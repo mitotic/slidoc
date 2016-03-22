@@ -37,8 +37,8 @@ def make_id(header):
     """Make ID string from header string"""
     return re.sub(r'\s*,\s*', ',', re.sub(r'\s+', ' ', header)).replace(' ', '-')
 
-def make_slide_id(slide_number, file_number=0):
-    return 'slide%02d-%02d' % (file_number, slide_number)
+def make_slide_id(slide_number, filenumber=0):
+    return 'slide%02d-%02d' % (filenumber, slide_number)
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -300,7 +300,7 @@ class IPythonRenderer(mistune.Renderer):
         self.slide_number = 1
         self.section_number = 0
         self.untitled_number = 0
-        self.cur_id = make_slide_id(1)
+        self.cur_id = make_slide_id(1, filenumber=self.options['filenumber'])
 
     def minirule(self):
         """Treat minirule as a linebreak"""
@@ -315,7 +315,7 @@ class IPythonRenderer(mistune.Renderer):
         self.first_para = True
 
         self.slide_number += 1
-        self.cur_id = make_slide_id(self.slide_number)
+        self.cur_id = make_slide_id(self.slide_number, filenumber=self.options['filenumber'])
 
         if self.options["cmd_args"].norule:
             html = '<p id="%s"></p>' % self.cur_id
@@ -571,28 +571,37 @@ class IPythonRenderer(mistune.Renderer):
         return highlight(code, lexer, formatter)
 
     
-def markdown2html_mistune(source, filename, cmd_args, filenumber=0):
+def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
     renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
 
-    html = MarkdownWithMath(renderer=renderer).render(source)
+    content_html = MarkdownWithMath(renderer=renderer).render(source)
 
     if not cmd_args.noheaders:
+        nav_html = ''
+        if prev_file:
+            nav_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, prev_file, 'PREV')
+        if next_file:
+            nav_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, next_file, 'NEXT')
+        if cmd_args.toc:
+            nav_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
+
+        content_html += '<p></p>' + '<a href="#%s">%s</a><br>' % (make_slide_id(1, filenumber=filenumber), 'TOP') + nav_html
         headers_html = renderer.table_of_contents(filenumber=filenumber)
         if headers_html:
-            if cmd_args.toc:
-                headers_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
-            if 'meldr-notes' in html:
+            headers_html += nav_html
+            if 'meldr-notes' in content_html:
                 headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'meldr-notes'"+');">Hide all notes</a>'
-        html = html.replace('__HEADER_LIST__', headers_html)
+
+        content_html = content_html.replace('__HEADER_LIST__', headers_html)
 
     if cmd_args.strip:
         # Strip out answer/notes blocks
-        html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', html, flags=re.DOTALL)
+        content_html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', html, flags=re.DOTALL)
 
     file_toc = renderer.table_of_contents(cmd_args.href+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, html)
+    return (renderer.file_header or filename, file_toc, content_html)
 
 if __name__ == '__main__':
     import argparse
@@ -619,7 +628,7 @@ if __name__ == '__main__':
 </script>
 %s
 <h3>Table of Contents</h3>
-<a href="#" onclick="toggleAll('filetoc');">Show all contents</a>
+<a href="#" onclick="toggleAll('filetoc');">Show all sections</a>
 <p></p>
 '''
     
@@ -734,6 +743,9 @@ if __name__ == '__main__':
     fprefix = None
     for j, f in enumerate(cmd_args.file):
         fname = fnames[j]
+        prev_file = fnames[j-1]+".html" if j > 0 else ''
+        next_file = fnames[j+1]+".html" if j < len(cmd_args.file)-1 else ''
+
         md_text = f.read()
         f.close()
 
@@ -746,9 +758,10 @@ if __name__ == '__main__':
                     break
                 fprefix = fprefix[:-1]
 
-        params = {'first_id': make_slide_id(1), 'body_style': style_str, 'math_js': mathjax if '$$' in md_text else ''}
         filenumber = 0 if cmd_args.nosections else (j+1)
-        fheader, file_toc, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args, filenumber=filenumber)
+        params = {'first_id': make_slide_id(1, filenumber=filenumber), 'body_style': style_str, 'math_js': mathjax if '$$' in md_text else ''}
+        fheader, file_toc, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args, filenumber=filenumber,
+                                                           prev_file=prev_file, next_file=next_file)
 
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
