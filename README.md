@@ -146,11 +146,22 @@ questions. Questions are slides of the form:
 where `X` can be `a`, `b`, etc. for multiple-choice questions, a
 number for numeric answers, or some text for open-ended answers. For
 unspecified answers, `X` should be as `choice`, `number`, or `text`.
+Correct text answers with markup, or spanning multiple lines, can be
+provided in a separate slide with a Level 3 header containing the word
+`answer`.
 
 The optional concepts list for questions is analyzed by Slidedown
 for dependencies.
 
 Concepts: questions; concept list 
+
+---
+
+### Slide with answer
+
+Level 3 header will not be listed in table of contents. The `--hide=[Aa]nswer`
+can be used to hide this answer slide. The `--strip`` option will
+remove it completely.
 
 ---
 
@@ -388,7 +399,7 @@ Notes: This is an example of an open-ended text answer question.
 
 ---
 
-## Simple function (answer)
+### Simple function (answer)
 
 The answer
 
@@ -480,7 +491,7 @@ Answer: text
 
 ---
 
-## Open text response question answer
+### Open text response question answer
 
 Solution to open response question
 

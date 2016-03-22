@@ -37,8 +37,8 @@ def make_id(header):
     """Make ID string from header string"""
     return re.sub(r'\s*,\s*', ',', re.sub(r'\s+', ' ', header)).replace(' ', '-')
 
-def make_slide_id(slide_number):
-    return 'slide%03d' % slide_number
+def make_slide_id(slide_number, file_number=0):
+    return 'slide%02d-%02d' % (file_number, slide_number)
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -171,9 +171,10 @@ class MathBlockGrammar(mistune.BlockGrammar):
     meldr_answer =   re.compile(r"^ {0,3}([Aa]ns|[Aa]nswer):(.*?)\s*?(\n|$)")
     meldr_concepts = re.compile(r"^ {0,3}([Cc]oncepts):(.*?)\s*?(\n|$)")
     meldr_notes =    re.compile(r"^ {0,3}([Nn]otes):\s*?((?=\S)|\n)")
+    minirule =       re.compile(r'^(--) *(?:\n+|$)')
 
 class MathBlockLexer(mistune.BlockLexer):
-    default_rules = ['block_math', 'latex_environment', 'meldr_header', 'meldr_answer', 'meldr_concepts', 'meldr_notes'] + mistune.BlockLexer.default_rules
+    default_rules = ['block_math', 'latex_environment', 'meldr_header', 'meldr_answer', 'meldr_concepts', 'meldr_notes', 'minirule'] + mistune.BlockLexer.default_rules
 
     def __init__(self, rules=None, **kwargs):
         if rules is None:
@@ -222,7 +223,10 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2).strip()
         })
 
+    def parse_minirule(self, m):
+        self.tokens.append({'type': 'minirule'})
 
+    
 class MathInlineGrammar(mistune.InlineGrammar):
     math = re.compile(r"^`\$(.+?)\$`", re.DOTALL)
     block_math = re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
@@ -270,7 +274,14 @@ class MarkdownWithMath(mistune.Markdown):
     def output_meldr_notes(self):
         return self.renderer.meldr_notes(self.token['name'], self.token['text'])
 
+    def output_minirule(self):
+        return self.renderer.minirule()
 
+    def render(self, text):
+        html = super(MarkdownWithMath, self).render(text)
+        return html + self.renderer.end_notes() + self.renderer.end_section()
+
+    
 class IPythonRenderer(mistune.Renderer):
     def __init__(self, **kwargs):
         super(IPythonRenderer, self).__init__(**kwargs)
@@ -281,6 +292,7 @@ class IPythonRenderer(mistune.Renderer):
         self.notes_end = None
         self.cur_header = ''
         self.cur_qtype = ''
+        self.cur_answer = False
         self.slide_concepts = ''
         self.first_para = True
 
@@ -290,11 +302,15 @@ class IPythonRenderer(mistune.Renderer):
         self.untitled_number = 0
         self.cur_id = make_slide_id(1)
 
+    def minirule(self):
+        """Treat minirule as a linebreak"""
+        return '<br>\n'
 
     def hrule(self):
         """Rendering method for ``<hr>`` tag."""
         self.cur_header = ''
         self.cur_qtype = ''
+        self.cur_answer = False
         self.slide_concepts = ''
         self.first_para = True
 
@@ -342,9 +358,10 @@ class IPythonRenderer(mistune.Renderer):
     def header(self, text, level, raw=None):
         """Handle markdown headings
         """
+        hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         html = super(IPythonRenderer, self).header(text, level, raw=raw)
-        if level >= 3:
-            # Ignore higher level headers
+        if level > 3 or (level == 3 and (not hide_block or self.section_end)):
+            # Ignore higher level headers (except for level 3 hide block)
             return html
 
         try:
@@ -371,30 +388,28 @@ class IPythonRenderer(mistune.Renderer):
                 if not self.options["cmd_args"].noheaders:
                     suffix = '__HEADER_LIST__'
 
-        elif level == 2:
-            # Level 2 (section) header
-            self.section_number += 1
-
-            if self.options['filenumber']:
-                hdr_prefix =  '%d.%d ' % (self.options['filenumber'], self.section_number)
+        else:
+            # Level 2/3 header
+            if level == 2:
+                # New section
+                self.section_number += 1
+                if self.options['filenumber']:
+                    hdr_prefix =  '%d.%d ' % (self.options['filenumber'], self.section_number)
+                self.cur_header = hdr_prefix + text
+                self.header_list.append( (self.cur_id, self.cur_header) )
 
             # Close previous blocks
             prefix = self.end_notes()+self.end_section()
+            self.section_end = ''
 
-            # New section
-            if self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text):
-                # Answer/solution
-                id_str = 'section' + str(self.section_number)
+            if hide_block:
+                # Hide answer/solution
+                id_str = 'answer%02d-%02d' % (self.options['filenumber'], self.section_number)
                 ans_prefix, suffix, end_str = self.start_block(id_str)
                 self.section_end = end_str
                 prefix = prefix + ans_prefix
                 hdr.set('class', 'meldr-clickable' )
                 hdr.set('onclick', "toggleBlock('"+id_str+"')" )
-            else:
-                self.section_end = ''
-
-            self.cur_header = hdr_prefix + text
-            self.header_list.append( (self.cur_id, self.cur_header) )
 
         if hdr_prefix:
             hdr.text = hdr_prefix + (hdr.text or '')
@@ -430,6 +445,10 @@ class IPythonRenderer(mistune.Renderer):
         return ''
 
     def meldr_answer(self, name, text):
+        if self.cur_answer:
+            # Ignore multiple answers
+            return ''
+        self.cur_answer = True
         if not self.cur_qtype:
             self.question_number += 1
 
@@ -515,7 +534,7 @@ class IPythonRenderer(mistune.Renderer):
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
-        id_str = 'notes' + str(self.slide_number)
+        id_str = 'notes%02d-%02d' % (self.options['filenumber'], self.slide_number)
         prefix, suffix, end_str = self.start_block(id_str, display='block', style='meldr-notes')
         self.notes_end = end_str
         return prefix + '<a class="meldr-clickable" onclick="'+"toggleBlock('"+id_str+"')"+'">Notes:</a>\n' + suffix
@@ -551,25 +570,25 @@ class IPythonRenderer(mistune.Renderer):
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
-
+    
 def markdown2html_mistune(source, filename, cmd_args, filenumber=0):
     """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
     renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
 
     html = MarkdownWithMath(renderer=renderer).render(source)
-    html += renderer.end_notes() + renderer.end_section()
 
     if not cmd_args.noheaders:
         headers_html = renderer.table_of_contents(filenumber=filenumber)
-        if cmd_args.toc:
-            headers_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
-        if 'meldr-notes' in html:
-            headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'meldr-notes'"+');">Hide all notes</a>'
+        if headers_html:
+            if cmd_args.toc:
+                headers_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
+            if 'meldr-notes' in html:
+                headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'meldr-notes'"+');">Hide all notes</a>'
         html = html.replace('__HEADER_LIST__', headers_html)
 
     if cmd_args.strip:
         # Strip out answer/notes blocks
-        html = re.sub(r"<!--meldr-block-begin\[(\w+)\](.*?)<!--meldr-block-end\[\1\]-->", '', html, flags=re.DOTALL)
+        html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', html, flags=re.DOTALL)
 
     file_toc = renderer.table_of_contents(cmd_args.href+filename+'.html', filenumber=filenumber)
 
