@@ -1,0 +1,101 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html><head>
+
+  <style>
+    body { line-height: 1.35;
+           max-width: 960px;
+           %(body_style)s }
+    pre { padding: 0px 2em;}
+    .meldr-notes { padding: 0px 1em; font-size: 90%%; }
+    .meldr-notes p {margin: 0.3em 0;}
+    .meldr-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
+  </style>
+
+ %(math_js)s
+
+  <script>
+     function toggleBlock(className) {
+        var elements = document.getElementsByClassName(className);
+        for (var i = 0; i < elements.length; ++i) {
+           elements[i].style.display = (elements[i].style.display=='block') ? 'none' : 'block';
+        }
+     }
+
+     function toggleInline(elem) {
+        var elements = elem.children;
+        for (var i = 0; i < elements.length; ++i) {
+           elements[i].style.display = (elements[i].style.display=='inline') ? 'none' : 'inline';
+        }
+     }
+
+    var Slidedown = {};
+    Slidedown.questions_answered = {};
+    Slidedown.questions_count = 0;
+    Slidedown.questions_correct = 0;
+     
+     function choiceClick(elem, slide_id, question_number, choice_val) {
+        console.log("choiceClick:", slide_id, question_number, choice_val);
+        if (question_number in Slidedown.questions_answered)
+           return;
+        Slidedown.questions_answered[question_number] = choice_val;
+
+        elem.style['text-decoration'] = 'line-through';
+        var choices = document.getElementsByClassName(slide_id+"-choice");
+        for (var i = 0; i < choices.length; ++i) {
+           choices[i].removeAttribute("onclick");
+           choices[i].classList.remove("meldr-clickable");
+        }
+        var notes_id = slide_id+"-notes";
+        toggleBlock(notes_id);
+        var notes_elem = document.getElementById(notes_id);
+        if (notes_elem) notes_elem.style.display = 'inline';
+        var concept_elem = document.getElementById(slide_id+"-concepts");
+        var concept_list = concept_elem ? concept_elem.textContent.split('; ') : ';';
+        var ans_elem = document.getElementById(slide_id+"-answer");
+        if (ans_elem) ans_elem.style.display = 'inline';
+        var corr_elem = document.getElementById(slide_id+"-correct");
+        if (corr_elem) {
+           var corr_answer = corr_elem.textContent;
+           console.log('choiceClick:corr', corr_answer, concept_list);
+           if (corr_answer) {
+               Slidedown.questions_count += 1;
+               var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
+               if (corr_choice) {
+                corr_choice.style['text-decoration'] = '';
+                corr_choice.style['font-weight'] = 'bold';
+              }
+              var resp_elem = document.getElementById(slide_id+"-resp");
+              if (resp_elem && choice_val) {
+                 if (choice_val == corr_answer)  {
+                    Slidedown.questions_correct += 1;
+                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
+                 } else {
+                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
+                 }
+               }
+            }
+        }
+     }
+
+     function answerClick(elem, slide_id, question_number, choice_type) {
+        console.log("answerClick:", slide_id, choice_type);
+        toggleInline(elem);
+        if (choice_type) {
+           var notes_id = slide_id+"-notes";
+           var notes_link = document.getElementById(notes_id);
+           if (notes_link) {
+               // Display any notes associated with this question
+               notes_link.style.display = "inline";
+               toggleBlock(notes_id);
+           }
+        }
+     }
+  </script>
+
+</head>
+<body>
+
+  <p id="%(first_id)s"></p>
+  %(content)s
+
+</body></html>

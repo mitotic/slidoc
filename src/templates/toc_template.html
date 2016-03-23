@@ -1,0 +1,30 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html> <head>
+    <style>
+       body { line-height: 1.6;
+              max-width: 960px;
+              font-family:'Helvetica Neue', Helvetica, 'Segoe UI', Arial, freesans, sans-serif;
+       }
+       .filetoc { padding: 0.3em 0 0 1em; color: blue; text-decoration: underline; }
+   </style>
+
+   <script>
+       function toggleTOC(elem_id) {
+           var element = document.getElementById(elem_id);
+           element.style.display = (element.style.display=='block') ? 'none' : 'block';
+        }
+        function toggleAll(className) {
+           var elements = document.getElementsByClassName(className);
+           for (var i = 0; i < elements.length; ++i) {
+              toggleTOC(elements[i].id);
+           }
+        }
+   </script>
+</head>
+<body>
+%(insert)s
+<h3>Table of Contents</h3>
+<a href="#" onclick="toggleAll('filetoc');">Show all sections</a>
+<p></p>
+%(content)s
+</body> </html>

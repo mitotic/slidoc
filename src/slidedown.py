@@ -82,14 +82,15 @@ def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
             sec_tags[tag][filename].append( (slide_id, header) )
 
 
-def make_index(first_tags, sec_tags, href, outfile=sys.stdout, only_headers=False, fprefix=''):
+def make_index(first_tags, sec_tags, href, only_headers=False, fprefix=''):
     # if not only_headers, link to file if no headers available
     covered_first = defaultdict(set)
     fsuffixes = OrderedDict()
     tag_list = list(set(first_tags.keys()+sec_tags.keys()))
     tag_list.sort()
+    out_list = []
     if href:
-        outfile.write('<b>INDEX</b><ul>\n')
+        out_list.append('<b>INDEX</b><ul>\n')
 
     prev_tag_comps = []
     for tag in tag_list:
@@ -97,9 +98,9 @@ def make_index(first_tags, sec_tags, href, outfile=sys.stdout, only_headers=Fals
         tag_str = tag
         if href:
             if not prev_tag_comps or prev_tag_comps[0][0] != tag_comps[0][0]:
-                outfile.write('</ul><b>%s</b>\n<ul style="list-style-type: none;">\n' % tag_comps[0][0].upper())
+                out_list.append('</ul><b>%s</b>\n<ul style="list-style-type: none;">\n' % tag_comps[0][0].upper())
             elif prev_tag_comps and prev_tag_comps[0] != tag_comps[0]:
-                outfile.write('&nbsp;\n')
+                out_list.append('&nbsp;\n')
             else:
                 tag_str = '___, ' + ','.join(tag_comps[1:])
         
@@ -111,7 +112,7 @@ def make_index(first_tags, sec_tags, href, outfile=sys.stdout, only_headers=Fals
         files.sort()
         fsuffix = []
         if href and files:
-            outfile.write('<li id="%s"><b>%s</b>:\n' % (make_id_from_header(tag), tag_str))
+            out_list.append('<li id="%s"><b>%s</b>:\n' % (make_id_from_header(tag), tag_str))
 
         start = True
         for fname in files:
@@ -122,29 +123,29 @@ def make_index(first_tags, sec_tags, href, outfile=sys.stdout, only_headers=Fals
                 if not first_headers and not sec_headers and not only_headers:
                     # Link to file (no headers available)
                     if not start:
-                        outfile.write(', ')
-                    outfile.write('<a href="%s%s" target="_blank"><b>%s</b></a>' % (href, fname+'.html', fname))
+                        out_list.append(', ')
+                    out_list.append('<a href="%s%s" target="_blank"><b>%s</b></a>' % (href, fname+'.html', fname))
                 else:
                     for slide_id, slide_header in first_headers:
                         if not start:
-                            outfile.write(', ')
+                            out_list.append(', ')
                         start = False
-                        outfile.write('<a href="%s%s" target="_blank"><b>%s</b></a>' % (href, fname+'.html#'+slide_id, slide_header))
+                        out_list.append('<a href="%s%s" target="_blank"><b>%s</b></a>' % (href, fname+'.html#'+slide_id, slide_header))
                     for slide_id, slide_header in sec_headers:
                         if not start:
-                            outfile.write(', ')
+                            out_list.append(', ')
                         start = False
-                        outfile.write('<a href="%s%s" target="_blank">%s</a>' % (href, fname+'.html#'+slide_id, slide_header))
+                        out_list.append('<a href="%s%s" target="_blank">%s</a>' % (href, fname+'.html#'+slide_id, slide_header))
         if href and files:
-            outfile.write('</li>\n')
+            out_list.append('</li>\n')
 
         fsuffixes[tag] = fsuffix
         prev_tag_comps = tag_comps
 
     if href:
-        outfile.write('</ul>\n')
+        out_list.append('</ul>\n')
         
-    return fsuffixes, covered_first
+    return fsuffixes, covered_first, ''.join(out_list)
 
 
 class Dummy(object):
@@ -489,6 +490,7 @@ class IPythonRenderer(mistune.Renderer):
                 self.cur_qtype = 'text'
 
         if self.options['cmd_args'].strip or not text:
+            # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'\n'
 
         if self.options['cmd_args'].hide:
@@ -548,7 +550,8 @@ class IPythonRenderer(mistune.Renderer):
                 # Not question
                 add_to_index(Global.first_tags, Global.sec_tags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
 
-        if self.options['cmd_args'].strip:
+        if self.options['cmd_args'].strip or self.options['cmd_args'].noconcepts:
+            # Strip concepts
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
@@ -621,14 +624,14 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
 
     if not cmd_args.noheaders:
         nav_html = ''
+        if cmd_args.toc:
+            nav_html += '<a href="%s%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
         if prev_file:
             nav_html += '<a href="%s%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (cmd_args.href, prev_file, 'PREV')
         if next_file:
             nav_html += '<a href="%s%s">%s</a>' % (cmd_args.href, next_file, 'NEXT')
-        if cmd_args.toc:
-            nav_html += '<p></p><a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
 
-        content_html += '<p></p>' + '<a href="#%s">%s</a><br>' % (renderer.first_id, 'TOP') + nav_html
+        content_html += '<p></p>' + '<a href="#%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (renderer.first_id, 'TOP') + nav_html
         headers_html = renderer.table_of_contents(filenumber=filenumber)
         if headers_html:
             headers_html = nav_html + headers_html
@@ -638,136 +641,14 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
         content_html = content_html.replace('__HEADER_LIST__', headers_html)
 
     if cmd_args.strip:
-        # Strip out answer/notes blocks
+        # Strip out notes, answer slides
         content_html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
     file_toc = renderer.table_of_contents(cmd_args.href+filename+'.html', filenumber=filenumber)
 
     return (renderer.file_header or filename, file_toc, renderer.first_id, content_html)
 
-if __name__ == '__main__':
-    import argparse
-
-    header_toc = '''
-<style>
-    body { line-height: 1.6;
-           max-width: 960px;
-           font-family:'Helvetica Neue', Helvetica, 'Segoe UI', Arial, freesans, sans-serif;
-    }
-    .filetoc { padding: 0.3em 0 0 1em; color: blue; text-decoration: underline; }
-</style>
-<script>
-    function toggleTOC(elem_id) {
-        var element = document.getElementById(elem_id);
-        element.style.display = (element.style.display=='block') ? 'none' : 'block';
-     }
-     function toggleAll(className) {
-        var elements = document.getElementsByClassName(className);
-        for (var i = 0; i < elements.length; ++i) {
-           toggleTOC(elements[i].id);
-        }
-     }
-</script>
-%s
-<h3>Table of Contents</h3>
-<a href="#" onclick="toggleAll('filetoc');">Show all sections</a>
-<p></p>
-'''
-    
-    header_document = '''<head>
-%(math_js)s
-  <script>
-     function toggleBlock(className) {
-        var elements = document.getElementsByClassName(className);
-        for (var i = 0; i < elements.length; ++i) {
-           elements[i].style.display = (elements[i].style.display=='block') ? 'none' : 'block';
-        }
-     }
-
-     function toggleInline(elem) {
-        var elements = elem.children;
-        for (var i = 0; i < elements.length; ++i) {
-           elements[i].style.display = (elements[i].style.display=='inline') ? 'none' : 'inline';
-        }
-     }
-
-var Slidedown = {};
-Slidedown.questions_answered = {};
-Slidedown.questions_count = 0;
-Slidedown.questions_correct = 0;
-     
-     function choiceClick(elem, slide_id, question_number, choice_val) {
-        console.log("choiceClick:", slide_id, question_number, choice_val);
-        if (question_number in Slidedown.questions_answered)
-           return;
-        Slidedown.questions_answered[question_number] = choice_val;
-
-        elem.style['text-decoration'] = 'line-through';
-        var choices = document.getElementsByClassName(slide_id+"-choice");
-        for (var i = 0; i < choices.length; ++i) {
-           choices[i].removeAttribute("onclick");
-           choices[i].classList.remove("meldr-clickable");
-        }
-        var notes_id = slide_id+"-notes";
-        toggleBlock(notes_id);
-        var notes_elem = document.getElementById(notes_id);
-        if (notes_elem) notes_elem.style.display = 'inline';
-        var concept_elem = document.getElementById(slide_id+"-concepts");
-        var concept_list = concept_elem ? concept_elem.textContent.split('; ') : ';';
-        var ans_elem = document.getElementById(slide_id+"-answer");
-        if (ans_elem) ans_elem.style.display = 'inline';
-        var corr_elem = document.getElementById(slide_id+"-correct");
-        if (corr_elem) {
-           var corr_answer = corr_elem.textContent;
-           console.log('choiceClick:corr', corr_answer, concept_list);
-           if (corr_answer) {
-               Slidedown.questions_count += 1;
-               var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
-               if (corr_choice) {
-                corr_choice.style['text-decoration'] = '';
-                corr_choice.style['font-weight'] = 'bold';
-              }
-              var resp_elem = document.getElementById(slide_id+"-resp");
-              if (resp_elem && choice_val) {
-                 if (choice_val == corr_answer)  {
-                    Slidedown.questions_correct += 1;
-                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
-                 } else {
-                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
-                 }
-               }
-            }
-        }
-     }
-
-     function answerClick(elem, slide_id, question_number, choice_type) {
-        console.log("answerClick:", slide_id, choice_type);
-        toggleInline(elem);
-        if (choice_type) {
-           var notes_id = slide_id+"-notes";
-           var notes_link = document.getElementById(notes_id);
-           if (notes_link) {
-               // Display any notes associated with this question
-               notes_link.style.display = "inline";
-               toggleBlock(notes_id);
-           }
-        }
-     }
-  </script>
-  <style>
-    body { line-height: 1.35;
-           max-width: 960px;
-           %(body_style)s }
-    pre { padding: 0px 2em;}
-    .meldr-notes { padding: 0px 1em; font-size: 90%%; }
-    .meldr-notes p {margin: 0.3em 0;}
-    .meldr-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
-  </style>
-</head>
-<body>
-<p id="%(first_id)s"></p>
-'''
-    mathjax = '''<script type="text/x-mathjax-config">
+Mathjax_js = '''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
     tex2jax: {
       inlineMath: [ ['`$','$`'], ["$$$","$$$"] ],
@@ -777,7 +658,9 @@ Slidedown.questions_correct = 0;
 </script>
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
-    footer_document = '''</body>'''
+
+if __name__ == '__main__':
+    import argparse
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
@@ -787,6 +670,7 @@ Slidedown.questions_correct = 0;
     parser.add_argument('--header', help='HTML header file for ToC')
     parser.add_argument('--href', help='URL prefix to link local HTML files (default: "./")', default='./')
     parser.add_argument('--index', metavar='FILE', help='index file (default: ind.html)', default='ind.html')
+    parser.add_argument('--noconcepts', help='Strip concept lists', action="store_true")
     parser.add_argument('--noheaders', help='No clickable list of headers', action="store_true")
     parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
     parser.add_argument('--nosections', help='No section numbering', action="store_true")
@@ -796,11 +680,16 @@ Slidedown.questions_correct = 0;
     parser.add_argument('--qindex', metavar='FILE', help='question index file (default: qind.html)', default='qind.html')
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
-    parser.add_argument('--strip', help='Strip hidden code', action="store_true")
+    parser.add_argument('--strip', help='Strip answers, concepts, notes, answer slides', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
+    templates = {}
+    for tname in ('doc', 'toc', 'reveal'):
+        f = open(scriptdir+'/templates/'+tname+'_template.html')
+        templates[tname] = f.read()
+        f.close()
 
     fnames = []
     for f in cmd_args.file:
@@ -830,9 +719,6 @@ Slidedown.questions_correct = 0;
     if cmd_args.slides:
         reveal_themes = cmd_args.slides.split(',')
         reveal_themes += [''] * (4-len(reveal_themes))
-        reveal_f = open(scriptdir+'/templates/slidedown_reveal.txt')
-        reveal_template = reveal_f.read()
-        reveal_f.close()
         reveal_pars = { 'reveal_theme': reveal_themes[0] or 'white',
                         'highlight_theme': reveal_themes[1] or 'github',
                         'reveal_fsize': reveal_themes[2] or '200%',
@@ -842,7 +728,6 @@ Slidedown.questions_correct = 0;
                         'highlight_cdn': 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.2.0',
                         'reveal_title': '', 'reveal_md': ''}
     else:
-        reveal_template = ''
         reveal_pars = ''
 
     flist = []
@@ -878,11 +763,10 @@ Slidedown.questions_correct = 0;
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
-            params = {'first_id': first_id, 'body_style': style_str, 'math_js': mathjax if '$$' in md_text else ''}
+            params = {'body_style': style_str, 'math_js': Mathjax_js if '$$' in md_text else '',
+                      'first_id': first_id, 'content': md_html }
             out = open(outname, "w")
-            out.write(header_document % params)
-            out.write(md_html)
-            out.write(footer_document)
+            out.write(templates['doc'] % params)
             out.close()
             print("Created ", outname+":", fheader, file=sys.stderr)
 
@@ -902,7 +786,7 @@ Slidedown.questions_correct = 0;
                 sfile = open(sfilename, "w")
                 reveal_pars['reveal_title'] = fname
                 reveal_pars['reveal_md'] = reveal_md
-                sfile.write(reveal_template % reveal_pars)
+                sfile.write(templates['reveal'] % reveal_pars)
                 sfile.close()
                 print("Created ", sfilename, file=sys.stderr)
 
@@ -922,10 +806,10 @@ Slidedown.questions_correct = 0;
             header_file.close()
         else:
             header_insert = ''
-        tocfile = sys.stdout if cmd_args.dry_run else open(cmd_args.toc, 'w')
-        tocfile.write(header_toc % header_insert)
-        tocfile.write('<blockquote>\n')
-        tocfile.write('<ol>' if cmd_args.nosections else '<ul style="list-style-type: none;">')
+
+        toc_html = []
+        toc_html.append('<blockquote>\n')
+        toc_html.append('<ol>\n' if cmd_args.nosections else '<ul style="list-style-type: none;">\n')
         ifile = 0
         for fname, outname, fheader, file_toc in flist:
             ifile += 1
@@ -939,29 +823,34 @@ Slidedown.questions_correct = 0;
             doc_link = '<a href="%s%s">%s</a>' % (cmd_args.href, outname, 'document')
 
             toggle_link = '<a href="#" onclick="toggleTOC(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
-            tocfile.write('<li>%s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(<em>%s%s%s</em>)</li>\n' % (toggle_link, doc_link, slide_link, nb_link))
+            toc_html.append('<li>%s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(<em>%s%s%s</em>)</li>\n' % (toggle_link, doc_link, slide_link, nb_link))
 
             f_toc_html = '<div id="'+id_str+'" class="filetoc" style="display: none;">'+file_toc+'<p></p></div>'
-            tocfile.write(f_toc_html)
+            toc_html.append(f_toc_html)
 
-        tocfile.write('</ol>' if cmd_args.nosections else '</ul>')
+        toc_html.append('</ol>\n' if cmd_args.nosections else '</ul>\n')
+
         if cmd_args.index:
-            tocfile.write('<a href="%s%s" target="_blank">%s</a><br>\n' % (cmd_args.href, cmd_args.index, 'INDEX'))
-        tocfile.write('</blockquote>\n')
+            toc_html.append('<a href="%s%s" target="_blank">%s</a><br>\n' % (cmd_args.href, cmd_args.index, 'INDEX'))
+        toc_html.append('</blockquote>\n')
+
         if cmd_args.slides:
-            tocfile.write('<em>Note</em>: When viewing slides, type ? for help or click <a target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
+            toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
 
         if not cmd_args.dry_run:
+            tocfile = open(cmd_args.toc, 'w')
+            tocfile.write(templates['toc'] % {'insert': header_insert, 'content': ''.join(toc_html)})
             tocfile.close()
             print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
     if cmd_args.index:
-        indexfile = sys.stdout if cmd_args.dry_run else open(cmd_args.index, 'w')
-        if cmd_args.toc:
-            indexfile.write('<a href="%s%s">%s</a><p></p>' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
-        indexfile.write('<b>CONCEPT</b>\n')
-        fsuffixes, covered_first = make_index(Global.first_tags, Global.sec_tags, cmd_args.href, outfile=indexfile, fprefix=fprefix)
+        fsuffixes, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.href, fprefix=fprefix)
         if not cmd_args.dry_run:
+            indexfile = open(cmd_args.index, 'w')
+            if cmd_args.toc:
+                indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
+            indexfile.write('<b>CONCEPT</b>\n')
+            indexfile.write(index_html)
             indexfile.close()
             print("Created index in", cmd_args.index, file=sys.stderr)
 
@@ -982,17 +871,18 @@ Slidedown.questions_correct = 0;
 
     if cmd_args.qindex and Global.first_qtags:
         import itertools
-        qindexfile = sys.stdout if cmd_args.dry_run else open(cmd_args.qindex, 'w')
+        qout_list = []
         if cmd_args.toc:
-            qindexfile.write('<a href="%s%s">%s</a><p></p>' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
-        qindexfile.write('<b>QUESTION CONCEPT</b>\n')
-        fsuffixes, covered_first = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.href, outfile=qindexfile, only_headers=True, fprefix=fprefix)
-        qindexfile.write('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant that explores all the same concepts.</p>\n')
-        qindexfile.write('<ul style="list-style-type: none;">\n')
+            qout_list.append('<a href="%s%s">%s</a><p></p>' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
+        qout_list.append('<b>QUESTION CONCEPT</b>\n')
+        fsuffixes, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.href, only_headers=True, fprefix=fprefix)
+        qout_list.append(qindex_html)
+        qout_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant that explores all the same concepts.</p>\n')
+        qout_list.append('<ul style="list-style-type: none;">\n')
 
         for fname, slide_id, header, qnumber, concept_id in Global.questions.values():
             q_id = make_file_id(fname, slide_id)
-            qindexfile.write('<li><a href="%s%s.html#%s">%s: %s</a>: ' % (cmd_args.href, fname, slide_id, make_q_label(fname, qnumber, fprefix), header))
+            qout_list.append('<li><a href="%s%s.html#%s">%s: %s</a>: ' % (cmd_args.href, fname, slide_id, make_q_label(fname, qnumber, fprefix), header))
             ctags = concept_id.split(';')
             n = len(ctags)
             for m in range(n):
@@ -1004,10 +894,12 @@ Slidedown.questions_correct = 0;
                     for sub_fname, sub_slide_id, sub_header, sub_qnumber, sub_concept_id in Global.concept_questions.get(sub_concept_id, []):
                         sub_q_id = make_file_id(sub_fname, sub_slide_id)
                         if sub_q_id != q_id:
-                            qindexfile.write('<a href="%s%s.html#%s">%s</a><sup>%s</sup>, ' % (cmd_args.href, sub_fname, sub_slide_id, make_q_label(sub_fname, sub_qnumber, fprefix), sub_num))
+                            qout_list.append('<a href="%s%s.html#%s">%s</a><sup>%s</sup>, ' % (cmd_args.href, sub_fname, sub_slide_id, make_q_label(sub_fname, sub_qnumber, fprefix), sub_num))
                 
-            qindexfile.write('</li>\n')
-        qindexfile.write('</ul>\n')
+            qout_list.append('</li>\n')
+        qout_list.append('</ul>\n')
         if not cmd_args.dry_run:
+            qindexfile = open(cmd_args.qindex, 'w')
+            qindexfile.write(''.join(qout_list))
             qindexfile.close()
             print("Created qindex in", cmd_args.qindex, file=sys.stderr)
