@@ -28,16 +28,16 @@
         }
      }
 
-    var Slidedown = {};
-    Slidedown.questions_answered = {};
-    Slidedown.questions_count = 0;
-    Slidedown.questions_correct = 0;
+    var Slidoc = {};
+    Slidoc.questions_answered = {};
+    Slidoc.questions_count = 0;
+    Slidoc.questions_correct = 0;
      
      function choiceClick(elem, slide_id, question_number, choice_val) {
         console.log("choiceClick:", slide_id, question_number, choice_val);
-        if (question_number in Slidedown.questions_answered)
+        if (question_number in Slidoc.questions_answered)
            return;
-        Slidedown.questions_answered[question_number] = choice_val;
+        Slidoc.questions_answered[question_number] = choice_val;
 
         elem.style['text-decoration'] = 'line-through';
         var choices = document.getElementsByClassName(slide_id+"-choice");
@@ -58,7 +58,7 @@
            var corr_answer = corr_elem.textContent;
            console.log('choiceClick:corr', corr_answer, concept_list);
            if (corr_answer) {
-               Slidedown.questions_count += 1;
+               Slidoc.questions_count += 1;
                var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
                if (corr_choice) {
                 corr_choice.style['text-decoration'] = '';
@@ -67,10 +67,10 @@
               var resp_elem = document.getElementById(slide_id+"-resp");
               if (resp_elem && choice_val) {
                  if (choice_val == corr_answer)  {
-                    Slidedown.questions_correct += 1;
-                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
+                    Slidoc.questions_correct += 1;
+                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidoc.questions_correct+"/"+Slidoc.questions_count+")";
                  } else {
-                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
+                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidoc.questions_correct+"/"+Slidoc.questions_count+")";
                  }
                }
             }

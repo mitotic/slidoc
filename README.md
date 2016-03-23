@@ -1,12 +1,12 @@
-# Slidedown: A Markdown-based lecture management system
+# Slidoc: A Markdown-based lecture management system
 
-Slidedown manages a collection of lectures written using
+Slidoc manages a collection of lectures written using
 [Markdown](https://daringfireball.net/projects/markdown/), which is a
 very simple and popular markup syntax. Markdown files are plain text files saved using extension `.md`. They
 can be edited using text editors like Emacs, vi,
 [Atom](https://atom.io/), and Sublime Text.
 
-Slidedown can publish a set of Markdown files as HTML (web) files,
+Slidoc can publish a set of Markdown files as HTML (web) files,
 [reveal.js](http://lab.hakim.se/reveal-js/) slideshows and
 [Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/).
 It can also create content lists and indexes, manage questions and
@@ -15,7 +15,7 @@ management system is that many open source tools can be used to
 process them. Version control is easy and sites like
 [GitHub](https://github.com) can be used to store and share them.
 
-This README.md provides examples and tests for Slidedown.
+This README.md provides examples and tests for Slidoc.
 
 Concepts: slides; markdown
 
@@ -23,16 +23,16 @@ Concepts: slides; markdown
 
 ## Installation and dependencies
 
-All the Slidedown scripts are located in the `src` directory. The
+All the Slidoc scripts are located in the `src` directory. The
 `templates` sub-directory is also needed. Download and unzip/untar to
 install. To test, publish this `README.md` file in a temporary
 directory:
 
-    ../src/slidedown.py --slides=black ../README.md
+    ../src/slidoc.py --slides=black ../README.md
 
 Open the `toc.html` file created by the above command in a browser.
 
-Slidedown uses [mistune](https://github.com/lepture/mistune) for HTML
+Slidoc uses [mistune](https://github.com/lepture/mistune) for HTML
 exports, which needs to be installed. It also automatically loads
 [reveal.js](https://github.com/hakimel/reveal.js/) for slideshows
 (except for presentation mode, which requires the `notes` plugin for
@@ -49,7 +49,7 @@ stored in a `Lectures` subddirectory with ordered names like
 To export some or all lectures to `html` format for web publishing,
 create a sub-directory, say `Publish`. In that directory, type:
 
-    slidedown.py ../Lectures/prefix-lecture??.md
+    slidoc.py ../Lectures/prefix-lecture??.md
 
 The above command will create files named `prefix-lecture01.html` and
 so on in that directory. Additionally, it will create four files,
@@ -68,7 +68,7 @@ Concepts: lecture management
 
 Lecture files may be converted to
 [Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/)
-by specifying the `--notebook` option to `slidedown.py`.
+by specifying the `--notebook` option to `slidoc.py`.
 By default, concept lists are stripped during this conversion process.
 
 Alternatively, to simply convert to notebooks, use the `md2nb.py` command:
@@ -89,7 +89,7 @@ Concepts: jupyter notebook; code, fenced; code, indented
 
 ## Slide extensions
 
-Slidedown recognizes several extensions to standard Markdown to
+Slidoc recognizes several extensions to standard Markdown to
 process slides in a lecture.
 
 - Each file begins with a Level 1 title header (`# Lecture Title`)
@@ -136,7 +136,7 @@ view but only displayed in the presenter view.
 
 ## Question slides
 
-Slidedown distinguishes between normal slides and slides with
+Slidoc distinguishes between normal slides and slides with
 questions. Questions are slides of the form:
 
     Question statement
@@ -152,7 +152,7 @@ Correct text answers with markup, or spanning multiple lines, can be
 provided as Notes or in the next slide with a Level 3 header
 containing the word `answer`.
 
-The optional concepts list for questions is analyzed by Slidedown
+The optional concepts list for questions is analyzed by Slidoc
 for dependencies.
 
 Concepts: questions; concept list 
@@ -169,14 +169,14 @@ remove it completely.
 
 ## Concept dependency analysis
 
-Slidedown creates the `qind.html` file with a map analyzing each
+Slidoc creates the `qind.html` file with a map analyzing each
 question for all the concepts it covers, and relating it to other
 questions which cover a subset of these concepts.
 
 To analyze concept dependency for lectures and exercises delivered,
 create a temporary subdirectory and use a command like:
 
-    slidedown.py ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
+    slidoc.py ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
 
 This will generate the concept dependency analysis for the first six
 lectures and the first three exercises in the files `index.html`,
@@ -195,11 +195,11 @@ reveal the answers. The following command will hide all slides with
 the string `Answer` or `answer` in the title (as well as answers
 specified in question slides).
 
-    slidedown.py --hide=[Aa]answer ... 
+    slidoc.py --hide=[Aa]answer ... 
 
 The following command
 
-    slidedown.py --hide=[Aa]answer --strip ... 
+    slidoc.py --hide=[Aa]answer --strip ... 
 
 will strip answers completely from the printable `.html` files.
 
@@ -209,7 +209,7 @@ Concepts: answers, hiding; answers, stripping
 
 ## Viewing slides with reveal.js
 
-Slidedown supports creating slideshows using
+Slidoc supports creating slideshows using
 [reveal.js](http://lab.hakim.se/reveal-js/). To enable it, specify
 `--slides=THEME,CODE_THEME,FSIZE,NOTES_PLUGIN` the option. This will
 create a `*-slides.html` file will be created for each source file.
@@ -229,7 +229,7 @@ or `--slides=,,190%`
 Concepts: slideshow
 
 Notes: To customize the presentation further, edit the
-`slidedown_reveal.txt` template file.
+`slidoc_reveal.txt` template file.
 
 ---
 
@@ -263,7 +263,7 @@ also work).
 If the plugin is installed in `reveal.js/plugin/notes`, use the
 command
 
-    slidedown.py --slides=,,,reveal.js/plugin/notes
+    slidoc.py --slides=,,,reveal.js/plugin/notes
 
 to generate the slides file.
 
@@ -278,10 +278,10 @@ Concepts: presentation mode
 
 ## Additional command line options
 
-The `slidedown.py` supports several additional command line
+The `slidoc.py` supports several additional command line
 options. Use the following command to display them:
 
-    slidedown.py -i
+    slidoc.py -i
 
 These options include:
 
@@ -295,7 +295,7 @@ These options include:
 ---
 
 The remaining slides are example slides used to illustrate the Markdown
-slide format and to test `slidedown.py`
+slide format and to test `slidoc.py`
 
 ---
 

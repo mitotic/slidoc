@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
-"""Slidedown is a Markdown based lecture management system.
+"""Slidoc is a Markdown based lecture management system.
 Markdown filters with mistune, with support for MathJax, keyword indexing etc.
 Use $$ ... $$ for block math
 Use `$ ... $` for inline math (use ``$stuff`` for inline code that has dollar signs at the beginning/end)
 Used from markdown.py
 
-See slidedown.md for examples and test cases in Markdown.
+See slidoc.md for examples and test cases in Markdown.
 
 Usage examples:
-./slidedown.py --hide='[Aa]nswer' --slides=black,zenburn,200% ../Lectures/course-lecture??.md
+./slidoc.py --hide='[Aa]nswer' --slides=black,zenburn,200% ../Lectures/course-lecture??.md
 
 """
 # Copyright (c) IPython Development Team.
