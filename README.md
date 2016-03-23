@@ -438,9 +438,9 @@ Notes: This is an example of an open-ended text answer question.
 The answer
 
 ```
-    def add(a, b):
-        c = a + b
-        return c
+def add(a, b):
+    c = a + b
+    return c
 ```
 
 Notes: The above function accepts two arguments and returns the sum of

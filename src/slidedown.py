@@ -3,7 +3,7 @@
 """Slidedown is a Markdown based lecture management system.
 Markdown filters with mistune, with support for MathJax, keyword indexing etc.
 Use $$ ... $$ for block math
-Use `$ ... $` for inline math (use ``stuff`` for inline code that has dollar signs at the beginning/end)
+Use `$ ... $` for inline math (use ``$stuff`` for inline code that has dollar signs at the beginning/end)
 Used from markdown.py
 
 See slidedown.md for examples and test cases in Markdown.
@@ -166,9 +166,9 @@ class MathBlockGrammar(mistune.BlockGrammar):
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
     meldr_header =   re.compile(r'^ {0,3}<!--meldr-(\w+)\s+(.*?)-->\s*?\n')
-    meldr_answer =   re.compile(r'^ {0,3}([Aa]ns|[Aa]nswer):(.*?)(\n|$)')
-    meldr_concepts = re.compile(r'^ {0,3}([Cc]oncepts):(.*?)(\n|$)')
-    meldr_notes =    re.compile(r'^ {0,3}([Nn]otes):\s*?((?=\S)|\n)')
+    meldr_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
+    meldr_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
+    meldr_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     minirule =       re.compile(r'^(--) *(?:\n+|$)')
 
 class MathBlockLexer(mistune.BlockLexer):
@@ -227,7 +227,7 @@ class MathBlockLexer(mistune.BlockLexer):
     
 class MathInlineGrammar(mistune.InlineGrammar):
     meldr_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
-    math =         re.compile(r"^`\$(.+?)\$`", re.DOTALL)
+    math =         re.compile(r"^`\$(.+?)\$`")
     block_math =   re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
     text =         re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
 
@@ -661,6 +661,8 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 
 if __name__ == '__main__':
     import argparse
+    import md2md
+    import md2nb
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
@@ -701,15 +703,6 @@ if __name__ == '__main__':
         if cmd_args.notebook and os.path.exists(fcomp[0]+'.ipynb') and not cmd_args.overwrite and not cmd_args.dry_run:
             sys.exit("File %s.ipynb already exists. Delete it or specify --overwrite" % fcomp[0])
 
-    nb_args = Dummy()
-    if cmd_args.notebook:
-        nb_args.href = cmd_args.href
-        nb_args.norule = cmd_args.norule
-        nb_args.indented = False
-        nb_args.noconcepts = True
-        nb_args.nomarkup = False
-        nb_args.nonotes = False
-
     style_str = ''
     if cmd_args.fsize:
         style_str += 'font-size: ' + cmd_args.fsize + ';'
@@ -730,11 +723,28 @@ if __name__ == '__main__':
     else:
         reveal_pars = ''
 
+    filter_args = md2md.Defaults
+    filter_args.noconcepts = True
+    if cmd_args.strip:
+        filter_args.noanswers = True
+        filter_args.nonotes = True
+
+    nb_args = md2nb.Defaults
+    if cmd_args.notebook:
+        nb_args.href = cmd_args.href
+        nb_args.norule = cmd_args.norule
+        nb_args.noconcepts = True
+
     flist = []
     fprefix = None
     for j, f in enumerate(cmd_args.file):
         md_text = f.read()
         f.close()
+
+        filter_parser = md2md.Parser(filter_args)
+        md_text_filtered = filter_parser.parse(md_text)
+        if cmd_args.strip and cmd_args.hide:
+            md_text_filtered = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_filtered, flags=re.DOTALL)
 
         fname = fnames[j]
         prev_file = fnames[j-1]+".html" if j > 0 else ''
@@ -771,31 +781,19 @@ if __name__ == '__main__':
             print("Created ", outname+":", fheader, file=sys.stderr)
 
             if cmd_args.slides:
-                reveal_md = re.sub(r'(^|\n) {0,3}[Cc]oncepts:(.*?)(\n|$)', '', md_text)
-                reveal_md = re.sub(r'\$\$\$(.+?)\$\$\$', r'`$\1$`', reveal_md)
-                reveal_md = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`$$\2$$`', reveal_md, flags=re.DOTALL)
-
-                if cmd_args.strip:
-                    reveal_md = re.sub(r'(^|\n) {0,3}([Aa]ns|[Aa]nswer):.*?(\n|$)', r'\3', reveal_md)
-                    reveal_md = re.sub(r'(^|\n) {0,3}([Nn]otes):.*?(\n *\n---|$)', r'\3', reveal_md, flags=re.DOTALL)
-
-                    if cmd_args.hide:
-                        reveal_md = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', reveal_md, flags=re.DOTALL)
-                
                 sfilename = fname+"-slides.html"
                 sfile = open(sfilename, "w")
                 reveal_pars['reveal_title'] = fname
-                reveal_pars['reveal_md'] = reveal_md
+                reveal_pars['reveal_md'] = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`\1$$\2$$`', md_text_filtered, flags=re.DOTALL)
                 sfile.write(templates['reveal'] % reveal_pars)
                 sfile.close()
                 print("Created ", sfilename, file=sys.stderr)
 
             if cmd_args.notebook:
-                import md2nb
                 md_parser = md2nb.MDParser(nb_args)
                 nfilename = fname+".ipynb"
                 nfile = open(nfilename, "w")
-                nb_text = md_parser.parse_cells(md_text)
+                nb_text = md_parser.parse_cells(md_text_filtered)
                 nfile.write(nb_text)
                 print("Created ", nfilename, file=sys.stderr)
 
