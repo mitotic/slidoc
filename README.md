@@ -100,8 +100,10 @@ process slides in a lecture.
 
 ---
 
-- Two additional pieces of information may optionally be included at
-  the end of each slide: a list of concepts and additional notes.
+- Two additional pieces of information may optionally be included in
+  each slide: a list of concepts and additional notes. (A concept list
+  may appear anywhere in the slide, but notes can only appear at the
+  very end of the slide.)
 
 Example:
 
@@ -123,7 +125,7 @@ as the first concept.
 Notes are additional material that are displayed in the printed
 version of the lecture. For normal slideshows, notes are not visible
 in the main slide, but are normally displayed in vertical slides below
-the main slide. (The separator `--` may be used to generated multiple
+the main slide. (The separator `--` may be used to generate multiple
 Notes slides in the vertical.)
 
 An alternative presentation mode, with two views, is also available
@@ -138,17 +140,17 @@ Slidedown distinguishes between normal slides and slides with
 questions. Questions are slides of the form:
 
     Question statement
- 
+
     Answer: X
- 
+
     Concepts: ...
 
 where `X` can be `a`, `b`, etc. for multiple-choice questions, a
 number for numeric answers, or some text for open-ended answers. For
 unspecified answers, `X` should be as `choice`, `number`, or `text`.
 Correct text answers with markup, or spanning multiple lines, can be
-provided in a separate slide with a Level 3 header containing the word
-`answer`.
+provided as Notes or in the next slide with a Level 3 header
+containing the word `answer`.
 
 The optional concepts list for questions is analyzed by Slidedown
 for dependencies.
@@ -387,13 +389,45 @@ over height/width)
 
 ---
 
-## Simple function
+## Interactive multiple choice question
+
+This is a multiple choice question that uses the `A.. ` notation
+allowing interactive response. (The space after the `..` is required.)
+Click on a choice to view the correct answer.
+
+A.. Option1
+
+B.. Option2
+
+C.. Option3
+
+D.. Option4
+
+Answer: B
+
+Concepts: questions, interactive; questions, multiple choice
+
+Notes: This illustrates the interactive format of a multiple choice question.
+
+---
+
+This is a question with a numeric response (no header)
+
+What is the square root of `6.25`?
+
+Answer: 2.5
+
+Concepts: questions, numeric response
+
+---
+
+## Simple function (question)
 
 Write a python function to add two numbers.
 
 Answer: text
 
-Concepts: question, text response 
+Concepts: questions, text response 
 
 Notes: This is an example of an open-ended text answer question.
 
@@ -418,38 +452,6 @@ This is an example to test hiding of answer slides.
 
 ---
 
-## _Multiple choice_ question
-
-This is a multiple choice question
-
-A. ``Option 1a`` or perhaps ``Option 1b``
-
-B. ``Option 2a`` or perhaps ``Option 2b``
-
-C. ``Option 3a`` or
-perhaps ``Option 3b``
-
-D. ``Option 4a`` or
-perhaps ``Option 4b``
-
-Answer: B
-
-Concepts: question, multiple choice 
-
-Notes: This illustrates the format of a multiple choice question.
-
----
-
-This is a question with a numeric response (no header)
-
-What is the square root of `6.25`?
-
-Answer: 2.5
-
-Concepts: question, numeric response
-
----
-
 ## Tables (markdown extension)
 
 | Item      | Value | Qty |
@@ -465,11 +467,15 @@ Concepts: question, numeric response
 To leave correct answer unspecified for a multiple-choice question,
 use the string "choice"
 
-a. option1
+A.. ``Option 1a`` or perhaps ``Option 1b``
 
-b. option2
+B.. ``Option 2a`` or perhaps ``Option 2b``
 
-c. option3
+C.. ``Option 3a`` or
+perhaps ``Option 3b``
+
+D.. ``Option 4a`` or
+perhaps ``Option 4b``
 
 Answer: choice
 

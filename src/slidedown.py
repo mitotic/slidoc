@@ -33,12 +33,9 @@ from pygments.util import ClassNotFound
 
 from xml.etree import ElementTree
 
-def make_id(header):
+def make_id_from_header(header):
     """Make ID string from header string"""
     return re.sub(r'\s*,\s*', ',', re.sub(r'\s+', ' ', header)).replace(' ', '-')
-
-def make_slide_id(slide_number, filenumber=0):
-    return 'slide%02d-%02d' % (filenumber, slide_number)
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -114,7 +111,7 @@ def make_index(first_tags, sec_tags, href, outfile=sys.stdout, only_headers=Fals
         files.sort()
         fsuffix = []
         if href and files:
-            outfile.write('<li id="%s"><b>%s</b>:\n' % (make_id(tag), tag_str))
+            outfile.write('<li id="%s"><b>%s</b>:\n' % (make_id_from_header(tag), tag_str))
 
         start = True
         for fname in files:
@@ -164,13 +161,13 @@ Global.concept_questions = defaultdict(list)
 
 
 class MathBlockGrammar(mistune.BlockGrammar):
-    block_math = re.compile(r"^\$\$(.*?)\$\$", re.DOTALL)
-    latex_environment = re.compile(r"^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}",
+    block_math = re.compile(r'^\$\$(.*?)\$\$', re.DOTALL)
+    latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
-    meldr_header =   re.compile(r"^ {0,3}<!--meldr-(\w+)\s+(.*?)-->\s*?\n")
-    meldr_answer =   re.compile(r"^ {0,3}([Aa]ns|[Aa]nswer):(.*?)\s*?(\n|$)")
-    meldr_concepts = re.compile(r"^ {0,3}([Cc]oncepts):(.*?)\s*?(\n|$)")
-    meldr_notes =    re.compile(r"^ {0,3}([Nn]otes):\s*?((?=\S)|\n)")
+    meldr_header =   re.compile(r'^ {0,3}<!--meldr-(\w+)\s+(.*?)-->\s*?\n')
+    meldr_answer =   re.compile(r'^ {0,3}([Aa]ns|[Aa]nswer):(.*?)(\n|$)')
+    meldr_concepts = re.compile(r'^ {0,3}([Cc]oncepts):(.*?)(\n|$)')
+    meldr_notes =    re.compile(r'^ {0,3}([Nn]otes):\s*?((?=\S)|\n)')
     minirule =       re.compile(r'^(--) *(?:\n+|$)')
 
 class MathBlockLexer(mistune.BlockLexer):
@@ -228,18 +225,22 @@ class MathBlockLexer(mistune.BlockLexer):
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
-    math = re.compile(r"^`\$(.+?)\$`", re.DOTALL)
-    block_math = re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
-    text = re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
+    meldr_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
+    math =         re.compile(r"^`\$(.+?)\$`", re.DOTALL)
+    block_math =   re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
+    text =         re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
 
 
 class MathInlineLexer(mistune.InlineLexer):
-    default_rules = ['block_math', 'math'] + mistune.InlineLexer.default_rules
+    default_rules = ['meldr_choice', 'block_math', 'math'] + mistune.InlineLexer.default_rules
 
     def __init__(self, renderer, rules=None, **kwargs):
         if rules is None:
             rules = MathInlineGrammar()
         super(MathInlineLexer, self).__init__(renderer, rules, **kwargs)
+
+    def output_meldr_choice(self, m):
+        return self.renderer.meldr_choice(m.group(1).upper())
 
     def output_math(self, m):
         return self.renderer.inline_math(m.group(1))
@@ -279,56 +280,35 @@ class MarkdownWithMath(mistune.Markdown):
 
     def render(self, text):
         html = super(MarkdownWithMath, self).render(text)
-        return html + self.renderer.end_notes() + self.renderer.end_section()
+        return html + self.renderer.end_notes() + self.renderer.end_hide()
 
     
 class IPythonRenderer(mistune.Renderer):
     def __init__(self, **kwargs):
         super(IPythonRenderer, self).__init__(**kwargs)
-        self.id_count = 0
         self.file_header = ''
         self.header_list = []
-        self.section_end = None
+        self.hide_end = None
         self.notes_end = None
-        self.cur_header = ''
-        self.cur_qtype = ''
-        self.cur_answer = False
-        self.slide_concepts = ''
-        self.first_para = True
-
-        self.question_number = 0
-        self.slide_number = 1
         self.section_number = 0
+        self.question_number = 0
         self.untitled_number = 0
-        self.cur_id = make_slide_id(1, filenumber=self.options['filenumber'])
+        self.slide_number = 0
+        self._new_slide()
+        self.first_id = self.get_slide_id()
 
-    def minirule(self):
-        """Treat minirule as a linebreak"""
-        return '<br>\n'
-
-    def hrule(self):
-        """Rendering method for ``<hr>`` tag."""
-        self.cur_header = ''
+    def _new_slide(self):
+        self.slide_number += 1
+        self.choice_end = None
+        self.cur_choice = ''
         self.cur_qtype = ''
+        self.cur_header = ''
         self.cur_answer = False
         self.slide_concepts = ''
         self.first_para = True
 
-        self.slide_number += 1
-        self.cur_id = make_slide_id(self.slide_number, filenumber=self.options['filenumber'])
-
-        if self.options["cmd_args"].norule:
-            html = '<p id="%s"></p>' % self.cur_id
-        elif self.options.get('use_xhtml'):
-            html = '<hr id="%s"/>\n' % self.cur_id
-        else:
-            html = '<hr id="%s">\n' % self.cur_id
-
-        return self.end_notes()+html
-    
-    def get_id_str(self):
-        self.id_count += 1
-        return 'md_id'+str(self.id_count)
+    def get_slide_id(self):
+        return 'slide%02d-%03d' % (self.options['filenumber'], self.slide_number)
 
     def start_block(self, id_str, display='none', style=''):
         prefix =          '<!--meldr-block-begin['+id_str+']-->\n'
@@ -336,9 +316,9 @@ class IPythonRenderer(mistune.Renderer):
         suffix =  '<div class="%s %s" style="display: %s;">\n' % (id_str, style, display)
         return prefix, suffix, end_str
 
-    def end_section(self):
-        s = self.section_end or ''
-        self.section_end = None
+    def end_hide(self):
+        s = self.hide_end or ''
+        self.hide_end = None
         return s
 
     def end_notes(self):
@@ -346,6 +326,27 @@ class IPythonRenderer(mistune.Renderer):
         self.notes_end = None
         return s
 
+    def minirule(self):
+        """Treat minirule as a linebreak"""
+        return '<br>\n'
+
+    def hrule(self):
+        """Rendering method for ``<hr>`` tag."""
+        if self.choice_end:
+            prefix = self.choice_end
+
+        self._new_slide()
+
+        hide_prefix = self.end_hide()
+        if self.options["cmd_args"].norule or (self.options["cmd_args"].strip and hide_prefix):
+            html = '<p id="%s"></p>' % self.get_slide_id()
+        elif self.options.get('use_xhtml'):
+            html = '<hr id="%s"/>\n' % self.get_slide_id()
+        else:
+            html = '<hr id="%s">\n' % self.get_slide_id()
+
+        return self.end_notes()+hide_prefix+html
+    
     def paragraph(self, text):
         """Rendering paragraph tags. Like ``<p>``."""
         if not self.cur_header and self.first_para:
@@ -360,7 +361,7 @@ class IPythonRenderer(mistune.Renderer):
         """
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         html = super(IPythonRenderer, self).header(text, level, raw=raw)
-        if level > 3 or (level == 3 and (not hide_block or self.section_end)):
+        if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
             # Ignore higher level headers (except for level 3 hide block)
             return html
 
@@ -396,17 +397,17 @@ class IPythonRenderer(mistune.Renderer):
                 if self.options['filenumber']:
                     hdr_prefix =  '%d.%d ' % (self.options['filenumber'], self.section_number)
                 self.cur_header = hdr_prefix + text
-                self.header_list.append( (self.cur_id, self.cur_header) )
+                self.header_list.append( (self.get_slide_id(), self.cur_header) )
 
             # Close previous blocks
-            prefix = self.end_notes()+self.end_section()
-            self.section_end = ''
+            prefix = self.end_notes()+self.end_hide()
+            self.hide_end = ''
 
             if hide_block:
                 # Hide answer/solution
-                id_str = 'answer%02d-%02d' % (self.options['filenumber'], self.section_number)
+                id_str = self.get_slide_id() + '-hide'
                 ans_prefix, suffix, end_str = self.start_block(id_str)
-                self.section_end = end_str
+                self.hide_end = end_str
                 prefix = prefix + ans_prefix
                 hdr.set('class', 'meldr-clickable' )
                 hdr.set('onclick', "toggleBlock('"+id_str+"')" )
@@ -414,7 +415,7 @@ class IPythonRenderer(mistune.Renderer):
         if hdr_prefix:
             hdr.text = hdr_prefix + (hdr.text or '')
 
-        ##a = ElementTree.Element("a", {"class" : "anchor-link", "href" : "#" + self.cur_id})
+        ##a = ElementTree.Element("a", {"class" : "anchor-link", "href" : "#" + self.get_slide_id()})
         ##a.text = u' '
         ##hdr.append(a)
 
@@ -444,11 +445,36 @@ class IPythonRenderer(mistune.Renderer):
              
         return ''
 
+    def meldr_choice(self, name):
+        if not self.cur_qtype:
+            self.cur_qtype = 'choice'
+            self.question_number += 1
+        elif self.cur_qtype != 'choice':
+            print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question in '%s'" % (self.options["filename"], name, self.cur_header), file=sys.stderr)
+            return name+'.. '
+
+        prefix = ''
+        if not self.cur_choice:
+            prefix = '<blockquote>\n'
+            self.choice_end = '</blockquote>\n'
+
+        self.cur_choice = name
+
+        id_str = self.get_slide_id()
+        return prefix+'''<span id="%(id)s-choice-%(opt)s" class="meldr-clickable %(id)s-choice" onclick="choiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % {'id': id_str, 'opt': name, 'qno': self.question_number}
+
+    
     def meldr_answer(self, name, text):
         if self.cur_answer:
             # Ignore multiple answers
             return ''
         self.cur_answer = True
+
+        choice_prefix = ''
+        if self.choice_end:
+            choice_prefix = self.choice_end
+            self.choice_end = ''
+
         if not self.cur_qtype:
             self.question_number += 1
 
@@ -463,17 +489,28 @@ class IPythonRenderer(mistune.Renderer):
                 self.cur_qtype = 'text'
 
         if self.options['cmd_args'].strip or not text:
-            return name.capitalize()+':'+'\n'
+            return choice_prefix+name.capitalize()+':'+'\n'
 
         if self.options['cmd_args'].hide:
-            label = ElementTree.Element('div', {'class' : 'meldr-clickable', 'onclick': "toggleInline(this)"})
-            label.text = name.capitalize()+': '
-            span = ElementTree.Element('span', {'style': 'display: none;'})
-            span.text = text
-            label.append(span)
-            return ElementTree.tostring(label)+'\n'
+            id_str = self.get_slide_id()
+            attrs_ans = {'id': id_str+'-answer' }
+            attrs_corr = {'id': id_str+'-correct'}
+            if self.cur_choice:
+                attrs_ans.update({'style': 'display: none;'})
+            else:
+                attrs_ans.update({'class' : 'meldr-clickable', 'onclick': "answerClick(this, '%s', %d, '');" % (id_str, self.question_number)} )
+                attrs_corr.update({'style': 'display: none;'})
+            ans_elem = ElementTree.Element('div', attrs_ans)
+            ans_elem.text = name.capitalize()+': '
+            span_corr = ElementTree.Element('span', attrs_corr)
+            span_corr.text = text.upper() if len(text) == 1 else text
+            ans_elem.append(span_corr)
+            span_resp = ElementTree.Element('span', {'id': id_str+'-resp'})
+            ans_elem.append(span_resp)
+            return choice_prefix+ElementTree.tostring(ans_elem)+'\n'
         else:
-            return name.capitalize()+': '+text+'\n'
+            return choice_prefix+name.capitalize()+': '+text+'\n'
+
 
     def meldr_concepts(self, name, text):
         if not text:
@@ -497,32 +534,33 @@ class IPythonRenderer(mistune.Renderer):
             if self.cur_qtype in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
                 nn_tags.sort()
-                q_id = make_file_id(self.options["filename"], self.cur_id)
+                q_id = make_file_id(self.options["filename"], self.get_slide_id())
                 q_concept_id = ';'.join(nn_tags)
-                q_pars = (self.options["filename"], self.cur_id, self.cur_header, self.question_number, q_concept_id)
+                q_pars = (self.options["filename"], self.get_slide_id(), self.cur_header, self.question_number, q_concept_id)
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
                     if tag not in Global.first_tags and tag not in Global.sec_tags:
                         print("        CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header), file=sys.stderr)
 
-                add_to_index(Global.first_qtags, Global.sec_qtags, tags, self.options["filename"], self.cur_id, self.cur_header)
+                add_to_index(Global.first_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
             else:
                 # Not question
-                add_to_index(Global.first_tags, Global.sec_tags, tags, self.options["filename"], self.cur_id, self.cur_header)
+                add_to_index(Global.first_tags, Global.sec_tags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
 
         if self.options['cmd_args'].strip:
             return ''
 
-        tag_html = '<div class="meldr-clickable" onclick="toggleInline(this)">%s: <span style="display: none;">' % name.capitalize()
+        id_str = self.get_slide_id()+'-concepts'
+        tag_html = '<div class="meldr-clickable" onclick="toggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
 
         if self.options["cmd_args"].index or self.options["cmd_args"].qindex:
             first = True
             for tag in tags:
                 if not first:
-                    tag_html += ', '
+                    tag_html += '; '
                 first = False
-                tag_html += '<a href="%s%s#%s" target="_blank">%s</a>' % (self.options['cmd_args'].href, self.options['cmd_args'].index, make_id(tag), tag)
+                tag_html += '<a href="%s%s#%s" target="_blank">%s</a>' % (self.options['cmd_args'].href, self.options['cmd_args'].index, make_id_from_header(tag), tag)
         else:
             tag_html += text
 
@@ -530,14 +568,18 @@ class IPythonRenderer(mistune.Renderer):
 
         return tag_html+'\n'
 
+    
     def meldr_notes(self, name, text):
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
-        id_str = 'notes%02d-%02d' % (self.options['filenumber'], self.slide_number)
-        prefix, suffix, end_str = self.start_block(id_str, display='block', style='meldr-notes')
+        hide_notes = self.cur_answer
+        id_str = self.get_slide_id() + '-notes'
+        disp_block = 'none' if hide_notes else 'block'
+        prefix, suffix, end_str = self.start_block(id_str, display=disp_block, style='meldr-notes')
         self.notes_end = end_str
-        return prefix + '<a class="meldr-clickable" onclick="'+"toggleBlock('"+id_str+"')"+'">Notes:</a>\n' + suffix
+        return prefix + ('''<a id="%s" class="meldr-clickable" onclick="toggleBlock('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if hide_notes else 'inline')) + suffix
+
 
     def table_of_contents(self, filepath='', filenumber=0):
         if len(self.header_list) < 1:
@@ -580,16 +622,16 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
     if not cmd_args.noheaders:
         nav_html = ''
         if prev_file:
-            nav_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, prev_file, 'PREV')
+            nav_html += '<a href="%s%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (cmd_args.href, prev_file, 'PREV')
         if next_file:
-            nav_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, next_file, 'NEXT')
+            nav_html += '<a href="%s%s">%s</a>' % (cmd_args.href, next_file, 'NEXT')
         if cmd_args.toc:
-            nav_html += '<a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
+            nav_html += '<p></p><a href="%s%s">%s</a><br>' % (cmd_args.href, cmd_args.toc, 'CONTENTS')
 
-        content_html += '<p></p>' + '<a href="#%s">%s</a><br>' % (make_slide_id(1, filenumber=filenumber), 'TOP') + nav_html
+        content_html += '<p></p>' + '<a href="#%s">%s</a><br>' % (renderer.first_id, 'TOP') + nav_html
         headers_html = renderer.table_of_contents(filenumber=filenumber)
         if headers_html:
-            headers_html += nav_html
+            headers_html = nav_html + headers_html
             if 'meldr-notes' in content_html:
                 headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'meldr-notes'"+');">Hide all notes</a>'
 
@@ -597,11 +639,11 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
 
     if cmd_args.strip:
         # Strip out answer/notes blocks
-        content_html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', html, flags=re.DOTALL)
+        content_html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
     file_toc = renderer.table_of_contents(cmd_args.href+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, content_html)
+    return (renderer.file_header or filename, file_toc, renderer.first_id, content_html)
 
 if __name__ == '__main__':
     import argparse
@@ -632,7 +674,7 @@ if __name__ == '__main__':
 <p></p>
 '''
     
-    header = '''<head>
+    header_document = '''<head>
 %(math_js)s
   <script>
      function toggleBlock(className) {
@@ -641,10 +683,74 @@ if __name__ == '__main__':
            elements[i].style.display = (elements[i].style.display=='block') ? 'none' : 'block';
         }
      }
+
      function toggleInline(elem) {
         var elements = elem.children;
         for (var i = 0; i < elements.length; ++i) {
            elements[i].style.display = (elements[i].style.display=='inline') ? 'none' : 'inline';
+        }
+     }
+
+var Slidedown = {};
+Slidedown.questions_answered = {};
+Slidedown.questions_count = 0;
+Slidedown.questions_correct = 0;
+     
+     function choiceClick(elem, slide_id, question_number, choice_val) {
+        console.log("choiceClick:", slide_id, question_number, choice_val);
+        if (question_number in Slidedown.questions_answered)
+           return;
+        Slidedown.questions_answered[question_number] = choice_val;
+
+        elem.style['text-decoration'] = 'line-through';
+        var choices = document.getElementsByClassName(slide_id+"-choice");
+        for (var i = 0; i < choices.length; ++i) {
+           choices[i].removeAttribute("onclick");
+           choices[i].classList.remove("meldr-clickable");
+        }
+        var notes_id = slide_id+"-notes";
+        toggleBlock(notes_id);
+        var notes_elem = document.getElementById(notes_id);
+        if (notes_elem) notes_elem.style.display = 'inline';
+        var concept_elem = document.getElementById(slide_id+"-concepts");
+        var concept_list = concept_elem ? concept_elem.textContent.split('; ') : ';';
+        var ans_elem = document.getElementById(slide_id+"-answer");
+        if (ans_elem) ans_elem.style.display = 'inline';
+        var corr_elem = document.getElementById(slide_id+"-correct");
+        if (corr_elem) {
+           var corr_answer = corr_elem.textContent;
+           console.log('choiceClick:corr', corr_answer, concept_list);
+           if (corr_answer) {
+               Slidedown.questions_count += 1;
+               var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
+               if (corr_choice) {
+                corr_choice.style['text-decoration'] = '';
+                corr_choice.style['font-weight'] = 'bold';
+              }
+              var resp_elem = document.getElementById(slide_id+"-resp");
+              if (resp_elem && choice_val) {
+                 if (choice_val == corr_answer)  {
+                    Slidedown.questions_correct += 1;
+                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
+                 } else {
+                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidedown.questions_correct+"/"+Slidedown.questions_count+")";
+                 }
+               }
+            }
+        }
+     }
+
+     function answerClick(elem, slide_id, question_number, choice_type) {
+        console.log("answerClick:", slide_id, choice_type);
+        toggleInline(elem);
+        if (choice_type) {
+           var notes_id = slide_id+"-notes";
+           var notes_link = document.getElementById(notes_id);
+           if (notes_link) {
+               // Display any notes associated with this question
+               notes_link.style.display = "inline";
+               toggleBlock(notes_id);
+           }
         }
      }
   </script>
@@ -671,7 +777,7 @@ if __name__ == '__main__':
 </script>
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
-    footer = '''</body>'''
+    footer_document = '''</body>'''
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
@@ -742,12 +848,12 @@ if __name__ == '__main__':
     flist = []
     fprefix = None
     for j, f in enumerate(cmd_args.file):
+        md_text = f.read()
+        f.close()
+
         fname = fnames[j]
         prev_file = fnames[j-1]+".html" if j > 0 else ''
         next_file = fnames[j+1]+".html" if j < len(cmd_args.file)-1 else ''
-
-        md_text = f.read()
-        f.close()
 
         if fprefix == None:
             fprefix = fname
@@ -759,9 +865,12 @@ if __name__ == '__main__':
                 fprefix = fprefix[:-1]
 
         filenumber = 0 if cmd_args.nosections else (j+1)
-        params = {'first_id': make_slide_id(1, filenumber=filenumber), 'body_style': style_str, 'math_js': mathjax if '$$' in md_text else ''}
-        fheader, file_toc, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args, filenumber=filenumber,
-                                                           prev_file=prev_file, next_file=next_file)
+
+        # Strip annotations
+        md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
+
+        fheader, file_toc, first_id, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args,
+                                                                     filenumber=filenumber, prev_file=prev_file, next_file=next_file)
 
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
@@ -769,20 +878,30 @@ if __name__ == '__main__':
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
+            params = {'first_id': first_id, 'body_style': style_str, 'math_js': mathjax if '$$' in md_text else ''}
             out = open(outname, "w")
-            out.write(header % params)
+            out.write(header_document % params)
             out.write(md_html)
-            out.write(footer)
+            out.write(footer_document)
             out.close()
             print("Created ", outname+":", fheader, file=sys.stderr)
 
             if cmd_args.slides:
+                reveal_md = re.sub(r'(^|\n) {0,3}[Cc]oncepts:(.*?)(\n|$)', '', md_text)
+                reveal_md = re.sub(r'\$\$\$(.+?)\$\$\$', r'`$\1$`', reveal_md)
+                reveal_md = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`$$\2$$`', reveal_md, flags=re.DOTALL)
+
+                if cmd_args.strip:
+                    reveal_md = re.sub(r'(^|\n) {0,3}([Aa]ns|[Aa]nswer):.*?(\n|$)', r'\3', reveal_md)
+                    reveal_md = re.sub(r'(^|\n) {0,3}([Nn]otes):.*?(\n *\n---|$)', r'\3', reveal_md, flags=re.DOTALL)
+
+                    if cmd_args.hide:
+                        reveal_md = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', reveal_md, flags=re.DOTALL)
+                
                 sfilename = fname+"-slides.html"
                 sfile = open(sfilename, "w")
                 reveal_pars['reveal_title'] = fname
-                reveal_pars['reveal_md'] = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`$$\2$$`',
-                                                  re.sub(r'\$\$\$(.+?)\$\$\$', r'`$\1$`', re.sub(r"(^|\n) {0,3}([Aa]nnotation|[Cc]oncepts):(.*?)\s*?(\n|$)", '', md_text)),
-                                                   flags=re.DOTALL)
+                reveal_pars['reveal_md'] = reveal_md
                 sfile.write(reveal_template % reveal_pars)
                 sfile.close()
                 print("Created ", sfilename, file=sys.stderr)
