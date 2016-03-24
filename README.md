@@ -2,18 +2,30 @@
 
 Slidoc manages a collection of lectures written using
 [Markdown](https://daringfireball.net/projects/markdown/), which is a
-very simple and popular markup syntax. Markdown files are plain text files saved using extension `.md`. They
-can be edited using text editors like Emacs, vi,
-[Atom](https://atom.io/), and Sublime Text.
+very simple and popular markup syntax. Markdown files are plain text
+files saved using extension `.md`. They can be edited using text
+editors like Emacs, vi, [Atom](https://atom.io/), and Sublime Text.
 
-Slidoc can publish a set of Markdown files as HTML (web) files,
+Slidoc can publish a set of Markdown files as static HTML files,
 [reveal.js](http://lab.hakim.se/reveal-js/) slideshows and
 [Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/).
-It can also create content lists and indexes, manage questions and
-analyze concept dependencies. The advantage of a plain text lecture
-management system is that many open source tools can be used to
-process them. Version control is easy and sites like
-[GitHub](https://github.com) can be used to store and share them.
+It can also create a table of contents, generate an index, manage
+questions and analyze concept dependencies.
+
+---
+
+The design goals of Slidoc are:
+
+ 1. The raw file format should be as close as possible to the final display format
+
+ 2. No specialized software should be required to reorganize/reorder
+ the lecture material.
+
+Using the plain text Markdown file format, with some extensions,
+accomplishes both these goals. With this format, many open source
+tools can be used to process the files. Version control is easy and
+sites like [GitHub](https://github.com) can be used to store and share
+them.
 
 This README.md provides examples and tests for Slidoc.
 
@@ -58,7 +70,8 @@ so on in that directory. Additionally, it will create four files,
 (concept listings for files).
 
 The files in the `Publish` directory can be served from a web server,
-say by linking `toc.html` to `index.html`
+say by renaming `toc.html` to `index.html` using the
+`--toc=index.html` option.
 
 Concepts: lecture management
 
@@ -87,7 +100,7 @@ Concepts: jupyter notebook; code, fenced; code, indented
 
 ---
 
-## Slide extensions
+## Slidoc extensions
 
 Slidoc recognizes several extensions to standard Markdown to
 process slides in a lecture.

@@ -289,6 +289,7 @@ class IPythonRenderer(mistune.Renderer):
         super(IPythonRenderer, self).__init__(**kwargs)
         self.file_header = ''
         self.header_list = []
+        self.concept_warnings = []
         self.hide_end = None
         self.notes_end = None
         self.section_number = 0
@@ -543,7 +544,8 @@ class IPythonRenderer(mistune.Renderer):
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
                     if tag not in Global.first_tags and tag not in Global.sec_tags:
-                        print("        CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header), file=sys.stderr)
+                        self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header))
+                        print("        "+self.concept_warnings[-1], file=sys.stderr)
 
                 add_to_index(Global.first_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
             else:
@@ -646,7 +648,7 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
 
     file_toc = renderer.table_of_contents(cmd_args.href+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, renderer.first_id, content_html)
+    return (renderer.file_header or filename, file_toc, renderer.first_id, renderer.concept_warnings, content_html)
 
 Mathjax_js = '''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
@@ -665,6 +667,7 @@ if __name__ == '__main__':
     import md2nb
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
+    parser.add_argument('--destdir', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
     parser.add_argument('--fsize', help='Font size in %% or px (default: 90%%)', default='90%')
     parser.add_argument('--ffamily', help='Font family ("Arial,sans-serif,...")', default="'Helvetica Neue', Helvetica, 'Segoe UI', Arial, freesans, sans-serif")
@@ -686,6 +689,9 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
+    if cmd_args.destdir and not os.path.isdir(cmd_args.destdir):
+        sys.exit("Destination directory %s does not exist" % cmd_args.destdir)
+    destdir = cmd_args.destdir+"/" if cmd_args.destdir else ''
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
     for tname in ('doc', 'toc', 'reveal'):
@@ -764,7 +770,7 @@ if __name__ == '__main__':
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        fheader, file_toc, first_id, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args,
+        fheader, file_toc, first_id, concept_warnings, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args,
                                                                      filenumber=filenumber, prev_file=prev_file, next_file=next_file)
 
         outname = fname+".html"
@@ -775,14 +781,14 @@ if __name__ == '__main__':
         else:
             params = {'body_style': style_str, 'math_js': Mathjax_js if '$$' in md_text else '',
                       'first_id': first_id, 'content': md_html }
-            out = open(outname, "w")
+            out = open(destdir+outname, "w")
             out.write(templates['doc'] % params)
             out.close()
             print("Created ", outname+":", fheader, file=sys.stderr)
 
             if cmd_args.slides:
                 sfilename = fname+"-slides.html"
-                sfile = open(sfilename, "w")
+                sfile = open(destdir+sfilename, "w")
                 reveal_pars['reveal_title'] = fname
                 reveal_pars['reveal_md'] = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`\1$$\2$$`', md_text_filtered, flags=re.DOTALL)
                 sfile.write(templates['reveal'] % reveal_pars)
@@ -792,7 +798,7 @@ if __name__ == '__main__':
             if cmd_args.notebook:
                 md_parser = md2nb.MDParser(nb_args)
                 nfilename = fname+".ipynb"
-                nfile = open(nfilename, "w")
+                nfile = open(destdir+nfilename, "w")
                 nb_text = md_parser.parse_cells(md_text_filtered)
                 nfile.write(nb_text)
                 print("Created ", nfilename, file=sys.stderr)
@@ -836,7 +842,7 @@ if __name__ == '__main__':
             toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
 
         if not cmd_args.dry_run:
-            tocfile = open(cmd_args.toc, 'w')
+            tocfile = open(destdir+cmd_args.toc, 'w')
             tocfile.write(templates['toc'] % {'insert': header_insert, 'content': ''.join(toc_html)})
             tocfile.close()
             print("Created ToC in", cmd_args.toc, file=sys.stderr)
@@ -844,7 +850,7 @@ if __name__ == '__main__':
     if cmd_args.index:
         fsuffixes, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.href, fprefix=fprefix)
         if not cmd_args.dry_run:
-            indexfile = open(cmd_args.index, 'w')
+            indexfile = open(destdir+cmd_args.index, 'w')
             if cmd_args.toc:
                 indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
             indexfile.write('<b>CONCEPT</b>\n')
@@ -853,7 +859,7 @@ if __name__ == '__main__':
             print("Created index in", cmd_args.index, file=sys.stderr)
 
         concfilename = 'concepts.txt'
-        concfile = open(concfilename, 'w')
+        concfile = open(destdir+concfilename, 'w')
         print("File prefix: "+fprefix, file=concfile)
         print("\nConcepts -> files mapping:", file=concfile)
         for tag, fsuffix in fsuffixes.items():
@@ -864,6 +870,8 @@ if __name__ == '__main__':
             tlist = list(covered_first[fname])
             tlist.sort()
             print('%-24s:' % fname[len(fprefix):], '; '.join(tlist), file=concfile)
+        if concept_warnings:
+            concfile.write('\n'+'\n'.join(concept_warnings)+'/n')
         concfile.close()
         print("Created concept listings in", concfilename, file=sys.stderr)
 
@@ -897,7 +905,7 @@ if __name__ == '__main__':
             qout_list.append('</li>\n')
         qout_list.append('</ul>\n')
         if not cmd_args.dry_run:
-            qindexfile = open(cmd_args.qindex, 'w')
+            qindexfile = open(destdir+cmd_args.qindex, 'w')
             qindexfile.write(''.join(qout_list))
             qindexfile.close()
             print("Created qindex in", cmd_args.qindex, file=sys.stderr)
