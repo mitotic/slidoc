@@ -176,14 +176,14 @@ class MathBlockGrammar(mistune.BlockGrammar):
     block_math = re.compile(r'^\$\$(.*?)\$\$', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
-    meldr_header =   re.compile(r'^ {0,3}<!--meldr-(\w+)\s+(.*?)-->\s*?\n')
-    meldr_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
-    meldr_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
-    meldr_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
-    minirule =       re.compile(r'^(--) *(?:\n+|$)')
+    slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
+    slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
+    slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
+    slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
+    minirule =        re.compile(r'^(--) *(?:\n+|$)')
 
 class MathBlockLexer(mistune.BlockLexer):
-    default_rules = ['block_math', 'latex_environment', 'meldr_header', 'meldr_answer', 'meldr_concepts', 'meldr_notes', 'minirule'] + mistune.BlockLexer.default_rules
+    default_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule'] + mistune.BlockLexer.default_rules
 
     def __init__(self, rules=None, **kwargs):
         if rules is None:
@@ -204,30 +204,30 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2)
         })
 
-    def parse_meldr_header(self, m):
+    def parse_slidoc_header(self, m):
          self.tokens.append({
-            'type': 'meldr_header',
+            'type': 'slidoc_header',
+            'name': m.group(2).lower(),
+            'text': m.group(3).strip()
+        })
+
+    def parse_slidoc_answer(self, m):
+         self.tokens.append({
+            'type': 'slidoc_answer',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
 
-    def parse_meldr_answer(self, m):
+    def parse_slidoc_concepts(self, m):
          self.tokens.append({
-            'type': 'meldr_answer',
+            'type': 'slidoc_concepts',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
 
-    def parse_meldr_concepts(self, m):
+    def parse_slidoc_notes(self, m):
          self.tokens.append({
-            'type': 'meldr_concepts',
-            'name': m.group(1).lower(),
-            'text': m.group(2).strip()
-        })
-
-    def parse_meldr_notes(self, m):
-         self.tokens.append({
-            'type': 'meldr_notes',
+            'type': 'slidoc_notes',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -237,22 +237,22 @@ class MathBlockLexer(mistune.BlockLexer):
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
-    meldr_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
-    math =         re.compile(r"^`\$(.+?)\$`")
-    block_math =   re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
-    text =         re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
+    slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
+    math =          re.compile(r"^`\$(.+?)\$`")
+    block_math =    re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
+    text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
 
 
 class MathInlineLexer(mistune.InlineLexer):
-    default_rules = ['meldr_choice', 'block_math', 'math'] + mistune.InlineLexer.default_rules
+    default_rules = ['slidoc_choice', 'block_math', 'math'] + mistune.InlineLexer.default_rules
 
     def __init__(self, renderer, rules=None, **kwargs):
         if rules is None:
             rules = MathInlineGrammar()
         super(MathInlineLexer, self).__init__(renderer, rules, **kwargs)
 
-    def output_meldr_choice(self, m):
-        return self.renderer.meldr_choice(m.group(1).upper())
+    def output_slidoc_choice(self, m):
+        return self.renderer.slidoc_choice(m.group(1).upper())
 
     def output_math(self, m):
         return self.renderer.inline_math(m.group(1))
@@ -275,17 +275,17 @@ class MarkdownWithMath(mistune.Markdown):
     def output_latex_environment(self):
         return self.renderer.latex_environment(self.token['name'], self.token['text'])
 
-    def output_meldr_header(self):
-        return self.renderer.meldr_header(self.token['name'], self.token['text'])
+    def output_slidoc_header(self):
+        return self.renderer.slidoc_header(self.token['name'], self.token['text'])
 
-    def output_meldr_answer(self):
-        return self.renderer.meldr_answer(self.token['name'], self.token['text'])
+    def output_slidoc_answer(self):
+        return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
 
-    def output_meldr_concepts(self):
-        return self.renderer.meldr_concepts(self.token['name'], self.token['text'])
+    def output_slidoc_concepts(self):
+        return self.renderer.slidoc_concepts(self.token['name'], self.token['text'])
 
-    def output_meldr_notes(self):
-        return self.renderer.meldr_notes(self.token['name'], self.token['text'])
+    def output_slidoc_notes(self):
+        return self.renderer.slidoc_notes(self.token['name'], self.token['text'])
 
     def output_minirule(self):
         return self.renderer.minirule()
@@ -324,8 +324,8 @@ class IPythonRenderer(mistune.Renderer):
         return 'sd%02d-%02d' % (self.options['filenumber'], self.slide_number)
 
     def start_block(self, id_str, display='none', style=''):
-        prefix =          '<!--meldr-block-begin['+id_str+']-->\n'
-        end_str = '</div>\n<!--meldr-block-end['+id_str+']-->\n'
+        prefix =          '<!--slidoc-block-begin['+id_str+']-->\n'
+        end_str = '</div>\n<!--slidoc-block-end['+id_str+']-->\n'
         suffix =  '<div class="%s %s" style="display: %s;">\n' % (id_str, style, display)
         return prefix, suffix, end_str
 
@@ -427,11 +427,11 @@ class IPythonRenderer(mistune.Renderer):
                 ans_prefix, suffix, end_str = self.start_block(id_str)
                 self.hide_end = end_str
                 prefix = prefix + ans_prefix
-                hdr.set('class', 'meldr-clickable' )
+                hdr.set('class', 'slidoc-clickable' )
                 hdr.set('onclick', "toggleBlock('"+id_str+"')" )
 
         if clickable_secnum:
-            span_prefix = ElementTree.Element('span', {'class' : 'meldr-clickable', 'onclick': 'slidocScrollTop();'})
+            span_prefix = ElementTree.Element('span', {'class' : 'slidoc-clickable', 'onclick': 'slidocScrollTop();'})
             span_prefix.text = hdr_prefix.strip()
             span_elem = ElementTree.Element('span', {})
             span_elem.text = ' '+hdr.text
@@ -461,7 +461,7 @@ class IPythonRenderer(mistune.Renderer):
     def inline_math(self, text):
         return '`$%s$`' % text
 
-    def meldr_header(self, name, text):
+    def slidoc_header(self, name, text):
         if name == "type" and text:
             params = text.split()
             type_code = params[0]
@@ -471,7 +471,7 @@ class IPythonRenderer(mistune.Renderer):
              
         return ''
 
-    def meldr_choice(self, name):
+    def slidoc_choice(self, name):
         if not self.cur_qtype:
             self.cur_qtype = 'choice'
             self.question_number += 1
@@ -487,10 +487,10 @@ class IPythonRenderer(mistune.Renderer):
         self.cur_choice = name
 
         id_str = self.get_slide_id()
-        return prefix+'''<span id="%(id)s-choice-%(opt)s" class="meldr-clickable %(id)s-choice" onclick="choiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % {'id': id_str, 'opt': name, 'qno': self.question_number}
+        return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="choiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % {'id': id_str, 'opt': name, 'qno': self.question_number}
 
     
-    def meldr_answer(self, name, text):
+    def slidoc_answer(self, name, text):
         if self.cur_answer:
             # Ignore multiple answers
             return ''
@@ -525,7 +525,7 @@ class IPythonRenderer(mistune.Renderer):
             if self.cur_choice:
                 attrs_ans.update({'style': 'display: none;'})
             else:
-                attrs_ans.update({'class' : 'meldr-clickable', 'onclick': "answerClick(this, '%s', %d, '');" % (id_str, self.question_number)} )
+                attrs_ans.update({'class' : 'slidoc-clickable', 'onclick': "answerClick(this, '%s', %d, '');" % (id_str, self.question_number)} )
                 attrs_corr.update({'style': 'display: none;'})
             ans_elem = ElementTree.Element('div', attrs_ans)
             ans_elem.text = name.capitalize()+': '
@@ -539,7 +539,7 @@ class IPythonRenderer(mistune.Renderer):
             return choice_prefix+name.capitalize()+': '+text+'\n'
 
 
-    def meldr_concepts(self, name, text):
+    def slidoc_concepts(self, name, text):
         if not text:
             return ''
 
@@ -581,7 +581,7 @@ class IPythonRenderer(mistune.Renderer):
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
-        tag_html = '<div class="meldr-clickable" onclick="toggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
+        tag_html = '<div class="slidoc-clickable" onclick="toggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
 
         if self.options["cmd_args"].index:
             first = True
@@ -598,16 +598,16 @@ class IPythonRenderer(mistune.Renderer):
         return tag_html+'\n'
 
     
-    def meldr_notes(self, name, text):
+    def slidoc_notes(self, name, text):
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
         hide_notes = self.cur_answer
         id_str = self.get_slide_id() + '-notes'
         disp_block = 'none' if hide_notes else 'block'
-        prefix, suffix, end_str = self.start_block(id_str, display=disp_block, style='meldr-notes')
+        prefix, suffix, end_str = self.start_block(id_str, display=disp_block, style='slidoc-notes')
         self.notes_end = end_str
-        return prefix + ('''<a id="%s" class="meldr-clickable" onclick="toggleBlock('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if hide_notes else 'inline')) + suffix
+        return prefix + ('''<a id="%s" class="slidoc-clickable" onclick="toggleBlock('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if hide_notes else 'inline')) + suffix
 
 
     def table_of_contents(self, filepath='', filenumber=0):
@@ -661,14 +661,14 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
         headers_html = renderer.table_of_contents(filenumber=filenumber)
         if headers_html:
             headers_html = nav_html + headers_html
-            if 'meldr-notes' in content_html:
-                headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'meldr-notes'"+');">Hide all notes</a>'
+            if 'slidoc-notes' in content_html:
+                headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'slidoc-notes'"+');">Hide all notes</a>'
 
         content_html = content_html.replace('__HEADER_LIST__', headers_html)
 
     if cmd_args.strip:
         # Strip out notes, answer slides
-        content_html = re.sub(r"<!--meldr-block-begin\[([-\w]+)\](.*?)<!--meldr-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
+        content_html = re.sub(r"<!--slidoc-block-begin\[([-\w]+)\](.*?)<!--slidoc-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
     file_toc = renderer.table_of_contents(cmd_args.href+filename+'.html', filenumber=filenumber)
 
@@ -855,7 +855,7 @@ if __name__ == '__main__':
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, cmd_args.href[len('http://'):], fname, 'notebook')
             doc_link = '<a href="%s%s">%s</a>' % (cmd_args.href, outname, 'document')
 
-            toggle_link = '<a class="meldr-clickable" onclick="toggleTOC(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
+            toggle_link = '<a class="slidoc-clickable" onclick="toggleTOC(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
             toc_html.append('<li>%s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(<em>%s%s%s</em>)</li>\n' % (toggle_link, doc_link, slide_link, nb_link))
 
             f_toc_html = '<div id="'+id_str+'" class="filetoc" style="display: none;">'+file_toc+'<p></p></div>'

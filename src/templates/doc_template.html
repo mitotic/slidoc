@@ -6,9 +6,9 @@
            max-width: 960px;
            %(body_style)s }
     pre { padding: 0px 2em;}
-    .meldr-notes { padding: 0px 1em; font-size: 90%%; }
-    .meldr-notes p {margin: 0.3em 0;}
-    .meldr-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
+    .slidoc-notes { padding: 0px 1em; font-size: 90%%; }
+    .slidoc-notes p {margin: 0.3em 0;}
+    .slidoc-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
   </style>
 
  %(math_js)s
@@ -43,7 +43,7 @@
         var choices = document.getElementsByClassName(slide_id+"-choice");
         for (var i = 0; i < choices.length; ++i) {
            choices[i].removeAttribute("onclick");
-           choices[i].classList.remove("meldr-clickable");
+           choices[i].classList.remove("slidoc-clickable");
         }
         var notes_id = slide_id+"-notes";
         toggleBlock(notes_id);
