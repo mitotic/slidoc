@@ -77,6 +77,10 @@
         }
      }
 
+     function slidocScrollTop() {
+        window.scroll(0, 0);
+     }
+
      function answerClick(elem, slide_id, question_number, choice_type) {
         console.log("answerClick:", slide_id, choice_type);
         toggleInline(elem);
@@ -90,6 +94,66 @@
            }
         }
      }
+
+     function getParameterByName(name) {
+        var match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+        return match && decodeURIComponent(match[1].replace(/\+/g, ' '));
+     }
+
+     function slidocChainURL(taglist, curindex, newindex) {
+        // Returns next/prev URL: /(prefix)(newtag0).html?index=1&taglist=...#newtag1
+        // tag = fsuffix#id
+        var suffix = ".html";
+        var curcomps = taglist[curindex-1].split("#");
+        var newcomps = taglist[newindex-1].split("#");
+        var newsearch = location.search.replace('index='+curindex, 'index='+newindex);
+        var prefix = location.pathname.substr(0, location.pathname.length-(curcomps[0]+suffix).length);
+        return prefix + newcomps[0] + suffix + newsearch + '#' + newcomps[1];
+     }
+
+     function slidocReady(event) {
+         var tagindex = parseInt(getParameterByName('tagindex') || '0');
+         console.log("slidocReady:", tagindex);
+         if (!tagindex)
+           return;
+         var tagid = location.hash.substr(1);
+         var ichain_elem = document.getElementById(tagid+"-ichain");
+         if (!ichain_elem)
+            return;
+         var tagconcept = getParameterByName('tagconcept') || '';
+         var tagconceptref = getParameterByName('tagconceptref') || '';
+         var taglist = (getParameterByName('taglist') || '').split(";");
+
+         //TEST taglist = ['a#11', 'E#22', 'f#33'];  tagindex = 2; tagconcept="CONCEPT"; tagconceptref="CONCEPTREF";
+
+         console.log("slidocReady2:", tagindex, tagconcept, tagconceptref, taglist);
+         if (tagindex && taglist.length > 1) {
+             ichain_elem.style.display = 'block';
+             var concept_elem = document.getElementById(tagid+"-ichain-concept");
+             concept_elem.href += tagconceptref;
+             concept_elem.text += tagconcept;
+             if (tagindex > 1) {
+                var prev_elem = document.getElementById(tagid+"-ichain-prev");
+                prev_elem.style.display = 'inline';
+                prev_elem.href = slidocChainURL(taglist, tagindex, tagindex-1);
+             }
+             if (tagindex < taglist.length) {
+                var next_elem = document.getElementById(tagid+"-ichain-next");
+                next_elem.style.display = 'inline';
+                next_elem.href = slidocChainURL(taglist, tagindex, tagindex+1);
+             }
+         }
+     }
+
+     document.onreadystatechange = function(event) {
+         console.log('onreadystatechange:', document.readyState);
+         if (document.readyState != "interactive")
+           return;
+         try {
+            slidocReady();
+         } catch(err) {console.log("slidocReady: ERROR", err);}
+     }
+
   </script>
 
 </head>

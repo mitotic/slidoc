@@ -21,6 +21,7 @@ from __future__ import print_function
 import os
 import re
 import sys
+import urllib
 
 from collections import defaultdict, OrderedDict
 
@@ -33,9 +34,11 @@ from pygments.util import ClassNotFound
 
 from xml.etree import ElementTree
 
+MAX_QUERY = 500   # Maximum length of query string for concept chains
+
 def make_id_from_header(header):
     """Make ID string from header string"""
-    return re.sub(r'\s*,\s*', ',', re.sub(r'\s+', ' ', header)).replace(' ', '-')
+    return urllib.quote(re.sub(r'\s*,\s*', ',', re.sub(r'\s+', ' ', header)).replace(' ', '-'), safe='')
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -70,82 +73,90 @@ def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
         if filename not in first_tags[tags[0]]:
             first_tags[tags[0]][filename] = []
 
-        if header:
-            first_tags[tags[0]][filename].append( (slide_id, header) )
+        first_tags[tags[0]][filename].append( (slide_id, header) )
 
     for tag in tags[1:]:
         # Secondary tags
         if filename not in sec_tags[tag]:
             sec_tags[tag][filename] = []
 
-        if header:
-            sec_tags[tag][filename].append( (slide_id, header) )
+        sec_tags[tag][filename].append( (slide_id, header) )
 
 
-def make_index(first_tags, sec_tags, href, only_headers=False, fprefix=''):
-    # if not only_headers, link to file if no headers available
-    covered_first = defaultdict(set)
-    fsuffixes = OrderedDict()
+def make_index(first_tags, sec_tags, href, index_file, prefix=''):
+    covered_first = defaultdict(dict)
+    first_references = OrderedDict()
     tag_list = list(set(first_tags.keys()+sec_tags.keys()))
     tag_list.sort()
     out_list = []
-    if href:
-        out_list.append('<b>INDEX</b><ul>\n')
-
+    first_letters = []
     prev_tag_comps = []
+    close_ul = '<br><li><a href="#">TOP</a></li>\n</ul>\n'
     for tag in tag_list:
         tag_comps = tag.split(',')
         tag_str = tag
-        if href:
-            if not prev_tag_comps or prev_tag_comps[0][0] != tag_comps[0][0]:
-                out_list.append('</ul><b>%s</b>\n<ul style="list-style-type: none;">\n' % tag_comps[0][0].upper())
-            elif prev_tag_comps and prev_tag_comps[0] != tag_comps[0]:
-                out_list.append('&nbsp;\n')
-            else:
-                tag_str = '___, ' + ','.join(tag_comps[1:])
+        first_letter = tag_comps[0][0]
+        if not prev_tag_comps or prev_tag_comps[0][0] != first_letter:
+            first_letters.append(first_letter)
+            if out_list:
+                out_list.append(close_ul)
+            out_list.append('<b id="slidoc-index-%s">%s</b>\n<ul style="list-style-type: none;">\n' % (first_letter.upper(), first_letter.upper()) )
+        elif prev_tag_comps and prev_tag_comps[0] != tag_comps[0]:
+            out_list.append('&nbsp;\n')
+        else:
+            tag_str = '___, ' + ','.join(tag_comps[1:])
         
-        for fname in first_tags[tag].keys():
-            # First tags in each file
-            covered_first[fname].add(tag)
+        for fname, ref_list in first_tags[tag].items():
+            # File includes this tag as primary tag
+            if tag not in covered_first[fname]:
+                covered_first[fname][tag] = ref_list[0]
 
+        # Get sorted list of files with at least one reference (primary or secondary) to tag
         files = list(set(first_tags[tag].keys()+sec_tags[tag].keys()))
         files.sort()
-        fsuffix = []
-        if href and files:
-            out_list.append('<li id="%s"><b>%s</b>:\n' % (make_id_from_header(tag), tag_str))
 
-        start = True
+        first_ref_list = []
+        tag_id = make_id_from_header(tag)
+        if files:
+            out_list.append('<li id="%s"><b>%s</b>:\n' % (tag_id, tag_str))
+
+        tag_index = []
         for fname in files:
-            fsuffix.append( fname[len(fprefix):] )
-            if href:
-                first_headers = first_tags[tag].get(fname,[])
-                sec_headers = sec_tags[tag].get(fname,[])
-                if not first_headers and not sec_headers and not only_headers:
-                    # Link to file (no headers available)
-                    if not start:
-                        out_list.append(', ')
-                    out_list.append('<a href="%s%s" target="_blank"><b>%s</b></a>' % (href, fname+'.html', fname))
-                else:
-                    for slide_id, slide_header in first_headers:
-                        if not start:
-                            out_list.append(', ')
-                        start = False
-                        out_list.append('<a href="%s%s" target="_blank"><b>%s</b></a>' % (href, fname+'.html#'+slide_id, slide_header))
-                    for slide_id, slide_header in sec_headers:
-                        if not start:
-                            out_list.append(', ')
-                        start = False
-                        out_list.append('<a href="%s%s" target="_blank">%s</a>' % (href, fname+'.html#'+slide_id, slide_header))
-        if href and files:
+            f_index  = [(fname, slide_id, header, 1) for slide_id, header in first_tags[tag].get(fname,[])]
+            f_index += [(fname, slide_id, header, 2) for slide_id, header in sec_tags[tag].get(fname,[])]
+            tag_index += f_index
+            assert f_index, 'Expect at least one reference to tag in '+fname
+            first_ref_list.append( f_index[0][:3] )
+
+        tagid_list = [fname[len(fprefix):]+'#'+slide_id for fname, slide_id, header, reftype in tag_index]
+        tagids_quoted = urllib.quote(';'.join(tagid_list), safe='')
+
+        started = False
+        j = 0
+        for fname, slide_id, header, reftype in tag_index:
+            j += 1
+            if j > 1:
+                out_list.append(', ')
+
+            started = True
+            query_str = '?tagindex=%d&tagconcept=%s&tagconceptref=%s&taglist=%s' % (j, urllib.quote(tag, safe=''),
+                                                urllib.quote(index_file+'#'+tag_id, safe=''), tagids_quoted )
+            if len(query_str) > MAX_QUERY:
+                query_str = ''
+            header = header or 'slide'
+            header_html = '<b>%s</b>' % header if reftype == 1 else header
+            out_list.append('<a href="%s%s.html%s#%s" target="_blank">%s</a>' % (href, fname, query_str, slide_id, header_html))            
+
+        if files:
             out_list.append('</li>\n')
 
-        fsuffixes[tag] = fsuffix
+        first_references[tag] = first_ref_list
         prev_tag_comps = tag_comps
 
-    if href:
-        out_list.append('</ul>\n')
+    out_list.append(close_ul)
         
-    return fsuffixes, covered_first, ''.join(out_list)
+    out_list = ['<b>INDEX</b><blockquote>\n'] + ["&nbsp;&nbsp;".join(['<a href="#slidoc-index-%s">%s</a>' % (x.upper(), x.upper()) for x in first_letters])] + ['</blockquote>'] + out_list
+    return first_references, covered_first, ''.join(out_list)
 
 
 class Dummy(object):
@@ -310,7 +321,7 @@ class IPythonRenderer(mistune.Renderer):
         self.first_para = True
 
     def get_slide_id(self):
-        return 'slide%02d-%03d' % (self.options['filenumber'], self.slide_number)
+        return 'sd%02d-%02d' % (self.options['filenumber'], self.slide_number)
 
     def start_block(self, id_str, display='none', style=''):
         prefix =          '<!--meldr-block-begin['+id_str+']-->\n'
@@ -340,12 +351,15 @@ class IPythonRenderer(mistune.Renderer):
         self._new_slide()
 
         hide_prefix = self.end_hide()
+        slide_id = self.get_slide_id()
         if self.options["cmd_args"].norule or (self.options["cmd_args"].strip and hide_prefix):
-            html = '<p id="%s"></p>' % self.get_slide_id()
+            html = '<p id="%s"></p>' % slide_id
         elif self.options.get('use_xhtml'):
-            html = '<hr id="%s"/>\n' % self.get_slide_id()
+            html = '<hr id="%s"/>\n' % slide_id
         else:
-            html = '<hr id="%s">\n' % self.get_slide_id()
+            html = '<hr id="%s">\n' % slide_id
+
+        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" href="%(ixfile)s"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev" style="display: none;">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" style="display: none;">NEXT</a></div>' % {'sid': slide_id, 'ixfile':self.options["cmd_args"].href }
 
         return self.end_notes()+hide_prefix+html
     
@@ -378,6 +392,7 @@ class IPythonRenderer(mistune.Renderer):
         prefix = ''
         suffix = ''
         hdr_prefix = ''
+        clickable_secnum = False
         if level == 1:
             # Level 1 (file) header
             if not self.file_header:
@@ -398,6 +413,7 @@ class IPythonRenderer(mistune.Renderer):
                 self.section_number += 1
                 if self.options['filenumber']:
                     hdr_prefix =  '%d.%d ' % (self.options['filenumber'], self.section_number)
+                    clickable_secnum = True
                 self.cur_header = hdr_prefix + text
                 self.header_list.append( (self.get_slide_id(), self.cur_header) )
 
@@ -414,7 +430,15 @@ class IPythonRenderer(mistune.Renderer):
                 hdr.set('class', 'meldr-clickable' )
                 hdr.set('onclick', "toggleBlock('"+id_str+"')" )
 
-        if hdr_prefix:
+        if clickable_secnum:
+            span_prefix = ElementTree.Element('span', {'class' : 'meldr-clickable', 'onclick': 'slidocScrollTop();'})
+            span_prefix.text = hdr_prefix.strip()
+            span_elem = ElementTree.Element('span', {})
+            span_elem.text = ' '+hdr.text
+            hdr.text = ''
+            hdr.append(span_prefix)
+            hdr.append(span_elem)
+        elif hdr_prefix:
             hdr.text = hdr_prefix + (hdr.text or '')
 
         ##a = ElementTree.Element("a", {"class" : "anchor-link", "href" : "#" + self.get_slide_id()})
@@ -559,7 +583,7 @@ class IPythonRenderer(mistune.Renderer):
         id_str = self.get_slide_id()+'-concepts'
         tag_html = '<div class="meldr-clickable" onclick="toggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
 
-        if self.options["cmd_args"].index or self.options["cmd_args"].qindex:
+        if self.options["cmd_args"].index:
             first = True
             for tag in tags:
                 if not first:
@@ -667,6 +691,7 @@ if __name__ == '__main__':
     import md2nb
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
+    parser.add_argument('--crossref', metavar='FILE', help='Cross reference file (default: '')', default='')
     parser.add_argument('--destdir', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
     parser.add_argument('--fsize', help='Font size in %% or px (default: 90%%)', default='90%')
@@ -682,7 +707,7 @@ if __name__ == '__main__':
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
-    parser.add_argument('--qindex', metavar='FILE', help='question index file (default: qind.html)', default='qind.html')
+    parser.add_argument('--qindex', metavar='FILE', help='Question index file (default: qind.html)', default='qind.html')
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', help='Strip answers, concepts, notes, answer slides', action="store_true")
@@ -742,6 +767,7 @@ if __name__ == '__main__':
         nb_args.noconcepts = True
 
     flist = []
+    all_concept_warnings = []
     fprefix = None
     for j, f in enumerate(cmd_args.file):
         md_text = f.read()
@@ -773,6 +799,7 @@ if __name__ == '__main__':
         fheader, file_toc, first_id, concept_warnings, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args,
                                                                      filenumber=filenumber, prev_file=prev_file, next_file=next_file)
 
+        all_concept_warnings += concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
 
@@ -812,6 +839,8 @@ if __name__ == '__main__':
             header_insert = ''
 
         toc_html = []
+        if cmd_args.index:
+            toc_html.append('<a href="%s%s" target="_blank">%s</a><br>\n' % (cmd_args.href, cmd_args.index, 'INDEX'))
         toc_html.append('<blockquote>\n')
         toc_html.append('<ol>\n' if cmd_args.nosections else '<ul style="list-style-type: none;">\n')
         ifile = 0
@@ -826,7 +855,7 @@ if __name__ == '__main__':
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, cmd_args.href[len('http://'):], fname, 'notebook')
             doc_link = '<a href="%s%s">%s</a>' % (cmd_args.href, outname, 'document')
 
-            toggle_link = '<a href="#" onclick="toggleTOC(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
+            toggle_link = '<a class="meldr-clickable" onclick="toggleTOC(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
             toc_html.append('<li>%s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(<em>%s%s%s</em>)</li>\n' % (toggle_link, doc_link, slide_link, nb_link))
 
             f_toc_html = '<div id="'+id_str+'" class="filetoc" style="display: none;">'+file_toc+'<p></p></div>'
@@ -834,8 +863,6 @@ if __name__ == '__main__':
 
         toc_html.append('</ol>\n' if cmd_args.nosections else '</ul>\n')
 
-        if cmd_args.index:
-            toc_html.append('<a href="%s%s" target="_blank">%s</a><br>\n' % (cmd_args.href, cmd_args.index, 'INDEX'))
         toc_html.append('</blockquote>\n')
 
         if cmd_args.slides:
@@ -848,32 +875,47 @@ if __name__ == '__main__':
             print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
     if cmd_args.index:
-        fsuffixes, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.href, fprefix=fprefix)
+        first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.href, cmd_args.index)
         if not cmd_args.dry_run:
             indexfile = open(destdir+cmd_args.index, 'w')
             if cmd_args.toc:
                 indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
+            if cmd_args.qindex:
+                indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.href, cmd_args.qindex, 'QUESTION INDEX'))
             indexfile.write('<b>CONCEPT</b>\n')
             indexfile.write(index_html)
+
+        if not cmd_args.href.startswith('http'):
+            # Create crossref file only if not public web site
+            xref_file = 'xref.html'
+            crossfile = open(destdir+xref_file, 'w')
+            if cmd_args.toc:
+                crossfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
+            print("Concepts cross-reference (file prefix: "+fprefix+")<p></p>", file=crossfile)
+            print("\nConcepts -> files mapping:<br>", file=crossfile)
+            for tag in first_references:
+                links = ['<a href="%s%s.html#%s" target="_blank">%s</a>' % (cmd_args.href, slide_file, slide_id, slide_file[len(fprefix):] or slide_file) for slide_file, slide_id, slide_header in first_references[tag]]
+                print("%-32s:" % tag, ', '.join(links), '<br>', file=crossfile)
+
+            print("<p></p>First concepts in each file:<br>", file=crossfile)
+            for fname, outname, fheader, file_toc in flist:
+                clist = covered_first[fname].keys()
+                clist.sort()
+                tlist = []
+                for ctag in clist:
+                    slide_id, slide_header = covered_first[fname][ctag]
+                    tlist.append( '<a href="%s%s.html#%s" target="_blank">%s</a>' % (cmd_args.href, fname, slide_id, ctag) )
+                print('%-24s:' % fname[len(fprefix):], '; '.join(tlist), '<br>', file=crossfile)
+            if all_concept_warnings:
+                crossfile.write('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
+            crossfile.close()
+            print("Created crossref in", xref_file, file=sys.stderr)
+            if not cmd_args.dry_run:
+                indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.href, xref_file, 'CROSS-REFERENCING'))
+
+        if not cmd_args.dry_run:
             indexfile.close()
             print("Created index in", cmd_args.index, file=sys.stderr)
-
-        concfilename = 'concepts.txt'
-        concfile = open(destdir+concfilename, 'w')
-        print("File prefix: "+fprefix, file=concfile)
-        print("\nConcepts -> files mapping:", file=concfile)
-        for tag, fsuffix in fsuffixes.items():
-            print("%-32s:" % tag, ', '.join(fsuffix), file=concfile)
-
-        print("\n\nFirst concepts in each file:", file=concfile)
-        for fname, outname, fheader, file_toc in flist:
-            tlist = list(covered_first[fname])
-            tlist.sort()
-            print('%-24s:' % fname[len(fprefix):], '; '.join(tlist), file=concfile)
-        if concept_warnings:
-            concfile.write('\n'+'\n'.join(concept_warnings)+'/n')
-        concfile.close()
-        print("Created concept listings in", concfilename, file=sys.stderr)
 
     if cmd_args.qindex and Global.first_qtags:
         import itertools
@@ -881,7 +923,7 @@ if __name__ == '__main__':
         if cmd_args.toc:
             qout_list.append('<a href="%s%s">%s</a><p></p>' % (cmd_args.href, cmd_args.toc, 'BACK TO CONTENTS'))
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
-        fsuffixes, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.href, only_headers=True, fprefix=fprefix)
+        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.href, cmd_args.qindex)
         qout_list.append(qindex_html)
         qout_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant that explores all the same concepts.</p>\n')
         qout_list.append('<ul style="list-style-type: none;">\n')
@@ -909,3 +951,4 @@ if __name__ == '__main__':
             qindexfile.write(''.join(qout_list))
             qindexfile.close()
             print("Created qindex in", cmd_args.qindex, file=sys.stderr)
+
