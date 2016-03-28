@@ -236,24 +236,24 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to Jupyter Notebook format')
-    parser.add_argument('--href', help='URL prefix for website')
     parser.add_argument('--indented', help='Convert indented code blocks to notebook cells', action="store_true")
     parser.add_argument('--noconcepts', help='Remove Concepts list', action="store_true")
     parser.add_argument('--nomarkup', help='Convert code blocks only', action="store_true")
     parser.add_argument('--nonotes', help='Remove notes', action="store_true")
     parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
+    parser.add_argument('--site_url', help='URL prefix for website (default: "")')
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
     url_prefix = ''
-    if cmd_args.href:
-        if cmd_args.href.startswith('http://'):
-            url_prefix = cmd_args.href[len('http://'):]
+    if cmd_args.site_url:
+        if cmd_args.site_url.startswith('http://'):
+            url_prefix = cmd_args.site_url[len('http://'):]
         else:
-            url_prefix = cmd_args.href
+            url_prefix = cmd_args.site_url
 
-    md_parser = MDParser( Args_obj.create_args(cmd_args) )   # User args_obj to pass orgs as a consistency check
+    md_parser = MDParser( Args_obj.create_args(cmd_args) )   # Use args_obj to pass orgs as a consistency check
 
     fnames = []
     for f in cmd_args.file:
@@ -279,7 +279,7 @@ if __name__ == '__main__':
         outfile.close()
         print("Created ", outname, file=sys.stderr)
 
-    if cmd_args.href:
+    if cmd_args.site_url:
         for fname, flink in flist:
             sys.stdout.write('<ol>\n')
             sys.stdout.write('  <li>%s</li>\n' % flink)

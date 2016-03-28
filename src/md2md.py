@@ -44,11 +44,11 @@ def quote_pad_title(title, parentheses=False):
     # Quote non-null title and pad left
     if not title:
         return title
-    if "'" not in title:
-        return " '"+title+"'"
     if '"' not in title:
         return ' "'+title+'"'
-    if parentheses and '(' not in title and ')' not in title:
+    elif "'" not in title:
+        return " '"+title+"'"
+    elif parentheses and '(' not in title and ')' not in title:
         return " ("+title+")"
     return ''
 
@@ -101,6 +101,7 @@ class Parser(object):
         self.output = []
         self.imported_links = {}
         self.imported_defs = OrderedDict()
+        self.imported_refs = OrderedDict()
         self.exported_refs = OrderedDict()
         self.image_refs = {}
         self.old_defs = OrderedDict()
@@ -207,24 +208,18 @@ class Parser(object):
         title = match.group(4) or ''
 
         url_type = get_url_scheme(link)
-        web_enabled = url_type.startswith('http') and 'web' in self.cmd_args.images
 
-        if web_enabled or url_type == 'rel_path':
+        if url_type == 'rel_path' or (url_type.startswith('http') and 'web' in self.cmd_args.images):
             if 'import' in self.cmd_args.images:
                 # Check if link has already been imported (with the same title)
-                key = self.imported_links.get( (link, title) )
-                if key:
-                    new_link, new_title = self.imported_defs[key]
-                elif url_type == 'rel_path' or web_enabled:
-                    key, new_link, new_title = self.import_ref(link, title)
-                    if key:
-                        self.imported_defs[key] = (new_link, new_title)
-                        self.imported_links[(link, title)] = key
-                        print('Imported ref %s as %s' % (link, key), file=sys.stderr)
-                if key:
                     if 'embed' in self.cmd_args.images:
-                        return self.make_img_tag(new_link, text, new_title)
-                    return '![%s][%s]' % (text, key)
+                        filename, new_title, new_link = self.import_link(link, title)
+                        if filename is not None:
+                            return self.make_img_tag(new_link, text, new_title)
+                    else:
+                        key, new_title, new_link = self.import_ref(link, title)
+                        if key:
+                            return '![%s][%s]' % (text, key)
 
             elif 'check' in self.cmd_args.images:
                 self.copy_image(text, link, title, check_only=True)
@@ -261,24 +256,24 @@ class Parser(object):
                 newpath = os.path.basename(urlparse.urlsplit(link).path.rstrip('/'))
                 if not newpath.endswith('.'+extn):
                     newpath += '.'+extn
-                if self.cmd_args.imagedir:
-                    newpath = self.cmd_args.imagedir + '/' + newpath
+                if self.cmd_args.image_dir:
+                    newpath = self.cmd_args.image_dir + '/' + newpath
                 new_link = newpath
 
             elif url_type == 'rel_path':
                 if 'gather_images' in self.cmd_args.images:
                     # Copy all images to new destination image directory
                     newpath = os.path.basename(link)
-                    if self.cmd_args.imagedir:
-                        newpath = self.cmd_args.imagedir + '/' + newpath
+                    if self.cmd_args.image_dir:
+                        newpath = self.cmd_args.image_dir + '/' + newpath
                     if newpath != link:
                         new_link = newpath
                 else:
                     # Preserve relative path when copying
                     newpath = link
 
-            if self.cmd_args.destdir:
-                newpath = self.cmd_args.destdir + '/' + newpath
+            if self.cmd_args.dest_dir:
+                newpath = self.cmd_args.dest_dir + '/' + newpath
 
             try:
                 self.write_file(newpath, content)
@@ -335,6 +330,9 @@ class Parser(object):
                     attrs += ' ' + attr + '=' + value
             attrs += ' title="' + mistune.escape(title, quote=True) + '"'
 
+        if get_url_scheme(src) == 'rel_path' and self.cmd_args.image_url:
+            src = self.cmd_args.image_url + src
+            
         return '<img src="%s" alt="%s" %s>' % (src, alt, attrs)
 
     def get_html_tag_attr(self, attr_name, tag_text):
@@ -344,16 +342,29 @@ class Parser(object):
     def img_tag(self, match):
         orig_content = match.group(0)
 
+        src = self.get_html_tag_attr('src', orig_content)
+        if not src:
+            return orig_content
+        url_type = get_url_scheme(src)
+
         if 'check' in self.cmd_args.images:
-            src = self.get_html_tag_attr('src', orig_content)
-            alt = self.get_html_tag_attr('alt', orig_content)
-            title = self.get_html_tag_attr('title', orig_content)
-            web = 'web' in self.cmd_args.images
+            if url_type == 'rel_path' or (url_type.startswith('http') and 'web' in self.cmd_args.images):
+                filename, content_type, content = self.get_link_data(src, check_only=True)
+                if filename is None:
+                    print('ERROR: Unable to retrieve image %s' % src, file=sys.stderr)
 
-            filename, content_type, content = self.get_link_data(src, check_only=True)
-            if filename is None:
-                print('ERROR: Unable to retrieve image %s' % src, file=sys.stderr)
+        if self.cmd_args.image_url:
+            if url_type == 'rel_path':
+                new_src = self.cmd_args.image_url + src
+                return orig_content.replace(src, new_src)
 
+        elif url_type == 'rel_path' or (url_type.startswith('http') and 'web' in self.cmd_args.images):
+            if 'import' in self.cmd_args.images and 'embed' in self.cmd_args.images:
+                # Check if link has already been imported (with the same title); if not import it
+                filename, new_title, new_link = self.import_link(src, '')
+                if filename is not None:
+                    return orig_content.replace(src, new_link)   # Data URL
+                    
         return orig_content
 
     def parse(self, content, filepath=''):
@@ -380,17 +391,11 @@ class Parser(object):
                 elif 'import' in self.cmd_args.images and not url_type != 'data':
                     if url_type == 'rel_path' or (url_type.startswith('http') and 'web' in self.cmd_args.images):
                         # Relative file "URL" or web URL (with web enabled)
-                        _, new_link, new_title = self.import_ref(link, title, key=key)
-                        if new_link:
-                            self.new_defs[key] = (new_link, new_title)
+                        _, new_title, new_link = self.import_ref(link, title, key=key)
         
         while content:
             matched = None
             for rule_name, rule_re in self.rules_re:
-                if rule_name == 'indented' and not self.cmd_args.fence:
-                    # Do not parse indented code, unless fencing
-                    continue
-
                 # Find the first match
                 matched = rule_re.match(content)
                 if matched:
@@ -410,8 +415,11 @@ class Parser(object):
                             self.output.append(matched.group(0))
 
                 elif rule_name == 'indented':
-                    fenced_code = "```\n" + re.sub(r'(^|\n) {4}', '\g<1>', matched.group(0)) + "```\n\n"
-                    self.output.append(fenced_code)
+                    if self.cmd_args.fence:
+                        fenced_code = "```\n" + re.sub(r'(^|\n) {4}', '\g<1>', matched.group(0)) + "```\n\n"
+                        self.output.append(fenced_code)
+                    else:
+                        self.output.append(matched.group(0))
 
                 elif rule_name == 'block_math':
                     self.math_block(matched.group(0))
@@ -473,9 +481,9 @@ class Parser(object):
         if self.imported_defs:
             # Output imported ref definitions
             self.output.append('\n')
-            for key in self.imported_defs:
-                new_link, new_title = self.imported_defs[key]
-                self.output.append('[%s]: %s%s\n' % (key, new_link, quote_pad_title(new_title,parentheses=True)))
+            for link, title in self.imported_defs:
+                new_key, new_link = self.imported_defs[(link, title)]
+                self.output.append('[%s]: %s%s\n' % (new_key, new_link, quote_pad_title(title,parentheses=True)))
 
         return ''.join(self.output)
 
@@ -489,36 +497,61 @@ class Parser(object):
                 filename += '.' + content_type.split('/')[0]
         return filename
 
-    def import_ref(self, link, title, key=''):
-        """Return (key, new_link, new_title). On error, return None, None, None"""
-        title_filename = self.get_html_tag_attr('file', ' '+title)
-        filename, content_type, content = self.get_link_data(link, data_url=True)
-        if filename is None:
-            return None, None, None
+    def import_link(self, link, title=''):
+        """Import link as data URL, return (filename, new_title, new_link). On error, return None, None, None"""
+        if link in self.imported_links:
+            filename, content_type, content = self.imported_links[link]
+        else:
+            filename, content_type, content = self.get_link_data(link, data_url=True)
+            if filename is None:
+                return None, None, None
 
+        title_filename = self.get_html_tag_attr('file', ' '+title)
         filename = filename or title_filename
         if not filename:
             filename = self.gen_filename(content_type)
-
-        if not key:
-            # Generate new key from filename
-            key = make_id_from_text(filename)
-            suffix = ''
-            if key in self.imported_defs:
-                j = 2
-                while key+'-'+str(j) in self.imported_defs:
-                    j += 1
-                key = key+'-'+str(j)
 
         file_attr = 'file='+filename
         if not title_filename:
             # Include filename attribute in title
             if not title:
-                title = file_attr
+                new_title = file_attr
             else:
-                title += ' ' + file_attr
-        new_link = content
-        return key, new_link, title
+                new_title += ' ' + file_attr
+        else:
+            new_title = title
+
+        self.imported_links[link] = (filename, content_type, content)
+        return filename, new_title, content
+
+    def import_ref(self, link, title, key=''):
+        """Return (key, new_title, new_link). On error, return None, None, None"""
+        filename, new_title, new_link = self.import_link(link)
+        if filename is None:
+            return None, None, None
+
+        if key:
+            new_key = key
+        else:
+            # Check if link has already been imported (with the same title)
+            new_key, new_link = self.imported_defs.get( (link, title), (None, None) )
+            if new_key:
+                return new_key, new_title, new_link
+
+        if not new_key:
+            # Generate new key from filename
+            new_key = make_id_from_text(filename)
+            suffix = ''
+            if new_key in self.imported_refs:
+                j = 2
+                while new_key+'-'+str(j) in self.imported_refs:
+                    j += 1
+                new_key += '-' + str(j)
+
+        self.imported_refs[new_key] = (link, title)
+        self.imported_defs[(link, title)] = (new_key, new_link)
+        print('Imported ref %s as %s' % (link, new_key), file=sys.stderr)
+        return new_key, new_title, new_link
 
     def export_ref_definition(self, key, link, title, dry_run=False):
         """Return (key, new_link, new_title). On error, return None, None, None"""
@@ -534,11 +567,11 @@ class Parser(object):
 
             new_link = new_link or self.gen_filename(content_type=content_type)
 
-            if self.cmd_args.imagedir:
-                new_link = self.cmd_args.imagedir+'/'+new_link
+            if self.cmd_args.image_dir:
+                new_link = self.cmd_args.image_dir+'/'+new_link
 
-            if self.cmd_args.destdir:
-                fpath = self.cmd_args.destdir + '/' + new_link
+            if self.cmd_args.dest_dir:
+                fpath = self.cmd_args.dest_dir + '/' + new_link
             else:
                 fpath = new_link
 
@@ -594,9 +627,9 @@ class ArgsObj(object):
 
         return self.ParserArgs(**arg_vals)
 
-Args_obj = ArgsObj( str_args= ['destdir', 'imagedir', 'images'],
+Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images'],
                     bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'noanswers', 'nocode', 'noconcepts', 'nomarkup', 'nonotes', 'norule', 'overwrite', 'unfence'],
-                    defaults= {'imagedir': 'images'})
+                    defaults= {'image_dir': 'images'})
 
 if __name__ == '__main__':
     import argparse
@@ -604,9 +637,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert from Markdown to Markdown')
     parser.add_argument('--backtick_off', help='Remove backticks bracketing inline math', action="store_true")
     parser.add_argument('--backtick_on', help='Wrap block math with backticks', action="store_true")
-    parser.add_argument('--destdir', help='Destination directory for creating files (default:'')', default='')
+    parser.add_argument('--dest_dir', help='Destination directory for creating files (default:'')', default='')
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
-    parser.add_argument('--imagedir', help='image subdirectory (default: "images"', default='images')
+    parser.add_argument('--image_dir', help='image subdirectory (default: "images")', default='images')
+    parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web] to process images', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--noanswers', help='Remove all Answers', action="store_true")
@@ -619,11 +653,12 @@ if __name__ == '__main__':
     parser.add_argument('--unfence', help='Convert fenced code block to indented blocks', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
+
+    if cmd_args.image_url and not cmd_args.image_url.endswith('/'):
+        cmd_args.image_url += '/'
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
-
-
-    md_parser = Parser( Args_obj.create_args(cmd_args) )   # User args_obj to pass orgs as a consistency check
+    md_parser = Parser( Args_obj.create_args(cmd_args) )   # Use args_obj to pass orgs as a consistency check
     
     fnames = []
     for f in cmd_args.file:
@@ -632,18 +667,18 @@ if __name__ == '__main__':
         if fcomp[1] != '.md':
             sys.exit('Invalid file extension for '+f.name)
 
-        if os.path.exists(fcomp[0]+'-filtered.md') and not cmd_args.overwrite:
-            sys.exit("File %s-filtered.md already exists. Delete it or specify --overwrite" % fcomp[0])
+        if os.path.exists(fcomp[0]+'-modified.md') and not cmd_args.overwrite:
+            sys.exit("File %s-modified.md already exists. Delete it or specify --overwrite" % fcomp[0])
 
     for j, f in enumerate(cmd_args.file):
         filepath = f.name
         md_text = f.read()
         f.close()
-        filtered_text = md_parser.parse(md_text, filepath)
+        modified_text = md_parser.parse(md_text, filepath)
 
-        outname = fnames[j]+"-filtered.md"
+        outname = fnames[j]+"-modified.md"
         outfile = open(outname, "w")
-        outfile.write(filtered_text)
+        outfile.write(modified_text)
         outfile.close()
         print("Created ", outname, file=sys.stderr)
             

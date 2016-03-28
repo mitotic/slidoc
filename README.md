@@ -114,7 +114,7 @@ tranformations as follows:
 
     md2md.py --noconcepts --nonotes doc.md
 
-The above example creates a new file `doc-filtered.md` with concept lists and
+The above example creates a new file `doc-modified.md` with concept lists and
 notes stripped out.
 
 Notes: Other supported operations include:
@@ -123,7 +123,7 @@ Notes: Other supported operations include:
 `--images=check,web`: Check that all image references in the document are
 valid, including web references.
 
-`--images=copy --destdir=...`: Copy all image references to
+`--images=copy --dest_dir=...`: Copy all image references to
 destination
 
 `--images=import,web`: Import all image references into the document

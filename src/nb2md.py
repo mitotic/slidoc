@@ -67,8 +67,8 @@ class NBParser(object):
                         data = output['data']
                         if 'image/png' in data:
                             basename = 'nb_output-%s.png' % md2md.generate_random_label()
-                            if self.cmd_args.imagedir:
-                                img_filename =  self.cmd_args.imagedir + '/' + basename
+                            if self.cmd_args.image_dir:
+                                img_filename =  self.cmd_args.image_dir + '/' + basename
                             else:
                                 img_filename = basename
                             img_file = open(img_filename, 'w')
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Convert from Jupyter Notebook format to Markdown')
-    parser.add_argument('--imagedir', help='image subdirectory (default: "images"', default='images')
+    parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--href', help='URL prefix to link image files (default: "./")', default='./')
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Notebook filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
