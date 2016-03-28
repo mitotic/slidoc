@@ -93,10 +93,44 @@ cells. Specifiying the `--indented` option also converts indented code
 blocks to code cells. Use the `-h` option to list all command options.
 
 The reverse conversion, from notebook to Markdown format, can be
-accomplished using `nb2md.py`. *Warning: the reverse conversion is
-lossy, and may lose information like outputs etc.*
+accomplished using `nb2md.py`. Another script, `md2md.py`, can be used to
+transform Markdown documents by removing concept lists,
+embedding/exporting images etc.
 
 Concepts: jupyter notebook; code, fenced; code, indented
+
+---
+
+## Managing images
+
+Handling images is a bit hard when using Markdown. For Slidoc,
+the convention is to use web URLs or to store images in a local
+subdirectory named `images` and include references of the form
+
+    ![alt text](images/figure1.png)
+
+The script `md2md.py` can be used to apply several Markdown
+tranformations as follows:
+
+    md2md.py --noconcepts --nonotes doc.md
+
+The above example creates a new file `doc-filtered.md` with concept lists and
+notes stripped out.
+
+Notes: Other supported operations include:
+`--fence|--unfence`: Convert fenced code to indented code and vice versa
+
+`--images=check,web`: Check that all image references in the document are
+valid, including web references.
+
+`--images=copy --destdir=...`: Copy all image references to
+destination
+
+`--images=import,web`: Import all image references into the document
+as data URLs (including web URLs)
+
+`--images=export,embed`: Export all data URLs from document as local
+files, and convert all Markdown image references to HTML `<img>` tags.
 
 ---
 
@@ -389,16 +423,37 @@ Slide with no header
 
 Flowchart example of image inserted using Markdown syntax:
 
-![https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/LampFlowchart.png/460px-LampFlowchart.png](https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/LampFlowchart.png/460px-LampFlowchart.png)
+![El Nino time series](images/elnino.png)
+
+Alternatively, an internal image reference can be used:
+
+![El Nino time series][blank.gif]
+
+The reference `blank.gif` can be defined elsewhere in the
+document. The definition can be a web URL or a data URL:
+
+    [blank.gif]: data: URL "title height=100"
+
+[blank.gif]: data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw== 'file=MyImage.png height=50' 
 
 ---
 
-## Another slide with image
+## Another slide with images
 
 Images can also be inserted directly as HTML tags (allowing control
 over height/width)
 
-<img height=500 src="http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png">
+    <img height=100 src="http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png">
+
+<img height=100 src="http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png">
+
+Slidoc also supports an extension to the Markdown title syntax that
+embeds attributes `align`, `height`, and `width` in the title of an
+image (either in the link itself or in the definition, in case of a
+reference)
+
+![Flowchart](http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png 'title width=100% height=100')
+
 
 ---
 

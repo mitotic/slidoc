@@ -16,6 +16,8 @@ import random
 import re
 import sys
 
+import md2md
+
 Fenced_re = re.compile( r'^ *(`{3,}|~{3,}) *(\S+)? *\n'
                         r'([\s\S]+?)\s*'
                         r'\1 *(?:\n+|$)', re.MULTILINE)
@@ -33,6 +35,7 @@ class NBParser(object):
     def __init__(self, cmd_args):
         self.cmd_args = cmd_args
         self.outbuffer = []
+        self.defbuffer = []
 
     def normalize(self, source, nonewline=False):
         if isinstance(source, list):
@@ -50,7 +53,7 @@ class NBParser(object):
                 self.outbuffer.append( Fenced_re.sub(unfence, source) )
                     
             elif cell_type == 'code':
-                self.outbuffer.append( '```\n' + source + '```\n\n')
+                self.outbuffer.append( '\n```\n' + source + '```\n\n')
 
                 outputs = cell.get('outputs', [])
                 for output in outputs:
@@ -58,26 +61,35 @@ class NBParser(object):
 
                     if output_type == 'stream':
                         if output.get('name') in ('stdout', 'stderr'):
-                            self.outbuffer.append( '```output\n' + self.normalize(output.get('text', '')) + '```\n\n')
+                            self.outbuffer.append( '\n```nb_output\n' + self.normalize(output.get('text', '')) + '```\n\n')
 
                     elif output_type == 'display_data':
                         data = output['data']
                         if 'image/png' in data:
-                            img_filename = 'img%s.png' % rand_name()
+                            basename = 'nb_output-%s.png' % md2md.generate_random_label()
+                            if self.cmd_args.imagedir:
+                                img_filename =  self.cmd_args.imagedir + '/' + basename
+                            else:
+                                img_filename = basename
                             img_file = open(img_filename, 'w')
                             img_file.write( base64.b64decode(data['image/png'].strip()) )
                             img_file.close()
                             alt_text = self.normalize(data.get('text/plain','image'), nonewline=True)
                             print('Created', img_filename, alt_text)
-                            self.outbuffer.append('<img href="%s%s" alt="%s">\n\n' % (self.cmd_args.href, img_filename, alt_text) )
+                            title = 'nb_output file="%s"' % basename
+                            self.outbuffer.append("![%s](%s '%s')\n\n" % (alt_text, img_filename, title) )
 
-        return ''.join(self.outbuffer)
+        out_str = ''.join(self.outbuffer)
+        if self.defbuffer:
+            out_str += '\n' + ''.join(self.defbuffer)
+        return out_str
             
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Convert from Jupyter Notebook format to Markdown')
+    parser.add_argument('--imagedir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--href', help='URL prefix to link image files (default: "./")', default='./')
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Notebook filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)

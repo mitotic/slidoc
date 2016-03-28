@@ -10,10 +10,13 @@ Optionally, indented code blocks may also be converted to cells.
 
 from __future__ import print_function
 
+import base64
 import json
 import os
 import re
 import sys
+
+import md2md
 
 Nb_metadata_format = '''
 {
@@ -30,50 +33,28 @@ Nb_metadata_format = '''
 }
 '''
 
-Markdown_cell_format = '''
+Cell_formats = {}
+
+Cell_formats['markdown'] = '''
 {
   "cell_type" : "markdown",
   "metadata" : {},
-  "source" : %s
+  "source" : %(source)s
 }
 '''
 
-Code_cell_format = '''
+Cell_formats['code'] = '''
 {
   "cell_type" : "code",
   "execution_count": null,
   "metadata" : {
-      "collapsed" : true
+      "collapsed" : false
   },
-  "source" : %s,
-  "outputs": [
-%s
-  ]
+  "source" : %(source)s,
+  "outputs": %(outputs)s
 }
 '''
 
-Output_text_format = '''
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-%s
-     ]
-    }
-'''
-
-Output_img_format = '''
-    {
-     "data": {
-      "image/png": "%s",
-      "text/plain": [
-       %s
-      ]
-      },
-     "metadata": {},
-     "output_type": "display_data"
-    }
-'''
 
 class MDParser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
@@ -87,6 +68,7 @@ class MDParser(object):
                  ('block_math',        re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
+                 ('external_link',     re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?([\s\S]*?)(?(3)>)(?:\s+['"]([\s\S]*?)['"])?\s*\) *(\n|$)''') ),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ) ]
 
     def __init__(self, cmd_args):
@@ -94,6 +76,7 @@ class MDParser(object):
         self.cells_buffer = []
         self.buffered_lines = []
         self.skipping_notes = False
+        self.filedir = ''
 
     def clear_buffer(self):
         if not self.buffered_lines:
@@ -101,7 +84,10 @@ class MDParser(object):
         self.markdown(''.join(self.buffered_lines))
         self.buffered_lines = []
 
-    def parse_cells(self, content):
+    def parse_cells(self, content, filepath=''):
+        if filepath:
+            self.filedir = os.path.dirname(os.path.realpath(filepath))
+
         content = self.newline_norm_re.sub('\n', content) # Normalize newlines
 
         while content:
@@ -134,6 +120,9 @@ class MDParser(object):
                 elif rule_name == 'latex_environment':
                     self.math_block(matched.group(0))
 
+                elif rule_name == 'external_link':
+                    self.external_link(matched.group(0), matched.group(2), matched.group(4), matched.group(5) or '')
+
                 elif rule_name == 'hrule':
                     self.hrule(matched.group(1))
                 else:
@@ -147,6 +136,9 @@ class MDParser(object):
                     pass
                 elif self.notes_re.match(line) and self.cmd_args.nonotes:
                     self.skipping_notes = True
+                elif not line.strip() and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
+                    # Skip blank lines immediately following a code block
+                    pass
                 else:
                     self.buffered_lines.append(line+'\n')
 
@@ -156,7 +148,7 @@ class MDParser(object):
 
         self.clear_buffer()
 
-        nb_cells = ','.join(self.cells_buffer)
+        nb_cells = ','.join([self.dump_cell(cell) for cell in self.cells_buffer])
         return Nb_metadata_format % {'lang': 'python', 'cells': nb_cells}
 
 
@@ -165,9 +157,29 @@ class MDParser(object):
             self.buffered_lines.append(text+'\n\n')
         self.skipping_notes = False
 
+    def external_link(self, line, text, link, title):
+        if line.lstrip().startswith('!') and title.startswith('nb_output') and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
+            fpath = link
+            if self.filedir:
+                fpath = self.filedir + '/' + fpath
+            _, extn = os.path.splitext(os.path.basename(fpath))
+            extn = extn.lower()
+            if extn in ('.gif', '.jpg', '.jpeg', '.png', '.svg'):
+                content_type = 'image/jpeg' if extn == '.jpg' else 'image/'+extn[1:]
+                f = open(fpath)
+                content = f.read()
+                f.close()
+                self.cells_buffer[-1]['outputs'].append(self.image_output(text, content_type, base64.b64encode(content)))
+            else:
+                self.buffered_lines.append(line)
+        else:
+            self.buffered_lines.append(line)
+
     def code_block(self, code, lang=''):
-        outputs = ''
-        self.cells_buffer.append(Code_cell_format % (self.split_str(code), outputs))
+        if lang == 'nb_output' and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
+            self.cells_buffer[-1]['outputs'].append(self.stream_output(code))
+        else:
+            self.cells_buffer.append({'cell_type': 'code', 'source': self.split_str(code), 'outputs': []})
 
     def math_block(self, content):
         if not self.cmd_args.nomarkup:
@@ -175,25 +187,50 @@ class MDParser(object):
 
     def markdown(self, content):
         if not self.cmd_args.nomarkup:
-            self.cells_buffer.append(Markdown_cell_format % self.split_str(content))
+            self.cells_buffer.append({'cell_type': 'markdown', 'source': self.split_str(content, backtick_off=True)})
 
-    def split_str(self, content):
-        content = re.sub(r"(^|[^`])`\$(.+?)\$`", r"\1$\2$", content) # Un-backtick inline math
+    def split_str(self, content, backtick_off=False):
+        # Split string into list of lines
+        if backtick_off:
+            # Un-backtick inline math
+            content = re.sub(r"(^|[^`])`\$(.+?)\$`", r"\1$\2$", content)
         lines = content.split('\n')
         out_lines = [x+'\n' for x in lines[:-1]]
         if not out_lines or lines[-1]:
             out_lines.append(lines[-1])
-        return json.dumps(out_lines)
+        return out_lines
+
+    def stream_output(self, text):
+        return {
+        "name": "stdout",
+        "output_type": "stream",
+        "text": self.split_str(text)
+        }
+
+    def image_output(self, text, content_type, data):
+        return {
+        "data": {
+        content_type: data,
+        "text/plain": [ text ]
+        },
+        "metadata": {},
+        "output_type": "display_data"
+        }
+
+
+    def dump_cell(self, cell):
+        if cell['cell_type'] == 'code':
+            return Cell_formats['code'] % {'source': json.dumps(cell['source']),
+                                           'outputs': json.dumps(cell['outputs'])}
+        if cell['cell_type'] == 'markdown':
+            return Cell_formats['markdown'] % {'source': json.dumps(cell['source'])}
+
 
 Nb_convert_url_prefix = 'http://nbviewer.jupyter.org/url/'
 
-class Dummy(object):
-    pass
-
-Defaults = Dummy()
-for argname in ('indented', 'noconcepts', 'nomarkup', 'nonotes', 'norule'):
-    setattr(Defaults, argname, False)
-Defaults.href = ''
+Args_obj = md2md.ArgsObj( str_args= ['href'],
+                          bool_args= [ 'indented', 'noconcepts', 'nomarkup', 'nonotes', 'norule', 'overwrite'],
+                          defaults= {})
 
 if __name__ == '__main__':
     import argparse
@@ -216,7 +253,7 @@ if __name__ == '__main__':
         else:
             url_prefix = cmd_args.href
 
-    md_parser = MDParser(cmd_args)
+    md_parser = MDParser( Args_obj.create_args(cmd_args) )   # User args_obj to pass orgs as a consistency check
 
     fnames = []
     for f in cmd_args.file:
@@ -233,7 +270,7 @@ if __name__ == '__main__':
         fname = fnames[j]
         md_text = f.read()
         f.close()
-        nb_text = md_parser.parse_cells(md_text)
+        nb_text = md_parser.parse_cells(md_text, f.name)
 
         flist.append( (fname, '<a href="%s%s%s.ipynb">%s.ipynb</a>' % (Nb_convert_url_prefix, url_prefix, fname, fname)) )
         outname = fname+".ipynb"

@@ -38,7 +38,7 @@ MAX_QUERY = 500   # Maximum length of query string for concept chains
 
 def make_id_from_header(header):
     """Make ID string from header string"""
-    return urllib.quote(re.sub(r'\s*,\s*', ',', re.sub(r'\s+', ' ', header)).replace(' ', '-'), safe='')
+    return urllib.quote(re.sub(r'[^-\w\.]+', '-', header.strip()).strip('-'), safe='')
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -173,6 +173,12 @@ Global.concept_questions = defaultdict(list)
 
 
 class MathBlockGrammar(mistune.BlockGrammar):
+    def_links = re.compile(  # RE-DEFINE TO INCLUDE SINGLE QUOTES
+        r'^ *\[([^^\]]+)\]: *'  # [key]:
+        r'<?([^\s>]+)>?'  # <link> or link
+        r'''(?: +['"(]([^\n]+)['")])? *(?:\n+|$)'''
+    )
+
     block_math = re.compile(r'^\$\$(.*?)\$\$', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
@@ -627,14 +633,14 @@ class IPythonRenderer(mistune.Renderer):
     def block_code(self, code, lang=None):
         """Rendering block level code. ``pre > code``.
         """
-        if lang:
+        lexer = None
+        if lang and not lang.startswith('nb_'):
             try:
                 lexer = get_lexer_by_name(lang, stripall=True)
             except ClassNotFound:
                 code = lang + '\n' + code
-                lang = None
 
-        if not lang:
+        if not lexer:
             return '\n<pre><code>%s</code></pre>\n' % \
                 mistune.escape(code)
 
@@ -699,6 +705,8 @@ if __name__ == '__main__':
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
     parser.add_argument('--header', help='HTML header file for ToC')
     parser.add_argument('--href', help='URL prefix to link local HTML files (default: "./")', default='./')
+    parser.add_argument('--imagedir', help='image subdirectory (default: "images"', default='images')
+    parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images', default='')
     parser.add_argument('--index', metavar='FILE', help='index file (default: ind.html)', default='ind.html')
     parser.add_argument('--noconcepts', help='Strip concept lists', action="store_true")
     parser.add_argument('--noheaders', help='No clickable list of headers', action="store_true")
@@ -713,6 +721,8 @@ if __name__ == '__main__':
     parser.add_argument('--strip', help='Strip answers, concepts, notes, answer slides', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
+
+    cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
     if cmd_args.destdir and not os.path.isdir(cmd_args.destdir):
         sys.exit("Destination directory %s does not exist" % cmd_args.destdir)
@@ -754,27 +764,31 @@ if __name__ == '__main__':
     else:
         reveal_pars = ''
 
-    filter_args = md2md.Defaults
-    filter_args.noconcepts = True
+    base_filter_args = md2md.Args_obj.create_args(None, destdir=cmd_args.destdir,
+                                                        imagedir=cmd_args.imagedir,
+                                                        images=cmd_args.images | set(['embed']))
+    slide_filter_dict = {'noconcepts': True}
     if cmd_args.strip:
-        filter_args.noanswers = True
-        filter_args.nonotes = True
+        slide_filter_dict['noanswers'] = True
+        slide_filter_dict['nonotes'] = True
+    slide_filter_args = md2md.Args_obj.create_args(base_filter_args, **slide_filter_dict)
 
-    nb_args = md2nb.Defaults
-    if cmd_args.notebook:
-        nb_args.href = cmd_args.href
-        nb_args.norule = cmd_args.norule
-        nb_args.noconcepts = True
-
+    nb_converter_args = md2nb.Args_obj.create_args(None, href=cmd_args.href,
+                                                         norule=cmd_args.norule,
+                                                         noconcepts=True)
     flist = []
     all_concept_warnings = []
     fprefix = None
     for j, f in enumerate(cmd_args.file):
+        filepath = f.name
         md_text = f.read()
         f.close()
 
-        filter_parser = md2md.Parser(filter_args)
-        md_text_filtered = filter_parser.parse(md_text)
+        base_parser = md2md.Parser(base_filter_args)
+        slide_parser = md2md.Parser(slide_filter_args)
+        md_text_filtered = slide_parser.parse(md_text, filepath)
+        md_text = base_parser.parse(md_text, filepath)
+
         if cmd_args.strip and cmd_args.hide:
             md_text_filtered = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_filtered, flags=re.DOTALL)
 
@@ -823,7 +837,7 @@ if __name__ == '__main__':
                 print("Created ", sfilename, file=sys.stderr)
 
             if cmd_args.notebook:
-                md_parser = md2nb.MDParser(nb_args)
+                md_parser = md2nb.MDParser(nb_converter_args)
                 nfilename = fname+".ipynb"
                 nfile = open(destdir+nfilename, "w")
                 nb_text = md_parser.parse_cells(md_text_filtered)
