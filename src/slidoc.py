@@ -721,6 +721,8 @@ if __name__ == '__main__':
 
     if cmd_args.site_url and not cmd_args.site_url.endswith('/'):
         cmd_args.site_url += '/'
+    if cmd_args.image_url and not cmd_args.image_url.endswith('/'):
+        cmd_args.image_url += '/'
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
     if cmd_args.dest_dir and not os.path.isdir(cmd_args.dest_dir):
