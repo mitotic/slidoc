@@ -362,7 +362,7 @@ class IPythonRenderer(mistune.Renderer):
         else:
             html = '<hr id="%s">\n' % slide_id
 
-        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" href="%(ixfile)s"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev" style="display: none;">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" style="display: none;">NEXT</a></div>' % {'sid': slide_id, 'ixfile':self.options["cmd_args"].site_url }
+        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" href="%(ixfile)s"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">NEXT</a></div>' % {'sid': slide_id, 'ixfile':self.options["cmd_args"].site_url }
 
         return self.end_notes()+hide_prefix+html
     
@@ -653,12 +653,11 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
 
     if not cmd_args.noheaders:
         nav_html = ''
+        spacer = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
         if cmd_args.toc:
-            nav_html += '<a href="%s%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (cmd_args.site_url, cmd_args.toc, 'CONTENTS')
-        if prev_file:
-            nav_html += '<a href="%s%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (cmd_args.site_url, prev_file, 'PREV')
-        if next_file:
-            nav_html += '<a href="%s%s">%s</a>' % (cmd_args.site_url, next_file, 'NEXT')
+            nav_html += '<a href="%s%s">%s</a>%s' % (cmd_args.site_url, cmd_args.toc, 'CONTENTS', spacer)
+        nav_html += ('<a href="%s%s">%s</a>%s' if prev_file else '<span dummy="%s%s">%s</span>%s') % (cmd_args.site_url, prev_file, 'PREV', spacer)
+        nav_html += ('<a href="%s%s">%s</a>%s' if next_file else '<span dummy="%s%s">%s</span>%s') % (cmd_args.site_url, next_file, 'NEXT', spacer)
 
         content_html += '<p></p>' + '<a href="#%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (renderer.first_id, 'TOP') + nav_html
         headers_html = renderer.table_of_contents(filenumber=filenumber)
@@ -699,7 +698,6 @@ if __name__ == '__main__':
     parser.add_argument('--fsize', help='Font size in %% or px (default: 90%%)', default='90%')
     parser.add_argument('--ffamily', help='Font family ("Arial,sans-serif,...")', default="'Helvetica Neue', Helvetica, 'Segoe UI', Arial, freesans, sans-serif")
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
-    parser.add_argument('--header', help='HTML header file for ToC')
     parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images', default='')
@@ -712,10 +710,11 @@ if __name__ == '__main__':
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('--qindex', metavar='FILE', help='Question index file (default: qind.html)', default='qind.html')
-    parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")')
+    parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', help='Strip answers, concepts, notes, answer slides', action="store_true")
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
+    parser.add_argument('--toc_header', help='HTML header file for ToC')
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
@@ -847,8 +846,8 @@ if __name__ == '__main__':
                 print("Created ", nfilename, file=sys.stderr)
 
     if cmd_args.toc:
-        if cmd_args.header:
-            header_file = open(cmd_args.header)
+        if cmd_args.toc_header:
+            header_file = open(cmd_args.toc_header)
             header_insert = header_file.read()
             header_file.close()
         else:

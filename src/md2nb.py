@@ -228,7 +228,7 @@ class MDParser(object):
 
 Nb_convert_url_prefix = 'http://nbviewer.jupyter.org/url/'
 
-Args_obj = md2md.ArgsObj( str_args= ['href'],
+Args_obj = md2md.ArgsObj( str_args= ['site_url'],
                           bool_args= [ 'indented', 'noconcepts', 'nomarkup', 'nonotes', 'norule', 'overwrite'],
                           defaults= {})
 
@@ -241,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--nomarkup', help='Convert code blocks only', action="store_true")
     parser.add_argument('--nonotes', help='Remove notes', action="store_true")
     parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
-    parser.add_argument('--site_url', help='URL prefix for website (default: "")')
+    parser.add_argument('--site_url', help='URL prefix for website (default: "")', default='')
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
