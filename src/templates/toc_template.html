@@ -1,31 +1,47 @@
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html> <head>
     <style>
-       body { line-height: 1.6;
-              max-width: 960px;
-              font-family:'Helvetica Neue', Helvetica, 'Segoe UI', Arial, freesans, sans-serif;
-       }
-       .filetoc { padding: 0.3em 0 0 1em; color: blue; text-decoration: underline; }
-       .slidoc-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
+    body { line-height: 1.35;
+           max-width: 960px;
+           %(body_style)s }
+    body .slidoc-toc-container { line-height: 1.6; }
+    pre { padding: 0px 2em;}
+    .slidoc-notes { padding: 0px 1em; font-size: 90%%; }
+    .slidoc-notes p {margin: 0.3em 0;}
+    .slidoc-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
+    .slidoc-clickable.slidoc-toc-entry { padding: 0.3em 0 0 1em; }
    </style>
 
    <script>
-       function toggleTOC(elem_id) {
-           var element = document.getElementById(elem_id);
+     function slidocClassDisplay(className, displayValue) {
+        // Set display value (string) for all elements with class
+        // If !displayValue, toggle it
+        var elements = document.getElementsByClassName(className);
+        for (var i = 0; i < elements.length; i++) {
+          if (displayValue)
+             elements[i].style.display = displayValue;
+          else
+             elements[i].style.display = (elements[i].style.display=='block') ? 'none' : 'block'
+        }
+     }
+
+     function slidocIdDisplay(idValue, displayValue) {
+        // Set display value (string) for element with it
+        // If !displayValue, toggle it
+         var element = document.getElementById(idValue);
+         if (displayValue)
+           element.style.display = displayValue;
+         else
            element.style.display = (element.style.display=='block') ? 'none' : 'block';
-        }
-        function toggleAll(className) {
-           var elements = document.getElementsByClassName(className);
-           for (var i = 0; i < elements.length; ++i) {
-              toggleTOC(elements[i].id);
-           }
-        }
+     }
    </script>
 </head>
 <body>
 %(insert)s
+<div class="slidoc-chapter slidoc-toc-container">
 <h3>Table of Contents</h3>
-<a href="#" onclick="toggleAll('filetoc');">Show all sections</a>
+<a href="#" onclick="slidocClassDisplay('slidoc-toc-entry');">Show all sections</a>
 <br>
 %(content)s
+</div>
 </body> </html>

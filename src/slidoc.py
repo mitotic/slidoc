@@ -431,7 +431,7 @@ class IPythonRenderer(mistune.Renderer):
                 self.hide_end = end_str
                 prefix = prefix + ans_prefix
                 hdr.set('class', 'slidoc-clickable' )
-                hdr.set('onclick', "toggleBlock('"+id_str+"')" )
+                hdr.set('onclick', "slidocClassDisplay('"+id_str+"')" )
 
         if clickable_secnum:
             span_prefix = ElementTree.Element('span', {'class' : 'slidoc-clickable', 'onclick': 'slidocScrollTop();'})
@@ -490,7 +490,7 @@ class IPythonRenderer(mistune.Renderer):
         self.cur_choice = name
 
         id_str = self.get_slide_id()
-        return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="choiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % {'id': id_str, 'opt': name, 'qno': self.question_number}
+        return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="slidocChoiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % {'id': id_str, 'opt': name, 'qno': self.question_number}
 
     
     def slidoc_answer(self, name, text):
@@ -528,7 +528,7 @@ class IPythonRenderer(mistune.Renderer):
             if self.cur_choice:
                 attrs_ans.update({'style': 'display: none;'})
             else:
-                attrs_ans.update({'class' : 'slidoc-clickable', 'onclick': "answerClick(this, '%s', %d, '');" % (id_str, self.question_number)} )
+                attrs_ans.update({'class' : 'slidoc-clickable', 'onclick': "slidocAnswerClick(this, '%s', %d, '');" % (id_str, self.question_number)} )
                 attrs_corr.update({'style': 'display: none;'})
             ans_elem = ElementTree.Element('div', attrs_ans)
             ans_elem.text = name.capitalize()+': '
@@ -584,7 +584,7 @@ class IPythonRenderer(mistune.Renderer):
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
-        tag_html = '<div class="slidoc-clickable" onclick="toggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
+        tag_html = '<div class="slidoc-clickable" onclick="slidocToggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
 
         if self.options["cmd_args"].index:
             first = True
@@ -610,7 +610,7 @@ class IPythonRenderer(mistune.Renderer):
         disp_block = 'none' if hide_notes else 'block'
         prefix, suffix, end_str = self.start_block(id_str, display=disp_block, style='slidoc-notes')
         self.notes_end = end_str
-        return prefix + ('''<a id="%s" class="slidoc-clickable" onclick="toggleBlock('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if hide_notes else 'inline')) + suffix
+        return prefix + ('''<a id="%s" class="slidoc-clickable" onclick="slidocClassDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if hide_notes else 'inline')) + suffix
 
 
     def table_of_contents(self, filepath='', filenumber=0):
@@ -664,7 +664,7 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
         if headers_html:
             headers_html = nav_html + headers_html
             if 'slidoc-notes' in content_html:
-                headers_html += '<p></p><a href="#" onclick="toggleBlock('+"'slidoc-notes'"+');">Hide all notes</a>'
+                headers_html += '<p></p><a href="#" onclick="slidocClassDisplay('+"'slidoc-notes'"+');">Hide all notes</a>'
 
         content_html = content_html.replace('__HEADER_LIST__', headers_html)
 
@@ -818,13 +818,13 @@ if __name__ == '__main__':
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
 
+        doc_params = {'body_style': style_str, 'math_js': Mathjax_js if '$$' in md_text else '',
+                      'first_id': first_id, 'content': md_html }
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
-            params = {'body_style': style_str, 'math_js': Mathjax_js if '$$' in md_text else '',
-                      'first_id': first_id, 'content': md_html }
             out = open(dest_dir+outname, "w")
-            out.write(templates['doc'] % params)
+            out.write(templates['doc'] % doc_params)
             out.close()
             print("Created ", outname+":", fheader, file=sys.stderr)
 
@@ -870,10 +870,10 @@ if __name__ == '__main__':
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, cmd_args.site_url[len('http://'):], fname, 'notebook')
             doc_link = '<a href="%s%s">%s</a>' % (cmd_args.site_url, outname, 'document')
 
-            toggle_link = '<a class="slidoc-clickable" onclick="toggleTOC(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
+            toggle_link = '<a class="slidoc-clickable" onclick="slidocIdDisplay(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
             toc_html.append('<li>%s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(<em>%s%s%s</em>)</li>\n' % (toggle_link, doc_link, slide_link, nb_link))
 
-            f_toc_html = '<div id="'+id_str+'" class="filetoc" style="display: none;">'+file_toc+'<p></p></div>'
+            f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
             toc_html.append(f_toc_html)
 
         toc_html.append('</ol>\n' if cmd_args.nosections else '</ul>\n')
@@ -885,7 +885,10 @@ if __name__ == '__main__':
 
         if not cmd_args.dry_run:
             tocfile = open(dest_dir+cmd_args.toc, 'w')
-            tocfile.write(templates['toc'] % {'insert': header_insert, 'content': ''.join(toc_html)})
+            toc_params = {}
+            toc_params.update(doc_params)
+            toc_params.update( {'insert': header_insert, 'content': ''.join(toc_html)} )
+            tocfile.write(templates['toc'] % toc_params)
             tocfile.close()
             print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
