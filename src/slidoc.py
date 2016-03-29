@@ -362,7 +362,7 @@ class IPythonRenderer(mistune.Renderer):
         else:
             html = '<hr id="%s">\n' % slide_id
 
-        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" href="%(ixfile)s"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">NEXT</a></div>' % {'sid': slide_id, 'ixfile':self.options["cmd_args"].site_url }
+        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" href="%(ixfilepfx)s"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">NEXT</a></div>' % {'sid': slide_id, 'ixfilepfx':self.options["cmd_args"].site_url}
 
         return self.end_notes()+hide_prefix+html
     
@@ -519,7 +519,7 @@ class IPythonRenderer(mistune.Renderer):
 
         if self.options['cmd_args'].strip or not text:
             # Strip correct answers
-            return choice_prefix+name.capitalize()+':'+'\n'
+            return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
         if self.options['cmd_args'].hide:
             id_str = self.get_slide_id()
@@ -605,12 +605,11 @@ class IPythonRenderer(mistune.Renderer):
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
-        hide_notes = self.cur_answer
         id_str = self.get_slide_id() + '-notes'
-        disp_block = 'none' if hide_notes else 'block'
+        disp_block = 'none' if self.cur_answer else 'block'
         prefix, suffix, end_str = self.start_block(id_str, display=disp_block, style='slidoc-notes')
         self.notes_end = end_str
-        return prefix + ('''<a id="%s" class="slidoc-clickable" onclick="slidocClassDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if hide_notes else 'inline')) + suffix
+        return prefix + ('''<a id="%s" class="slidoc-clickable" onclick="slidocClassDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
 
 
     def table_of_contents(self, filepath='', filenumber=0):

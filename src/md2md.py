@@ -70,7 +70,9 @@ class Parser(object):
                  ('block_math',        re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
-                 ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ) ]
+                 ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ),
+                 ('minirule',   re.compile( r'^(--) *(?:\n+|$)') )
+                  ]
 
     link_re = re.compile(
         r'!?\[('
@@ -429,6 +431,9 @@ class Parser(object):
 
                 elif rule_name == 'hrule':
                     self.hrule(matched.group(1))
+
+                elif rule_name == 'minirule':
+                    self.minirule(matched.group(1))
                 else:
                     raise Exception('Unknown rule: '+rule_name)
 
@@ -586,6 +591,10 @@ class Parser(object):
         if not self.cmd_args.norule and not self.cmd_args.nomarkup:
             self.buffered_markdown.append(text+'\n\n')
         self.skipping_notes = False
+
+    def minirule(self, text):
+        if not self.cmd_args.norule and not self.cmd_args.nomarkup:
+            self.buffered_markdown.append(text+'\n\n')
 
     def math_block(self, content, latex=False):
         if not self.cmd_args.nomarkup:

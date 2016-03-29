@@ -74,7 +74,7 @@
            choices[i].classList.remove("slidoc-clickable");
         }
         var notes_id = slide_id+"-notes";
-        toggleBlock(notes_id);
+        slidocIdDisplay(notes_id);
         var notes_elem = document.getElementById(notes_id);
         if (notes_elem) notes_elem.style.display = 'inline';
         var concept_elem = document.getElementById(slide_id+"-concepts");
@@ -107,14 +107,14 @@
 
      function slidocAnswerClick(elem, slide_id, question_number, choice_type) {
         console.log("slidocAnswerClick:", slide_id, choice_type);
-        toggleInline(elem);
+        slidocToggleInline(elem);
         if (choice_type) {
            var notes_id = slide_id+"-notes";
            var notes_link = document.getElementById(notes_id);
            if (notes_link) {
                // Display any notes associated with this question
                notes_link.style.display = "inline";
-               toggleBlock(notes_id);
+               slidocIdDisplay(notes_id);
            }
         }
      }
