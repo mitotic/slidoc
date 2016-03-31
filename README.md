@@ -64,16 +64,17 @@ create a sub-directory, say `Publish`. In that directory, type:
     slidoc.py ../Lectures/prefix-lecture??.md
 
 The above command will create files named `prefix-lecture01.html` and
-so on in that directory. Additionally, it will create four files,
-`toc.html` (table of contents), `ind.html` (concept index),
-`qind.html` (concept dependency for questions), and `concepts.txt`
-(concept listings for files).
-
+so on in that directory. Additionally, it will create two files,
+`toc.html` (table of contents) and `ind.html` (concept index).
 The files in the `Publish` directory can be served from a web server,
 say by renaming `toc.html` to `index.html` using the
 `--toc=index.html` option.
 
-Concepts: lecture management
+Alternatively, the `--combine=all.html` option can be added, which
+will combine all the lectures, table of contents and index into a
+single file `all.html`, which can be published or shared.
+
+Concepts: lecture management; index, concepts
 
 ---
 
@@ -216,20 +217,21 @@ remove it completely.
 
 ## Concept dependency analysis
 
-Slidoc creates the `qind.html` file with a map analyzing each
-question for all the concepts it covers, and relating it to other
-questions which cover a subset of these concepts.
-
 To analyze concept dependency for lectures and exercises delivered,
 create a temporary subdirectory and use a command like:
 
-    slidoc.py ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
+    slidoc.py --qindex=qind.html --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
 
 This will generate the concept dependency analysis for the first six
-lectures and the first three exercises in the files `index.html`,
-`qind.html`, and `concepts.txt`.
+lectures and the first three exercises in the files `index.html`
+(concepts index), `qind.html` (questions index), and `xref.html`
+(cross-referencing info).
 
-Concepts: concept dependency analysis 
+The `qind.html` file has a map analyzing each question for all the
+concepts it covers, and relating it to other questions which cover a
+subset of these concepts.
+
+Concepts: concept dependency analysis; index, questions
 
 ---
 
@@ -276,7 +278,7 @@ or `--slides=,,190%`
 Concepts: slideshow
 
 Notes: To customize the presentation further, edit the
-`slidoc_reveal.txt` template file.
+`templates/reveal_template.html` template file.
 
 ---
 

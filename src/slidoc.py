@@ -36,10 +36,17 @@ from pygments.util import ClassNotFound
 from xml.etree import ElementTree
 
 MAX_QUERY = 500   # Maximum length of query string for concept chains
+SPACER = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
     
+def make_chapter_id(chapnum):
+    return 'slidoc%02d' % chapnum
+
+def make_slide_id(chapnum, slidenum):
+    return make_chapter_id(chapnum) + ('-%02d' % slidenum)
+
 def make_q_label(filename, question_number, fprefix=''):
     return filename[len(fprefix):]+('.q%03d' % question_number)
 
@@ -80,7 +87,8 @@ def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
         sec_tags[tag][filename].append( (slide_id, header) )
 
 
-def make_index(first_tags, sec_tags, href, index_file, prefix=''):
+def make_index(first_tags, sec_tags, site_url, fprefix='', index_id='', index_file=''):
+    # index_file would be null string for combined file
     covered_first = defaultdict(dict)
     first_references = OrderedDict()
     tag_list = list(set(first_tags.keys()+sec_tags.keys()))
@@ -88,7 +96,7 @@ def make_index(first_tags, sec_tags, href, index_file, prefix=''):
     out_list = []
     first_letters = []
     prev_tag_comps = []
-    close_ul = '<br><li><a href="#">TOP</a></li>\n</ul>\n'
+    close_ul = '<br><li><a href="#%s">TOP</a></li>\n</ul>\n' % index_id
     for tag in tag_list:
         tag_comps = tag.split(',')
         tag_str = tag
@@ -113,7 +121,7 @@ def make_index(first_tags, sec_tags, href, index_file, prefix=''):
         files.sort()
 
         first_ref_list = []
-        tag_id = md2md.make_id_from_text(tag)
+        tag_id = '%s-concept-%s' % (index_id, md2md.make_id_from_text(tag))
         if files:
             out_list.append('<li id="%s"><b>%s</b>:\n' % (tag_id, tag_str))
 
@@ -125,7 +133,7 @@ def make_index(first_tags, sec_tags, href, index_file, prefix=''):
             assert f_index, 'Expect at least one reference to tag in '+fname
             first_ref_list.append( f_index[0][:3] )
 
-        tagid_list = [fname[len(fprefix):]+'#'+slide_id for fname, slide_id, header, reftype in tag_index]
+        tagid_list = [(fname[len(fprefix):] if index_file else '')+'#'+slide_id for fname, slide_id, header, reftype in tag_index]
         tagids_quoted = urllib.quote(';'.join(tagid_list), safe='')
 
         started = False
@@ -142,7 +150,10 @@ def make_index(first_tags, sec_tags, href, index_file, prefix=''):
                 query_str = ''
             header = header or 'slide'
             header_html = '<b>%s</b>' % header if reftype == 1 else header
-            out_list.append('<a href="%s%s.html%s#%s" target="_blank">%s</a>' % (href, fname, query_str, slide_id, header_html))            
+            if index_file:
+                out_list.append('<a href="%s#%s" target="_blank">%s</a>' % (site_url+fname+'.html'+query_str, slide_id, header_html))            
+            else:
+                out_list.append('''<a href="#%s" onclick="slidocChainStart('%s', '#%s');">%s</a>''' % (slide_id, query_str, slide_id, header_html))            
 
         if files:
             out_list.append('</li>\n')
@@ -293,9 +304,11 @@ class MarkdownWithMath(mistune.Markdown):
     def output_minirule(self):
         return self.renderer.minirule()
 
-    def render(self, text):
+    def render(self, text, index_id='', qindex_id=''):
+        self.renderer.index_id = index_id
+        self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        return html + self.renderer.end_notes() + self.renderer.end_hide()
+        return ('<p id="%s"></p>\n' % self.renderer.first_id)+html+self.renderer.end_notes()+self.renderer.end_hide()
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -312,6 +325,8 @@ class IPythonRenderer(mistune.Renderer):
         self.slide_number = 0
         self._new_slide()
         self.first_id = self.get_slide_id()
+        self.index_id = ''                     # Set by render()
+        self.qindex_id = ''                    # Set by render
 
     def _new_slide(self):
         self.slide_number += 1
@@ -323,8 +338,11 @@ class IPythonRenderer(mistune.Renderer):
         self.slide_concepts = ''
         self.first_para = True
 
+    def get_chapter_id(self):
+        return make_chapter_id(self.options['filenumber'])
+
     def get_slide_id(self):
-        return 'sd%02d-%02d' % (self.options['filenumber'], self.slide_number)
+        return make_slide_id(self.options['filenumber'], self.slide_number)
 
     def start_block(self, id_str, display='none', style=''):
         prefix =          '<!--slidoc-block-begin['+id_str+']-->\n'
@@ -362,7 +380,7 @@ class IPythonRenderer(mistune.Renderer):
         else:
             html = '<hr id="%s">\n' % slide_id
 
-        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" href="%(ixfilepfx)s"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">NEXT</a></div>' % {'sid': slide_id, 'ixfilepfx':self.options["cmd_args"].site_url}
+        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">NEXT</a></div>' % {'sid': slide_id, 'ixfilepfx':self.options["cmd_args"].site_url+'/'}
 
         return self.end_notes()+hide_prefix+html
     
@@ -434,7 +452,7 @@ class IPythonRenderer(mistune.Renderer):
                 hdr.set('onclick', "slidocClassDisplay('"+id_str+"')" )
 
         if clickable_secnum:
-            span_prefix = ElementTree.Element('span', {'class' : 'slidoc-clickable', 'onclick': 'slidocScrollTop();'})
+            span_prefix = ElementTree.Element('a', {'href': '#'+self.get_chapter_id()})
             span_prefix.text = hdr_prefix.strip()
             span_elem = ElementTree.Element('span', {})
             span_elem.text = ' '+hdr.text
@@ -584,7 +602,7 @@ class IPythonRenderer(mistune.Renderer):
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
-        tag_html = '<div class="slidoc-clickable" onclick="slidocToggleInline(this)">%s: <span id="%s" style="display: none;">' % (name.capitalize(), id_str)
+        tag_html = '''<div><span class="slidoc-clickable" onclick="slidocToggleInlineId('%s')">%s:</span> <span id="%s" style="display: none;">''' % (id_str, name.capitalize(), id_str)
 
         if self.options["cmd_args"].index:
             first = True
@@ -592,7 +610,11 @@ class IPythonRenderer(mistune.Renderer):
                 if not first:
                     tag_html += '; '
                 first = False
-                tag_html += '<a href="%s%s#%s" target="_blank">%s</a>' % (self.options['cmd_args'].site_url, self.options['cmd_args'].index, md2md.make_id_from_text(tag), tag)
+                url = '' if self.options['cmd_args'].combine else (self.options['cmd_args'].site_url+self.options['cmd_args'].index)
+                tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
+                tag_html += a_link(tag, self.options['cmd_args'].site_url, self.options['cmd_args'].index,
+                                   hash=tag_hash, combine=self.options['cmd_args'].combine, target='_blank',
+                                   keep_hash=True)
         else:
             tag_html += text
 
@@ -643,22 +665,29 @@ class IPythonRenderer(mistune.Renderer):
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
-    
-def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''):
+def a_link(text, site_url, href, hash='', combine=False, keep_hash=False, target=''):
+    target_str = ' target="%s"' if target else ''
+    if combine:
+        return '''<a href="%s" onclick="slidocGo('%s')">%s</a>'''  % (hash or href, hash or href, text)
+    elif href:
+        return '''<a href="%s%s"%s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, target_str, text)
+    else:
+        return '<span>%s</span>' % text
+
+def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
     renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
 
-    content_html = MarkdownWithMath(renderer=renderer).render(source)
+    content_html = MarkdownWithMath(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
 
     if not cmd_args.noheaders:
         nav_html = ''
-        spacer = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
         if cmd_args.toc:
-            nav_html += '<a href="%s%s">%s</a>%s' % (cmd_args.site_url, cmd_args.toc, 'CONTENTS', spacer)
-        nav_html += ('<a href="%s%s">%s</a>%s' if prev_file else '<span dummy="%s%s">%s</span>%s') % (cmd_args.site_url, prev_file, 'PREV', spacer)
-        nav_html += ('<a href="%s%s">%s</a>%s' if next_file else '<span dummy="%s%s">%s</span>%s') % (cmd_args.site_url, next_file, 'NEXT', spacer)
+            nav_html += a_link('CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
+            nav_html += a_link('PREV', cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
+            nav_html += a_link('NEXT', cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
 
-        content_html += '<p></p>' + '<a href="#%s">%s</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' % (renderer.first_id, 'TOP') + nav_html
+        content_html += '<p></p>' + '<a href="#%s">%s</a>%s' % (renderer.first_id, 'TOP', SPACER) + nav_html
         headers_html = renderer.table_of_contents(filenumber=filenumber)
         if headers_html:
             headers_html = nav_html + headers_html
@@ -673,7 +702,25 @@ def markdown2html_mistune(source, filename, cmd_args, filenumber=0, prev_file=''
 
     file_toc = renderer.table_of_contents(cmd_args.site_url+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, renderer.first_id, renderer.concept_warnings, content_html)
+    return (renderer.file_header or filename, file_toc, renderer.concept_warnings, content_html)
+
+Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html><head>
+'''
+
+Html_mid = '''</head>
+<body>
+'''
+
+Html_footer = '''
+</body></html>
+'''
+
+Toc_header = '''
+<h3>Table of Contents</h3>
+
+'''
+
 
 Mathjax_js = '''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
@@ -686,12 +733,16 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
 
+def chapter_prefix(num, classes=''):
+        return '\n<div id="%(cid)s" class="slidoc-container %(classes)s">\n' % {'num': num, 'cid': make_chapter_id(num), 'classes': classes}
+
 if __name__ == '__main__':
     import argparse
     import md2nb
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
-    parser.add_argument('--crossref', metavar='FILE', help='Cross reference file (default: '')', default='')
+    parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file (default: ""', default='')
+    parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file (default: "")', default='')
     parser.add_argument('--dest_dir', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
     parser.add_argument('--fsize', help='Font size in %% or px (default: 90%%)', default='90%')
@@ -700,7 +751,7 @@ if __name__ == '__main__':
     parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images', default='')
-    parser.add_argument('--index', metavar='FILE', help='index file (default: ind.html)', default='ind.html')
+    parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)', default='ind.html')
     parser.add_argument('--noconcepts', help='Strip concept lists', action="store_true")
     parser.add_argument('--noheaders', help='No clickable list of headers', action="store_true")
     parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
@@ -708,7 +759,7 @@ if __name__ == '__main__':
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
-    parser.add_argument('--qindex', metavar='FILE', help='Question index file (default: qind.html)', default='qind.html')
+    parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', help='Strip answers, concepts, notes, answer slides', action="store_true")
@@ -717,6 +768,8 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
+    if cmd_args.combine:
+        cmd_args.site_url = ''
     if cmd_args.site_url and not cmd_args.site_url.endswith('/'):
         cmd_args.site_url += '/'
     if cmd_args.image_url and not cmd_args.image_url.endswith('/'):
@@ -728,7 +781,7 @@ if __name__ == '__main__':
     dest_dir = cmd_args.dest_dir+"/" if cmd_args.dest_dir else ''
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
-    for tname in ('doc', 'toc', 'reveal'):
+    for tname in ('doc', 'reveal'):
         f = open(scriptdir+'/templates/'+tname+'_template.html')
         templates[tname] = f.read()
         f.close()
@@ -776,9 +829,16 @@ if __name__ == '__main__':
     nb_converter_args = md2nb.Args_obj.create_args(None, site_url=cmd_args.site_url,
                                                          norule=cmd_args.norule,
                                                          noconcepts=True)
+    index_id = make_chapter_id(len(cmd_args.file)+1)
+    qindex_id = make_chapter_id(len(cmd_args.file)+2)
+    back_to_contents = a_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
+                              combine=cmd_args.combine)+'<p></p>\n'
+
     flist = []
     all_concept_warnings = []
+    combined_html = []
     fprefix = None
+    math_found = False
     for j, f in enumerate(cmd_args.file):
         filepath = f.name
         md_text = f.read()
@@ -793,8 +853,14 @@ if __name__ == '__main__':
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
         fname = fnames[j]
-        prev_file = fnames[j-1]+".html" if j > 0 else ''
-        next_file = fnames[j+1]+".html" if j < len(cmd_args.file)-1 else ''
+        if j > 0:
+            prev_file = '#'+make_chapter_id(j) if cmd_args.combine else fnames[j-1]+".html"
+        else:
+            prev_file = ''
+        if j < len(cmd_args.file)-1:
+            next_file = '#'+make_chapter_id(j+2) if cmd_args.combine else fnames[j+1]+".html"
+        else:
+            next_file = ''
 
         if fprefix == None:
             fprefix = fname
@@ -810,22 +876,40 @@ if __name__ == '__main__':
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        fheader, file_toc, first_id, concept_warnings, md_html = markdown2html_mistune(md_text, filename=fname, cmd_args=cmd_args,
-                                                                     filenumber=filenumber, prev_file=prev_file, next_file=next_file)
+        fheader, file_toc, concept_warnings, md_html = md2html(md_text, filename=fname, cmd_args=cmd_args,
+                                                               filenumber=filenumber, prev_file=prev_file,
+                                                               next_file=next_file,
+                                                               index_id=index_id, qindex_id=qindex_id)
 
         all_concept_warnings += concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
 
-        doc_params = {'body_style': style_str, 'math_js': Mathjax_js if '$$' in md_text else '',
-                      'first_id': first_id, 'content': md_html }
+        math_in_file = '$$' in md_text or ('`$' in md_text and '$`' in md_text)
+        if math_in_file:
+            math_found = True
+        
+        doc_params = {'body_style': style_str, 'math_js': Mathjax_js if math_in_file else ''}
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
-            out = open(dest_dir+outname, "w")
-            out.write(templates['doc'] % doc_params)
-            out.close()
-            print("Created ", outname+":", fheader, file=sys.stderr)
+            md_prefix = chapter_prefix(j+1, 'slidoc-reg-chapter')
+            md_suffix = '</div>\n'
+            if cmd_args.combine:
+                combined_html.append(md_prefix)
+                combined_html.append(md_html)
+                combined_html.append(md_suffix)
+            else:
+                out = open(dest_dir+outname, "w")
+                out.write(Html_header)
+                out.write(templates['doc'] % doc_params)
+                out.write(Html_mid)
+                out.write(md_prefix)
+                out.write(md_html)
+                out.write(md_suffix)
+                out.write(Html_footer)
+                out.close()
+                print("Created ", outname+":", fheader, file=sys.stderr)
 
             if cmd_args.slides:
                 sfilename = fname+"-slides.html"
@@ -854,7 +938,7 @@ if __name__ == '__main__':
 
         toc_html = []
         if cmd_args.index:
-            toc_html.append('<a href="%s%s" target="_blank">%s</a><br>\n' % (cmd_args.site_url, cmd_args.index, 'INDEX'))
+            toc_html.append(a_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id, combine=cmd_args.combine))
         toc_html.append('<blockquote>\n')
         toc_html.append('<ol>\n' if cmd_args.nosections else '<ul style="list-style-type: none;">\n')
         ifile = 0
@@ -867,10 +951,10 @@ if __name__ == '__main__':
             nb_link = ''
             if cmd_args.notebook and cmd_args.site_url.startswith('http://'):
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, cmd_args.site_url[len('http://'):], fname, 'notebook')
-            doc_link = '<a href="%s%s">%s</a>' % (cmd_args.site_url, outname, 'document')
+            doc_link = a_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile), combine=cmd_args.combine)
 
             toggle_link = '<a class="slidoc-clickable" onclick="slidocIdDisplay(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
-            toc_html.append('<li>%s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(<em>%s%s%s</em>)</li>\n' % (toggle_link, doc_link, slide_link, nb_link))
+            toc_html.append('<li>%s%s(<em>%s%s%s</em>)</li>\n' % (toggle_link, SPACER, doc_link, slide_link, nb_link))
 
             f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
             toc_html.append(f_toc_html)
@@ -883,29 +967,42 @@ if __name__ == '__main__':
             toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
 
         if not cmd_args.dry_run:
-            tocfile = open(dest_dir+cmd_args.toc, 'w')
-            toc_params = {}
-            toc_params.update(doc_params)
-            toc_params.update( {'insert': header_insert, 'content': ''.join(toc_html)} )
-            tocfile.write(templates['toc'] % toc_params)
-            tocfile.close()
-            print("Created ToC in", cmd_args.toc, file=sys.stderr)
+            toc_insert = '''<a href="#" onclick="slidocClassDisplay('slidoc-toc-entry');">Show all sections</a>'''
+            if cmd_args.combine:
+                toc_insert += SPACER + '''<a href="#" onclick="slidocAllDisplay(this);">Open all chapters</a>'''
+            toc_output = chapter_prefix(0, 'slidoc-toc-container')+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
+            if cmd_args.combine:
+                combined_html = [toc_output] + combined_html
+            else:
+                tocfile = open(dest_dir+cmd_args.toc, 'w')
+                tocfile.write(Html_header)
+                tocfile.write(templates['doc'] % doc_params)
+                tocfile.write(Html_mid)
+                tocfile.write(toc_output)
+                tocfile.write(Html_footer)
+                tocfile.close()
+                print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
+    indexfile = None
     if cmd_args.index:
-        first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.site_url, cmd_args.index)
+        first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.site_url, fprefix=fprefix, index_id=index_id, index_file='' if cmd_args.combine else cmd_args.index)
         if not cmd_args.dry_run:
-            indexfile = open(dest_dir+cmd_args.index, 'w')
-            if cmd_args.toc:
-                indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.toc, 'BACK TO CONTENTS'))
+            index_html= ' <b>CONCEPT</b>\n' + index_html
             if cmd_args.qindex:
-                indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.qindex, 'QUESTION INDEX'))
-            indexfile.write('<b>CONCEPT</b>\n')
-            indexfile.write(index_html)
+                index_html = a_link('QUESTION INDEX', cmd_args.site_url, cmd_args.qindex, hash='#'+qindex_id) + '<p></p>\n' + index_html
+            if cmd_args.crossref:
+                index_html = ('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
-        if not cmd_args.site_url.startswith('http'):
+            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container') + back_to_contents +'<p></p>' + index_html + '</div>\n'
+            if cmd_args.combine:
+                combined_html.append(index_output)
+            else:
+                indexfile = open(dest_dir+cmd_args.index, 'w')
+                indexfile.write(index_output)
+
+        if cmd_args.crossref:
             # Create crossref file only if not public web site
-            xref_file = 'xref.html'
-            crossfile = open(dest_dir+xref_file, 'w')
+            crossfile = open(dest_dir+cmd_args.crossref, 'w')
             if cmd_args.toc:
                 crossfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.toc, 'BACK TO CONTENTS'))
             print("Concepts cross-reference (file prefix: "+fprefix+")<p></p>", file=crossfile)
@@ -926,28 +1023,26 @@ if __name__ == '__main__':
             if all_concept_warnings:
                 crossfile.write('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
             crossfile.close()
-            print("Created crossref in", xref_file, file=sys.stderr)
-            if not cmd_args.dry_run:
-                indexfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, xref_file, 'CROSS-REFERENCING'))
+            print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
-        if not cmd_args.dry_run:
+        if indexfile:
             indexfile.close()
             print("Created index in", cmd_args.index, file=sys.stderr)
 
     if cmd_args.qindex and Global.first_qtags:
         import itertools
         qout_list = []
-        if cmd_args.toc:
-            qout_list.append('<a href="%s%s">%s</a><p></p>' % (cmd_args.site_url, cmd_args.toc, 'BACK TO CONTENTS'))
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
-        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, cmd_args.qindex)
+        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
         qout_list.append(qindex_html)
         qout_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant that explores all the same concepts.</p>\n')
         qout_list.append('<ul style="list-style-type: none;">\n')
 
         for fname, slide_id, header, qnumber, concept_id in Global.questions.values():
             q_id = make_file_id(fname, slide_id)
-            qout_list.append('<li><a href="%s%s.html#%s">%s: %s</a>: ' % (cmd_args.site_url, fname, slide_id, make_q_label(fname, qnumber, fprefix), header))
+            qout_list.append('<li>'+a_link(make_q_label(fname, qnumber, fprefix)+': '+header,
+                                           cmd_args.site_url, fname+'.html', hash='#'+slide_id,
+                                           combine=cmd_args.combine, keep_hash=True))
             ctags = concept_id.split(';')
             n = len(ctags)
             for m in range(n):
@@ -959,13 +1054,30 @@ if __name__ == '__main__':
                     for sub_fname, sub_slide_id, sub_header, sub_qnumber, sub_concept_id in Global.concept_questions.get(sub_concept_id, []):
                         sub_q_id = make_file_id(sub_fname, sub_slide_id)
                         if sub_q_id != q_id:
-                            qout_list.append('<a href="%s%s.html#%s">%s</a><sup>%s</sup>, ' % (cmd_args.site_url, sub_fname, sub_slide_id, make_q_label(sub_fname, sub_qnumber, fprefix), sub_num))
-                
+                            qout_list.append(a_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
+                                                    cmd_args.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
+                                                    combine=cmd_args.combine, keep_hash=True)
+                                                    + ('<sup>%s</sup>, ' % sub_num) )
+
             qout_list.append('</li>\n')
         qout_list.append('</ul>\n')
+        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container') + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
         if not cmd_args.dry_run:
-            qindexfile = open(dest_dir+cmd_args.qindex, 'w')
-            qindexfile.write(''.join(qout_list))
-            qindexfile.close()
-            print("Created qindex in", cmd_args.qindex, file=sys.stderr)
+            if cmd_args.combine:
+                combined_html.append(qindex_output)
+            else:
+                qindexfile = open(dest_dir+cmd_args.qindex, 'w')
+                qindexfile.write(qindex_output)
+                qindexfile.close()
+                print("Created qindex in", cmd_args.qindex, file=sys.stderr)
 
+if cmd_args.combine:
+    comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
+    comb_file = open(dest_dir+cmd_args.combine, 'w')
+    comb_file.write(Html_header)
+    comb_file.write(templates['doc'] % comb_params)
+    comb_file.write(Html_mid)
+    comb_file.write('\n'.join(combined_html))
+    comb_file.write(Html_footer)
+    comb_file.close()
+    print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)
