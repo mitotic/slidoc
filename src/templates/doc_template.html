@@ -255,7 +255,7 @@
          var tagconceptref = slidocGetParameter('tagconceptref', false, queryStr) || '';
          var taglist = (slidocGetParameter('taglist', false, queryStr) || '').split(";");
 
-         if (tagindex && taglist.length > 1) {
+         if (tagindex) {
              ichain_elem.style.display = 'block';
              var concept_elem = document.getElementById(tagid+"-ichain-concept");
              concept_elem.text = tagconcept;

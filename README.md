@@ -119,18 +119,23 @@ The above example creates a new file `doc-modified.md` with concept lists and
 notes stripped out.
 
 Notes: Other supported operations include:
-`--fence|--unfence`: Convert fenced code to indented code and vice versa
 
-`--images=check,web`: Check that all image references in the document are
+- `--fence|--unfence`: Convert fenced code to indented code and vice versa
+
+- `--images=check,web`: Check that all image references in the document are
 valid, including web references.
 
-`--images=copy --dest_dir=...`: Copy all image references to
+- `--images=copy --dest_dir=...`: Copy all image references to
 destination
 
-`--images=import,web`: Import all image references into the document
+- `--images=import,web`: Import all image references into the document
 as data URLs (including web URLs)
 
-`--images=export,embed`: Export all data URLs from document as local
+- `--images=import,web,embed --combine=all.html`: Import all image
+references, embed them as data URLs and create a single, large,
+self-contained HTML document.
+
+- `--images=export,embed`: Export all data URLs from document as local
 files, and convert all Markdown image references to HTML `<img>` tags.
 
 ---

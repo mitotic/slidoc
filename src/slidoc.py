@@ -966,6 +966,8 @@ if __name__ == '__main__':
         if cmd_args.slides:
             toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
 
+        toc_html.append('<p></p><em>Document formatted by <a href="https://github.com/mitotic/slidoc">slidoc</a>.</em><p></p>')
+
         if not cmd_args.dry_run:
             toc_insert = '''<a href="#" onclick="slidocClassDisplay('slidoc-toc-entry');">Show all sections</a>'''
             if cmd_args.combine:
@@ -984,6 +986,7 @@ if __name__ == '__main__':
                 print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
     indexfile = None
+    xref_list = []
     if cmd_args.index:
         first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.site_url, fprefix=fprefix, index_id=index_id, index_file='' if cmd_args.combine else cmd_args.index)
         if not cmd_args.dry_run:
@@ -1001,17 +1004,15 @@ if __name__ == '__main__':
                 indexfile.write(index_output)
 
         if cmd_args.crossref:
-            # Create crossref file only if not public web site
-            crossfile = open(dest_dir+cmd_args.crossref, 'w')
             if cmd_args.toc:
-                crossfile.write('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.toc, 'BACK TO CONTENTS'))
-            print("Concepts cross-reference (file prefix: "+fprefix+")<p></p>", file=crossfile)
-            print("\nConcepts -> files mapping:<br>", file=crossfile)
+                xref_list.append('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.toc, 'BACK TO CONTENTS'))
+            xref_list.append("<h3>Concepts cross-reference (file prefix: "+fprefix+")</h3><p></p>")
+            xref_list.append("\n<b>Concepts -> files mapping:</b><br>")
             for tag in first_references:
                 links = ['<a href="%s%s.html#%s" target="_blank">%s</a>' % (cmd_args.site_url, slide_file, slide_id, slide_file[len(fprefix):] or slide_file) for slide_file, slide_id, slide_header in first_references[tag]]
-                print("%-32s:" % tag, ', '.join(links), '<br>', file=crossfile)
+                xref_list.append(("%-32s:" % tag)+', '.join(links)+'<br>')
 
-            print("<p></p>First concepts in each file:<br>", file=crossfile)
+            xref_list.append("<p></p><b>First concepts in each file:</b><br>")
             for fname, outname, fheader, file_toc in flist:
                 clist = covered_first[fname].keys()
                 clist.sort()
@@ -1019,11 +1020,9 @@ if __name__ == '__main__':
                 for ctag in clist:
                     slide_id, slide_header = covered_first[fname][ctag]
                     tlist.append( '<a href="%s%s.html#%s" target="_blank">%s</a>' % (cmd_args.site_url, fname, slide_id, ctag) )
-                print('%-24s:' % fname[len(fprefix):], '; '.join(tlist), '<br>', file=crossfile)
+                xref_list.append(('%-24s:' % fname[len(fprefix):])+'; '.join(tlist)+'<br>')
             if all_concept_warnings:
-                crossfile.write('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
-            crossfile.close()
-            print("Created crossref in", cmd_args.crossref, file=sys.stderr)
+                xref_list.append('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
 
         if indexfile:
             indexfile.close()
@@ -1035,32 +1034,7 @@ if __name__ == '__main__':
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
         first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
         qout_list.append(qindex_html)
-        qout_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant that explores all the same concepts.</p>\n')
-        qout_list.append('<ul style="list-style-type: none;">\n')
 
-        for fname, slide_id, header, qnumber, concept_id in Global.questions.values():
-            q_id = make_file_id(fname, slide_id)
-            qout_list.append('<li>'+a_link(make_q_label(fname, qnumber, fprefix)+': '+header,
-                                           cmd_args.site_url, fname+'.html', hash='#'+slide_id,
-                                           combine=cmd_args.combine, keep_hash=True))
-            ctags = concept_id.split(';')
-            n = len(ctags)
-            for m in range(n):
-                for subtags in itertools.combinations(ctags, n-m):
-                    subtags = list(subtags)
-                    subtags.sort()
-                    sub_concept_id = ';'.join(subtags)
-                    sub_num = str(n-m) if m else '*'
-                    for sub_fname, sub_slide_id, sub_header, sub_qnumber, sub_concept_id in Global.concept_questions.get(sub_concept_id, []):
-                        sub_q_id = make_file_id(sub_fname, sub_slide_id)
-                        if sub_q_id != q_id:
-                            qout_list.append(a_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
-                                                    cmd_args.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
-                                                    combine=cmd_args.combine, keep_hash=True)
-                                                    + ('<sup>%s</sup>, ' % sub_num) )
-
-            qout_list.append('</li>\n')
-        qout_list.append('</ul>\n')
         qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container') + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
         if not cmd_args.dry_run:
             if cmd_args.combine:
@@ -1071,13 +1045,47 @@ if __name__ == '__main__':
                 qindexfile.close()
                 print("Created qindex in", cmd_args.qindex, file=sys.stderr)
 
-if cmd_args.combine:
-    comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
-    comb_file = open(dest_dir+cmd_args.combine, 'w')
-    comb_file.write(Html_header)
-    comb_file.write(templates['doc'] % comb_params)
-    comb_file.write(Html_mid)
-    comb_file.write('\n'.join(combined_html))
-    comb_file.write(Html_footer)
-    comb_file.close()
-    print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)
+        if cmd_args.crossref:
+            xref_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant question that explores all the same concepts as the original question. Numeric superscript indicates the number of concepts in the sub-question shared with the original question.</p>\n')
+            xref_list.append('<ul style="list-style-type: none;">\n')
+            xref_list.append('<li><em><b>Original question:</b> Sub-question1, Sub-question2, ...</em></li>')
+            for fname, slide_id, header, qnumber, concept_id in Global.questions.values():
+                q_id = make_file_id(fname, slide_id)
+                xref_list.append('<li><b>'+a_link(make_q_label(fname, qnumber, fprefix)+': '+header,
+                                               cmd_args.site_url, fname+'.html', hash='#'+slide_id,
+                                               combine=cmd_args.combine, keep_hash=True)+'</b>: ')
+                ctags = concept_id.split(';')
+                n = len(ctags)
+                for m in range(n):
+                    for subtags in itertools.combinations(ctags, n-m):
+                        subtags = list(subtags)
+                        subtags.sort()
+                        sub_concept_id = ';'.join(subtags)
+                        sub_num = str(n-m) if m else '*'
+                        for sub_fname, sub_slide_id, sub_header, sub_qnumber, sub_concept_id in Global.concept_questions.get(sub_concept_id, []):
+                            sub_q_id = make_file_id(sub_fname, sub_slide_id)
+                            if sub_q_id != q_id:
+                                xref_list.append(a_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
+                                                        cmd_args.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
+                                                        combine=cmd_args.combine, keep_hash=True)
+                                                        + ('<sup>%s</sup>, ' % sub_num) )
+
+                xref_list.append('</li>\n')
+            xref_list.append('</ul>\n')
+
+    if cmd_args.crossref:
+        crossfile = open(dest_dir+cmd_args.crossref, 'w')
+        crossfile.write(''.join(xref_list))
+        crossfile.close()
+        print("Created crossref in", cmd_args.crossref, file=sys.stderr)
+
+    if cmd_args.combine:
+        comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
+        comb_file = open(dest_dir+cmd_args.combine, 'w')
+        comb_file.write(Html_header)
+        comb_file.write(templates['doc'] % comb_params)
+        comb_file.write(Html_mid)
+        comb_file.write('\n'.join(combined_html))
+        comb_file.write(Html_footer)
+        comb_file.close()
+        print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)

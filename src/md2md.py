@@ -522,7 +522,7 @@ class Parser(object):
             if not title:
                 new_title = file_attr
             else:
-                new_title += ' ' + file_attr
+                new_title = ' ' + file_attr
         else:
             new_title = title
 
