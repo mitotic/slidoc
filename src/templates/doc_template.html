@@ -8,12 +8,61 @@
     .slidoc-notes { padding: 0px 1em; font-size: 90%%; }
     .slidoc-notes p {margin: 0.3em 0;}
     .slidoc-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
+    .slidoc-clickable-sym { padding: 0.3em 0 0 0; color: blue; }
     .slidoc-clickable.slidoc-toc-entry { padding: 0.3em 0 0 1em; }
+
+    a.slidoc-clickable-sym { text-decoration: none; }
+
+    body.slidoc-slide-view { font-size: 150%%; }
+
+    body.slidoc-slide-view .slidoc-noslide
+          { display: none; }
+    body:not(.slidoc-slide-view) .slidoc-slideonly
+          { display: none; }
+
+    .slidoc-slide-nav { z-index: 1000; position: fixed; right: 15px; bottom: 10px; }
+    .slidoc-slide-view-button { z-index: 1000; position: fixed; right: 15px; bottom: 10px; }
   </style>
 
  %(math_js)s
 
   <script>
+     var Slidoc = {};
+     Slidoc.questions_answered = {};
+     Slidoc.questions_count = 0;
+     Slidoc.questions_correct = 0;
+
+     Slidoc.chainQuery = '';
+     Slidoc.showAll = false;
+     Slidoc.slideView = 0;
+     Slidoc.curChapterId = '';
+
+     document.onkeydown = function(evt) {
+        if (!Slidoc.slideView)
+          return;
+        switch (evt.keyCode) {
+            case 27:  // Escape
+                slidocSlideViewEnd();
+                break;
+            case 35:  // End
+                slidocSlideViewGo(false,slidocGetVisibleSlides().length);
+                break;
+            case 36:  // Home
+                slidocSlideViewGo(false,1);
+                break;
+            case 37:  // Left arrow
+                slidocSlideViewGo(false);
+                break;
+            case 38: // Up arrow
+                break;
+            case 39: // Right arrow
+                slidocSlideViewGo(true);
+                break;
+            case 40: // Down arrow
+                break;
+        }
+     };
+
      function slidocGetBaseURL() {
      return (location.pathname.slice(-1)=='/') ? location.pathname : location.pathname.split('/').slice(0,-1).join('/');
      }
@@ -31,15 +80,27 @@
         return value;
      }
 
+     function slidocHide(elem, className) {
+        if (elem.text.charAt(0) == 'H') {
+           elem.text = elem.text.replace('Hide', 'Show');
+           if (className) slidocClassDisplay(className, 'none');
+        } else {
+           elem.text = elem.text.replace('Show', 'Hide');
+           if (className) slidocClassDisplay(className, 'block');
+        }
+        return false;
+     }
+
      function slidocAllDisplay(elem) {
         // Display all "chapters"
-        var elements = document.getElementsByClassName('slidoc-container');
-        var displayVal = (document.getElementById('slidoc01').style.display == 'block') ? 'none' : 'block';
-        for (var i = 0; i < elements.length; ++i) {
-           elements[i].style.display = displayVal;
-        }
+        slidocHide(elem);
         Slidoc.showAll = !Slidoc.showAll;
-        slidocGo('#slidoc00');
+        var elements = document.getElementsByClassName('slidoc-container');
+        for (var i = 0; i < elements.length; ++i) {
+           elements[i].style.display= Slidoc.showAll ? null : 'none';
+        }
+        if (Slidoc.showAll) Slidoc.curChapterId = '';
+        if (!Slidoc.showAll) slidocGo('#slidoc00');
         return false;
      }
 
@@ -141,6 +202,72 @@
         return false;
      }
 
+     function slidocGetVisibleSlides() {
+        var slideClass = 'slidoc-slide';
+        if (Slidoc.curChapterId) {
+           var curChap = document.getElementById(Slidoc.curChapterId);
+           if (curChap.classList.contains('slidoc-noslide'))
+             return null;
+           slideClass = Slidoc.curChapterId+'-slide';
+        }
+        return document.getElementsByClassName(slideClass);
+     }
+
+
+     function slidocSlideViewStart() {
+        if (Slidoc.slideView) 
+           return false;
+        var slides = slidocGetVisibleSlides();
+        if (!slides)
+           return false;
+        Slidoc.slideView = 1;
+        for (var i=0; i<slides.length; ++i) {
+            var topOffset = slides[i].getBoundingClientRect().top;
+            if (topOffset >= 0 && topOffset < window.innerHeight) {
+               Slidoc.slideView = i+1;
+               break;
+            }
+        }
+        slidocClassDisplay('slidoc-notes', 'none');
+        document.body.classList.add('slidoc-slide-view');
+
+        slidocSlideViewGo(false, Slidoc.slideView);
+        return false;
+     }
+
+     function slidocSlideViewEnd() {
+        document.body.classList.remove('slidoc-slide-view');
+        slidocClassDisplay('slidoc-slide', 'block');
+        slidocClassDisplay('slidoc-notes', 'block');
+        var slides = slidocGetVisibleSlides();
+        if (slides && Slidoc.slideView > 0 && Slidoc.slideView <= slides.length) {
+          location.href = '#'+slides[Slidoc.slideView-1].id;
+        }
+        Slidoc.slideView = 0;
+        return false;
+     }
+
+     function slidocSlideViewGo(forward, slide_num) {
+        console.log('slidocSlideViewGo:', forward, slide_num);
+        if (!Slidoc.slideView)
+           return false;
+        if (!slide_num) slide_num = forward ? Slidoc.slideView+1 : Slidoc.slideView-1;
+        var slides = slidocGetVisibleSlides();
+        if (!slides || slide_num < 1 || slide_num > slides.length)
+           return false;
+
+        var prev_elem = document.getElementById('slidoc-slide-nav-prev');
+        var next_elem = document.getElementById('slidoc-slide-nav-next');
+        prev_elem.style.visibility = (slide_num == 1) ? 'hidden' : 'visible';
+        next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
+
+        slidocClassDisplay('slidoc-slide', 'none');
+        slides[slide_num-1].style.display = 'block';
+        Slidoc.slideView = slide_num;
+        location.href = '#'+slides[Slidoc.slideView-1].id;
+        return false;
+     }
+
      function slidocGo(slideHash, chained) {
         // Scroll to slide with slideHash, hiding current chapter and opening new one
         // If chained, hide previos link and set up new link
@@ -164,11 +291,14 @@
             if (match && !Slidoc.showAll) {
               // Hide all and expose next slide
               var chapnum = parseInt(match[1]);
+              Slidoc.curChapterId = 'slidoc'+match[1];
               var chapters = document.getElementsByClassName('slidoc-container');
               for (var i = 0; i < chapters.length; ++i) {
                  chapters[i].style.display = (i == chapnum) ? 'block' : 'none';
               }
-            }         
+            } else {
+              Slidoc.curChapterId = '';
+            }
             location.hash = slideHash;
 
             if (chained && Slidoc.chainQuery)  // Set up new chain link
@@ -223,14 +353,6 @@
         return false;
      }
 
-     var Slidoc = {};
-     Slidoc.questions_answered = {};
-     Slidoc.questions_count = 0;
-     Slidoc.questions_correct = 0;
-
-     Slidoc.chainQuery = '';
-     Slidoc.showAll = false;
-
      function slidocReady(event) {
         console.log("slidocReady:");
         slidocChainUpdate(location.search);
@@ -268,27 +390,27 @@
              if (tagindex > 1) {
                 if (Slidoc.chainQuery) {
                     prev_elem.onclick = function() {slidocChainNav(tagindex-1);}
-                    prev_elem.classList.add("slidoc-clickable");
+                    prev_elem.classList.add("slidoc-clickable-sym");
                 } else {
                   prev_elem.href = slidocChainURL(tagindex-1);
                 }
              } else {
                 delete prev_elem.href;
                 delete prev_elem.onclick;
-                prev_elem.classList.remove("slidoc-clickable");
+                prev_elem.classList.remove("slidoc-clickable-sym");
              }
              var next_elem = document.getElementById(tagid+"-ichain-next");
              if (tagindex < taglist.length) {
                 if (Slidoc.chainQuery) {
                     next_elem.onclick = function() {slidocChainNav(tagindex+1);}
-                    next_elem.classList.add("slidoc-clickable");
+                    next_elem.classList.add("slidoc-clickable-sym");
                 } else {
                    next_elem.href = slidocChainURL(tagindex+1);
                 }
              } else {
                 delete next_elem.href;
                 delete next_elem.onclick;
-                next_elem.classList.remove("slidoc-clickable");
+                next_elem.classList.remove("slidoc-clickable-sym");
              }
          }
      console.log("slidocChainUpdate:4", location.hash);

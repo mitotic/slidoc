@@ -215,7 +215,7 @@ Concepts: questions; concept list
 ### Slide with answer
 
 Level 3 header will not be listed in table of contents. The `--hide=[Aa]nswer`
-can be used to hide this answer slide. The `--strip`` option will
+can be used to hide this answer slide. The `--strip` option will
 remove it completely.
 
 ---
@@ -553,6 +553,8 @@ D.. ``Option 4a`` or
 perhaps ``Option 4b``
 
 Answer: choice
+
+Notes: Some info on the correct response.
 
 ---
 

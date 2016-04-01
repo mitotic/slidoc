@@ -308,7 +308,7 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        return ('<p id="%s"></p>\n' % self.renderer.first_id)+html+self.renderer.end_notes()+self.renderer.end_hide()
+        return slide_prefix(self.renderer.first_id)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div><!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -372,15 +372,18 @@ class IPythonRenderer(mistune.Renderer):
         self._new_slide()
 
         hide_prefix = self.end_hide()
-        slide_id = self.get_slide_id()
-        if self.options["cmd_args"].norule or (self.options["cmd_args"].strip and hide_prefix):
-            html = '<p id="%s"></p>' % slide_id
-        elif self.options.get('use_xhtml'):
-            html = '<hr id="%s"/>\n' % slide_id
-        else:
-            html = '<hr id="%s">\n' % slide_id
+        new_slide_id = self.get_slide_id()
 
-        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">PREV</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">NEXT</a></div>' % {'sid': slide_id, 'ixfilepfx':self.options["cmd_args"].site_url+'/'}
+        if self.options["cmd_args"].norule or (self.options["cmd_args"].strip and hide_prefix):
+            html = ''
+        elif self.options.get('use_xhtml'):
+            html = '<hr class="slidoc-noslide"/>\n'
+        else:
+            html = '<hr class="slidoc-noslide">\n'
+
+        html += '</div><!--slide end-->\n' + slide_prefix(new_slide_id)
+            
+        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">&#9668;</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">&#9658;</a></div>' % {'sid': new_slide_id, 'ixfilepfx':self.options["cmd_args"].site_url+'/'}
 
         return self.end_notes()+hide_prefix+html
     
@@ -452,11 +455,13 @@ class IPythonRenderer(mistune.Renderer):
                 hdr.set('onclick', "slidocClassDisplay('"+id_str+"')" )
 
         if clickable_secnum:
-            span_prefix = ElementTree.Element('a', {'href': '#'+self.get_chapter_id()})
+            span_prefix = ElementTree.Element('a', {'href': '#'+self.get_chapter_id(), 'class': 'slidoc-noslide'})
             span_prefix.text = hdr_prefix.strip()
             span_elem = ElementTree.Element('span', {})
-            span_elem.text = ' '+hdr.text
+            span_elem.text = ' '+ text
             hdr.text = ''
+            for child in list(hdr):
+                hdr.remove(child)
             hdr.append(span_prefix)
             hdr.append(span_elem)
         elif hdr_prefix:
@@ -507,8 +512,11 @@ class IPythonRenderer(mistune.Renderer):
 
         self.cur_choice = name
 
-        id_str = self.get_slide_id()
-        return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="slidocChoiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % {'id': id_str, 'opt': name, 'qno': self.question_number}
+        params = {'id': self.get_slide_id(), 'opt': name, 'qno': self.question_number}
+        if self.options['cmd_args'].hide:
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="slidocChoiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % params
+        else:
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice">%(opt)s</span>. ''' % params
 
     
     def slidoc_answer(self, name, text):
@@ -522,18 +530,26 @@ class IPythonRenderer(mistune.Renderer):
             choice_prefix = self.choice_end
             self.choice_end = ''
 
+        if text.lower() in ('choice', 'multichoice', 'number', 'text', 'point', 'line'):
+            # Unspecified answer
+            if not self.cur_qtype:
+                self.cur_qtype = text.lower()
+                self.question_number += 1
+            elif self.cur_qtype != text.lower():
+                print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], text, self.cur_qtype), file=sys.stderr)
+
+            text = ''
+
         if not self.cur_qtype:
             self.question_number += 1
 
-            if text.lower() in ('choice', 'multichoice', 'number', 'text', 'point', 'line'):
-                self.cur_qtype = text.lower()
-                text = ''
-            elif len(text) == 1 and text.isalpha():
+            # Determine question type from answer
+            if len(text) == 1 and text.isalpha():
                 self.cur_qtype = 'choice'
             elif text and text[0].isdigit():
                 self.cur_qtype = 'number'
             else:
-                self.cur_qtype = 'text'
+                self.cur_qtype = 'text'    # Default answer type
 
         if self.options['cmd_args'].strip or not text:
             # Strip correct answers
@@ -602,7 +618,7 @@ class IPythonRenderer(mistune.Renderer):
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
-        tag_html = '''<div><span class="slidoc-clickable" onclick="slidocToggleInlineId('%s')">%s:</span> <span id="%s" style="display: none;">''' % (id_str, name.capitalize(), id_str)
+        tag_html = '''<div><span class="slidoc-clickable slidoc-noslide" onclick="slidocToggleInlineId('%s')">%s:</span> <span id="%s" style="display: none;">''' % (id_str, name.capitalize(), id_str)
 
         if self.options["cmd_args"].index:
             first = True
@@ -631,14 +647,14 @@ class IPythonRenderer(mistune.Renderer):
         disp_block = 'none' if self.cur_answer else 'block'
         prefix, suffix, end_str = self.start_block(id_str, display=disp_block, style='slidoc-notes')
         self.notes_end = end_str
-        return prefix + ('''<a id="%s" class="slidoc-clickable" onclick="slidocClassDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
+        return prefix + ('''<br><a id="%s" class="slidoc-clickable" onclick="slidocClassDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
 
 
     def table_of_contents(self, filepath='', filenumber=0):
         if len(self.header_list) < 1:
             return ''
 
-        toc = ['<ul style="list-style-type: none;">' if filenumber else '<ol>']
+        toc = ['<ul class="slidoc-noslide" style="list-style-type: none;">' if filenumber else '<ol>']
 
         for id_str, header in self.header_list:  # Skip first header
             elem = ElementTree.Element("a", {"class" : "header-link", "href" : filepath+"#"+id_str})
@@ -666,11 +682,13 @@ class IPythonRenderer(mistune.Renderer):
         return highlight(code, lexer, formatter)
 
 def a_link(text, site_url, href, hash='', combine=False, keep_hash=False, target=''):
-    target_str = ' target="%s"' if target else ''
+    extras = ' target="%s"' if target else ''
+    if text.startswith('&'):
+        extras += ' class="slidoc-clickable-sym"'
     if combine:
-        return '''<a href="%s" onclick="slidocGo('%s')">%s</a>'''  % (hash or href, hash or href, text)
+        return '''<a href="%s" onclick="slidocGo('%s')"%s>%s</a>'''  % (hash or href, hash or href, extras, text)
     elif href:
-        return '''<a href="%s%s"%s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, target_str, text)
+        return '''<a href="%s%s"%s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, extras, text)
     else:
         return '<span>%s</span>' % text
 
@@ -683,16 +701,16 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
     if not cmd_args.noheaders:
         nav_html = ''
         if cmd_args.toc:
-            nav_html += a_link('CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
-            nav_html += a_link('PREV', cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
-            nav_html += a_link('NEXT', cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
+            nav_html += a_link('&#8617;', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
+            nav_html += a_link('&#9668;', cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
+            nav_html += a_link('&#9658;', cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
 
-        content_html += '<p></p>' + '<a href="#%s">%s</a>%s' % (renderer.first_id, 'TOP', SPACER) + nav_html
+        content_html += '<div class="slidoc-noslide">' + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, '&#9650;', SPACER) + nav_html + '</div>\n'
         headers_html = renderer.table_of_contents(filenumber=filenumber)
         if headers_html:
-            headers_html = nav_html + headers_html
+            headers_html = '<div class="slidoc-noslide">'+nav_html+'<span class="slidoc-clickable-sym" onclick="slidocSlideViewStart();">&#9635;</span></div>\n' + headers_html
             if 'slidoc-notes' in content_html:
-                headers_html += '<p></p><a href="#" onclick="slidocClassDisplay('+"'slidoc-notes'"+');">Hide all notes</a>'
+                headers_html += '<p></p><a href="#" onclick="slidocHide(this,'+"'slidoc-notes'"+');">Hide all notes</a>'
 
         content_html = content_html.replace('__HEADER_LIST__', headers_html)
 
@@ -710,6 +728,9 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 
 Html_mid = '''</head>
 <body>
+<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym"><span id="slidoc-slide-nav-prev" onclick="slidocSlideViewGo(false);">&#9668;</span> &nbsp;&nbsp; <span onclick="slidocSlideViewEnd();">&#9673;</span> &nbsp;&nbsp; <span id="slidoc-slide-nav-next" onclick="slidocSlideViewGo(true);">&#9658;</span></div>
+<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-noslide slidoc-clickable-sym"><span onclick="slidocSlideViewStart();">&#9635;</span> </div>
+
 '''
 
 Html_footer = '''
@@ -734,7 +755,11 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 '''
 
 def chapter_prefix(num, classes=''):
-        return '\n<div id="%(cid)s" class="slidoc-container %(classes)s">\n' % {'num': num, 'cid': make_chapter_id(num), 'classes': classes}
+    return '\n<div id="%s" class="slidoc-container %s"> <!--chapter start-->\n' % (make_chapter_id(num), classes)
+
+def slide_prefix(slide_id, classes=''):
+    chapter_id, sep, _ = slide_id.partition('-')
+    return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
 
 if __name__ == '__main__':
     import argparse
@@ -971,8 +996,8 @@ if __name__ == '__main__':
         if not cmd_args.dry_run:
             toc_insert = '''<a href="#" onclick="slidocClassDisplay('slidoc-toc-entry');">Show all sections</a>'''
             if cmd_args.combine:
-                toc_insert += SPACER + '''<a href="#" onclick="slidocAllDisplay(this);">Open all chapters</a>'''
-            toc_output = chapter_prefix(0, 'slidoc-toc-container')+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
+                toc_insert += SPACER + '''<a href="#" onclick="slidocAllDisplay(this);">Show all chapters</a>'''
+            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide')+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html
             else:
@@ -996,9 +1021,9 @@ if __name__ == '__main__':
             if cmd_args.crossref:
                 index_html = ('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
-            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container') + back_to_contents +'<p></p>' + index_html + '</div>\n'
+            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container slidoc-noslide') + back_to_contents +'<p></p>' + index_html + '</div>\n'
             if cmd_args.combine:
-                combined_html.append(index_output)
+                combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             else:
                 indexfile = open(dest_dir+cmd_args.index, 'w')
                 indexfile.write(index_output)
@@ -1035,10 +1060,10 @@ if __name__ == '__main__':
         first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
         qout_list.append(qindex_html)
 
-        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container') + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
+        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container slidoc-noslide') + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
         if not cmd_args.dry_run:
             if cmd_args.combine:
-                combined_html.append(qindex_output)
+                combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
             else:
                 qindexfile = open(dest_dir+cmd_args.qindex, 'w')
                 qindexfile.write(qindex_output)
