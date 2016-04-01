@@ -793,6 +793,7 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
+    nb_site_url = cmd_args.site_url
     if cmd_args.combine:
         cmd_args.site_url = ''
     if cmd_args.site_url and not cmd_args.site_url.endswith('/'):
@@ -974,8 +975,8 @@ if __name__ == '__main__':
             if cmd_args.slides:
                 slide_link = ',&nbsp; <a href="%s%s" target="_blank">%s</a>' % (cmd_args.site_url, fname+"-slides.html", 'slides')
             nb_link = ''
-            if cmd_args.notebook and cmd_args.site_url.startswith('http://'):
-                nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, cmd_args.site_url[len('http://'):], fname, 'notebook')
+            if cmd_args.notebook and nb_site_url:
+                nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
             doc_link = a_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile), combine=cmd_args.combine)
 
             toggle_link = '<a class="slidoc-clickable" onclick="slidocIdDisplay(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
