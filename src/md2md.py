@@ -24,9 +24,10 @@ def ref_key(text):
     # create reference key: compress multiple spaces, and lower-case
     return re.sub(r'\s+', ' ', text).lower()
 
-def make_id_from_text(text):
+def make_id_from_text(text, slidoc_header=False):
     """Make safe ID string from string"""
-    return urllib.quote(re.sub(r'[^-\w\.]+', '-', text.strip()).strip('-').strip('.'), safe='')
+    id_str = urllib.quote(re.sub(r'[^-\w\.]+', '-', text.lower().strip()).strip('-').strip('.'), safe='')
+    return 'slidoc-header-id-'+id_str if slidoc_header else id_str
 
 def generate_random_label(id_str=''):
     if id_str:
@@ -201,13 +202,42 @@ class Parser(object):
 
     def external_link(self, match):
         orig_content = match.group(0)
-        is_image = orig_content.startswith("!")
-        if not is_image:
-            return orig_content
-
         text = match.group(1)
         link = match.group(3)
         title = match.group(4) or ''
+
+        is_image = orig_content.startswith('!')
+        if not is_image:
+            if link.startswith('#') and ('pandoc' in self.cmd_args.images or '_slidoc' in self.cmd_args.images):
+                # Handle internal links
+                header_ref = link[1:].strip()
+                if 'pandoc' in self.cmd_args.images:
+                    if not header_ref:
+                        return '![%s](%s%s)' % (text, '#'+text, quote_pad_title(title))
+                    else:
+                        return orig_content
+                else:
+                    if not header_ref and not text.strip():
+                        return ''
+                    # Slidoc-specific hash reference handling
+                    hash_ref = '#'+make_id_from_text(header_ref or text, slidoc_header=True)
+                    if '_slidoc_combine' in self.cmd_args.images:
+                        return '''<a href="%s" onclick="slidocGo('%s');">%s</a>'''  % (hash_ref, hash_ref, text)
+                    else:
+                        return '''<a href="%s">%s</a>'''  % (hash_ref, text)
+            else:
+                return orig_content
+
+        if title and 'pandoc' in self.cmd_args.images:
+            attrs = []
+            for attr in ('height', 'width'):
+                value = self.get_html_tag_attr(attr, ' '+title)
+                if value:
+                    attrs.append(attr + '=' + value)
+            if attrs:
+                return orig_content + ' { ' + ' '.join(attrs) + ' }'
+            else:
+                return orig_content
 
         url_type = get_url_scheme(link)
 
@@ -650,7 +680,7 @@ if __name__ == '__main__':
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
     parser.add_argument('--image_dir', help='image subdirectory (default: "images")', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web] to process images', default='')
+    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web,pandoc] to process images', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--noanswers', help='Remove all Answers', action="store_true")
     parser.add_argument('--nocode', help='Remove all fenced code', action="store_true")

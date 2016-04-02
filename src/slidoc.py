@@ -25,6 +25,7 @@ import urllib
 
 from collections import defaultdict, OrderedDict
 
+import json
 import mistune
 import md2md
 
@@ -63,7 +64,7 @@ def slide_prefix(slide_id, classes=''):
 def concept_chain(slide_id, site_url):
     params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
     params.update(SYMS)
-    return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>' % params
+    return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n' % params
 
 
 def html2text(element):
@@ -413,17 +414,21 @@ class IPythonRenderer(mistune.Renderer):
     def header(self, text, level, raw=None):
         """Handle markdown headings
         """
-        hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         html = super(IPythonRenderer, self).header(text, level, raw=raw)
-        if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
-            # Ignore higher level headers (except for level 3 hide block, if no earlier header in slide)
-            return html
-
         try:
             hdr = ElementTree.fromstring(html)
         except Exception:
             # failed to parse, just return it unmodified
             return html
+
+        hdr.set('id', md2md.make_id_from_text(text, slidoc_header=True))
+        hdr_class = (hdr.get('class') + ' ') if hdr.get('class') else ''
+        hdr.set('class', hdr_class + 'slidoc-header-in-'+self.get_slide_id())
+
+        hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
+        if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
+            # Ignore higher level headers (except for level 3 hide block, if no earlier header in slide)
+            return ElementTree.tostring(hdr)
 
         text = html2text(hdr).strip()
 
@@ -701,7 +706,7 @@ def a_link(text, site_url, href, hash='', combine=False, keep_hash=False, target
         if not href:
             extras += ' style="visibility: hidden;"'
     if combine:
-        return '''<a href="%s" onclick="slidocGo('%s')" %s>%s</a>'''  % (hash or href, hash or href, extras, text)
+        return '''<a href="%s" onclick="slidocGo('%s');" %s>%s</a>'''  % (hash or href, hash or href, extras, text)
     elif href or text.startswith('&'):
         return '''<a href="%s%s" %s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, extras, text)
     else:
@@ -797,6 +802,7 @@ if __name__ == '__main__':
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
+    parser.add_argument('--pace', help='=session_name,tries,delay_sec for paced session (default: "")', default='')
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
@@ -806,6 +812,16 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
+    js_params = {'sessionName': '', 'paceTries': 0, 'paceDelay': 0}
+    if cmd_args.pace:
+        comps = cmd_args.pace.split(',')
+        if comps[0].strip():
+            js_params['sessionName'] = comps[0].strip()
+        if len(comps) > 1 and comps[1].isdigit():
+            js_params['paceTries'] = int(comps[1])
+        if len(comps) > 2 and comps[2].isdigit():
+            js_params['paceDelay'] = int(comps[2])
+    
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
         cmd_args.site_url = ''
@@ -855,10 +871,14 @@ if __name__ == '__main__':
     else:
         reveal_pars = ''
 
+    slidoc_opts = set(['embed', '_slidoc'])
+    if cmd_args.combine:
+        slidoc_opts.add('_slidoc_combine')
+
     base_mods_args = md2md.Args_obj.create_args(None, dest_dir=cmd_args.dest_dir,
                                                       image_dir=cmd_args.image_dir,
                                                       image_url=cmd_args.image_url,
-                                                      images=cmd_args.images | set(['embed']))
+                                                      images=cmd_args.images | slidoc_opts)
     slide_mods_dict = {'noconcepts': True}
     if cmd_args.strip:
         slide_mods_dict['noanswers'] = True
@@ -928,7 +948,8 @@ if __name__ == '__main__':
         if math_in_file:
             math_found = True
         
-        doc_params = {'body_style': style_str, 'math_js': Mathjax_js if math_in_file else ''}
+        doc_params = {'body_style': style_str, 'js_params': json.dumps(js_params),
+                      'math_js': Mathjax_js if math_in_file else ''}
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
@@ -1119,7 +1140,8 @@ if __name__ == '__main__':
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
-        comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
+        comb_params = {'body_style': style_str, 'js_params': json.dumps(js_params),
+                       'math_js': Mathjax_js if math_found else ''}
         comb_file = open(dest_dir+cmd_args.combine, 'w')
         comb_file.write(Html_header)
         comb_file.write(templates['doc'] % comb_params)

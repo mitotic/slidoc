@@ -210,6 +210,7 @@ for dependencies.
 
 Concepts: questions; concept list 
 
+
 ---
 
 ### Slide with answer
@@ -217,6 +218,16 @@ Concepts: questions; concept list
 Level 3 header will not be listed in table of contents. The `--hide=[Aa]nswer`
 can be used to hide this answer slide. The `--strip` option will
 remove it completely.
+
+Notes: Also see [another answer](#Simple function code answer) 
+The above example illustrates internal links, i.e., referring to other
+headers using the `#` syntax:
+
+    [text](#header)
+
+If `header` is the same as text, a simpler notation may be used:
+
+    [text][#]
 
 ---
 
@@ -496,7 +507,7 @@ Concepts: questions, numeric response
 
 ---
 
-## Simple function (question)
+## Simple function code (question)
 
 Write a python function to add two numbers.
 
@@ -508,7 +519,7 @@ Notes: This is an example of an open-ended text answer question.
 
 ---
 
-### Simple function (answer)
+### Simple function code answer
 
 The answer
 

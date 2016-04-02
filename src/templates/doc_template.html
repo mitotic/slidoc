@@ -31,6 +31,9 @@
 
   <script>
      var Slidoc = {};
+
+     Slidoc.params = %(js_params)s;
+
      Slidoc.questions_answered = {};
      Slidoc.questions_count = 0;
      Slidoc.questions_correct = 0;
@@ -39,6 +42,36 @@
      Slidoc.showAll = false;
      Slidoc.slideView = 0;
      Slidoc.curChapterId = '';
+
+     function slidocPut(key, obj) {
+        window.localStorage['slidoc_'+key] = JSON.stringify(obj);
+     }
+
+     function slidocDel(key) {
+        delete window.localStorage['slidoc_'+key];
+     }
+
+     function slidocGet(key) {
+        try {
+           return JSON.parse(window.localStorage['slidoc_'+key]);
+        } catch(err) {
+          return null;
+        }
+     }
+
+     var curSession = null;
+     if (Slidoc.params.sessionName) {
+        // Persistent named session
+        Slidoc.paced = true;
+        curSession = slidocGet('session');
+        if (!curSession || !curSession.sessionName || curSession.sessionName != Slidoc.params.sessionName) {
+           // New named session
+           curSession = {'sessionName': Slidoc.params.sessionName};
+        }
+     } else {
+        // Transient session
+        Slidoc.paced = false;
+     }
 
      document.onkeydown = function(evt) {
         if (!Slidoc.slideView)
@@ -243,6 +276,10 @@
      }
 
      function slidocSlideViewEnd() {
+        if (Slidoc.paced) {
+           alert('Paced mode');
+           return false;
+        }
         document.body.classList.remove('slidoc-slide-view');
         slidocClassDisplay('slidoc-slide', 'block');
         slidocClassDisplay('slidoc-notes', 'block');
@@ -365,6 +402,11 @@
 
      function slidocReady(event) {
         console.log("slidocReady:");
+        if (Slidoc.paced) {
+          slidocGo("#slidoc01");
+          slidocSlideViewStart();
+          return;
+        }
         slidocChainUpdate(location.search);
         var toc_elem = document.getElementById("slidoc00");
         if (toc_elem) slidocGo(location.hash || "#slidoc00");
