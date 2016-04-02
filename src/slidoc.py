@@ -38,6 +38,9 @@ from xml.etree import ElementTree
 MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 
+SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;',
+         'circle': '&#9673;', 'square': '&#9635;'}
+
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
     
@@ -49,6 +52,19 @@ def make_slide_id(chapnum, slidenum):
 
 def make_q_label(filename, question_number, fprefix=''):
     return filename[len(fprefix):]+('.q%03d' % question_number)
+
+def chapter_prefix(num, classes=''):
+    return '\n<div id="%s" class="slidoc-container %s"> <!--chapter start-->\n' % (make_chapter_id(num), classes)
+
+def slide_prefix(slide_id, classes=''):
+    chapter_id, sep, _ = slide_id.partition('-')
+    return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+
+def concept_chain(slide_id, site_url):
+    params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
+    params.update(SYMS)
+    return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>' % params
+
 
 def html2text(element):
     """extract inner text from html
@@ -308,7 +324,7 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        return slide_prefix(self.renderer.first_id)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div><!--last slide end-->\n'
+        return slide_prefix(self.renderer.first_id)+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div><!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -381,9 +397,7 @@ class IPythonRenderer(mistune.Renderer):
         else:
             html = '<hr class="slidoc-noslide">\n'
 
-        html += '</div><!--slide end-->\n' + slide_prefix(new_slide_id)
-            
-        html += '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev">&#9668;</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next">&#9658;</a></div>' % {'sid': new_slide_id, 'ixfilepfx':self.options["cmd_args"].site_url+'/'}
+        html += '</div><!--slide end-->\n' + slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
 
         return self.end_notes()+hide_prefix+html
     
@@ -402,7 +416,7 @@ class IPythonRenderer(mistune.Renderer):
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         html = super(IPythonRenderer, self).header(text, level, raw=raw)
         if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
-            # Ignore higher level headers (except for level 3 hide block)
+            # Ignore higher level headers (except for level 3 hide block, if no earlier header in slide)
             return html
 
         try:
@@ -413,8 +427,8 @@ class IPythonRenderer(mistune.Renderer):
 
         text = html2text(hdr).strip()
 
-        prefix = ''
-        suffix = ''
+        pre_header = ''
+        post_header = ''
         hdr_prefix = ''
         clickable_secnum = False
         if level == 1:
@@ -428,7 +442,8 @@ class IPythonRenderer(mistune.Renderer):
                 self.file_header = self.cur_header
 
                 if not self.options["cmd_args"].noheaders:
-                    suffix = '__HEADER_LIST__'
+                    pre_header = '__PRE_HEADER__'
+                    post_header = '__POST_HEADER__'
 
         else:
             # Level 2/3 header
@@ -441,16 +456,14 @@ class IPythonRenderer(mistune.Renderer):
                 self.cur_header = hdr_prefix + text
                 self.header_list.append( (self.get_slide_id(), self.cur_header) )
 
-            # Close previous blocks
-            prefix = self.end_notes()+self.end_hide()
+            # Record header occurrence (preventing hiding of any more level 3 headers in the same slide)
             self.hide_end = ''
 
             if hide_block:
-                # Hide answer/solution
+                # New block to hide answer/solution
                 id_str = self.get_slide_id() + '-hide'
-                ans_prefix, suffix, end_str = self.start_block(id_str)
+                pre_header, post_header, end_str = self.start_block(id_str)
                 self.hide_end = end_str
-                prefix = prefix + ans_prefix
                 hdr.set('class', 'slidoc-clickable' )
                 hdr.set('onclick', "slidocClassDisplay('"+id_str+"')" )
 
@@ -474,7 +487,7 @@ class IPythonRenderer(mistune.Renderer):
         # Known issue of Python3.x, ElementTree.tostring() returns a byte string
         # instead of a text string.  See issue http://bugs.python.org/issue10942
         # Workaround is to make sure the bytes are casted to a string.
-        return prefix + ElementTree.tostring(hdr) + '\n' + suffix
+        return pre_header + ElementTree.tostring(hdr) + '\n' + post_header
 
 
     # Pass math through unaltered - mathjax does the rendering in the browser
@@ -685,10 +698,12 @@ def a_link(text, site_url, href, hash='', combine=False, keep_hash=False, target
     extras = ' target="%s"' if target else ''
     if text.startswith('&'):
         extras += ' class="slidoc-clickable-sym"'
+        if not href:
+            extras += ' style="visibility: hidden;"'
     if combine:
-        return '''<a href="%s" onclick="slidocGo('%s')"%s>%s</a>'''  % (hash or href, hash or href, extras, text)
-    elif href:
-        return '''<a href="%s%s"%s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, extras, text)
+        return '''<a href="%s" onclick="slidocGo('%s')" %s>%s</a>'''  % (hash or href, hash or href, extras, text)
+    elif href or text.startswith('&'):
+        return '''<a href="%s%s" %s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, extras, text)
     else:
         return '<span>%s</span>' % text
 
@@ -701,18 +716,23 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
     if not cmd_args.noheaders:
         nav_html = ''
         if cmd_args.toc:
-            nav_html += a_link('&#8617;', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
-            nav_html += a_link('&#9668;', cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
-            nav_html += a_link('&#9658;', cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
+            nav_html += a_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
+            nav_html += a_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
+            nav_html += a_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
 
-        content_html += '<div class="slidoc-noslide">' + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, '&#9650;', SPACER) + nav_html + '</div>\n'
-        headers_html = renderer.table_of_contents(filenumber=filenumber)
-        if headers_html:
-            headers_html = '<div class="slidoc-noslide">'+nav_html+'<span class="slidoc-clickable-sym" onclick="slidocSlideViewStart();">&#9635;</span></div>\n' + headers_html
+        pre_header_html = '<div class="slidoc-noslide">'+nav_html+'<span class="slidoc-clickable-sym" onclick="slidocSlideViewStart();">'+SYMS['square']+'</span>'+'</div>\n'
+
+        tail_html = '<div class="slidoc-noslide">' + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + nav_html + '</div>\n'
+
+        post_header_html = renderer.table_of_contents(filenumber=filenumber)
+        if post_header_html:
+            post_header_html = '<div class="slidoc-noslide">'+ post_header_html + '</div>\n'
             if 'slidoc-notes' in content_html:
-                headers_html += '<p></p><a href="#" onclick="slidocHide(this,'+"'slidoc-notes'"+');">Hide all notes</a>'
+                post_header_html += ('<p></p><a id="%s-hidenotes" href="#" onclick="slidocHide(this,'+"'slidoc-notes'"+');">Hide all notes</a>') % renderer.first_id
 
-        content_html = content_html.replace('__HEADER_LIST__', headers_html)
+        content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
+        content_html = content_html.replace('__POST_HEADER__', post_header_html)
+        content_html += tail_html
 
     if cmd_args.strip:
         # Strip out notes, answer slides
@@ -728,10 +748,10 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 
 Html_mid = '''</head>
 <body>
-<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym"><span id="slidoc-slide-nav-prev" onclick="slidocSlideViewGo(false);">&#9668;</span> &nbsp;&nbsp; <span onclick="slidocSlideViewEnd();">&#9673;</span> &nbsp;&nbsp; <span id="slidoc-slide-nav-next" onclick="slidocSlideViewGo(true);">&#9658;</span></div>
-<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-noslide slidoc-clickable-sym"><span onclick="slidocSlideViewStart();">&#9635;</span> </div>
+<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym"><span id="slidoc-slide-nav-prev" onclick="slidocSlideViewGo(false);">%(prev)s</span> &nbsp;&nbsp; <span onclick="slidocSlideViewEnd();">%(circle)s</span> &nbsp;&nbsp; <span id="slidoc-slide-nav-next" onclick="slidocSlideViewGo(true);">%(next)s</span></div>
+<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-noslide slidoc-clickable-sym"><span onclick="slidocSlideViewStart();">%(square)s</span> </div>
 
-'''
+''' % SYMS
 
 Html_footer = '''
 </body></html>
@@ -753,13 +773,6 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 </script>
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
-
-def chapter_prefix(num, classes=''):
-    return '\n<div id="%s" class="slidoc-container %s"> <!--chapter start-->\n' % (make_chapter_id(num), classes)
-
-def slide_prefix(slide_id, classes=''):
-    chapter_id, sep, _ = slide_id.partition('-')
-    return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
 
 if __name__ == '__main__':
     import argparse
