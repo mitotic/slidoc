@@ -221,10 +221,7 @@ class Parser(object):
                         return ''
                     # Slidoc-specific hash reference handling
                     hash_ref = '#'+make_id_from_text(header_ref or text, slidoc_header=True)
-                    if '_slidoc_combine' in self.cmd_args.images:
-                        return '''<a href="%s" onclick="slidocGo('%s');">%s</a>'''  % (hash_ref, hash_ref, text)
-                    else:
-                        return '''<a href="%s">%s</a>'''  % (hash_ref, text)
+                    return '''<span class="slidoc-clickable" onclick="slidocGo('%s');">%s</span>'''  % (hash_ref, text)
             else:
                 return orig_content
 

@@ -422,8 +422,7 @@ class IPythonRenderer(mistune.Renderer):
             return html
 
         hdr.set('id', md2md.make_id_from_text(text, slidoc_header=True))
-        hdr_class = (hdr.get('class') + ' ') if hdr.get('class') else ''
-        hdr.set('class', hdr_class + 'slidoc-header-in-'+self.get_slide_id())
+        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + 'slidoc-header-in-'+self.get_slide_id()
 
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
@@ -469,7 +468,7 @@ class IPythonRenderer(mistune.Renderer):
                 id_str = self.get_slide_id() + '-hide'
                 pre_header, post_header, end_str = self.start_block(id_str)
                 self.hide_end = end_str
-                hdr.set('class', 'slidoc-clickable' )
+                hdr_class += ' slidoc-clickable'
                 hdr.set('onclick', "slidocClassDisplay('"+id_str+"')" )
 
         if clickable_secnum:
@@ -492,6 +491,7 @@ class IPythonRenderer(mistune.Renderer):
         # Known issue of Python3.x, ElementTree.tostring() returns a byte string
         # instead of a text string.  See issue http://bugs.python.org/issue10942
         # Workaround is to make sure the bytes are casted to a string.
+        hdr.set('class', hdr_class)
         return pre_header + ElementTree.tostring(hdr) + '\n' + post_header
 
 
@@ -646,9 +646,9 @@ class IPythonRenderer(mistune.Renderer):
                 first = False
                 url = '' if self.options['cmd_args'].combine else (self.options['cmd_args'].site_url+self.options['cmd_args'].index)
                 tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
-                tag_html += a_link(tag, self.options['cmd_args'].site_url, self.options['cmd_args'].index,
-                                   hash=tag_hash, combine=self.options['cmd_args'].combine, target='_blank',
-                                   keep_hash=True)
+                tag_html += nav_link(tag, self.options['cmd_args'].site_url, self.options['cmd_args'].index,
+                                     hash=tag_hash, combine=self.options['cmd_args'].combine, target='_blank',
+                                     keep_hash=True)
         else:
             tag_html += text
 
@@ -699,14 +699,16 @@ class IPythonRenderer(mistune.Renderer):
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
-def a_link(text, site_url, href, hash='', combine=False, keep_hash=False, target=''):
+def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, target=''):
     extras = ' target="%s"' if target else ''
     if text.startswith('&'):
         extras += ' class="slidoc-clickable-sym"'
         if not href:
             extras += ' style="visibility: hidden;"'
+    else:
+        extras += ' class="slidoc-clickable"'
     if combine:
-        return '''<a href="%s" onclick="slidocGo('%s');" %s>%s</a>'''  % (hash or href, hash or href, extras, text)
+        return '''<span onclick="slidocGo('%s');" %s>%s</span>'''  % (hash or href, extras, text)
     elif href or text.startswith('&'):
         return '''<a href="%s%s" %s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, extras, text)
     else:
@@ -721,9 +723,9 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
     if not cmd_args.noheaders:
         nav_html = ''
         if cmd_args.toc:
-            nav_html += a_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
-            nav_html += a_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
-            nav_html += a_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
+            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
+            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
+            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
 
         pre_header_html = '<div class="slidoc-noslide">'+nav_html+'<span class="slidoc-clickable-sym" onclick="slidocSlideViewStart();">'+SYMS['square']+'</span>'+'</div>\n'
 
@@ -802,7 +804,7 @@ if __name__ == '__main__':
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
-    parser.add_argument('--pace', help='=session_name,tries,delay_sec for paced session (default: "")', default='')
+    parser.add_argument('--pace', help='=delay_sec,try_count,try_delay for paced session using combined file', default='')
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
@@ -812,15 +814,18 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
-    js_params = {'sessionName': '', 'paceTries': 0, 'paceDelay': 0}
+    js_params = {'sessionName': '', 'paceDelay': None, 'tryCount': None, 'tryDelay': None}
+    if cmd_args.combine:
+        js_params['sessionName'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
+        print("Session Name:", js_params['sessionName'], file=sys.stderr)
     if cmd_args.pace:
         comps = cmd_args.pace.split(',')
-        if comps[0].strip():
-            js_params['sessionName'] = comps[0].strip()
+        if comps[0]:
+            js_params['paceDelay'] = int(comps[0])
         if len(comps) > 1 and comps[1].isdigit():
-            js_params['paceTries'] = int(comps[1])
+            js_params['tryCount'] = int(comps[1])
         if len(comps) > 2 and comps[2].isdigit():
-            js_params['paceDelay'] = int(comps[2])
+            js_params['tryDelay'] = int(comps[2])
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -890,8 +895,8 @@ if __name__ == '__main__':
                                                          noconcepts=True)
     index_id = make_chapter_id(len(cmd_args.file)+1)
     qindex_id = make_chapter_id(len(cmd_args.file)+2)
-    back_to_contents = a_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
-                              combine=cmd_args.combine)+'<p></p>\n'
+    back_to_contents = nav_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
+                                combine=cmd_args.combine)+'<p></p>\n'
 
     flist = []
     all_concept_warnings = []
@@ -998,7 +1003,7 @@ if __name__ == '__main__':
 
         toc_html = []
         if cmd_args.index:
-            toc_html.append(a_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id, combine=cmd_args.combine))
+            toc_html.append(nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id, combine=cmd_args.combine))
         toc_html.append('<blockquote>\n')
         toc_html.append('<ol>\n' if cmd_args.nosections else '<ul style="list-style-type: none;">\n')
         ifile = 0
@@ -1011,7 +1016,7 @@ if __name__ == '__main__':
             nb_link = ''
             if cmd_args.notebook and nb_site_url:
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
-            doc_link = a_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile), combine=cmd_args.combine)
+            doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile), combine=cmd_args.combine)
 
             toggle_link = '<a class="slidoc-clickable" onclick="slidocIdDisplay(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
             toc_html.append('<li>%s%s(<em>%s%s%s</em>)</li>\n' % (toggle_link, SPACER, doc_link, slide_link, nb_link))
@@ -1052,7 +1057,7 @@ if __name__ == '__main__':
         if not cmd_args.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
             if cmd_args.qindex:
-                index_html = a_link('QUESTION INDEX', cmd_args.site_url, cmd_args.qindex, hash='#'+qindex_id) + '<p></p>\n' + index_html
+                index_html = nav_link('QUESTION INDEX', cmd_args.site_url, cmd_args.qindex, hash='#'+qindex_id) + '<p></p>\n' + index_html
             if cmd_args.crossref:
                 index_html = ('<a href="%s%s">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
@@ -1111,7 +1116,7 @@ if __name__ == '__main__':
             xref_list.append('<li><em><b>Original question:</b> Sub-question1, Sub-question2, ...</em></li>')
             for fname, slide_id, header, qnumber, concept_id in Global.questions.values():
                 q_id = make_file_id(fname, slide_id)
-                xref_list.append('<li><b>'+a_link(make_q_label(fname, qnumber, fprefix)+': '+header,
+                xref_list.append('<li><b>'+nav_link(make_q_label(fname, qnumber, fprefix)+': '+header,
                                                cmd_args.site_url, fname+'.html', hash='#'+slide_id,
                                                combine=cmd_args.combine, keep_hash=True)+'</b>: ')
                 ctags = concept_id.split(';')
@@ -1125,7 +1130,7 @@ if __name__ == '__main__':
                         for sub_fname, sub_slide_id, sub_header, sub_qnumber, sub_concept_id in Global.concept_questions.get(sub_concept_id, []):
                             sub_q_id = make_file_id(sub_fname, sub_slide_id)
                             if sub_q_id != q_id:
-                                xref_list.append(a_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
+                                xref_list.append(nav_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
                                                         cmd_args.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
                                                         combine=cmd_args.combine, keep_hash=True)
                                                         + ('<sup>%s</sup>, ' % sub_num) )

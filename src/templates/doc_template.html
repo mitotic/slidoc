@@ -59,18 +59,15 @@
         }
      }
 
+     Slidoc.paced = Slidoc.params.paceDelay !== null;
      var curSession = null;
      if (Slidoc.params.sessionName) {
         // Persistent named session
-        Slidoc.paced = true;
         curSession = slidocGet('session');
         if (!curSession || !curSession.sessionName || curSession.sessionName != Slidoc.params.sessionName) {
            // New named session
            curSession = {'sessionName': Slidoc.params.sessionName};
         }
-     } else {
-        // Transient session
-        Slidoc.paced = false;
      }
 
      document.onkeydown = function(evt) {
@@ -325,28 +322,76 @@
         // If chained, hide previous link and set up new link
         console.log("slidocGo:", slideHash, chained);
         var slideId = slideHash.substr(1);
-        var element = document.getElementById(slideId);
-        console.log('slidocGo2: ', slideId, chained, element);
-        if (!element)
+        var goElement = document.getElementById(slideId);
+        console.log('slidocGo2: ', slideId, chained, goElement);
+        if (!goElement) {
+           console.log('slidocGo: Error - unable to find element', slideHash);
            return false;
+        }
         slidocBreakChain();
         if (!chained) {
             // End chain
             Slidoc.chainQuery = '';
         }
 
-        var match = RegExp('slidoc(\\d+)(-.*)?$').exec(slideId);
-        if (match && !Slidoc.showAll) {
-           // Hide all and expose next slide
-           var chapnum = parseInt(match[1]);
-           Slidoc.curChapterId = 'slidoc'+match[1];
-           var chapters = document.getElementsByClassName('slidoc-container');
-           for (var i = 0; i < chapters.length; ++i) {
-              chapters[i].style.display = (i == chapnum) ? 'block' : 'none';
+        if (Slidoc.curChapterId || Slidoc.slideView) {
+           // Displaying single chapter or slide show
+           var match = RegExp('slidoc-header-id-(.*)$').exec(slideId);
+           console.log('slidocGo2a: ', match, slideId);
+           if (match) {
+              // Find slide containing header
+              var slides = document.getElementsByClassName('slidoc-slide');
+              slideId = '';
+              for (var i=0; i<slides.length; ++i) {
+                 if (goElement.classList.contains('slidoc-header-in-'+slides[i].id)) {
+                    slideId = slides[i].id;
+                    slideHash = '#'+slideId;
+                    console.log('slidocGo2b: ', slideHash);
+                    break;
+                 }
+              }
+              if (!slideId) {
+                 console.log('slidocGo: Error - unable to find slide containing header:', slideHash);
+                 return false;
+              }
            }
-        } else {
-            Slidoc.curChapterId = '';
         }
+        if (Slidoc.curChapterId) {
+           var match = RegExp('slidoc(\\d+)(-.*)?$').exec(slideId);
+           if (!match) {
+               console.log('slidocGo: Error - invalid hash, not slide or chapter', slideHash);
+              return false;
+           }
+           // Display chapter containing slide
+           var newChapterId = 'slidoc'+match[1];
+           if (newChapterId != Slidoc.curChapterId) {
+              var newChapterElem = document.getElementById(newChapterId);
+              if (!newChapterElem) {
+                 console.log('slidocGo: Error - unable to find chapter:', newChapterId);
+                 return false;
+              }
+              Slidoc.curChapterId = newChapterId;
+              var chapters = document.getElementsByClassName('slidoc-container');
+              console.log('slidocGo3: ', newChapterId, chapters.length);
+              for (var i = 0; i < chapters.length; ++i) {
+                 chapters[i].style.display = (chapters[i].id == newChapterId) ? 'block' : 'none';
+              }
+           }
+        }
+        if (Slidoc.slideView) {
+           var slides = slidocGetVisibleSlides();
+           for (var i=0; i<slides.length; ++i) {
+              if (slides[i].id == slideId) {
+                console.log('slidocGo4: ', location.hash);
+                slidocSlideViewGo(false, i+1);
+                console.log('slidocGo4b: ', location.hash);
+                return false;
+              }
+           }
+           console.log('slidocGo: Error - slideshow slide not in view:', slideId);
+           return false;
+        }
+
         location.hash = slideHash;
 
         if (chained && Slidoc.chainQuery)  // Set up new chain link
@@ -466,7 +511,7 @@
            return;
          try {
             slidocReady();
-         } catch(err) {console.log("slidocReady: ERROR", err);}
+         } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
      }
 
   </script>
