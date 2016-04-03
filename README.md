@@ -221,13 +221,32 @@ remove it completely.
 
 Notes: Also see [another answer](#Simple function code answer) 
 The above example illustrates internal links, i.e., referring to other
-headers using the `#` syntax:
+headers using the hash `#` syntax:
 
     [text](#header)
 
 If `header` is the same as text, a simpler notation may be used:
 
-    [text][#]
+    [text](#)
+
+Headers (at all levels) are automatically referrable. To refer to an arbitrary portion
+of text, define the reference using the notation:
+
+    [phrase][#mnemonic)
+
+This [phrase][#mnemonic] can be referred to elsewhere as [phrase](#mnemonic):
+
+    [phrase](#mnemonic)
+
+Double hash `##` links may be used to append numbers, like figure numbers:
+
+    [Figure ][##my_figure]. Figure caption
+
+[Figure ][##my_figure] can then can be referred to elsewhere as
+
+	[Figure ](##my_figure)
+
+Look at [Figure ](##my_figure)
 
 ---
 

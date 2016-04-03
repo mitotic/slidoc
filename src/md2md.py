@@ -22,7 +22,7 @@ import mistune
 
 def ref_key(text):
     # create reference key: compress multiple spaces, and lower-case
-    return re.sub(r'\s+', ' ', text).lower()
+    return re.sub(r'\s+', ' ', text).strip().lower()
 
 def make_id_from_text(text, slidoc_header=False):
     """Make safe ID string from string"""
@@ -208,22 +208,14 @@ class Parser(object):
 
         is_image = orig_content.startswith('!')
         if not is_image:
-            if link.startswith('#') and ('pandoc' in self.cmd_args.images or '_slidoc' in self.cmd_args.images):
-                # Handle internal links
-                header_ref = link[1:].strip()
+            if link.startswith('#'):
+                if link == '#' or link == '##':
+                    link += text.strip()
                 if 'pandoc' in self.cmd_args.images:
-                    if not header_ref:
-                        return '![%s](%s%s)' % (text, '#'+text, quote_pad_title(title))
-                    else:
-                        return orig_content
-                else:
-                    if not header_ref and not text.strip():
-                        return ''
-                    # Slidoc-specific hash reference handling
-                    hash_ref = '#'+make_id_from_text(header_ref or text, slidoc_header=True)
-                    return '''<span class="slidoc-clickable" onclick="slidocGo('%s');">%s</span>'''  % (hash_ref, text)
-            else:
-                return orig_content
+                    if link.startswith('##'):
+                        return text+'(number)'
+                    return '[%s](%s%s)' % (text, link, quote_pad_title(title))
+            return orig_content
 
         if title and 'pandoc' in self.cmd_args.images:
             attrs = []
@@ -319,15 +311,24 @@ class Parser(object):
     def ref_link(self, match):
         # Internal reference
         orig_content = match.group(0)
-        if not orig_content.startswith("!"):
-            # Not image
-            return orig_content
-
         text = match.group(1)
         if len(match.groups()) < 2:
             key = ref_key(text)
         else:
             key = ref_key(match.group(2) or match.group(1))
+
+        if not orig_content.startswith("!"):
+            # Not image
+            if not key.startswith('#'):
+                return orig_content
+            if key == '#' or key == '##':
+                key += text.strip()
+            if 'pandoc' in self.cmd_args.images:
+                if key.startswith('##'):
+                    return text+'(number)'
+                return text
+            else:
+                return orig_content
 
         self.image_refs[key] = text
 
