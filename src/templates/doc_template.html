@@ -30,18 +30,67 @@
  %(math_js)s
 
   <script>
+     document.onreadystatechange = function(event) {
+         console.log('onreadystatechange:', document.readyState);
+         if (document.readyState != "interactive")
+           return;
+         try {
+            slidocReady();
+         } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
+     }
+
      var Slidoc = {};
 
-     Slidoc.params = %(js_params)s;
+     function slidocReady(event) {
+        console.log("slidocReady:");
+        Slidoc.params = JSON.parse(atob('%(js_params)s'));
 
-     Slidoc.questions_answered = {};
-     Slidoc.questions_count = 0;
-     Slidoc.questions_correct = 0;
+        Slidoc.chainQuery = '';
+        Slidoc.showAll = false;
+        Slidoc.slideView = 0;
+        Slidoc.curChapterId = '';
 
-     Slidoc.chainQuery = '';
-     Slidoc.showAll = false;
-     Slidoc.slideView = 0;
-     Slidoc.curChapterId = '';
+        Slidoc.delay = {interval: null, timeout: null};
+
+        Slidoc.paced = (Slidoc.params.paceDelay !== null);
+        Slidoc.session = null;
+        var sessionName = Slidoc.params.filename;
+        if (Slidoc.paced) {
+           // Paced named session
+           Slidoc.session = slidocGet('session');
+           if (Slidoc.session && Slidoc.session.sessionName != sessionName) {
+              if (window.confirm('Discard previous session '+Slidoc.session.sessionName+'?')) {
+                 Slidoc.session = null;
+              } else {
+                 document.body.text = 'Cancelled page load';
+                 return false;
+              }
+           }
+        } else {
+           // Unnamed session
+           sessionName = '';
+        }
+        if (!Slidoc.session) {
+           // New paced session
+           Slidoc.session = {sessionName: sessionName,
+                             lastSlide: 0,
+                             lastTime: 0,
+                             lastTries: 0,
+                             questionsCount: 0,
+                             questionsCorrect: 0,
+                             questionsAttempted: {}
+                            };
+        }
+
+        if (Slidoc.paced) {
+          slidocGo("#slidoc01");
+          slidocSlideViewStart();
+          return;
+        }
+        slidocChainUpdate(location.search);
+        var toc_elem = document.getElementById("slidoc00");
+        if (toc_elem) slidocGo(location.hash || "#slidoc00");
+     }
 
      function slidocPut(key, obj) {
         window.localStorage['slidoc_'+key] = JSON.stringify(obj);
@@ -56,17 +105,6 @@
            return JSON.parse(window.localStorage['slidoc_'+key]);
         } catch(err) {
           return null;
-        }
-     }
-
-     Slidoc.paced = Slidoc.params.paceDelay !== null;
-     var curSession = null;
-     if (Slidoc.params.sessionName) {
-        // Persistent named session
-        curSession = slidocGet('session');
-        if (!curSession || !curSession.sessionName || curSession.sessionName != Slidoc.params.sessionName) {
-           // New named session
-           curSession = {'sessionName': Slidoc.params.sessionName};
         }
      }
 
@@ -180,9 +218,9 @@
 
      function slidocChoiceClick(elem, slide_id, question_number, choice_val) {
         console.log("slidocChoiceClick:", slide_id, question_number, choice_val);
-        if (question_number in Slidoc.questions_answered)
+        if (question_number in Slidoc.session.questionsAttempted)
            return false;
-        Slidoc.questions_answered[question_number] = choice_val;
+        Slidoc.session.questionsAttempted[question_number] = choice_val;
 
         elem.style['text-decoration'] = 'line-through';
         var choices = document.getElementsByClassName(slide_id+"-choice");
@@ -203,7 +241,7 @@
            var corr_answer = corr_elem.textContent;
            console.log('slidocChoiceClick:corr', corr_answer, concept_list);
            if (corr_answer) {
-               Slidoc.questions_count += 1;
+               Slidoc.session.questionsCount += 1;
                var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
                if (corr_choice) {
                 corr_choice.style['text-decoration'] = '';
@@ -212,10 +250,10 @@
               var resp_elem = document.getElementById(slide_id+"-resp");
               if (resp_elem && choice_val) {
                  if (choice_val == corr_answer)  {
-                    Slidoc.questions_correct += 1;
-                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidoc.questions_correct+"/"+Slidoc.questions_count+")";
+                    Slidoc.session.questionsCorrect += 1;
+                    resp_elem.innerHTML = " &#x2714;&nbsp; ("+Slidoc.session.questionsCorrect+"/"+Slidoc.session.questionsCount+")";
                  } else {
-                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidoc.questions_correct+"/"+Slidoc.questions_count+")";
+                    resp_elem.innerHTML = " &#x2718;&nbsp; ("+Slidoc.session.questionsCorrect+"/"+Slidoc.session.questionsCount+")";
                  }
                }
             }
@@ -397,7 +435,7 @@
         if (chained && Slidoc.chainQuery)  // Set up new chain link
             slidocChainUpdate(Slidoc.chainQuery);
 
-        element.scrollIntoView(true); // Redundant?
+        goElement.scrollIntoView(true); // Redundant?
         return false;
      }
 
@@ -443,18 +481,6 @@
         Slidoc.chainQuery = queryStr;
         slidocGo(slideHash, true);
         return false;
-     }
-
-     function slidocReady(event) {
-        console.log("slidocReady:");
-        if (Slidoc.paced) {
-          slidocGo("#slidoc01");
-          slidocSlideViewStart();
-          return;
-        }
-        slidocChainUpdate(location.search);
-        var toc_elem = document.getElementById("slidoc00");
-        if (toc_elem) slidocGo(location.hash || "#slidoc00");
      }
 
      function slidocChainUpdate(queryStr) {
@@ -503,15 +529,6 @@
              }
          }
      console.log("slidocChainUpdate:4", location.hash);
-     }
-
-     document.onreadystatechange = function(event) {
-         console.log('onreadystatechange:', document.readyState);
-         if (document.readyState != "interactive")
-           return;
-         try {
-            slidocReady();
-         } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
      }
 
   </script>
