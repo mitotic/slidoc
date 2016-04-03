@@ -310,7 +310,7 @@ class MathInlineLexer(mistune.InlineLexer):
                     print('LINK-ERROR: Null link', file=sys.stderr)
                     return None
                 # Slidoc-specific hash reference handling
-                ref_id = md2md.make_id_from_text(header_ref, referable=True)
+                ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
                 if link.startswith('##'):
                     # Numbered reference
                     if ref_id in Global.ref_tracker:
@@ -339,7 +339,8 @@ class MathInlineLexer(mistune.InlineLexer):
                 return None
 
             # Slidoc-specific hash reference handling
-            ref_id = md2md.make_id_from_text(header_ref, referable=True)
+            ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
+            ref_class = ''
             if ref_id in Global.ref_tracker:
                 print('REF-ERROR: Duplicate reference #%s (%s)' % (ref_id, key), file=sys.stderr)
                 ref_id += '-duplicate-'+md2md.generate_random_label()
@@ -347,6 +348,7 @@ class MathInlineLexer(mistune.InlineLexer):
                 num_label = '??'
                 if key.startswith('##'):
                     # Numbered reference
+                    ref_class = 'slidoc-ref-'+md2md.make_id_from_text(text_key)
                     Global.ref_counter[text_key] += 1
                     if self.renderer.options['filenumber']:
                         num_label = "%d.%d" % (self.renderer.options['filenumber'], Global.ref_counter[text_key])
@@ -354,7 +356,7 @@ class MathInlineLexer(mistune.InlineLexer):
                         num_label = "%d" % Global.ref_counter[text_key]
                     text += num_label
                 Global.ref_tracker[ref_id] = (num_label, key)
-            return '''<span id="%s" class="slidoc-referable-in-%s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), text)
+            return '''<span id="%s" class="slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
 
         return super(MathInlineLexer, self).output_reflink(m)
 
@@ -488,7 +490,7 @@ class IPythonRenderer(mistune.Renderer):
             # failed to parse, just return it unmodified
             return html
 
-        hdr.set('id', md2md.make_id_from_text(text, referable=True))
+        hdr.set('id', 'slidoc-ref-'+md2md.make_id_from_text(text))
         hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id())
 
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
@@ -742,7 +744,10 @@ class IPythonRenderer(mistune.Renderer):
         toc = ['<ul class="slidoc-noslide" style="list-style-type: none;">' if filenumber else '<ol>']
 
         for id_str, header in self.header_list:  # Skip first header
-            elem = ElementTree.Element("a", {"class" : "header-link", "href" : filepath+"#"+id_str})
+            if self.options['cmd_args'].combine:
+                elem = ElementTree.Element("span", {"class" : "slidoc-clickable", "onclick" : "Slidoc.go('#%s');" % id_str})
+            else:
+                elem = ElementTree.Element("a", {"class" : "header-link", "href" : filepath+"#"+id_str})
             elem.text = header
             toc.append('<li>'+ElementTree.tostring(elem)+'</li>')
 
@@ -769,11 +774,11 @@ class IPythonRenderer(mistune.Renderer):
 def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, target=''):
     extras = ' target="%s"' if target else ''
     if text.startswith('&'):
-        extras += ' class="slidoc-clickable-sym"'
+        extras += ' class="slidoc-clickable-sym slidoc-noall"'
         if not href:
             extras += ' style="visibility: hidden;"'
     else:
-        extras += ' class="slidoc-clickable"'
+        extras += ' class="slidoc-clickable slidoc-noall"'
     if combine:
         return '''<span onclick="Slidoc.go('%s');" %s>%s</span>'''  % (hash or href, extras, text)
     elif href or text.startswith('&'):
@@ -781,13 +786,24 @@ def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, targ
     else:
         return '<span>%s</span>' % text
 
+Missing_ref_num_re = re.compile(r'_MISSING_SLIDOC_REF_NUM(#[-.\w]+)')
+def Missing_ref_num(match):
+    ref_id = match.group(1)
+    if ref_id in Global.ref_tracker:
+        return Global.ref_tracker[ref_id][0]
+    else:
+        return '(%s)??' % ref_id
+
 def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
     if filenumber:
         Global.ref_counter = defaultdict(int)
+
     renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
 
     content_html = MarkdownWithMath(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
+
+    content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
     if not cmd_args.noheaders:
         nav_html = ''
@@ -796,9 +812,9 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
             nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
             nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
 
-        pre_header_html = '<div class="slidoc-noslide">'+nav_html+'<span class="slidoc-clickable-sym" onclick="Slidoc.slideViewStart();">'+SYMS['square']+'</span>'+'</div>\n'
+        pre_header_html = '<div class="slidoc-noslide slidoc-noall">'+nav_html+'<span class="slidoc-clickable-sym" onclick="Slidoc.slideViewStart();">'+SYMS['square']+'</span>'+'</div>\n'
 
-        tail_html = '<div class="slidoc-noslide">' + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + nav_html + '</div>\n'
+        tail_html = '<div class="slidoc-noslide">' + ('<a href="#" class="slidoc-clickable-sym slidoc-allonly">%s</a>' %  SYMS['return']) + nav_html + '<a href="#%s" class="slidoc-clickable-sym slidoc-allonly">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
 
         post_header_html = renderer.table_of_contents(filenumber=filenumber)
         if post_header_html:
@@ -817,6 +833,7 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
     file_toc = renderer.table_of_contents(cmd_args.site_url+filename+'.html', filenumber=filenumber)
 
     return (renderer.file_header or filename, file_toc, renderer.concept_warnings, content_html)
+
 
 Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html><head>
@@ -838,7 +855,6 @@ Toc_header = '''
 
 '''
 
-
 Mathjax_js = '''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
     tex2jax: {
@@ -849,6 +865,10 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 </script>
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
+
+
+def write_doc(path, head, body):
+    md2md.write_file(path, Html_header, head, Html_mid, body, Html_footer)
 
 if __name__ == '__main__':
     import argparse
@@ -914,9 +934,7 @@ if __name__ == '__main__':
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
     for tname in ('doc_template.js', 'doc_template.html', 'reveal_template.html'):
-        f = open(scriptdir+'/templates/'+tname)
-        templates[tname] = f.read()
-        f.close()
+        templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
     doc_template = templates['doc_template.html'] + '<script>\n' + templates['doc_template.js'] + '</script>\n'
         
@@ -974,6 +992,7 @@ if __name__ == '__main__':
 
     flist = []
     all_concept_warnings = []
+    outfile_buffer = []
     combined_html = []
     fprefix = None
     math_found = False
@@ -991,14 +1010,8 @@ if __name__ == '__main__':
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
         fname = fnames[j]
-        if j > 0:
-            prev_file = '#'+make_chapter_id(j) if cmd_args.combine else fnames[j-1]+".html"
-        else:
-            prev_file = ''
-        if j < len(cmd_args.file)-1:
-            next_file = '#'+make_chapter_id(j+2) if cmd_args.combine else fnames[j+1]+".html"
-        else:
-            next_file = ''
+        prev_file = '' if j == 0                    else ('#'+make_chapter_id(j) if cmd_args.combine else fnames[j-1]+".html")
+        next_file = '' if j >= len(cmd_args.file)-1 else ('#'+make_chapter_id(j+2) if cmd_args.combine else fnames[j+1]+".html")
 
         if fprefix == None:
             fprefix = fname
@@ -1039,44 +1052,46 @@ if __name__ == '__main__':
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
             else:
-                out = open(dest_dir+outname, "w")
-                out.write(Html_header)
-                out.write(doc_template % doc_params)
-                out.write(Html_mid)
-                out.write(md_prefix)
-                out.write(md_html)
-                out.write(md_suffix)
-                out.write(Html_footer)
-                out.close()
-                print("Created ", outname+":", fheader, file=sys.stderr)
+                head = doc_template % doc_params
+                body = md_prefix+md_html+md_suffix
+                if Missing_ref_num_re.search(md_html):
+                    # Still some missing reference numbers; output file later
+                    outfile_buffer.append([outname, dest_dir+outname, head, body])
+                else:
+                    outfile_buffer.append([outname, dest_dir+outname, '', ''])
+                    write_doc(dest_dir+outname, head, body)
 
             if cmd_args.slides:
-                sfilename = fname+"-slides.html"
-                sfile = open(dest_dir+sfilename, "w")
                 reveal_pars['reveal_title'] = fname
                 reveal_pars['reveal_md'] = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`\1$$\2$$`', md_text_modified, flags=re.DOTALL)
-                sfile.write(templates['reveal_template.html'] % reveal_pars)
-                sfile.close()
-                print("Created ", sfilename, file=sys.stderr)
+                md2md.write_file(dest_dir+fname+"-slides.html", templates['reveal_template.html'] % reveal_pars)
 
             if cmd_args.notebook:
                 md_parser = md2nb.MDParser(nb_converter_args)
-                nfilename = fname+".ipynb"
-                nfile = open(dest_dir+nfilename, "w")
-                nb_text = md_parser.parse_cells(md_text_modified)
-                nfile.write(nb_text)
-                print("Created ", nfilename, file=sys.stderr)
+                md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
+
+    
+    if not cmd_args.dry_run:
+        if not cmd_args.combine:
+            for outname, outpath, head, body in outfile_buffer:
+                if body:
+                    # Update "missing" reference numbers and write output file
+                    body = Missing_ref_num_re.sub(Missing_ref_num, body)
+                    write_doc(outpath, head, body)
+            print('Created output files:', ', '.join(x[0] for x in outfile_buffer), file=sys.stderr)
+        if cmd_args.slides:
+            print('Created *-slides.html files', file=sys.stderr)
+        if cmd_args.notebook:
+            print('Created *.ipynb files', file=sys.stderr)
 
     if cmd_args.toc:
         if cmd_args.toc_header:
-            header_file = open(cmd_args.toc_header)
-            header_insert = header_file.read()
-            header_file.close()
+            header_insert = md2md.read_file(cmd_args.toc_header)
         else:
             header_insert = ''
 
         toc_html = []
-        if cmd_args.index:
+        if cmd_args.index and (Global.first_tags or Global.first_qtags):
             toc_html.append(nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id, combine=cmd_args.combine))
         toc_html.append('<blockquote>\n')
         toc_html.append('<ol>\n' if cmd_args.nosections else '<ul style="list-style-type: none;">\n')
@@ -1115,18 +1130,11 @@ if __name__ == '__main__':
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html
             else:
-                tocfile = open(dest_dir+cmd_args.toc, 'w')
-                tocfile.write(Html_header)
-                tocfile.write(doc_template % doc_params)
-                tocfile.write(Html_mid)
-                tocfile.write(toc_output)
-                tocfile.write(Html_footer)
-                tocfile.close()
+                md2md.write_file(dest_dir+cmd_args.toc, Html_header, doc_template % doc_params, Html_mid, toc_output, Html_footer)
                 print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
-    indexfile = None
     xref_list = []
-    if cmd_args.index:
+    if cmd_args.index and (Global.first_tags or Global.first_qtags):
         first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.site_url, fprefix=fprefix, index_id=index_id, index_file='' if cmd_args.combine else cmd_args.index)
         if not cmd_args.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
@@ -1139,8 +1147,8 @@ if __name__ == '__main__':
             if cmd_args.combine:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             else:
-                indexfile = open(dest_dir+cmd_args.index, 'w')
-                indexfile.write(index_output)
+                md2md.write_file(dest_dir+cmd_args.index, index_output)
+                print("Created index in", cmd_args.index, file=sys.stderr)
 
         if cmd_args.crossref:
             if cmd_args.toc:
@@ -1163,10 +1171,6 @@ if __name__ == '__main__':
             if all_concept_warnings:
                 xref_list.append('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
 
-        if indexfile:
-            indexfile.close()
-            print("Created index in", cmd_args.index, file=sys.stderr)
-
     if cmd_args.qindex and Global.first_qtags:
         import itertools
         qout_list = []
@@ -1179,9 +1183,7 @@ if __name__ == '__main__':
             if cmd_args.combine:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
             else:
-                qindexfile = open(dest_dir+cmd_args.qindex, 'w')
-                qindexfile.write(qindex_output)
-                qindexfile.close()
+                md2md.write_file(dest_dir+cmd_args.qindex, qindex_output)
                 print("Created qindex in", cmd_args.qindex, file=sys.stderr)
 
         if cmd_args.crossref:
@@ -1213,19 +1215,12 @@ if __name__ == '__main__':
             xref_list.append('</ul>\n')
 
     if cmd_args.crossref:
-        crossfile = open(dest_dir+cmd_args.crossref, 'w')
-        crossfile.write(''.join(xref_list))
-        crossfile.close()
+        md2md.write_file(dest_dir+cmd_args.crossref, ''.join(xref_list))
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
         comb_params = {'body_style': style_str, 'js_params': base64.b64encode(json.dumps(js_params)),
                        'math_js': Mathjax_js if math_found else ''}
-        comb_file = open(dest_dir+cmd_args.combine, 'w')
-        comb_file.write(Html_header)
-        comb_file.write(doc_template % comb_params)
-        comb_file.write(Html_mid)
-        comb_file.write('\n'.join(combined_html))
-        comb_file.write(Html_footer)
-        comb_file.close()
+        md2md.write_file(dest_dir+cmd_args.combine, Html_header, doc_template % comb_params, Html_mid,
+                         '\n'.join(combined_html), Html_footer)
         print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)

@@ -1,4 +1,7 @@
+// Template file 
+
 var Slidoc = {};
+Slidoc.params = JSON.parse(atob('%(js_params)s'));
 
 (function(Slidoc) {
 
@@ -39,7 +42,6 @@ document.onkeydown = function(evt) {
 
 function slidocReady(event) {
    console.log("slidocReady:");
-   Slidoc.params = JSON.parse(atob('%(js_params)s'));
 
    Slidoc.chainQuery = '';
    Slidoc.showAll = false;
@@ -154,8 +156,13 @@ Slidoc.allDisplay = function (elem) {
    for (var i = 0; i < elements.length; ++i) {
       elements[i].style.display= Slidoc.showAll ? null : 'none';
    }
-   if (Slidoc.showAll) Slidoc.curChapterId = '';
-    if (!Slidoc.showAll) Slidoc.go('#slidoc00', false, true);
+    if (Slidoc.showAll) {
+	Slidoc.curChapterId = '';
+        document.body.classList.add('slidoc-all-view');
+    } else {
+        document.body.classList.remove('slidoc-all-view');
+	Slidoc.go('#slidoc00', false, true);
+    }
    return false;
 }
 
@@ -350,7 +357,7 @@ Slidoc.go = function (slideHash, chained, firstChapter) {
          // Find slide containing header
 	 slideId = '';
          for (var i=0; i<goElement.classList.length; ++i) {
-	     var refmatch = RegExp('slidoc-referable-(.*)$').exec(goElement.classList[i]);
+	     var refmatch = RegExp('slidoc-referable-in-(.*)$').exec(goElement.classList[i]);
 	     if (refmatch) {
 		 slideId = refmatch[1];
 		 slideHash = '#'+slideId;

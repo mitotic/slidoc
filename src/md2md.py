@@ -20,14 +20,22 @@ from collections import defaultdict, namedtuple, OrderedDict
 
 import mistune
 
+def read_file(path):
+    with open(path) as f:
+        return f.read()
+    
+def write_file(path, *args):
+    with open(path, 'w') as f:
+        for arg in args:
+            f.write(arg)
+    
 def ref_key(text):
     # create reference key: compress multiple spaces, and lower-case
     return re.sub(r'\s+', ' ', text).strip().lower()
 
-def make_id_from_text(text, referable=False):
+def make_id_from_text(text):
     """Make safe ID string from string"""
-    id_str = urllib.quote(re.sub(r'[^-\w\.]+', '-', text.lower().strip()).strip('-').strip('.'), safe='')
-    return 'slidoc-ref-'+id_str if referable else id_str
+    return urllib.quote(re.sub(r'[^-\w\.]+', '-', text.lower().strip()).strip('-').strip('.'), safe='')
 
 def generate_random_label(id_str=''):
     if id_str:
@@ -119,23 +127,18 @@ class Parser(object):
         if n > 1:
             sys.exit('ERROR Only one of check|copy|import|export may be specified for --images')
 
-    def write_file(self, filepath, content, dry_run=False):
+    def write_content(self, filepath, content, dry_run=False):
         """Write content to file. If file already exists, check its content"""
         fdir = os.path.dirname(filepath)
         if fdir and not os.path.exists(fdir):
             os.mkdir(fdir)
         elif os.path.exists(filepath):
-            f_old = open(filepath)
-            old_content = f_old.read()
-            f_old.close()
-            if old_content == content:
+            if content == read_file(filepath):
                 return
             if not self.cmd_args.overwrite:
                 raise Exception('Error: Specify --overwrite to copy %s' % filepath)
         if not dry_run:
-            f = open(filepath, 'w')
-            f.write(content)
-            f.close()
+            write_file(filepath, content)
 
     def get_link_data(self, link, check_only=False, data_url=False):
         ''' Returns (filename, content_type, content)
@@ -184,9 +187,7 @@ class Parser(object):
                     if extn in ('.gif', '.jpg', '.jpeg', '.png', '.svg'):
                         content_type = 'image/jpeg' if extn == '.jpg' else 'image/'+extn[1:]
 
-                    f = open(filepath)
-                    content = f.read()
-                    f.close()
+                    content = read_file(filepath)
                     if data_url:
                         if not content_type:
                             raise Exception('Unknown content type for file %s' % filename)
@@ -297,7 +298,7 @@ class Parser(object):
                 newpath = self.cmd_args.dest_dir + '/' + newpath
 
             try:
-                self.write_file(newpath, content)
+                self.write_content(newpath, content)
 
                 print('Copied link %s to %s' % (link, newpath), file=sys.stderr)
                 if new_link:
@@ -608,7 +609,7 @@ class Parser(object):
             else:
                 fpath = new_link
 
-            self.write_file(fpath, content, dry_run=dry_run)
+            self.write_content(fpath, content, dry_run=dry_run)
             print('Exported ref %s as file %s' % (key, fpath), file=sys.stderr)
             return key, new_link, title
         except Exception, excp:
@@ -714,8 +715,6 @@ if __name__ == '__main__':
         modified_text = md_parser.parse(md_text, filepath)
 
         outname = fnames[j]+"-modified.md"
-        outfile = open(outname, "w")
-        outfile.write(modified_text)
-        outfile.close()
+        write_file(outname, modified_text)
         print("Created ", outname, file=sys.stderr)
             
