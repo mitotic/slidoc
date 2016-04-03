@@ -24,10 +24,10 @@ def ref_key(text):
     # create reference key: compress multiple spaces, and lower-case
     return re.sub(r'\s+', ' ', text).strip().lower()
 
-def make_id_from_text(text, slidoc_header=False):
+def make_id_from_text(text, referable=False):
     """Make safe ID string from string"""
     id_str = urllib.quote(re.sub(r'[^-\w\.]+', '-', text.lower().strip()).strip('-').strip('.'), safe='')
-    return 'slidoc-header-id-'+id_str if slidoc_header else id_str
+    return 'slidoc-ref-'+id_str if referable else id_str
 
 def generate_random_label(id_str=''):
     if id_str:

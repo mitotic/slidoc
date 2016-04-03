@@ -344,20 +344,20 @@ Slidoc.go = function (slideHash, chained, firstChapter) {
 
    if (Slidoc.curChapterId || Slidoc.slideView || firstChapter) {
       // Displaying single chapter or slide show
-      var match = RegExp('slidoc-header-id-(.*)$').exec(slideId);
+      var match = RegExp('slidoc-ref-(.*)$').exec(slideId);
       console.log('Slidoc.go2a: ', match, slideId);
       if (match) {
          // Find slide containing header
-         var slides = document.getElementsByClassName('slidoc-slide');
-         slideId = '';
-         for (var i=0; i<slides.length; ++i) {
-            if (goElement.classList.contains('slidoc-header-in-'+slides[i].id)) {
-               slideId = slides[i].id;
-               slideHash = '#'+slideId;
-               console.log('Slidoc.go2b: ', slideHash);
-               break;
-            }
-         }
+	 slideId = '';
+         for (var i=0; i<goElement.classList.length; ++i) {
+	     var refmatch = RegExp('slidoc-referable-(.*)$').exec(goElement.classList[i]);
+	     if (refmatch) {
+		 slideId = refmatch[1];
+		 slideHash = '#'+slideId;
+                 console.log('Slidoc.go2b: ', slideHash);
+		 break;
+	     }
+	 }
          if (!slideId) {
             console.log('Slidoc.go: Error - unable to find slide containing header:', slideHash);
             return false;

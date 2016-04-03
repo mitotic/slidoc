@@ -310,15 +310,15 @@ class MathInlineLexer(mistune.InlineLexer):
                     print('LINK-ERROR: Null link', file=sys.stderr)
                     return None
                 # Slidoc-specific hash reference handling
-                hash_ref = '#'+ md2md.make_id_from_text(header_ref, slidoc_header=True)
+                ref_id = md2md.make_id_from_text(header_ref, referable=True)
                 if link.startswith('##'):
                     # Numbered reference
-                    if hash_ref in Global.ref_tracker:
-                        num_label = Global.ref_tracker[hash_ref][0]
+                    if ref_id in Global.ref_tracker:
+                        num_label = Global.ref_tracker[ref_id][0]
                     else:
-                        num_label = '_MISSING_SLIDOC_REF_NUM(%s)' % hash_ref
+                        num_label = '_MISSING_SLIDOC_REF_NUM(#%s)' % ref_id
                     text += num_label
-                return '''<span class="slidoc-clickable" onclick="Slidoc.go('%s');">%s</span>'''  % (hash_ref, text)
+                return '''<span class="slidoc-clickable" onclick="Slidoc.go('#%s');">%s</span>'''  % (ref_id, text)
 
         return super(MathInlineLexer, self).output_link(m)
 
@@ -339,10 +339,10 @@ class MathInlineLexer(mistune.InlineLexer):
                 return None
 
             # Slidoc-specific hash reference handling
-            hash_ref = '#'+ md2md.make_id_from_text(header_ref, slidoc_header=True)
-            if hash_ref in Global.ref_tracker:
-                print('REF-ERROR: Duplicate reference %s (%s)' % (hash_ref, key), file=sys.stderr)
-                hash_ref += '-duplicate-'+md2md.generate_random_label()
+            ref_id = md2md.make_id_from_text(header_ref, referable=True)
+            if ref_id in Global.ref_tracker:
+                print('REF-ERROR: Duplicate reference #%s (%s)' % (ref_id, key), file=sys.stderr)
+                ref_id += '-duplicate-'+md2md.generate_random_label()
             else:
                 num_label = '??'
                 if key.startswith('##'):
@@ -353,8 +353,8 @@ class MathInlineLexer(mistune.InlineLexer):
                     else:
                         num_label = "%d" % Global.ref_counter[text_key]
                     text += num_label
-                Global.ref_tracker[hash_ref] = (num_label, key)
-            return '''<span id="%s" class="slidoc-header-in-%s">%s</span>'''  % (hash_ref, self.renderer.get_slide_id(), text)
+                Global.ref_tracker[ref_id] = (num_label, key)
+            return '''<span id="%s" class="slidoc-referable-in-%s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), text)
 
         return super(MathInlineLexer, self).output_reflink(m)
 
@@ -488,8 +488,8 @@ class IPythonRenderer(mistune.Renderer):
             # failed to parse, just return it unmodified
             return html
 
-        hdr.set('id', md2md.make_id_from_text(text, slidoc_header=True))
-        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-header-in-%s' % self.get_slide_id())
+        hdr.set('id', md2md.make_id_from_text(text, referable=True))
+        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id())
 
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
