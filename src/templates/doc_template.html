@@ -8,8 +8,8 @@
     pre { padding: 0px 2em;}
     .slidoc-notes { padding: 0px 1em; font-size: 90%%; }
     .slidoc-notes p {margin: 0.3em 0;}
-    .slidoc-clickable { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
-    .slidoc-clickable-sym { padding: 0.3em 0 0 0; color: blue; }
+    .slidoc-clickable { padding: 0.3em 0 0 0; color: blue; cursor: pointer; text-decoration: underline; }
+    .slidoc-clickable-sym { padding: 0.3em 0 0 0; color: blue; cursor: pointer; }
     .slidoc-clickable.slidoc-toc-entry { padding: 0.3em 0 0 1em; }
 
     a.slidoc-clickable-sym { text-decoration: none; }
@@ -17,20 +17,24 @@
     body.slidoc-slide-view { font-size: 150%%; }
 
     body.slidoc-all-view .slidoc-noall, 
-    body.slidoc-slide-view .slidoc-noslide 
+    body.slidoc-slide-view .slidoc-noslide, 
+    body.slidoc-paced-view .slidoc-nopaced 
           { display: none; }
 
     body:not(.slidoc-all-view) .slidoc-allonly, 
-    body:not(.slidoc-slide-view) .slidoc-slideonly 
+    body:not(.slidoc-slide-view) .slidoc-slideonly,
+    body:not(.slidoc-paced-view) .slidoc-pacedonly
           { display: none; }
 
     body:not(.slidoc-slide-view) .slidoc-clickable-noslide 
-       { padding: 0.3em 0 0 0; color: blue; text-decoration: underline; }
+       { padding: 0.3em 0 0 0; color: blue; cursor: pointer; text-decoration: underline; }
 
     .slidoc-clickable-sym { font-size: 120%%; font-weight: bold; }
 
     .slidoc-slide-nav { z-index: 1000; position: fixed; right: 15px; bottom: 10px; }
+    .slidoc-slide-home-button { font-size: 1.2em; z-index: 1000; position: fixed; right: 20px; top: 15px; }
     .slidoc-slide-view-button { font-size: 1.2em; z-index: 1000; position: fixed; right: 20px; bottom: 15px; }
+
     /* .slidoc-ref-figure { font-style: oblique; } */
 
   </style>

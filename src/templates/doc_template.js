@@ -3,7 +3,7 @@
 var Slidoc = {};
 Slidoc.params = JSON.parse(atob('%(js_params)s'));
 
-(function(Slidoc) {
+///UNCOMMENT: (function(Slidoc) {
 
 document.onreadystatechange = function(event) {
     console.log('onreadystatechange:', document.readyState);
@@ -20,16 +20,16 @@ document.onkeydown = function(evt) {
    switch (evt.keyCode) {
        case 27:  // Escape
            Slidoc.slideViewEnd();
-           break;
+           return false;
        case 35:  // End
            Slidoc.slideViewGo(false, getVisibleSlides().length);
-           break;
+           return false;
        case 36:  // Home
            Slidoc.slideViewGo(false, 1);
-           break;
+           return false;
        case 37:  // Left arrow
            Slidoc.slideViewGo(false);
-           break;
+           return false;
        case 38: // Up arrow
            break;
        case 39: // Right arrow
@@ -38,6 +38,7 @@ document.onkeydown = function(evt) {
        case 40: // Down arrow
            break;
    }
+   return;
 };
 
 function slidocReady(event) {
@@ -50,20 +51,22 @@ function slidocReady(event) {
 
    Slidoc.delay = {interval: null, timeout: null};
 
-   Slidoc.paced = (Slidoc.params.paceDelay !== null);
+   var pacedFile = (Slidoc.params.paceDelay !== null);
    Slidoc.session = null;
    var sessionName = Slidoc.params.filename;
-   if (Slidoc.paced) {
+   if (pacedFile) {
       // Paced named session
       Slidoc.session = slidocGet('session');
-      if (Slidoc.session && Slidoc.session.sessionName != sessionName) {
-         if (window.confirm('Discard previous session '+Slidoc.session.sessionName+'?')) {
-            Slidoc.session = null;
-         } else {
-            document.body.text = 'Cancelled page load';
-            return false;
-         }
-      }
+       if (Slidoc.session) {
+	   if (Slidoc.session.sessionName != sessionName) {
+               if (window.confirm('Discard previous session '+Slidoc.session.sessionName+'?')) {
+		   Slidoc.session = null;
+               } else {
+		   document.body.text = 'Cancelled page load';
+		   return false;
+               }
+	   }
+       }
    } else {
       // Unnamed session
       sessionName = '';
@@ -71,6 +74,7 @@ function slidocReady(event) {
    if (!Slidoc.session) {
       // New paced session
       Slidoc.session = {sessionName: sessionName,
+			paced: pacedFile,
                         lastSlide: 1,
                         lastTime: 0,
                         lastTries: 0,
@@ -80,10 +84,9 @@ function slidocReady(event) {
                        };
    }
 
-   if (Slidoc.paced) {
-     Slidoc.go("#slidoc01-01", false, true);
-     Slidoc.slideViewStart();
-     return;
+   if (Slidoc.session.paced) {
+     Slidoc.startPaced();
+     return false;
    }
    Slidoc.chainUpdate(location.search);
    var toc_elem = document.getElementById("slidoc00");
@@ -174,7 +177,7 @@ Slidoc.classDisplay = function (className, displayValue) {
      if (displayValue)
         elements[i].style.display = displayValue;
      else
-        elements[i].style.display = (elements[i].style.display=='block') ? 'none' : 'block'
+        elements[i].style.display = (elements[i].style.display=='none') ? 'block' : 'none'
    }
    return false;
 }
@@ -265,6 +268,17 @@ Slidoc.answerClick = function (elem, slide_id, question_number, choice_type) {
    return false;
 }
 
+Slidoc.startPaced = function () {
+    document.body.classList.add('slidoc-paced-view');
+    Slidoc.go("#slidoc01-01", false, true);
+    Slidoc.slideViewStart();
+}
+
+Slidoc.endPaced = function () {
+    document.body.classList.remove('slidoc-paced-view');
+    Slidoc.session.paced = false;
+}
+
 Slidoc.slideViewStart = function () {
    if (Slidoc.slideView) 
       return false;
@@ -273,7 +287,7 @@ Slidoc.slideViewStart = function () {
       return false;
    Slidoc.breakChain();
 
-   if (Slidoc.paced) {
+   if (Slidoc.session.paced) {
        Slidoc.slideView = Slidoc.session.lastSlide; 
    } else {
        Slidoc.slideView = 1;
@@ -286,6 +300,7 @@ Slidoc.slideViewStart = function () {
 	   }
        }
    }
+   Slidoc.classDisplay('slidoc-toc', 'none');
    Slidoc.hide(document.getElementById(slides[0].id+'-hidenotes'), 'slidoc-notes', 'Hide');
    document.body.classList.add('slidoc-slide-view');
 
@@ -294,13 +309,14 @@ Slidoc.slideViewStart = function () {
 }
 
 Slidoc.slideViewEnd = function() {
-   if (Slidoc.paced) {
+   if (Slidoc.session.paced) {
       alert('Paced mode');
       return false;
    }
    document.body.classList.remove('slidoc-slide-view');
    Slidoc.classDisplay('slidoc-slide', 'block');
    Slidoc.classDisplay('slidoc-notes', 'block');
+   Slidoc.classDisplay('slidoc-toc', 'block');
    var slides = getVisibleSlides();
    if (slides && Slidoc.slideView > 0 && Slidoc.slideView <= slides.length) {
      location.href = '#'+slides[Slidoc.slideView-1].id;
@@ -323,7 +339,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
    if (!slides || slide_num < 1 || slide_num > slides.length)
       return false;
 
-    if (Slidoc.paced) {
+    if (Slidoc.session.paced) {
 	console.log('Slidoc.slideViewGo2:', Slidoc.params.paceDelay, slide_num, Slidoc.session.lastSlide);
 	if (Slidoc.params.paceDelay && slide_num > Slidoc.session.lastSlide) {
 	    var delta = (Date.now() - Slidoc.session.lastTime)/1000;
@@ -333,8 +349,11 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    }
 	}
 	slide_num = Math.min(slide_num, Slidoc.session.lastSlide+1);
-	Slidoc.session.lastSlide = Math.max(Slidoc.session.lastSlide, slide_num);
 	Slidoc.session.lastTime = Date.now();
+	Slidoc.session.lastSlide = Math.max(Slidoc.session.lastSlide, slide_num);
+	if (Slidoc.session.lastSlide == slides.length) {
+	    Slidoc.endPaced();
+	}
 	if (Slidoc.session.sessionName) {
 	    // Save updated session
 	    slidocPut('session', Slidoc.session);
@@ -368,6 +387,16 @@ Slidoc.go = function (slideHash, chained, firstChapter) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
    console.log("Slidoc.go:", slideHash, chained);
+    if (!slideHash) {
+	if (Slidoc.slideView) {
+	    Slidoc.slideViewGo(false, 1);
+	} else {
+	    location.hash = Slidoc.curChapterId ? '#'+Slidoc.curChapterId+'-01' : '#slidoc01-01';
+	    window.scrollTo(0,0);
+        }
+	return false;
+    }
+
    var slideId = slideHash.substr(1);
    var goElement = document.getElementById(slideId);
    console.log('Slidoc.go2: ', slideId, chained, goElement);
@@ -585,4 +614,4 @@ function handleTouchMove(evt) {
     yDown = null;                                             
 };
     
-})(Slidoc);
+///UNCOMMENT: })(Slidoc);

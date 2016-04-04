@@ -41,7 +41,7 @@ MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;',
-        'circle': '&#9673;', 'square': '&#9635;'}
+        'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;'}
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -351,10 +351,10 @@ class MathInlineLexer(mistune.InlineLexer):
                     # Numbered reference
                     ref_class = 'slidoc-ref-'+md2md.make_id_from_text(text_key)
                     Global.ref_counter[text_key] += 1
-                    if self.renderer.options['filenumber']:
-                        num_label = "%d.%d" % (self.renderer.options['filenumber'], Global.ref_counter[text_key])
-                    else:
+                    if self.renderer.options['cmd_args'].nonumbering:
                         num_label = "%d" % Global.ref_counter[text_key]
+                    else:
+                        num_label = "%d.%d" % (self.renderer.options['filenumber'], Global.ref_counter[text_key])
                     text += num_label
                 Global.ref_tracker[ref_id] = (num_label, key, ref_class)
             return '''<span id="%s" class="slidoc-referable slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
@@ -509,7 +509,7 @@ class IPythonRenderer(mistune.Renderer):
             # Level 1 (file) header
             if not self.file_header:
                 # Ignore multiple Level 1 headers
-                if self.options['filenumber']:
+                if not self.options['cmd_args'].nonumbering:
                     hdr_prefix = '%d. ' % self.options['filenumber']
 
                 self.cur_header = hdr_prefix + text
@@ -524,7 +524,7 @@ class IPythonRenderer(mistune.Renderer):
             if level == 2:
                 # New section
                 self.section_number += 1
-                if self.options['filenumber']:
+                if not self.options['cmd_args'].nonumbering:
                     hdr_prefix =  '%d.%d ' % (self.options['filenumber'], self.section_number)
                     clickable_secnum = True
                 self.cur_header = hdr_prefix + text
@@ -542,8 +542,7 @@ class IPythonRenderer(mistune.Renderer):
                 hdr.set('onclick', "Slidoc.classDisplay('"+id_str+"');" )
 
         if clickable_secnum:
-            span_prefix = ElementTree.Element('span', {'onclick': "Slidoc.go('#%s');" % self.get_slide_id(1),
-                                                        'class': 'slidoc-clickable-noslide'} )
+            span_prefix = ElementTree.Element('span', {} )
             span_prefix.text = hdr_prefix.strip()
             span_elem = ElementTree.Element('span', {})
             span_elem.text = ' '+ text
@@ -739,17 +738,17 @@ class IPythonRenderer(mistune.Renderer):
         return prefix + ('''<br><a id="%s" class="slidoc-clickable" onclick="Slidoc.classDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
 
 
-    def table_of_contents(self, filepath='', filenumber=0):
+    def table_of_contents(self, filepath='', filenumber=1):
         if len(self.header_list) < 1:
             return ''
 
-        toc = ['<ul class="slidoc-noslide" style="list-style-type: none;">' if filenumber else '<ol>']
+        toc = [('<ol class="slidoc-toc %s">' if self.options['cmd_args'].nonumbering else '<ul class="slidoc-toc %s" style="list-style-type: none;">') % (self.get_chapter_id()+'-toc')]
 
         for id_str, header in self.header_list:  # Skip first header
-            if self.options['cmd_args'].combine:
-                elem = ElementTree.Element("span", {"class" : "slidoc-clickable", "onclick" : "Slidoc.go('#%s');" % id_str})
-            else:
+            if filepath:
                 elem = ElementTree.Element("a", {"class" : "header-link", "href" : filepath+"#"+id_str})
+            else:
+                elem = ElementTree.Element("span", {"class" : "slidoc-clickable", "onclick" : "Slidoc.go('#%s');" % id_str})
             elem.text = header
             toc.append('<li>'+ElementTree.tostring(elem)+'</li>')
 
@@ -803,9 +802,9 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file='', index_id='', qindex_id=''):
+def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
-    if filenumber:
+    if not cmd_args.nonumbering:
         Global.ref_counter = defaultdict(int)
 
     renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
@@ -827,10 +826,11 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
 
         post_header_html = renderer.table_of_contents(filenumber=filenumber)
         if post_header_html:
-            post_header_html = '<div class="slidoc-noslide">'+ post_header_html + '</div>\n'
             if 'slidoc-notes' in content_html:
-                post_header_html += '<p></p>'+click_span('Hide all notes', "Slidoc.hide(this,'slidoc-notes');",
-                                                         id=renderer.first_id+'-hidenotes')
+                post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
+                post_header_html += click_span('Contents', "Slidoc.classDisplay('%s')" % (make_chapter_id(filenumber)+'-toc'),
+                                               classes=['slidoc-clickable', 'slidoc-nopaced'])+'&nbsp;&nbsp;'
+                post_header_html += click_span('Hide all notes', "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes')
 
         content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
         content_html = content_html.replace('__POST_HEADER__', post_header_html)
@@ -840,7 +840,7 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
         # Strip out notes, answer slides
         content_html = re.sub(r"<!--slidoc-block-begin\[([-\w]+)\](.*?)<!--slidoc-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
-    file_toc = renderer.table_of_contents(cmd_args.site_url+filename+'.html', filenumber=filenumber)
+    file_toc = renderer.table_of_contents('' if cmd_args.combine else cmd_args.site_url+filename+'.html', filenumber=filenumber)
 
     return (renderer.file_header or filename, file_toc, renderer.concept_warnings, content_html)
 
@@ -851,8 +851,20 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 
 Html_mid = '''</head>
 <body>
-<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym"><span id="slidoc-slide-nav-prev" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp; <span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp; <span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span></div>
-<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-noslide slidoc-clickable-sym"><span onclick="Slidoc.slideViewStart();">%(square)s</span> </div>
+
+<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym">
+<span id="slidoc-slide-nav-prev" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp;
+<span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp;
+<span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
+</div>
+
+<div id="slidoc-slide-home-button" class="slidoc-slide-home-button slidoc-clickable-sym">
+<span onclick="Slidoc.go();">%(house)s</span>
+</div>
+
+<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide">
+<span onclick="Slidoc.slideViewStart();">%(square)s</span>
+</div>
 
 ''' % SYMS
 
@@ -898,8 +910,8 @@ if __name__ == '__main__':
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)', default='ind.html')
     parser.add_argument('--noconcepts', help='Strip concept lists', action="store_true")
     parser.add_argument('--noheaders', help='No clickable list of headers', action="store_true")
+    parser.add_argument('--nonumbering', help='No chapter/section numbering', action="store_true")
     parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
-    parser.add_argument('--nosections', help='No section numbering', action="store_true")
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
@@ -1032,7 +1044,7 @@ if __name__ == '__main__':
                     break
                 fprefix = fprefix[:-1]
 
-        filenumber = 0 if cmd_args.nosections else (j+1)
+        filenumber = j+1
 
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
@@ -1104,7 +1116,7 @@ if __name__ == '__main__':
         if cmd_args.index and (Global.first_tags or Global.first_qtags):
             toc_html.append(nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id, combine=cmd_args.combine))
         toc_html.append('<blockquote>\n')
-        toc_html.append('<ol>\n' if cmd_args.nosections else '<ul style="list-style-type: none;">\n')
+        toc_html.append('<ol>\n' if cmd_args.nonumbering else '<ul style="list-style-type: none;">\n')
         ifile = 0
         for fname, outname, fheader, file_toc in flist:
             ifile += 1
@@ -1123,7 +1135,7 @@ if __name__ == '__main__':
             f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
             toc_html.append(f_toc_html)
 
-        toc_html.append('</ol>\n' if cmd_args.nosections else '</ul>\n')
+        toc_html.append('</ol>\n' if cmd_args.nonumbering else '</ul>\n')
 
         toc_html.append('</blockquote>\n')
 
