@@ -65,7 +65,7 @@ def slide_prefix(slide_id, classes=''):
 def concept_chain(slide_id, site_url):
     params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
     params.update(SYMS)
-    return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n' % params
+    return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n' % params
 
 
 def html2text(element):
@@ -311,14 +311,15 @@ class MathInlineLexer(mistune.InlineLexer):
                     return None
                 # Slidoc-specific hash reference handling
                 ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
+                ref_class = ''
                 if link.startswith('##'):
                     # Numbered reference
                     if ref_id in Global.ref_tracker:
-                        num_label = Global.ref_tracker[ref_id][0]
+                        num_label, _, ref_class = Global.ref_tracker[ref_id]
                     else:
                         num_label = '_MISSING_SLIDOC_REF_NUM(#%s)' % ref_id
                     text += num_label
-                return '''<span class="slidoc-clickable" onclick="Slidoc.go('#%s');">%s</span>'''  % (ref_id, text)
+                return '''<span class="slidoc-clickable %s" onclick="Slidoc.go('#%s');">%s</span>'''  % (ref_class, ref_id, text)
 
         return super(MathInlineLexer, self).output_link(m)
 
@@ -355,8 +356,8 @@ class MathInlineLexer(mistune.InlineLexer):
                     else:
                         num_label = "%d" % Global.ref_counter[text_key]
                     text += num_label
-                Global.ref_tracker[ref_id] = (num_label, key)
-            return '''<span id="%s" class="slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
+                Global.ref_tracker[ref_id] = (num_label, key, ref_class)
+            return '''<span id="%s" class="slidoc-referable slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
 
         return super(MathInlineLexer, self).output_reflink(m)
 
@@ -771,20 +772,23 @@ class IPythonRenderer(mistune.Renderer):
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
-def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, target=''):
+def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, target='', classes=[]):
     extras = ' target="%s"' if target else ''
+    class_list = classes[:]
     if text.startswith('&'):
-        extras += ' class="slidoc-clickable-sym slidoc-noall"'
+        class_list.append("slidoc-clickable-sym")
         if not href:
             extras += ' style="visibility: hidden;"'
     else:
+        class_list.append("slidoc-clickable")
         extras += ' class="slidoc-clickable slidoc-noall"'
+    class_str = ' '.join(class_list)
     if combine:
-        return '''<span onclick="Slidoc.go('%s');" %s>%s</span>'''  % (hash or href, extras, text)
+        return '''<span class="%s" onclick="Slidoc.go('%s');" %s>%s</span>'''  % (class_str, hash or href, extras, text)
     elif href or text.startswith('&'):
-        return '''<a href="%s%s" %s>%s</a>'''  % (site_url, href+hash if hash and keep_hash else href, extras, text)
+        return '''<a class="%s" href="%s%s" %s>%s</a>'''  % (class_str, site_url, href+hash if hash and keep_hash else href, extras, text)
     else:
-        return '<span>%s</span>' % text
+        return '<span class="%s">%s</span>' % (class_str, text)
 
 Missing_ref_num_re = re.compile(r'_MISSING_SLIDOC_REF_NUM(#[-.\w]+)')
 def Missing_ref_num(match):
@@ -809,12 +813,12 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
         nav_html = ''
         if cmd_args.toc:
             nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
-            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine) + SPACER
-            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine) + SPACER
+            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
+            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
 
         pre_header_html = '<div class="slidoc-noslide slidoc-noall">'+nav_html+'<span class="slidoc-clickable-sym" onclick="Slidoc.slideViewStart();">'+SYMS['square']+'</span>'+'</div>\n'
 
-        tail_html = '<div class="slidoc-noslide">' + ('<a href="#" class="slidoc-clickable-sym slidoc-allonly">%s</a>' %  SYMS['return']) + nav_html + '<a href="#%s" class="slidoc-clickable-sym slidoc-allonly">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
+        tail_html = '<div class="slidoc-noslide">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
 
         post_header_html = renderer.table_of_contents(filenumber=filenumber)
         if post_header_html:
