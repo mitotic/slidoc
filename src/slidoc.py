@@ -41,7 +41,7 @@ MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;',
-         'circle': '&#9673;', 'square': '&#9635;'}
+        'circle': '&#9673;', 'square': '&#9635;'}
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -319,7 +319,7 @@ class MathInlineLexer(mistune.InlineLexer):
                     else:
                         num_label = '_MISSING_SLIDOC_REF_NUM(#%s)' % ref_id
                     text += num_label
-                return '''<span class="slidoc-clickable %s" onclick="Slidoc.go('#%s');">%s</span>'''  % (ref_class, ref_id, text)
+                return click_span(text, "Slidoc.go('#%s');" % ref_id, classes=["slidoc-clickable", ref_class])
 
         return super(MathInlineLexer, self).output_link(m)
 
@@ -428,8 +428,8 @@ class IPythonRenderer(mistune.Renderer):
     def get_chapter_id(self):
         return make_chapter_id(self.options['filenumber'])
 
-    def get_slide_id(self):
-        return make_slide_id(self.options['filenumber'], self.slide_number)
+    def get_slide_id(self, slide_number=0):
+        return make_slide_id(self.options['filenumber'], slide_number or self.slide_number)
 
     def start_block(self, id_str, display='none', style=''):
         prefix =          '<!--slidoc-block-begin['+id_str+']-->\n'
@@ -539,10 +539,11 @@ class IPythonRenderer(mistune.Renderer):
                 pre_header, post_header, end_str = self.start_block(id_str)
                 self.hide_end = end_str
                 hdr_class += ' slidoc-clickable'
-                hdr.set('onclick', "Slidoc.classDisplay('"+id_str+"')" )
+                hdr.set('onclick', "Slidoc.classDisplay('"+id_str+"');" )
 
         if clickable_secnum:
-            span_prefix = ElementTree.Element('a', {'href': '#'+self.get_chapter_id(), 'class': 'slidoc-noslide'})
+            span_prefix = ElementTree.Element('span', {'onclick': "Slidoc.go('#%s');" % self.get_slide_id(1),
+                                                        'class': 'slidoc-clickable-noslide'} )
             span_prefix.text = hdr_prefix.strip()
             span_elem = ElementTree.Element('span', {})
             span_elem.text = ' '+ text
@@ -772,6 +773,10 @@ class IPythonRenderer(mistune.Renderer):
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
+def click_span(text, onclick, id='', classes=['slidoc-clickable']):
+    id_str = ' id="%s"' % id if id else ''
+    return '''<span %s class="%s" onclick="%s">%s</span>''' % (id_str, ' '.join(classes), onclick, text)
+
 def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, target='', classes=[]):
     extras = ' target="%s"' if target else ''
     class_list = classes[:]
@@ -816,7 +821,7 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
             nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
             nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
 
-        pre_header_html = '<div class="slidoc-noslide slidoc-noall">'+nav_html+'<span class="slidoc-clickable-sym" onclick="Slidoc.slideViewStart();">'+SYMS['square']+'</span>'+'</div>\n'
+        pre_header_html = '<div class="slidoc-noslide slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym"])+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
 
@@ -824,7 +829,8 @@ def md2html(source, filename, cmd_args, filenumber=0, prev_file='', next_file=''
         if post_header_html:
             post_header_html = '<div class="slidoc-noslide">'+ post_header_html + '</div>\n'
             if 'slidoc-notes' in content_html:
-                post_header_html += ('<p></p><a id="%s-hidenotes" href="#" onclick="Slidoc.hide(this,'+"'slidoc-notes'"+');">Hide all notes</a>') % renderer.first_id
+                post_header_html += '<p></p>'+click_span('Hide all notes', "Slidoc.hide(this,'slidoc-notes');",
+                                                         id=renderer.first_id+'-hidenotes')
 
         content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
         content_html = content_html.replace('__POST_HEADER__', post_header_html)
@@ -845,7 +851,7 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 
 Html_mid = '''</head>
 <body>
-<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym"><span id="slidoc-slide-nav-prev" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp; <span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp; <span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span></div>
+<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym"><span id="slidoc-slide-nav-prev" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp; <span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp; <span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span></div>
 <div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-noslide slidoc-clickable-sym"><span onclick="Slidoc.slideViewStart();">%(square)s</span> </div>
 
 ''' % SYMS
@@ -1127,9 +1133,9 @@ if __name__ == '__main__':
         toc_html.append('<p></p><em>Document formatted by <a href="https://github.com/mitotic/slidoc">slidoc</a>.</em><p></p>')
 
         if not cmd_args.dry_run:
-            toc_insert = '''<a href="#" onclick="Slidoc.classDisplay('slidoc-toc-entry');">Show all sections</a>'''
+            toc_insert = click_span('Show all sections', "Slidoc.classDisplay('slidoc-toc-entry');")
             if cmd_args.combine:
-                toc_insert += SPACER + '''<a href="#" onclick="Slidoc.allDisplay(this);">Show all chapters</a>'''
+                toc_insert += SPACER + click_span('Show all chapters', "Slidoc.allDisplay(this);")
             toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide')+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html

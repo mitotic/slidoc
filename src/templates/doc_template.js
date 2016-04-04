@@ -71,7 +71,7 @@ function slidocReady(event) {
    if (!Slidoc.session) {
       // New paced session
       Slidoc.session = {sessionName: sessionName,
-                        lastSlide: 0,
+                        lastSlide: 1,
                         lastTime: 0,
                         lastTries: 0,
                         questionsCount: 0,
@@ -81,7 +81,7 @@ function slidocReady(event) {
    }
 
    if (Slidoc.paced) {
-     Slidoc.go("#slidoc01", false, true);
+     Slidoc.go("#slidoc01-01", false, true);
      Slidoc.slideViewStart();
      return;
    }
@@ -137,12 +137,12 @@ function getVisibleSlides() {
 Slidoc.hide = function (elem, className, action) {
    // Action = 'Hide' or 'Show' or omitted for toggling
    if (!elem) return false;
-   action = action || elem.text;
+   action = action || elem.textContent;
    if (action.charAt(0) == 'H') {
-      elem.text = elem.text.replace('Hide', 'Show');
+      elem.textContent = elem.textContent.replace('Hide', 'Show');
       if (className) Slidoc.classDisplay(className, 'none');
    } else {
-      elem.text = elem.text.replace('Show', 'Hide');
+      elem.textContent = elem.textContent.replace('Show', 'Hide');
       if (className) Slidoc.classDisplay(className, 'block');
    }
    return false;
@@ -272,12 +272,18 @@ Slidoc.slideViewStart = function () {
    if (!slides)
       return false;
    Slidoc.breakChain();
-   Slidoc.slideView = 1;
-   for (var i=0; i<slides.length; ++i) {
-       var topOffset = slides[i].getBoundingClientRect().top;
-       if (topOffset >= 0 && topOffset < window.innerHeight) {
-          Slidoc.slideView = i+1;
-          break;
+
+   if (Slidoc.paced) {
+       Slidoc.slideView = Slidoc.session.lastSlide; 
+   } else {
+       Slidoc.slideView = 1;
+       for (var i=0; i<slides.length; ++i) {
+	   // Start from currently visible slide
+	   var topOffset = slides[i].getBoundingClientRect().top;
+	   if (topOffset >= 0 && topOffset < window.innerHeight) {
+               Slidoc.slideView = i+1;
+               break;
+	   }
        }
    }
    Slidoc.hide(document.getElementById(slides[0].id+'-hidenotes'), 'slidoc-notes', 'Hide');
@@ -307,18 +313,44 @@ Slidoc.slideViewGo = function (forward, slide_num) {
    console.log('Slidoc.slideViewGo:', forward, slide_num);
    if (!Slidoc.slideView)
       return false;
-   if (!slide_num) slide_num = forward ? Slidoc.slideView+1 : Slidoc.slideView-1;
-   var slides = getVisibleSlides();
+
+    var slides = getVisibleSlides();
+    if (slide_num) {
+	slide_num = Math.min(slide_num, slides.length);
+    } else {
+	slide_num = forward ? Slidoc.slideView+1 : Slidoc.slideView-1;
+    }
    if (!slides || slide_num < 1 || slide_num > slides.length)
       return false;
+
+    if (Slidoc.paced) {
+	console.log('Slidoc.slideViewGo2:', Slidoc.params.paceDelay, slide_num, Slidoc.session.lastSlide);
+	if (Slidoc.params.paceDelay && slide_num > Slidoc.session.lastSlide) {
+	    var delta = (Date.now() - Slidoc.session.lastTime)/1000;
+	    if (delta < Slidoc.params.paceDelay) {
+		alert('Please wait '+ Math.ceil(Slidoc.params.paceDelay-delta) + ' seconds');
+		return false;
+	    }
+	}
+	slide_num = Math.min(slide_num, Slidoc.session.lastSlide+1);
+	Slidoc.session.lastSlide = Math.max(Slidoc.session.lastSlide, slide_num);
+	Slidoc.session.lastTime = Date.now();
+	if (Slidoc.session.sessionName) {
+	    // Save updated session
+	    slidocPut('session', Slidoc.session);
+	}
+    }
 
    var prev_elem = document.getElementById('slidoc-slide-nav-prev');
    var next_elem = document.getElementById('slidoc-slide-nav-next');
    prev_elem.style.visibility = (slide_num == 1) ? 'hidden' : 'visible';
    next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
 
-   Slidoc.classDisplay('slidoc-slide', 'none');
+   console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
    slides[slide_num-1].style.display = 'block';
+   for (var i=0; i<slides.length; ++i) {
+       if (i != slide_num-1) slides[i].style.display = 'none';
+   }
    Slidoc.slideView = slide_num;
    location.href = '#'+slides[Slidoc.slideView-1].id;
    return false;
@@ -509,4 +541,48 @@ Slidoc.chainUpdate = function (queryStr) {
 console.log("Slidoc.chainUpdate:4", location.hash);
 }
 
+// Detect swipe events
+// http://stackoverflow.com/questions/2264072/detect-a-finger-swipe-through-javascript-on-the-iphone-and-android
+document.addEventListener('touchstart', handleTouchStart, false);        
+document.addEventListener('touchmove', handleTouchMove, false);
+
+var xDown = null;                                                        
+var yDown = null;                                                        
+
+function handleTouchStart(evt) {                                         
+    xDown = evt.touches[0].clientX;                                      
+    yDown = evt.touches[0].clientY;                                      
+};                                                
+
+function handleTouchMove(evt) {
+    if ( ! xDown || ! yDown ) {
+        return;
+    }
+
+    var xUp = evt.touches[0].clientX;                                    
+    var yUp = evt.touches[0].clientY;
+
+    var xDiff = xDown - xUp;
+    var yDiff = yDown - yUp;
+
+    if ( Math.abs( xDiff ) > Math.abs( yDiff ) ) {/*most significant*/
+        if ( xDiff > 0 ) {
+            /* left swipe (right motion) */ 
+           Slidoc.slideViewGo(true);
+        } else {
+            /* right swipe (leftward motion) */
+           Slidoc.slideViewGo(false);
+        }                       
+    } else {
+        if ( yDiff > 0 ) {
+            /* up swipe */ 
+        } else { 
+            /* down swipe */
+        }                                                                 
+    }
+    /* reset values */
+    xDown = null;
+    yDown = null;                                             
+};
+    
 })(Slidoc);
