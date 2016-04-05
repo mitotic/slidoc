@@ -18,7 +18,6 @@ Usage examples:
 
 from __future__ import print_function
 
-import base64
 import os
 import re
 import sys
@@ -67,6 +66,13 @@ def concept_chain(slide_id, site_url):
     params.update(SYMS)
     return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n' % params
 
+
+def isfloat(value):
+  try:
+    float(value)
+    return True
+  except ValueError:
+    return False
 
 def html2text(element):
     """extract inner text from html
@@ -602,7 +608,7 @@ class IPythonRenderer(mistune.Renderer):
 
         params = {'id': self.get_slide_id(), 'opt': name, 'qno': self.question_number}
         if self.options['cmd_args'].hide:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, '%(id)s', %(qno)d, '%(opt)s');"+'">%(opt)s</span>. ''' % params
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, %(qno)d, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice">%(opt)s</span>. ''' % params
 
@@ -635,7 +641,21 @@ class IPythonRenderer(mistune.Renderer):
             if len(text) == 1 and text.isalpha():
                 self.cur_qtype = 'choice'
             elif text and text[0].isdigit():
-                self.cur_qtype = 'number'
+                ans, error = '', ''
+                if '+/-' in text:
+                    ans, _, error = text.partition('+/-')
+                elif ' ' in text.strip():
+                    comps = text.strip().split()
+                    if len(comps) == 2:
+                        ans, error = comps
+                else:
+                    ans = text
+                ans, error = ans.strip(), error.strip()
+                if isfloat(ans) and (not error or isfloat(error)):
+                    self.cur_qtype = 'number'
+                    text = ans + (' +/- '+error if error else '')
+                else:
+                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err'" % (self.options["filename"], text), file=sys.stderr)
             else:
                 self.cur_qtype = 'text'    # Default answer type
 
@@ -645,21 +665,28 @@ class IPythonRenderer(mistune.Renderer):
 
         if self.options['cmd_args'].hide:
             id_str = self.get_slide_id()
-            attrs_ans = {'id': id_str+'-answer' }
-            attrs_corr = {'id': id_str+'-correct'}
+            ans_params = {'sid': id_str,
+                          'ans_text': name.capitalize(),
+                          'ans_extras': '',
+                          'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (self.question_number, id_str, self.cur_qtype),
+                          'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
+                          'inp_extras': '',
+                          'corr_text': text.upper() if len(text) == 1 else text
+                          }
             if self.cur_choice:
-                attrs_ans.update({'style': 'display: none;'})
-            else:
-                attrs_ans.update({'class' : 'slidoc-clickable', 'onclick': "Slidoc.answerClick(this, '%s', %d, '');" % (id_str, self.question_number)} )
-                attrs_corr.update({'style': 'display: none;'})
-            ans_elem = ElementTree.Element('div', attrs_ans)
-            ans_elem.text = name.capitalize()+': '
-            span_corr = ElementTree.Element('span', attrs_corr)
-            span_corr.text = text.upper() if len(text) == 1 else text
-            ans_elem.append(span_corr)
-            span_resp = ElementTree.Element('span', {'id': id_str+'-resp'})
-            ans_elem.append(span_resp)
-            return choice_prefix+ElementTree.tostring(ans_elem)+'\n'
+                ans_params['ans_extras'] = 'style="display: none;"'
+                ans_params['click_extras'] = 'style="display: none;"'
+                ans_params['inp_extras'] = 'style="display: none;"'
+
+            ans_html = '''<div id="%(sid)s-answer" %(ans_extras)s>
+<span id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>%(ans_text)s:</span>
+<input id="%(sid)s-input" type="%(inp_type)s" %(inp_extras)s></input>
+<span id="%(sid)s-resp"></span>
+<span id="%(sid)s-correct" style="display: none;">%(corr_text)s</span>
+</div>
+''' % ans_params
+
+            return choice_prefix+ans_html+'\n'
         else:
             return choice_prefix+name.capitalize()+': '+text+'\n'
 
@@ -828,9 +855,13 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
         if post_header_html:
             if 'slidoc-notes' in content_html:
                 post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
-                post_header_html += click_span('Contents', "Slidoc.classDisplay('%s')" % (make_chapter_id(filenumber)+'-toc'),
+                post_header_html += click_span('Reset paced session', "Slidoc.resetPaced();",
+                                               classes=['slidoc-clickable', 'slidoc-pacedonly'])
+                post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
                                                classes=['slidoc-clickable', 'slidoc-nopaced'])+'&nbsp;&nbsp;'
-                post_header_html += click_span('Hide all notes', "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes')
+                post_header_html += click_span('Hide all notes',
+                                                "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
+                                                classes=['slidoc-clickable', 'slidoc-nopaced'])
 
         content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
         content_html = content_html.replace('__POST_HEADER__', post_header_html)
@@ -858,8 +889,9 @@ Html_mid = '''</head>
 <span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
 </div>
 
-<div id="slidoc-slide-home-button" class="slidoc-slide-home-button slidoc-clickable-sym">
-<span onclick="Slidoc.go();">%(house)s</span>
+<div id="slidoc-slide-home-button" class="slidoc-slide-home-button ">
+<span id="slidoc-score-display"></span>
+<span class="slidoc-clickable-sym" onclick="Slidoc.go();">%(house)s</span>
 </div>
 
 <div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide">
@@ -915,7 +947,7 @@ if __name__ == '__main__':
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
-    parser.add_argument('--pace', help='=delay_sec,try_count,try_delay for paced session using combined file', default='')
+    parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay for paced session using combined file, e.g., 0,0,1', default='')
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
@@ -925,7 +957,7 @@ if __name__ == '__main__':
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
-    js_params = {'filename': '', 'paceDelay': None, 'tryCount': None, 'tryDelay': None}
+    js_params = {'filename': '', 'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
     else:
@@ -935,11 +967,13 @@ if __name__ == '__main__':
     if cmd_args.pace:
         comps = cmd_args.pace.split(',')
         if comps[0]:
-            js_params['paceDelay'] = int(comps[0])
+            js_params['paceOpen'] = int(comps[0])
         if len(comps) > 1 and comps[1].isdigit():
-            js_params['tryCount'] = int(comps[1])
-        if len(comps) > 2 and comps[2].isdigit():
-            js_params['tryDelay'] = int(comps[2])
+            js_params['paceDelay'] = int(comps[1])
+        if len(comps) > 2 and comps[1].isdigit():
+            js_params['tryCount'] = int(comps[2])
+        if len(comps) > 3 and comps[2].isdigit():
+            js_params['tryDelay'] = int(comps[3])
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -1062,7 +1096,7 @@ if __name__ == '__main__':
         if math_in_file:
             math_found = True
         
-        doc_params = {'body_style': style_str, 'js_params': base64.b64encode(json.dumps(js_params)),
+        doc_params = {'body_style': style_str, 'js_params': json.dumps(js_params),
                       'math_js': Mathjax_js if math_in_file else ''}
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
@@ -1181,7 +1215,7 @@ if __name__ == '__main__':
                 links = ['<a href="%s%s.html#%s" target="_blank">%s</a>' % (cmd_args.site_url, slide_file, slide_id, slide_file[len(fprefix):] or slide_file) for slide_file, slide_id, slide_header in first_references[tag]]
                 xref_list.append(("%-32s:" % tag)+', '.join(links)+'<br>')
 
-            xref_list.append("<p></p><b>First concepts in each file:</b><br>")
+            xref_list.append("<p></p><b>Primary concepts covered in each file:</b><br>")
             for fname, outname, fheader, file_toc in flist:
                 clist = covered_first[fname].keys()
                 clist.sort()
@@ -1241,7 +1275,7 @@ if __name__ == '__main__':
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
-        comb_params = {'body_style': style_str, 'js_params': base64.b64encode(json.dumps(js_params)),
+        comb_params = {'body_style': style_str, 'js_params': json.dumps(js_params),
                        'math_js': Mathjax_js if math_found else ''}
         md2md.write_file(dest_dir+cmd_args.combine, Html_header, doc_template % comb_params, Html_mid,
                          '\n'.join(combined_html), Html_footer)
