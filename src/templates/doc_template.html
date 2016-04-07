@@ -1,12 +1,27 @@
-<!-- HTML include for slidoc--->
+<!-- HTML template for slidoc--->
 
-<div id="slidoc-popup-overlay"></div>
+<style>
+    body { %(body_style)s }
+</style>
 
-<div id="slidoc-generic-popup" class="slidoc-popup">
-    <div class="slidoc-popup-controls">
-        <span id="slidoc-generic-popup-close" class="slidoc-popup-close">X</span>
-    </div>
-    <div id="slidoc-generic-popup-content" class="slidoc-popup-content">
-    </div>
+%(math_js)s
+
+</head>
+<body>
+
+<div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym">
+<span id="slidoc-slide-nav-prev" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp;
+<span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp;
+<span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
+</div>
+<div id="slidoc-hourglass-container" ><span id="slidoc-hourglass" ></span></div>
+
+<div id="slidoc-slide-home-button" class="slidoc-slide-home-button ">
+<span id="slidoc-score-display"></span>
+<span class="slidoc-clickable-sym" onclick="Slidoc.go();">%(house)s</span>
+</div>
+
+<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide">
+<span onclick="Slidoc.slideViewStart();">%(square)s</span>
 </div>
 
