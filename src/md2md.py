@@ -103,6 +103,13 @@ class Parser(object):
     img_re = re.compile(r'''<img(\s+\w+(=[^'"\s]+|='[^'\n]*'|="[^"\n]*")?)*\s*>''')
     attr_re_format = r'''\s%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
 
+    slidoc_choice_re = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
+    internal_ref_re =  re.compile(
+        r'\[('
+        r'(?:\[[^^\]]*\]|[^\[\]]|\](?=[^\[]*\]))*'
+        r')\]\s*\{\s*#([^^\}]*)\}'
+    )
+    
     def __init__(self, cmd_args):
         self.cmd_args = cmd_args
         self.arg_check(cmd_args)
@@ -439,7 +446,7 @@ class Parser(object):
                 content = content[len(matched.group(0)):]
 
                 if rule_name == 'fenced':
-                    if not self.cmd_args.nocode:
+                    if 'code' not in self.cmd_args.strip:
                         if self.cmd_args.unfence:
                             self.output.append( re.sub(r'(^|\n)(.)', '\g<1>    \g<2>', matched.group(3))+'\n\n' )
                         else:
@@ -473,11 +480,11 @@ class Parser(object):
                     pass
                 elif self.annotation_re.match(line) and not self.cmd_args.keep_annotation:
                     pass
-                elif self.answer_re.match(line) and self.cmd_args.noanswers:
+                elif self.answer_re.match(line) and 'answers' in self.cmd_args.strip:
                     pass
-                elif self.concepts_re.match(line) and self.cmd_args.noconcepts:
+                elif self.concepts_re.match(line) and 'concepts' in self.cmd_args.strip:
                     pass
-                elif self.notes_re.match(line) and self.cmd_args.nonotes:
+                elif self.notes_re.match(line) and 'notes' in self.cmd_args.strip:
                     self.skipping_notes = True
                 else:
                     match_ref = self.ref_re.match(line)
@@ -497,6 +504,12 @@ class Parser(object):
                             self.buffered_markdown.append(line+'\n')
                     else:
                         # Normal markdown line
+                        if 'extensions' in self.cmd_args.strip:
+                            if self.slidoc_choice_re.match(line):
+                                # Strip slidoc extension for interactive multiple-choice
+                                line = re.sub('\.\.', '.', line, count=1)
+                            # Strip slidoc extension for internal references
+                            line = self.internal_ref_re.sub(r'\1', line)
                         if self.cmd_args.backtick_off:
                             line = re.sub(r"(^|[^`])`\$(.+?)\$`", r"\1$\2$", line)
                         self.buffered_markdown.append(line+'\n')
@@ -617,16 +630,16 @@ class Parser(object):
             return None, None, None
 
     def hrule(self, text):
-        if not self.cmd_args.norule and not self.cmd_args.nomarkup:
+        if 'rule' not in self.cmd_args.strip and 'markup' not in self.cmd_args.strip:
             self.buffered_markdown.append(text+'\n\n')
         self.skipping_notes = False
 
     def minirule(self, text):
-        if not self.cmd_args.norule and not self.cmd_args.nomarkup:
+        if 'rule' not in self.cmd_args.strip and 'markup' not in self.cmd_args.strip:
             self.buffered_markdown.append(text+'\n\n')
 
     def math_block(self, content, latex=False):
-        if not self.cmd_args.nomarkup:
+        if 'markup' not in self.cmd_args.strip:
             if latex or not self.cmd_args.backtick_on:
                 self.output.append(content)
             else:
@@ -642,7 +655,7 @@ class Parser(object):
         md_text = self.reflink_re.sub(self.ref_link, md_text)
         md_text = self.img_re.sub(self.img_tag, md_text)
 
-        if not self.cmd_args.nomarkup:
+        if 'markup' not in self.cmd_args.strip:
             self.output.append(md_text)
 
 
@@ -665,13 +678,27 @@ class ArgsObj(object):
 
         return self.ParserArgs(**arg_vals)
 
-Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images'],
-                    bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'noanswers', 'nocode', 'noconcepts', 'nomarkup', 'nonotes', 'norule', 'overwrite', 'unfence'],
+Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', 'strip'],
+                    bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'overwrite', 'unfence'],
                     defaults= {'image_dir': 'images'})
+
+def make_strip_set(strip_arg, strip_all):
+    strip_all_set = set(strip_all)
+    strip_set = set(strip_arg.split(',')) if strip_arg else set()
+    if 'all' in strip_set:
+        strip_set.discard('all')
+        if 'but' in strip_set:
+            strip_set.discard('but')
+            strip_set = strip_all_set.copy().difference(strip_set)
+        else:
+            strip_set = strip_all_set.copy()    
+    return strip_set
 
 if __name__ == '__main__':
     import argparse
 
+    strip_all = ['answers', 'code', 'concepts', 'extensions', 'markup', 'notes', 'rule']
+    
     parser = argparse.ArgumentParser(description='Convert from Markdown to Markdown')
     parser.add_argument('--backtick_off', help='Remove backticks bracketing inline math', action="store_true")
     parser.add_argument('--backtick_on', help='Wrap block math with backticks', action="store_true")
@@ -681,13 +708,8 @@ if __name__ == '__main__':
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web,pandoc] to process images', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
-    parser.add_argument('--noanswers', help='Remove all Answers', action="store_true")
-    parser.add_argument('--nocode', help='Remove all fenced code', action="store_true")
-    parser.add_argument('--noconcepts', help='Remove Concepts list', action="store_true")
-    parser.add_argument('--nomarkup', help='Retain code blocks only', action="store_true")
-    parser.add_argument('--nonotes', help='Remove notes', action="store_true")
-    parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
+    parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--unfence', help='Convert fenced code block to indented blocks', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
@@ -695,6 +717,8 @@ if __name__ == '__main__':
     if cmd_args.image_url and not cmd_args.image_url.endswith('/'):
         cmd_args.image_url += '/'
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
+
+    cmd_args.strip = make_strip_set(cmd_args.strip, strip_all)
 
     md_parser = Parser( Args_obj.create_args(cmd_args) )   # Use args_obj to pass orgs as a consistency check
     

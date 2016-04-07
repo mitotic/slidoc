@@ -132,9 +132,9 @@ class MDParser(object):
                 line, _, content = content.partition('\n')
                 if self.skipping_notes:
                     pass
-                elif self.concepts_re.match(line) and self.cmd_args.noconcepts:
+                elif self.concepts_re.match(line) and 'concepts' in self.cmd_args.strip:
                     pass
-                elif self.notes_re.match(line) and self.cmd_args.nonotes:
+                elif self.notes_re.match(line) and 'notes' in self.cmd_args.strip:
                     self.skipping_notes = True
                 elif not line.strip() and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
                     # Skip blank lines immediately following a code block
@@ -153,7 +153,7 @@ class MDParser(object):
 
 
     def hrule(self, text):
-        if not self.cmd_args.norule and not self.cmd_args.nomarkup:
+        if 'rule' not in self.cmd_args.strip and 'markup' not in self.cmd_args.strip:
             self.buffered_lines.append(text+'\n\n')
         self.skipping_notes = False
 
@@ -182,11 +182,11 @@ class MDParser(object):
             self.cells_buffer.append({'cell_type': 'code', 'source': self.split_str(code), 'outputs': []})
 
     def math_block(self, content):
-        if not self.cmd_args.nomarkup:
+        if 'markup' not in self.cmd_args.strip:
             self.buffered_lines.append(content)
 
     def markdown(self, content):
-        if not self.cmd_args.nomarkup:
+        if 'markup' not in self.cmd_args.strip:
             self.cells_buffer.append({'cell_type': 'markdown', 'source': self.split_str(content, backtick_off=True)})
 
     def split_str(self, content, backtick_off=False):
@@ -228,23 +228,23 @@ class MDParser(object):
 
 Nb_convert_url_prefix = 'http://nbviewer.jupyter.org/url/'
 
-Args_obj = md2md.ArgsObj( str_args= ['site_url'],
-                          bool_args= [ 'indented', 'noconcepts', 'nomarkup', 'nonotes', 'norule', 'overwrite'],
+Args_obj = md2md.ArgsObj( str_args= ['site_url', 'strip'],
+                          bool_args= [ 'indented', 'overwrite'],
                           defaults= {})
 
 if __name__ == '__main__':
     import argparse
 
+    strip_all = ['concepts', 'markup', 'notes', 'rule']
+    
     parser = argparse.ArgumentParser(description='Convert from Markdown to Jupyter Notebook format')
     parser.add_argument('--indented', help='Convert indented code blocks to notebook cells', action="store_true")
-    parser.add_argument('--noconcepts', help='Remove Concepts list', action="store_true")
-    parser.add_argument('--nomarkup', help='Convert code blocks only', action="store_true")
-    parser.add_argument('--nonotes', help='Remove notes', action="store_true")
-    parser.add_argument('--norule', help='Suppress horizontal rule separating slides', action="store_true")
     parser.add_argument('--site_url', help='URL prefix for website (default: "")', default='')
+    parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
+    cmd_args.strip = md2md.make_strip_set(cmd_args.strip, strip_all)
 
     url_prefix = ''
     if cmd_args.site_url:

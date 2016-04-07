@@ -963,6 +963,8 @@ if __name__ == '__main__':
     import argparse
     import md2nb
 
+    strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'notes', 'rule', 'sections']
+
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file (default: ""', default='')
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file (default: "")', default='')
@@ -982,7 +984,7 @@ if __name__ == '__main__':
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
-    parser.add_argument('--strip', help='Strip answers,chapters,concepts,contents,hidden,notes,rule,sections|all|all,but,...')
+    parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
     parser.add_argument('--toc_header', help='HTML header file for ToC')
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
@@ -1016,15 +1018,7 @@ if __name__ == '__main__':
 
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
-    strip_all_set = set(['answers', 'chapters', 'concepts', 'contents', 'hidden', 'notes', 'rule', 'sections'])
-    cmd_args.strip = set(cmd_args.strip.split(',')) if cmd_args.strip else set()
-    if 'all' in cmd_args.strip:
-        cmd_args.strip.discard('all')
-        if 'but' in cmd_args.strip:
-            cmd_args.strip.discard('but')
-            cmd_args.strip = strip_all_set.copy().difference(cmd_args.strip)
-        else:
-            cmd_args.strip = strip_all_set.copy()
+    cmd_args.strip = md2md.make_strip_set(cmd_args.strip, strip_all)
 
     if cmd_args.dest_dir and not os.path.isdir(cmd_args.dest_dir):
         sys.exit("Destination directory %s does not exist" % cmd_args.dest_dir)
@@ -1075,16 +1069,17 @@ if __name__ == '__main__':
                                                       image_dir=cmd_args.image_dir,
                                                       image_url=cmd_args.image_url,
                                                       images=cmd_args.images | slidoc_opts)
-    slide_mods_dict = {'noconcepts': True}
+    slide_mods_dict = {'strip': 'concepts,extensions'}
     if 'answers' in cmd_args.strip:
-        slide_mods_dict['noanswers'] = True
+        slide_mods_dict['strip'] += ',answers'
     if 'notes' in cmd_args.strip:
-        slide_mods_dict['nonotes'] = True
+        slide_mods_dict['strip'] += ',notes'
     slide_mods_args = md2md.Args_obj.create_args(base_mods_args, **slide_mods_dict)
 
-    nb_converter_args = md2nb.Args_obj.create_args(None, site_url=cmd_args.site_url,
-                                                         norule='rule' in cmd_args.strip,
-                                                         noconcepts=True)
+    nb_mods_dict = {'strip': 'concepts,extensions', 'site_url': cmd_args.site_url}
+    if 'rule' in cmd_args.strip:
+        nb_mods_dict['strip'] += ',rule'
+    nb_converter_args = md2nb.Args_obj.create_args(None, **nb_mods_dict)
     index_id = make_chapter_id(len(cmd_args.file)+1)
     qindex_id = make_chapter_id(len(cmd_args.file)+2)
     back_to_contents = nav_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
