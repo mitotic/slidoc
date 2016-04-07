@@ -205,6 +205,7 @@ Global.concept_questions = defaultdict(list)
 
 Global.ref_tracker = dict()
 Global.ref_counter = defaultdict(int)
+Global.chapter_ref_counter = defaultdict(int)
 
 class MathBlockGrammar(mistune.BlockGrammar):
     def_links = re.compile(  # RE-DEFINE TO INCLUDE SINGLE QUOTES
@@ -356,11 +357,12 @@ class MathInlineLexer(mistune.InlineLexer):
                 if key.startswith('##'):
                     # Numbered reference
                     ref_class = 'slidoc-ref-'+md2md.make_id_from_text(text_key)
-                    Global.ref_counter[text_key] += 1
-                    if self.renderer.options['cmd_args'].nonumbering:
-                        num_label = "%d" % Global.ref_counter[text_key]
+                    if key.startswith('##.#'):
+                        Global.chapter_ref_counter[text_key] += 1
+                        num_label = "%d.%d" % (self.renderer.options['filenumber'], Global.chapter_ref_counter[text_key])
                     else:
-                        num_label = "%d.%d" % (self.renderer.options['filenumber'], Global.ref_counter[text_key])
+                        Global.ref_counter[text_key] += 1
+                        num_label = "%d" % Global.ref_counter[text_key]
                     text += num_label
                 Global.ref_tracker[ref_id] = (num_label, key, ref_class)
             return '''<span id="%s" class="slidoc-referable slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
@@ -680,9 +682,10 @@ class IPythonRenderer(mistune.Renderer):
 
             ans_html = '''<div id="%(sid)s-answer" %(ans_extras)s>
 <span id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>%(ans_text)s:</span>
-<input id="%(sid)s-input" type="%(inp_type)s" %(inp_extras)s></input>
-<span id="%(sid)s-resp"></span>
-<span id="%(sid)s-correct" style="display: none;">%(corr_text)s</span>
+<input id="%(sid)s-input" type="%(inp_type)s" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>
+<span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
+<span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
+<span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;">%(corr_text)s</span>
 </div>
 ''' % ans_params
 
@@ -821,7 +824,7 @@ def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, targ
     else:
         return '<span class="%s">%s</span>' % (class_str, text)
 
-Missing_ref_num_re = re.compile(r'_MISSING_SLIDOC_REF_NUM(#[-.\w]+)')
+Missing_ref_num_re = re.compile(r'_MISSING_SLIDOC_REF_NUM\(#([-.\w]+)\)')
 def Missing_ref_num(match):
     ref_id = match.group(1)
     if ref_id in Global.ref_tracker:
@@ -831,8 +834,7 @@ def Missing_ref_num(match):
 
 def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
-    if not cmd_args.nonumbering:
-        Global.ref_counter = defaultdict(int)
+    Global.chapter_ref_counter = defaultdict(int)
 
     renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
 
@@ -888,6 +890,7 @@ Html_mid = '''</head>
 <span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp;
 <span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
 </div>
+<div id="slidoc-hourglass-container" ><span id="slidoc-hourglass" ></span></div>
 
 <div id="slidoc-slide-home-button" class="slidoc-slide-home-button ">
 <span id="slidoc-score-display"></span>
@@ -897,6 +900,7 @@ Html_mid = '''</head>
 <div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide">
 <span onclick="Slidoc.slideViewStart();">%(square)s</span>
 </div>
+
 
 ''' % SYMS
 
@@ -992,7 +996,8 @@ if __name__ == '__main__':
     for tname in ('doc_template.js', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
-    doc_template = templates['doc_template.html'] + '<script>\n' + templates['doc_template.js'] + '</script>\n'
+    doc_template = templates['doc_template.html']
+    js_template = '<script>\n'+templates['doc_template.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params))+'</script>\n'
         
     fnames = []
     for f in cmd_args.file:
@@ -1096,8 +1101,7 @@ if __name__ == '__main__':
         if math_in_file:
             math_found = True
         
-        doc_params = {'body_style': style_str, 'js_params': json.dumps(js_params),
-                      'math_js': Mathjax_js if math_in_file else ''}
+        doc_params = {'body_style': style_str, 'math_js': Mathjax_js if math_in_file else ''}
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
@@ -1108,7 +1112,7 @@ if __name__ == '__main__':
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
             else:
-                head = doc_template % doc_params
+                head = (doc_template % doc_params) + js_template
                 body = md_prefix+md_html+md_suffix
                 if Missing_ref_num_re.search(md_html):
                     # Still some missing reference numbers; output file later
@@ -1186,7 +1190,7 @@ if __name__ == '__main__':
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html
             else:
-                md2md.write_file(dest_dir+cmd_args.toc, Html_header, doc_template % doc_params, Html_mid, toc_output, Html_footer)
+                md2md.write_file(dest_dir+cmd_args.toc, Html_header, (doc_template % doc_params) + js_template, Html_mid, toc_output, Html_footer)
                 print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
     xref_list = []
@@ -1275,8 +1279,7 @@ if __name__ == '__main__':
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
-        comb_params = {'body_style': style_str, 'js_params': json.dumps(js_params),
-                       'math_js': Mathjax_js if math_found else ''}
-        md2md.write_file(dest_dir+cmd_args.combine, Html_header, doc_template % comb_params, Html_mid,
+        comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
+        md2md.write_file(dest_dir+cmd_args.combine, Html_header, (doc_template % comb_params) + js_template, Html_mid,
                          '\n'.join(combined_html), Html_footer)
         print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)
