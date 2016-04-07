@@ -1,4 +1,4 @@
-// Template file 
+// JS include file for slidoc
 
 var Slidoc = {};  // External object
 
@@ -504,7 +504,7 @@ Slidoc.startPaced = function () {
 	    alertStr += ' '+Sliobj.params.tryCount+' attempts for non-choice questions;';
 	if (Sliobj.params.tryDelay)
 	    alertStr += ' '+Sliobj.params.tryDelay+' sec delay between attempts;';
-	alert(alertStr);
+	Slidoc.showPopup(alertStr);
     }
     for (var qnumber in Sliobj.session.questionsAttempted) {
 	// Pre-answer questions
@@ -868,6 +868,38 @@ Slidoc.chainUpdate = function (queryStr) {
         }
     }
 console.log("Slidoc.chainUpdate:4", location.hash);
+}
+
+// Popup: http://www.loginradius.com/engineering/simple-popup-tutorial/
+
+Slidoc.showPopup = function (innerHTML, divElemId) {
+    // Only one of innerHTML or divElemId needs to be non-null
+    if (!divElemId) divElemId = 'slidoc-generic-popup';
+    var divElem = document.getElementById(divElemId);
+    var closeElem = document.getElementById(divElem.id+'-close');
+    var overlayElem = document.getElementById('slidoc-popup-overlay');
+    if (!overlayElem) {
+	alert('slidoc: INTERNAL ERROR - no overlay for popup ');
+    } else if (!divElem) {
+	alert('slidoc: INTERNAL ERROR - no div for popup'+divElemId);
+    } else if (!closeElem) {
+	alert('slidoc: INTERNAL ERROR - no close for popup'+divElemId);
+    } else {
+	if (innerHTML) {
+	    var contentElem = document.getElementById(divElem.id+'-content')
+	    if (contentElem)
+		contentElem.innerHTML = innerHTML;
+	    else
+		alert('slidoc: INTERNAL ERROR - no content for popup'+divElemId)
+	}
+	overlayElem.style.display = 'block';
+	divElem.style.display = 'block';
+
+	closeElem.onclick = function () {
+	    overlayElem.style.display = 'none';
+	    divElem.style.display = 'none';
+	}
+    }
 }
 
 // Detect swipe events

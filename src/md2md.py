@@ -104,6 +104,7 @@ class Parser(object):
     attr_re_format = r'''\s%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
 
     slidoc_choice_re = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
+    header_attr_re = re.compile(r'^(\s*#+.*?)(\s*\{\s*#([-.\w]+)(\s+[^\}]*)?\s*\})\s*$')
     internal_ref_re =  re.compile(
         r'\[('
         r'(?:\[[^^\]]*\]|[^\[\]]|\](?=[^\[]*\]))*'
@@ -508,6 +509,9 @@ class Parser(object):
                             if self.slidoc_choice_re.match(line):
                                 # Strip slidoc extension for interactive multiple-choice
                                 line = re.sub('\.\.', '.', line, count=1)
+                            if 'pandoc' not in self.cmd_args.images:
+                                # Strip slidoc extension for header attributes (Only the # case)
+                                line = self.header_attr_re.sub(r'\1', line)
                             # Strip slidoc extension for internal references
                             line = self.internal_ref_re.sub(r'\1', line)
                         if self.cmd_args.backtick_off:

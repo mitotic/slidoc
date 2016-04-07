@@ -904,18 +904,15 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html><head>
 '''
 
-Html_mid = '''</head>
+Html_mid = '''
+<style>
+    body { %(body_style)s }
+</style>
+
+%(math_js)s
+
+</head>
 <body>
-
-<div id="slidoc-popup-overlay"></div>
-
-<div id="slidoc-generic-popup" class="slidoc-popup">
-    <div class="slidoc-popup-controls">
-        <span id="slidoc-generic-popup-close" class="slidoc-popup-close">X</span>
-    </div>
-    <div id="slidoc-generic-popup-content" class="slidoc-popup-content">
-    </div>
-</div>
 
 <div class="slidoc-slide-nav slidoc-slideonly slidoc-clickable-sym">
 <span id="slidoc-slide-nav-prev" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp;
@@ -933,7 +930,7 @@ Html_mid = '''</head>
 <span onclick="Slidoc.slideViewStart();">%(square)s</span>
 </div>
 
-''' % SYMS
+'''
 
 Html_footer = '''
 </body></html>
@@ -956,8 +953,8 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 '''
 
 
-def write_doc(path, head, body):
-    md2md.write_file(path, Html_header, head, Html_mid, body, Html_footer)
+def write_doc(path, head, tail):
+    md2md.write_file(path, Html_header, head, tail, Html_footer)
 
 if __name__ == '__main__':
     import argparse
@@ -1025,11 +1022,12 @@ if __name__ == '__main__':
     dest_dir = cmd_args.dest_dir+"/" if cmd_args.dest_dir else ''
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
-    for tname in ('doc_template.js', 'doc_template.html', 'reveal_template.html'):
+    for tname in ('doc_template.css', 'doc_template.js', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
-    doc_template = templates['doc_template.html']
-    js_template = '<script>\n'+templates['doc_template.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params))+'</script>\n'
+    head_html = '<style>\n%s</style>\n\n<script>\n%s</script>\n' % (templates['doc_template.css'],
+                                                                  templates['doc_template.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+    body_prefix = templates['doc_template.html']
         
     fnames = []
     for f in cmd_args.file:
@@ -1135,7 +1133,8 @@ if __name__ == '__main__':
         if math_in_file:
             math_found = True
         
-        doc_params = {'body_style': style_str, 'math_js': Mathjax_js if math_in_file else ''}
+        mid_params = {'body_style': style_str, 'math_js': Mathjax_js if math_in_file else ''}
+        mid_params.update(SYMS)
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
@@ -1146,14 +1145,14 @@ if __name__ == '__main__':
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
             else:
-                head = (doc_template % doc_params) + js_template
-                body = md_prefix+md_html+md_suffix
+                head = head_html + (Html_mid % mid_params) + body_prefix
+                tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html):
                     # Still some missing reference numbers; output file later
-                    outfile_buffer.append([outname, dest_dir+outname, head, body])
+                    outfile_buffer.append([outname, dest_dir+outname, head, tail])
                 else:
                     outfile_buffer.append([outname, dest_dir+outname, '', ''])
-                    write_doc(dest_dir+outname, head, body)
+                    write_doc(dest_dir+outname, head, tail)
 
             if cmd_args.slides:
                 reveal_pars['reveal_title'] = fname
@@ -1167,11 +1166,11 @@ if __name__ == '__main__':
     
     if not cmd_args.dry_run:
         if not cmd_args.combine:
-            for outname, outpath, head, body in outfile_buffer:
-                if body:
+            for outname, outpath, head, tail in outfile_buffer:
+                if tail:
                     # Update "missing" reference numbers and write output file
-                    body = Missing_ref_num_re.sub(Missing_ref_num, body)
-                    write_doc(outpath, head, body)
+                    tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
+                    write_doc(outpath, head, tail)
             print('Created output files:', ', '.join(x[0] for x in outfile_buffer), file=sys.stderr)
         if cmd_args.slides:
             print('Created *-slides.html files', file=sys.stderr)
@@ -1224,7 +1223,8 @@ if __name__ == '__main__':
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html
             else:
-                md2md.write_file(dest_dir+cmd_args.toc, Html_header, (doc_template % doc_params) + js_template, Html_mid, toc_output, Html_footer)
+                md2md.write_file(dest_dir+cmd_args.toc, Html_header, head_html,
+                                  Html_mid % mid_params, body_prefix, toc_output, Html_footer)
                 print("Created ToC in", cmd_args.toc, file=sys.stderr)
 
     xref_list = []
@@ -1314,6 +1314,8 @@ if __name__ == '__main__':
 
     if cmd_args.combine:
         comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
-        md2md.write_file(dest_dir+cmd_args.combine, Html_header, (doc_template % comb_params) + js_template, Html_mid,
+        comb_params.update(SYMS)
+        md2md.write_file(dest_dir+cmd_args.combine, Html_header, head_html,
+                          Html_mid % comb_params, body_prefix,
                          '\n'.join(combined_html), Html_footer)
         print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)
