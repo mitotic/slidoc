@@ -113,7 +113,7 @@ subdirectory named `images` and include references of the form
 The script `md2md.py` can be used to apply several Markdown
 tranformations as follows:
 
-    md2md.py --noconcepts --nonotes doc.md
+    md2md.py --strip=concepts,notes doc.md
 
 The above example creates a new file `doc-modified.md` with concept lists and
 notes stripped out.
@@ -137,6 +137,8 @@ self-contained HTML document.
 
 - `--images=export,embed`: Export all data URLs from document as local
 files, and convert all Markdown image references to HTML `<img>` tags.
+
+- `--strip=extensions`: Strip `slidoc`-specific extensions.
 
 ---
 
@@ -187,7 +189,7 @@ view but only displayed in the presenter view.
 
 ---
 
-## Internal links {#int-link}
+## Internal links and numbering {#int-link}
 
 Slidoc supports internal links that refer to other slides using a
  `#` in the reference syntax:
@@ -224,8 +226,8 @@ Double hash `##` links may be used to refer to concept index entries, like
 
     [markdown](##) OR [multiple-choice questions](##questions, multiple choice)
 
-Link prefixes of the form `#:` may be used to append numbers to
-references, like figure numbers:
+Link prefixes of the form `#:` may be used to append automatically
+generated counter values, like figure numbers:
 
     [Figure ]{#:my_figure}. Figure caption
 
@@ -242,7 +244,7 @@ For references, the above syntax allows for two options:
 
     []{#ref-newton1687} Newton, I., 1687: ... 
 
-for author-based reference like [Newton (1687)](#ref-newton1687)
+for author-based references like [Newton (1687)](#ref-newton1687)
 
 []{#ref-newton1687} Newton, I., 1687: ...  
 
@@ -501,13 +503,17 @@ Slide with no header
 
 ## Slide with image
 
-Flowchart example of image inserted using Markdown syntax:
+Flowchart example of image (*[Image ](#:elnino1)*) inserted using Markdown syntax:
 
 ![El Nino time series](images/elnino.png)
+
+*[Image ]{#:elnino1}*: El Nino time series
 
 Alternatively, an internal image reference can be used:
 
 ![El Nino time series][blank.gif]
+
+*[Image ]{#:elnino2}*: Another El Nino time series
 
 The reference `blank.gif` can be defined elsewhere in the
 document. The definition can be a web URL or a data URL:
@@ -527,6 +533,8 @@ over height/width)
 
 <img height=100 src="http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png">
 
+*[Image ]{#:flowchart}*: Flowchart
+
 Slidoc also supports an extension to the Markdown title syntax that
 embeds attributes `align`, `height`, and `width` in the title of an
 image (either in the link itself or in the definition, in case of a
@@ -534,6 +542,7 @@ reference)
 
 ![Flowchart](http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png 'title width=100% height=100')
 
+*[Image ]{#:resized}*: Resized image
 
 ---
 
@@ -673,3 +682,25 @@ Solution to open response question
 
 Notes: Notes on answer to
 open response question
+
+---
+
+## Embed Jupyter Notebook
+
+A Jupyter Notebook can be embedded using `iframe` HTML element:
+
+    <iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
+
+Copy the `Slidoc`-generated `README.html` to a subdirectory `files` of
+the notebook server working directory. The start the server as
+follows:
+
+    jupyter notebook --NotebookApp.extra_static_paths='["./files"]'
+
+The notebook server will then statically serve the HTML file from the
+following link: `http://localhost:8888/static/README.html`
+
+<iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
+
+
+Concepts: notebook, embed

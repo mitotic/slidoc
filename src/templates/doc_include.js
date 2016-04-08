@@ -9,6 +9,7 @@ var Sliobj = {}; // Internal object
 Sliobj.params = JS_PARAMS_OBJ;
 
 Sliobj.lastInputValue = null;
+Sliobj.closePopup = null;
 
 document.onreadystatechange = function(event) {
     console.log('onreadystatechange:', document.readyState);
@@ -19,30 +20,53 @@ document.onreadystatechange = function(event) {
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
+var Key_codes = {
+    27: 'esc',
+    35: 'end',
+    36: 'home',
+    37: 'left',
+    38: 'up',
+    39: 'right',
+    40: 'down',
+    191: 'qmark'
+};
+
+function slideViewHelp() {
+    Slidoc.showPopup( '<em>Escape</em> to exit slide mode<br><em>LeftArrow</em> previous slide<br><em>RightArrow</em> next slide<br><em>Home/Fn+LeftArrow</em> First slide<br><em>End/Fn+RightArrow</em> Last slide' );
+}
+
+var Slide_view_handlers = {
+    'esc':   function() { Slidoc.slideViewEnd(); },
+    'end':   function() { Slidoc.slideViewGo(false, getVisibleSlides().length); },
+    'home':  function() { Slidoc.slideViewGo(false, 1); },
+    'left':  function() { Slidoc.slideViewGo(false); },
+    'right': function() { Slidoc.slideViewGo(true); },
+    'qmark': slideViewHelp
+}
+
 document.onkeydown = function(evt) {
-   if (!Slidoc.slideView)
-     return;
-   switch (evt.keyCode) {
-       case 27:  // Escape
-           Slidoc.slideViewEnd();
-           return false;
-       case 35:  // End
-           Slidoc.slideViewGo(false, getVisibleSlides().length);
-           return false;
-       case 36:  // Home
-           Slidoc.slideViewGo(false, 1);
-           return false;
-       case 37:  // Left arrow
-           Slidoc.slideViewGo(false);
-           return false;
-       case 38: // Up arrow
-           break;
-       case 39: // Right arrow
-           Slidoc.slideViewGo(true);
-           break;
-       case 40: // Down arrow
-           break;
-   }
+    if (!(evt.keyCode in Key_codes))
+	return;
+    var keyName = Key_codes[evt.keyCode];
+    console.log('onkeydown:', keyName);
+
+    if (Sliobj.closePopup && keyName == 'esc') {
+	Sliobj.closePopup();
+	return false;
+    }
+
+    if (Slidoc.slideView) {
+	if (!(keyName in Slide_view_handlers))
+	    return;
+	Slide_view_handlers[keyName]();
+	return false;
+
+    } else if (Slidoc.chainActive) {
+	if (keyName == 'left')  Slidoc.chainActive[0]();
+	if (keyName == 'esc')   Slidoc.chainActive[1]();
+	if (keyName == 'right') Slidoc.chainActive[2]();
+    }
+	
    return;
 };
 
@@ -59,6 +83,7 @@ function slidocReady(event) {
     sessionManage();
 
     Slidoc.chainQuery = '';
+    Slidoc.chainActive = null;
     Slidoc.showAll = false;
     Slidoc.slideView = 0;
     Slidoc.curChapterId = '';
@@ -87,7 +112,7 @@ function slidocReady(event) {
    }
    Slidoc.chainUpdate(location.search);
    var toc_elem = document.getElementById("slidoc00");
-   if (toc_elem) goToSlide(location.hash || "#slidoc00", false, true);
+   if (toc_elem) goSlide(location.hash || "#slidoc00", false, true);
 }
 
 function sessionCreate(paced, paceOpen) {
@@ -234,7 +259,7 @@ Slidoc.allDisplay = function (elem) {
         document.body.classList.add('slidoc-all-view');
     } else {
         document.body.classList.remove('slidoc-all-view');
-	goToSlide('#slidoc00', false, true);
+	goSlide('#slidoc00', false, true);
     }
    return false;
 }
@@ -528,7 +553,7 @@ Slidoc.startPaced = function () {
 	Slidoc.showScore();
 
     document.body.classList.add('slidoc-paced-view');
-    goToSlide("#slidoc01-01", false, true);
+    goSlide("#slidoc01-01", false, true);
     Slidoc.slideViewStart();
 }
 
@@ -685,15 +710,15 @@ Slidoc.breakChain = function () {
 }
 
 Slidoc.go = function (slideHash, chained) {
-    return goToSlide(slideHash, chained);
+    return goSlide(slideHash, chained);
 }
 
-function goToSlide(slideHash, chained, force) {
+function goSlide(slideHash, chained, force) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
-   console.log("goToSlide:", slideHash, chained);
+   console.log("goSlide:", slideHash, chained);
     if (Sliobj.session.paced && slideHash && !force && !Sliobj.session.lastAnswerCorrect) {
-	console.log("goToSlide: Error - paced mode");
+	console.log("goSlide: Error - paced mode");
 	return false;
     }
     if (!slideHash) {
@@ -708,21 +733,22 @@ function goToSlide(slideHash, chained, force) {
 
    var slideId = slideHash.substr(1);
    var goElement = document.getElementById(slideId);
-   console.log('goToSlide2: ', slideId, chained, goElement);
+   console.log('goSlide2: ', slideId, chained, goElement);
    if (!goElement) {
-      console.log('goToSlide: Error - unable to find element', slideHash);
+      console.log('goSlide: Error - unable to find element', slideHash);
       return false;
    }
    Slidoc.breakChain();
    if (!chained) {
        // End chain
        Slidoc.chainQuery = '';
+       Slidoc.chainActive = null;
    }
 
    if (Slidoc.curChapterId || Slidoc.slideView || force) {
       // Displaying single chapter or slide show
       var match = RegExp('slidoc-ref-(.*)$').exec(slideId);
-      console.log('goToSlide2a: ', match, slideId);
+      console.log('goSlide2a: ', match, slideId);
       if (match) {
          // Find slide containing header
 	 slideId = '';
@@ -731,12 +757,12 @@ function goToSlide(slideHash, chained, force) {
 	     if (refmatch) {
 		 slideId = refmatch[1];
 		 slideHash = '#'+slideId;
-                 console.log('goToSlide2b: ', slideHash);
+                 console.log('goSlide2b: ', slideHash);
 		 break;
 	     }
 	 }
          if (!slideId) {
-            console.log('goToSlide: Error - unable to find slide containing header:', slideHash);
+            console.log('goSlide: Error - unable to find slide containing header:', slideHash);
             return false;
          }
       }
@@ -744,7 +770,7 @@ function goToSlide(slideHash, chained, force) {
    if (Slidoc.curChapterId || force) {
       var match = RegExp('slidoc(\\d+)(-.*)?$').exec(slideId);
       if (!match) {
-          console.log('goToSlide: Error - invalid hash, not slide or chapter', slideHash);
+          console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
          return false;
       }
       // Display only chapter containing slide
@@ -752,12 +778,12 @@ function goToSlide(slideHash, chained, force) {
       if (newChapterId != Slidoc.curChapterId || force) {
          var newChapterElem = document.getElementById(newChapterId);
          if (!newChapterElem) {
-            console.log('goToSlide: Error - unable to find chapter:', newChapterId);
+            console.log('goSlide: Error - unable to find chapter:', newChapterId);
             return false;
          }
          Slidoc.curChapterId = newChapterId;
          var chapters = document.getElementsByClassName('slidoc-container');
-         console.log('goToSlide3: ', newChapterId, chapters.length);
+         console.log('goSlide3: ', newChapterId, chapters.length);
          for (var i = 0; i < chapters.length; ++i) {
             chapters[i].style.display = (chapters[i].id == newChapterId) ? 'block' : 'none';
          }
@@ -771,11 +797,11 @@ function goToSlide(slideHash, chained, force) {
            return false;
          }
       }
-      console.log('goToSlide: Error - slideshow slide not in view:', slideId);
+      console.log('goSlide: Error - slideshow slide not in view:', slideId);
       return false;
    }
 
-   console.log('goToSlide4: ', slideHash);
+   console.log('goSlide4: ', slideHash);
    location.hash = slideHash;
 
    if (chained && Slidoc.chainQuery)  // Set up new chain link
@@ -816,17 +842,17 @@ Slidoc.chainNav = function (newindex) {
       return false;
    var comps = Slidoc.chainLink(newindex, Slidoc.chainQuery).split('#');
    Slidoc.chainQuery = comps[0];
-   goToSlide('#'+comps[1], true);
+   goSlide('#'+comps[1], true);
 console.log("Slidoc.chainNav2:", location.hash);
    return false;
 }
 
 Slidoc.chainStart = function (queryStr, slideHash) {
    // Go to first link in concept chain
-   console.log("Slidoc.chainStart:", slideHash, queryStr);
-   Slidoc.chainQuery = queryStr;
-   goToSlide(slideHash, true);
-   return false;
+    console.log("Slidoc.chainStart:", slideHash, queryStr);
+    Slidoc.chainQuery = queryStr;
+    goSlide(slideHash, true);
+    return false;
 }
 
 Slidoc.chainUpdate = function (queryStr) {
@@ -842,45 +868,64 @@ Slidoc.chainUpdate = function (queryStr) {
     console.log("Slidoc.chainUpdate2:", tagindex);
     if (!tagindex)
       return false;
+
     var tagconcept = getParameter('tagconcept', false, queryStr) || '';
     var tagconceptref = getParameter('tagconceptref', false, queryStr) || '';
     var taglist = (getParameter('taglist', false, queryStr) || '').split(";");
 
+    var conceptFunc = null;
+    var prevFunc = null;
+    var nextFunc = null;
     if (tagindex) {
         ichain_elem.style.display = 'block';
         var concept_elem = document.getElementById(tagid+"-ichain-concept");
         concept_elem.text = tagconcept;
         if (Slidoc.chainQuery) {
-            concept_elem.onclick = function() {goToSlide(tagconceptref);}
+	    conceptFunc = function() {goSlide(tagconceptref);}
+            concept_elem.onclick = conceptFunc;
         } else {
-            concept_elem.href = getBaseURL()+'/'+tagconceptref;
+	    var conceptURL = getBaseURL()+'/'+tagconceptref;
+	    conceptFunc = function() { window.location = conceptURL; }
+            concept_elem.href = conceptURL;
         }
         var prev_elem = document.getElementById(tagid+"-ichain-prev");
         prev_elem.style.visibility = (tagindex == 1) ? 'hidden' : 'visible';
         if (tagindex > 1) {
            if (Slidoc.chainQuery) {
-              prev_elem.onclick = function() {Slidoc.chainNav(tagindex-1);}
+	       prevFunc = function() {Slidoc.chainNav(tagindex-1);}
+               prev_elem.onclick = prevFunc;
            } else {
-              prev_elem.href = Slidoc.chainURL(tagindex-1);
+	       var prevURL = Slidoc.chainURL(tagindex-1);
+	       prevFunc = function() { window.location = prevURL; }
+               prev_elem.href = prevURL;
            }
         }
         var next_elem = document.getElementById(tagid+"-ichain-next");
         next_elem.style.visibility = (tagindex == taglist.length) ? 'hidden' : 'visible';
         if (tagindex < taglist.length) {
            if (Slidoc.chainQuery) {
-              next_elem.onclick = function() {Slidoc.chainNav(tagindex+1);}
+	       nextFunc = function() {Slidoc.chainNav(tagindex+1);}
+               next_elem.onclick = nextFunc;
            } else {
-              next_elem.href = Slidoc.chainURL(tagindex+1);
+	       var nextURL = Slidoc.chainURL(tagindex+1);
+	       nextFunc = function() { window.location = nextURL; }
+               next_elem.href = nextURL;
            }
         }
     }
-console.log("Slidoc.chainUpdate:4", location.hash);
+    Slidoc.chainActive = [prevFunc, conceptFunc, nextFunc];
+    console.log("Slidoc.chainUpdate:4", location.hash);
 }
 
 // Popup: http://www.loginradius.com/engineering/simple-popup-tutorial/
 
 Slidoc.showPopup = function (innerHTML, divElemId) {
     // Only one of innerHTML or divElemId needs to be non-null
+    if (Sliobj.closePopup) {
+	console.log('Slidoc.showPopup: Popup already open');
+	return;
+    }
+
     if (!divElemId) divElemId = 'slidoc-generic-popup';
     var divElem = document.getElementById(divElemId);
     var closeElem = document.getElementById(divElem.id+'-close');
@@ -902,10 +947,13 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 	overlayElem.style.display = 'block';
 	divElem.style.display = 'block';
 
-	closeElem.onclick = function () {
+	Sliobj.closePopup = function () {
 	    overlayElem.style.display = 'none';
 	    divElem.style.display = 'none';
+	    Sliobj.closePopup = null;
 	}
+	
+	closeElem.onclick = Sliobj.closePopup;
     }
 }
 

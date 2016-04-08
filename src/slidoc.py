@@ -64,7 +64,7 @@ def slide_prefix(slide_id, classes=''):
 def concept_chain(slide_id, site_url):
     params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
     params.update(SYMS)
-    return '<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n' % params
+    return '\n<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n\n' % params
 
 
 def isfloat(value):
@@ -96,6 +96,13 @@ def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
     if not tags:
         return
 
+    # Save tags in proper case and then lowercase tags
+    for tag in tags:
+        if tag not in Global.all_tags:
+            Global.all_tags[tag.lower()] = tag
+        
+    tags = [x.lower() for x in tags]
+
     if tags[0] != 'null':
         # List non-null primary tag
         if filename not in first_tags[tags[0]]:
@@ -105,6 +112,8 @@ def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
 
     for tag in tags[1:]:
         # Secondary tags
+        if tag == 'null':
+            continue
         if filename not in sec_tags[tag]:
             sec_tags[tag][filename] = []
 
@@ -123,7 +132,7 @@ def make_index(first_tags, sec_tags, site_url, fprefix='', index_id='', index_fi
     close_ul = '<br><li><a href="#%s" class="slidoc-clickable">TOP</a></li>\n</ul>\n' % index_id
     for tag in tag_list:
         tag_comps = tag.split(',')
-        tag_str = tag
+        tag_str = Global.all_tags.get(tag, tag)
         first_letter = tag_comps[0][0]
         if not prev_tag_comps or prev_tag_comps[0][0] != first_letter:
             first_letters.append(first_letter)
@@ -133,7 +142,7 @@ def make_index(first_tags, sec_tags, site_url, fprefix='', index_id='', index_fi
         elif prev_tag_comps and prev_tag_comps[0] != tag_comps[0]:
             out_list.append('&nbsp;\n')
         else:
-            tag_str = '___, ' + ','.join(tag_comps[1:])
+            tag_str = '___, ' + ','.join(tag_str.split(',')[1:])
         
         for fname, ref_list in first_tags[tag].items():
             # File includes this tag as primary tag
@@ -200,6 +209,9 @@ Global.first_tags = defaultdict(OrderedDict)
 Global.sec_tags = defaultdict(OrderedDict)
 Global.first_qtags = defaultdict(OrderedDict)
 Global.sec_qtags = defaultdict(OrderedDict)
+
+Global.all_tags = {}
+
 Global.questions = OrderedDict()
 Global.concept_questions = defaultdict(list)
 
@@ -409,7 +421,7 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        return slide_prefix(self.renderer.first_id)+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div><!--last slide end-->\n'
+        return slide_prefix(self.renderer.first_id)+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -541,9 +553,8 @@ class IPythonRenderer(mistune.Renderer):
                 self.cur_header = hdr_prefix + text
                 self.file_header = self.cur_header
 
-                if 'contents' not in self.options['cmd_args'].strip:
-                    pre_header = '__PRE_HEADER__'
-                    post_header = '__POST_HEADER__'
+                pre_header = '__PRE_HEADER__'
+                post_header = '__POST_HEADER__'
 
         else:
             # Level 2/3 header
@@ -865,32 +876,38 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
 
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
-    if 'contents' not in cmd_args.strip:
+    pre_header_html = ''
+    tail_html = ''
+    post_header_html = ''
+    if 'navigate' not in cmd_args.strip:
         nav_html = ''
         if cmd_args.toc:
             nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
             nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
             nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
 
-        pre_header_html = '<div class="slidoc-noslide slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym"])+'</div>\n'
+        pre_header_html += '<div class="slidoc-noslide slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym"])+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
 
-        post_header_html = renderer.table_of_contents(filenumber=filenumber)
+    if 'contents' not in cmd_args.strip:
+        post_header_html += renderer.table_of_contents(filenumber=filenumber)
         if post_header_html:
-            if 'slidoc-notes' in content_html:
-                post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
-                post_header_html += click_span('Reset paced session', "Slidoc.resetPaced();",
-                                               classes=['slidoc-clickable', 'slidoc-pacedonly'])
-                post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
+            post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
+            post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
                                                classes=['slidoc-clickable', 'slidoc-nopaced'])+'&nbsp;&nbsp;'
-                post_header_html += click_span('Hide all notes',
-                                                "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
-                                                classes=['slidoc-clickable', 'slidoc-nopaced'])
 
-        content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
-        content_html = content_html.replace('__POST_HEADER__', post_header_html)
-        content_html += tail_html
+    post_header_html += click_span('Reset paced session', "Slidoc.resetPaced();",
+                                    classes=['slidoc-clickable', 'slidoc-pacedonly'])
+
+    if 'contents' not in cmd_args.strip and 'slidoc-notes' in content_html:
+        post_header_html += click_span('Hide all notes',
+                                       "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
+                                       classes=['slidoc-clickable', 'slidoc-nopaced'])
+
+    content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
+    content_html = content_html.replace('__POST_HEADER__', post_header_html)
+    content_html += tail_html
 
     if 'hidden' in cmd_args.strip:
         # Strip out hidden answer slides
@@ -937,7 +954,7 @@ if __name__ == '__main__':
     import argparse
     import md2nb
 
-    strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'notes', 'rule', 'sections']
+    strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'navigate', 'notes', 'rule', 'sections']
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file (default: ""', default='')
@@ -993,6 +1010,8 @@ if __name__ == '__main__':
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
     cmd_args.strip = md2md.make_strip_set(cmd_args.strip, strip_all)
+    if len(cmd_args.file) == 1:
+        cmd_args.strip.add('chapters')
 
     if cmd_args.dest_dir and not os.path.isdir(cmd_args.dest_dir):
         sys.exit("Destination directory %s does not exist" % cmd_args.dest_dir)
