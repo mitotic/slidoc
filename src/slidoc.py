@@ -329,7 +329,7 @@ class MathInlineLexer(mistune.InlineLexer):
                     tag_hash = '#%s-concept-%s' % (self.renderer.index_id, md2md.make_id_from_text(tag))
                     tag_html = nav_link(text, self.renderer.options['cmd_args'].site_url, self.renderer.options['cmd_args'].index,
                                         hash=tag_hash, combine=self.renderer.options['cmd_args'].combine, target='_blank',
-                                        keep_hash=True)
+                                        keep_hash=True, printable=self.renderer.options['cmd_args'].printable)
                     return tag_html
                 header_ref = md2md.ref_key(link[1:].lstrip(':'))
                 if not header_ref:
@@ -348,7 +348,8 @@ class MathInlineLexer(mistune.InlineLexer):
                     else:
                         num_label = '_MISSING_SLIDOC_REF_NUM(#%s)' % ref_id
                     text += num_label
-                return click_span(text, "Slidoc.go('#%s');" % ref_id, classes=["slidoc-clickable", ref_class])
+                return click_span(text, "Slidoc.go('#%s');" % ref_id, classes=["slidoc-clickable", ref_class],
+                                  href='#'+ref_id if self.renderer.options['cmd_args'].printable else '')
 
         return super(MathInlineLexer, self).output_link(m)
 
@@ -492,9 +493,9 @@ class IPythonRenderer(mistune.Renderer):
         if 'rule' in self.options["cmd_args"].strip or (hide_prefix and 'hidden' in self.options["cmd_args"].strip):
             html = ''
         elif self.options.get('use_xhtml'):
-            html = '<hr class="slidoc-noslide"/>\n'
+            html = '<hr class="slidoc-noslide slidoc-noprint"/>\n'
         else:
-            html = '<hr class="slidoc-noslide">\n'
+            html = '<hr class="slidoc-noslide slidoc-noprint">\n'
 
         html += '</div><!--slide end-->\n' + slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
 
@@ -768,7 +769,8 @@ class IPythonRenderer(mistune.Renderer):
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
-        tag_html = '''<div><span class="slidoc-clickable slidoc-noslide" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: none;">''' % (id_str, name.capitalize(), id_str)
+        display_style = 'inline' if self.options['cmd_args'].printable else 'none'
+        tag_html = '''<div><span class="slidoc-clickable slidoc-noslide" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
         if self.options["cmd_args"].index:
             first = True
@@ -779,7 +781,7 @@ class IPythonRenderer(mistune.Renderer):
                 tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
                 tag_html += nav_link(tag, self.options['cmd_args'].site_url, self.options['cmd_args'].index,
                                      hash=tag_hash, combine=self.options['cmd_args'].combine, target='_blank',
-                                     keep_hash=True)
+                                     keep_hash=True, printable=self.options['cmd_args'].printable)
         else:
             tag_html += text
 
@@ -796,7 +798,7 @@ class IPythonRenderer(mistune.Renderer):
         disp_block = 'none' if self.cur_answer else 'block'
         prefix, suffix, end_str = self.start_block('notes', id_str, display=disp_block)
         self.notes_end = end_str
-        return prefix + ('''<br><a id="%s" class="slidoc-clickable" onclick="Slidoc.classDisplay('%s')" style="display: %s;">Notes:</a>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
+        return prefix + ('''<br><span id="%s" class="slidoc-clickable" onclick="Slidoc.classDisplay('%s')" style="display: %s;">Notes:</span>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
 
 
     def table_of_contents(self, filepath='', filenumber=1):
@@ -807,7 +809,7 @@ class IPythonRenderer(mistune.Renderer):
                  else '<ul class="slidoc-toc %s" style="list-style-type: none;">') % (self.get_chapter_id()+'-toc')]
 
         for id_str, header in self.header_list:  # Skip first header
-            if filepath:
+            if filepath or self.options['cmd_args'].printable:
                 elem = ElementTree.Element("a", {"class" : "header-link", "href" : filepath+"#"+id_str})
             else:
                 elem = ElementTree.Element("span", {"class" : "slidoc-clickable", "onclick" : "Slidoc.go('#%s');" % id_str})
@@ -836,11 +838,14 @@ class IPythonRenderer(mistune.Renderer):
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
-def click_span(text, onclick, id='', classes=['slidoc-clickable']):
+def click_span(text, onclick, id='', classes=['slidoc-clickable'], href=''):
     id_str = ' id="%s"' % id if id else ''
-    return '''<span %s class="%s" onclick="%s">%s</span>''' % (id_str, ' '.join(classes), onclick, text)
+    if href:
+        return '''<a %s href="%s" class="%s" onclick="%s">%s</a>''' % (id_str, href, ' '.join(classes), onclick, text)
+    else:
+        return '''<span %s class="%s" onclick="%s">%s</span>''' % (id_str, ' '.join(classes), onclick, text)
 
-def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, target='', classes=[]):
+def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, printable=False, target='', classes=[]):
     extras = ' target="%s"' if target else ''
     class_list = classes[:]
     if text.startswith('&'):
@@ -851,7 +856,9 @@ def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, targ
         class_list.append("slidoc-clickable")
         extras += ' class="slidoc-clickable slidoc-noall"'
     class_str = ' '.join(class_list)
-    if combine:
+    if printable:
+        return '''<a class="%s" href="%s%s" onclick="Slidoc.go('%s');" %s>%s</a>'''  % (class_str, site_url, hash or href, hash or href, extras, text)
+    elif combine:
         return '''<span class="%s" onclick="Slidoc.go('%s');" %s>%s</span>'''  % (class_str, hash or href, extras, text)
     elif href or text.startswith('&'):
         return '''<a class="%s" href="%s%s" %s>%s</a>'''  % (class_str, site_url, href+hash if hash and keep_hash else href, extras, text)
@@ -882,11 +889,11 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
     if 'navigate' not in cmd_args.strip:
         nav_html = ''
         if cmd_args.toc:
-            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine) + SPACER
-            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
-            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall']) + SPACER
+            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine, printable=cmd_args.printable) + SPACER
+            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER
+            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER
 
-        pre_header_html += '<div class="slidoc-noslide slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym"])+'</div>\n'
+        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym"])+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
 
@@ -895,7 +902,7 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
         if post_header_html:
             post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
             post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
-                                               classes=['slidoc-clickable', 'slidoc-nopaced'])+'&nbsp;&nbsp;'
+                                               classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])+'&nbsp;&nbsp;'
 
     post_header_html += click_span('Reset paced session', "Slidoc.resetPaced();",
                                     classes=['slidoc-clickable', 'slidoc-pacedonly'])
@@ -903,7 +910,7 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
     if 'contents' not in cmd_args.strip and 'slidoc-notes' in content_html:
         post_header_html += click_span('Hide all notes',
                                        "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
-                                       classes=['slidoc-clickable', 'slidoc-nopaced'])
+                                       classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
 
     content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
     content_html = content_html.replace('__POST_HEADER__', post_header_html)
@@ -959,10 +966,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file (default: ""', default='')
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file (default: "")', default='')
+    parser.add_argument('--css', help='Custom CSS file (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
-    parser.add_argument('--fsize', help='Font size in %% or px (default: 90%%)', default='90%')
-    parser.add_argument('--ffamily', help='Font family ("Arial,sans-serif,...")', default='"Gentium Basic", serif')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
     parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
@@ -972,6 +978,7 @@ if __name__ == '__main__':
     parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay for paced session using combined file, e.g., 0,0,1', default='')
+    parser.add_argument('--printable', help='Printer-friendly output', action="store_true")
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
@@ -989,6 +996,8 @@ if __name__ == '__main__':
     print('Filename: ', js_params['filename'], file=sys.stderr)
 
     if cmd_args.pace:
+        if cmd_args.printable:
+            sys.exit('slidoc: Error: --pace and --printable options do not work well together')
         comps = cmd_args.pace.split(',')
         if comps[0]:
             js_params['paceOpen'] = int(comps[0])
@@ -1018,11 +1027,13 @@ if __name__ == '__main__':
     dest_dir = cmd_args.dest_dir+"/" if cmd_args.dest_dir else ''
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
-    for tname in ('doc_include.css', 'doc_include.js', 'doc_include.html',
+    for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_include.html',
                   'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
-    head_html = '<style>\n%s</style>\n\n<script>\n%s</script>\n' % (templates['doc_include.css'],
+    
+    custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
+    head_html = '<style>\n%s\n%s</style>\n\n<script>\n%s</script>\n' % (custom_css, templates['doc_include.css'],
                                                                   templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
@@ -1036,12 +1047,6 @@ if __name__ == '__main__':
 
         if cmd_args.notebook and os.path.exists(fcomp[0]+'.ipynb') and not cmd_args.overwrite and not cmd_args.dry_run:
             sys.exit("File %s.ipynb already exists. Delete it or specify --overwrite" % fcomp[0])
-
-    style_str = ''
-    if cmd_args.fsize:
-        style_str += 'font-size: ' + cmd_args.fsize + ';'
-    if cmd_args.ffamily:
-        style_str += 'font-family: ' + cmd_args.ffamily + ';'
 
     if cmd_args.slides:
         reveal_themes = cmd_args.slides.split(',')
@@ -1079,7 +1084,7 @@ if __name__ == '__main__':
     index_id = make_chapter_id(len(cmd_args.file)+1)
     qindex_id = make_chapter_id(len(cmd_args.file)+2)
     back_to_contents = nav_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
-                                combine=cmd_args.combine)+'<p></p>\n'
+                                combine=cmd_args.combine, printable=cmd_args.printable)+'<p></p>\n'
 
     flist = []
     all_concept_warnings = []
@@ -1131,7 +1136,7 @@ if __name__ == '__main__':
         if math_in_file:
             math_found = True
         
-        mid_params = {'body_style': style_str, 'math_js': Mathjax_js if math_in_file else ''}
+        mid_params = {'math_js': Mathjax_js if math_in_file else ''}
         mid_params.update(SYMS)
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
@@ -1183,7 +1188,8 @@ if __name__ == '__main__':
 
         toc_html = []
         if cmd_args.index and (Global.first_tags or Global.first_qtags):
-            toc_html.append(nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id, combine=cmd_args.combine))
+            toc_html.append(nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id,
+                                     combine=cmd_args.combine, printable=cmd_args.printable))
         toc_html.append('<blockquote>\n')
         toc_html.append('<ol>\n' if 'sections' in cmd_args.strip else '<ul style="list-style-type: none;">\n')
         ifile = 0
@@ -1196,9 +1202,10 @@ if __name__ == '__main__':
             nb_link = ''
             if cmd_args.notebook and nb_site_url:
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
-            doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile), combine=cmd_args.combine)
+            doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile),
+                                 combine=cmd_args.combine, printable=cmd_args.printable)
 
-            toggle_link = '<a class="slidoc-clickable" onclick="Slidoc.idDisplay(%s);"><b>%s</b></a>' % ("'"+id_str+"'", fheader)
+            toggle_link = '<span class="slidoc-clickable" onclick="Slidoc.idDisplay(%s);"><b>%s</b></span>' % ("'"+id_str+"'", fheader)
             toc_html.append('<li>%s%s(<em>%s%s%s</em>)</li>\n' % (toggle_link, SPACER, doc_link, slide_link, nb_link))
 
             f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
@@ -1214,9 +1221,11 @@ if __name__ == '__main__':
         toc_html.append('<p></p><em>Document formatted by <a href="https://github.com/mitotic/slidoc" class="slidoc-clickable">slidoc</a>.</em><p></p>')
 
         if not cmd_args.dry_run:
-            toc_insert = click_span('Show all sections', "Slidoc.classDisplay('slidoc-toc-entry');")
+            toc_insert = click_span('Show all sections', "Slidoc.classDisplay('slidoc-toc-entry');",
+                                    classes=['slidoc-clickable', 'slidoc-noprint'])
             if cmd_args.combine:
-                toc_insert += SPACER + click_span('Show all chapters', "Slidoc.allDisplay(this);")
+                toc_insert += SPACER + click_span('Show all chapters', "Slidoc.allDisplay(this);",
+                                                  classes=['slidoc-clickable', 'slidoc-noprint'])
             toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide')+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html
@@ -1231,7 +1240,8 @@ if __name__ == '__main__':
         if not cmd_args.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
             if cmd_args.qindex:
-                index_html = nav_link('QUESTION INDEX', cmd_args.site_url, cmd_args.qindex, hash='#'+qindex_id, combine=cmd_args.combine) + '<p></p>\n' + index_html
+                index_html = nav_link('QUESTION INDEX', cmd_args.site_url, cmd_args.qindex, hash='#'+qindex_id,
+                                      combine=cmd_args.combine, printable=cmd_args.printable) + '<p></p>\n' + index_html
             if cmd_args.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
@@ -1286,7 +1296,7 @@ if __name__ == '__main__':
                 q_id = make_file_id(fname, slide_id)
                 xref_list.append('<li><b>'+nav_link(make_q_label(fname, qnumber, fprefix)+': '+header,
                                                cmd_args.site_url, fname+'.html', hash='#'+slide_id,
-                                               combine=cmd_args.combine, keep_hash=True)+'</b>: ')
+                                               combine=cmd_args.combine, keep_hash=True, printable=cmd_args.printable)+'</b>: ')
                 ctags = concept_id.split(';')
                 n = len(ctags)
                 for m in range(n):
@@ -1300,7 +1310,7 @@ if __name__ == '__main__':
                             if sub_q_id != q_id:
                                 xref_list.append(nav_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
                                                         cmd_args.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
-                                                        combine=cmd_args.combine, keep_hash=True)
+                                                        combine=cmd_args.combine, keep_hash=True, printable=cmd_args.printable)
                                                         + ('<sup>%s</sup>, ' % sub_num) )
 
                 xref_list.append('</li>\n')
@@ -1311,7 +1321,7 @@ if __name__ == '__main__':
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
-        comb_params = {'body_style': style_str, 'math_js': Mathjax_js if math_found else ''}
+        comb_params = {'math_js': Mathjax_js if math_found else ''}
         comb_params.update(SYMS)
         md2md.write_file(dest_dir+cmd_args.combine, Html_header, head_html,
                           mid_template % comb_params, body_prefix,

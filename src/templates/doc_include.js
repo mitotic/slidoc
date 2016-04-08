@@ -47,9 +47,11 @@ var Slide_view_handlers = {
 document.onkeydown = function(evt) {
     if (!(evt.keyCode in Key_codes))
 	return;
-    var keyName = Key_codes[evt.keyCode];
-    console.log('onkeydown:', keyName);
+    return handleKey(Key_codes[evt.keyCode]);
+}
 
+function handleKey(keyName) {
+    console.log('handleKey:', keyName);
     if (Sliobj.closePopup && keyName == 'esc') {
 	Sliobj.closePopup();
 	return false;
@@ -984,21 +986,22 @@ function handleTouchMove(evt) {
     if ( Math.abs( xDiff ) > Math.abs( yDiff ) ) {/*most significant*/
         if ( xDiff > 0 ) {
             /* left swipe (right motion) */ 
-           Slidoc.slideViewGo(true);
+            return handleKey('right');
         } else {
             /* right swipe (leftward motion) */
-           Slidoc.slideViewGo(false);
+            return handleKey('left');
         }                       
     } else {
         if ( yDiff > 0 ) {
-            /* up swipe */ 
+            /* up swipe (downward motion) */ 
         } else { 
-            /* down swipe */
+            /* down swipe (upward motion) */
         }                                                                 
     }
     /* reset values */
     xDown = null;
     yDown = null;                                             
+    return;
 };
     
 ///UNCOMMENT: })(Slidoc);
