@@ -187,6 +187,77 @@ view but only displayed in the presenter view.
 
 ---
 
+## Internal links {#int-link}
+
+Slidoc supports internal links that refer to other slides using a
+ `#` in the reference syntax:
+ 
+    [text](#header)
+
+If `header` is the same as text, a simpler notation may be used:
+
+    [text](#)
+
+Headers (at all levels) are automatically referrable. For example,
+see [another answer](#Simple function code answer) or
+[Simple function code answer](#).
+
+If the header name is too long to be conveniently linked, a shorter
+reference can be appended to the header using the notation:
+
+    ## header {#short-ref}
+
+like the one that links to [this slide](#int-link). Short references
+may only contain letters, digits, underscores, hyphens and dots.
+
+Notes: To refer to an arbitrary portion of non-header text, define the
+reference using the notation:
+
+    [phrase]{#mnemonic}
+
+This [phrase]{#mnemonic} can be referred to elsewhere as [phrase](#mnemonic):
+
+    [phrase](#mnemonic)
+
+Double hash `##` links may be used to refer to concept index entries, like
+[markdown](##) or [multiple-choice questions](##questions, multiple choice):
+
+    [markdown](##) OR [multiple-choice questions](##questions, multiple choice)
+
+Link prefixes of the form `#:` may be used to append numbers to
+references, like figure numbers:
+
+    [Figure ]{#:my_figure}. Figure caption
+
+[Figure ]{#:my_figure} can then can be referred to elsewhere as
+
+	[Figure ](#:my_figure)
+
+Look at [Figure ](#:my_figure). For figure numbers with sections
+(e.g., 1.2), use `#::my_sectional_figure`.
+
+For references, the above syntax allows for two options:
+
+    [Newton (1687)](#ref-newton1687)
+
+    []{#ref-newton1687} Newton, I., 1687: ... 
+
+for author-based reference like [Newton (1687)](#ref-newton1687)
+
+[]{#ref-newton1687} Newton, I., 1687: ...  
+
+Alternatively,
+
+    [[](#:ref-einstein1905)]
+
+    []{#:ref-einstein1905}. Einstein, A., 1905: ... 
+
+for numeric references[[](#:ref-einstein1905)].
+
+[]{#:ref-einstein1905}. Einstein, A., 1905: ... 
+
+---
+
 ## Question slides
 
 Slidoc distinguishes between normal slides and slides with
@@ -216,37 +287,9 @@ Concepts: questions; concept list
 ### Slide with answer
 
 Level 3 header will not be listed in table of contents. The `--hide=[Aa]nswer`
-can be used to hide this answer slide. The `--strip` option will
-remove it completely.
+can be used to hide this answer slide.
 
-Notes: Also see [another answer](#Simple function code answer) 
-The above example illustrates internal links, i.e., referring to other
-headers using the hash `#` syntax:
-
-    [text](#header)
-
-If `header` is the same as text, a simpler notation may be used:
-
-    [text](#)
-
-Headers (at all levels) are automatically referrable. To refer to an arbitrary portion
-of text, define the reference using the notation:
-
-    [phrase][#mnemonic)
-
-This [phrase][#mnemonic] can be referred to elsewhere as [phrase](#mnemonic):
-
-    [phrase](#mnemonic)
-
-Double hash `##` links may be used to append numbers, like figure numbers:
-
-    [Figure ][##my_figure]. Figure caption
-
-[Figure ][##my_figure] can then can be referred to elsewhere as
-
-	[Figure ](##my_figure)
-
-Look at [Figure ](##my_figure)
+Notes: Adding the `--strip=hidden` option will remove it completely.
 
 ---
 
@@ -283,7 +326,7 @@ specified in question slides).
 
 The following command
 
-    slidoc.py --hide=[Aa]answer --strip ... 
+    slidoc.py --hide=[Aa]answer --strip=hidden ... 
 
 will strip answers completely from the printable `.html` files.
 
@@ -510,7 +553,7 @@ D.. Option4
 
 Answer: B
 
-Concepts: questions, interactive; questions, multiple choice
+Concepts: questions, interactive; questions, multiple-choice
 
 Notes: This illustrates the interactive format of a multiple choice question.
 
@@ -520,9 +563,29 @@ This is a question with a numeric response (no header)
 
 What is the square root of `6.25`?
 
-Answer: 2.5
+Answer: 2.5 +/- 0.1
 
 Concepts: questions, numeric response
+
+Notes: An optional error range may be provided after `+/-`.
+
+---
+
+## Text response
+
+The dinosaur named tyrant lizard is more commonly known as?
+
+Answer: T.Rex OR T Rex OR T-Rex OR Tyrannosaurus Rex
+
+Concepts: questions, text response
+
+Notes: The upper-case OR is used to separate correct answer options,
+which are not case-sensitive. If a correct answer option includes a
+space (e.g., `T Rex`, it is compared to the user response with
+normalized spaces, i.e, `T Rex` would be considered correct, but not
+`TRex`. If the correct option does not include a space, then all
+spaces are stripped from the user response before comparison, i.e.,
+`T.Rex` and `T. Rex` would be considered correct.
 
 ---
 

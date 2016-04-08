@@ -1,18 +1,48 @@
 <!-- CSS include file for slidoc--->
-body { line-height: 1.35;
-           max-width: 960px;
+body {
+    max-width: 960px;
+    line-height: 1.35;
+    color: #222;
   }
+
 body .slidoc-toc-container { line-height: 1.6; }
 
+h1, h2, h3, h4, h5, h6 {
+    font-weight: normal;
+    font-family: "Dosis", "Helvetica Neue", Helvetica, "Segoe UI", Arial, freesans, sans-serif;
+    color: #111;
+}
+
+code {font-family: Monaco,Menlo,Consolas,"Courier New",monospace;
+      font-size: 0.8em;
+      color: #338866;}
+
 pre { padding: 0px 2em;}
-.slidoc-notes { padding: 0px 1em; font-size: 90%; }
-.slidoc-notes p {margin: 0.3em 0;}
-.slidoc-clickable { padding: 0.3em 0 0 0; color: blue; cursor: pointer; text-decoration: underline; }
-.slidoc-clickable-sym { padding: 0.3em 0 0 0; color: blue; cursor: pointer; }
+
+/* Clickable */
+
+a, a:visited,
+  a.slidoc-clickable,
+  a.slidoc-clickable:visited,
+  a.slidoc-clickable-sym { color: #438099; text-decoration: none; }
+
+.slidoc-clickable,
+  .slidoc-clickable-sym {
+    color: #438099; cursor: pointer; }
+
+.slidoc-clickable-sym {
+    padding: 0.3em 0 0 0;
+    font-size: 120%; font-weight: bold; }
+
 .slidoc-clickable.slidoc-toc-entry { padding: 0.3em 0 0 1em; }
 
-a.slidoc-clickable-sym { text-decoration: none; }
+.slidoc-clickable:hover {text-decoration: underline;}
 
+/* Notes */
+.slidoc-notes { padding: 0px 1em; font-size: 95%; }
+.slidoc-notes p {margin: 0.3em 0;}
+
+/* Views */
 body.slidoc-slide-view { font-size: 150%; }
 
 body.slidoc-all-view .slidoc-noall, 
@@ -25,31 +55,30 @@ body:not(.slidoc-slide-view) .slidoc-slideonly,
 body:not(.slidoc-paced-view) .slidoc-pacedonly
     { display: none; }
 
-body:not(.slidoc-slide-view) .slidoc-clickable-noslide 
-    { padding: 0.3em 0 0 0; color: blue; cursor: pointer; text-decoration: underline; }
-
-.slidoc-clickable-sym { font-size: 120%; font-weight: bold; }
-
+/* Navigation */
 .slidoc-slide-nav { z-index: 1000; position: fixed; right: 15px; bottom: 10px; }
 .slidoc-slide-home-button { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; }
 .slidoc-slide-view-button { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; }
 
+/* "Hourglass" */
 #slidoc-hourglass-container {
     z-index: 900; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em;
     width: 5.5em; height: 1em; 
     background: white;
     overflow: hidden;}
+
 #slidoc-hourglass {
     display: inline-block; width: 5.5em; height: 1em;
     top: 0; left: 5.5em; background: #f80;
     position: absolute;}
 
+/* Score tally */
 #slidoc-score-display {color: red;}
 .slidoc-correct-answer {color: green;}
 .slidoc-wrong-answer {color: red;}
 /* .slidoc-ref-figure { font-style: oblique; } */
 
-
+/* Popup */
 #slidoc-popup-overlay {
     display: none;
     position: absolute;
@@ -66,13 +95,13 @@ body:not(.slidoc-slide-view) .slidoc-clickable-noslide
     display: none;
     position: absolute;
     z-index: 2100;
-    top: 50%;
+    top: 100px;
     left: 50%;
+    width: 500px;
+    margin-left: -250px; /*Half the value of width to center div*/
+    /* margin-top: -100px;  Half the value of height to center div*/
     background: #fff;
-    width: 200px;
-    height: 200px;
-    margin-left: -100px; /*Half the value of width to center div*/
-    margin-top: -100px;  /*Half the value of height to center div*/
+    border-radius: 10px;
 }
 
 .slidoc-popup-close {

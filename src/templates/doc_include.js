@@ -398,16 +398,22 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		} catch(err) {console.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
 
 		if (corr_value !== null && resp_value != null)
-		    is_correct = Math.abs(resp_value - corr_value) <= corr_error;
+		    is_correct = Math.abs(resp_value - corr_value) <= 1.001*corr_error;
 	    } else {
 		// Check if non-numeric answer is correct (all spaces are removed before comparison)
-		var norm_resp = response.toLowerCase().replace(/\s+/, '');
+		var norm_resp = response.trim().toLowerCase();
 		var correct_options = corr_answer.split(' OR ');
 		for (var k=0; k < correct_options.length; k++) {
-		    if (norm_resp == correct_options[k].toLowerCase().replace(/\s+/, '')) {
-			is_correct = true;
-			break;
+		    var norm_corr = correct_options[k].trim().toLowerCase().replace(/\s+/, ' ');
+		    if (norm_corr.indexOf(' ') > 0) {
+			// Correct answer has space(s); compare using normalized spaces
+			is_correct = (norm_resp.replace(/\s+/, ' ') == norm_corr);
+		    } else {
+			// Strip all spaces from response
+			is_correct = (norm_resp.replace(/\s+/, '') == norm_corr);
 		    }
+		    if (is_correct)
+			break;
 		}
 	    }
 	     
@@ -419,7 +425,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		    hourglass(Sliobj.params.tryDelay);
 		    after_str = ' after '+Sliobj.params.tryDelay+' seconds';
 		}
-		alert('Incorrect. Please re-attempt question'+after_str+'. You have '+Sliobj.session.remainingTries+' try(s) remaining');
+		Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
 		return false;
 	    }
 	    // Display correctness of response
@@ -497,13 +503,14 @@ Slidoc.resetPaced = function () {
 Slidoc.startPaced = function () {
     console.log('Slidoc.startPaced: ');
     if (!Sliobj.session.lastSlide) {
-	var alertStr = 'Starting paced slideshow '+Sliobj.sessionName+':';
+	var alertStr = 'Starting paced slideshow '+Sliobj.sessionName+':<ul>';
 	if (Sliobj.params.paceDelay)
-	    alertStr += ' '+Sliobj.params.paceDelay+' sec delay between slides;';
+	    alertStr += '<li>'+Sliobj.params.paceDelay+' sec delay between slides</li>';
 	if (Sliobj.params.tryCount)
-	    alertStr += ' '+Sliobj.params.tryCount+' attempts for non-choice questions;';
+	    alertStr += '<li>'+Sliobj.params.tryCount+' attempts for non-choice questions</li>';
 	if (Sliobj.params.tryDelay)
-	    alertStr += ' '+Sliobj.params.tryDelay+' sec delay between attempts;';
+	    alertStr += '<li>'+Sliobj.params.tryDelay+' sec delay between attempts</li>';
+        alertStr += '</ul>';
 	Slidoc.showPopup(alertStr);
     }
     for (var qnumber in Sliobj.session.questionsAttempted) {
