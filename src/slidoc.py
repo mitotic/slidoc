@@ -701,6 +701,7 @@ class IPythonRenderer(mistune.Renderer):
         if self.options['cmd_args'].hide:
             id_str = self.get_slide_id()
             ans_params = {'sid': id_str,
+                          'ans_type': self.cur_qtype,
                           'ans_text': name.capitalize(),
                           'ans_extras': '',
                           'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (self.question_number, id_str, self.cur_qtype),
@@ -713,9 +714,10 @@ class IPythonRenderer(mistune.Renderer):
                 ans_params['click_extras'] = 'style="display: none;"'
                 ans_params['inp_extras'] = 'style="display: none;"'
 
-            ans_html = '''<div id="%(sid)s-answer" %(ans_extras)s>
+            ans_html = '''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
 <span id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>%(ans_text)s:</span>
-<input id="%(sid)s-input" type="%(inp_type)s" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>
+<span id="%(sid)s-anstype" class="slidoc-answer-type" style="display: none;">%(ans_type)s</span>
+<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>
 <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
 <span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;">%(corr_text)s</span>
@@ -770,7 +772,7 @@ class IPythonRenderer(mistune.Renderer):
 
         id_str = self.get_slide_id()+'-concepts'
         display_style = 'inline' if self.options['cmd_args'].printable else 'none'
-        tag_html = '''<div><span class="slidoc-clickable slidoc-noslide" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
+        tag_html = '''<div class="slidoc-concepts-container"><span class="slidoc-clickable slidoc-noslide" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
         if self.options["cmd_args"].index:
             first = True
@@ -798,7 +800,10 @@ class IPythonRenderer(mistune.Renderer):
         disp_block = 'none' if self.cur_answer else 'block'
         prefix, suffix, end_str = self.start_block('notes', id_str, display=disp_block)
         self.notes_end = end_str
-        return prefix + ('''<br><span id="%s" class="slidoc-clickable" onclick="Slidoc.classDisplay('%s')" style="display: %s;">Notes:</span>\n''' % (id_str, id_str, 'none' if self.cur_choice else 'inline')) + suffix
+        classes = 'slidoc-clickable'
+        if self.cur_qtype:
+            classes += ' slidoc-question-notes'
+        return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
 
 
     def table_of_contents(self, filepath='', filenumber=1):
@@ -902,15 +907,18 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
         if post_header_html:
             post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
             post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
-                                               classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])+'&nbsp;&nbsp;'
+                                               classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
 
-    post_header_html += click_span('Reset paced session', "Slidoc.resetPaced();",
-                                    classes=['slidoc-clickable', 'slidoc-pacedonly'])
+    post_header_html += '&nbsp;&nbsp;' + click_span('Reset paced session', "Slidoc.resetPaced();",
+                                                    classes=['slidoc-clickable', 'slidoc-pacedonly'])
+
+    if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:
+        post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();")
 
     if 'contents' not in cmd_args.strip and 'slidoc-notes' in content_html:
-        post_header_html += click_span('Hide all notes',
-                                       "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
-                                       classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
+        post_header_html += '&nbsp;&nbsp;' + click_span('Hide all notes',
+                                             "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
+                                              classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
 
     content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
     content_html = content_html.replace('__POST_HEADER__', post_header_html)

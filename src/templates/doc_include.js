@@ -20,6 +20,13 @@ document.onreadystatechange = function(event) {
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
+Slidoc.showConcepts = function (only_if_non_null) {
+    if (!only_if_non_null || Object.keys(Sliobj.session.primaryConceptsMissed).length || Object.keys(Sliobj.session.primaryConceptsMissed).length) {
+    Slidoc.showPopup('<b>Question Concepts</b><br>Primary concepts missed:'+conceptStats(Sliobj.session.primaryConceptsMissed)+
+		     '<p></p>Secondary concepts missed:'+conceptStats(Sliobj.session.secondaryConceptsMissed));
+    }
+}
+
 var Key_codes = {
     27: 'esc',
     35: 'end',
@@ -28,33 +35,62 @@ var Key_codes = {
     38: 'up',
     39: 'right',
     40: 'down',
-    191: 'qmark'
+    67: 'c',
+    69: 'e',
+    72: 'h',
+    78: 'n',
+    80: 'p',
+    81: 'q',
+   191: 'qmark'
 };
 
-function slideViewHelp() {
-    Slidoc.showPopup( '<em>Escape</em> to exit slide mode<br><em>LeftArrow</em> previous slide<br><em>RightArrow</em> next slide<br><em>Home/Fn+LeftArrow</em> First slide<br><em>End/Fn+RightArrow</em> Last slide' );
+var Slide_help_list = [
+    ['q or Escape',               'esc', 'exit slide mode'],
+    ['h or Home or Fn+LeftArrow', 'home', 'first slide'],
+    ['e or End or Fn+RightArrow', 'end', 'last slide'],
+    ['p or LeftArrow',            'left', 'previous slide'],
+    ['n or RightArrow',           'right', 'next slide'],
+    ['c',                         'c', 'missed question concepts'],
+    ['?',                         'qmark', 'help']
+    ]
+
+Slidoc.slideViewHelp = function () {
+    var html = '<b>Slide navigation</b><table class="slidoc-slide-help-table">';
+    for (var j=0; j<Slide_help_list.length; j++) {
+	var x = Slide_help_list[j];
+	html += '<tr><td>' + x[0] + '</td><td><span class="slidoc-clickable" onclick="Slidoc.handleKey('+ "'"+x[1]+"'"+ ');">' + x[2] + '</span></td></tr>';
+    }
+    html += '</table>';
+    Slidoc.showPopup(html);
 }
 
 var Slide_view_handlers = {
     'esc':   function() { Slidoc.slideViewEnd(); },
-    'end':   function() { Slidoc.slideViewGo(false, getVisibleSlides().length); },
+    'q':     function() { Slidoc.slideViewEnd(); },
     'home':  function() { Slidoc.slideViewGo(false, 1); },
+    'h':     function() { Slidoc.slideViewGo(false, 1); },
+    'end':   function() { Slidoc.slideViewGoLast(); },
+    'e':     function() { Slidoc.slideViewGoLast(); },
     'left':  function() { Slidoc.slideViewGo(false); },
+    'p':     function() { Slidoc.slideViewGo(false); },
     'right': function() { Slidoc.slideViewGo(true); },
-    'qmark': slideViewHelp
+    'n':     function() { Slidoc.slideViewGo(true); },
+    'c':     Slidoc.showConcepts,
+    'qmark': Slidoc.slideViewHelp
 }
 
 document.onkeydown = function(evt) {
     if (!(evt.keyCode in Key_codes))
 	return;
-    return handleKey(Key_codes[evt.keyCode]);
+    return Slidoc.handleKey(Key_codes[evt.keyCode]);
 }
 
-function handleKey(keyName) {
-    console.log('handleKey:', keyName);
-    if (Sliobj.closePopup && keyName == 'esc') {
+Slidoc.handleKey = function (keyName) {
+    console.log('Slidoc.handleKey:', keyName);
+    if (Sliobj.closePopup) {
 	Sliobj.closePopup();
-	return false;
+	if (keyName == 'esc' || keyName == 'q')
+	    return false;
     }
 
     if (Slidoc.slideView) {
@@ -75,7 +111,7 @@ function handleKey(keyName) {
 Slidoc.inputKeyDown = function (evt) {
     console.log('Slidoc.inputKeyDown', evt.keyCode, evt.target, evt.target.id);
     if (evt.keyCode == 13) {
-	var inputElem = document.getElementById(evt.target.id.replace('-input', '-ansclick'));
+	var inputElem = document.getElementById(evt.target.id.replace('-ansinput', '-ansclick'));
 	inputElem.onclick();
     }
 }
@@ -129,7 +165,9 @@ function sessionCreate(paced, paceOpen) {
 	    questionSlide: '',
             questionsCount: 0,
             questionsCorrect: 0,
-            questionsAttempted: {}
+            questionsAttempted: {},
+            primaryConceptsMissed: {},
+            secondaryConceptsMissed: {}
 	   };
 }
 
@@ -186,6 +224,10 @@ function localGet(key) {
    } catch(err) {
      return null;
    }
+}
+
+function make_id_from_text(text) {
+    return text.toLowerCase().trim().replace(/[^-\w\.]+/, '-').replace(/^[-\.]+/, '').replace(/[-\.]+$/, '');
 }
 
 function getBaseURL() {
@@ -320,7 +362,7 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
        response = '';
     }
    Slidoc.toggleInline(elem);
-   var inputElem = document.getElementById(slide_id+'-input');
+   var inputElem = document.getElementById(slide_id+'-ansinput');
    if (inputElem) {
        if (setup) {
 	   inputElem.value = response;
@@ -476,9 +518,6 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
     if (click_elem) click_elem.style.display = 'inline';
     if (click_elem) click_elem.classList.remove('slidoc-clickable');
 
-    var concept_elem = document.getElementById(slide_id+"-concepts");
-    var concept_list = concept_elem ? concept_elem.textContent.split('; ') : ';';
-
     var notes_id = slide_id+"-notes";
     var notes_elem = document.getElementById(notes_id);
     if (notes_elem) {
@@ -502,7 +541,33 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 	if (is_correct)
             Sliobj.session.questionsCorrect += 1;
 	Slidoc.showScore();
+
+	var concept_elem = document.getElementById(slide_id+"-concepts");
+	var concepts = concept_elem ? concept_elem.textContent.split('; ') : ';';
+	var score = is_correct ? 1 : 0;
+	for (var j=0; j<concepts.length; j++) {
+	    if (concepts[j] == 'null')
+		continue;
+	    if (j == 0) {
+		// Primary concept
+		if (!(concepts[j] in Sliobj.session.primaryConceptsMissed)) {
+		    Sliobj.session.primaryConceptsMissed[concepts[j]] = [score, 1];
+		} else {
+		    Sliobj.session.primaryConceptsMissed[concepts[j]][0] += score;
+		    Sliobj.session.primaryConceptsMissed[concepts[j]][1] += 1;
+		}
+	    } else {
+		// Secondary concepts
+		if (!(concepts[j] in Sliobj.session.secondaryConceptsMissed)) {
+		    Sliobj.session.secondaryConceptsMissed[concepts[j]] = [score, 1];
+		} else {
+		    Sliobj.session.secondaryConceptsMissed[concepts[j]][0] += score;
+		    Sliobj.session.secondaryConceptsMissed[concepts[j]][1] += 1;
+		}
+	    }
+	}
     }
+
     if (Sliobj.session.paced) {
 	Sliobj.session.remainingTries = 0;
 	if (is_correct) {
@@ -519,10 +584,26 @@ Slidoc.showScore = function () {
 	scoreElem.textContent = Sliobj.session.questionsCorrect+'/'+Sliobj.session.questionsCount;
 }
 
+function conceptStats(conceptsMissed) {
+    var keys = Object.keys(conceptsMissed);
+    var scores = [];
+    for (var j=0; j<keys.length; j++) {
+	var value = conceptsMissed[keys[j]];
+	scores.push([keys[j], value[0], value[1]]);
+    }
+    scores.sort(function(a,b){return (b[1]/b[2])-(a[1]/a[2])});
+    var html = '<ul>';
+    for (var j=0; j<scores.length; j++) {
+	html += '<li>'+scores[j][0]+': '+scores[j][1]+'/'+scores[j][2]+'</li>';
+    }
+    html += '</ul>';
+    return html;
+}
+
 Slidoc.resetPaced = function () {
     if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
 	return false;
-    Sliobj.session = sessionCreate(Sliobj.session.paced, Sliobj.session.paceOpen);
+    Sliobj.session = sessionCreate(Sliobj.session.paced, Sliobj.params.paceOpen);
     sessionPut(Sliobj.sessionName, Sliobj.session);
     location.reload(true);
 }
@@ -555,13 +636,14 @@ Slidoc.startPaced = function () {
 	Slidoc.showScore();
 
     document.body.classList.add('slidoc-paced-view');
+    Slidoc.classDisplay('slidoc-question-notes', 'none');
     goSlide("#slidoc01-01", false, true);
     Slidoc.slideViewStart();
 }
 
 Slidoc.endPaced = function () {
     console.log('Slidoc.endPaced: ');
-    if (Sliobs.session.paceOpen) {
+    if (Sliobj.session.paceOpen) {
 	// If open session, unpace
 	document.body.classList.remove('slidoc-paced-view');
 	Sliobj.session.paced = false;
@@ -612,9 +694,12 @@ Slidoc.slideViewStart = function () {
 }
 
 Slidoc.slideViewEnd = function() {
-   if (Sliobj.session.paced) {
-      alert('Paced mode');
-      return false;
+    if (Sliobj.session.paced) {
+	var msgStr = 'Cannot exit slide view when in paced mode';
+	if (Sliobj.params.paceOpen)
+	    msgStr += ' (until the last slide is reached)';
+	alert(msgStr);
+	return false;
    }
    document.body.classList.remove('slidoc-slide-view');
    Slidoc.classDisplay('slidoc-slide', 'block');
@@ -626,6 +711,13 @@ Slidoc.slideViewEnd = function() {
    }
    Slidoc.slideView = 0;
    return false;
+}
+
+Slidoc.slideViewGoLast = function () {
+    var slides = getVisibleSlides();
+    if (Sliobj.session.paced && Sliobj.session.lastSlide < slides.length)
+	return false;
+    Slidoc.slideViewGo(false, slides.length);
 }
 
 Slidoc.slideViewGo = function (forward, slide_num) {
@@ -665,9 +757,9 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 
 	    Sliobj.session.lastTries = 0;
 	    Sliobj.lastInputValue = null;
-	    var answerElem = document.getElementById(slides[slide_num-1].id+'-answer');
-	    if (answerElem) {
-		Sliobj.session.questionSlide = document.getElementById(slides[slide_num-1].id+'-choice-A') ? 'choice' : 'other';
+	    var answerType = document.getElementById(slides[slide_num-1].id+'-anstype');
+	    if (answerType) {
+		Sliobj.session.questionSlide = answerType.textContent;
 		Sliobj.session.lastAnswerCorrect = false;
 		Sliobj.session.remainingTries = Sliobj.params.tryCount;
 	    } else {
@@ -679,6 +771,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 
 	    if (Sliobj.session.lastSlide == slides.length) {
 		Slidoc.endPaced();
+		Slidoc.showConcepts(true);
 	    }
 	    // Save updated session (if not transient)
 	    sessionPut(Sliobj.sessionName, Sliobj.session);
@@ -698,7 +791,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     Slidoc.slideView = slide_num;
     location.href = '#'+slides[Slidoc.slideView-1].id;
 
-    var inputElem = document.getElementById(slides[Slidoc.slideView-1].id+'-input');
+    var inputElem = document.getElementById(slides[Slidoc.slideView-1].id+'-ansinput');
     if (inputElem) setTimeout(function(){inputElem.focus();}, 200);
     return false;
 }
@@ -986,10 +1079,10 @@ function handleTouchMove(evt) {
     if ( Math.abs( xDiff ) > Math.abs( yDiff ) ) {/*most significant*/
         if ( xDiff > 0 ) {
             /* left swipe (right motion) */ 
-            return handleKey('right');
+            return Slidoc.handleKey('right');
         } else {
             /* right swipe (leftward motion) */
-            return handleKey('left');
+            return Slidoc.handleKey('left');
         }                       
     } else {
         if ( yDiff > 0 ) {

@@ -85,11 +85,14 @@ a, a:visited,
 .slidoc-notes { padding: 0px 1em; font-size: 95%; }
 .slidoc-notes p {margin: 0.3em 0;}
 
+/* Help table */
+.slidoc-slide-help-table td {padding-bottom: 1em; padding-left: 2em;}
+
 /* Views */
 body.slidoc-slide-view { font-size: 150%; }
 
 /* Score tally */
-#slidoc-score-display {color: red;}
+/* #slidoc-score-display {color: red;} */
 .slidoc-correct-answer {color: green;}
 .slidoc-wrong-answer {color: red;}
 

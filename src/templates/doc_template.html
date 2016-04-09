@@ -1,8 +1,4 @@
-<!-- HTML template for slidoc--->
-
-<style>
-    body { %(body_style)s }
-</style>
+<!-- HTML head/body transition template for slidoc--->
 
 %(math_js)s
 
@@ -14,14 +10,15 @@
 <span onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp;
 <span id="slidoc-slide-nav-next" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
 </div>
-<div id="slidoc-hourglass-container" ><span id="slidoc-hourglass" ></span></div>
+<div id="slidoc-hourglass-container" class="slidoc-slideonly"><span id="slidoc-hourglass" ></span></div>
 
-<div id="slidoc-slide-home-button" class="slidoc-slide-home-button ">
-<span id="slidoc-score-display"></span>
-<span class="slidoc-clickable-sym" onclick="Slidoc.go();">%(house)s</span>
+<div id="slidoc-slide-home-button" class="slidoc-slide-home-button slidoc-noprint">
+<span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
+<span class="slidoc-clickable slidoc-slideonly" onclick="Slidoc.slideViewHelp();">?</span>&nbsp;
+<span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>
 </div>
 
-<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide">
+<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide slidoc-noprint">
 <span onclick="Slidoc.slideViewStart();">%(square)s</span>
 </div>
 
