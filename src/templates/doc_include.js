@@ -21,9 +21,14 @@ document.onreadystatechange = function(event) {
 }
 
 Slidoc.showConcepts = function (only_if_non_null) {
-    if (!only_if_non_null || Object.keys(Sliobj.session.primaryConceptsMissed).length || Object.keys(Sliobj.session.primaryConceptsMissed).length) {
-    Slidoc.showPopup('<b>Question Concepts</b><br>Primary concepts missed:'+conceptStats(Sliobj.session.primaryConceptsMissed)+
-		     '<p></p>Secondary concepts missed:'+conceptStats(Sliobj.session.secondaryConceptsMissed));
+    if (!only_if_non_null || Object.keys(Sliobj.session.primaryConceptsMissed).length || Object.keys(Sliobj.session.secondaryConceptsMissed).length) {
+	var html = '<b>Question Concepts</b><br>';
+	var missed = [Sliobj.session.primaryConceptsMissed, Sliobj.session.secondaryConceptsMissed];
+	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
+	for (var k=0; k<missed.length; k++) {
+	    html += labels[k]+conceptStats(missed[k])+'<p></p>';
+	}
+	Slidoc.showPopup(html);
     }
 }
 
@@ -134,27 +139,41 @@ function slidocReady(event) {
     if (pacedSession) {
 	// Paced named session
 	Sliobj.session = sessionGet(Sliobj.sessionName);
+	if (Sliobj.session) {
+	    if (Sliobj.session.version != Sliobj.params.sessionVersion) {
+		alert('Slidoc: session version mismatch; discarding previous session with version '+Sliobj.session.version);
+		Sliobj.session = null;
+	    } else if (Sliobj.session.cookie != Sliobj.params.sessionCookie) {
+		alert('Slidoc: session cookie mismatch; discarding previous session');
+		Sliobj.session = null;
+	    } else {
+		Sliobj.session.paced = pacedSession;
+	    }
+	}
     } else {
 	// Unnamed session
 	Sliobj.sessionName = '';
     }
     if (!Sliobj.session) {
 	// New paced session
-	Sliobj.session = sessionCreate(pacedSession, Sliobj.params.paceOpen);
+	Sliobj.session = sessionCreate(Sliobj.params.sessionVersion, Sliobj.params.sessionCookie,
+				       pacedSession, Sliobj.params.paceOpen);
 	sessionPut(Sliobj.sessionName, Sliobj.session);
     }
 
-   if (Sliobj.session.paced) {
+   var toc_elem = document.getElementById("slidoc00");
+   if (!toc_elem && Sliobj.session.paced) {
      Slidoc.startPaced();
      return false;
    }
    Slidoc.chainUpdate(location.search);
-   var toc_elem = document.getElementById("slidoc00");
    if (toc_elem) goSlide(location.hash || "#slidoc00", false, true);
 }
 
-function sessionCreate(paced, paceOpen) {
-    return {paced: paced || false,
+function sessionCreate(version, cookie, paced, paceOpen) {
+    return {version: version,
+	    cookie: cookie,
+	    paced: paced || false,
 	    paceOpen: paceOpen || 0,
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
 	    lastSlide: 0,
@@ -291,7 +310,9 @@ Slidoc.hide = function (elem, className, action) {
 }
 
 Slidoc.allDisplay = function (elem) {
-   // Display all "chapters"
+    // Display all "chapters"
+   if (Sliobj.session.paced)
+       return false;
    Slidoc.hide(elem);
    Slidoc.showAll = !Slidoc.showAll;
    var elements = document.getElementsByClassName('slidoc-container');
@@ -439,7 +460,7 @@ Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
 Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, response) {
     console.log('Slidoc.answerUpdate: ', setup, question_number, slide_id, resp_type, response);
 
-    if (!setup && Sliobj.paced)
+    if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1
     var corr_elem = document.getElementById(slide_id+"-correct");
     console.log("Slidoc.answerUpdate2:", corr_elem);
@@ -592,18 +613,19 @@ function conceptStats(conceptsMissed) {
 	scores.push([keys[j], value[0], value[1]]);
     }
     scores.sort(function(a,b){return (b[1]/b[2])-(a[1]/a[2])});
-    var html = '<ul>';
+    var html = '<table class="slidoc-missed-concepts-table">';
     for (var j=0; j<scores.length; j++) {
-	html += '<li>'+scores[j][0]+': '+scores[j][1]+'/'+scores[j][2]+'</li>';
+	html += '<tr><td>'+scores[j][0]+':</td><td>'+scores[j][1]+'/'+scores[j][2]+'</td></tr>';
     }
-    html += '</ul>';
+    html += '</table>';
     return html;
 }
 
 Slidoc.resetPaced = function () {
     if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
 	return false;
-    Sliobj.session = sessionCreate(Sliobj.session.paced, Sliobj.params.paceOpen);
+    Sliobj.session = sessionCreate(Sliobj.params.sessionVersion, Sliobj.params.sessionCookie,
+				   Sliobj.session.paced, Sliobj.params.paceOpen);
     sessionPut(Sliobj.sessionName, Sliobj.session);
     location.reload(true);
 }

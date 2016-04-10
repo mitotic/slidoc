@@ -505,7 +505,7 @@ class IPythonRenderer(mistune.Renderer):
         """Rendering paragraph tags. Like ``<p>``."""
         if not self.cur_header and self.first_para:
             self.untitled_number += 1
-            if self.options["cmd_args"].number:
+            if self.options["cmd_args"].untitled_number:
                 text = ('%d. ' % self.untitled_number) + text
         self.first_para = False
         return super(IPythonRenderer, self).paragraph(text)
@@ -851,7 +851,7 @@ def click_span(text, onclick, id='', classes=['slidoc-clickable'], href=''):
         return '''<span %s class="%s" onclick="%s">%s</span>''' % (id_str, ' '.join(classes), onclick, text)
 
 def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, printable=False, target='', classes=[]):
-    extras = ' target="%s"' if target else ''
+    extras = ' target="%s"' % target if target else ''
     class_list = classes[:]
     if text.startswith('&'):
         class_list.append("slidoc-clickable-sym")
@@ -955,7 +955,7 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
     tex2jax: {
       inlineMath: [ ['`$','$`'], ["$$$","$$$"] ],
       processEscapes: false
-    }
+    }%s
   });
 </script>
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
@@ -977,15 +977,15 @@ if __name__ == '__main__':
     parser.add_argument('--css', help='Custom CSS file (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
+    parser.add_argument('--eq_number', help='Automatic equation numbering', action="store_true")
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
     parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images', default='')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)', default='ind.html')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
-    parser.add_argument('--number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
-    parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay for paced session using combined file, e.g., 0,0,1', default='')
+    parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1', default='')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true")
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
     parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
@@ -993,10 +993,12 @@ if __name__ == '__main__':
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
     parser.add_argument('--toc_header', help='HTML header file for ToC')
+    parser.add_argument('--untitled_number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
-    js_params = {'filename': '', 'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0}
+    js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
+                 'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
     else:
@@ -1004,6 +1006,8 @@ if __name__ == '__main__':
     print('Filename: ', js_params['filename'], file=sys.stderr)
 
     if cmd_args.pace:
+        if cmd_args.combine:
+            sys.exit('slidoc: Error: --pace and --combine options do not work well together')
         if cmd_args.printable:
             sys.exit('slidoc: Error: --pace and --printable options do not work well together')
         comps = cmd_args.pace.split(',')
@@ -1011,10 +1015,12 @@ if __name__ == '__main__':
             js_params['paceOpen'] = int(comps[0])
         if len(comps) > 1 and comps[1].isdigit():
             js_params['paceDelay'] = int(comps[1])
-        if len(comps) > 2 and comps[1].isdigit():
+        if len(comps) > 2 and comps[2].isdigit():
             js_params['tryCount'] = int(comps[2])
-        if len(comps) > 3 and comps[2].isdigit():
+        if len(comps) > 3 and comps[3].isdigit():
             js_params['tryDelay'] = int(comps[3])
+        if len(comps) > 4:
+            js_params['sessionCookie'] = comps[4]
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -1045,7 +1051,9 @@ if __name__ == '__main__':
                                                                   templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
-        
+
+    math_inc = Mathjax_js % ( ', TeX: { equationNumbers: { autoNumber: "AMS" } }' if cmd_args.eq_number else '')
+    
     fnames = []
     for f in cmd_args.file:
         fcomp = os.path.splitext(os.path.basename(f.name))
@@ -1144,7 +1152,7 @@ if __name__ == '__main__':
         if math_in_file:
             math_found = True
         
-        mid_params = {'math_js': Mathjax_js if math_in_file else ''}
+        mid_params = {'math_js': math_inc if math_in_file else ''}
         mid_params.update(SYMS)
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
@@ -1205,19 +1213,26 @@ if __name__ == '__main__':
             ifile += 1
             id_str = 'toc%02d' % ifile
             slide_link = ''
-            if cmd_args.slides:
+            if not cmd_args.pace and cmd_args.slides:
                 slide_link = ',&nbsp; <a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>' % (cmd_args.site_url, fname+"-slides.html", 'slides')
             nb_link = ''
-            if cmd_args.notebook and nb_site_url:
+            if not cmd_args.pace and cmd_args.notebook and nb_site_url:
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
             doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile),
                                  combine=cmd_args.combine, printable=cmd_args.printable)
 
-            toggle_link = '<span class="slidoc-clickable" onclick="Slidoc.idDisplay(%s);"><b>%s</b></span>' % ("'"+id_str+"'", fheader)
+            if not cmd_args.pace:
+                doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile),
+                                    combine=cmd_args.combine, printable=cmd_args.printable)
+                toggle_link = '<span class="slidoc-clickable" onclick="Slidoc.idDisplay(%s);"><b>%s</b></span>' % ("'"+id_str+"'", fheader)
+            else:
+                doc_link = nav_link('paced', cmd_args.site_url, outname, target='_blank')
+                toggle_link = '<span><b>%s</b></span>' % (fheader,)
             toc_html.append('<li>%s%s(<em>%s%s%s</em>)</li>\n' % (toggle_link, SPACER, doc_link, slide_link, nb_link))
 
-            f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
-            toc_html.append(f_toc_html)
+            if not cmd_args.pace:
+                f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
+                toc_html.append(f_toc_html)
 
         toc_html.append('</ol>\n' if 'sections' in cmd_args.strip else '</ul>\n')
 
@@ -1329,7 +1344,7 @@ if __name__ == '__main__':
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
-        comb_params = {'math_js': Mathjax_js if math_found else ''}
+        comb_params = {'math_js': math_inc if math_found else ''}
         comb_params.update(SYMS)
         md2md.write_file(dest_dir+cmd_args.combine, Html_header, head_html,
                           mid_template % comb_params, body_prefix,

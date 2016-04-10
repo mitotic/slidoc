@@ -14,12 +14,16 @@ questions and analyze concept dependencies.
 
 ---
 
-The design goals of Slidoc are:
+The user-interface design goals of Slidoc are:
 
- 1. The raw file format should be as close as possible to the final display format
+ 1. Raw file format should be as close as possible to the final display format
 
  2. No specialized software should be required to reorganize/reorder
  the lecture material.
+
+ 3. Navigating in the document should be easy, both on the desktop and
+ on mobile devices
+
 
 Using the plain text Markdown file format, with some extensions,
 accomplishes both these goals. With this format, many open source
@@ -142,7 +146,7 @@ files, and convert all Markdown image references to HTML `<img>` tags.
 
 ---
 
-## Slidoc extensions
+## Slidoc document structure
 
 Slidoc recognizes several extensions to standard Markdown to
 process slides in a lecture.
@@ -152,13 +156,16 @@ process slides in a lecture.
 - Slides are separated by lines with three horizontal dashes (`---`)
 
 - Each slide may have an optional Level 2 header (`## Slide title`)
+  (Higher-level headers may also be used, but they will not be numbered.)
 
 ---
 
-- Two additional pieces of information may optionally be included in
-  each slide: a list of concepts and additional notes. (A concept list
-  may appear anywhere in the slide, but notes can only appear at the
-  very end of the slide.)
+## Concepts and Notes
+
+Two additional pieces of information may optionally be included in
+each slide: a list of concepts and additional notes. A concept list
+may appear anywhere in the slide, but notes can only appear at the
+very end of the slide.
 
 Example:
 
@@ -166,16 +173,22 @@ Example:
  
     Notes: Additional material
 
+Concept lists are used generate an automatic concept index. Indexing
+is done separately for regular slides and question slides. Slidoc
+supports concept chain naviagtion. Starting from the index, you can
+easily navigate between all places in the document where a particular
+concept is discussed.
+
 Notes:
 Concept lists are semicolon-separated and use the syntax `topic,
 subtopic` where `topic/subtopic` is a space-separated phrase and
 `subtopic` is optional. Concepts are not visible during a slideshow, but are
 displayed in the printed version of the lecture.
 
-The concept list is used to generate the index, and the first concept
-is assumed to be the main concept discussed in the slide. If there is
-no main concept, then the special concept `null` should be specified
-as the first concept.
+The first concept in the list is assumed to be the primary concept
+relevant to the slide. If there is no primary concept, then the
+special concept `null` should be specified as the first
+concept. Additional concepts are treated as secondary concepts.
 
 Notes are additional material that are displayed in the printed
 version of the lecture. For normal slideshows, notes are not visible
@@ -336,6 +349,69 @@ Concepts: answers, hiding; answers, stripping
 
 ---
 
+## Slideshow mode
+
+Slidoc features a built-in "slideshow" mode, allowing you to switch
+seamlessly between scrolling view and slide view for any slide. Slide
+view is enabled by clicking on the square (<span>&#9635;</span>) icon
+on the bottom left.  Pressing `?` during a slideshow displays a list
+of keyboard shortcuts.
+
+Unlike a true slideshow, vertical scrolling is permitted, allowing
+essentially unlimited supporting material in each slide.
+
+---
+
+## Paced mode
+
+Slidoc supports a restrictive type of slideshow mode known as the
+paced mode, where the user is forced to view the document as a
+sequence of slides. Information about the state of a paced slideshow
+is saved in the persistent local storage of the browser, using the
+filename as the key. It is enabled by the option:
+
+    --pace=open_on_end,delay_sec,try_count,try_delay
+
+* `open_on_end=1` implies that at the end of the slideshow, the document
+  may be viewed as a regular document. The default value is `0`, which
+  prevents this behavior.
+
+* `delay_sec` if non-zero, forces a minimum delay between slides
+
+* `try_count` if non-zero, forces each question to be attempted at
+  least this many times (except for multiple-choice, where only one
+  attempt is forced).
+
+* `try_delay` if non-zero, forces a wait after an incorrect attempt.
+
+The Notes portion of a question slide is hidden until a correct
+response is received or all tries are exhausted.
+
+Notes: Slides can normally be advanced only one at a time in paced
+mode. This means that "slide skipping", i.e., forward slide navigation
+through [internal links](#int-link) is disabled. However, if a
+question is answered correctly, forward slide navigation is enabled
+until the next question slide is reached. Thus, a forward slide link
+could be included in the Notes portion of a question (or the next
+slide) to enable *adaptive testing*.  If you answer correctly, you can
+skip the next several slides, which may contain additional questions
+aimed at those who failed to answer correctly.
+
+Concepts: paced mode; adaptive testing
+
+---
+
+## Answer tally and concept understanding analysis
+
+When you attempt each question in a Slidoc document, along with the
+score, the concepts associated with that question are also tracked.
+The score is displayed on the top right corner.  By clicking on the
+score, you can view a list of concepts associated with the questions
+that you answered incorrectly, sorted in decreasing order of
+difficulty.
+
+---
+
 ## Viewing slides with reveal.js
 
 Slidoc supports creating slideshows using
@@ -355,14 +431,14 @@ installed (for presentation mode, see below)
 Any of the above can be a null string, or be omitted, e.g. `--slides=,`
 or `--slides=,,190%`
 
-Concepts: slideshow
+Concepts: reveal.js; slideshow, reveal.js
 
 Notes: To customize the presentation further, edit the
 `templates/reveal_template.html` template file.
 
 ---
 
-## Slideshow shortcuts
+## reveal.js shortcuts
 
 In a `reaveal.js` slideshow, the following keyboard shortcuts may be
 useful:
@@ -377,11 +453,11 @@ useful:
 
 - `?` to display keyboard shortcuts
 
-Concepts: keyboard shortcuts; slideshow
+Concepts: reveal.js, keyboard shortcuts; slideshow, reveal.js
 
 ---
 
-## Using presentation mode
+## reveal.js presentation mode
 
 `reveal.js` has a presentation mode which displays a timer, notes for
 the current slide, as well as a preview of the next slide. This mode
@@ -401,7 +477,29 @@ presentation mode. Turn off any mirroring of displays. Display the
 standard window on the projected window and the presentation window in
 the desktop/laptop window.
 
-Concepts: presentation mode
+Concepts: reveal.js, presentation mode
+
+---
+
+## Printing slidoc documents
+
+Although `slidoc` are best viewed as HTM documents, sometime you may
+need to print them or save them as PDF files.
+
+You can create a single document from a set of Markdown files using
+the `--combine=` option, open it in the browser, and select the *Show
+all chapters* option. You can then print it or save it as PDF. (The
+`--printable` option can be used to preserve internal links when
+printing, but it should not be used for web view.)
+
+To customize what appears in the document, you can use the `--strip`
+option. It accepts a list of comma-separated values from the list
+`answers,chapters,concepts,contents,hidden,navigate,notes,rule,sections`
+
+You can also specity `--strip=all` or `--strip=all,but,...`
+
+Concepts: printing; PDF
+
 
 ---
 
@@ -410,16 +508,20 @@ Concepts: presentation mode
 The `slidoc.py` supports several additional command line
 options. Use the following command to display them:
 
-    slidoc.py -i
+    slidoc.py -h
 
 These options include:
 
-* `--fsize` Font size for `.html` files, e.g., `90%`, `16px`
+* `--css` To use custom CSS file (by modifying `templates/doc_custom.css`) 
 
-* `--ffamily` Font family for `.html` files, e.g., `Arial`, `sans-serif`
+* `--eq_number` To automatically number Mathjax equations 
 
-* `--number` Number all untitled slides (useful for generating
+* `--toc_header` To insert custom HTML header before Table of Contents
+
+* `--untitled_number` Number all untitled slides (useful for generating
   question banks)
+
+Concepts: command line, options
 
 ---
 
@@ -449,14 +551,33 @@ $$
 \alpha = \beta *\gamma* \delta
 $$
 
-(Slideshow: Use Down arrow to view vertical slides with notes)
+Can also use Latex-style equation blocks:
+
+    \begin{equation}
+       \label{eq:a}
+       E = mc^2
+    \end{equation}
+
+which renders as
+
+\begin{equation}
+   \label{eq:a}
+   E = mc^2
+\end{equation}
+
+Using the `--eq_number` option for automatic equation numbering, you
+can refer to the above equation inline as
+
+    `$\ref{eq:a}$`
+
+which renders as (`$\ref{eq:a}$`)
 
 Concepts: equations; mathjax 
 
 Notes: Equations are also allowed in notes: `$\alpha = \omega$` 
 
 (The ``--`` separator below can be used to create additional
-vertical slides containing notes.)
+vertical slides containing notes in `reveal.js`.)
 
 --
 
