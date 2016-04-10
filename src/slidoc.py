@@ -1001,9 +1001,7 @@ if __name__ == '__main__':
                  'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
-    else:
-        js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.file[0].name))[0]
-    print('Filename: ', js_params['filename'], file=sys.stderr)
+        print('Filename: ', js_params['filename'], file=sys.stderr)
 
     if cmd_args.pace:
         if cmd_args.combine:
@@ -1047,8 +1045,8 @@ if __name__ == '__main__':
 
     
     custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
-    head_html = '<style>\n%s\n%s</style>\n\n<script>\n%s</script>\n' % (custom_css, templates['doc_include.css'],
-                                                                  templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+    css_html = '<style>\n%s\n%s</style>\n' % (custom_css, templates['doc_include.css'])
+    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
@@ -1109,9 +1107,15 @@ if __name__ == '__main__':
     fprefix = None
     math_found = False
     for j, f in enumerate(cmd_args.file):
+        fname = fnames[j]
         filepath = f.name
         md_text = f.read()
         f.close()
+        if not cmd_args.combine:
+            js_params['filename'] = fname
+
+        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+
 
         base_parser = md2md.Parser(base_mods_args)
         slide_parser = md2md.Parser(slide_mods_args)
@@ -1121,7 +1125,6 @@ if __name__ == '__main__':
         if cmd_args.hide and 'hidden' in cmd_args.strip:
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
-        fname = fnames[j]
         prev_file = '' if j == 0                    else ('#'+make_chapter_id(j) if cmd_args.combine else fnames[j-1]+".html")
         next_file = '' if j >= len(cmd_args.file)-1 else ('#'+make_chapter_id(j+2) if cmd_args.combine else fnames[j+1]+".html")
 
@@ -1164,7 +1167,7 @@ if __name__ == '__main__':
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
             else:
-                head = head_html + (mid_template % mid_params) + body_prefix
+                head = file_head_html + (mid_template % mid_params) + body_prefix
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html):
                     # Still some missing reference numbers; output file later

@@ -136,7 +136,7 @@ function slidocReady(event) {
     var pacedSession = (Sliobj.params.paceOpen !== null);
     Sliobj.session = null;
     Sliobj.sessionName = Sliobj.params.filename;
-    if (pacedSession) {
+    if (pacedSession && Sliobj.sessionName) {
 	// Paced named session
 	Sliobj.session = sessionGet(Sliobj.sessionName);
 	if (Sliobj.session) {
