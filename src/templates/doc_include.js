@@ -10,6 +10,7 @@ Sliobj.params = JS_PARAMS_OBJ;
 
 Sliobj.lastInputValue = null;
 Sliobj.closePopup = null;
+Sliobj.questionSlide = null;
 
 document.onreadystatechange = function(event) {
     console.log('onreadystatechange:', document.readyState);
@@ -86,8 +87,9 @@ var Slide_view_handlers = {
 }
 
 document.onkeydown = function(evt) {
-    if (Sliobj.session.questionSlide && evt.keyCode > 44)
-	return;
+    if ((!Slidoc.slideView || Sliobj.questionSlide) && evt.keyCode > 44)
+	return;  // Handle printable input normally
+
     if (!(evt.keyCode in Key_codes))
 	return;
 
@@ -109,9 +111,9 @@ Slidoc.handleKey = function (keyName) {
 	return false;
 
     } else if (Slidoc.chainActive) {
-	if (keyName == 'left')  Slidoc.chainActive[0]();
-	if (keyName == 'esc')   Slidoc.chainActive[1]();
-	if (keyName == 'right') Slidoc.chainActive[2]();
+	if (keyName == 'left')  { Slidoc.chainActive[0](); return false; }
+	if (keyName == 'esc')   { Slidoc.chainActive[1](); return false; }
+	if (keyName == 'right') { Slidoc.chainActive[2](); return false; }
     }
 	
    return;
@@ -199,8 +201,7 @@ function sessionCreate(version, cookie, paced, paceOpen) {
             lastTime: 0,
             lastTries: 0,
             remainingTries: 0,
-            lastAnswerCorrect: false,
-	    questionSlide: '',
+            lastAnswersCorrect: 0,
             questionsCount: 0,
             questionsCorrect: 0,
             questionsAttempted: {},
@@ -654,24 +655,24 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 
 	var concept_elem = document.getElementById(slide_id+"-concepts");
 	var concepts = concept_elem ? concept_elem.textContent.split('; ') : ';';
-	var score = is_correct ? 1 : 0;
+	var miss_count = is_correct ? 0 : 1;
 	for (var j=0; j<concepts.length; j++) {
 	    if (concepts[j] == 'null')
 		continue;
 	    if (j == 0) {
 		// Primary concept
 		if (!(concepts[j] in Sliobj.session.primaryConceptsMissed)) {
-		    Sliobj.session.primaryConceptsMissed[concepts[j]] = [score, 1];
+		    Sliobj.session.primaryConceptsMissed[concepts[j]] = [miss_count, 1];
 		} else {
-		    Sliobj.session.primaryConceptsMissed[concepts[j]][0] += score;
+		    Sliobj.session.primaryConceptsMissed[concepts[j]][0] += miss_count;
 		    Sliobj.session.primaryConceptsMissed[concepts[j]][1] += 1;
 		}
 	    } else {
 		// Secondary concepts
 		if (!(concepts[j] in Sliobj.session.secondaryConceptsMissed)) {
-		    Sliobj.session.secondaryConceptsMissed[concepts[j]] = [score, 1];
+		    Sliobj.session.secondaryConceptsMissed[concepts[j]] = [miss_count, 1];
 		} else {
-		    Sliobj.session.secondaryConceptsMissed[concepts[j]][0] += score;
+		    Sliobj.session.secondaryConceptsMissed[concepts[j]][0] += miss_count;
 		    Sliobj.session.secondaryConceptsMissed[concepts[j]][1] += 1;
 		}
 	    }
@@ -680,8 +681,12 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 
     if (Sliobj.session.paced) {
 	Sliobj.session.remainingTries = 0;
-	if (is_correct) {
-	    Sliobj.session.lastAnswerCorrect = true;
+	if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
+	    // 1 => Current sequence of correct answers
+	    Sliobj.session.lastAnswersCorrect = 1;
+	} else {
+            // -1 => Current sequence with at least one incorrect answer
+	    Sliobj.session.lastAnswersCorrect = -1;
 	}
 	Sliobj.session.lastTime = Date.now();
 	sessionPut(Sliobj.sessionName, Sliobj.session);
@@ -821,6 +826,7 @@ Slidoc.slideViewEnd = function() {
      location.href = '#'+slides[Slidoc.slideView-1].id;
    }
    Slidoc.slideView = 0;
+   Sliobj.questionSlide = '';
    return false;
 }
 
@@ -846,47 +852,51 @@ Slidoc.slideViewGo = function (forward, slide_num) {
       return false;
 
     if (Sliobj.session.paced) {
+	// Advance one slide at a time
+	slide_num = Math.min(slide_num, Sliobj.session.lastSlide+1);
+    }
+
+    var answerType = document.getElementById(slides[slide_num-1].id+'-anstype');
+    Sliobj.questionSlide = answerType ? answerType.textContent : '';
+
+    if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
+	// Advancing to next paced slide
 	console.log('Slidoc.slideViewGo2:', slide_num, Sliobj.session.lastSlide);
-        if (slide_num > Sliobj.session.lastSlide) {
-	    // Advancing to next paced slide
-
-	    if (Sliobj.session.questionSlide && Sliobj.session.remainingTries) {
-		var tryCount =  (Sliobj.session.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
-		alert('Please answer before proceeding. You have '+tryCount+' try(s)');
+	if (Sliobj.questionSlide && Sliobj.session.remainingTries) {
+	    var tryCount =  (Sliobj.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
+	    alert('Please answer before proceeding. You have '+tryCount+' try(s)');
+	    return false;
+	} else if (!Sliobj.questionSlide && Sliobj.params.paceDelay) {
+	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
+	    if (delta < Sliobj.params.paceDelay) {
+		alert('Please wait '+ Math.ceil(Sliobj.params.paceDelay-delta) + ' seconds');
 		return false;
-	    } else if (!Sliobj.session.questionSlide && Sliobj.params.paceDelay) {
-		var delta = (Date.now() - Sliobj.session.lastTime)/1000;
-		if (delta < Sliobj.params.paceDelay) {
-		    alert('Please wait '+ Math.ceil(Sliobj.params.paceDelay-delta) + ' seconds');
-		    return false;
-		}
 	    }
-            // Update session for new slide
-	    slide_num = Sliobj.session.lastSlide+1;
-	    Sliobj.session.lastSlide = slide_num; 
-	    Sliobj.session.lastTime = Date.now();
-
-	    Sliobj.session.lastTries = 0;
-	    Sliobj.lastInputValue = null;
-	    var answerType = document.getElementById(slides[slide_num-1].id+'-anstype');
-	    if (answerType) {
-		Sliobj.session.questionSlide = answerType.textContent;
-		Sliobj.session.lastAnswerCorrect = false;
-		Sliobj.session.remainingTries = Sliobj.params.tryCount;
-	    } else {
-		Sliobj.session.questionSlide = '';
-		Sliobj.session.remainingTries = 0;
-		if (Sliobj.params.paceDelay)
-		    hourglass(Sliobj.params.paceDelay);
-            }
-
-	    if (Sliobj.session.lastSlide == slides.length) {
-		Slidoc.endPaced();
-		Slidoc.showConcepts(true);
-	    }
-	    // Save updated session (if not transient)
-	    sessionPut(Sliobj.sessionName, Sliobj.session);
 	}
+        // Update session for new slide
+	Sliobj.session.lastSlide = slide_num; 
+	Sliobj.session.lastTime = Date.now();
+
+	Sliobj.session.lastTries = 0;
+	Sliobj.lastInputValue = null;
+	if (Sliobj.questionSlide) {
+	    if (Sliobj.session.lastAnswersCorrect != 1 && Sliobj.session.lastAnswersCorrect != -1)
+		Sliobj.session.lastAnswersCorrect = 0;
+	    Sliobj.session.remainingTries = Sliobj.params.tryCount;
+	} else {
+            // 2 => Last sequence of questions was answered correctly
+	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 2 : 0;
+	    Sliobj.session.remainingTries = 0;
+	    if (Sliobj.params.paceDelay)
+		hourglass(Sliobj.params.paceDelay);
+        }
+
+	if (Sliobj.session.lastSlide == slides.length) {
+	    Slidoc.endPaced();
+	    Slidoc.showConcepts(true);
+	}
+	// Save updated session (if not transient)
+	sessionPut(Sliobj.sessionName, Sliobj.session);
     }
 
     var prev_elem = document.getElementById('slidoc-slide-nav-prev');
@@ -923,7 +933,7 @@ function goSlide(slideHash, chained, force) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
    console.log("goSlide:", slideHash, chained);
-    if (Sliobj.session.paced && slideHash && !force && !Sliobj.session.lastAnswerCorrect) {
+    if (Sliobj.session.paced && slideHash && !force && Sliobj.session.lastAnswersCorrect <= 0) {
 	console.log("goSlide: Error - paced mode");
 	return false;
     }

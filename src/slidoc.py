@@ -481,7 +481,7 @@ class IPythonRenderer(mistune.Renderer):
         chapter_id, sep, _ = slide_id.partition('-')
         return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
 
-    def hrule(self):
+    def hrule(self, implicit=False):
         """Rendering method for ``<hr>`` tag."""
         if self.choice_end:
             prefix = self.choice_end
@@ -491,7 +491,7 @@ class IPythonRenderer(mistune.Renderer):
         hide_prefix = self.end_hide()
         new_slide_id = self.get_slide_id()
 
-        if 'rule' in self.options["cmd_args"].strip or (hide_prefix and 'hidden' in self.options["cmd_args"].strip):
+        if implicit or 'rule' in self.options["cmd_args"].strip or (hide_prefix and 'hidden' in self.options["cmd_args"].strip):
             html = ''
         elif self.options.get('use_xhtml'):
             html = '<hr class="slidoc-noslide slidoc-noprint"/>\n'
@@ -499,7 +499,6 @@ class IPythonRenderer(mistune.Renderer):
             html = '<hr class="slidoc-noslide slidoc-noprint">\n'
 
         html += '</div><!--slide end-->\n' + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
-
         return self.end_notes()+hide_prefix+html
     
     def paragraph(self, text):
@@ -521,6 +520,10 @@ class IPythonRenderer(mistune.Renderer):
             # failed to parse, just return it unmodified
             return html
 
+        if self.cur_header and level <= 2:
+            # Implicit horizontal rule before Level 1/2 header
+            self.hrule(implitic=True)
+        
         text = html2text(hdr).strip()
         match = self.header_attr_re.match(text)
         ref_id = md2md.make_id_from_text(text)
@@ -545,22 +548,20 @@ class IPythonRenderer(mistune.Renderer):
         post_header = ''
         hdr_prefix = ''
         clickable_secnum = False
-        if level == 1:
-            # Level 1 (file) header
-            if not self.file_header:
-                # Ignore multiple Level 1 headers
-                if 'chapters' not in self.options['cmd_args'].strip:
-                    hdr_prefix = '%d ' % self.options['filenumber']
+        if level == 1 and not self.file_header:
+            # First level 1 (file) header
+            if 'chapters' not in self.options['cmd_args'].strip:
+                hdr_prefix = '%d ' % self.options['filenumber']
 
-                self.cur_header = hdr_prefix + text
-                self.file_header = self.cur_header
+            self.cur_header = hdr_prefix + text
+            self.file_header = self.cur_header
 
-                pre_header = '__PRE_HEADER__'
-                post_header = '__POST_HEADER__'
+            pre_header = '__PRE_HEADER__'
+            post_header = '__POST_HEADER__'
 
         else:
-            # Level 2/3 header
-            if level == 2:
+            # Level 1/2/3 header
+            if level <= 2:
                 # New section
                 self.section_number += 1
                 if 'sections' not in self.options['cmd_args'].strip:
