@@ -16,7 +16,8 @@ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive")
       return;
     try {
-       slidocReady();
+	if (!Sliobj.params.gd_sheet_url)
+	    Slidoc.slidocReady(null);
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
@@ -85,8 +86,11 @@ var Slide_view_handlers = {
 }
 
 document.onkeydown = function(evt) {
+    if (Sliobj.session.questionSlide && evt.keyCode > 44)
+	return;
     if (!(evt.keyCode in Key_codes))
 	return;
+
     return Slidoc.handleKey(Key_codes[evt.keyCode]);
 }
 
@@ -121,8 +125,8 @@ Slidoc.inputKeyDown = function (evt) {
     }
 }
 
-function slidocReady(event) {
-    console.log("slidocReady:");
+Slidoc.slidocReady = function (auth) {
+    console.log("Slidoc.slidocReady:", auth);
     sessionManage();
 
     Slidoc.chainQuery = '';
@@ -133,12 +137,24 @@ function slidocReady(event) {
 
     Slidoc.delay = {interval: null, timeout: null};
 
-    var pacedSession = (Sliobj.params.paceOpen !== null);
-    Sliobj.session = null;
-    Sliobj.sessionName = Sliobj.params.filename;
-    if (pacedSession && Sliobj.sessionName) {
+    if (Sliobj.params.paceOpen !== null && Sliobj.params.filename) {
 	// Paced named session
-	Sliobj.session = sessionGet(Sliobj.sessionName);
+	if (Sliobj.params.gd_sheet_url && !auth) {
+	    sessionAbort('Session aborted. Google Docs authentication error.');
+	    return false;
+	}
+	sessionGet(Sliobj.params.filename, slidocReadyAux);
+    } else {
+	slidocReadyAux(null);
+    }
+}
+
+function slidocReadyAux(session) {
+    console.log('slidocReadyAux:', session);
+    Sliobj.session = session;
+    Sliobj.sessionName = Sliobj.params.filename;
+    var pacedSession = (Sliobj.params.paceOpen !== null);
+    if (pacedSession && Sliobj.sessionName) {
 	if (Sliobj.session) {
 	    if (Sliobj.session.version != Sliobj.params.sessionVersion) {
 		alert('Slidoc: session version mismatch; discarding previous session with version '+Sliobj.session.version);
@@ -161,13 +177,16 @@ function slidocReady(event) {
 	sessionPut(Sliobj.sessionName, Sliobj.session);
     }
 
-   var toc_elem = document.getElementById("slidoc00");
-   if (!toc_elem && Sliobj.session.paced) {
-     Slidoc.startPaced();
-     return false;
-   }
-   Slidoc.chainUpdate(location.search);
-   if (toc_elem) goSlide(location.hash || "#slidoc00", false, true);
+    var toc_elem = document.getElementById("slidoc00");
+    if (!toc_elem && Sliobj.session.paced) {
+	Slidoc.startPaced();
+	return false;
+    }
+    Slidoc.chainUpdate(location.search);
+    if (toc_elem) {
+	var slideHash =  (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
+	goSlide(slideHash, false, true);
+    }
 }
 
 function sessionCreate(version, cookie, paced, paceOpen) {
@@ -190,7 +209,51 @@ function sessionCreate(version, cookie, paced, paceOpen) {
 	   };
 }
 
+var Auth_sheet = null;
+var Session_fields = ['lastSlide', 'questionsCount', 'questionsCorrect', 'session_hidden'];
+
+function sessionAbort(err_msg) {
+    Slidoc.classDisplay('slidoc-slide', 'none');
+    alert(err_msg);
+}
+
+function sessionGetAux(callback, result, err_msg) {
+    console.log('Slidoc.sessionGetAux: ', callback, result, err_msg);
+    var session = null;
+    if (!result) {
+	console.log('Slidoc.sessionGetAux: ERROR '+err_msg, result);
+    } else if (!result.id) {
+	callback(null);
+    } else {
+	try {
+	    session = JSON.parse( atob(result.session_hidden.replace(/\s+/, '')) );
+	} catch(err) {
+	    console.log('Slidoc.sessionGetAux: ERROR in parsing', err)
+	    err_msg = 'Parsing error';
+	}
+    }
+
+    if (session) {
+	callback(session);
+    } else {
+	sessionAbort('Session aborted. Error in accessing session info from Google Docs: '+err_msg);
+    }
+}
+
+function sessionPutAux(callback, result, err_msg) {
+    var session = null;
+    if (!result) {
+	console.log('Slidoc.sessionGetAux: ERROR '+err_msg, result);
+	sessionAbort('Session aborted. Error in accessing session info from Google Docs: '+err_msg);
+    } else {
+	if (callback)
+	    callback(result);
+    }
+}
+
 function sessionManage() {
+    if (Sliobj.params.gd_sheet_url)
+	return;
     var sessionObj = localGet('sessions');
     if (!sessionObj) {
 	localPut('sessions', {});
@@ -205,27 +268,53 @@ function sessionManage() {
     }
 }
 
-function sessionGet(name) {
-    var sessionObj = localGet('sessions');
-    if (!sessionObj) {
-	alert('sessionGet: Error - no session object');
+function sessionGet(name, callback) {
+    if (Sliobj.params.gd_sheet_url) {
+	// Google Docs storage
+	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Session_fields, GService.gauth.auth);
+	Auth_sheet.getRow(sessionGetAux.bind(null, callback), true);
     } else {
-	if (name in sessionObj)
-	    return sessionObj[name];
-	else
-	    return null;
+	// Local storage
+	var sessionObj = localGet('sessions');
+	if (!sessionObj) {
+	    alert('sessionGet: Error - no session object');
+	} else {
+	    if (name in sessionObj)
+		callback(sessionObj[name]);
+	    else
+		callback(null);
+	}
     }
 }
 
 function sessionPut(name, obj) {
     if (!name)
 	return;
-    var sessionObj = localGet('sessions');
-    if (!sessionObj) {
-	alert('sessionPut: Error - no session object');
+    if (Sliobj.params.gd_sheet_url) {
+	// Google Docs storage
+	var rowObj = {};
+	for (var j=0; j<Session_fields.length; j++) {
+	    var header = Session_fields[j];
+	    if (header.slice(0,6) != 'hidden') {
+		rowObj[header] = obj[header];
+	    }
+	}
+        // Break up Base64 version of object-json into lines
+	var base64str = btoa(JSON.stringify(obj));
+	var comps = [];
+	for (var j=0; j < base64str.length; j+=80)
+	    comps.push(base64str.slice(j,j+80));
+	rowObj.session_hidden = comps.join('\n')+'\n';
+	Auth_sheet.putRow(rowObj, sessionPutAux.bind(null, null));
     } else {
-	sessionObj[name] = obj;
-	localPut('sessions', sessionObj);
+	// Local storage
+	var sessionObj = localGet('sessions');
+	if (!sessionObj) {
+	    alert('sessionPut: Error - no session object');
+	} else {
+	    sessionObj[name] = obj;
+	    localPut('sessions', sessionObj);
+	}
     }
 }
 

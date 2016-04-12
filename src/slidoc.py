@@ -54,12 +54,9 @@ def make_slide_id(chapnum, slidenum):
 def make_q_label(filename, question_number, fprefix=''):
     return filename[len(fprefix):]+('.q%03d' % question_number)
 
-def chapter_prefix(num, classes=''):
-    return '\n<div id="%s" class="slidoc-container %s"> <!--chapter start-->\n' % (make_chapter_id(num), classes)
-
-def slide_prefix(slide_id, classes=''):
-    chapter_id, sep, _ = slide_id.partition('-')
-    return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+def chapter_prefix(num, classes='', hide=False):
+    attrs = ' style="display: none;"' if hide else ''
+    return '\n<div id="%s" class="slidoc-container %s" %s> <!--chapter start-->\n' % (make_chapter_id(num), classes, attrs)
 
 def concept_chain(slide_id, site_url):
     params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
@@ -422,7 +419,7 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        return slide_prefix(self.renderer.first_id)+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
+        return self.renderer.slide_prefix(self.renderer.first_id)+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -480,6 +477,10 @@ class IPythonRenderer(mistune.Renderer):
         """Treat minirule as a linebreak"""
         return '<br>\n'
 
+    def slide_prefix(self, slide_id, classes=''):
+        chapter_id, sep, _ = slide_id.partition('-')
+        return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+
     def hrule(self):
         """Rendering method for ``<hr>`` tag."""
         if self.choice_end:
@@ -497,7 +498,7 @@ class IPythonRenderer(mistune.Renderer):
         else:
             html = '<hr class="slidoc-noslide slidoc-noprint">\n'
 
-        html += '</div><!--slide end-->\n' + slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
+        html += '</div><!--slide end-->\n' + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
 
         return self.end_notes()+hide_prefix+html
     
@@ -642,7 +643,7 @@ class IPythonRenderer(mistune.Renderer):
         self.cur_choice = name
 
         params = {'id': self.get_slide_id(), 'opt': name, 'qno': self.question_number}
-        if self.options['cmd_args'].hide:
+        if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, %(qno)d, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice">%(opt)s</span>. ''' % params
@@ -698,7 +699,7 @@ class IPythonRenderer(mistune.Renderer):
             # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
-        if self.options['cmd_args'].hide:
+        if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
             id_str = self.get_slide_id()
             ans_params = {'sid': id_str,
                           'ans_type': self.cur_qtype,
@@ -961,6 +962,19 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
 
+Google_docs_js = '''
+<script>
+var CLIENT_ID = '%(gd_client_id)s';
+var API_KEY = '%(gd_api_key)s';
+var LOGIN_BUTTON_ID = 'slidoc-google-login-button';
+var AUTH_CALLBACK = Slidoc.slidocReady;
+
+function onGoogleAPILoad() {
+    console.log('onGoogleAPILoad:',GService);
+    GService.onGoogleAPILoad();
+}
+</script>
+'''
 
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
@@ -974,13 +988,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file (default: ""', default='')
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file (default: "")', default='')
-    parser.add_argument('--css', help='Custom CSS file (derived from doc_custom.css)')
-    parser.add_argument('--dest_dir', help='Destination directory for creating files (default:local)', default='')
+    parser.add_argument('--css', metavar='FILE', help='Custom CSS file (derived from doc_custom.css)')
+    parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
     parser.add_argument('--eq_number', help='Automatic equation numbering', action="store_true")
+    parser.add_argument('--google_docs', help='client_id,api_key,spreadsheet_url (export sessions to Google Docs spreadsheet)')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
-    parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
-    parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
+    parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: "images"', default='images')
+    parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images', default='')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)', default='ind.html')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true")
@@ -988,26 +1003,29 @@ if __name__ == '__main__':
     parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1', default='')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true")
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
-    parser.add_argument('--site_url', help='URL prefix to link local HTML files (default: "")', default='')
+    parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")', default='')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
-    parser.add_argument('--toc_header', help='HTML header file for ToC')
+    parser.add_argument('--toc_header', metavar='FILE', help='HTML header file for ToC')
     parser.add_argument('--untitled_number', help='Number untitled slides (e.g., question numbering)', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
-                 'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0}
+                 'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
+                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
         print('Filename: ', js_params['filename'], file=sys.stderr)
 
+    hide_chapters = False
     if cmd_args.pace:
         if cmd_args.combine:
             sys.exit('slidoc: Error: --pace and --combine options do not work well together')
         if cmd_args.printable:
             sys.exit('slidoc: Error: --pace and --printable options do not work well together')
+        hide_chapters = True
         comps = cmd_args.pace.split(',')
         if comps[0]:
             js_params['paceOpen'] = int(comps[0])
@@ -1019,6 +1037,9 @@ if __name__ == '__main__':
             js_params['tryDelay'] = int(comps[3])
         if len(comps) > 4:
             js_params['sessionCookie'] = comps[4]
+
+    if cmd_args.google_docs:
+        js_params['gd_client_id'], js_params['gd_api_key'], js_params['gd_sheet_url'] = cmd_args.google_docs.split(',')
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -1039,14 +1060,18 @@ if __name__ == '__main__':
     dest_dir = cmd_args.dest_dir+"/" if cmd_args.dest_dir else ''
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
-    for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_include.html',
-                  'doc_template.html', 'reveal_template.html'):
+    for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_google.js',
+                  'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
-    
     custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
     css_html = '<style>\n%s\n%s</style>\n' % (custom_css, templates['doc_include.css'])
-    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+    gd_html = ''
+    if cmd_args.google_docs:
+        gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
+        gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
+
+    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
@@ -1114,7 +1139,7 @@ if __name__ == '__main__':
         if not cmd_args.combine:
             js_params['filename'] = fname
 
-        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
 
 
         base_parser = md2md.Parser(base_mods_args)
@@ -1160,7 +1185,7 @@ if __name__ == '__main__':
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
-            md_prefix = chapter_prefix(j+1, 'slidoc-reg-chapter')
+            md_prefix = chapter_prefix(j+1, 'slidoc-reg-chapter', hide=hide_chapters)
             md_suffix = '</div>\n'
             if cmd_args.combine:
                 combined_html.append(md_prefix)
@@ -1252,7 +1277,7 @@ if __name__ == '__main__':
             if cmd_args.combine:
                 toc_insert += SPACER + click_span('Show all chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-noprint'])
-            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide')+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
+            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
             if cmd_args.combine:
                 combined_html = [toc_output] + combined_html
             else:
@@ -1271,7 +1296,7 @@ if __name__ == '__main__':
             if cmd_args.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
-            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container slidoc-noslide') + back_to_contents +'<p></p>' + index_html + '</div>\n'
+            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + index_html + '</div>\n'
             if cmd_args.combine:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             else:
@@ -1306,7 +1331,7 @@ if __name__ == '__main__':
         first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
         qout_list.append(qindex_html)
 
-        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container slidoc-noslide') + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
+        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
         if not cmd_args.dry_run:
             if cmd_args.combine:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
