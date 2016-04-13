@@ -29,12 +29,13 @@
 //  8. Insert column names on your destination sheet matching the parameter names of the data you are passing in (exactly matching case)
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
+var HMAC_KEY = '';
 
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 
-///function doGet(evt){
-///  return handleResponse(evt);
-///}
+function doGet(evt){
+  return handleResponse(evt);
+}
 
 function doPost(evt){
   return handleResponse(evt);
@@ -63,9 +64,33 @@ function handleResponse(evt) {
 
     var returnValues = null;
     var returnMessages = [];
+    var jsonPrefix = '';
+    var jsonSuffix = '';
+    var mimeType = ContentService.MimeType.JSON;
     try {
-	// Check parameter consistency
 	var params = evt.parameter;
+
+	if (params.prefix) {
+	    jsonPrefix = params.prefix + '(' + (params.callback || '0') + ', ';
+            jsonSuffix = ')';
+	    mimeType = ContentService.MimeType.JAVASCRIPT;
+	}
+
+	if (HMAC_KEY) {
+	    var token = params.token || '';
+	    var user = params.user || '';
+	    if (!token || !user)
+		throw("Invalid/missing token/user for HMAC authentication");
+	    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
+							 user,
+							 HMAC_KEY,
+							 Utilities.Charset.US_ASCII);
+            var b64HMAC = Utilities.base64Encode(rawHMAC);
+	    if (token != b64HMAC)
+		throw('HMAC token mismatch');
+	}
+
+	// Check parameter consistency
 	var sheetName = params.sheet;
 	if (!sheetName)
 	    throw('No sheet name specified');
@@ -221,13 +246,13 @@ function handleResponse(evt) {
 
 	// return json success results
 	return ContentService
-            .createTextOutput(JSON.stringify({"result":"success", "row": returnValues, "messages": returnMessages.join('\n')}))
-            .setMimeType(ContentService.MimeType.JSON);
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "row": returnValues, "messages": returnMessages.join('\n')})+jsonSuffix)
+            .setMimeType(mimeType);
     } catch(err){
 	// if error return this
 	return ContentService
-            .createTextOutput(JSON.stringify({"result":"error", "error": err, "row": returnValues, "messages": returnMessages.join('\n')}))
-            .setMimeType(ContentService.MimeType.JSON);
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": err, "row": returnValues, "messages": returnMessages.join('\n')})+jsonSuffix)
+            .setMimeType(mimeType);
     } finally { //release lock
 	lock.releaseLock();
     }

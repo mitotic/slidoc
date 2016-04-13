@@ -844,11 +844,6 @@ the spreadsheet in the command line to generate the HTML documents:
 
     slidoc.py --google_docs=spreadsheet_url ... 
 
-The HTML documents must be accessed via a web server for Google Docs
-linking to work (local HTML file access will fail). You can either use
-[a local web server](https://github.com/lmccart/itp-creative-js/wiki/SimpleHTTPServer)
-or an external web server.
-
 By default, users will use a unique name or other identifier when they
 start a paced session. If you want the users to authenticate using
 their Google account, additional steps are necessary as described in

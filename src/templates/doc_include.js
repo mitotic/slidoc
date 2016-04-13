@@ -12,6 +12,9 @@ Sliobj.lastInputValue = null;
 Sliobj.closePopup = null;
 Sliobj.questionSlide = null;
 
+var uagent = navigator.userAgent.toLowerCase();
+var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
+
 document.onreadystatechange = function(event) {
     console.log('onreadystatechange:', document.readyState);
     if (document.readyState != "interactive")
@@ -238,7 +241,7 @@ function sessionGetPutAux(callback, result, err_msg) {
 	try {
 	    session = JSON.parse( atob(result.session_hidden.replace(/\s+/, '')) );
 	} catch(err) {
-	    console.log('Slidoc.sessionGetPutAux: ERROR in parsing', err)
+	    console.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
 	    err_msg = 'Parsing error';
 	}
     }
@@ -269,8 +272,11 @@ function sessionManage() {
 }
 
 function setupAuthSheet(name) {
-    if (!Auth_sheet)
-	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Session_fields, GService.gauth.auth);
+    if (!Auth_sheet) {
+	var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
+	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Session_fields,
+						  GService.gauth.auth, useJSONP);
+    }
 }
 
 function sessionGet(name, callback) {
@@ -308,12 +314,13 @@ function sessionPut(session, nooverwrite, callback, get, createSheet) {
 		rowObj[header] = session[header];
 	    }
 	}
-        // Break up Base64 version of object-json into lines
 	var base64str = btoa(JSON.stringify(session));
-	var comps = [];
-	for (var j=0; j < base64str.length; j+=80)
-	    comps.push(base64str.slice(j,j+80));
-	rowObj.session_hidden = comps.join('\n')+'\n';
+        // Break up Base64 version of object-json into lines (commnted out; does not work with JSONP)
+	///var comps = [];
+	///for (var j=0; j < base64str.length; j+=80)
+	///    comps.push(base64str.slice(j,j+80));
+	///comps.join('')+'';
+	rowObj.session_hidden = base64str;
 	setupAuthSheet(Sliobj.sessionName);
 	Auth_sheet.putRow(rowObj, nooverwrite, sessionGetPutAux.bind(null, callback||null), get, createSheet);
 

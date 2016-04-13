@@ -5,10 +5,64 @@
 
 var GService = {};
 
+function GServiceJSONP(callback_index, json_text) {
+    GService.handleJSONP(callback_index, json_text);
+}
+
 (function (GService) {
 // http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/
 
-GService.sendData = function (data, url, callback) {
+var jsonpCounter = 0;
+var jsonpRequests = {};
+
+function requestJSONP(url, queryStr, callback) {
+    var suffix = '&prefix=GServiceJSONP';
+    if (callback) {
+	jsonpCounter += 1;
+	jsonpRequests[jsonpCounter] = [callback, url];
+	suffix += '&callback='+jsonpCounter;
+    }
+
+    url += '?'+queryStr+suffix;
+    console.log('requestJSONP:', url);
+
+    var head = document.head;
+    var script = document.createElement("script");
+
+    script.setAttribute("src", url);
+    head.appendChild(script);
+    head.removeChild(script);
+}
+
+GService.handleJSONP = function(callback_index, json_obj) {
+    console.log('GService.handleJSONP:', callback_index);
+    if (!callback_index)
+	return;
+    if (!(callback_index in jsonpRequests)) {
+	console.log('GService.handleJSONP: Error - Invalid JSONP callback index: '+callback_index);
+	return;
+    }
+    var callback = jsonpRequests[callback_index][0];
+    delete jsonpRequests[callback_index];
+    if (callback)
+	callback(json_obj || null);
+}
+    
+function handleCallback(responseText, callback){
+    if (!callback)
+	return;
+    var obj = null;
+    var msg = '';
+    try {
+        obj = JSON.parse(responseText)
+    } catch (err) {
+        console.log('JSON parsing error:', err, responseText);
+        msg = 'JSON parsing error';
+    }
+    callback(obj, msg);
+}
+
+GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
 
   var XHR = new XMLHttpRequest();
@@ -21,32 +75,26 @@ GService.sendData = function (data, url, callback) {
       if (XHR.readyState === DONE) {
         if (XHR.status === OK) {
           console.log('XHR: '+XHR.status, XHR.responseText);
-          if (callback) {
-             var obj = null;
-             var msg = '';
-             try {
-                 obj = JSON.parse(XHR.responseText)
-             } catch (err) {
-                 console.log('JSON parsing error:', err, XHR.responseText);
-                 msg = 'JSON parsing error';
-             }
-             callback(obj, msg);
-          }
+	  handleCallback(XHR.responseText, callback);
         } else {
           console.log('XHR Error: '+XHR.status, XHR.responseText);
-          callback(null, 'Error in HTTP request')
+          if (callback)
+              callback(null, 'Error in HTTP request')
         }
       }
   };
 
-  // We turn the data object into an array of URL encoded key value pairs.
-  for(var name in data) {
+  // Encoded key=value pairs
+    for (var name in data) {
     urlEncodedDataPairs.push(encodeURIComponent(name) + '=' + encodeURIComponent(data[name]));
   }
-
-  // We combine the pairs into a single string and replace all encoded spaces to 
-  // the plus character to match the behaviour of the web browser form submit.
+  // Replaces encoded spaces with plus symbol to mimic form behavior
   urlEncodedData = urlEncodedDataPairs.join('&').replace(/%20/g, '+');
+
+  if (useJSONP) {
+      requestJSONP(url, urlEncodedData, callback);
+      return;
+  }
 
   // We setup our request
   XHR.open('POST', url);
@@ -54,7 +102,7 @@ GService.sendData = function (data, url, callback) {
   // We add the required HTTP header to handle a form data POST request
   XHR.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
   XHR.setRequestHeader('Content-Length', urlEncodedData.length);
-  console.log('sendData:', urlEncodedData, url);
+  console.log('sendData:', urlEncodedData, url, useJSONP);
   // And finally, We send our data.
   XHR.send(urlEncodedData);
 }
@@ -146,10 +194,13 @@ GoogleAuth.prototype.promptUserInfo = function () {
 		     emails: [{type: 'account', value:email}] });
 }
 
-function GoogleSheet(url, sheetName, fields) {
+function GoogleSheet(url, sheetName, fields, useJSONP, user, token) {
     this.url = url;
     this.fields = fields;
     this.sheetName = sheetName;
+    this.useJSONP = !!useJSONP;
+    this.user = user || '';
+    this.token = token || '';
     this.headers = ['name', 'email', 'id', 'Timestamp'].concat(fields);
     this.created = null;
     this.callbackCounter = 0;
@@ -158,6 +209,15 @@ function GoogleSheet(url, sheetName, fields) {
         this.columnIndex[this.headers[j]] = j;
 }
 
+GoogleSheet.prototype.send = function(params, callType, callback) {
+    if (this.token) {
+	params.user = this.user;  // NOTE: modifies params in calling function
+	params.token = this.token;  // NOTE: modifies params in calling function
+    }
+    GService.sendData(params, this.url, this.callback.bind(this, callType, callback),
+		      this.useJSONP);
+}
+    
 GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, err_msg) {
     console.log('GoogleSheet: callback', callbackType, result, err_msg);
     this.callbackCounter -= 1;
@@ -210,7 +270,7 @@ GoogleSheet.prototype.checkCreated = function () {
 GoogleSheet.prototype.createSheet = function (callback) {
     var params = { sheet: this.sheetName, headers: JSON.stringify(this.headers) };
     this.callbackCounter += 1;
-    GService.sendData(params, this.url, this.callback.bind(this, 'createSheet', callback));
+    this.send(params, 'createSheet', callback);
 }
 
 GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
@@ -232,7 +292,7 @@ GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, cre
     if (get)
         params['get'] = '1';
     this.callbackCounter += 1;
-    GService.sendData(params, this.url, this.callback.bind(this, 'putRow', callback));
+    this.send(params, 'putRow', callback);
 }
 
 GoogleSheet.prototype.updateRow = function (updateObj, callback, get) {
@@ -251,7 +311,7 @@ GoogleSheet.prototype.updateRow = function (updateObj, callback, get) {
     }
     var params = {sheet: this.sheetName, id: updateObj.id, get: (get?'1':''), update: JSON.stringify(updates)};
     this.callbackCounter += 1;
-    GService.sendData(params, this.url, this.callback.bind(this, 'updateRow', callback));
+    this.send(params, 'updateRow', callback);
 }
 
 GoogleSheet.prototype.getRow = function (id, callback, createSheet) {
@@ -270,14 +330,14 @@ GoogleSheet.prototype.getRow = function (id, callback, createSheet) {
     this.checkCreated();
     var params = {sheet: this.sheetName, id: id, get: '1'};
     this.callbackCounter += 1;
-    GService.sendData(params, this.url, this.callback.bind(this, 'getRow', callback));
+    this.send(params, 'getRow', callback);
 }
 
 
-function GoogleAuthSheet(url, sheetName, fields, auth) {
+function GoogleAuthSheet(url, sheetName, fields, auth, useJSONP) {
     if (!auth || !auth.id)
 	throw('GoogleAuthSheet: Error - auth.id not defined!');
-    this.gsheet = new GoogleSheet(url, sheetName, fields);
+    this.gsheet = new GoogleSheet(url, sheetName, fields, useJSONP);
     this.auth = auth;
 }
 

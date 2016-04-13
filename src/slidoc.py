@@ -1015,7 +1015,7 @@ if __name__ == '__main__':
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
                  'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
-                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None}
+                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None, 'gd_hmac_token': ''}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
         print('Filename: ', js_params['filename'], file=sys.stderr)
@@ -1046,6 +1046,8 @@ if __name__ == '__main__':
         js_params['gd_sheet_url'] = comps[0]
         if len(comps) > 1:
             js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
+        if len(comps) > 3:
+            js_params['gd_hmac_token']= comps[3]
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -1077,6 +1079,8 @@ if __name__ == '__main__':
         gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
         if js_params['gd_client_id']:
             gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
+        if js_params['gd_hmac_token']:
+            gd_html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.min.js"></script>\n'
 
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
     body_prefix = templates['doc_include.html']
