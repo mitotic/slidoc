@@ -912,7 +912,7 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
                                                classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
 
     post_header_html += '&nbsp;&nbsp;' + click_span('Reset paced session', "Slidoc.resetPaced();",
-                                                    classes=['slidoc-clickable', 'slidoc-pacedonly'])
+                                                    classes=['slidoc-clickable', 'slidoc-pacedonly', 'slidoc-noremote'])
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:
         post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();")

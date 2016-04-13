@@ -3,12 +3,14 @@
 /* View control*/
 body.slidoc-all-view .slidoc-noall, 
 body.slidoc-slide-view .slidoc-noslide, 
-body.slidoc-paced-view .slidoc-nopaced {
+body.slidoc-paced-view .slidoc-nopaced,
+body.slidoc-remote-view .slidoc-noremote {
     display: none; }
 
 body:not(.slidoc-all-view) .slidoc-allonly, 
 body:not(.slidoc-slide-view) .slidoc-slideonly,
-body:not(.slidoc-paced-view) .slidoc-pacedonly {
+body:not(.slidoc-paced-view) .slidoc-pacedonly,
+body:not(.slidoc-remote-view) .slidoc-remoteonly {
     display: none; }
 
 /* Navigation */

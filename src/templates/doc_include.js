@@ -17,6 +17,9 @@ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive")
       return;
     try {
+	if (Sliobj.params.gd_sheet_url)
+	    document.body.classList.add('slidoc-remote-view');
+
 	if (Sliobj.params.gd_client_id) {
 	    // Google client load will authenticate
 	} else if (Sliobj.params.gd_sheet_url) {
