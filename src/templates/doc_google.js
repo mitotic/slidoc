@@ -111,26 +111,40 @@ GoogleAuth.prototype.requestUserInfo = function () {
 
 GoogleAuth.prototype.onUserInfo = function (resp) {
     console.log('GoogleAuth.onUserInfo:', resp);
-    if (!resp.emails)
+    if (!resp.emails || !resp.id)
         return;
 
     for (var j=0; j<resp.emails.length; j++) {
         var email = resp.emails[j];
         if (email.type == 'account') {
-            this.auth = {'email': email.value};
+            this.auth = {email: email.value};
             break;
         }
     }
     if (!this.auth)
         return;
-    this.auth.id = resp.id || '';
-    this.auth.displayName = resp.displayName || '';
+    this.auth.id = resp.id;
+    var comps = resp.displayName.split(/\s+/);
+    var name = (comps.length > 1) ? comps.slice(-1)+', '+comps.slice(0,-1).join(' ') : resp.displayName;
+    this.auth.displayName = name || this.auth.email;
     this.auth.domain = resp.domain || '';
     this.auth.image = (resp.image && resp.image.url) ? resp.image.url : ''; 
     if (this.authCallback)
 	this.authCallback(this.auth);
 }
 
+GoogleAuth.prototype.promptUserInfo = function () {
+    var name = window.prompt('Enter a unique identifier or name');
+    name = (name || '').trim();
+    if (!name) {
+	alert('Cancelled');
+	return;
+    }
+    var email = (name.indexOf('@') >= 0) ? name : 'none@example.com';
+    var id = name.replace(/[-.,'\s]+/g,'-').toLowerCase();
+    this.onUserInfo({id: '#'+id, displayName: name,
+		     emails: [{type: 'account', value:email}] });
+}
 
 function GoogleSheet(url, sheetName, fields) {
     this.url = url;
@@ -138,30 +152,27 @@ function GoogleSheet(url, sheetName, fields) {
     this.sheetName = sheetName;
     this.headers = ['name', 'email', 'id', 'Timestamp'].concat(fields);
     this.created = null;
-    this.callbackInfo = null;
+    this.callbackCounter = 0;
     this.columnIndex = {};
     for (var j=0; j<this.headers.length; j++)
         this.columnIndex[this.headers[j]] = j;
 }
 
-GoogleSheet.prototype.callback = function (result, err_msg) {
-    if (!this.callbackInfo) {
-        console.log('GoogleSheet: Unhandled callback');
-        return;
-    }
-    console.log('GoogleSheet: callback', result, err_msg);
-    var callback = this.callbackInfo[0];
-    var callbackType = this.callbackInfo[1];
+GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, err_msg) {
+    console.log('GoogleSheet: callback', callbackType, result, err_msg);
+    this.callbackCounter -= 1;
+
     if (callbackType == 'createSheet')
         this.created = !!result;
+
     if (!result)
-        console.log('GoogleSheet: '+this.callbackInfo[1]+' callback: ERROR '+err_msg);
-    this.callbackInfo = null;
-    if (callback) {
+        console.log('GoogleSheet: '+callbackType+' callback: ERROR '+err_msg);
+
+    if (outerCallback) {
         var retval = null;
         if (result && result.row)
             retval = (result.row.length == 0) ? {} : this.row2obj(result.row);
-        callback(retval, err_msg);
+        outerCallback(retval, err_msg);
     }
 }
 
@@ -192,31 +203,41 @@ GoogleSheet.prototype.obj2row = function(obj) {
 }
 
 GoogleSheet.prototype.checkCreated = function () {
-    if (this.callbackInfo)
-        throw('GoogleSheet: callback in process: '+this.callbackInfo[1]);
     if (!this.created)
         throw('GoogleSheet: Sheet '+this.sheetName+' not created');
 }
 
 GoogleSheet.prototype.createSheet = function (callback) {
     var params = { sheet: this.sheetName, headers: JSON.stringify(this.headers) };
-    if (this.callbackInfo)
-        throw('GoogleSheet: callback in process: '+this.callbackInfo[1]);
-    this.callbackInfo = [callback || null, 'createSheet'];
-    GService.sendData(params, this.url, this.callback.bind(this));
+    this.callbackCounter += 1;
+    GService.sendData(params, this.url, this.callback.bind(this, 'createSheet', callback));
 }
 
-GoogleSheet.prototype.putRow = function (rowObj, callback) {
+GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
+    // Specify get to retrieve the existing/overwritten row.
+    // Specify nooverwrite to not overwrite any existing row with same id
+    // Get with nooverwrite will return the existing row, or the newly inserted row.
+    if (createSheet && this.created == null) {
+        // Call putRow after creating sheet
+        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get) );
+        return;
+    }
     this.checkCreated();
     if (!rowObj.id || !rowObj.name)
         throw('GoogleSheet: Must provide id and name to put row');
     var row = this.obj2row(rowObj);
     var params = {sheet: this.sheetName, row: JSON.stringify(row)};
-    this.callbackInfo = [callback || null, 'putRow'];
-    GService.sendData(params, this.url, this.callback.bind(this));
+    if (nooverwrite)
+        params['nooverwrite'] = '1';
+    if (get)
+        params['get'] = '1';
+    this.callbackCounter += 1;
+    GService.sendData(params, this.url, this.callback.bind(this, 'putRow', callback));
 }
 
 GoogleSheet.prototype.updateRow = function (updateObj, callback, get) {
+    // Only works with existing rows
+    // Specify get to return updated row
     this.checkCreated();
     if (!updateObj.id)
         throw('GoogleSheet: Must provide id to update row');
@@ -229,8 +250,8 @@ GoogleSheet.prototype.updateRow = function (updateObj, callback, get) {
        updates.push( [key, updateObj[key]] );
     }
     var params = {sheet: this.sheetName, id: updateObj.id, get: (get?'1':''), update: JSON.stringify(updates)};
-    this.callbackInfo = [callback || null, 'updateRow', updateObj.id];
-    GService.sendData(params, this.url, this.callback.bind(this));
+    this.callbackCounter += 1;
+    GService.sendData(params, this.url, this.callback.bind(this, 'updateRow', callback));
 }
 
 GoogleSheet.prototype.getRow = function (id, callback, createSheet) {
@@ -241,14 +262,15 @@ GoogleSheet.prototype.getRow = function (id, callback, createSheet) {
     if (!callback)
         throw('GoogleSheet: Must specify callback for getRow');
 
-    if (createSheet && this.created == null && this.callbackInfo == null) {
+    if (createSheet && this.created == null) {
+        // Call getRow after creating sheet
         this.createSheet( this.getRow.bind(this, id, callback, null) );
         return;
     }
     this.checkCreated();
     var params = {sheet: this.sheetName, id: id, get: '1'};
-    this.callbackInfo = [callback, 'getRow', id];
-    GService.sendData(params, this.url, this.callback.bind(this));
+    this.callbackCounter += 1;
+    GService.sendData(params, this.url, this.callback.bind(this, 'getRow', callback));
 }
 
 
@@ -280,8 +302,8 @@ GoogleAuthSheet.prototype.createSheet = function (callback) {
     return this.gsheet.createSheet(callback);
 }
 
-GoogleAuthSheet.prototype.putRow = function (rowObj, callback) {
-    return this.gsheet.putRow(this.extendObj(rowObj, true), callback);
+GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
+    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, createSheet);
 }
 
 GoogleAuthSheet.prototype.updateRow = function (updateObj, callback, get) {

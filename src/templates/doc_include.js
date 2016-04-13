@@ -17,8 +17,13 @@ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive")
       return;
     try {
-	if (!Sliobj.params.gd_sheet_url)
+	if (Sliobj.params.gd_client_id) {
+	    // Google client load will authenticate
+	} else if (Sliobj.params.gd_sheet_url) {
+	    GService.gauth.promptUserInfo();
+	} else {
 	    Slidoc.slidocReady(null);
+	}
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
@@ -139,44 +144,42 @@ Slidoc.slidocReady = function (auth) {
 
     Slidoc.delay = {interval: null, timeout: null};
 
-    if (Sliobj.params.paceOpen !== null && Sliobj.params.filename) {
+    var pacedSession = (Sliobj.params.paceOpen !== null);
+    Sliobj.sessionName = pacedSession ? Sliobj.params.filename : '';
+
+    var newSession = sessionCreate(pacedSession);
+
+    if (Sliobj.sessionName) {
 	// Paced named session
 	if (Sliobj.params.gd_sheet_url && !auth) {
 	    sessionAbort('Session aborted. Google Docs authentication error.');
 	    return false;
 	}
-	sessionGet(Sliobj.params.filename, slidocReadyAux);
+	sessionPut(newSession, true, slidocReadyAux, true, true); // No-overwrite, get, createSheet
     } else {
-	slidocReadyAux(null);
+	slidocReadyAux(newSession);
     }
 }
 
 function slidocReadyAux(session) {
     console.log('slidocReadyAux:', session);
     Sliobj.session = session;
-    Sliobj.sessionName = Sliobj.params.filename;
     var pacedSession = (Sliobj.params.paceOpen !== null);
-    if (pacedSession && Sliobj.sessionName) {
-	if (Sliobj.session) {
-	    if (Sliobj.session.version != Sliobj.params.sessionVersion) {
-		alert('Slidoc: session version mismatch; discarding previous session with version '+Sliobj.session.version);
-		Sliobj.session = null;
-	    } else if (Sliobj.session.cookie != Sliobj.params.sessionCookie) {
-		alert('Slidoc: session cookie mismatch; discarding previous session');
-		Sliobj.session = null;
-	    } else {
-		Sliobj.session.paced = pacedSession;
-	    }
-	}
+
+    if (Sliobj.session.version != Sliobj.params.sessionVersion) {
+	alert('Slidoc: session version mismatch; discarding previous session with version '+Sliobj.session.version);
+	Sliobj.session = null;
+    } else if (Sliobj.session.cookie != Sliobj.params.sessionCookie) {
+	alert('Slidoc: session cookie mismatch; discarding previous session');
+	Sliobj.session = null;
     } else {
-	// Unnamed session
-	Sliobj.sessionName = '';
+	Sliobj.session.paced = pacedSession;
     }
+
     if (!Sliobj.session) {
 	// New paced session
-	Sliobj.session = sessionCreate(Sliobj.params.sessionVersion, Sliobj.params.sessionCookie,
-				       pacedSession, Sliobj.params.paceOpen);
-	sessionPut(Sliobj.sessionName, Sliobj.session);
+	Sliobj.session = sessionCreate(pacedSession);
+	sessionPut();
     }
 
     var toc_elem = document.getElementById("slidoc00");
@@ -192,13 +195,14 @@ function slidocReadyAux(session) {
 }
 
 function sessionCreate(version, cookie, paced, paceOpen) {
-    return {version: version,
-	    cookie: cookie,
+    return {version: Sliobj.params.sessionVersion,
+	    cookie: Sliobj.params.sessionCookie,
 	    paced: paced || false,
-	    paceOpen: paceOpen || 0,
+	    paceOpen: Sliobj.params.paceOpen || 0,
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
-	    lastSlide: 0,
+            startTime: Date.now(),
             lastTime: 0,
+	    lastSlide: 0,
             lastTries: 0,
             remainingTries: 0,
             lastAnswersCorrect: 0,
@@ -211,44 +215,36 @@ function sessionCreate(version, cookie, paced, paceOpen) {
 }
 
 var Auth_sheet = null;
-var Session_fields = ['lastSlide', 'questionsCount', 'questionsCorrect', 'session_hidden'];
+var Session_fields = ['startTime', 'lastSlide', 'questionsCount', 'questionsCorrect', 'session_hidden'];
 
 function sessionAbort(err_msg) {
     Slidoc.classDisplay('slidoc-slide', 'none');
     alert(err_msg);
 }
 
-function sessionGetAux(callback, result, err_msg) {
-    console.log('Slidoc.sessionGetAux: ', callback, result, err_msg);
+function sessionGetPutAux(callback, result, err_msg) {
+    console.log('Slidoc.sessionGetPutAux: ', callback, result, err_msg);
     var session = null;
     if (!result) {
-	console.log('Slidoc.sessionGetAux: ERROR '+err_msg, result);
+	console.log('Slidoc.sessionGetPutAux: ERROR '+err_msg, result);
     } else if (!result.id) {
-	callback(null);
+	if (callback)
+	    callback(null);
+	return;
     } else {
 	try {
 	    session = JSON.parse( atob(result.session_hidden.replace(/\s+/, '')) );
 	} catch(err) {
-	    console.log('Slidoc.sessionGetAux: ERROR in parsing', err)
+	    console.log('Slidoc.sessionGetPutAux: ERROR in parsing', err)
 	    err_msg = 'Parsing error';
 	}
     }
 
     if (session) {
-	callback(session);
-    } else {
-	sessionAbort('Session aborted. Error in accessing session info from Google Docs: '+err_msg);
-    }
-}
-
-function sessionPutAux(callback, result, err_msg) {
-    var session = null;
-    if (!result) {
-	console.log('Slidoc.sessionGetAux: ERROR '+err_msg, result);
-	sessionAbort('Session aborted. Error in accessing session info from Google Docs: '+err_msg);
-    } else {
 	if (callback)
-	    callback(result);
+	    callback(session);
+    } else {
+	sessionAbort('Session aborted. Error in accessing session info from Google Docs: '+err_msg);
     }
 }
 
@@ -269,11 +265,16 @@ function sessionManage() {
     }
 }
 
+function setupAuthSheet(name) {
+    if (!Auth_sheet)
+	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Session_fields, GService.gauth.auth);
+}
+
 function sessionGet(name, callback) {
     if (Sliobj.params.gd_sheet_url) {
 	// Google Docs storage
-	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Session_fields, GService.gauth.auth);
-	Auth_sheet.getRow(sessionGetAux.bind(null, callback), true);
+	setupAuthSheet(name);
+	Auth_sheet.getRow(sessionGetPutAux.bind(null, callback), true);
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
@@ -288,33 +289,42 @@ function sessionGet(name, callback) {
     }
 }
 
-function sessionPut(name, obj) {
-    if (!name)
+function sessionPut(session, nooverwrite, callback, get, createSheet) {
+    if (!Sliobj.sessionName) {
+	if (callback)
+	    callback(null);
 	return;
+    }
+    session = session || Sliobj.session;
     if (Sliobj.params.gd_sheet_url) {
 	// Google Docs storage
 	var rowObj = {};
 	for (var j=0; j<Session_fields.length; j++) {
 	    var header = Session_fields[j];
 	    if (header.slice(0,6) != 'hidden') {
-		rowObj[header] = obj[header];
+		rowObj[header] = session[header];
 	    }
 	}
         // Break up Base64 version of object-json into lines
-	var base64str = btoa(JSON.stringify(obj));
+	var base64str = btoa(JSON.stringify(session));
 	var comps = [];
 	for (var j=0; j < base64str.length; j+=80)
 	    comps.push(base64str.slice(j,j+80));
 	rowObj.session_hidden = comps.join('\n')+'\n';
-	Auth_sheet.putRow(rowObj, sessionPutAux.bind(null, null));
+	setupAuthSheet(Sliobj.sessionName);
+	Auth_sheet.putRow(rowObj, nooverwrite, sessionGetPutAux.bind(null, callback||null), get, createSheet);
+
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
 	if (!sessionObj) {
 	    alert('sessionPut: Error - no session object');
 	} else {
-	    sessionObj[name] = obj;
+	    if (!(Sliobj.sessionName in sessionObj) || !nooverwrite)
+		sessionObj[Sliobj.sessionName] = session;
 	    localPut('sessions', sessionObj);
+	    if (callback)
+		callback(get ? sessionObj[Sliobj.sessionName] : null);
 	}
     }
 }
@@ -689,7 +699,8 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 	    Sliobj.session.lastAnswersCorrect = -1;
 	}
 	Sliobj.session.lastTime = Date.now();
-	sessionPut(Sliobj.sessionName, Sliobj.session);
+        if (Sliobj.params.paceDelay || Sliobj.params.tryCount)
+	    sessionPut();
     }
 }
 
@@ -718,9 +729,8 @@ function conceptStats(conceptsMissed) {
 Slidoc.resetPaced = function () {
     if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
 	return false;
-    Sliobj.session = sessionCreate(Sliobj.params.sessionVersion, Sliobj.params.sessionCookie,
-				   Sliobj.session.paced, Sliobj.params.paceOpen);
-    sessionPut(Sliobj.sessionName, Sliobj.session);
+    Sliobj.session = sessionCreate(Sliobj.session.paced);
+    sessionPut();
     location.reload(true);
 }
 
@@ -764,6 +774,7 @@ Slidoc.endPaced = function () {
 	document.body.classList.remove('slidoc-paced-view');
 	Sliobj.session.paced = false;
     }
+    sessionPut();
 }
 
 Slidoc.answerPacedAllow = function () {
@@ -892,11 +903,13 @@ Slidoc.slideViewGo = function (forward, slide_num) {
         }
 
 	if (Sliobj.session.lastSlide == slides.length) {
+	    // Last slide
 	    Slidoc.endPaced();
 	    Slidoc.showConcepts(true);
+	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {
+	    // Save updated session (if not transient and not remote)
+	    sessionPut();
 	}
-	// Save updated session (if not transient)
-	sessionPut(Sliobj.sessionName, Sliobj.session);
     }
 
     var prev_elem = document.getElementById('slidoc-slide-nav-prev');

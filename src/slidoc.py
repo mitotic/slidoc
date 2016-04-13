@@ -993,7 +993,7 @@ if __name__ == '__main__':
     parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files (default:local)', default='')
     parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
     parser.add_argument('--eq_number', help='Automatic equation numbering', action="store_true")
-    parser.add_argument('--google_docs', help='client_id,api_key,spreadsheet_url (export sessions to Google Docs spreadsheet)')
+    parser.add_argument('--google_docs', help='spreadsheet_url[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
     parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
@@ -1040,7 +1040,12 @@ if __name__ == '__main__':
             js_params['sessionCookie'] = comps[4]
 
     if cmd_args.google_docs:
-        js_params['gd_client_id'], js_params['gd_api_key'], js_params['gd_sheet_url'] = cmd_args.google_docs.split(',')
+        if not cmd_args.pace:
+            sys.exit('slidoc: Error: Must use --google_docs with --pace')
+        comps = cmd_args.google_docs.split(',')
+        js_params['gd_sheet_url'] = comps[0]
+        if len(comps) > 1:
+            js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -1070,7 +1075,8 @@ if __name__ == '__main__':
     gd_html = ''
     if cmd_args.google_docs:
         gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
-        gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
+        if js_params['gd_client_id']:
+            gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
 
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
     body_prefix = templates['doc_include.html']

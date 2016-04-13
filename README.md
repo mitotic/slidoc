@@ -151,12 +151,18 @@ files, and convert all Markdown image references to HTML `<img>` tags.
 Slidoc recognizes several extensions to standard Markdown to
 process slides in a lecture.
 
-- Each file begins with a Level 1 title header (`# Lecture Title`)
+- Each file begins with a Level 1 title header (`# Lecture Title`) in
+  the first slide.
 
-- Slides are separated by lines with three horizontal dashes (`---`)
-
-- Each slide may have an optional Level 2 header (`## Slide title`)
+- Each new slide may have an optional Level 2 header (`## Slide title`)
   (Higher-level headers may also be used, but they will not be numbered.)
+
+- If a Level 2 header is not present at the start of a slide, a
+  *horizontal rule*, i.e., a line with three or more horizontal dashes
+  (`---`), may be used to indicate the start of a slide.
+
+Notes: Any Level 1 header other than the first one will be treated
+like a Level 2 header.
 
 ---
 
@@ -389,13 +395,14 @@ response is received or all tries are exhausted.
 
 Notes: Slides can normally be advanced only one at a time in paced
 mode. This means that "slide skipping", i.e., forward slide navigation
-through [internal links](#int-link) is disabled. However, if a
-question is answered correctly, forward slide navigation is enabled
-until the next question slide is reached. Thus, a forward slide link
-could be included in the Notes portion of a question (or the next
-slide) to enable *adaptive testing*.  If you answer correctly, you can
-skip the next several slides, which may contain additional questions
-aimed at those who failed to answer correctly.
+through [internal links](#int-link) is disabled. However, if a set of
+consecutive questions is answered correctly, forward slide navigation
+is enabled until the next question slide is reached. Thus, a forward
+slide link could be included in the Notes portion of the final
+question in a sequence (or the following non-question slides) to
+enable *adaptive testing*.  If you answer the sequence of questions
+correctly, you can skip the next several slides, which may contain
+additional questions aimed at those who failed to answer correctly.
 
 Concepts: paced mode; adaptive testing
 
@@ -806,22 +813,61 @@ open response question
 
 ---
 
+## Linking Slidoc sessions a Google Docs spreadsheet
+
+Slidoc paced sessions may be linked to a Google Docs spreadsheet. The
+spreadhseet will be updated with information for each user such as the
+last access time, slides viewed, questions answered etc. To create
+the link you will need to attach the script `scripts/slidoc_sheet.js`
+to your Google Docs spreadsheet using the `Tools->Script Editor...`
+menu item. Instructions are provided in the comments section of
+`slidoc_sheet.js` and additional information may be found in this
+[blog post](http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/).
+After attaching the script, you can use the *Current web app URL* for
+the spreadsheet in the command line:
+
+    slidoc.py --google_docs=spreadsheet_url ... 
+
+By default, users will use a unique name or other identifier when they
+start a paced session. If you want the users to authenticate using
+their Google account, additional steps are necessary as described in
+the Notes below.
+
+Notes: You will need to create a Web Application attached to your
+Google account, obtain its `ClientID` and `API key` and use it as
+follows:
+
+    slidoc.py --google_docs=spreadsheet_url,client_id,apiKey ...
+
+[Getting access keys for your application:](https://developers.google.com/api-client-library/javascript/features/authentication#overview)
+To get access keys, go to the
+[Google Developers Console](https://console.developers.google.com/)
+and specify your application's name and the Google APIs it will
+access. For simple access, Google generates an API key that uniquely
+identifies your application in its transactions with the Google Auth
+server.
+
+For authorized access, you must also tell Google your website's
+protocol and domain. In return, Google generates a client ID. Your
+application submits this to the Google Auth server to get an OAuth 2.0
+access token.
+
+---
+
 ## Embed Jupyter Notebook
 
-A Jupyter Notebook can be embedded using `iframe` HTML element:
-
-    <iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
-
-Copy the `Slidoc`-generated `README.html` to a subdirectory `files` of
-the notebook server working directory. The start the server as
-follows:
+A Jupyter Notebook can be embedded in a slide. To enable that, copy
+the `Slidoc`-generated `README.html` version of this file to a
+subdirectory `files` of the notebook server working directory. The
+start the server as follows:
 
     jupyter notebook --NotebookApp.extra_static_paths='["./files"]'
 
 The notebook server will then statically serve the HTML file from the
 following link: `http://localhost:8888/static/README.html`
 
-<iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
+Within the slide, include the following `iframe` HTML element:
 
+    <iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
 
 Concepts: notebook, embed

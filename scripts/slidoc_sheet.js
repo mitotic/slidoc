@@ -106,12 +106,15 @@ function handleResponse(evt) {
 	var userName = null;
 
 	var getRow = params.get || '';
+	var nooverwriteRow = params.nooverwrite || '';
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
 	    // No row updates
 	    returnValues = [];
 	} else {
-	    if (rowUpdates) {
+	    if (rowUpdates && selectedUpdates) {
+		throw('Cannot specify both rowUpdates and selectedUpdates');
+	    } else if (rowUpdates) {
 		if (rowUpdates.length != columnHeaders.length)
 		    throw('row_headers length does not equal no. of columns in sheet');
 
@@ -137,14 +140,14 @@ function handleResponse(evt) {
 	    }
 	    //returnMessages.push('DEBUG:userRow, userid: '+userRow+', '+userId);
 	    var newRow = (userRow < 0);
-	    if (newRow && getRow) {
+	    if (newRow && getRow && !rowUpdates) {
 		// Row does not exist; return empty list
 		returnValues = [];
 	    } else {
 		if (newRow) {
 		    // New user; insert row in sorted order of name
 		    if (!userName || !rowUpdates)
-			throw('User name and row parameters required to create a new row for id '+userId)
+			throw('User name and row parameters required to create a new row for id '+userId);
 		    var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name']+1, sheet.getLastRow(), 1);
 		    userRow = sheet.getLastRow()+1;
 		    for (var j=0; j<names.length; j++) {
@@ -154,6 +157,13 @@ function handleResponse(evt) {
 			}
 		    }
 		    sheet.insertRowBefore(userRow);
+		} else if (rowUpdates && nooverwriteRow) {
+		    if (getRow) {
+			// Simply return existing row
+			rowUpdates = null;
+		    } else {
+			throw('Do not specify nooverwrite=1 to overwrite existing rows');
+		    }
 		}
 
 		var userRange = sheet.getRange(userRow, 1, 1, sheet.getLastColumn());
