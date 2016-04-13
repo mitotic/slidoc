@@ -727,6 +727,10 @@ function conceptStats(conceptsMissed) {
 }
 
 Slidoc.resetPaced = function () {
+    if (Sliobj.params.gd_sheet_url) {
+	alert('Cannot reset session linked to Google Docs');
+	return false;
+    }
     if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
 	return false;
     Sliobj.session = sessionCreate(Sliobj.session.paced);
@@ -763,7 +767,7 @@ Slidoc.startPaced = function () {
 
     document.body.classList.add('slidoc-paced-view');
     Slidoc.classDisplay('slidoc-question-notes', 'none');
-    goSlide("#slidoc01-01", false, true);
+    goSlide('#'+getVisibleSlides()[0].id, false, true);
     Slidoc.slideViewStart();
 }
 
