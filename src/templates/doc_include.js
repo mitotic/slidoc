@@ -33,6 +33,37 @@ document.onreadystatechange = function(event) {
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
+function requestFullscreen(element) {
+  if (element.requestFullscreen) {
+    element.requestFullscreen();
+  } else if (element.mozRequestFullScreen) {
+    element.mozRequestFullScreen();
+  } else if (element.webkitRequestFullscreen) {
+    element.webkitRequestFullscreen();
+  } else if (element.msRequestFullscreen) {
+    element.msRequestFullscreen();
+  }
+}
+
+function exitFullscreen() {
+  if (document.exitFullscreen) {
+    document.exitFullscreen();
+  } else if (document.mozCancelFullScreen) {
+    document.mozCancelFullScreen();
+  } else if (document.webkitExitFullscreen) {
+    document.webkitExitFullscreen();
+  } else if (document.msExitFullscreen) {
+    document.msExitFullscreen();
+  }
+}
+
+Slidoc.docFullScreen = function (exit) {
+    if (exit)
+	exitFullscreen();
+    else
+	requestFullscreen(document.documentElement);
+}
+
 Slidoc.showConcepts = function (msg) {
     var html = msg || '';
     if (!msg || Object.keys(Sliobj.session.primaryConceptsMissed).length || Object.keys(Sliobj.session.secondaryConceptsMissed).length) {
@@ -56,6 +87,7 @@ var Key_codes = {
     40: 'down',
     67: 'c',
     69: 'e',
+    70: 'f',
     72: 'h',
     78: 'n',
     80: 'p',
@@ -69,6 +101,7 @@ var Slide_help_list = [
     ['e or End or Fn+RightArrow', 'end', 'last slide'],
     ['p or LeftArrow',            'left', 'previous slide'],
     ['n or RightArrow',           'right', 'next slide'],
+    ['f',                         'f', 'fullscreen mode'],
     ['c',                         'c', 'missed question concepts'],
     ['?',                         'qmark', 'help']
     ]
@@ -94,6 +127,7 @@ var Slide_view_handlers = {
     'p':     function() { Slidoc.slideViewGo(false); },
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
+    'f':     Slidoc.docFullScreen,
     'c':     Slidoc.showConcepts,
     'qmark': Slidoc.slideViewHelp
 }
