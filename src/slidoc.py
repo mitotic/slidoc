@@ -419,7 +419,8 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        return self.renderer.slide_prefix(self.renderer.first_id)+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
+        questions_max = '<span id="%s-questions-max" class="slidoc-questions-max" style="display: none;">%s</span>\n' % (self.renderer.first_id, self.renderer.question_number)
+        return self.renderer.slide_prefix(self.renderer.first_id)+questions_max+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -548,8 +549,8 @@ class IPythonRenderer(mistune.Renderer):
         post_header = ''
         hdr_prefix = ''
         clickable_secnum = False
-        if level == 1 and not self.file_header:
-            # First level 1 (file) header
+        if level <= 2 and not self.file_header:
+            # First (file) header
             if 'chapters' not in self.options['cmd_args'].strip:
                 hdr_prefix = '%d ' % self.options['filenumber']
 

@@ -374,13 +374,15 @@ Concepts: answers, hiding; answers, stripping
 ## Slideshow mode
 
 Slidoc features a built-in "slideshow" mode, allowing you to switch
-seamlessly between scrolling view and slide view for any slide. Slide
-view is enabled by clicking on the square (<span>&#9635;</span>) icon
-on the bottom left.  Pressing `?` during a slideshow displays a list
-of keyboard shortcuts.
+seamlessly between scroll view and slide view anywhere in the
+document. Slide view is enabled by clicking on the square
+(<span>&#9635;</span>) icon on the bottom left.  The Escape key may
+also be used to enter/exit slide mode. Pressing `?` during a slideshow
+displays a list of keyboard shortcuts.
 
-Unlike a true slideshow, vertical scrolling is permitted, allowing
-essentially unlimited supporting material in each slide.
+Unlike a true slideshow, vertical scrolling is permitted in each
+slide, allowing essentially unlimited supporting material such as
+Notes.
 
 ---
 

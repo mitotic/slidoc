@@ -33,16 +33,17 @@ document.onreadystatechange = function(event) {
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
-Slidoc.showConcepts = function (only_if_non_null) {
-    if (!only_if_non_null || Object.keys(Sliobj.session.primaryConceptsMissed).length || Object.keys(Sliobj.session.secondaryConceptsMissed).length) {
-	var html = '<b>Question Concepts</b><br>';
+Slidoc.showConcepts = function (msg) {
+    var html = msg || '';
+    if (!msg || Object.keys(Sliobj.session.primaryConceptsMissed).length || Object.keys(Sliobj.session.secondaryConceptsMissed).length) {
+	html += '<b>Question Concepts</b><br>';
 	var missed = [Sliobj.session.primaryConceptsMissed, Sliobj.session.secondaryConceptsMissed];
 	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
 	for (var k=0; k<missed.length; k++) {
 	    html += labels[k]+conceptStats(missed[k])+'<p></p>';
 	}
-	Slidoc.showPopup(html);
     }
+    Slidoc.showPopup(html);
 }
 
 var Key_codes = {
@@ -63,7 +64,7 @@ var Key_codes = {
 };
 
 var Slide_help_list = [
-    ['q or Escape',               'esc', 'exit slide mode'],
+    ['q or Escape',               'esc', 'enter/exit slide mode'],
     ['h or Home or Fn+LeftArrow', 'home', 'first slide'],
     ['e or End or Fn+RightArrow', 'end', 'last slide'],
     ['p or LeftArrow',            'left', 'previous slide'],
@@ -125,6 +126,9 @@ Slidoc.handleKey = function (keyName) {
 	if (keyName == 'left')  { Slidoc.chainActive[0](); return false; }
 	if (keyName == 'esc')   { Slidoc.chainActive[1](); return false; }
 	if (keyName == 'right') { Slidoc.chainActive[2](); return false; }
+
+    } else if (!Sliobj.session.paced) {
+	if (keyName == 'esc')   { Slidoc.slideViewStart(); return false; }
     }
 	
    return;
@@ -212,6 +216,7 @@ function sessionCreate(version, cookie, paced, paceOpen) {
             lastTries: 0,
             remainingTries: 0,
             lastAnswersCorrect: 0,
+	    questionsMax: 0,
             questionsCount: 0,
             questionsCorrect: 0,
             questionsAttempted: {},
@@ -299,6 +304,7 @@ function sessionGet(name, callback) {
 }
 
 function sessionPut(session, nooverwrite, callback, get, createSheet) {
+    // Remote saving only happens if session.paced is true
     if (!Sliobj.sessionName) {
 	if (callback)
 	    callback(null);
@@ -306,7 +312,12 @@ function sessionPut(session, nooverwrite, callback, get, createSheet) {
     }
     session = session || Sliobj.session;
     if (Sliobj.params.gd_sheet_url) {
-	// Google Docs storage
+	// Google Docs storage; remote save
+	if (!session.paced) {
+	    if (callback)
+		callback(get ? session : null);
+	    return;
+	}
 	var rowObj = {};
 	for (var j=0; j<Session_fields.length; j++) {
 	    var header = Session_fields[j];
@@ -709,7 +720,7 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 	    Sliobj.session.lastAnswersCorrect = -1;
 	}
 	Sliobj.session.lastTime = Date.now();
-        if (Sliobj.params.paceDelay || Sliobj.params.tryCount)
+        if (!Sliobj.params.gd_sheet_url || Sliobj.params.paceDelay || Sliobj.params.tryCount)
 	    sessionPut();
     }
 }
@@ -750,16 +761,28 @@ Slidoc.resetPaced = function () {
 
 Slidoc.startPaced = function () {
     console.log('Slidoc.startPaced: ');
+    var firstSlideId = getVisibleSlides()[0].id;
     if (!Sliobj.session.lastSlide) {
-	var alertStr = 'Starting paced slideshow '+Sliobj.sessionName+':<ul>';
+	Sliobj.session.questionsMax = 0;
+	try {Sliobj.session.questionsMax = parseInt(document.getElementById(firstSlideId+'-questions-max').textContent);}catch(err){}
+	var startMsg = 'Starting paced slideshow '+Sliobj.sessionName+':<br>';
+	if (Sliobj.session.questionsMax)
+	    startMsg += '&nbsp;&nbsp;<em>There are '+Sliobj.session.questionsMax+' questions.</em><br>';
+	if (Sliobj.params.gd_sheet_url) {
+	    if (Sliobj.params.paceDelay || Sliobj.params.tryCount)
+		startMsg += '&nbsp;&nbsp;<em>Session stats will be submitted after each answered question.</em><br>';
+	    else
+		startMsg += '&nbsp;&nbsp;<em>Session stats will only be submitted when you reach the last slide.</em><br>';
+	}
+	startMsg += '<ul>';
 	if (Sliobj.params.paceDelay)
-	    alertStr += '<li>'+Sliobj.params.paceDelay+' sec delay between slides</li>';
+	    startMsg += '<li>'+Sliobj.params.paceDelay+' sec delay between slides</li>';
 	if (Sliobj.params.tryCount)
-	    alertStr += '<li>'+Sliobj.params.tryCount+' attempts for non-choice questions</li>';
+	    startMsg += '<li>'+Sliobj.params.tryCount+' attempts for non-choice questions</li>';
 	if (Sliobj.params.tryDelay)
-	    alertStr += '<li>'+Sliobj.params.tryDelay+' sec delay between attempts</li>';
-        alertStr += '</ul>';
-	Slidoc.showPopup(alertStr);
+	    startMsg += '<li>'+Sliobj.params.tryDelay+' sec delay between attempts</li>';
+        startMsg += '</ul>';
+	Slidoc.showPopup(startMsg);
     }
     for (var qnumber in Sliobj.session.questionsAttempted) {
 	// Pre-answer questions
@@ -777,18 +800,18 @@ Slidoc.startPaced = function () {
 
     document.body.classList.add('slidoc-paced-view');
     Slidoc.classDisplay('slidoc-question-notes', 'none');
-    goSlide('#'+getVisibleSlides()[0].id, false, true);
+    goSlide('#'+firstSlideId, false, true);
     Slidoc.slideViewStart();
 }
 
 Slidoc.endPaced = function () {
     console.log('Slidoc.endPaced: ');
+    sessionPut(); // Must call before unpacing session, to force save
     if (Sliobj.session.paceOpen) {
 	// If open session, unpace
 	document.body.classList.remove('slidoc-paced-view');
 	Sliobj.session.paced = false;
     }
-    sessionPut();
 }
 
 Slidoc.answerPacedAllow = function () {
@@ -887,6 +910,10 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next paced slide
 	console.log('Slidoc.slideViewGo2:', slide_num, Sliobj.session.lastSlide);
+	if (slide_num == slides.length && Sliobj.params.gd_sheet_url && !Sliobj.params.tryCount && Sliobj.session.questionsCount < Sliobj.session.questionsMax) {
+	    if (!window.confirm('You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.session.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?'))
+		return false;
+	}
 	if (Sliobj.questionSlide && Sliobj.session.remainingTries) {
 	    var tryCount =  (Sliobj.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
 	    alert('Please answer before proceeding. You have '+tryCount+' try(s)');
@@ -919,9 +946,13 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	if (Sliobj.session.lastSlide == slides.length) {
 	    // Last slide
 	    Slidoc.endPaced();
-	    Slidoc.showConcepts(true);
+	    var msg = 'Paced session completed.<br>';
+	    if (Sliobj.params.gd_sheet_url)
+		msg += 'Session stats will be submitted to Google Docs.<br>';
+	    Slidoc.showConcepts(msg);
+
 	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {
-	    // Save updated session (if not transient and not remote)
+	    // Not last slide; save updated session (if not transient and not remote)
 	    sessionPut();
 	}
     }
