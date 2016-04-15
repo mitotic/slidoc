@@ -201,7 +201,7 @@ function GoogleSheet(url, sheetName, fields, useJSONP, user, token) {
     this.useJSONP = !!useJSONP;
     this.user = user || '';
     this.token = token || '';
-    this.headers = ['name', 'email', 'id', 'Timestamp'].concat(fields);
+    this.headers = ['name', 'id', 'email', 'Timestamp'].concat(fields);
     this.created = null;
     this.callbackCounter = 0;
     this.columnIndex = {};

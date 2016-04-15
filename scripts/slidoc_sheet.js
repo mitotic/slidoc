@@ -29,7 +29,7 @@
 //  8. Insert column names on your destination sheet matching the parameter names of the data you are passing in (exactly matching case)
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
-var HMAC_KEY = '';
+var HMAC_KEY = 'testkey';
 
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 
@@ -46,14 +46,17 @@ function handleResponse(evt) {
     // The list contains updated row values if get=true; otherwise it is just an empty list.
     // PARAMETERS
     // sheet: 'sheet name' (required)
-    // headers: ['name', 'email', 'id', 'Timestamp', 'field1', ...] (required for sheet creation)
+    // headers: ['name', 'id', 'email', 'Timestamp', 'field1', ...] (name and id required for sheet creation)
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
     // If the special name Timestamp occurs in the list, the timestamp is automatically updated.
-    // row: ['name_value', 'email_value', 'id_value', null, 'field1_value', ...]
+    // row: ['name_value', 'id_value', 'email_value', null, 'field1_value', ...]
     //       null value implies no update (except for Timestamp)
     // get: true to retrieve row (id must be specified) (otherwise only [] is returned on success)
-    // id: Google id  (required if creating or updating a row, and row parameter is not specified)
-    // name: Display name (required if creating a row, and row parameter is not specified)
+    // id: unique id  (required if creating or updating a row, and row parameter is not specified)
+    // name: sortable name (required if creating a row, and row parameter is not specified)
+    // Can add row with fewer columns than already present.
+    // This allows user to add additional columns without affecting script actions.
+    // (User added columns are returned on gets and selective updates, but not row updates.)
     
     // shortly after my original solution Google announced the LockService[1]
     // this prevents concurrent access overwritting data
@@ -76,25 +79,26 @@ function handleResponse(evt) {
 	    mimeType = ContentService.MimeType.JAVASCRIPT;
 	}
 
-	if (HMAC_KEY) {
+	var sheetName = params.sheet;
+	if (!sheetName)
+	    throw('No sheet name specified');
+
+	if (sheetName == 'sessions') {
+	    // Restricted sheet
 	    var token = params.token || '';
 	    var user = params.user || '';
 	    if (!token || !user)
-		throw("Invalid/missing token/user for HMAC authentication");
+		throw('Invalid/missing token/user for HMAC authentication for sheet '+sheetName);
 	    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
 							 user,
 							 HMAC_KEY,
 							 Utilities.Charset.US_ASCII);
             var b64HMAC = Utilities.base64Encode(rawHMAC);
 	    if (token != b64HMAC)
-		throw('HMAC token mismatch');
+		throw('HMAC token mismatch for sheet '+sheetName);
 	}
 
 	// Check parameter consistency
-	var sheetName = params.sheet;
-	if (!sheetName)
-	    throw('No sheet name specified');
-
 	var headers = params.headers ? JSON.parse(params.headers) : null;
 
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
@@ -102,7 +106,7 @@ function handleResponse(evt) {
 	if (!sheet) {
 	    // Create new sheet
 	    if (!headers)
-		throw('Headers must be specified for new sheet');
+		throw('Headers must be specified for new sheet '+sheetName);
 	    doc.insertSheet(sheetName);
 	    sheet = doc.getSheetByName(sheetName);
 	    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -116,13 +120,17 @@ function handleResponse(evt) {
 	    throw('No columns in sheet '+sheetName);
 
 	var columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0];
-	if (headers && headers.length != columnHeaders.length)
-	    throw('Number of headers mismatched with sheet');
 	var columnIndex = {};
-	for (var j=0; j<columnHeaders.length; j++) {
+	for (var j=0; j<columnHeaders.length; j++)
 	    columnIndex[columnHeaders[j]] = j;
-	    if (headers && headers[j] != columnHeaders[j])
-		throw('Column header mismatch: '+headers[j]+' vs. '+columnHeaders[j]);
+
+	if (headers) {
+	    if (headers.length > columnHeaders.length)
+		throw('Number of headers exceeds that present in sheet '+sheetName);
+	    for (var j=0; j<headers.length; j++) {
+		if (headers[j] != columnHeaders[j])
+		    throw('Column header mismatch: '+headers[j]+' vs. '+columnHeaders[j]+' in sheet '+sheetName);
+	    }
 	}
 
 	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
@@ -140,11 +148,11 @@ function handleResponse(evt) {
 	    if (rowUpdates && selectedUpdates) {
 		throw('Cannot specify both rowUpdates and selectedUpdates');
 	    } else if (rowUpdates) {
-		if (rowUpdates.length != columnHeaders.length)
-		    throw('row_headers length does not equal no. of columns in sheet');
+		if (rowUpdates.length > columnHeaders.length)
+		    throw('row_headers length exceeds no. of columns in sheet');
 
-		userId = rowUpdates[columnIndex['id']];
-		userName = rowUpdates[columnIndex['name']];
+		userId = rowUpdates[columnIndex['id']] || null;
+		userName = rowUpdates[columnIndex['name']] || null;
 	    } else {
 		userId = params.id || null;
 		userName = params.name || null;
@@ -157,7 +165,7 @@ function handleResponse(evt) {
 	    var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id']+1, sheet.getLastRow(), 1);
 	    var userRow = -1;
             for (var j=0; j<ids.length; j++) {
-		// Use Google ID as unique ID
+		// Unique ID
 		if (ids[j][0] == userId) {
 		    userRow = j+1+numStickyRows;
 		    break;
@@ -191,7 +199,8 @@ function handleResponse(evt) {
 		    }
 		}
 
-		var userRange = sheet.getRange(userRow, 1, 1, sheet.getLastColumn());
+		var maxCol = rowUpdates ? rowUpdates.length : columnHeaders.length;
+		var userRange = sheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 	    
 		if (rowUpdates) {

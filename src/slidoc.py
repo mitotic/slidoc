@@ -18,10 +18,14 @@ Usage examples:
 
 from __future__ import print_function
 
+import base64
+import hashlib
+import hmac
 import os
 import re
 import sys
 import urllib
+import urllib2
 
 from collections import defaultdict, OrderedDict
 
@@ -419,8 +423,16 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
-        questions_max = '<span id="%s-questions-max" class="slidoc-questions-max" style="display: none;">%s</span>\n' % (self.renderer.first_id, self.renderer.question_number)
-        return self.renderer.slide_prefix(self.renderer.first_id)+questions_max+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
+
+        first_slide_prefix = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
+
+        if self.renderer.qconcepts[0] or self.renderer.qconcepts[1]:
+            # Include sorted list of concepts related to questions
+            q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
+            first_slide_prefix += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
+
+        
+        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_prefix+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -434,8 +446,9 @@ class IPythonRenderer(mistune.Renderer):
         self.hide_end = None
         self.notes_end = None
         self.section_number = 0
-        self.question_number = 0
         self.untitled_number = 0
+        self.questions = []
+        self.qconcepts = [set(),set()]
         self.slide_number = 0
         self._new_slide()
         self.first_id = self.get_slide_id()
@@ -625,14 +638,14 @@ class IPythonRenderer(mistune.Renderer):
             type_code = params[0]
             if type_code in ("choice", "multichoice", "number", "text", "point", "line"):
                 self.cur_qtype = type_code
-                self.question_number += 1
+                self.questions.append([type_code, None])
              
         return ''
 
     def slidoc_choice(self, name):
         if not self.cur_qtype:
             self.cur_qtype = 'choice'
-            self.question_number += 1
+            self.questions.append([self.cur_qtype, None])
         elif self.cur_qtype != 'choice':
             print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question in '%s'" % (self.options["filename"], name, self.cur_header), file=sys.stderr)
             return name+'.. '
@@ -644,7 +657,7 @@ class IPythonRenderer(mistune.Renderer):
 
         self.cur_choice = name
 
-        params = {'id': self.get_slide_id(), 'opt': name, 'qno': self.question_number}
+        params = {'id': self.get_slide_id(), 'opt': name, 'qno': len(self.questions)}
         if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, %(qno)d, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
         else:
@@ -666,15 +679,13 @@ class IPythonRenderer(mistune.Renderer):
             # Unspecified answer
             if not self.cur_qtype:
                 self.cur_qtype = text.lower()
-                self.question_number += 1
+                self.questions.append([self.cur_qtype, None])
             elif self.cur_qtype != text.lower():
                 print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], text, self.cur_qtype), file=sys.stderr)
 
             text = ''
 
         if not self.cur_qtype:
-            self.question_number += 1
-
             # Determine question type from answer
             if len(text) == 1 and text.isalpha():
                 self.cur_qtype = 'choice'
@@ -694,23 +705,25 @@ class IPythonRenderer(mistune.Renderer):
                     text = ans + (' +/- '+error if error else '')
                 else:
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err'" % (self.options["filename"], text), file=sys.stderr)
+                    self.cur_qtype = 'text'
             else:
                 self.cur_qtype = 'text'    # Default answer type
+            self.questions.append([self.cur_qtype, None])
 
         if not text or 'answers' in self.options['cmd_args'].strip:
             # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
         if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
+            self.questions[-1][1] = text.upper() if len(text) == 1 else text
             id_str = self.get_slide_id()
             ans_params = {'sid': id_str,
                           'ans_type': self.cur_qtype,
                           'ans_text': name.capitalize(),
                           'ans_extras': '',
-                          'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (self.question_number, id_str, self.cur_qtype),
+                          'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (len(self.questions), id_str, self.cur_qtype),
                           'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
-                          'inp_extras': '',
-                          'corr_text': text.upper() if len(text) == 1 else text
+                          'inp_extras': ''
                           }
             if self.cur_choice:
                 ans_params['ans_extras'] = 'style="display: none;"'
@@ -723,7 +736,8 @@ class IPythonRenderer(mistune.Renderer):
 <input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>
 <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
-<span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;">%(corr_text)s</span>
+<span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;"></span>
+
 </div>
 ''' % ans_params
 
@@ -756,7 +770,7 @@ class IPythonRenderer(mistune.Renderer):
                 nn_tags.sort()
                 q_id = make_file_id(self.options["filename"], self.get_slide_id())
                 q_concept_id = ';'.join(nn_tags)
-                q_pars = (self.options["filename"], self.get_slide_id(), self.cur_header, self.question_number, q_concept_id)
+                q_pars = (self.options["filename"], self.get_slide_id(), self.cur_header, len(self.questions), q_concept_id)
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
@@ -765,6 +779,10 @@ class IPythonRenderer(mistune.Renderer):
                         print("        "+self.concept_warnings[-1], file=sys.stderr)
 
                 add_to_index(Global.first_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
+                if tags[0] != 'null':
+                    self.qconcepts[0].add(tags[0])
+                if tags[1:]:
+                    self.qconcepts[1].update(set(tags[1:]))
             else:
                 # Not question
                 add_to_index(Global.first_tags, Global.sec_tags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
@@ -937,7 +955,23 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
 
     file_toc = renderer.table_of_contents('' if cmd_args.combine else cmd_args.site_url+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, renderer.concept_warnings, content_html)
+    return (renderer.file_header or filename, file_toc, renderer, content_html)
+
+def sort_caseless(list):
+    new_list = list[:]
+    sorted(new_list, key=lambda s: s.lower())
+    return new_list
+
+def http_post(url, params_dict):
+    data = urllib.urlencode(params_dict)
+    req = urllib2.Request(url, data)
+    response = urllib2.urlopen(req) 
+    result = response.read()
+    try:
+        result = json.loads(result)
+    except Exception, excp:
+        pass
+    return result
 
 
 Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
@@ -1016,7 +1050,7 @@ if __name__ == '__main__':
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
                  'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
-                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None, 'gd_hmac_token': ''}
+                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
         print('Filename: ', js_params['filename'], file=sys.stderr)
@@ -1040,6 +1074,7 @@ if __name__ == '__main__':
         if len(comps) > 4:
             js_params['sessionCookie'] = comps[4]
 
+    gd_hmac_key = ''
     if cmd_args.google_docs:
         if not cmd_args.pace:
             sys.exit('slidoc: Error: Must use --google_docs with --pace')
@@ -1048,7 +1083,7 @@ if __name__ == '__main__':
         if len(comps) > 1:
             js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
         if len(comps) > 3:
-            js_params['gd_hmac_token']= comps[3]
+            gd_hmac_key = comps[3]
     
     nb_site_url = cmd_args.site_url
     if cmd_args.combine:
@@ -1080,7 +1115,7 @@ if __name__ == '__main__':
         gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
         if js_params['gd_client_id']:
             gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
-        if js_params['gd_hmac_token']:
+        if gd_hmac_key:
             gd_html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.min.js"></script>\n'
 
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
@@ -1179,12 +1214,12 @@ if __name__ == '__main__':
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        fheader, file_toc, concept_warnings, md_html = md2html(md_text, filename=fname, cmd_args=cmd_args,
+        fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, cmd_args=cmd_args,
                                                                filenumber=filenumber, prev_file=prev_file,
                                                                next_file=next_file,
                                                                index_id=index_id, qindex_id=qindex_id)
 
-        all_concept_warnings += concept_warnings
+        all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
 
@@ -1222,6 +1257,21 @@ if __name__ == '__main__':
                 md_parser = md2nb.MDParser(nb_converter_args)
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
+            if gd_hmac_key:
+                user = 'admin'
+                user_token = base64.b64encode(hmac.new(gd_hmac_key, user, hashlib.md5).digest())
+                sheet_headers = ['name', 'id', 'Timestamp', 'cookie',
+                                 'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
+                row_values = [fname, fname, None, js_params['sessionCookie'],
+                                ','.join([x[0] for x in renderer.questions]),
+                                '|'.join([(x[1] or '').replace('|','/') for x in renderer.questions]),
+                                '; '.join(sort_caseless(list(renderer.qconcepts[0]))),
+                                '; '.join(sort_caseless(list(renderer.qconcepts[1])))
+                                ]
+                post_params = {'sheet': 'sessions', 'user': user, 'token': user_token,
+                               'headers': json.dumps(sheet_headers), 'row': json.dumps(row_values)
+                               }
+                print('slidoc: Updated remote spreadsheet:', http_post(js_params['gd_sheet_url'], post_params))
     
     if not cmd_args.dry_run:
         if not cmd_args.combine:
