@@ -1,3 +1,4 @@
+<!--slidoc-defaults --hide="[Aa]nswer" --eq_number -->
 # Slidoc: A slide-oriented document management system using Markdown
 
 Slidoc manages a collection of lectures written using
@@ -546,7 +547,16 @@ These options include:
 * `--untitled_number` Number all untitled slides (useful for generating
   question banks)
 
-Concepts: command line, options
+Default options for the `slidoc.py` command can be specified in the first
+line of the first file using the following format:
+
+    <!--slidoc-defaults --hide="[Aa]nswer" --eq_number -->
+
+The above line appears as the first line of this README file. (These
+options can be overridden by explicity specifying options in the
+command line.)
+
+Concepts: command line, options; options, default
 
 ---
 

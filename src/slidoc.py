@@ -18,11 +18,13 @@ Usage examples:
 
 from __future__ import print_function
 
+import argparse
 import base64
 import hashlib
 import hmac
 import os
 import re
+import shlex
 import sys
 import urllib
 import urllib2
@@ -1016,37 +1018,69 @@ def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
 if __name__ == '__main__':
-    import argparse
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'navigate', 'notes', 'rule', 'sections']
 
-    parser = argparse.ArgumentParser(description='Convert from Markdown to HTML')
-    parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file (default: ""', default='')
-    parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file (default: "")', default='')
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file')
+    parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
     parser.add_argument('--css', metavar='FILE', help='Custom CSS file (derived from doc_custom.css)')
-    parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files (default:local)', default='')
-    parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true")
-    parser.add_argument('--eq_number', help='Automatic equation numbering', action="store_true")
+    parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
+    parser.add_argument('--eq_number', help='Automatic equation numbering', action="store_true", default=None)
     parser.add_argument('--google_docs', help='spreadsheet_url[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
-    parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: "images"', default='images')
+    parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
     parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images', default='')
-    parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)', default='ind.html')
-    parser.add_argument('--notebook', help='Create notebook files', action="store_true")
-    parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
-    parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1', default='')
-    parser.add_argument('--printable', help='Printer-friendly output', action="store_true")
-    parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")', default='')
-    parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")', default='')
+    parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
+    parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
+    parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
+    parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1')
+    parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+    parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
+    parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
-    parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)', default='toc.html')
+    parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)')
     parser.add_argument('--toc_header', metavar='FILE', help='HTML header file for ToC')
-    parser.add_argument('--untitled_number', help='Number untitled slides (e.g., question numbering)', action="store_true")
-    parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
-    cmd_args = parser.parse_args()
+    parser.add_argument('--untitled_number', help='Number untitled slides (e.g., question numbering)', action="store_true", default=None)
+
+    cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
+    cmd_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
+    cmd_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
+    cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
+
+    # Some arguments need to be set explicitly to '' by default, rather than staying as None
+    cmd_defaults = {'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '', 'index': 'ind.html',
+                     'toc': 'toc.html', 'site_url': ''}
+    
+    cmd_args = cmd_parser.parse_args()
+    # Read first line of first file and rewind it
+    first_line = cmd_args.file[0].readline()
+    cmd_args.file[0].seek(0)
+    match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
+    if match:
+        try:
+            line_args_list = shlex.split(match.group(1).strip())
+            print('slidoc: First line arguments from file', cmd_args.file[0].name, line_args_list)
+            line_args_dict = vars(parser.parse_args(line_args_list))
+        except Exception, excp:
+            sys.exit('slidoc: ERROR in parsing command options in first line of %s: %s' % (cmd_args.file[0].name, excp))
+        cmd_args_dict = vars(cmd_args)
+        for arg_name in cmd_args_dict:
+            if arg_name not in line_args_dict:
+                # Argument not specified in file line (copy from command line)
+                line_args_dict[arg_name] = cmd_args_dict[arg_name]
+            elif cmd_args_dict[arg_name] != None:
+                # Argument also specified in command line (override)
+                line_args_dict[arg_name] = cmd_args_dict[arg_name]
+        cmd_args = argparse.Namespace(**line_args_dict)
+
+    # Assign default (non-None) values to arguments not specified anywhere
+    for arg_name in cmd_defaults:
+        if getattr(cmd_args, arg_name) == None:
+            setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
+    print('slidoc: Effective argument list', cmd_args)
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
                  'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,

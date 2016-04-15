@@ -7,6 +7,7 @@ Filter Markdown files.
 
 from __future__ import print_function
 
+import argparse
 import base64
 import os
 import random
@@ -669,10 +670,9 @@ class ArgsObj(object):
         self.str_args = str_args
         self.bool_args = bool_args
         self.defaults = defaults
-        self.ParserArgs = namedtuple('ParserArgs', self.str_args + self.bool_args)
 
     def create_args(self, *args, **kwargs):
-        """Returns a named tuple with argument values, optionally initialized from object args[0] (if not None) and updated with kwargs"""
+        """Returns a argparse.Namespace object with argument values, optionally initialized from object args[0] (if not None) and updated with kwargs"""
         if args and args[0] is not None:
             arg_vals = dict( [(k, getattr(args[0], k)) for k in self.str_args+self.bool_args] )
         else:
@@ -680,7 +680,7 @@ class ArgsObj(object):
             arg_vals.update(self.defaults)
         arg_vals.update(kwargs)
 
-        return self.ParserArgs(**arg_vals)
+        return argparse.Namespace(**arg_vals)
 
 Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', 'strip'],
                     bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'overwrite', 'unfence'],
