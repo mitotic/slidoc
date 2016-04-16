@@ -65,6 +65,18 @@ Slidoc.docFullScreen = function (exit) {
 	requestFullscreen(document.documentElement);
 }
 
+Slidoc.resetPaced = function () {
+    if (Sliobj.params.gd_sheet_url) {
+	alert('Cannot reset session linked to Google Docs');
+	return false;
+    }
+    if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
+	return false;
+    Sliobj.session = sessionCreate(Sliobj.session.paced);
+    sessionPut();
+    location.reload(true);
+}
+
 Slidoc.showConcepts = function (msg) {
     var html = msg || '';
     if (Sliobj.questionConcepts.length) {
@@ -95,21 +107,30 @@ var Key_codes = {
 };
 
 var Slide_help_list = [
-    ['q or Escape',               'esc', 'enter/exit slide mode'],
-    ['h or Home or Fn+LeftArrow', 'home', 'first slide'],
-    ['e or End or Fn+RightArrow', 'end', 'last slide'],
-    ['p or LeftArrow',            'left', 'previous slide'],
-    ['n or RightArrow',           'right', 'next slide'],
-    ['f',                         'f', 'fullscreen mode'],
-    ['c',                         'c', 'missed question concepts'],
-    ['?',                         'qmark', 'help']
+    ['q, Escape',           'esc',   'enter/exit slide mode'],
+    ['h, Home, Fn&#9668;', 'home',  'home (first) slide'],
+    ['e, End, Fn&#9658;',  'end',   'end (last) slide'],
+    ['p, &#9668;',          'left',  'previous slide'],
+    ['n, &#9658;',          'right', 'next slide'],
+    ['f',                   'f',     'fullscreen mode'],
+    ['m',                   'm',     'missed question concepts'],
+    ['?',                   'qmark', 'help']
     ]
 
 Slidoc.slideViewHelp = function () {
     var html = '<b>Slide navigation</b><table class="slidoc-slide-help-table">';
-    for (var j=0; j<Slide_help_list.length; j++) {
-	var x = Slide_help_list[j];
-	html += '<tr><td>' + x[0] + '</td><td><span class="slidoc-clickable" onclick="Slidoc.handleKey('+ "'"+x[1]+"'"+ ');">' + x[2] + '</span></td></tr>';
+    var help_list = Slide_help_list.slice();
+    if (Sliobj.session.paced && !Sliobj.params.gd_sheet_url) {
+	html += '<tr><td colspan="3"><hr></td></tr>';
+	help_list.splice(0,0,['', 'reset', 'Reset paced session'], ['', '', '']);
+    }
+
+    for (var j=0; j<help_list.length; j++) {
+	var x = help_list[j];
+	if (x[1])
+	    html += '<tr><td>' + x[0] + '</td><td><span class="slidoc-clickable" onclick="Slidoc.handleKey('+ "'"+x[1]+"'"+ ');">' + x[2] + '</span></td></tr>';
+	else
+	    html += '<tr><td colspan="3"><hr></td></tr>';
     }
     html += '</table>';
     Slidoc.showPopup(html);
@@ -127,8 +148,9 @@ var Slide_view_handlers = {
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
     'f':     Slidoc.docFullScreen,
-    'c':     Slidoc.showConcepts,
-    'qmark': Slidoc.slideViewHelp
+    'm':     Slidoc.showConcepts,
+    'qmark': Slidoc.slideViewHelp,
+    'reset': Slidoc.resetPaced
 }
 
 document.onkeydown = function(evt) {
@@ -802,18 +824,6 @@ function conceptStats(tags, tallies) {
     }
     html += '</table>';
     return html;
-}
-
-Slidoc.resetPaced = function () {
-    if (Sliobj.params.gd_sheet_url) {
-	alert('Cannot reset session linked to Google Docs');
-	return false;
-    }
-    if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
-	return false;
-    Sliobj.session = sessionCreate(Sliobj.session.paced);
-    sessionPut();
-    location.reload(true);
 }
 
 Slidoc.startPaced = function () {

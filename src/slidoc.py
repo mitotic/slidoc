@@ -928,12 +928,9 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
     if 'contents' not in cmd_args.strip:
         post_header_html += renderer.table_of_contents(filenumber=filenumber)
         if post_header_html:
-            post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div><p></p>\n'
+            post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div>\n'
             post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
                                                classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
-
-    post_header_html += '&nbsp;&nbsp;' + click_span('Reset paced session', "Slidoc.resetPaced();",
-                                                    classes=['slidoc-clickable', 'slidoc-pacedonly', 'slidoc-noremote'])
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:
         post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();")

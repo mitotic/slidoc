@@ -58,12 +58,14 @@ body:not(.slidoc-remote-view) .slidoc-remoteonly {
 
 .slidoc-popup-close {
   float: right;
-  padding: 10px;
+  padding: 12px;
   font-weight: bold;
+  font-family: Helvetica, Arial, freesans, sans-serif;
   cursor: pointer;
 }
 
 .slidoc-popup-content {
+  font-family: Helvetica, Arial, freesans, sans-serif;
   padding: 10px;
 }
 
