@@ -18,6 +18,11 @@ body:not(.slidoc-remote-view) .slidoc-remoteonly {
 .slidoc-slide-home-button { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; }
 .slidoc-slide-view-button { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; }
 
+body.slidoc-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
+body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
+
+body.slidoc-paced-last-slide.slidoc-incorrect-answer-state span.slidoc-forward-link { opacity: 0.3; }
+
 /* "Hourglass" */
 #slidoc-hourglass-container {
     z-index: 900; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em;

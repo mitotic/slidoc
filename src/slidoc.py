@@ -343,15 +343,19 @@ class MathInlineLexer(mistune.InlineLexer):
 
                 # Slidoc-specific hash reference handling
                 ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
-                ref_class = ''
+                classes = ["slidoc-clickable"]
+                if ref_id not in Global.ref_tracker:
+                    # Forward link
+                    classes.append('slidoc-forward-link')
                 if link.startswith('#:'):
                     # Numbered reference
                     if ref_id in Global.ref_tracker:
                         num_label, _, ref_class = Global.ref_tracker[ref_id]
+                        classes.append(ref_class)
                     else:
                         num_label = '_MISSING_SLIDOC_REF_NUM(#%s)' % ref_id
                     text += num_label
-                return click_span(text, "Slidoc.go('#%s');" % ref_id, classes=["slidoc-clickable", ref_class],
+                return click_span(text, "Slidoc.go('#%s');" % ref_id, classes=classes,
                                   href='#'+ref_id if self.renderer.options['cmd_args'].printable else '')
 
         return super(MathInlineLexer, self).output_link(m)
@@ -360,7 +364,7 @@ class MathInlineLexer(mistune.InlineLexer):
         text = m.group(1)
         text_key = md2md.ref_key(text)
         key = md2md.ref_key(m.group(2))
-        header_ref = md2md.ref_key(key.lstrip(':'))
+        header_ref = key.lstrip(':')
         if not header_ref:
             header_ref = text_key
         if not header_ref:
@@ -438,7 +442,7 @@ class MarkdownWithMath(mistune.Markdown):
 
     
 class IPythonRenderer(mistune.Renderer):
-    header_attr_re = re.compile(r'^.*?(\s*\{\s*#([-.\w]+)(\s+[^\}]*)?\s*\})\s*$')
+    header_attr_re = re.compile(r'^.*?(\s*\{\s*#(\S+)(\s+[^\}]*)?\s*\})\s*$')
 
     def __init__(self, **kwargs):
         super(IPythonRenderer, self).__init__(**kwargs)
@@ -543,17 +547,25 @@ class IPythonRenderer(mistune.Renderer):
         
         text = html2text(hdr).strip()
         match = self.header_attr_re.match(text)
-        ref_id = md2md.make_id_from_text(text)
+        header_ref = md2md.ref_key(text)
         if match:
             # Header attributes found
-            ref_id = match.group(2)
+            if not re.match(r'^[-.\w]+$', match.group(2)):
+                print('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text, file=sys.stderr)
+            header_ref = md2md.ref_key(match.group(2))
             try:
                 hdr = ElementTree.fromstring(html.replace(match.group(1),''))
                 text = html2text(hdr).strip()
             except Exception:
                 pass
 
-        hdr.set('id', 'slidoc-ref-'+ref_id)
+        ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
+        if ref_id in Global.ref_tracker:
+            print('REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, header_ref), file=sys.stderr)
+        else:
+            Global.ref_tracker[ref_id] = ('??', header_ref, '')
+
+        hdr.set('id', ref_id)
         hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id())
 
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
@@ -1032,7 +1044,7 @@ if __name__ == '__main__':
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-    parser.add_argument('--pace', help='=open_on_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1')
+    parser.add_argument('--pace', help='=pace_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
@@ -1080,7 +1092,7 @@ if __name__ == '__main__':
     print('slidoc: Effective argument list', cmd_args)
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
-                 'paceOpen': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
+                 'paceEnd': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
@@ -1095,7 +1107,7 @@ if __name__ == '__main__':
         hide_chapters = True
         comps = cmd_args.pace.split(',')
         if comps[0]:
-            js_params['paceOpen'] = int(comps[0])
+            js_params['paceEnd'] = int(comps[0])
         if len(comps) > 1 and comps[1].isdigit():
             js_params['paceDelay'] = int(comps[1])
         if len(comps) > 2 and comps[2].isdigit():
