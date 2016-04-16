@@ -341,7 +341,7 @@ questions. Questions are slides of the form:
 
 where `X` can be `a`, `b`, etc. for multiple-choice questions, a
 number for numeric answers, or some text for open-ended answers. For
-unspecified answers, `X` should be as `choice`, `number`, or `text`.
+unspecified answers, `X` should be `choice`, `number`, or `text`.
 Correct text answers with markup, or spanning multiple lines, can be
 provided as Notes or in the next slide with a Level 3 header
 containing the word `answer`.
@@ -714,23 +714,40 @@ reference)
 
 ## Interactive multiple choice question
 
-This is a multiple choice question that uses the `A.. ` notation
-allowing interactive response. (The space after the `..` is required.)
-Click on a choice to view the correct answer.
+Slidoc supports a simple format for framing multiple-choice questions,
+similar to the
+[Aiken format](https://docs.moodle.org/24/en/Aiken_format) used by
+Learning Management Systems like Moodle.
 
-A.. Option1
+The next slide contains a multiple choice question that uses the `A.. `
+notation allowing interactive response. (The space after the `..` is
+required.)  Click on a choice to view the correct answer.
 
-B.. Option2
+---
 
-C.. Option3
+In Shakespeare's play *Hamlet*, the protagonist agonizes over
+answering a multiple-choice question. What choice does he agonize
+over?
 
-D.. Option4
+A.. Letter A
+
+B.. Letter B
+
+C.. Letter C
+
+D.. Letter D
 
 Answer: B
 
 Concepts: questions, interactive; questions, multiple-choice
 
-Notes: This illustrates the interactive format of a multiple choice question.
+Notes:
+
+    To be or not to be-that is the question:
+    Whether 'tis nobler in the mind to suffer
+    The slings and arrows of outrageous fortune,
+    Or to take arms against a sea of troubles,
+    And, by opposing, end them. 
 
 ---
 
@@ -758,9 +775,10 @@ Notes: The upper-case OR is used to separate correct answer options,
 which are not case-sensitive. If a correct answer option includes a
 space (e.g., `T Rex`, it is compared to the user response with
 normalized spaces, i.e, `T Rex` would be considered correct, but not
-`TRex`. If the correct option does not include a space, then all
-spaces are stripped from the user response before comparison, i.e.,
-`T.Rex` and `T. Rex` would be considered correct.
+`TRex`. If the correct answer option does not include a space, such as
+the answer to a coding question, then all spaces are stripped from the
+user response before comparison, i.e., `T.Rex` and `T. Rex` would be
+considered correct.
 
 ---
 
@@ -807,38 +825,40 @@ This is an example to test hiding of answer slides.
 
 ## Open multiple choice question
 
-To leave correct answer unspecified for a multiple-choice question,
-use the string "choice"
+What is the best way to deal with climate change?
 
-A.. ``Option 1a`` or perhaps ``Option 1b``
+A.. Mitigation
 
-B.. ``Option 2a`` or perhaps ``Option 2b``
+B.. Adaptation
 
-C.. ``Option 3a`` or
-perhaps ``Option 3b``
+C.. Geoengineering
 
-D.. ``Option 4a`` or
-perhaps ``Option 4b``
+D.. Move to Mars
 
 Answer: choice
 
-Notes: Some info on the correct response.
+Notes: If no correct answer is provided, all answers are scored as
+being correct.
 
 ---
 
 ## Open numeric response question
 
-To leave answer unspecified, use the string "number"
+What number is the answer to the Ultimate Question of Life, the Universe and Everything?
 
 Answer: number
+
+Notes: All answers are assumed correct.
 
 ---
 
 ## Open text response question
 
-To leave answer unspecified, use the string "text"
+To be or note to be-that is the question. What is the answer?
 
 Answer: text
+
+Notes: All answers are assumed correct.
 
 ---
 

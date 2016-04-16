@@ -536,9 +536,10 @@ class IPythonRenderer(mistune.Renderer):
             # failed to parse, just return it unmodified
             return html
 
+        prev_slide_end = ''
         if self.cur_header and level <= 2:
             # Implicit horizontal rule before Level 1/2 header
-            self.hrule(implitic=True)
+            prev_slide_end = self.hrule(implicit=True)
         
         text = html2text(hdr).strip()
         match = self.header_attr_re.match(text)
@@ -621,7 +622,7 @@ class IPythonRenderer(mistune.Renderer):
         # instead of a text string.  See issue http://bugs.python.org/issue10942
         # Workaround is to make sure the bytes are casted to a string.
         hdr.set('class', hdr_class)
-        return pre_header + ElementTree.tostring(hdr) + '\n' + post_header
+        return prev_slide_end + pre_header + ElementTree.tostring(hdr) + '\n' + post_header
 
 
     # Pass math through unaltered - mathjax does the rendering in the browser
@@ -712,7 +713,7 @@ class IPythonRenderer(mistune.Renderer):
                 self.cur_qtype = 'text'    # Default answer type
             self.questions.append([self.cur_qtype, None])
 
-        if not text or 'answers' in self.options['cmd_args'].strip:
+        if not self.options['cmd_args'].pace and (not text or 'answers' in self.options['cmd_args'].strip):
             # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
@@ -739,13 +740,12 @@ class IPythonRenderer(mistune.Renderer):
 <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
 <span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;"></span>
-
 </div>
 ''' % ans_params
 
             return choice_prefix+ans_html+'\n'
         else:
-            return choice_prefix+name.capitalize()+': '+text+'\n'
+            return choice_prefix+name.capitalize()+': '+text+'<p></p>\n'
 
 
     def slidoc_concepts(self, name, text):
