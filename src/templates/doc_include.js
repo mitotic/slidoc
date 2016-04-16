@@ -579,6 +579,7 @@ Slidoc.toggleInline = function (elem) {
 }
 
 Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, response) {
+   // Handle answer types: number, text
    console.log("Slidoc.answerClick:", elem, slide_id, question_number, answer_type, response);
    var setup = !elem;
    if (setup) {
@@ -604,7 +605,7 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
 	       alert('Expecting a numeric value as answer');
 	       return false;
 	   } else if (Sliobj.session.paced) {
-	       if (!response && Sliobj.session.remainingTries > 0) {
+	       if (!response) {
 		   alert('Expecting a non-null answer');
 		   return false;
 	       } else if (Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
@@ -762,8 +763,9 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
     if (ans_elem) ans_elem.style.display = 'inline';
 
     var click_elem = document.getElementById(slide_id+"-ansclick");
-    if (click_elem) click_elem.style.display = 'inline';
-    if (click_elem) click_elem.classList.remove('slidoc-clickable');
+    var prefix_elem = document.getElementById(slide_id+"-ansprefix");
+    if (click_elem) click_elem.style.display = 'none';
+    if (prefix_elem) prefix_elem.style.display = 'inline';
 
     var notes_id = slide_id+"-notes";
     var notes_elem = document.getElementById(notes_id);

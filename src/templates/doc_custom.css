@@ -92,7 +92,7 @@ body.slidoc-slide-view { font-size: 150%; }
 body.slidoc-slide-view td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */
-/* #slidoc-score-display {color: red;} */
+#slidoc-score-display {color: red; font-size: 0.8em; padding-right: 5px;}
 .slidoc-correct-answer {color: green;}
 .slidoc-wrong-answer {color: red;}
 

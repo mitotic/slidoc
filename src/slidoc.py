@@ -746,9 +746,10 @@ class IPythonRenderer(mistune.Renderer):
                 ans_params['inp_extras'] = 'style="display: none;"'
 
             ans_html = '''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
-<span id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>%(ans_text)s:</span>
+<span id="%(sid)s-ansprefix" style="display: none;">%(ans_text)s:</span>
 <span id="%(sid)s-anstype" class="slidoc-answer-type" style="display: none;">%(ans_type)s</span>
 <input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>
+<button id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>Answer</button>
 <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
 <span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;"></span>
