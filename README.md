@@ -99,70 +99,6 @@ Concepts: lecture management; index, concepts
 
 ---
 
-## Converting to Jupyter Notebooks
-
-Lecture files may be converted to
-[Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/)
-by specifying the `--notebook` option to `slidoc.py`.
-By default, concept lists are stripped during this conversion process.
-
-Alternatively, to simply convert to notebooks, use the `md2nb.py` command:
-
-    md2nb.py ../Lectures/prefix-lecture03.md ../Lectures/prefix-lecture04.md
-
-By default, all fenced code blocks are converted to code
-cells. Specifiying the `--indented` option also converts indented code
-blocks to code cells. Use the `-h` option to list all command options.
-
-The reverse conversion, from notebook to Markdown format, can be
-accomplished using `nb2md.py`. Another script, `md2md.py`, can be used to
-transform Markdown documents by removing concept lists,
-embedding/exporting images etc.
-
-Concepts: jupyter notebook; code, fenced; code, indented
-
----
-
-## Managing images
-
-Handling images is a bit hard when using Markdown. For Slidoc,
-the convention is to use web URLs or to store images in a local
-subdirectory named `images` and include references of the form
-
-    ![alt text](images/figure1.png)
-
-The script `md2md.py` can be used to apply several Markdown
-tranformations as follows:
-
-    md2md.py --strip=concepts,notes doc.md
-
-The above example creates a new file `doc-modified.md` with concept lists and
-notes stripped out.
-
-Notes: Other supported operations include:
-
-- `--fence|--unfence`: Convert fenced code to indented code and vice versa
-
-- `--images=check,web`: Check that all image references in the document are
-valid, including web references.
-
-- `--images=copy --dest_dir=...`: Copy all image references to
-destination
-
-- `--images=import,web`: Import all image references into the document
-as data URLs (including web URLs)
-
-- `--images=import,web,embed --combine=all.html`: Import all image
-references, embed them as data URLs and create a single, large,
-self-contained HTML document.
-
-- `--images=export,embed`: Export all data URLs from document as local
-files, and convert all Markdown image references to HTML `<img>` tags.
-
-- `--strip=extensions`: Strip `slidoc`-specific extensions.
-
----
-
 ## Slidoc document structure
 
 Slidoc recognizes several extensions to standard Markdown to
@@ -222,6 +158,102 @@ Notes slides in the vertical.)
 An alternative presentation mode, with two views, is also available
 for slideshows. In this case, notes are not displayed in the normal
 view but only displayed in the presenter view.
+
+---
+
+## Slideshow mode and quick navigation
+
+Slidoc features a built-in "slideshow" mode, allowing you to switch
+seamlessly between scroll view and slide view anywhere in the
+document. Slide view is enabled by clicking on the square
+(<span>&#9635;</span>) icon on the bottom left.  The Escape key may
+also be used to enter/exit slide mode. Pressing `?` during a slideshow
+displays a list of keyboard shortcuts.
+
+The slideshow mode can be used for quick navigation around the document:
+
+- Press Escape to enter slideshow
+
+- Use `h`, `e`, `p`, `n`, or left/right arrow keys to move around quickly
+
+- Press Escape to exit slideshow
+
+Concepts: slideshow; navigation
+
+Notes: Unlike a true slideshow, vertical scrolling is permitted in each
+slide, allowing essentially unlimited supporting material such as
+Notes.
+
+---
+
+## Paced mode
+
+Slidoc supports a restrictive type of slideshow mode known as the
+paced mode, where the user is forced to view the document as a
+sequence of slides. Information about the state of a paced slideshow
+is saved in the persistent local storage of the browser, using the
+filename as the key. It is enabled by the option:
+
+    --pace=open_on_end,delay_sec,try_count,try_delay
+
+* `open_on_end=1` implies that at the end of the slideshow, the document
+  may be viewed as a regular document. The default value is `0`, which
+  prevents this behavior.
+
+* `delay_sec` if non-zero, forces a minimum delay between slides
+
+* `try_count` if non-zero, forces each question to be attempted at
+  least this many times (except for multiple-choice, where only one
+  attempt is forced).
+
+* `try_delay` if non-zero, forces a wait after an incorrect attempt.
+
+The Notes portion of a question slide is hidden until a correct
+response is received or all tries are exhausted.
+
+Notes: Slides can normally be advanced only one at a time in paced
+mode. This means that "slide skipping", i.e., forward slide navigation
+through [internal links](#int-link) is disabled. However, if a set of
+consecutive questions is answered correctly, forward slide navigation
+is enabled until the next question slide is reached. Thus, a forward
+slide link could be included in the Notes portion of the final
+question in a sequence (or the following non-question slides) to
+enable *adaptive testing*.  If you answer the sequence of questions
+correctly, you can skip the next several slides, which may contain
+additional questions aimed at those who failed to answer correctly.
+
+Concepts: paced mode; adaptive testing
+
+---
+
+## Answer tally and concept understanding analysis
+
+When you attempt each question in a Slidoc document, along with the
+score, the concepts associated with that question are also tracked.
+The score is displayed on the top right corner.  By clicking on the
+score, you can view a list of concepts associated with the questions
+that you answered incorrectly, sorted in decreasing order of
+difficulty.
+
+---
+
+## Concept dependency analysis
+
+To analyze concept dependency for lectures and exercises delivered,
+create a temporary subdirectory and use a command like:
+
+    slidoc.py --qindex=qind.html --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
+
+This will generate the concept dependency analysis for the first six
+lectures and the first three exercises in the files `index.html`
+(concepts index), `qind.html` (questions index), and `xref.html`
+(cross-referencing info).
+
+The `qind.html` file has a map analyzing each question for all the
+concepts it covers, and relating it to other questions which cover a
+subset of these concepts.
+
+Concepts: concept dependency analysis; index, questions
 
 ---
 
@@ -331,26 +363,6 @@ Notes: Adding the `--strip=hidden` option will remove it completely.
 
 ---
 
-## Concept dependency analysis
-
-To analyze concept dependency for lectures and exercises delivered,
-create a temporary subdirectory and use a command like:
-
-    slidoc.py --qindex=qind.html --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
-
-This will generate the concept dependency analysis for the first six
-lectures and the first three exercises in the files `index.html`
-(concepts index), `qind.html` (questions index), and `xref.html`
-(cross-referencing info).
-
-The `qind.html` file has a map analyzing each question for all the
-concepts it covers, and relating it to other questions which cover a
-subset of these concepts.
-
-Concepts: concept dependency analysis; index, questions
-
----
-
 ## Hiding and/or stripping solutions
 
 By specifying a match pattern (regex) for slide titles, answers in
@@ -372,69 +384,67 @@ Concepts: answers, hiding; answers, stripping
 
 ---
 
-## Slideshow mode
+## Converting to Jupyter Notebooks
 
-Slidoc features a built-in "slideshow" mode, allowing you to switch
-seamlessly between scroll view and slide view anywhere in the
-document. Slide view is enabled by clicking on the square
-(<span>&#9635;</span>) icon on the bottom left.  The Escape key may
-also be used to enter/exit slide mode. Pressing `?` during a slideshow
-displays a list of keyboard shortcuts.
+Lecture files may be converted to
+[Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/)
+by specifying the `--notebook` option to `slidoc.py`.
+By default, concept lists are stripped during this conversion process.
 
-Unlike a true slideshow, vertical scrolling is permitted in each
-slide, allowing essentially unlimited supporting material such as
-Notes.
+Alternatively, to simply convert to notebooks, use the `md2nb.py` command:
 
----
+    md2nb.py ../Lectures/prefix-lecture03.md ../Lectures/prefix-lecture04.md
 
-## Paced mode
+By default, all fenced code blocks are converted to code
+cells. Specifiying the `--indented` option also converts indented code
+blocks to code cells. Use the `-h` option to list all command options.
 
-Slidoc supports a restrictive type of slideshow mode known as the
-paced mode, where the user is forced to view the document as a
-sequence of slides. Information about the state of a paced slideshow
-is saved in the persistent local storage of the browser, using the
-filename as the key. It is enabled by the option:
+The reverse conversion, from notebook to Markdown format, can be
+accomplished using `nb2md.py`. Another script, `md2md.py`, can be used to
+transform Markdown documents by removing concept lists,
+embedding/exporting images etc.
 
-    --pace=open_on_end,delay_sec,try_count,try_delay
-
-* `open_on_end=1` implies that at the end of the slideshow, the document
-  may be viewed as a regular document. The default value is `0`, which
-  prevents this behavior.
-
-* `delay_sec` if non-zero, forces a minimum delay between slides
-
-* `try_count` if non-zero, forces each question to be attempted at
-  least this many times (except for multiple-choice, where only one
-  attempt is forced).
-
-* `try_delay` if non-zero, forces a wait after an incorrect attempt.
-
-The Notes portion of a question slide is hidden until a correct
-response is received or all tries are exhausted.
-
-Notes: Slides can normally be advanced only one at a time in paced
-mode. This means that "slide skipping", i.e., forward slide navigation
-through [internal links](#int-link) is disabled. However, if a set of
-consecutive questions is answered correctly, forward slide navigation
-is enabled until the next question slide is reached. Thus, a forward
-slide link could be included in the Notes portion of the final
-question in a sequence (or the following non-question slides) to
-enable *adaptive testing*.  If you answer the sequence of questions
-correctly, you can skip the next several slides, which may contain
-additional questions aimed at those who failed to answer correctly.
-
-Concepts: paced mode; adaptive testing
+Concepts: jupyter notebook; code, fenced; code, indented
 
 ---
 
-## Answer tally and concept understanding analysis
+## Managing images
 
-When you attempt each question in a Slidoc document, along with the
-score, the concepts associated with that question are also tracked.
-The score is displayed on the top right corner.  By clicking on the
-score, you can view a list of concepts associated with the questions
-that you answered incorrectly, sorted in decreasing order of
-difficulty.
+Handling images is a bit hard when using Markdown. For Slidoc,
+the convention is to use web URLs or to store images in a local
+subdirectory named `images` and include references of the form
+
+    ![alt text](images/figure1.png)
+
+The script `md2md.py` can be used to apply several Markdown
+tranformations as follows:
+
+    md2md.py --strip=concepts,notes doc.md
+
+The above example creates a new file `doc-modified.md` with concept lists and
+notes stripped out.
+
+Notes: Other supported operations include:
+
+- `--fence|--unfence`: Convert fenced code to indented code and vice versa
+
+- `--images=check,web`: Check that all image references in the document are
+valid, including web references.
+
+- `--images=copy --dest_dir=...`: Copy all image references to
+destination
+
+- `--images=import,web`: Import all image references into the document
+as data URLs (including web URLs)
+
+- `--images=import,web,embed --combine=all.html`: Import all image
+references, embed them as data URLs and create a single, large,
+self-contained HTML document.
+
+- `--images=export,embed`: Export all data URLs from document as local
+files, and convert all Markdown image references to HTML `<img>` tags.
+
+- `--strip=extensions`: Strip `slidoc`-specific extensions.
 
 ---
 

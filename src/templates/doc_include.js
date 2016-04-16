@@ -67,13 +67,13 @@ Slidoc.docFullScreen = function (exit) {
 
 Slidoc.showConcepts = function (msg) {
     var html = msg || '';
-    if (!msg || Sliobj.questionConcepts.length) {
+    if (Sliobj.questionConcepts.length) {
 	html += '<b>Question Concepts</b><br>';
 	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
 	for (var m=0; m<labels.length; m++)
 	    html += labels[m]+conceptStats(Sliobj.questionConcepts[m], Sliobj.session.missedConcepts[m])+'<p></p>';
     }
-    Slidoc.showPopup(html);
+    Slidoc.showPopup(html || 'Not in paced mode, or no concepts specified to track.');
 }
 
 var Key_codes = {
