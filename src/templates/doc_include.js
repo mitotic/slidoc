@@ -113,6 +113,7 @@ var Key_codes = {
     78: 'n',
     80: 'p',
     81: 'q',
+    83: 's',
    191: 'qmark'
 };
 
@@ -198,9 +199,10 @@ Slidoc.handleKey = function (keyName) {
 	var chapters = document.getElementsByClassName('slidoc-reg-chapter');
 	if (keyName == 'left'  && chapNum > 1)  { goSlide('#slidoc'+('00'+(chapNum-1)).slice(-2)+'-01'); return false; }
 	if (keyName == 'right' && chapNum < chapters.length)  { goSlide('#slidoc'+('00'+(chapNum+1)).slice(-2)+'-01'); return false; }
-    } else if (!Sliobj.session.paced) {
 	if (keyName == 'esc')   { Slidoc.slideViewStart(); return false; }
 
+    } else if (!Sliobj.session.paced) {
+	if (keyName == 'esc')   { Slidoc.slideViewStart(); return false; }
     }
 	
    return;
@@ -240,6 +242,8 @@ Slidoc.slidocReady = function (auth) {
     Slidoc.showAll = false;
     Slidoc.slideView = 0;
     Slidoc.curChapterId = '';
+    Slidoc.sidebar = false;
+    Slidoc.prevSidebar = false;
 
     Slidoc.delay = {interval: null, timeout: null};
 
@@ -289,7 +293,7 @@ function slidocReadyAux(session) {
     }
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
-	var slideHash =  (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
+	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
 	goSlide(slideHash, false, true);
     }
 }
@@ -507,35 +511,57 @@ function getVisibleSlides() {
 }
 
 Slidoc.hide = function (elem, className, action) {
-   // Action = 'Hide' or 'Show' or omitted for toggling
-   if (!elem) return false;
-   action = action || elem.textContent;
-   if (action.charAt(0) == 'H') {
-      elem.textContent = elem.textContent.replace('Hide', 'Show');
-      if (className) Slidoc.classDisplay(className, 'none');
-   } else {
-      elem.textContent = elem.textContent.replace('Show', 'Hide');
-      if (className) Slidoc.classDisplay(className, 'block');
-   }
-   return false;
+    // Action = '\u2212' (&#8722;) hide or '+' show or omitted for toggling
+    if (!elem) return false;
+    if (!className)
+	className = elem.id.slice(0,-5) // Strip '-hide' suffice from id
+    action = action || elem.textContent;
+    if (action.charAt(0) == '\u2212') {
+	elem.textContent = elem.textContent.replace('\u2212', '+');
+	if (className) Slidoc.classDisplay(className, 'none');
+    } else {
+	elem.textContent = elem.textContent.replace('+', '\u2212');
+	if (className) Slidoc.classDisplay(className, 'block');
+    }
+    return false;
+}
+
+Slidoc.sidebarDisplay = function (elem) {
+    var toc_elem = document.getElementById("slidoc00");
+    if (!toc_elem)
+	return;
+    var slides = getVisibleSlides();
+    var curSlide = getCurrentlyVisibleSlide(slides);
+
+    Slidoc.sidebar = !Slidoc.sidebar;
+    toggleClass(Slidoc.sidebar, 'slidoc-sidebar-view');
+    if (Slidoc.sidebar)
+	toc_elem.style.display =  null;
+    else if (Slidoc.curChapterId)
+	toc_elem.style.display =  'none';
+
+    if (curSlide)
+	goSlide('#'+slides[curSlide-1].id);
+    else if (Slidoc.curChapterId && Slidoc.curChapterId != 'slidoc00')
+	goSlide('#'+Slidoc.curChapterId);
+    else
+	goSlide('#slidoc01');
 }
 
 Slidoc.allDisplay = function (elem) {
     // Display all "chapters"
-   if (Sliobj.session.paced)
-       return false;
-   Slidoc.hide(elem);
-   Slidoc.showAll = !Slidoc.showAll;
-   var elements = document.getElementsByClassName('slidoc-container');
-   for (var i = 0; i < elements.length; ++i) {
-      elements[i].style.display= Slidoc.showAll ? null : 'none';
-   }
+    if (Sliobj.session.paced)
+	return false;
+    Slidoc.hide(elem);
+    Slidoc.showAll = !Slidoc.showAll;
     if (Slidoc.showAll) {
 	Slidoc.curChapterId = '';
         document.body.classList.add('slidoc-all-view');
+	var elements = document.getElementsByClassName('slidoc-container');
+	for (var i = 0; i < elements.length; ++i)
+	    elements[i].style.display= null;
     } else {
-        document.body.classList.remove('slidoc-all-view');
-	goSlide('#slidoc00', false, true);
+	goSlide('#slidoc01-01', false, true);
     }
    return false;
 }
@@ -939,29 +965,43 @@ Slidoc.answerPacedAllow = function () {
     return true;
 }
 
+function getCurrentlyVisibleSlide(slides) {
+    if (!slides)
+	return 0;
+    for (var j=0; j<slides.length; j++) {
+	// Start from currently visible slide
+	var topOffset = slides[j].getBoundingClientRect().top;
+	if (topOffset >= 0 && topOffset < window.innerHeight) {
+            return j+1;
+	}
+    }
+    return 0
+}
+
 Slidoc.slideViewStart = function () {
    if (Slidoc.slideView) 
       return false;
+   Slidoc.prevSidebar = Slidoc.sidebar;
+    if (Slidoc.sidebar) {
+	Slidoc.sidebarDisplay();
+    }
    var slides = getVisibleSlides();
    if (!slides)
-      return false;
+       return false;
+   var firstSlideId = slides[0].id;
    Slidoc.breakChain();
 
    if (Sliobj.session.paced) {
        Slidoc.slideView = Sliobj.session.lastSlide || 1; 
    } else {
-       Slidoc.slideView = 1;
-       for (var i=0; i<slides.length; ++i) {
-	   // Start from currently visible slide
-	   var topOffset = slides[i].getBoundingClientRect().top;
-	   if (topOffset >= 0 && topOffset < window.innerHeight) {
-               Slidoc.slideView = i+1;
-               break;
-	   }
-       }
+       Slidoc.slideView = getCurrentlyVisibleSlide(slides) || 1;
    }
-   Slidoc.classDisplay('slidoc-toc', 'none');
-   Slidoc.hide(document.getElementById(slides[0].id+'-hidenotes'), 'slidoc-notes', 'Hide');
+    var chapterId = parseSlideId(firstSlideId)[0];
+    var contElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
+    for (var j=0; j<contElems.length; j++)
+	Slidoc.hide(contElems[j], null, '-');
+
+   Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
    document.body.classList.add('slidoc-slide-view');
 
    Slidoc.slideViewGo(false, Slidoc.slideView);
@@ -979,13 +1019,23 @@ Slidoc.slideViewEnd = function() {
    document.body.classList.remove('slidoc-slide-view');
    Slidoc.classDisplay('slidoc-slide', 'block');
    Slidoc.classDisplay('slidoc-notes', 'block');
-   Slidoc.classDisplay('slidoc-toc', 'block');
-   var slides = getVisibleSlides();
+
+    var slides = getVisibleSlides();
+    var firstSlideId = slides[0].id;
+    var chapterId = parseSlideId(firstSlideId)[0];
+    var contElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
+    for (var j=0; j<contElems.length; j++)
+	Slidoc.hide(contElems[j], null, '+');
+
    if (slides && Slidoc.slideView > 0 && Slidoc.slideView <= slides.length) {
      location.href = '#'+slides[Slidoc.slideView-1].id;
    }
    Slidoc.slideView = 0;
    Sliobj.questionSlide = '';
+    if (Slidoc.prevSidebar) {
+	Slidoc.prevSidebar = false;
+	Slidoc.sidebarDisplay();
+    }
    return false;
 }
 
@@ -1108,11 +1158,11 @@ Slidoc.go = function (slideHash, chained) {
     return goSlide(slideHash, chained);
 }
 
-function goSlide(slideHash, chained, force) {
+function goSlide(slideHash, chained, singleChapter) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
     console.log("goSlide:", slideHash, chained);
-    if (Sliobj.session.paced && !Slidoc.slideView && !force) {
+    if (Sliobj.session.paced && !Slidoc.slideView && !singleChapter) {
 	alert('Slidoc: InternalError: paced witout slideView');
 	return false;
     }
@@ -1126,7 +1176,10 @@ function goSlide(slideHash, chained, force) {
 	return false;
     }
 
-   var slideId = slideHash.substr(1);
+    var slideId = slideHash.substr(1);
+    if (Slidoc.sidebar && slideId.slice(0,8) == 'slidoc00')
+	slideId = 'slidoc01-01';
+
    var goElement = document.getElementById(slideId);
    console.log('goSlide2: ', slideId, chained, goElement);
    if (!goElement) {
@@ -1140,54 +1193,58 @@ function goSlide(slideHash, chained, force) {
        Slidoc.chainActive = null;
    }
 
-   if (Slidoc.curChapterId || Slidoc.slideView || force) {
-      // Displaying single chapter or slide show
-      var match = RegExp('slidoc-ref-(.*)$').exec(slideId);
-      console.log('goSlide2a: ', match, slideId);
-      if (match) {
-         // Find slide containing reference
-	 slideId = '';
-         for (var i=0; i<goElement.classList.length; ++i) {
-	     var refmatch = RegExp('slidoc-referable-in-(.*)$').exec(goElement.classList[i]);
-	     if (refmatch) {
-		 slideId = refmatch[1];
-		 slideHash = '#'+slideId;
-                 console.log('goSlide2b: ', slideHash);
-		 break;
-	     }
-	 }
-         if (!slideId) {
+    // Locate reference
+    var match = RegExp('slidoc-ref-(.*)$').exec(slideId);
+    console.log('goSlide2a: ', match, slideId);
+    if (match) {
+        // Find slide containing reference
+	slideId = '';
+        for (var i=0; i<goElement.classList.length; ++i) {
+	    var refmatch = RegExp('slidoc-referable-in-(.*)$').exec(goElement.classList[i]);
+	    if (refmatch) {
+		slideId = refmatch[1];
+		slideHash = '#'+slideId;
+                console.log('goSlide2b: ', slideHash);
+		break;
+	    }
+	}
+        if (!slideId) {
             console.log('goSlide: Error - unable to find slide containing header:', slideHash);
             return false;
-         }
-      }
-   }
-   if (Slidoc.curChapterId || force) {
-      // Display only chapter containing slide
-      var newChapterId = parseSlideId(slideId)[0];
-      if (!newChapterId) {
-          console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
-         return false;
-      }
-       if (newChapterId != Slidoc.curChapterId || force) {
+        }
+    }
+
+    if (Slidoc.curChapterId || singleChapter) {
+	// Display only chapter containing slide
+	var newChapterId = parseSlideId(slideId.slice(0,8))[0];
+	if (!newChapterId) {
+            console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
+            return false;
+	}
+       if (newChapterId != Slidoc.curChapterId) {
 	   // Switch chapter
-	  if (Sliobj.session.paced && !force) {
+	   if (!Slidoc.curChapterId) {
+	       // Switch to single chapter view
+	       document.body.classList.remove('slidoc-all-view');
+	   } else if (Sliobj.session.paced) {
 	      alert('Slidoc: InternalError: cannot switch chapters is paced mode');
 	      return false;
-	  }
-         var newChapterElem = document.getElementById(newChapterId);
-         if (!newChapterElem) {
-            console.log('goSlide: Error - unable to find chapter:', newChapterId);
-            return false;
-         }
-         Slidoc.curChapterId = newChapterId;
-         var chapters = document.getElementsByClassName('slidoc-container');
-         console.log('goSlide3: ', newChapterId, chapters.length);
-         for (var i = 0; i < chapters.length; ++i) {
-            chapters[i].style.display = (chapters[i].id == newChapterId) ? 'block' : 'none';
-         }
-      }
-   }
+	   }
+           var newChapterElem = document.getElementById(newChapterId);
+           if (!newChapterElem) {
+               console.log('goSlide: Error - unable to find chapter:', newChapterId);
+               return false;
+           }
+           Slidoc.curChapterId = newChapterId;
+           var chapters = document.getElementsByClassName('slidoc-container');
+           console.log('goSlide3: ', newChapterId, chapters.length);
+           for (var i = 0; i < chapters.length; ++i) {
+	       if (!Slidoc.sidebar || !chapters[i].classList.contains('slidoc-toc-container'))
+		   chapters[i].style.display = (chapters[i].id == newChapterId) ? null : 'none';
+           }
+       }
+    }
+
    if (Slidoc.slideView) {
       var slides = getVisibleSlides();
       for (var i=0; i<slides.length; ++i) {

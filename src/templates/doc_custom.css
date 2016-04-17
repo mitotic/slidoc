@@ -1,6 +1,5 @@
 <!-- Customizable CSS for slidoc--->
 
-
 body { 
     max-width: 960px;
     line-height: 1.3;
@@ -9,7 +8,10 @@ body {
 
 img { max-width: 960px; max-height: 720px; }
 
-body .slidoc-toc-container { line-height: 1.6; }
+.slidoc-toc-container {
+    line-height: 1.6;
+    font-family: "Helvetica Neue", Helvetica, "Segoe UI", Arial, freesans, sans-serif;
+}
 
 h1, h2, h3, h4, h5, h6 {
     font-weight: normal;
@@ -81,7 +83,7 @@ a, a:visited,
 
 .slidoc-clickable:hover {text-decoration: underline;}
 
-.slidoc-clickable.slidoc-toc-entry { padding: 0.3em 0 0 1em; }
+.slidoc-clickable.slidoc-toc-sections { padding: 0.3em 0 0 1em; }
 
 /* Notes */
 .slidoc-notes { padding: 0px 1em; font-size: 95%; }

@@ -43,10 +43,12 @@ from pygments.util import ClassNotFound
 from xml.etree import ElementTree
 
 MAX_QUERY = 500   # Maximum length of query string for concept chains
-SPACER = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+SPACER2 = '&nbsp;&nbsp;'
+SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;',
-        'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;'}
+        'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -846,8 +848,8 @@ class IPythonRenderer(mistune.Renderer):
         if len(self.header_list) < 1:
             return ''
 
-        toc = [('<ol class="slidoc-toc %s">' if 'sections' in self.options['cmd_args'].strip
-                 else '<ul class="slidoc-toc %s" style="list-style-type: none;">') % (self.get_chapter_id()+'-toc')]
+        toc = [('\n<ol class="slidoc-section-toc">' if 'sections' in self.options['cmd_args'].strip
+                 else '\n<ul class="slidoc-section-toc" style="list-style-type: none;">') ]
 
         for id_str, header in self.header_list:  # Skip first header
             if filepath or self.options['cmd_args'].printable:
@@ -930,28 +932,29 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
     if 'navigate' not in cmd_args.strip:
         nav_html = ''
         if cmd_args.toc:
-            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine, printable=cmd_args.printable) + SPACER
-            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER
-            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER
+            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine, classes=['slidoc-nosidebar'], printable=cmd_args.printable) + SPACER6
+            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
+            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
 
-        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym"])+'</div>\n'
+        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
-        tail_html = '<div class="slidoc-noslide">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER) + '</div>\n'
+        tail_html = '<div class="slidoc-noslide slidoc-nosidebar">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
 
     if 'contents' not in cmd_args.strip:
-        post_header_html += renderer.table_of_contents(filenumber=filenumber)
+        chapter_id = make_chapter_id(filenumber)
+        post_header_html += ('<div class="slidoc-chapter-toc %s-chapter-toc slidoc-nosidebar">' % chapter_id)+renderer.table_of_contents(filenumber=filenumber)+'</div>\n'
         if post_header_html:
             post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div>\n'
-            post_header_html += click_span('Contents', "Slidoc.classDisplay('%s');" % (make_chapter_id(filenumber)+'-toc'),
-                                               classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
+            post_header_html += click_span('&#8722;Contents', "Slidoc.hide(this, '%s');" % (chapter_id+'-chapter-toc'),
+                                            id=chapter_id+'-chapter-toc-hide', classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-chapter-toc-hide', 'slidoc-nopaced', 'slidoc-noprint', 'slidoc-nosidebar'])
+
+    if 'contents' not in cmd_args.strip and 'slidoc-notes' in content_html:
+        post_header_html += '&nbsp;&nbsp;' + click_span('&#8722;All Notes',
+                                             "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
+                                              classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-nopaced', 'slidoc-noprint'])
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:
         post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();")
-
-    if 'contents' not in cmd_args.strip and 'slidoc-notes' in content_html:
-        post_header_html += '&nbsp;&nbsp;' + click_span('Hide all notes',
-                                             "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
-                                              classes=['slidoc-clickable', 'slidoc-nopaced', 'slidoc-noprint'])
 
     content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
     content_html = content_html.replace('__POST_HEADER__', post_header_html)
@@ -1214,12 +1217,15 @@ if __name__ == '__main__':
     index_id = make_chapter_id(len(cmd_args.file)+1)
     qindex_id = make_chapter_id(len(cmd_args.file)+2)
     back_to_contents = nav_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
-                                combine=cmd_args.combine, printable=cmd_args.printable)+'<p></p>\n'
+                                combine=cmd_args.combine, classes=['slidoc-nosidebar'], printable=cmd_args.printable)+'<p></p>\n'
 
     flist = []
     all_concept_warnings = []
     outfile_buffer = []
     combined_html = []
+    if cmd_args.combine:
+        combined_html.append( '<div id="slidoc-sidebar-right-container" class="slidoc-sidebar-right-container">\n' )
+        combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
     fprefix = None
     math_found = False
     for j, f in enumerate(cmd_args.file):
@@ -1338,39 +1344,36 @@ if __name__ == '__main__':
 
         toc_html = []
         if cmd_args.index and (Global.first_tags or Global.first_qtags):
-            toc_html.append(nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id,
+            toc_html.append(' '+nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id,
                                      combine=cmd_args.combine, printable=cmd_args.printable))
-        toc_html.append('<blockquote>\n')
-        toc_html.append('<ol>\n' if 'sections' in cmd_args.strip else '<ul style="list-style-type: none;">\n')
+        toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in cmd_args.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
         ifile = 0
         for fname, outname, fheader, file_toc in flist:
             ifile += 1
-            id_str = 'toc%02d' % ifile
+            chapter_id = make_chapter_id(ifile)
             slide_link = ''
             if not cmd_args.pace and cmd_args.slides:
                 slide_link = ',&nbsp; <a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>' % (cmd_args.site_url, fname+"-slides.html", 'slides')
             nb_link = ''
             if not cmd_args.pace and cmd_args.notebook and nb_site_url:
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
-            doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile),
+            doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+chapter_id,
                                  combine=cmd_args.combine, printable=cmd_args.printable)
 
             if not cmd_args.pace:
-                doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+make_chapter_id(ifile),
+                doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+chapter_id,
                                     combine=cmd_args.combine, printable=cmd_args.printable)
-                toggle_link = '<span class="slidoc-clickable" onclick="Slidoc.idDisplay(%s);"><b>%s</b></span>' % ("'"+id_str+"'", fheader)
+                toggle_link = '''<span class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
             else:
                 doc_link = nav_link('paced', cmd_args.site_url, outname, target='_blank')
-                toggle_link = '<span><b>%s</b></span>' % (fheader,)
-            toc_html.append('<li>%s%s(<em>%s%s%s</em>)</li>\n' % (toggle_link, SPACER, doc_link, slide_link, nb_link))
+                toggle_link = '<span class="slidoc-toc-chapters">%s</span>' % (fheader,)
+            toc_html.append('<li>%s%s<span class="slidoc-nosidebar">(<em>%s%s%s</em>)</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
             if not cmd_args.pace:
-                f_toc_html = '<div id="'+id_str+'" class="slidoc-clickable slidoc-toc-entry" style="display: none;">'+file_toc+'<p></p></div>'
+                f_toc_html = ('\n<div id="%s-toc-sections" class="slidoc-toc-sections" style="display: none;">' % chapter_id)+file_toc+'\n<p></p></div>'
                 toc_html.append(f_toc_html)
 
         toc_html.append('</ol>\n' if 'sections' in cmd_args.strip else '</ul>\n')
-
-        toc_html.append('</blockquote>\n')
 
         if cmd_args.slides:
             toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a class="slidoc-clickable" target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
@@ -1378,14 +1381,21 @@ if __name__ == '__main__':
         toc_html.append('<p></p><em>Document formatted by <a href="https://github.com/mitotic/slidoc" class="slidoc-clickable">slidoc</a>.</em><p></p>')
 
         if not cmd_args.dry_run:
-            toc_insert = click_span('Show all sections', "Slidoc.classDisplay('slidoc-toc-entry');",
-                                    classes=['slidoc-clickable', 'slidoc-noprint'])
+            toc_insert = click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
+                                    classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if cmd_args.combine:
-                toc_insert += SPACER + click_span('Show all chapters', "Slidoc.allDisplay(this);",
-                                                  classes=['slidoc-clickable', 'slidoc-noprint'])
+                toc_insert = click_span(SYMS['leftpair'], "Slidoc.sidebarDisplay();",
+                                    classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
+                toc_insert = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();",
+                                    classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
+                toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
+                                                  classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
             if cmd_args.combine:
-                combined_html = [toc_output] + combined_html
+                all_container_prefix  = '<div id="slidoc-all-container" class="slidoc-all-container">\n'
+                left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
+                left_container_suffix = '</div> <!--slidoc-left-container-->\n'
+                combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
             else:
                 md2md.write_file(dest_dir+cmd_args.toc, Html_header, head_html,
                                   mid_template % mid_params, body_prefix, toc_output, Html_footer)
@@ -1411,7 +1421,7 @@ if __name__ == '__main__':
 
         if cmd_args.crossref:
             if cmd_args.toc:
-                xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.toc, 'BACK TO CONTENTS'))
+                xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.combine or cmd_args.toc, 'BACK TO CONTENTS'))
             xref_list.append("<h3>Concepts cross-reference (file prefix: "+fprefix+")</h3><p></p>")
             xref_list.append("\n<b>Concepts -> files mapping:</b><br>")
             for tag in first_references:
@@ -1478,6 +1488,11 @@ if __name__ == '__main__':
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
     if cmd_args.combine:
+        combined_html.append( '</div><!--slidoc-sidebar-right-wrapper-->\n' )
+        combined_html.append( '</div><!--slidoc-sidebar-right-container-->\n' )
+        if cmd_args.toc:
+            combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
+
         comb_params = {'math_js': math_inc if math_found else ''}
         comb_params.update(SYMS)
         md2md.write_file(dest_dir+cmd_args.combine, Html_header, head_html,
