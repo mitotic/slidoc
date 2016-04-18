@@ -1122,7 +1122,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    var msg = '<b>Paced session completed.</b><br>';
 	    if (Sliobj.params.gd_sheet_url)
 		msg += 'Session stats will be submitted to Google Docs.<br>';
-	    if (!Sliobj.paced)
+	    if (!Sliobj.session.paced)
 		msg += 'You may now exit the slideshow and access this document normally.<br>';
 	    Slidoc.showConcepts(msg);
 

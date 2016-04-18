@@ -1,4 +1,4 @@
-<!--slidoc-defaults --hide="[Aa]nswer" --eq_number -->
+<!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number -->
 # Slidoc: A slide-oriented document management system using Markdown
 
 Slidoc manages a collection of lectures written using
@@ -550,17 +550,17 @@ These options include:
 
 * `--css` To use custom CSS file (by modifying `templates/doc_custom.css`) 
 
-* `--eq_number` To automatically number Mathjax equations 
-
 * `--toc_header` To insert custom HTML header before Table of Contents
 
-* `--untitled_number` Number all untitled slides (useful for generating
+* `--features=equation_number` To automatically number Mathjax equations 
+
+* `--features=untitled_number` Number all untitled slides (useful for generating
   question banks)
 
 Default options for the `slidoc.py` command can be specified in the first
 line of the first file using the following format:
 
-    <!--slidoc-defaults --hide="[Aa]nswer" --eq_number -->
+    <!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number -->
 
 The above line appears as the first line of this README file. (These
 options can be overridden by explicity specifying options in the
@@ -610,7 +610,7 @@ which renders as
    E = mc^2
 \end{equation}
 
-Using the `--eq_number` option for automatic equation numbering, you
+Using the `--features=equation_number` option for automatic equation numbering, you
 can refer to the above equation inline as
 
     `$\ref{eq:a}$`

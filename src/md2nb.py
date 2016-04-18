@@ -244,7 +244,7 @@ if __name__ == '__main__':
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
-    cmd_args.strip = md2md.make_strip_set(cmd_args.strip, strip_all)
+    cmd_args.strip = md2md.make_arg_set(cmd_args.strip, strip_all)
 
     url_prefix = ''
     if cmd_args.site_url:

@@ -527,7 +527,8 @@ class IPythonRenderer(mistune.Renderer):
         """Rendering paragraph tags. Like ``<p>``."""
         if not self.cur_header and self.first_para:
             self.untitled_number += 1
-            if self.options["cmd_args"].untitled_number:
+            if 'untitled_number' in self.options["cmd_args"].features:
+                # Number untitled slides (e.g., as in question numbering) 
                 text = ('%d. ' % self.untitled_number) + text
         self.first_para = False
         return super(IPythonRenderer, self).paragraph(text)
@@ -1034,13 +1035,14 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'navigate', 'notes', 'rule', 'sections']
+    features_all = ['equation_number', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file')
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
     parser.add_argument('--css', metavar='FILE', help='Custom CSS file (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
-    parser.add_argument('--eq_number', help='Automatic equation numbering', action="store_true", default=None)
+    parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
     parser.add_argument('--google_docs', help='spreadsheet_url[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
     parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
@@ -1048,15 +1050,14 @@ if __name__ == '__main__':
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-    parser.add_argument('--pace', help='=pace_end,delay_sec,try_count,try_delay,cookie for paced session using combined file, e.g., 0,0,1')
+    parser.add_argument('--pace', metavar='PACE_END,DELAY_SEC,TRY_COUNT,TRY_DELAY,COOKIE', help='Options for paced session using combined file, e.g., 0,0,1 to force answering questions')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
-    parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
+    parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)')
     parser.add_argument('--toc_header', metavar='FILE', help='HTML header file for ToC')
-    parser.add_argument('--untitled_number', help='Number untitled slides (e.g., question numbering)', action="store_true", default=None)
 
     cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
     cmd_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
@@ -1109,6 +1110,9 @@ if __name__ == '__main__':
         if cmd_args.printable:
             sys.exit('slidoc: Error: --pace and --printable options do not work well together')
         hide_chapters = True
+        # Index not compatible with paced
+        cmd_args.index = ''
+        cmd_args.qindex = ''
         comps = cmd_args.pace.split(',')
         if comps[0]:
             js_params['paceEnd'] = int(comps[0])
@@ -1142,7 +1146,9 @@ if __name__ == '__main__':
 
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
-    cmd_args.strip = md2md.make_strip_set(cmd_args.strip, strip_all)
+    cmd_args.features = md2md.make_arg_set(cmd_args.features, features_all)
+
+    cmd_args.strip = md2md.make_arg_set(cmd_args.strip, strip_all)
     if len(cmd_args.file) == 1:
         cmd_args.strip.add('chapters')
 
@@ -1169,7 +1175,7 @@ if __name__ == '__main__':
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
-    math_inc = Mathjax_js % ( ', TeX: { equationNumbers: { autoNumber: "AMS" } }' if cmd_args.eq_number else '')
+    math_inc = Mathjax_js % ( ', TeX: { equationNumbers: { autoNumber: "AMS" } }' if 'equation_number' in cmd_args.features else '')
     
     fnames = []
     for f in cmd_args.file:
@@ -1381,8 +1387,10 @@ if __name__ == '__main__':
         toc_html.append('<p></p><em>Document formatted by <a href="https://github.com/mitotic/slidoc" class="slidoc-clickable">slidoc</a>.</em><p></p>')
 
         if not cmd_args.dry_run:
-            toc_insert = click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
-                                    classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
+            toc_insert = ''
+            if not cmd_args.pace:
+                toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
+                                        classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if cmd_args.combine:
                 toc_insert = click_span(SYMS['leftpair'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert

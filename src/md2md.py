@@ -686,17 +686,18 @@ Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', '
                     bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'overwrite', 'unfence'],
                     defaults= {'image_dir': 'images'})
 
-def make_strip_set(strip_arg, strip_all):
-    strip_all_set = set(strip_all)
-    strip_set = set(strip_arg.split(',')) if strip_arg else set()
-    if 'all' in strip_set:
-        strip_set.discard('all')
-        if 'but' in strip_set:
-            strip_set.discard('but')
-            strip_set = strip_all_set.copy().difference(strip_set)
+def make_arg_set(arg_value, arg_all_list):
+    """Converts comma-separated argument value to a set, handling 'all', and 'all,but,..' """
+    arg_all_set = set(arg_all_list)
+    arg_set = set(arg_value.split(',')) if arg_value else set()
+    if 'all' in arg_set:
+        arg_set.discard('all')
+        if 'but' in arg_set:
+            arg_set.discard('but')
+            arg_set = arg_all_set.copy().difference(arg_set)
         else:
-            strip_set = strip_all_set.copy()    
-    return strip_set
+            arg_set = arg_all_set.copy()    
+    return arg_set
 
 if __name__ == '__main__':
     import argparse
@@ -722,7 +723,7 @@ if __name__ == '__main__':
         cmd_args.image_url += '/'
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
-    cmd_args.strip = make_strip_set(cmd_args.strip, strip_all)
+    cmd_args.strip = make_arg_set(cmd_args.strip, strip_all)
 
     md_parser = Parser( Args_obj.create_args(cmd_args) )   # Use args_obj to pass orgs as a consistency check
     
