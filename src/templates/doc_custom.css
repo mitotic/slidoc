@@ -94,9 +94,61 @@ body.slidoc-slide-view { font-size: 150%; }
 body.slidoc-slide-view td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */
-#slidoc-score-display {color: red; font-size: 0.8em; padding-right: 5px;}
+#slidoc-score-display {color: green; font-size: 0.8em; padding-right: 5px;}
+.slidoc-incorrect-answer-state #slidoc-score-display {color: red;}
+
 .slidoc-correct-answer {color: green;}
 .slidoc-wrong-answer {color: red;}
 
 /* Figures etc. */
 /* .slidoc-ref-figure { font-style: oblique; } */
+
+
+/* Sidebar */
+body.slidoc-sidebar-view .slidoc-left-container {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 300px;
+    overflow-x: hidden;
+    overflow-y: hidden;
+    min-height: 100%;
+    background: #343131;
+    padding-bottom: 0em;
+    z-index: 200;
+    box-sizing: border-box;
+    white-space: nowrap;
+}
+
+body.slidoc-sidebar-view .slidoc-toc-container {
+    width: 320px;
+    position: relative;
+    overflow-x: hidden;
+    overflow-y: scroll;
+    height: 100%;
+    line-height: 1.4;
+    font-size: 90%;
+    background-color: #ccc;
+    padding-left: 8px;
+}
+
+body.slidoc-sidebar-view .slidoc-toc-container .slidoc-clickable {
+    color: #666;
+}
+
+body.slidoc-sidebar-view .slidoc-toc-list {
+    padding-left: 0px
+}
+
+body.slidoc-sidebar-view .slidoc-sidebar-right-container {
+    margin-left: 300px;
+    min-height: 100%;
+}
+
+body.slidoc-sidebar-view .slidoc-sidebar-right-wrapper {
+    padding: 1.6em 3.2em;
+    height: 100%;
+    max-width: 800px;
+    margin: auto;
+}

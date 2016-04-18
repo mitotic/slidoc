@@ -271,8 +271,8 @@ function slidocReadyAux(session) {
     if (Sliobj.session.version != Sliobj.params.sessionVersion) {
 	alert('Slidoc: session version mismatch; discarding previous session with version '+Sliobj.session.version);
 	Sliobj.session = null;
-    } else if (Sliobj.session.cookie != Sliobj.params.sessionCookie) {
-	alert('Slidoc: session cookie mismatch; discarding previous session');
+    } else if (Sliobj.session.revision != Sliobj.params.sessionRevision) {
+	alert('Slidoc: Revised session '+Sliobj.params.sessionRevision+' (discarded previous revision '+Sliobj.session.revision+')');
 	Sliobj.session = null;
 
     } else if (!paceParam && Sliobj.session.paced) {
@@ -306,7 +306,7 @@ function slidocReadyAux(session) {
 
 function sessionCreate(paced) {
     return {version: Sliobj.params.sessionVersion,
-	    cookie: Sliobj.params.sessionCookie,
+	    revision: Sliobj.params.sessionRevision,
 	    paced: paced || false,
 	    paceEnd: Sliobj.params.paceEnd || 0,
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
@@ -490,21 +490,42 @@ function getParameter(name, number, queryStr) {
 }
 
 function hourglass(delaySec) {
+    // Displays an "hourglass" or progress bar
     var interval = 0.05;
     var jmax = delaySec/interval;
     var j = 0;
     var hg_container_elem = document.getElementById('slidoc-hourglass-container');
     var hg_elem = document.getElementById('slidoc-hourglass');
-    function hourglass() {
+    function clocktick() {
 	j += 1;
 	hg_elem.style.left = 1.05*Math.ceil(hg_container_elem.offsetWidth*j/jmax);
     }
-    var intervalId = setInterval(hourglass, 1000*interval);
+    var intervalId = setInterval(clocktick, 1000*interval);
     function endInterval() {
 	clearInterval(intervalId);
 	hg_elem.style.left = hg_container_elem.offsetWidth;
     }
     setTimeout(endInterval, delaySec*1000);
+}
+
+function delayElement(delaySec, elementId) {
+    // Displays element after a delay (with 1 second transition afterward)
+    var interval = 0.05;
+    var transition = 1;
+    var jmax = (delaySec+transition)/interval;
+    var jtrans = delaySec/interval
+    var j = 0;
+    var hideElem = document.getElementById(elementId);
+    function clocktick() {
+	j += 1;
+	hideElem.style.opacity = (j < jtrans) ? 0.1 : Math.min(1.0, 0.1+0.9*(j-jtrans)/(jmax-jtrans) );
+    }
+    var intervalId = setInterval(clocktick, 1000*interval);
+    function endInterval() {
+	clearInterval(intervalId);
+	hideElem.style.opacity = 1.0;
+    }
+    setTimeout(endInterval, (delaySec+transition)*1000);
 }
 
 function getVisibleSlides() {
@@ -765,8 +786,8 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		document.body.classList.add('slidoc-incorrect-answer-state');
 		var after_str = '';
 		if (Sliobj.params.tryDelay) {
-		    hourglass(Sliobj.params.tryDelay);
-		    after_str = ' after '+Sliobj.params.tryDelay+' seconds';
+		    delayElement(Sliobj.params.tryDelay, slide_id+'-ansclick');
+		    after_str = ' after '+Sliobj.params.tryDelay+' second(s)';
 		}
 		Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
 		return false;
@@ -966,7 +987,7 @@ Slidoc.answerPacedAllow = function () {
     if (Sliobj.params.tryDelay && Sliobj.session.lastTries > 0) {
 	var delta = (Date.now() - Sliobj.session.lastTime)/1000;
 	if (delta < Sliobj.params.tryDelay) {
-	    alert('Please wait '+ Math.ceil(Sliobj.params.tryDelay-delta) + ' seconds to answer again');
+	    alert('Please wait '+ Math.ceil(Sliobj.params.tryDelay-delta) + ' second(s) to answer again');
 	    return false;
 	}
     }
@@ -1095,7 +1116,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	} else if (!Sliobj.questionSlide && Sliobj.params.paceDelay) {
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
 	    if (delta < Sliobj.params.paceDelay) {
-		alert('Please wait '+ Math.ceil(Sliobj.params.paceDelay-delta) + ' seconds');
+		alert('Please wait '+ Math.ceil(Sliobj.params.paceDelay-delta) + ' second(s)');
 		return false;
 	    }
 	}
@@ -1113,7 +1134,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 2 : 0;
 	    Sliobj.session.remainingTries = 0;
 	    if (Sliobj.params.paceDelay)
-		hourglass(Sliobj.params.paceDelay);
+		delayElement(Sliobj.params.paceDelay, 'slidoc-slide-nav-next');
         }
 
 	if (Sliobj.session.lastSlide == slides.length) {
@@ -1424,13 +1445,153 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 }
 
 // Detect swipe events
-// http://stackoverflow.com/questions/2264072/detect-a-finger-swipe-through-javascript-on-the-iphone-and-android
-document.addEventListener('touchstart', handleTouchStart, false);        
-document.addEventListener('touchmove', handleTouchMove, false);
+// Modified from https://blog.mobiscroll.com/working-with-touch-events/
 
-var swipeThreshold = 20;
+var touchStart,
+    touchAction,
+    touchDiffX,
+    touchDiffY,
+    touchEndX,
+    touchEndY,
+    touchScroll,
+    touchSort,
+    touchStartX,
+    touchStartY,
+    touchSwipe;
+
+function getCoord(evt, c) {
+    return /touch/.test(evt.type) ? (evt.originalEvent || evt).changedTouches[0]['page' + c] : evt['page' + c];
+}
+
+function testTouch(evt) {
+    if (evt.type == 'touchstart') {
+        touchStart = true;
+    } else if (touchStart) {
+        touchStart = false;
+        return false;
+    }
+    return true;
+}
+ 
+function onTouchStart(evt) {
+    console.log('onTouchStart:');
+    if (testTouch(evt) && !touchAction) {
+        touchAction = true;
+
+        touchStartX = getCoord(evt, 'X');
+        touchStartY = getCoord(evt, 'Y');
+        touchDiffX = 0;
+        touchDiffY = 0;
+ 
+        sortTimer = setTimeout(function () {
+            ///touchSort = true;  // Commented out (no sort events)
+        }, 200);
+ 
+        if (evt.type == 'mousedown') {
+	    document.addEventListener('mousemove', onTouchMove);
+	    document.addEventListener('mouseup', onTouchEnd);
+        }
+    }
+}
+
+var scrollThresholdY = 15;   // Try 10, 15, ...
+var swipeThresholdX = 7;     // Try 7, ...
+ 
+function onTouchMove(evt) {
+    if (touchAction) {
+        touchEndX = getCoord(evt, 'X');
+        touchEndY = getCoord(evt, 'Y');
+        touchDiffX = touchEndX - touchStartX;
+        touchDiffY = touchEndY - touchStartY;
+        console.log('onTouchMove: dx, dy, sort, swipe, scroll', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll);
+ 
+        if (!touchSort && !touchSwipe && !touchScroll) {
+            if (Math.abs(touchDiffY) > scrollThresholdY && Math.abs(touchDiffY) > 0.5*Math.abs(touchDiffX)) { // It's a scroll
+                touchScroll = true;
+            } else if (Math.abs(touchDiffX) > swipeThresholdX) { // It's a swipe
+                touchSwipe = true;
+            }
+        }
+ 
+        if (touchSwipe) {
+            evt.preventDefault(); // Kill page scroll
+            // Handle swipe
+            // ...
+        }
+ 
+        if (touchSort) {
+            evt.preventDefault(); // Kill page scroll
+            // Handle sort
+            // ....
+        }
+ 
+        if (Math.abs(touchDiffX) > 5 || Math.abs(touchDiffY) > 5) {
+            clearTimeout(sortTimer);
+        }
+    }
+}
+ 
+function onTouchEnd(evt) {
+    console.log('onTouchEnd: dx, dy, sort, swipe, scroll, action', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll, touchAction);
+    if (touchAction) {
+        touchAction = false;
+ 
+        if (touchSwipe) {
+            // Handle swipe end
+            if ( touchDiffX > 0 ) {
+		/* right swipe (leftward motion) */
+		Slidoc.handleKey('left');
+            } else {
+		/* left swipe (right motion) */ 
+		Slidoc.handleKey('right');
+	    }
+        } else if (touchSort) {
+            // Handle sort end
+            // ...
+        } else if (!touchScroll && Math.abs(touchDiffX) < 5 && Math.abs(touchDiffY) < 5) { // Tap
+            ///if (evt.type === 'touchend') { // Prevent phantom clicks
+            ///    evt.preventDefault();
+            ///}
+            // Handle tap
+            // ...
+        }
+ 
+        touchSwipe = false;
+        touchSort = false;
+        touchScroll = false;
+ 
+        clearTimeout(sortTimer);
+ 
+        if (evt.type == 'mouseup') {
+	    document.removeEventListener('mousemove', onTouchMove);
+	    document.removeEventListener('mouseup', onTouchEnd);
+        }
+    }
+}
+
+var useAltTouchHandler = true;
+
+if (useAltTouchHandler) {
+    // Alternate touch handler
+    document.addEventListener('touchstart', onTouchStart, false);      
+    document.addEventListener('mousedown', onTouchStart, false);      
+    document.addEventListener('touchmove', onTouchMove, false);
+    document.addEventListener('touchend', onTouchEnd, false);
+    document.addEventListener('touchcancel', onTouchEnd, false);
+} else {
+    // Primary touch handler
+    document.addEventListener('touchstart', handleTouchStart, false);        
+    document.addEventListener('touchmove', handleTouchMove, false);
+    document.addEventListener('touchend', handleTouchEnd, false);
+}
+
+// http://stackoverflow.com/questions/2264072/detect-a-finger-swipe-through-javascript-on-the-iphone-and-android
+
+var swipeThreshold = 30;
 var xDown = null;                                                        
 var yDown = null;                                                        
+var xDiff = 0;
+var yDiff = 0;
 
 function handleTouchStart(evt) {                                         
     xDown = evt.touches[0].clientX;                                      
@@ -1438,17 +1599,23 @@ function handleTouchStart(evt) {
 };                                                
 
 function handleTouchMove(evt) {
-    if ( ! xDown || ! yDown ) {
+    if (!xDown || !yDown) {
         return;
     }
 
     var xUp = evt.touches[0].clientX;                                    
     var yUp = evt.touches[0].clientY;
 
-    var xDiff = xDown - xUp;
-    var yDiff = yDown - yUp;
+    xDiff = xDown - xUp;
+    yDiff = yDown - yUp;
+    return;
+}
 
-    if ( Math.abs( xDiff ) > Math.abs( yDiff ) ) {/*most significant*/
+function handleTouchEnd(evt) {
+    if (!xDiff && !yDiff)
+	return;
+
+    if ( Math.abs( xDiff ) > Math.abs( yDiff ) ) { /* Slope */
 	if (Math.abs(xDiff) < swipeThreshold) {
 	    /* ignore */
         } else if ( xDiff > 0 ) {
@@ -1470,6 +1637,8 @@ function handleTouchMove(evt) {
     /* reset values */
     xDown = null;
     yDown = null;                                             
+    xDiff = 0;
+    yDiff = 0;
     return;
 };
     

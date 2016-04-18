@@ -1050,7 +1050,7 @@ if __name__ == '__main__':
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-    parser.add_argument('--pace', metavar='PACE_END,DELAY_SEC,TRY_COUNT,TRY_DELAY,COOKIE', help='Options for paced session using combined file, e.g., 0,0,1 to force answering questions')
+    parser.add_argument('--pace', metavar='PACE_END,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION', help='Options for paced session using combined file, e.g., 0,0,1 to force answering questions')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
@@ -1098,7 +1098,7 @@ if __name__ == '__main__':
     del effective_args['file']
     print('slidoc: Effective argument list', argparse.Namespace(**effective_args))
 
-    js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
+    js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '',
                  'paceEnd': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None}
     if cmd_args.combine:
@@ -1125,7 +1125,7 @@ if __name__ == '__main__':
         if len(comps) > 3 and comps[3].isdigit():
             js_params['tryDelay'] = int(comps[3])
         if len(comps) > 4:
-            js_params['sessionCookie'] = comps[4]
+            js_params['sessionRevision'] = comps[4]
 
     gd_hmac_key = ''
     if cmd_args.google_docs:
@@ -1318,9 +1318,9 @@ if __name__ == '__main__':
             if gd_hmac_key:
                 user = 'admin'
                 user_token = base64.b64encode(hmac.new(gd_hmac_key, user, hashlib.md5).digest())
-                sheet_headers = ['name', 'id', 'Timestamp', 'cookie',
+                sheet_headers = ['name', 'id', 'Timestamp', 'revision',
                                  'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
-                row_values = [fname, fname, None, js_params['sessionCookie'],
+                row_values = [fname, fname, None, js_params['sessionRevision'],
                                 ','.join([x[0] for x in renderer.questions]),
                                 '|'.join([(x[1] or '').replace('|','/') for x in renderer.questions]),
                                 '; '.join(sort_caseless(list(renderer.qconcepts[0]))),

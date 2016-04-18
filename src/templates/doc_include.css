@@ -23,7 +23,7 @@ body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next {
 
 body.slidoc-paced-last-slide.slidoc-incorrect-answer-state span.slidoc-forward-link { opacity: 0.3; }
 
-/* Sidebar */
+/* Sidebar view */
 
 body.slidoc-sidebar-view .slidoc-nosidebar {
     display: none;
@@ -46,53 +46,6 @@ body.slidoc-sidebar-view .slidoc-all-container {
     box-sizing: border-box;
 }
 
-body.slidoc-sidebar-view .slidoc-left-container {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 300px;
-    overflow-x: hidden;
-    overflow-y: hidden;
-    min-height: 100%;
-    background: #343131;
-    padding-bottom: 0em;
-    z-index: 200;
-    box-sizing: border-box;
-    white-space: nowrap;
-}
-
-body.slidoc-sidebar-view .slidoc-toc-container {
-    width: 320px;
-    position: relative;
-    overflow-x: hidden;
-    overflow-y: scroll;
-    height: 100%;
-    line-height: 1.4;
-    font-size: 90%;
-    background-color: #ccc;
-    padding-left: 8px;
-}
-
-body.slidoc-sidebar-view .slidoc-toc-container .slidoc-clickable {
-    color: #666;
-}
-
-body.slidoc-sidebar-view .slidoc-toc-list {
-    padding-left: 0px
-}
-
-body.slidoc-sidebar-view .slidoc-sidebar-right-container {
-    margin-left: 300px;
-    min-height: 100%;
-}
-
-body.slidoc-sidebar-view .slidoc-sidebar-right-wrapper {
-    padding: 1.6em 3.2em;
-    height: 100%;
-    max-width: 800px;
-    margin: auto;
-}
 
 /* "Hourglass" */
 #slidoc-hourglass-container {
