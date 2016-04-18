@@ -1094,7 +1094,9 @@ if __name__ == '__main__':
     for arg_name in cmd_defaults:
         if getattr(cmd_args, arg_name) == None:
             setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
-    print('slidoc: Effective argument list', cmd_args)
+    effective_args = vars(cmd_args).copy()
+    del effective_args['file']
+    print('slidoc: Effective argument list', argparse.Namespace(**effective_args))
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionCookie': '',
                  'paceEnd': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,

@@ -519,17 +519,17 @@ function getVisibleSlides() {
 }
 
 Slidoc.hide = function (elem, className, action) {
-    // Action = '\u2212' (&#8722;) hide or '+' show or omitted for toggling
+    // Action = '+' show or '-'|'\u2212' (&#8722;) hide or omitted for toggling
     if (!elem) return false;
     if (!className)
 	className = elem.id.slice(0,-5) // Strip '-hide' suffice from id
     action = action || elem.textContent;
-    if (action.charAt(0) == '\u2212') {
-	elem.textContent = elem.textContent.replace('\u2212', '+');
-	if (className) Slidoc.classDisplay(className, 'none');
-    } else {
+    if (action.charAt(0) == '+') {
 	elem.textContent = elem.textContent.replace('+', '\u2212');
 	if (className) Slidoc.classDisplay(className, 'block');
+    } else {
+	elem.textContent = elem.textContent.replace('\u2212', '+');
+	if (className) Slidoc.classDisplay(className, 'none');
     }
     return false;
 }
@@ -1428,6 +1428,7 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 document.addEventListener('touchstart', handleTouchStart, false);        
 document.addEventListener('touchmove', handleTouchMove, false);
 
+var swipeThreshold = 20;
 var xDown = null;                                                        
 var yDown = null;                                                        
 
@@ -1448,7 +1449,9 @@ function handleTouchMove(evt) {
     var yDiff = yDown - yUp;
 
     if ( Math.abs( xDiff ) > Math.abs( yDiff ) ) {/*most significant*/
-        if ( xDiff > 0 ) {
+	if (Math.abs(xDiff) < swipeThreshold) {
+	    /* ignore */
+        } else if ( xDiff > 0 ) {
             /* left swipe (right motion) */ 
             return Slidoc.handleKey('right');
         } else {
@@ -1456,7 +1459,9 @@ function handleTouchMove(evt) {
             return Slidoc.handleKey('left');
         }                       
     } else {
-        if ( yDiff > 0 ) {
+	if (Math.abs(yDiff) < swipeThreshold) {
+	    /* ignore */
+        } else if ( yDiff > 0 ) {
             /* up swipe (downward motion) */ 
         } else { 
             /* down swipe (upward motion) */
