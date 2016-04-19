@@ -1035,7 +1035,7 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['equation_number', 'untitled_number']
+    features_all = ['equation_number', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file')
@@ -1100,7 +1100,8 @@ if __name__ == '__main__':
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '',
                  'paceEnd': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
-                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None}
+                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
+                 'features': {}}
     if cmd_args.combine:
         js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
         print('Filename: ', js_params['filename'], file=sys.stderr)
@@ -1149,6 +1150,7 @@ if __name__ == '__main__':
     cmd_args.images = set(cmd_args.images.split(',')) if cmd_args.images else set()
 
     cmd_args.features = md2md.make_arg_set(cmd_args.features, features_all)
+    js_params['features'] = dict([(x, 1) for x in cmd_args.features])
 
     cmd_args.strip = md2md.make_arg_set(cmd_args.strip, strip_all)
     if len(cmd_args.file) == 1:

@@ -47,16 +47,17 @@ body.slidoc-sidebar-view .slidoc-all-container {
 }
 
 
-/* "Hourglass" */
-#slidoc-hourglass-container {
+/* Progress bar */
+#slidoc-progressbar-container {
     z-index: 900; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em;
     width: 5.5em; height: 1em; 
-    background: white;
+    background-color: rgba(255,255,255,0.3);
     overflow: hidden;}
 
-#slidoc-hourglass {
+#slidoc-progressbar {
     display: inline-block; width: 5.5em; height: 1em;
-    top: 0; left: 5.5em; background: #f80;
+    top: 0; left: 5.5em;
+    background-color: rgba(255,136,0,0.7);
     position: absolute;}
 
 /* Popup */

@@ -237,6 +237,8 @@ Slidoc.slidocReady = function (auth) {
     console.log("Slidoc.slidocReady:", auth);
     sessionManage();
 
+    Slidoc.delayIndicator = ('progress_bar' in Sliobj.params.features) ? progressBar : delayElement;
+
     Sliobj.ChainQuery = '';
     Sliobj.chainActive = null;
     Sliobj.showAll = false;
@@ -489,21 +491,21 @@ function getParameter(name, number, queryStr) {
    return value;
 }
 
-function hourglass(delaySec) {
-    // Displays an "hourglass" or progress bar
+function progressBar(delaySec) {
+    // Displays a progress bar
     var interval = 0.05;
     var jmax = delaySec/interval;
     var j = 0;
-    var hg_container_elem = document.getElementById('slidoc-hourglass-container');
-    var hg_elem = document.getElementById('slidoc-hourglass');
+    var pb_container_elem = document.getElementById('slidoc-progressbar-container');
+    var pb_elem = document.getElementById('slidoc-progressbar');
     function clocktick() {
 	j += 1;
-	hg_elem.style.left = 1.05*Math.ceil(hg_container_elem.offsetWidth*j/jmax);
+	pb_elem.style.left = 1.05*Math.ceil(pb_container_elem.offsetWidth*j/jmax);
     }
     var intervalId = setInterval(clocktick, 1000*interval);
     function endInterval() {
 	clearInterval(intervalId);
-	hg_elem.style.left = hg_container_elem.offsetWidth;
+	pb_elem.style.left = pb_container_elem.offsetWidth;
     }
     setTimeout(endInterval, delaySec*1000);
 }
@@ -786,7 +788,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		document.body.classList.add('slidoc-incorrect-answer-state');
 		var after_str = '';
 		if (Sliobj.params.tryDelay) {
-		    delayElement(Sliobj.params.tryDelay, slide_id+'-ansclick');
+		    Slidoc.delayIndicator(Sliobj.params.tryDelay, slide_id+'-ansclick');
 		    after_str = ' after '+Sliobj.params.tryDelay+' second(s)';
 		}
 		Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
@@ -1134,7 +1136,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 2 : 0;
 	    Sliobj.session.remainingTries = 0;
 	    if (Sliobj.params.paceDelay)
-		delayElement(Sliobj.params.paceDelay, 'slidoc-slide-nav-next');
+		Slidoc.delayIndicator(Sliobj.params.paceDelay, 'slidoc-slide-nav-next');
         }
 
 	if (Sliobj.session.lastSlide == slides.length) {
