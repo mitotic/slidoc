@@ -7,18 +7,18 @@
 
 <button id="slidoc-google-login-button" style="display: none;">Google Login</button>
 
+<div id="slidoc-slide-home-button" class="slidoc-slide-home-button slidoc-noprint">
+<span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
+<span class="slidoc-clickable slidoc-slideonly" onclick="Slidoc.slideViewHelp();">?</span>&nbsp;
+<span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>
+</div>
+
 <div class="slidoc-slide-nav slidoc-slideonly">
 <span id="slidoc-slide-nav-prev" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp;
 <span id="slidoc-slide-nav-end" class="slidoc-clickable-sym" onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp;
 <span id="slidoc-slide-nav-next" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
 </div>
 <div id="slidoc-progressbar-container" class="slidoc-slideonly"><span id="slidoc-progressbar" ></span></div>
-
-<div id="slidoc-slide-home-button" class="slidoc-slide-home-button slidoc-noprint">
-<span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
-<span class="slidoc-clickable slidoc-slideonly" onclick="Slidoc.slideViewHelp();">?</span>&nbsp;
-<span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>
-</div>
 
 <div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide slidoc-noprint">
 <span onclick="Slidoc.slideViewStart();">%(square)s</span>

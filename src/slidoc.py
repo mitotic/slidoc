@@ -943,9 +943,9 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
 
     if 'contents' not in cmd_args.strip:
         chapter_id = make_chapter_id(filenumber)
-        post_header_html += ('<div class="slidoc-chapter-toc %s-chapter-toc slidoc-nosidebar">' % chapter_id)+renderer.table_of_contents(filenumber=filenumber)+'</div>\n'
-        if post_header_html:
-            post_header_html = '<div class="slidoc-nopaced">'+ post_header_html + '</div>\n'
+        header_toc = renderer.table_of_contents(filenumber=filenumber)
+        if header_toc:
+            post_header_html += ('<div class="slidoc-chapter-toc %s-chapter-toc slidoc-nopaced slidoc-nosidebar">' % chapter_id)+header_toc+'</div>\n'
             post_header_html += click_span('&#8722;Contents', "Slidoc.hide(this, '%s');" % (chapter_id+'-chapter-toc'),
                                             id=chapter_id+'-chapter-toc-hide', classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-chapter-toc-hide', 'slidoc-nopaced', 'slidoc-noprint', 'slidoc-nosidebar'])
 
@@ -1050,7 +1050,7 @@ if __name__ == '__main__':
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-    parser.add_argument('--pace', metavar='PACE_END,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION', help='Options for paced session using combined file, e.g., 0,0,1 to force answering questions')
+    parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
@@ -1099,7 +1099,7 @@ if __name__ == '__main__':
     print('slidoc: Effective argument list', argparse.Namespace(**effective_args))
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '',
-                 'paceEnd': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
+                 'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'features': {}}
     if cmd_args.combine:
@@ -1113,12 +1113,14 @@ if __name__ == '__main__':
         if cmd_args.printable:
             sys.exit('slidoc: Error: --pace and --printable options do not work well together')
         hide_chapters = True
+        if len(cmd_args.file) == 1:
+            cmd_args.toc = ''
         # Index not compatible with paced
         cmd_args.index = ''
         cmd_args.qindex = ''
         comps = cmd_args.pace.split(',')
         if comps[0]:
-            js_params['paceEnd'] = int(comps[0])
+            js_params['paceStrict'] = int(comps[0])
         if len(comps) > 1 and comps[1].isdigit():
             js_params['paceDelay'] = int(comps[1])
         if len(comps) > 2 and comps[2].isdigit():

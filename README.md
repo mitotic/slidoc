@@ -194,11 +194,10 @@ sequence of slides. Information about the state of a paced slideshow
 is saved in the persistent local storage of the browser, using the
 filename as the key. It is enabled by the option:
 
-    --pace=pace_end,delay_sec,try_count,try_delay
+    --pace=pace_strict,delay_sec,try_count,try_delay
 
-* `pace_end=1` implies that at the end of the slideshow, the document
-  may be viewed as a regular document. The default value is `0`, which
-  prevents this behavior.
+* `pace_strict` if non-zero, implies that document may only be viewed as a
+  slideshow. If zero, switching to scrolling view is allowed.
 
 * `delay_sec` if non-zero, forces a minimum delay between slides
 
