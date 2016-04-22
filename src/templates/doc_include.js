@@ -597,7 +597,7 @@ Slidoc.allDisplay = function (elem) {
 	for (var i = 0; i < elements.length; ++i)
 	    elements[i].style.display= null;
     } else {
-	goSlide('#slidoc01-01', false, true);
+	goSlide(document.getElementById("slidoc00") ? '#slidoc00' : '#slidoc01-01', false, true);
     }
    return false;
 }
@@ -1598,7 +1598,7 @@ var useAltTouchHandler = true;
 if (useAltTouchHandler) {
     // Alternate touch handler
     document.addEventListener('touchstart', onTouchStart, false);      
-    document.addEventListener('mousedown', onTouchStart, false);      
+    ///document.addEventListener('mousedown', onTouchStart, false);  // Detecting mouse triggers swipes during copy operation
     document.addEventListener('touchmove', onTouchMove, false);
     document.addEventListener('touchend', onTouchEnd, false);
     document.addEventListener('touchcancel', onTouchEnd, false);

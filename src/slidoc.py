@@ -64,7 +64,7 @@ def make_q_label(filename, question_number, fprefix=''):
 
 def chapter_prefix(num, classes='', hide=False):
     attrs = ' style="display: none;"' if hide else ''
-    return '\n<div id="%s" class="slidoc-container %s" %s> <!--chapter start-->\n' % (make_chapter_id(num), classes, attrs)
+    return '\n<article id="%s" class="slidoc-container %s" %s> <!--chapter start-->\n' % (make_chapter_id(num), classes, attrs)
 
 def concept_chain(slide_id, site_url):
     params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
@@ -125,8 +125,9 @@ def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
         sec_tags[tag][filename].append( (slide_id, header) )
 
 
-def make_index(first_tags, sec_tags, site_url, fprefix='', index_id='', index_file=''):
+def make_index(first_tags, sec_tags, site_url, question=False, fprefix='', index_id='', index_file=''):
     # index_file would be null string for combined file
+    id_prefix = 'slidoc-qindex-' if question else 'slidoc-index-'
     covered_first = defaultdict(dict)
     first_references = OrderedDict()
     tag_list = list(set(first_tags.keys()+sec_tags.keys()))
@@ -143,7 +144,7 @@ def make_index(first_tags, sec_tags, site_url, fprefix='', index_id='', index_fi
             first_letters.append(first_letter)
             if out_list:
                 out_list.append(close_ul)
-            out_list.append('<b id="slidoc-index-%s">%s</b>\n<ul style="list-style-type: none;">\n' % (first_letter.upper(), first_letter.upper()) )
+            out_list.append('<b id="%s">%s</b>\n<ul style="list-style-type: none;">\n' % (id_prefix+first_letter.upper(), first_letter.upper()) )
         elif prev_tag_comps and prev_tag_comps[0] != tag_comps[0]:
             out_list.append('&nbsp;\n')
         else:
@@ -201,7 +202,7 @@ def make_index(first_tags, sec_tags, site_url, fprefix='', index_id='', index_fi
 
     out_list.append(close_ul)
         
-    out_list = ['<b>INDEX</b><blockquote>\n'] + ["&nbsp;&nbsp;".join(['<a href="#slidoc-index-%s" class="slidoc-clickable">%s</a>' % (x.upper(), x.upper()) for x in first_letters])] + ['</blockquote>'] + out_list
+    out_list = ['<b>INDEX</b><blockquote>\n'] + ["&nbsp;&nbsp;".join(['<a href="#%s" class="slidoc-clickable">%s</a>' % (id_prefix+x.upper(), x.upper()) for x in first_letters])] + ['</blockquote>'] + out_list
     return first_references, covered_first, ''.join(out_list)
 
 
@@ -432,15 +433,15 @@ class MarkdownWithMath(mistune.Markdown):
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithMath, self).render(text)
 
-        first_slide_prefix = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
+        first_slide_pre = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
 
         if self.renderer.qconcepts[0] or self.renderer.qconcepts[1]:
             # Include sorted list of concepts related to questions
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
-            first_slide_prefix += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
+            first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
         
-        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_prefix+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</div>\n<!--last slide end-->\n'
+        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</section>\n<!--last slide end-->\n'
 
     
 class IPythonRenderer(mistune.Renderer):
@@ -501,7 +502,7 @@ class IPythonRenderer(mistune.Renderer):
 
     def slide_prefix(self, slide_id, classes=''):
         chapter_id, sep, _ = slide_id.partition('-')
-        return '\n<div id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+        return '\n<section id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
 
     def hrule(self, implicit=False):
         """Rendering method for ``<hr>`` tag."""
@@ -520,7 +521,7 @@ class IPythonRenderer(mistune.Renderer):
         else:
             html = '<hr class="slidoc-noslide slidoc-noprint">\n'
 
-        html += '</div><!--slide end-->\n' + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
+        html += '</section><!--slide end-->\n' + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
         return self.end_notes()+hide_prefix+html
     
     def paragraph(self, text):
@@ -933,13 +934,13 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
     if 'navigate' not in cmd_args.strip:
         nav_html = ''
         if cmd_args.toc:
-            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine, classes=['slidoc-nosidebar'], printable=cmd_args.printable) + SPACER6
+            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine, classes=['slidoc-nosidebar', 'slidoc-noprint'], printable=cmd_args.printable) + SPACER6
             nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
 
         pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
-        tail_html = '<div class="slidoc-noslide slidoc-nosidebar">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
+        tail_html = '<div class="slidoc-noslide slidoc-nosidebar slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
 
     if 'contents' not in cmd_args.strip:
         chapter_id = make_chapter_id(filenumber)
@@ -1295,7 +1296,7 @@ if __name__ == '__main__':
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
             md_prefix = chapter_prefix(j+1, 'slidoc-reg-chapter', hide=hide_chapters)
-            md_suffix = '</div>\n'
+            md_suffix = '</article> <!--chapter end-->\n'
             if cmd_args.combine:
                 combined_html.append(md_prefix)
                 combined_html.append(md_html)
@@ -1404,7 +1405,7 @@ if __name__ == '__main__':
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
-            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</div>\n'
+            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</article>\n'
             if cmd_args.combine:
                 all_container_prefix  = '<div id="slidoc-all-container" class="slidoc-all-container">\n'
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
@@ -1426,7 +1427,7 @@ if __name__ == '__main__':
             if cmd_args.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
-            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + index_html + '</div>\n'
+            index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + index_html + '</article>\n'
             if cmd_args.combine:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             else:
@@ -1458,10 +1459,10 @@ if __name__ == '__main__':
         import itertools
         qout_list = []
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
-        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
+        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
         qout_list.append(qindex_html)
 
-        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</div>\n'
+        qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
         if not cmd_args.dry_run:
             if cmd_args.combine:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
