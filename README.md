@@ -549,7 +549,7 @@ These options include:
 
 * `--css` To use custom CSS file (by modifying `templates/doc_custom.css`) 
 
-* `--toc_header` To insert custom HTML header before Table of Contents
+* `--toc_header` To insert custom Markdown or HTML header before Table of Contents
 
 * `--features=equation_number` To automatically number Mathjax equations 
 

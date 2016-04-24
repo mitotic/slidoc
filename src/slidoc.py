@@ -12,8 +12,7 @@ Usage examples:
 ./slidoc.py --hide='[Aa]nswer' --slides=black,zenburn,200% ../Lectures/course-lecture??.md
 
 """
-# Copyright (c) IPython Development Team.
-# Modified by R. Saravanan
+# Copyright (c) R. Saravanan, IPython Development Team (for IPythonRenderer)
 # Distributed under the terms of the Modified BSD License.
 
 from __future__ import print_function
@@ -428,10 +427,11 @@ class MarkdownWithMath(mistune.Markdown):
     def output_minirule(self):
         return self.renderer.minirule()
 
+class MarkdownWithSlidoc(MarkdownWithMath):
     def render(self, text, index_id='', qindex_id=''):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
-        html = super(MarkdownWithMath, self).render(text)
+        html = super(MarkdownWithSlidoc, self).render(text)
 
         first_slide_pre = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
 
@@ -440,15 +440,44 @@ class MarkdownWithMath(mistune.Markdown):
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
-        
         return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options["cmd_args"].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</section>\n<!--last slide end-->\n'
 
     
-class IPythonRenderer(mistune.Renderer):
+class MathRenderer(mistune.Renderer):
+    def block_math(self, text):
+        return '$$%s$$' % text
+
+    def latex_environment(self, name, text):
+        return r'\begin{%s}%s\end{%s}' % (name, text, name)
+
+    def inline_math(self, text):
+        return '`$%s$`' % text
+
+    def block_code(self, code, lang=None):
+        """Rendering block level code. ``pre > code``.
+        """
+        lexer = None
+        if code.endswith('\n\n'):
+            code = code[:-1]
+        if lang and not lang.startswith('nb_'):
+            try:
+                lexer = get_lexer_by_name(lang, stripall=True)
+            except ClassNotFound:
+                code = lang + '\n' + code
+
+        if not lexer:
+            return '\n<pre><code>%s</code></pre>\n' % \
+                mistune.escape(code)
+
+        formatter = HtmlFormatter()
+        return highlight(code, lexer, formatter)
+
+
+class SlidocRenderer(MathRenderer):
     header_attr_re = re.compile(r'^.*?(\s*\{\s*#(\S+)(\s+[^\}]*)?\s*\})\s*$')
 
     def __init__(self, **kwargs):
-        super(IPythonRenderer, self).__init__(**kwargs)
+        super(SlidocRenderer, self).__init__(**kwargs)
         self.file_header = ''
         self.header_list = []
         self.concept_warnings = []
@@ -532,12 +561,12 @@ class IPythonRenderer(mistune.Renderer):
                 # Number untitled slides (e.g., as in question numbering) 
                 text = ('%d. ' % self.untitled_number) + text
         self.first_para = False
-        return super(IPythonRenderer, self).paragraph(text)
+        return super(SlidocRenderer, self).paragraph(text)
 
     def header(self, text, level, raw=None):
         """Handle markdown headings
         """
-        html = super(IPythonRenderer, self).header(text, level, raw=raw)
+        html = super(SlidocRenderer, self).header(text, level, raw=raw)
         try:
             hdr = ElementTree.fromstring(html)
         except Exception:
@@ -639,17 +668,6 @@ class IPythonRenderer(mistune.Renderer):
         # Workaround is to make sure the bytes are casted to a string.
         hdr.set('class', hdr_class)
         return prev_slide_end + pre_header + ElementTree.tostring(hdr) + '\n' + post_header
-
-
-    # Pass math through unaltered - mathjax does the rendering in the browser
-    def block_math(self, text):
-        return '$$%s$$' % text
-
-    def latex_environment(self, name, text):
-        return r'\begin{%s}%s\end{%s}' % (name, text, name)
-
-    def inline_math(self, text):
-        return '`$%s$`' % text
 
     def slidoc_header(self, name, text):
         if name == "type" and text:
@@ -864,25 +882,6 @@ class IPythonRenderer(mistune.Renderer):
         toc.append('</ol>\n' if 'sections' in self.options['cmd_args'].strip else '</ul>\n')
         return '\n'.join(toc)
 
-    def block_code(self, code, lang=None):
-        """Rendering block level code. ``pre > code``.
-        """
-        lexer = None
-        if code.endswith('\n\n'):
-            code = code[:-1]
-        if lang and not lang.startswith('nb_'):
-            try:
-                lexer = get_lexer_by_name(lang, stripall=True)
-            except ClassNotFound:
-                code = lang + '\n' + code
-
-        if not lexer:
-            return '\n<pre><code>%s</code></pre>\n' % \
-                mistune.escape(code)
-
-        formatter = HtmlFormatter()
-        return highlight(code, lexer, formatter)
-
 def click_span(text, onclick, id='', classes=['slidoc-clickable'], href=''):
     id_str = ' id="%s"' % id if id else ''
     if href:
@@ -919,12 +918,12 @@ def Missing_ref_num(match):
         return '(%s)??' % ref_id
 
 def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file='', index_id='', qindex_id=''):
-    """Convert a markdown string to HTML using mistune, returning (first_header, html)"""
+    """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
     Global.chapter_ref_counter = defaultdict(int)
 
-    renderer = IPythonRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
+    renderer = SlidocRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
 
-    content_html = MarkdownWithMath(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
+    content_html = MarkdownWithSlidoc(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
 
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
@@ -1058,7 +1057,7 @@ if __name__ == '__main__':
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)')
-    parser.add_argument('--toc_header', metavar='FILE', help='HTML header file for ToC')
+    parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
     cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
     cmd_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
@@ -1352,6 +1351,8 @@ if __name__ == '__main__':
     if cmd_args.toc:
         if cmd_args.toc_header:
             header_insert = md2md.read_file(cmd_args.toc_header)
+            if cmd_args.toc_header.endswith('.md'):
+                header_insert = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(header_insert)
         else:
             header_insert = ''
 

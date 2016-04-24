@@ -306,6 +306,8 @@ function slidocReadyAux(session) {
     if (toc_elem) {
 	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
 	goSlide(slideHash, false, true);
+	if (window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
+	    Slidoc.sidebarDisplay()
     }
 }
 
