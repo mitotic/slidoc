@@ -4,19 +4,21 @@
 body.slidoc-all-view .slidoc-noall, 
 body.slidoc-slide-view .slidoc-noslide, 
 body.slidoc-paced-view .slidoc-nopaced,
-body.slidoc-remote-view .slidoc-noremote {
+body.slidoc-remote-view .slidoc-noremote,
+.slidoc-hidden {
     display: none; }
 
 body:not(.slidoc-all-view) .slidoc-allonly, 
 body:not(.slidoc-slide-view) .slidoc-slideonly,
 body:not(.slidoc-paced-view) .slidoc-pacedonly,
-body:not(.slidoc-remote-view) .slidoc-remoteonly {
+body:not(.slidoc-remote-view) .slidoc-remoteonly,
+body:not(.slidoc-incremental-view) .slidoc-incrementalonly {
     display: none; }
 
 /* Navigation */
-.slidoc-slide-nav { z-index: 1000; position: fixed; right: 15px; bottom: 10px; }
-.slidoc-slide-home-button { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; }
+.slidoc-slide-nav         { z-index: 1000; position: fixed; right: 10px; bottom: 10px; }
 .slidoc-slide-view-button { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; }
+.slidoc-slide-home-button { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; }
 
 body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
@@ -24,7 +26,6 @@ body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next {
 body.slidoc-paced-last-slide.slidoc-incorrect-answer-state span.slidoc-forward-link { opacity: 0.3; }
 
 /* Sidebar view */
-
 body.slidoc-sidebar-view .slidoc-nosidebar {
     display: none;
 }
@@ -45,6 +46,17 @@ body.slidoc-sidebar-view .slidoc-all-container {
     height: 100%;
     box-sizing: border-box;
 }
+
+/* Incremental display */
+body.slidoc-slide-view:not(.slidoc-display-incremental1) .slidoc-incremental1 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental2) .slidoc-incremental2 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental3) .slidoc-incremental3 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental4) .slidoc-incremental4 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental5) .slidoc-incremental5 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental6) .slidoc-incremental6 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental7) .slidoc-incremental7 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental8) .slidoc-incremental8 { visibility: hidden; }
+body.slidoc-slide-view:not(.slidoc-display-incremental9) .slidoc-incremental9 { visibility: hidden; }
 
 
 /* Progress bar */

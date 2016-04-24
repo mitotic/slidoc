@@ -13,11 +13,17 @@
 <span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>
 </div>
 
-<div class="slidoc-slide-nav slidoc-slideonly">
-<span id="slidoc-slide-nav-prev" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(false);">%(prev)s</span> &nbsp;&nbsp;&nbsp;
-<span id="slidoc-slide-nav-end" class="slidoc-clickable-sym" onclick="Slidoc.slideViewEnd();">%(circle)s</span> &nbsp;&nbsp;&nbsp;
-<span id="slidoc-slide-nav-next" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(true);">%(next)s</span>
-</div>
+<table class="slidoc-slide-nav slidoc-slideonly">
+<tr>
+<td id="slidoc-slide-nav-prev" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(false);">%(prev)s</td>
+<td id="slidoc-slide-nav-end" class="slidoc-clickable-sym" onclick="Slidoc.slideViewEnd();">%(circle)s</td>
+<td id="slidoc-slide-nav-next" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(true);">%(next)s</td>
+</tr>
+<tr><td></td>
+<td id="slidoc-slide-nav-down" class="slidoc-clickable-sym slidoc-incrementalonly" onclick="Slidoc.slideViewIncrement();">%(down)s</td>
+<td></td></tr>
+</table>
+
 <div id="slidoc-progressbar-container" class="slidoc-slideonly"><span id="slidoc-progressbar" ></span></div>
 
 <div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide slidoc-noprint">

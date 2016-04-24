@@ -4,6 +4,8 @@ var Slidoc = {};  // External object
 
 ///UNCOMMENT: (function(Slidoc) {
 
+var MAX_INC_LEVEL = 9; // Max. incremental display level
+
 var Sliobj = {}; // Internal object
 
 Sliobj.params = JS_PARAMS_OBJ;
@@ -97,6 +99,23 @@ Slidoc.showConcepts = function (msg) {
     Slidoc.showPopup(html || (Sliobj.session.lastSlide ? 'Not tracking concepts!' : 'Concepts tracked only in paced mode!') );
 }
 
+Slidoc.slideViewIncrement = function () {
+    if (!Sliobj.currentSlide || !('incremental' in Sliobj.params.features))
+        return;
+    var slides = getVisibleSlides();
+    var slideId = slides[Sliobj.currentSlide-1].id
+    console.log('Slidoc.slideViewIncrement:', slideId);
+
+    for (var j=1; j<=MAX_INC_LEVEL; j++) {
+        var className = 'slidoc-display-incremental'+j;
+        if (!document.body.classList.contains(className)) {
+	    document.body.classList.add(className);
+	    break;
+        }
+    }
+    return false;
+}
+
 var Key_codes = {
     27: 'esc',
     35: 'end',
@@ -106,6 +125,7 @@ var Key_codes = {
     39: 'right',
     40: 'down',
     67: 'c',
+    68: 'd',
     69: 'e',
     70: 'f',
     72: 'h',
@@ -159,6 +179,8 @@ var Slide_view_handlers = {
     'p':     function() { Slidoc.slideViewGo(false); },
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
+    'down':  Slidoc.slideViewIncrement,
+    'd':     Slidoc.slideViewIncrement,
     'f':     Slidoc.docFullScreen,
     'm':     Slidoc.showConcepts,
     'qmark': Slidoc.slideViewHelp,
@@ -1073,7 +1095,11 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.hide(contElems[j], null, '+');
     }
 
-   document.body.classList.remove('slidoc-slide-view');
+    document.body.classList.remove('slidoc-slide-view');
+    document.body.classList.remove('slidoc-incremental-view');
+    for (var j=1; j<=MAX_INC_LEVEL; j++)
+	document.body.classList.remove('slidoc-display-incremental'+j);
+
    if (slides && Sliobj.currentSlide > 0 && Sliobj.currentSlide <= slides.length) {
      location.href = '#'+slides[Sliobj.currentSlide-1].id;
    }
@@ -1183,6 +1209,12 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
 
     console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
+    if ('incremental' in Sliobj.params.features) {
+	toggleClass(document.getElementsByClassName(slides[slide_num-1].id+'-incremental').length, 'slidoc-incremental-view');
+	for (var j=1; j<=MAX_INC_LEVEL; j++)
+	    toggleClass(Sliobj.currentSlide > slide_num, 'slidoc-display-incremental'+j);
+    }
+
     slides[slide_num-1].style.display = 'block';
     for (var i=0; i<slides.length; ++i) {
 	if (i != slide_num-1) slides[i].style.display = 'none';

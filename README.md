@@ -186,6 +186,34 @@ Notes.
 
 ---
 
+## Incremental lists
+
+Specifying the command option `--features=incremental` enables
+incremental display of lists and fragments in slideshows using
+[Pandoc syntax](http://pandoc.org/README.html#incremental-lists).
+
+> - Block quoted lists are displayed incrementally.
+
+> - Use the *Down* arrow to display incremental elements.
+
+> - The keyboard shortcut `d` may also be used.
+
+The ellipsis (`...`) may also be to indicate incremental display of
+remaining paragraphs.
+
+...
+
+Alternatively, the CSS classes `slidoc-incremental1`,
+`slidoc-incremental2` and so on may be added to elements for
+incremental display.
+
+...
+
+
+Concepts: incremental display; lists, incremental 
+
+---
+
 ## Paced mode
 
 Slidoc supports a restrictive type of slideshow mode known as the
@@ -359,6 +387,14 @@ Level 3 header will not be listed in table of contents. The `--hide=[Aa]nswer`
 can be used to hide this answer slide.
 
 Notes: Adding the `--strip=hidden` option will remove it completely.
+
+---
+
+## Hidden headers {.slidoc-hidden}
+
+Pandoc-style attributes may added to headers, as shown above, to hide
+headers. This may be useful if the slide already contains an image
+including the header text.
 
 ---
 

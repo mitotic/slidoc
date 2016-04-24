@@ -12,7 +12,7 @@ Usage examples:
 ./slidoc.py --hide='[Aa]nswer' --slides=black,zenburn,200% ../Lectures/course-lecture??.md
 
 """
-# Copyright (c) R. Saravanan, IPython Development Team (for IPythonRenderer)
+# Copyright (c) R. Saravanan, IPython Development Team (for MarkdownWithMath)
 # Distributed under the terms of the Modified BSD License.
 
 from __future__ import print_function
@@ -46,7 +46,7 @@ SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
-SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;',
+SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def make_file_id(filename, id_str, fprefix=''):
@@ -239,9 +239,10 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
     slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     minirule =        re.compile(r'^(--) *(?:\n+|$)')
+    pause =           re.compile(r'^(\.\.\.) *(?:\n+|$)')
 
 class MathBlockLexer(mistune.BlockLexer):
-    default_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule'] + mistune.BlockLexer.default_rules
+    default_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule', 'pause'] + mistune.BlockLexer.default_rules
 
     def __init__(self, rules=None, **kwargs):
         if rules is None:
@@ -292,6 +293,12 @@ class MathBlockLexer(mistune.BlockLexer):
 
     def parse_minirule(self, m):
         self.tokens.append({'type': 'minirule'})
+
+    def parse_pause(self, m):
+         self.tokens.append({
+            'type': 'pause',
+            'text': m.group(0)
+        })
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
@@ -427,7 +434,22 @@ class MarkdownWithMath(mistune.Markdown):
     def output_minirule(self):
         return self.renderer.minirule()
 
+    def output_pause(self):
+        return self.renderer.pause(self.token['text'])
+
 class MarkdownWithSlidoc(MarkdownWithMath):
+    def __init__(self, renderer, **kwargs):
+        super(MarkdownWithSlidoc, self).__init__(renderer, **kwargs)
+        self.incremental = 'incremental' in self.renderer.options['cmd_args'].features
+
+    def output_block_quote(self):
+        if self.incremental:
+            self.renderer.list_incremental(True)
+        retval = super(MarkdownWithSlidoc, self).output_block_quote()
+        if self.incremental:
+            self.renderer.list_incremental(False)
+        return retval
+
     def render(self, text, index_id='', qindex_id=''):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
@@ -474,7 +496,7 @@ class MathRenderer(mistune.Renderer):
 
 
 class SlidocRenderer(MathRenderer):
-    header_attr_re = re.compile(r'^.*?(\s*\{\s*#(\S+)(\s+[^\}]*)?\s*\})\s*$')
+    header_attr_re = re.compile(r'^.*?(\s*\{\s*(#\S+)?([^#\}]*)?\s*\})\s*$')
 
     def __init__(self, **kwargs):
         super(SlidocRenderer, self).__init__(**kwargs)
@@ -502,7 +524,13 @@ class SlidocRenderer(MathRenderer):
         self.cur_answer = False
         self.slide_concepts = ''
         self.first_para = True
+        self.incremental_level = 0
+        self.incremental_list = False
+        self.incremental_pause = False
 
+    def list_incremental(self, activate):
+        self.incremental_list = activate
+    
     def get_chapter_id(self):
         return make_chapter_id(self.options['filenumber'])
 
@@ -529,6 +557,15 @@ class SlidocRenderer(MathRenderer):
         """Treat minirule as a linebreak"""
         return '<br>\n'
 
+    def pause(self, text):
+        """Pause in display"""
+        if 'incremental' in self.options['cmd_args'].features:
+            self.incremental_pause = True
+            self.incremental_level += 1
+            return ''
+        else:
+            return text
+
     def slide_prefix(self, slide_id, classes=''):
         chapter_id, sep, _ = slide_id.partition('-')
         return '\n<section id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
@@ -552,7 +589,14 @@ class SlidocRenderer(MathRenderer):
 
         html += '</section><!--slide end-->\n' + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options["cmd_args"].site_url)
         return self.end_notes()+hide_prefix+html
-    
+
+    def list_item(self, text):
+        """Rendering list item snippet. Like ``<li>``."""
+        if not self.incremental_list:
+            return super(SlidocRenderer, self).list_item(text)
+        self.incremental_level += 1
+        return '<li class="%s-incremental slidoc-incremental%d">%s</li>\n' % (self.get_slide_id(), self.incremental_level, text)
+
     def paragraph(self, text):
         """Rendering paragraph tags. Like ``<p>``."""
         if not self.cur_header and self.first_para:
@@ -561,7 +605,10 @@ class SlidocRenderer(MathRenderer):
                 # Number untitled slides (e.g., as in question numbering) 
                 text = ('%d. ' % self.untitled_number) + text
         self.first_para = False
-        return super(SlidocRenderer, self).paragraph(text)
+        if not self.incremental_pause:
+            return super(SlidocRenderer, self).paragraph(text)
+        return '<p class="%s-incremental slidoc-incremental%d">%s</p>\n' % (self.get_slide_id(), self.incremental_level, text.strip(' '))
+
 
     def header(self, text, level, raw=None):
         """Handle markdown headings
@@ -578,20 +625,34 @@ class SlidocRenderer(MathRenderer):
             # Implicit horizontal rule before Level 1/2 header
             prev_slide_end = self.hrule(implicit=True)
         
+        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id())
+        if 'headers' in self.options['cmd_args'].strip:
+            hdr_class += ' slidoc-hidden'
+
         text = html2text(hdr).strip()
+        header_ref = ''
         match = self.header_attr_re.match(text)
-        header_ref = md2md.ref_key(text)
         if match:
             # Header attributes found
-            if not re.match(r'^[-.\w]+$', match.group(2)):
-                print('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text, file=sys.stderr)
-            header_ref = md2md.ref_key(match.group(2))
+            if match.group(2) and len(match.group(2)) > 1:
+                short_id = match.group(2)[1:]
+                if not re.match(r'^[-.\w]+$', short_id):
+                    
+                    print('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text, file=sys.stderr)
+                header_ref = md2md.ref_key(short_id)
+            if match.group(3) and match.group(3).strip():
+                attrs = match.group(3).strip().split()
+                for attr in attrs:
+                    if attr.startswith('.'):
+                        hdr_class += ' ' + attr[1:]
             try:
                 hdr = ElementTree.fromstring(html.replace(match.group(1),''))
                 text = html2text(hdr).strip()
             except Exception:
                 pass
 
+        if not header_ref:
+            header_ref = md2md.ref_key(text)
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         if ref_id in Global.ref_tracker:
             print('REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, header_ref), file=sys.stderr)
@@ -599,7 +660,6 @@ class SlidocRenderer(MathRenderer):
             Global.ref_tracker[ref_id] = ('??', header_ref, '')
 
         hdr.set('id', ref_id)
-        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id())
 
         hide_block = self.options["cmd_args"].hide and re.search(self.options["cmd_args"].hide, text)
         if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
@@ -1035,12 +1095,12 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['equation_number', 'progress_bar', 'untitled_number']
+    features_all = ['equation_number', 'incremental', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file')
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
-    parser.add_argument('--css', metavar='FILE', help='Custom CSS file (derived from doc_custom.css)')
+    parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
     parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
     parser.add_argument('--google_docs', help='spreadsheet_url[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
@@ -1065,8 +1125,8 @@ if __name__ == '__main__':
     cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
-    cmd_defaults = {'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '', 'index': 'ind.html',
-                     'toc': 'toc.html', 'site_url': ''}
+    cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
+                     'index': 'ind.html', 'toc': 'toc.html', 'site_url': ''}
     
     cmd_args = cmd_parser.parse_args()
     # Read first line of first file and rewind it
@@ -1167,8 +1227,11 @@ if __name__ == '__main__':
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
-    custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
-    css_html = '<style>\n%s\n%s</style>\n' % (custom_css, templates['doc_include.css'])
+    if cmd_args.css.startswith('http:') or cmd_args.css.startswith('https:'):
+        css_html = '<link rel="stylesheet" type="text/css" href="%s">\n' % cmd_args.css
+    else:
+        custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
+        css_html = '<style>\n%s\n%s</style>\n' % (custom_css, templates['doc_include.css'])
     gd_html = ''
     if cmd_args.google_docs:
         gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])

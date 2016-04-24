@@ -32,8 +32,11 @@ a, a:visited,
 }
 
 .slidoc-clickable-sym {
-    padding: 0.3em 0 0 0;
     font-size: 120%; font-weight: bold; font-family: Helvetica, Arial, freesans, sans-serif;}
+
+span.slidoc-clickable-sym { padding: 0.3em 0 0 0;}
+
+td.slidoc-clickable-sym { padding-left: 0.25em; padding-right: 0.25em; }
 
 
 @media print {
@@ -91,7 +94,7 @@ a, a:visited,
 
 /* Views */
 body.slidoc-slide-view { font-size: 150%; }
-body.slidoc-slide-view td { font-size: 120%; padding-left: 1em;}
+body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */
 #slidoc-score-display {color: green; font-size: 0.8em; padding-right: 5px;}
