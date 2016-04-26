@@ -196,7 +196,7 @@ incremental display of lists and fragments in slideshows using
 
 > - Use the *Down* arrow to display incremental elements.
 
-> - The keyboard shortcut `d` may also be used.
+> - The keyboard shortcut `i` may also be used.
 
 The ellipsis (`...`) may also be to indicate incremental display of
 remaining paragraphs.

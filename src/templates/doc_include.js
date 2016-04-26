@@ -10,10 +10,7 @@ var Sliobj = {}; // Internal object
 
 Sliobj.params = JS_PARAMS_OBJ;
 
-Sliobj.lastInputValue = null;
 Sliobj.closePopup = null;
-Sliobj.questionSlide = null;
-Sliobj.questionConcepts = [];
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
@@ -100,18 +97,14 @@ Slidoc.showConcepts = function (msg) {
 }
 
 Slidoc.slideViewIncrement = function () {
-    if (!Sliobj.currentSlide || !('incremental' in Sliobj.params.features))
+    if (!Sliobj.currentSlide || !Sliobj.maxIncrement || !('incremental' in Sliobj.params.features))
         return;
-    var slides = getVisibleSlides();
-    var slideId = slides[Sliobj.currentSlide-1].id
-    console.log('Slidoc.slideViewIncrement:', slideId);
 
-    for (var j=1; j<=MAX_INC_LEVEL; j++) {
-        var className = 'slidoc-display-incremental'+j;
-        if (!document.body.classList.contains(className)) {
-	    document.body.classList.add(className);
-	    break;
-        }
+    if (Sliobj.curIncrement < Sliobj.maxIncrement) {
+	Sliobj.curIncrement += 1;
+        document.body.classList.add('slidoc-display-incremental'+Sliobj.curIncrement);
+    } else {
+	toggleClass(false, 'slidoc-incremental-view');
     }
     return false;
 }
@@ -129,6 +122,7 @@ var Key_codes = {
     69: 'e',
     70: 'f',
     72: 'h',
+    73: 'i',
     77: 'm',
     78: 'n',
     80: 'p',
@@ -143,6 +137,7 @@ var Slide_help_list = [
     ['e, End, Fn&#9658;',   'end',   'end (last) slide'],
     ['p, &#9668;',          'left',  'previous slide'],
     ['n, &#9658;',          'right', 'next slide'],
+    ['i, &#9660;',          'i',     'incremental item'],
     ['f',                   'f',     'fullscreen mode'],
     ['m',                   'm',     'missed question concepts'],
     ['?',                   'qmark', 'help']
@@ -180,7 +175,7 @@ var Slide_view_handlers = {
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
     'down':  Slidoc.slideViewIncrement,
-    'd':     Slidoc.slideViewIncrement,
+    'i':     Slidoc.slideViewIncrement,
     'f':     Slidoc.docFullScreen,
     'm':     Slidoc.showConcepts,
     'qmark': Slidoc.slideViewHelp,
@@ -264,8 +259,13 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.ChainQuery = '';
     Sliobj.chainActive = null;
     Sliobj.showAll = false;
-    Sliobj.currentSlide = 0;
     Sliobj.curChapterId = '';
+    Sliobj.currentSlide = 0;
+    Sliobj.questionSlide = null;
+    Sliobj.lastInputValue = null;
+    Sliobj.maxIncrement = 0;
+    Sliobj.curIncrement = 0;
+    Sliobj.questionConcepts = [];
     Sliobj.sidebar = false;
     Sliobj.prevSidebar = false;
 
@@ -328,7 +328,7 @@ function slidocReadyAux(session) {
     if (toc_elem) {
 	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
 	goSlide(slideHash, false, true);
-	if (window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
+	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
 	    Slidoc.sidebarDisplay()
     }
 }
@@ -1099,6 +1099,8 @@ Slidoc.slideViewEnd = function() {
     document.body.classList.remove('slidoc-incremental-view');
     for (var j=1; j<=MAX_INC_LEVEL; j++)
 	document.body.classList.remove('slidoc-display-incremental'+j);
+    Sliobj.maxIncrement = 0;
+    Sliobj.curIncrement = 0;
 
    if (slides && Sliobj.currentSlide > 0 && Sliobj.currentSlide <= slides.length) {
      location.href = '#'+slides[Sliobj.currentSlide-1].id;
@@ -1209,10 +1211,19 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
 
     console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
+    Sliobj.maxIncrement = 0;
+    Sliobj.curIncrement = 0;
     if ('incremental' in Sliobj.params.features) {
-	toggleClass(document.getElementsByClassName(slides[slide_num-1].id+'-incremental').length, 'slidoc-incremental-view');
-	for (var j=1; j<=MAX_INC_LEVEL; j++)
-	    toggleClass(Sliobj.currentSlide > slide_num, 'slidoc-display-incremental'+j);
+	for (var j=1; j<=MAX_INC_LEVEL; j++) {
+	    if (slides[slide_num-1].querySelector('.slidoc-incremental'+j)) {
+		Sliobj.maxIncrement = j;
+		toggleClass(Sliobj.currentSlide > slide_num, 'slidoc-display-incremental'+j);
+		if (Sliobj.currentSlide > slide_num) {
+		    Sliobj.curIncrement = j;
+		}
+	    }
+	}
+	toggleClass(Sliobj.curIncrement < Sliobj.maxIncrement, 'slidoc-incremental-view');
     }
 
     slides[slide_num-1].style.display = 'block';

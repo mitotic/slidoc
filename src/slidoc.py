@@ -595,7 +595,7 @@ class SlidocRenderer(MathRenderer):
         if not self.incremental_list:
             return super(SlidocRenderer, self).list_item(text)
         self.incremental_level += 1
-        return '<li class="%s-incremental slidoc-incremental%d">%s</li>\n' % (self.get_slide_id(), self.incremental_level, text)
+        return '<li class="slidoc-incremental%d">%s</li>\n' % (self.incremental_level, text)
 
     def paragraph(self, text):
         """Rendering paragraph tags. Like ``<p>``."""
@@ -1124,10 +1124,6 @@ if __name__ == '__main__':
     cmd_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
     cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
-    # Some arguments need to be set explicitly to '' by default, rather than staying as None
-    cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
-                     'index': 'ind.html', 'toc': 'toc.html', 'site_url': ''}
-    
     cmd_args = cmd_parser.parse_args()
     # Read first line of first file and rewind it
     first_line = cmd_args.file[0].readline()
@@ -1149,6 +1145,14 @@ if __name__ == '__main__':
                 # Argument also specified in command line (override)
                 line_args_dict[arg_name] = cmd_args_dict[arg_name]
         cmd_args = argparse.Namespace(**line_args_dict)
+
+    # Some arguments need to be set explicitly to '' by default, rather than staying as None
+    cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
+                     'index': 'ind.html', 'toc': 'toc.html', 'site_url': ''}
+    
+    if len(cmd_args.file) == 1:
+        cmd_defaults['index'] = ''
+        cmd_defaults['toc'] = ''
 
     # Assign default (non-None) values to arguments not specified anywhere
     for arg_name in cmd_defaults:
@@ -1173,8 +1177,6 @@ if __name__ == '__main__':
         if cmd_args.printable:
             sys.exit('slidoc: Error: --pace and --printable options do not work well together')
         hide_chapters = True
-        if len(cmd_args.file) == 1:
-            cmd_args.toc = ''
         # Index not compatible with paced
         cmd_args.index = ''
         cmd_args.qindex = ''
