@@ -12,6 +12,7 @@ import base64
 import os
 import random
 import re
+import shlex
 import sys
 import urllib
 import urllib2
@@ -229,12 +230,15 @@ class Parser(object):
 
         if title and 'pandoc' in self.cmd_args.images:
             attrs = []
+            for attr in shlex.split(title):
+                if attr.startswith('.'):
+                    attrs.append(attr)
             for attr in ('height', 'width'):
                 value = self.get_html_tag_attr(attr, ' '+title)
                 if value:
                     attrs.append(attr + '=' + value)
             if attrs:
-                return orig_content + ' { ' + ' '.join(attrs) + ' }'
+                return orig_content + '{ ' + ' '.join(attrs) + ' }'
             else:
                 return orig_content
 
@@ -364,11 +368,20 @@ class Parser(object):
         '''Return img tag string, supporting extension of including align/height/width attributes in title string'''
         attrs = ''
         if title:
+            classes = []
+            for attr in shlex.split(title):
+                if attr.startswith('.'):
+                    classes.append(attr[1:])
+                    title = title.replace(attr, '')
+            if classes:
+                attrs += ' class="'+' '.join(classes)+'"'
             for attr in ('align', 'height', 'width'):
                 value = self.get_html_tag_attr(attr, ' '+title)
                 if value:
                     attrs += ' ' + attr + '=' + value
-            attrs += ' title="' + mistune.escape(title, quote=True) + '"'
+                    title = re.sub(self.attr_re_format % attr, '', title)
+            if title.strip():
+                attrs += ' title="' + mistune.escape(title.strip(), quote=True) + '"'
 
         if get_url_scheme(src) == 'rel_path' and self.cmd_args.image_url:
             src = self.cmd_args.image_url + src

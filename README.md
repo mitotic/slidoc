@@ -205,10 +205,11 @@ remaining paragraphs.
 
 Alternatively, the CSS classes `slidoc-incremental1`,
 `slidoc-incremental2` and so on may be added to elements for
-incremental display.
+incremental display (see [Another slide with images](#)).
 
 ...
 
+More incremental paragraph display.
 
 Concepts: incremental display; lists, incremental 
 
@@ -739,11 +740,14 @@ over height/width)
 Slidoc also supports an extension to the Markdown title syntax that
 embeds attributes `align`, `height`, and `width` in the title of an
 image (either in the link itself or in the definition, in case of a
-reference)
+reference). Style classes can also be included using the `.class`
+notation, such as in the example below that incrementally displays the image.
 
-![Flowchart](http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png 'title width=100% height=100')
+![Flowchart](http://upload.wikimedia.org/wikipedia/commons/d/d6/FlowchartExample.png 'title width=100% height=100 .slidoc-incremental1')
 
 *[Image ]{#:resized}*: Resized image
+
+Concepts: image, metadata; image, style; image, incremental
 
 ---
 
