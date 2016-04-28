@@ -103,9 +103,10 @@ Slidoc.slideViewIncrement = function () {
     if (Sliobj.curIncrement < Sliobj.maxIncrement) {
 	Sliobj.curIncrement += 1;
         document.body.classList.add('slidoc-display-incremental'+Sliobj.curIncrement);
-    } else {
-	toggleClass(false, 'slidoc-incremental-view');
     }
+    if (Sliobj.curIncrement == Sliobj.maxIncrement)
+	toggleClass(false, 'slidoc-incremental-view');
+
     return false;
 }
 
