@@ -7,7 +7,7 @@
 
 <button id="slidoc-google-login-button" style="display: none;">Google Login</button>
 
-<div id="slidoc-slide-home-button" class="slidoc-slide-home-button slidoc-noprint">
+<div id="slidoc-top-right" class="slidoc-top-right slidoc-noprint">
 <span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
 <span class="slidoc-clickable slidoc-slideonly" onclick="Slidoc.slideViewHelp();">?</span>&nbsp;
 <span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>
@@ -26,7 +26,9 @@
 
 <div id="slidoc-progressbar-container" class="slidoc-slideonly"><span id="slidoc-progressbar" ></span></div>
 
-<div id="slidoc-slide-view-button" class="slidoc-slide-view-button slidoc-clickable-sym slidoc-noslide slidoc-noprint">
-<span onclick="Slidoc.slideViewStart();">%(square)s</span>
+<div id="slidoc-bottom-right" class="slidoc-bottom-right slidoc-noslide slidoc-noprint">
+<span id="slidoc-sidebar-button" class="slidoc-clickable-sym slidoc-nosidebar" onclick="Slidoc.sidebarDisplay();" style="display: none;">%(rightpair)s</span>
+<span class="slidoc-clickable-sym slidoc-sidebaronly" onclick="Slidoc.sidebarDisplay();">%(leftpair)s</span>
+<span class="slidoc-clickable-sym"  onclick="Slidoc.slideViewStart();">%(square)s</span>
 </div>
 

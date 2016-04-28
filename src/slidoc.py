@@ -1150,7 +1150,9 @@ if __name__ == '__main__':
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
                      'index': 'ind.html', 'toc': 'toc.html', 'site_url': ''}
     
-    if len(cmd_args.file) == 1:
+    if cmd_args.combine:
+        cmd_defaults['qindex'] = 'qind.html'
+    elif len(cmd_args.file) == 1:
         cmd_defaults['index'] = ''
         cmd_defaults['toc'] = ''
 
@@ -1230,7 +1232,8 @@ if __name__ == '__main__':
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
     if cmd_args.css.startswith('http:') or cmd_args.css.startswith('https:'):
-        css_html = '<link rel="stylesheet" type="text/css" href="%s">\n' % cmd_args.css
+        link_css = '<link rel="stylesheet" type="text/css" href="%s">\n' % cmd_args.css
+        css_html = '%s<style>%s</style>\n' % (link_css, templates['doc_include.css'])
     else:
         custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
         css_html = '<style>\n%s\n%s</style>\n' % (custom_css, templates['doc_include.css'])
@@ -1465,9 +1468,9 @@ if __name__ == '__main__':
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if cmd_args.combine:
-                toc_insert = click_span(SYMS['leftpair'], "Slidoc.sidebarDisplay();",
-                                    classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
                 toc_insert = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();",
+                                    classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
+                toc_insert = click_span(SYMS['leftpair'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
