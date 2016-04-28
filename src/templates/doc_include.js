@@ -782,6 +782,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
       var attr_vals = parseElem(chapter_id+'-01-attrs');
       if (attr_vals) {
 	var corr_answer = attr_vals[question_number-1][1];
+	var corr_answer_html = attr_vals[question_number-1][2];
 	console.log('Slidoc.answerUpdate:corr', corr_answer);
 	if (corr_answer) {
 	    // Check response against correct answer
@@ -848,7 +849,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 	var corr_elem = document.getElementById(slide_id+"-correct");
         if (corr_elem) {
 	    if (corr_answer)
-		corr_elem.textContent = corr_answer;
+		corr_elem.innerHTML = corr_answer_html;
 	    else
 		corr_elem.innerHTML = '<b>&#9083;</b>'; // Not check mark
 	    corr_elem.style.display = 'inline';

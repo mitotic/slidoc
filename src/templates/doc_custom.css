@@ -19,8 +19,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 code {
-    font-size: 0.8em;
-    color: #338866;}
+    font-size: 0.85em;
+    color: #381;}
 
 a, a:visited,
  a.slidoc-clickable,
@@ -28,7 +28,7 @@ a, a:visited,
  a.slidoc-clickable-sym,
  .slidoc-clickable,
  .slidoc-clickable-sym {
-      color: #438099;
+      color: #2980B9;
 }
 
 .slidoc-clickable-sym {
@@ -71,7 +71,8 @@ body { font-family: "Gentium Basic", serif; }
 
 h1, h2, h3, h4, h5, h6 { font-family: "Dosis", "Helvetica Neue", Helvetica, "Segoe UI", Arial, freesans, sans-serif;}
 
-code {font-family: Monaco,Menlo,Consolas,"Courier New",monospace;}
+/* code {font-family: Monaco,Menlo,Consolas,"Courier New",monospace;} */
+code { font-family: Consolas,"Andale Mono WT","Andale Mono","Lucida Console","Lucida Sans Typewriter","DejaVu Sans Mono","Bitstream Vera Sans Mono","Liberation Mono","Nimbus Mono L",Monaco,"Courier New",Courier,monospace; }
 
 pre { padding: 0px 2em;}
 
@@ -97,7 +98,7 @@ body.slidoc-slide-view { font-size: 150%; }
 body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */
-#slidoc-score-display {color: green; font-size: 0.8em; padding-right: 5px;}
+#slidoc-score-display {color: #2980B9; font-size: 0.8em; padding-right: 5px;}
 .slidoc-incorrect-answer-state #slidoc-score-display {color: red;}
 
 .slidoc-correct-answer {color: green;}

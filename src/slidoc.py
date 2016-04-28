@@ -735,14 +735,14 @@ class SlidocRenderer(MathRenderer):
             type_code = params[0]
             if type_code in ("choice", "multichoice", "number", "text", "point", "line"):
                 self.cur_qtype = type_code
-                self.questions.append([type_code, None])
+                self.questions.append([type_code, None, None])
              
         return ''
 
     def slidoc_choice(self, name):
         if not self.cur_qtype:
             self.cur_qtype = 'choice'
-            self.questions.append([self.cur_qtype, None])
+            self.questions.append([self.cur_qtype, None, None])
         elif self.cur_qtype != 'choice':
             print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question in '%s'" % (self.options["filename"], name, self.cur_header), file=sys.stderr)
             return name+'.. '
@@ -776,7 +776,7 @@ class SlidocRenderer(MathRenderer):
             # Unspecified answer
             if not self.cur_qtype:
                 self.cur_qtype = text.lower()
-                self.questions.append([self.cur_qtype, None])
+                self.questions.append([self.cur_qtype, None, None])
             elif self.cur_qtype != text.lower():
                 print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], text, self.cur_qtype), file=sys.stderr)
 
@@ -805,14 +805,18 @@ class SlidocRenderer(MathRenderer):
                     self.cur_qtype = 'text'
             else:
                 self.cur_qtype = 'text'    # Default answer type
-            self.questions.append([self.cur_qtype, None])
+            self.questions.append([self.cur_qtype, None, None])
 
         if not self.options['cmd_args'].pace and (not text or 'answers' in self.options['cmd_args'].strip):
             # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
+        correct_html = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(text)[3:-5]
         if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
-            self.questions[-1][1] = text.upper() if len(text) == 1 else text
+            if len(text) == 1:
+                self.questions[-1][1:3] = (text.upper(), text.upper())
+            else:
+                self.questions[-1][1:3] = (text, correct_html)
             id_str = self.get_slide_id()
             ans_params = {'sid': id_str,
                           'ans_type': self.cur_qtype,
@@ -840,7 +844,7 @@ class SlidocRenderer(MathRenderer):
 
             return choice_prefix+ans_html+'\n'
         else:
-            return choice_prefix+name.capitalize()+': '+text+'<p></p>\n'
+            return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
 
 
     def slidoc_concepts(self, name, text):
