@@ -1122,7 +1122,7 @@ if __name__ == '__main__':
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
     parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-    parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+    parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION,PREREQS', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
     parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
@@ -1176,7 +1176,7 @@ if __name__ == '__main__':
     del effective_args['file']
     print('slidoc: Effective argument list', argparse.Namespace(**effective_args))
 
-    js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '',
+    js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'features': {}}
@@ -1205,6 +1205,8 @@ if __name__ == '__main__':
             js_params['tryDelay'] = int(comps[3])
         if len(comps) > 4:
             js_params['sessionRevision'] = comps[4]
+        if len(comps) > 5:
+            js_params['sessionPrereqs'] = comps[5]
 
     gd_hmac_key = ''
     if cmd_args.google_docs:

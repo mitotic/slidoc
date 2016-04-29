@@ -223,7 +223,7 @@ sequence of slides. Information about the state of a paced slideshow
 is saved in the persistent local storage of the browser, using the
 filename as the key. It is enabled by the option:
 
-    --pace=pace_strict,delay_sec,try_count,try_delay
+    --pace=pace_strict,delay_sec,try_count,try_delay,revision,prereqs
 
 * `pace_strict` if non-zero, implies that document may only be viewed as a
   slideshow. If zero, switching to scrolling view is allowed.
@@ -235,6 +235,11 @@ filename as the key. It is enabled by the option:
   attempt is forced).
 
 * `try_delay` if non-zero, forces a wait after an incorrect attempt.
+
+* `revision` if not a null string, updates the session, discarding old revisions.
+
+* `prereqs` optional colon-separated string of prerequisite session names
+  (to be completed before this paced session can be attempted).
 
 The Notes portion of a question slide is hidden until a correct
 response is received or all tries are exhausted.

@@ -282,10 +282,38 @@ Slidoc.slidocReady = function (auth) {
 	    sessionAbort('Session aborted. Google Docs authentication error.');
 	    return false;
 	}
-	sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true});
+	if (Sliobj.params.sessionPrereqs) {
+	    // Retrieve prerequisite session(s)
+	    var prereqs = Sliobj.params.sessionPrereqs.split(':');
+	    sessionGet(prereqs[0], slidocReadyPaced.bind(null, newSession, prereqs));
+	} else {
+	    slidocReadyPaced(newSession)
+	}
+    
     } else {
 	slidocReadyAux(newSession);
     }
+}
+
+function slidocReadyPaced(newSession, prereqs, prevSession) {
+    console.log('slidocReadyPaced:', newSession, prereqs, prevSession);
+    if (prereqs) {
+	if (!prevSession) {
+	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not attempted!");
+	    return;
+	}
+	if (!prevSession.completed) {
+	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not completed!");
+	    return;
+	}
+	if (prereqs.length > 1) {
+	    prereqs = prereqs.slice(1);
+	    sessionGet(prereqs[0], slidocReadyPaced.bind(null, newSession, prereqs));
+	    return;
+	}
+    }
+	
+    sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true});
 }
 
 function slidocReadyAux(session) {
@@ -355,6 +383,7 @@ function sessionCreate(paced) {
     return {version: Sliobj.params.sessionVersion,
 	    revision: Sliobj.params.sessionRevision,
 	    paced: paced || false,
+	    completed: false,
 	    paceStrict: Sliobj.params.paceStrict || 0,
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
             startTime: Date.now(),
@@ -377,6 +406,7 @@ var Session_fields = ['startTime', 'lastSlide', 'questionsCount', 'questionsCorr
 function sessionAbort(err_msg) {
     Slidoc.classDisplay('slidoc-slide', 'none');
     alert(err_msg);
+    document.body.textContent = err_msg;
 }
 
 function sessionGetPutAux(callback, result, err_msg) {
@@ -1023,6 +1053,7 @@ Slidoc.startPaced = function () {
 
 Slidoc.endPaced = function () {
     console.log('Slidoc.endPaced: ');
+    Sliobj.session.completed = true;
     if (!Sliobj.session.paceStrict) {
 	// If pace can end, unpace
 	document.body.classList.remove('slidoc-paced-view');
