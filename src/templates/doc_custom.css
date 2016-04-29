@@ -18,7 +18,8 @@ h1, h2, h3, h4, h5, h6 {
     color: #111;
 }
 
-code {
+code,
+td.slidoc-slide-nav-counter {
     font-size: 0.85em;
     color: #381;}
 
@@ -36,7 +37,10 @@ a, a:visited,
 
 span.slidoc-clickable-sym { padding: 0.3em 0 0 0;}
 
-td.slidoc-clickable-sym { padding-left: 0.25em; padding-right: 0.25em; }
+td.slidoc-clickable-sym { padding-left: 0.25em; padding-right: 0.25em; padding-top: 0px; padding-bottom: 0px; margin: 0px;}
+
+.slidoc-slide-nav-counter { opacity: 0.8; }
+
 
 
 @media print {

@@ -866,7 +866,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 	    if (corr_answer_html)
 		corr_elem.innerHTML = corr_answer_html;
 	    else if (corr_answer)
-		corr_elem.text = corr_answer;
+		corr_elem.textContent = corr_answer;
 	    else
 		corr_elem.innerHTML = '<b>&#9083;</b>'; // Not check mark
 	    corr_elem.style.display = 'inline';
@@ -1222,6 +1222,8 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     var next_elem = document.getElementById('slidoc-slide-nav-next');
     prev_elem.style.visibility = (slide_num == 1) ? 'hidden' : 'visible';
     next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
+    var counterElem = document.getElementById('slidoc-slide-nav-counter');
+    counterElem.textContent = ('0'+slide_num).slice(-2)+'/'+slides.length;
 
     console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;
@@ -1448,7 +1450,7 @@ Slidoc.chainUpdate = function (queryStr) {
     if (tagindex) {
         ichain_elem.style.display = 'block';
         var concept_elem = document.getElementById(tagid+"-ichain-concept");
-        concept_elem.text = tagconcept;
+        concept_elem.textContent = tagconcept;
         if (Sliobj.ChainQuery) {
 	    conceptFunc = function() {goSlide(tagconceptref);}
             concept_elem.onclick = conceptFunc;

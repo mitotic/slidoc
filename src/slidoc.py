@@ -872,7 +872,7 @@ class SlidocRenderer(MathRenderer):
         tags = [x.strip() for x in text.split(";")]
         nn_tags = tags[1:] if tags and tags[0] == 'null' else tags[:]   # Non-null tags
 
-        if nn_tags and (self.options["cmd_args"].index or self.options["cmd_args"].qindex):
+        if nn_tags and (self.options["cmd_args"].index or self.options["cmd_args"].qindex or self.options["cmd_args"].pace):
             # Track/check tags
             if self.cur_qtype in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
