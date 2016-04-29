@@ -80,7 +80,7 @@ Slidoc.resetPaced = function () {
     }
     if (!window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
 	return false;
-    Sliobj.session = sessionCreate(Sliobj.session.paced);
+    Sliobj.session = sessionCreate(Sliobj.params.paceStrict !== null);
     sessionPut();
     location.reload(true);
 }
@@ -147,7 +147,7 @@ var Slide_help_list = [
 Slidoc.slideViewHelp = function () {
     var html = '<b>Help</b><table class="slidoc-slide-help-table">';
     var help_list = Slide_help_list.slice();
-    if (Sliobj.session.paced && !Sliobj.params.gd_sheet_url) {
+    if (Sliobj.params.paceStrict !== null && !Sliobj.params.gd_sheet_url) {
 	html += '<tr><td colspan="3"><hr></td></tr>';
 	help_list.splice(0,0,['', 'reset', 'Reset paced session'], ['', '', '']);
     }
@@ -325,6 +325,7 @@ function slidocReadyAux(session) {
 	Slidoc.startPaced();
 	return false;
     }
+
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
 	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
@@ -333,6 +334,20 @@ function slidocReadyAux(session) {
 	    document.getElementById("slidoc-sidebar-button").style.display = null;
 	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
 	    Slidoc.sidebarDisplay()
+    }
+}
+
+function preAnswer() {
+    // Pre-answer questions (and display notes for those)
+    for (var qnumber in Sliobj.session.questionsAttempted) {
+	if (Sliobj.session.questionsAttempted.hasOwnProperty(qnumber)) {
+	    var qentry = Sliobj.session.questionsAttempted[qnumber];
+	    if (qentry[1] == 'choice') {
+		Slidoc.choiceClick(null, qnumber, qentry[0], qentry[2]);
+	    } else {
+		Slidoc.answerClick(null, qnumber, qentry[0], qentry[1], qentry[2]);
+	    }
+	}
     }
 }
 
@@ -848,8 +863,10 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 	// Display correct answer
 	var corr_elem = document.getElementById(slide_id+"-correct");
         if (corr_elem) {
-	    if (corr_answer)
+	    if (corr_answer_html)
 		corr_elem.innerHTML = corr_answer_html;
+	    else if (corr_answer)
+		corr_elem.text = corr_answer;
 	    else
 		corr_elem.innerHTML = '<b>&#9083;</b>'; // Not check mark
 	    corr_elem.style.display = 'inline';
@@ -974,18 +991,9 @@ Slidoc.startPaced = function () {
 	    alert('ERROR: Mismatch between question concepts and missed concepts length (reset session, if possible)');
     }
 
-    Slidoc.classDisplay('slidoc-question-notes', 'none');
-    for (var qnumber in Sliobj.session.questionsAttempted) {
-	// Pre-answer questions
-	if (Sliobj.session.questionsAttempted.hasOwnProperty(qnumber)) {
-	    var qentry = Sliobj.session.questionsAttempted[qnumber];
-	    if (qentry[1] == 'choice') {
-		Slidoc.choiceClick(null, qnumber, qentry[0], qentry[2]);
-	    } else {
-		Slidoc.answerClick(null, qnumber, qentry[0], qentry[1], qentry[2]);
-	    }
-	}
-    }
+    Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-'); // Hide notes for slide view
+    Slidoc.classDisplay('slidoc-question-notes', 'none'); // Hide notes toggle for pacing
+    preAnswer();
     document.body.classList.add('slidoc-paced-view');
     if (Sliobj.session.paceStrict)
 	document.body.classList.add('slidoc-strict-paced-view');
@@ -1067,13 +1075,14 @@ Slidoc.slideViewStart = function () {
        Sliobj.currentSlide = Sliobj.session.lastSlide || 1; 
    } else {
        Sliobj.currentSlide = getCurrentlyVisibleSlide(slides) || 1;
+       // Hide notes (for paced view, this is handled earlier)
+       Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
    }
     var chapterId = parseSlideId(firstSlideId)[0];
-    var contElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
-    for (var j=0; j<contElems.length; j++)
-	Slidoc.hide(contElems[j], null, '-');
+    var contentElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
+    for (var j=0; j<contentElems.length; j++)
+	Slidoc.hide(contentElems[j], null, '-');
 
-   Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
    document.body.classList.add('slidoc-slide-view');
 
    Slidoc.slideViewGo(false, Sliobj.currentSlide);

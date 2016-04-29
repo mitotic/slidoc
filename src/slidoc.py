@@ -811,7 +811,15 @@ class SlidocRenderer(MathRenderer):
             # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
-        correct_html = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(text)[3:-5]
+        correct_html = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(text)
+        try:
+            corr_elem = ElementTree.fromstring(correct_html)
+            text = html2text(corr_elem).strip()
+            correct_html = correct_html[3:-5]
+        except Exception, excp:
+            print("    ****ANSWER-ERROR: %s: 'Answer: %s' does not parse properly as html: %s'" % (self.options["filename"], text, excp), file=sys.stderr)
+            correct_html = ''
+
         if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
             if len(text) == 1:
                 self.questions[-1][1:3] = (text.upper(), text.upper())
