@@ -786,7 +786,7 @@ class SlidocRenderer(MathRenderer):
             # Determine question type from answer
             if len(text) == 1 and text.isalpha():
                 self.cur_qtype = 'choice'
-            elif text and text[0].isdigit():
+            elif text and re.match(r'^[-+/\d\.eE\s]+$', text):
                 ans, error = '', ''
                 if '+/-' in text:
                     ans, _, error = text.partition('+/-')
@@ -1027,7 +1027,7 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
                                               classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-nopaced', 'slidoc-noprint'])
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:
-        post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();")
+        post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();", classes=['slidoc-clickable', 'slidoc-noprint'])
 
     content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
     content_html = content_html.replace('__POST_HEADER__', post_header_html)
