@@ -488,8 +488,8 @@ class MathRenderer(mistune.Renderer):
                 code = lang + '\n' + code
 
         if not lexer:
-            return '\n<pre><code>%s</code></pre>\n' % \
-                mistune.escape(code)
+            attrs = (' class="slidoc-code-%s"' % lang[3:]) if lang and lang.startswith('nb_') else ''
+            return '\n<pre><code %s>%s</code></pre>\n' % (attrs, mistune.escape(code))
 
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)

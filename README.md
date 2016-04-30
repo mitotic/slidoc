@@ -259,7 +259,7 @@ Concepts: paced mode; adaptive testing
 
 ---
 
-## Answer tally and concept understanding analysis
+## Scores and concept understanding analysis
 
 When you attempt each question in a Slidoc document, along with the
 score, the concepts associated with that question are also tracked.
@@ -683,16 +683,25 @@ indented syntax.
 _Fenced_ code snippet
 
 ```
-def func(a):
+def sq(a):
     return a**2
+print 'The square of 4 is', sq(4)
 ```
 
-When converting to notebook format, fenced code is converted to a code cell. 
+```nb_output
+The square of 4 is 16
+```
+
+When converting to notebook format, fenced code is converted to a code
+cell. For fenced code, the pseudo-language `nb_output` can be used to
+indicate the output produced by executing a notebook cell (as shown
+above).
 
 **Indented** code snippet
 
-    def func2(b):
+    def sq(b):
         return b**2
+    print 'The square of 4 is', sq(4)
 
 When converting to notebook format, indented code is not converted to
 a code cell (unless explicitly requested).
