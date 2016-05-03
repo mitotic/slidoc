@@ -2,6 +2,8 @@
 
 var Slidoc = {};  // External object
 
+var SlidocFormulas = {};  // Inline JS object
+
 ///UNCOMMENT: (function(Slidoc) {
 
 var MAX_INC_LEVEL = 9; // Max. incremental display level
@@ -33,6 +35,9 @@ document.onreadystatechange = function(event) {
     } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
 }
 
+function unescapeAngles(text) {
+    return text.replace('&lt;', '<').replace('&gt;', '>')
+}
 
 function toggleClass(add, className, element) {
     element = element || document.body;
@@ -251,6 +256,11 @@ function parseElem(elemId) {
     return null;
 }
 
+function getSlideAttrs(slide_id) {
+   var chapter_id = parseSlideId(slide_id)[0];
+   return chapter_id ? parseElem(chapter_id+'-01-attrs') : null;
+}
+
 Slidoc.slidocReady = function (auth) {
     console.log("Slidoc.slidocReady:", auth);
     sessionManage();
@@ -345,6 +355,29 @@ function slidocReadyAux(session) {
 	sessionPut();
     }
 
+    // Restore random seed for session
+    SlidocRandom.setSeed(Sliobj.session.randomSeed);
+
+    // Inject inline JS
+    if (SlidocFormulas.ready)
+	SlidocFormulas.ready(Sliobj.session);
+
+    var jsSpans = document.getElementsByClassName('slidoc-inline-js');
+    for (var j=0; j<jsSpans.length; j++) {
+	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
+	var slideId = '';
+	for (var k=0; k<jsSpans[j].classList.length; k++) {
+	    var refmatch = RegExp('slidoc-inline-js-in-(.*)$').exec(jsSpans[j].classList[k]);
+	    if (refmatch) {
+		slideId = refmatch[1];
+		break;
+	    }
+	}
+	var val = slidocCall(jsFunc, slideId);
+	if (val)
+	    jsSpans[j].innerHTML = val;
+    }
+    
     if (Sliobj.session.questionsCount)
 	Slidoc.showScore();
 
@@ -352,6 +385,8 @@ function slidocReadyAux(session) {
     if (!toc_elem && Sliobj.session.paced) {
 	Slidoc.startPaced();
 	return false;
+    } else {
+	preAnswer();
     }
 
     Slidoc.chainUpdate(location.search);
@@ -362,6 +397,21 @@ function slidocReadyAux(session) {
 	    document.getElementById("slidoc-sidebar-button").style.display = null;
 	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
 	    Slidoc.sidebarDisplay()
+    }
+}
+
+function slidocCall(jsFunc, slide_id, question_attrs) {
+    // Invoke inline JS function
+    console.log('slidocCall:', jsFunc, slide_id, question_attrs);
+    if (!(jsFunc in SlidocFormulas))
+	return '';
+
+    try {
+	return SlidocFormulas[jsFunc](slide_id);
+    } catch(err) {
+	var msg = 'Error in function '+jsFunc+': '+err;
+	console.log('slidoc-inline-js:', msg );
+	return msg
     }
 }
 
@@ -380,11 +430,13 @@ function preAnswer() {
 }
 
 function sessionCreate(paced) {
+    SlidocRandom.setSeed(); // Initialize random seed
     return {version: Sliobj.params.sessionVersion,
 	    revision: Sliobj.params.sessionRevision,
 	    paced: paced || false,
 	    completed: false,
 	    paceStrict: Sliobj.params.paceStrict || 0,
+	    randomSeed: SlidocRandom.getSeed(),        // Save random seed
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
             startTime: Date.now(),
             lastTime: 0,
@@ -716,6 +768,7 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
    // Handle answer types: number, text
    console.log("Slidoc.answerClick:", elem, slide_id, question_number, answer_type, response);
    var setup = !elem;
+    var checkOnly = elem && elem.id.slice(-5) == 'check';
     if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
 	alert('Please switch to slide view to answer questions in paced mode');
 	return false;
@@ -728,11 +781,11 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
 	}
    } else {
        // Not setup
-	if (!Slidoc.answerPacedAllow())
+	if (!checkOnly && !Slidoc.answerPacedAllow())
 	    return false;
        response = '';
     }
-   Slidoc.toggleInline(elem);
+
    var inputElem = document.getElementById(slide_id+'-ansinput');
    if (inputElem) {
        if (setup) {
@@ -742,7 +795,7 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
 	   if (answer_type == 'number' && isNaN(response)) {
 	       alert('Expecting a numeric value as answer');
 	       return false;
-	   } else if (Sliobj.session.paced) {
+	   } else if (Sliobj.session.paced && !checkOnly) {
 	       if (!response) {
 		   alert('Expecting a non-null answer');
 		   return false;
@@ -753,13 +806,21 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
 	       Sliobj.lastInputValue = response;
 	   }
        }
-       if (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1)
+       if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
 	   inputElem.disabled = 'disabled';
     }
 
-    if (!setup && Sliobj.session.remainingTries > 0)
+    if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
 	Sliobj.session.remainingTries -= 1;
-    Slidoc.answerUpdate(setup, question_number, slide_id, answer_type, response);
+
+    var callUpdate = Slidoc.answerUpdate.bind(null, setup, question_number, slide_id, answer_type, response, checkOnly);
+    if (answer_type.slice(0,9) == 'text/code') {
+	var attr_vals = getSlideAttrs(slide_id);
+	var question_attrs = attr_vals[question_number-1];
+	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
+    } else {
+	callUpdate();
+    }
     return false;
 }
 
@@ -790,22 +851,18 @@ Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
       choices[i].classList.remove("slidoc-clickable");
    }
 
-   var chapter_id = parseSlideId(slide_id)[0];
-   console.log("Slidoc.choiceClick2:", chapter_id);
-
-   if (chapter_id) {
-       var attr_vals = parseElem(chapter_id+'-01-attrs');
-       if (attr_vals) {
-	   var corr_answer = attr_vals[question_number-1][1];
-	   if (corr_answer) {
-               var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
-               if (corr_choice) {
-		   corr_choice.style['text-decoration'] = '';
-		   corr_choice.style['font-weight'] = 'bold';
-               }
-	   }
-       }
-   }
+    console.log("Slidoc.choiceClick2:", slide_id);
+    var attr_vals = getSlideAttrs(slide_id);
+    if (attr_vals) {
+	var corr_answer = attr_vals[question_number-1].correct;
+	if (corr_answer) {
+            var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
+            if (corr_choice) {
+		corr_choice.style['text-decoration'] = '';
+		corr_choice.style['font-weight'] = 'bold';
+            }
+	}
+    }
 
     if (!setup && Sliobj.session.remainingTries > 0)
 	Sliobj.session.remainingTries = 0;   // Only one try for choice response
@@ -813,22 +870,228 @@ Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
     return false;
 }
 
-Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, response) {
-    console.log('Slidoc.answerUpdate: ', setup, question_number, slide_id, resp_type, response);
+var consoleOut = function() {};
+if (window.console && window.console.log)
+    consoleOut = function() {window.console.log.apply(window.console, arguments)};
+
+function execJS(code, outCallback, errCallback) {
+    // Evaluate JS expression
+    try {
+	outCallback(''+eval(code));
+    } catch(err) {
+	errCallback(''+err);
+    }
+}
+
+
+function skBuiltinRead(x) {
+    if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined)
+            throw "File not found: '" + x + "'";
+    return Sk.builtinFiles["files"][x];
+}
+
+function skRunit(code, outCallback, errCallback) { 
+    var skOutBuffer = [];
+    function skOutf(text) { 
+	console.log('skOutf:', text, skOutBuffer);
+	skOutBuffer.push(text);
+    } 
+
+    Sk.pre = "output";
+    Sk.configure({output:skOutf, read:skBuiltinRead}); 
+    //(Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = 'mycanvas';
+    var myPromise = Sk.misceval.asyncToPromise(function() {
+	return Sk.importMainWithBody("<stdin>", false, code, true);
+    });
+    myPromise.then(function(mod) {
+	console.log('skSuccess:', 'success', skOutBuffer);
+	outCallback(skOutBuffer.join(''));
+	skOutBuffer = [];
+    },
+    function(err) {
+         console.log('skErr:', err.toString());
+	 errCallback(err);
+    });
+}
+
+function execCode(codeType, code, expect, callback) {
+    // callback(correct, stdout, stderr)
+    // stderr => syntax error (correct == null)
+    // If !expect then correct == null
+    // Otherwise correct = (expect == stdout)
+    console.log('execCode:', codeType, code, expect);
+
+    if (codeType == 'text/code=test') {
+	if (code.indexOf('Syntax error') > -1)
+	    callback(null, null, 'Syntax error');
+	else if (code.indexOf('Semantic error') > -1)
+	    callback(expect ? false : null, 'Incorrect output', '');
+	else if (expect)
+	    callback(expect == 'Correct output', 'Correct output', '');
+	else
+	    callback(null, 'Correct output', '');
+    } else if (codeType == 'text/code=python') {
+	if (!window.Sk) {
+	    alert('Error: Skulpt module not loaded');
+	    return;
+	}
+	skRunit(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
+    } else if (codeType == 'text/code=javascript') {
+	execJS(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
+    }
+}
+
+function execCodeOut(expect, callback, text) {
+    console.log('execCodeOut:', expect, text);
+    var correct = expect ? (expect.trim() == text.trim()) : null;
+    callback(correct, text, '');
+}
+
+function execCodeErr(callback, err) {
+    console.log('execCodeErr:', err);
+    callback(null, '', err.toString());
+}
+
+function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
+    // Execute code and compare output to expected output
+    // callback( {correct:true/false/null, invalid: invalid_msg, output:output, tests:0/1/2} )
+    // invalid_msg => syntax error when executing user code
+    console.log('checkCode:', slide_id, user_code, checkOnly);
+
+    if (!question_attrs.input.length || !question_attrs.output.length) {
+	console.log('checkCode: Input/output code checks not found in '+slide_id);
+	return callback( {correct:null, invalid:'', output:'Not checked', tests:0} );
+    }
+
+    var codeType = question_attrs.qtype;
+
+    var codeCells = [];
+    for (var j=1; j<=question_attrs.prior; j++) {
+	// Execute all prior input cells
+	var priorCell = document.getElementById('slidoc-block-prior-'+j);
+	if (!priorCell) {
+	    console.log('checkCode: Prior cell '+j+' not found in '+slide_id);
+	    return callback({correct:null, invalid:'', output:'Missing prior cell'+j, tests:0});
+	}
+	codeCells.push( priorCell.textContent.trim() );
+    }
+
+    codeCells.push(user_code);
+    var ntest = checkOnly ? 1 : question_attrs.input.length;
+
+    function checkCodeAux(index, msg, correct, stdout, stderr) {
+	console.log('checkCodeAux:', index, msg, correct, stdout, stderr);
+	if (stderr) {
+	    console.log('checkCodeAux: Error', msg, stderr);
+	    return callback({correct:false, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
+	}
+	if (index > 0 && !correct) {
+	    console.log('checkCodeAux: Error in test input cell in '+slide_id, msg);
+	    return callback({correct:correct, invalid:'', output:stdout, tests:index-1});
+	}
+
+	// Execute test code
+	while (index < ntest) {
+	    var inputCell = document.getElementById('slidoc-block-input-'+question_attrs.input[index]);
+	    if (!inputCell) {
+		console.log('checkCodeAux: Test input cell '+question_attrs.input[index]+' not found in '+slide_id);
+		return callback({correct:null, invalid:'', output:'Missing test input'+(index+1), tests:index});
+	    }
+	    var inputCode = inputCell.textContent.trim();
+	    
+	    var outputCell = document.getElementById('slidoc-block-output-'+question_attrs.output[index]);
+	    if (!outputCell) {
+		console.log('checkCodeAux: Test output cell '+question_attrs.output[index]+' not found in '+slide_id);
+		return callback({correct:null, invalid:'', output:'Missing test output'+(index+1), tests:index});
+	    }
+	    var expectOutput = outputCell.textContent.trim();
+	    
+	    return execCode(codeType, codeCells.concat(inputCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, index+1, 'test code'+index));
+	}
+	return callback({correct:true , invalid:'', output:'', tests:ntest});
+    }
+
+    checkCodeAux(0, '', null, '', '');
+}
+
+function retryAnswer() {
+    Sliobj.session.lastTime = Date.now();
+    Sliobj.session.lastAnswersCorrect = -1;   // Incorrect answer
+    document.body.classList.add('slidoc-incorrect-answer-state');
+    var after_str = '';
+    if (Sliobj.params.tryDelay) {
+	Slidoc.delayIndicator(Sliobj.params.tryDelay, slide_id+'-ansclick');
+	after_str = ' after '+Sliobj.params.tryDelay+' second(s)';
+    }
+    Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
+    return false;
+}
+
+Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, response, checkOnly, checkResp) {
+    console.log('Slidoc.answerUpdate: ', setup, question_number, slide_id, resp_type, response, checkOnly, checkResp);
 
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
 
-   var is_correct = true;
-   var chapter_id = parseSlideId(slide_id)[0];
-   console.log("Slidoc.answerUpdate2:", chapter_id);
+    var is_correct = null;
+    var attr_vals = getSlideAttrs(slide_id);
+    if (!attr_vals)
+	return;
 
-   if (chapter_id) {
-      var attr_vals = parseElem(chapter_id+'-01-attrs');
-      if (attr_vals) {
-	var corr_answer = attr_vals[question_number-1][1];
-	var corr_answer_html = attr_vals[question_number-1][2];
-	console.log('Slidoc.answerUpdate:corr', corr_answer);
+    var question_attrs = attr_vals[question_number-1];
+    var corr_answer = question_attrs.correct;
+    var corr_answer_html = question_attrs.html;
+    var corr_answer_js = question_attrs.js;
+    console.log('Slidoc.answerUpdate:', slide_id);
+
+    if (checkResp) {
+	var ntests = question_attrs.input.length;
+	var code_output_elem = document.getElementById(slide_id+"-code-output");
+	if (checkOnly) {
+	    var msg = 'Checked';
+	    code_output_elem.textContent = msg;
+	    if (checkResp.invalid) {
+		msg = 'Syntax/runtime error!';
+		code_output_elem.textContent = 'Error output:\n'+checkResp.invalid;
+	    } else if (checkResp.correct === false) {
+		msg = (ntests > 1) ? 'First check failed!' : 'Incorrect output!';
+		code_output_elem.textContent = 'Incorrect output:\n'+checkResp.output;
+	    } else if (checkResp.correct === true) {
+		msg = (ntests > 1) ? 'First check passed!' : 'Valid output!';
+		code_output_elem.textContent = msg;
+	    }
+	    Slidoc.showPopup(msg);
+	    return false;
+	}
+	corr_answer = '';
+	corr_answer_html = '';
+	is_correct = checkResp.correct;
+	if (checkResp.invalid) {
+	    is_correct = false;
+	    code_output_elem.textContent = 'Error output:\n'+checkResp.invalid;
+	} else if (is_correct) {
+	    code_output_elem.textContent = (checkResp.tests > 1) ? 'Second check passed!' : 'Valid output';
+	} else if (is_correct === false) {
+	    if (!setup && Sliobj.session.remainingTries > 0 && ntests > 1) {
+		// Retry only if second check is present
+		code_output_elem.textContent = (checkResp.tests > 0) ? 'Second check failed!' : 'Incorrect output:\n'+checkResp.output;
+		retryAnswer();
+		return false;
+	    }
+	    code_output_elem.textContent = 'Incorrect'+((checkResp.tests > 0) ? ' second' : '')+' output:\n'+checkResp.output;
+	} else {
+	    code_output_elem.textContent = 'Output:\n'+(checkResp.output || '');
+	}
+	
+    } else if (corr_answer_js) {
+	var val = slidocCall(corr_answer_js, slide_id, question_attrs);
+	if (val) {
+	    corr_answer = val;
+	    corr_answer_html = '<code>'+corr_answer+'</code>';
+	}
+    }
+
+    if (corr_answer || corr_answer_js) {
 	if (corr_answer) {
 	    // Check response against correct answer
 	    is_correct = false;
@@ -846,7 +1109,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		try {
 		    resp_value = parseFloat(response);
 		} catch(err) {console.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
-
+		
 		if (corr_value !== null && resp_value != null)
 		    is_correct = Math.abs(resp_value - corr_value) <= 1.001*corr_error;
 	    } else {
@@ -866,43 +1129,31 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 			break;
 		}
 	    }
-	     
-	    if (!setup && !is_correct && Sliobj.session.remainingTries > 0) {
-		// Re-try answer
-		Sliobj.session.lastTime = Date.now();
-		Sliobj.session.lastAnswersCorrect = -1;   // Incorrect answer
-		document.body.classList.add('slidoc-incorrect-answer-state');
-		var after_str = '';
-		if (Sliobj.params.tryDelay) {
-		    Slidoc.delayIndicator(Sliobj.params.tryDelay, slide_id+'-ansclick');
-		    after_str = ' after '+Sliobj.params.tryDelay+' second(s)';
-		}
-		Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
-		return false;
-	    }
-	    // Display correctness of response
-	    if (is_correct) {
-		var cmark_elem = document.getElementById(slide_id+"-correct-mark");
-		if (cmark_elem)
-		    cmark_elem.innerHTML = " &#x2714;&nbsp;";
-	    } else {
-		var wmark_elem = document.getElementById(slide_id+"-wrong-mark");
-		wmark_elem.innerHTML = " &#x2718;&nbsp;";
-	    }
 	}
-	// Display correct answer
-	var corr_elem = document.getElementById(slide_id+"-correct");
-        if (corr_elem) {
-	    if (corr_answer_html)
-		corr_elem.innerHTML = corr_answer_html;
-	    else if (corr_answer)
-		corr_elem.textContent = corr_answer;
-	    else
-		corr_elem.innerHTML = '<b>&#9083;</b>'; // Not check mark
-	    corr_elem.style.display = 'inline';
+	if (!setup && !is_correct && Sliobj.session.remainingTries > 0) {
+	    retryAnswer();
+	    return false;
 	}
-      }
-   }
+    }
+    // Display correctness of response
+    var cmark_elem = document.getElementById(slide_id+"-correct-mark");
+    var wmark_elem = document.getElementById(slide_id+"-wrong-mark");
+    var amark_elem = document.getElementById(slide_id+"-any-mark");
+    cmark_elem.innerHTML = is_correct ? " &#x2714;&nbsp;" : "";
+    wmark_elem.innerHTML = (is_correct === false) ? " &#x2718;&nbsp;" : "";
+    amark_elem.innerHTML = (is_correct === null) ? '<b>&#9083;</b>' : ""; // Not check mark
+    
+    // Display correct answer
+    var corr_elem = document.getElementById(slide_id+"-correct");
+    if (corr_elem) {
+	if (corr_answer_html)
+	    corr_elem.innerHTML = corr_answer_html;
+	else if (corr_answer)
+	    corr_elem.textContent = corr_answer;
+	else
+	    corr_elem.innerHTML = '';
+	corr_elem.style.display = 'inline';
+    }
 
     var ans_elem = document.getElementById(slide_id+"-answer");
     if (ans_elem) ans_elem.style.display = 'inline';
@@ -924,6 +1175,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
    if (!setup)
        Slidoc.answerTally(is_correct, question_number, slide_id, resp_type, response);
 }
+
 
 Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type, response) {
    console.log('Slidoc.answerTally: ', is_correct, question_number, slide_id, resp_type, response);
@@ -1001,7 +1253,7 @@ Slidoc.startPaced = function () {
 
     if (!Sliobj.session.lastSlide) {
 	// Start of session
-	var attr_vals = parseElem(firstSlideId+'-attrs');
+	var attr_vals = getSlideAttrs(firstSlideId);
 	Sliobj.session.questionsMax = attr_vals ? attr_vals.length : 0;
 
 	if (Sliobj.questionConcepts.length > 0) {
@@ -1254,7 +1506,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     prev_elem.style.visibility = (slide_num == 1) ? 'hidden' : 'visible';
     next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
     var counterElem = document.getElementById('slidoc-slide-nav-counter');
-    counterElem.textContent = ('0'+slide_num).slice(-2)+'/'+slides.length;
+    counterElem.textContent = ((slides.length <= 9) ? slide_num : ('0'+slide_num).slice(-2))+'/'+slides.length;
 
     console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;
@@ -1558,6 +1810,34 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 	closeElem.onclick = Sliobj.closePopup;
     }
 }
+
+// Linear Congruential Random Number Generator  https://gist.github.com/Protonk/5367430
+var SlidocRandom = (function() {
+  // Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
+      // m is basically chosen to be large (as it is the max period)
+      // and for its relationships to a and c
+  var m = 4294967296,
+      // a - 1 should be divisible by m's prime factors
+      a = 1664525,
+      // c and m should be co-prime
+      c = 1013904223,
+      seed, z;
+  return {
+    setSeed : function(val) {
+      z = seed = val || Math.round(Math.random() * m);
+    },
+    getSeed : function() {
+      return seed;
+    },
+    rand : function() {
+      // define the recurrence relationship
+      z = (a * z + c) % m;
+      // return a float in [0, 1) 
+      // if z = m then z / m = 0 therefore (z % m) / m < 1 always
+      return z / m;
+    }
+  };
+}());
 
 // Detect swipe events
 // Modified from https://blog.mobiscroll.com/working-with-touch-events/

@@ -1,4 +1,4 @@
-<!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number -->
+<!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number,incremental -->
 # Slidoc: A slide-oriented document management system using Markdown
 
 Slidoc manages a collection of lectures written using
@@ -682,7 +682,7 @@ indented syntax.
 
 _Fenced_ code snippet
 
-```
+```python
 def sq(a):
     return a**2
 print 'The square of 4 is', sq(4)
@@ -804,15 +804,48 @@ Notes:
 
 ---
 
-This is a question with a numeric response (no header)
+## Interactive numerical response question
 
-What is the square root of `6.25`?
+What is the square root of `=sqrtNumber();6.25`?
 
-Answer: 2.5 +/- 0.1
+Answer: `=sqrtAnswer();2.5 +/- 0.1`
 
-Concepts: questions, numeric response
+Concepts: questions, numeric response; questions, formulas
 
 Notes: An optional error range may be provided after `+/-`.
+
+Embedded javascript functions may be used as formulas, using the notation
+
+    =function_name()
+
+To display a default reference value, append it, separated by `;`.
+
+<script>
+// Sample code for embedding Javascript formulas ("macros") in questions and answers.
+// Use anonymous function wrapper to save persistent values.
+// Define formulas as function attributes to global object SlidocFormulas.
+// First argument to formula function is the slideId.
+// For answers, there is also second argument, the question attributes.
+// Use SlidocRandom.rand() to generate repeatable uniform random number between 0 and 1
+//
+(function() {
+  var randVals = {}; // Persistent value
+
+  SlidocFormulas.sqrtNumber = function(slideId)
+  {
+  	// Pick an integer between 2 and 19
+	var randInt = Math.floor(2 + 18*SlidocRandom.rand())
+	randVals[slideId] = (0.5*randInt).toFixed(1);
+	console.log('SlidocFormulas.sqrtNumber:', slideId, SlidocRandom.getSeed(), randVals[slideId]);
+	return (randVals[slideId]*randVals[slideId]).toFixed(2);
+  }
+
+  SlidocFormulas.sqrtAnswer = function(slideId, questionAttrs) {
+	console.log('SlidocFormulas.sqrtAnswer:', slideId, questionAttrs);
+	return randVals[slideId]+' +/- '+'0.1';
+  }
+})();
+</script>
 
 ---
 
@@ -839,7 +872,7 @@ considered correct.
 
 Write a python function to add two numbers.
 
-Answer: text
+Answer: text/multiline
 
 Concepts: questions, text response 
 

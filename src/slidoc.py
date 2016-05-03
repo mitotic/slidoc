@@ -242,11 +242,14 @@ class MathBlockGrammar(mistune.BlockGrammar):
     pause =           re.compile(r'^(\.\.\.) *(?:\n+|$)')
 
 class MathBlockLexer(mistune.BlockLexer):
-    default_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule', 'pause'] + mistune.BlockLexer.default_rules
-
     def __init__(self, rules=None, **kwargs):
         if rules is None:
             rules = MathBlockGrammar()
+        cmd_args = kwargs.get('cmd_args')
+        slidoc_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule']
+        if cmd_args and 'incremental' in cmd_args.features:
+            slidoc_rules += ['pause']
+        self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
         super(MathBlockLexer, self).__init__(rules, **kwargs)
 
     def parse_block_math(self, m):
@@ -304,6 +307,7 @@ class MathBlockLexer(mistune.BlockLexer):
 class MathInlineGrammar(mistune.InlineGrammar):
     slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
     math =          re.compile(r"^`\$(.+?)\$`")
+    inline_js =     re.compile(r"^`=(\w+)\(\)(;([^`\n]+))?`")
     block_math =    re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
@@ -313,11 +317,12 @@ class MathInlineGrammar(mistune.InlineGrammar):
     )
 
 class MathInlineLexer(mistune.InlineLexer):
-    default_rules = ['slidoc_choice', 'block_math', 'math', 'internal_ref'] + mistune.InlineLexer.default_rules
-
     def __init__(self, renderer, rules=None, **kwargs):
         if rules is None:
             rules = MathInlineGrammar()
+        cmd_args = kwargs.get('cmd_args')
+        slidoc_rules = ['slidoc_choice', 'block_math', 'math', 'internal_ref', 'inline_js']
+        self.default_rules = slidoc_rules + mistune.InlineLexer.default_rules
         super(MathInlineLexer, self).__init__(renderer, rules, **kwargs)
 
     def output_slidoc_choice(self, m):
@@ -325,6 +330,9 @@ class MathInlineLexer(mistune.InlineLexer):
 
     def output_math(self, m):
         return self.renderer.inline_math(m.group(1))
+
+    def output_inline_js(self, m):
+        return self.renderer.inline_js(m.group(1), m.group(3))
 
     def output_block_math(self, m):
         return self.renderer.block_math(m.group(1))
@@ -412,7 +420,7 @@ class MarkdownWithMath(mistune.Markdown):
         if 'block' not in kwargs:
             kwargs['block'] = MathBlockLexer
         super(MarkdownWithMath, self).__init__(renderer, **kwargs)
-        
+
     def output_block_math(self):
         return self.renderer.block_math(self.token['text'])
 
@@ -481,20 +489,19 @@ class MathRenderer(mistune.Renderer):
         lexer = None
         if code.endswith('\n\n'):
             code = code[:-1]
-        if lang and not lang.startswith('nb_'):
+        if lang:
             try:
                 lexer = get_lexer_by_name(lang, stripall=True)
             except ClassNotFound:
                 code = lang + '\n' + code
 
         if not lexer:
-            attrs = (' class="slidoc-code-%s"' % lang[3:]) if lang and lang.startswith('nb_') else ''
-            return '\n<pre><code %s>%s</code></pre>\n' % (attrs, mistune.escape(code))
+            return '\n<pre><code>%s</code></pre>\n' % mistune.escape(code)
 
         formatter = HtmlFormatter()
         return highlight(code, lexer, formatter)
 
-
+    
 class SlidocRenderer(MathRenderer):
     header_attr_re = re.compile(r'^.*?(\s*\{\s*(#\S+)?([^#\}]*)?\s*\})\s*$')
 
@@ -514,6 +521,10 @@ class SlidocRenderer(MathRenderer):
         self.first_id = self.get_slide_id()
         self.index_id = ''                     # Set by render()
         self.qindex_id = ''                    # Set by render
+        self.block_prior_counter = 0
+        self.block_input_counter = 0
+        self.block_output_counter = 0
+        self.load_python = False
 
     def _new_slide(self):
         self.slide_number += 1
@@ -527,10 +538,21 @@ class SlidocRenderer(MathRenderer):
         self.incremental_level = 0
         self.incremental_list = False
         self.incremental_pause = False
+        self.slide_block_input = []
+        self.slide_block_output = []
 
     def list_incremental(self, activate):
         self.incremental_list = activate
     
+    def inline_js(self, js_func, text):
+        if 'inline_js' in self.options["cmd_args"].strip:
+            return '<code>%s</code>' % (mistune.escape('='+js_func+'()' if text is None else text))
+        slide_id = self.get_slide_id()
+        classes = 'slidoc-inline-js'
+        if slide_id:
+            classes += ' slidoc-inline-js-in-'+slide_id
+        return '<code class="%s" data-slidoc-js-function="%s">%s</code>' % (classes, js_func.replace('<', '&lt;').replace('>', '&gt;'), mistune.escape('='+js_func+'()' if text is None else text))
+
     def get_chapter_id(self):
         return make_chapter_id(self.options['filenumber'])
 
@@ -609,6 +631,55 @@ class SlidocRenderer(MathRenderer):
             return super(SlidocRenderer, self).paragraph(text)
         return '<p class="%s-incremental slidoc-incremental%d">%s</p>\n' % (self.get_slide_id(), self.incremental_level, text.strip(' '))
 
+    def block_code(self, code, lang=None):
+        """Rendering block level code. ``pre > code``.
+        """
+        if code.endswith('\n\n'):
+            code = code[:-1]
+
+        slide_id = self.get_slide_id()
+        classes = 'slidoc-block-code slidoc-block-code-in-%s' % slide_id
+
+        id_str = ''
+    
+        if lang == 'nb_input':
+            lang = lang[3:]
+            classes += ' slidoc-block-input'
+            self.block_input_counter += 1
+            self.slide_block_input.append(self.block_input_counter)
+            id_str = 'id="slidoc-block-input-%d"' % self.block_input_counter
+            if len(self.slide_block_input) > 1:
+                classes += ' slidoc-block-multi'
+
+        elif lang == 'nb_output':
+            lang = lang[3:]
+            classes += ' slidoc-block-output'
+            self.block_output_counter += 1
+            self.slide_block_output.append(self.block_output_counter)
+            id_str = 'id="slidoc-block-output-%d"' % self.block_output_counter
+            if len(self.slide_block_output) > 1:
+                classes += ' slidoc-block-multi'
+
+        elif lang in ('nb_javascript','nb_python'):
+            lang = lang[3:]
+            classes += ' slidoc-block-prior'
+            self.block_prior_counter += 1
+            id_str = 'id="slidoc-block-prior-%d"' % self.block_prior_counter
+
+        lexer = None
+        if lang and lang not in ('input', 'output'):
+            classes += ' slidoc-block-lang-'+lang
+            try:
+                lexer = get_lexer_by_name(lang, stripall=True)
+            except ClassNotFound:
+                code = lang + '\n' + code
+
+        if lexer:
+            html = highlight(code, lexer, HtmlFormatter())
+        else:
+            html = '<pre><code>%s</code></pre>\n' % mistune.escape(code)
+        
+        return ('\n<div %s class="%s">\n' % (id_str, classes))+html+'</div>\n'
 
     def header(self, text, level, raw=None):
         """Handle markdown headings
@@ -735,14 +806,14 @@ class SlidocRenderer(MathRenderer):
             type_code = params[0]
             if type_code in ("choice", "multichoice", "number", "text", "point", "line"):
                 self.cur_qtype = type_code
-                self.questions.append([type_code, None, None])
+                self.questions.append({'qtype': type_code})
              
         return ''
 
     def slidoc_choice(self, name):
         if not self.cur_qtype:
             self.cur_qtype = 'choice'
-            self.questions.append([self.cur_qtype, None, None])
+            self.questions.append({'qtype': self.cur_qtype})
         elif self.cur_qtype != 'choice':
             print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question in '%s'" % (self.options["filename"], name, self.cur_header), file=sys.stderr)
             return name+'.. '
@@ -772,87 +843,132 @@ class SlidocRenderer(MathRenderer):
             choice_prefix = self.choice_end
             self.choice_end = ''
 
-        if text.lower() in ('choice', 'multichoice', 'number', 'text', 'point', 'line'):
-            # Unspecified answer
-            if not self.cur_qtype:
-                self.cur_qtype = text.lower()
-                self.questions.append([self.cur_qtype, None, None])
-            elif self.cur_qtype != text.lower():
-                print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], text, self.cur_qtype), file=sys.stderr)
+        correct_js = ''
+        js_match = MathInlineGrammar.inline_js.match(text)
+        if js_match:
+            # Inline JS answer; strip function call
+            if 'inline_js' not in self.options["cmd_args"].strip:
+                correct_js = js_match.group(1)
+            text = text[len(js_match.group(0)):].strip()
+            if js_match.group(3) is not None:
+                text = js_match.group(3) + text
+            elif not text and correct_js:
+                text = '='+correct_js+'()'
 
+        qtype = ''
+        num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
+        if num_match:
+            # Numeric default answer
+            text = num_match.group(1).strip()
+            ans, error = '', ''
+            if '+/-' in text:
+                ans, _, error = text.partition('+/-')
+            elif ' ' in text.strip():
+                comps = text.strip().split()
+                if len(comps) == 2:
+                    ans, error = comps
+            else:
+                ans = text
+            ans, error = ans.strip(), error.strip()
+            if isfloat(ans) and (not error or isfloat(error)):
+                qtype = 'number'
+                text = ans + (' +/- '+error if error else '')
+            else:
+                print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err'" % (self.options["filename"], text), file=sys.stderr)
+
+        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/multiline', 'point', 'line'):
+            # Unspecified answer
+            qtype = text.lower()
             text = ''
 
         if not self.cur_qtype:
-            # Determine question type from answer
-            if len(text) == 1 and text.isalpha():
-                self.cur_qtype = 'choice'
-            elif text and re.match(r'^[-+/\d\.eE\s]+$', text):
-                ans, error = '', ''
-                if '+/-' in text:
-                    ans, _, error = text.partition('+/-')
-                elif ' ' in text.strip():
-                    comps = text.strip().split()
-                    if len(comps) == 2:
-                        ans, error = comps
+            if not qtype:
+                # Determine question type from answer
+                if len(text) == 1 and text.isalpha():
+                    qtype = 'choice'
                 else:
-                    ans = text
-                ans, error = ans.strip(), error.strip()
-                if isfloat(ans) and (not error or isfloat(error)):
-                    self.cur_qtype = 'number'
-                    text = ans + (' +/- '+error if error else '')
-                else:
-                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err'" % (self.options["filename"], text), file=sys.stderr)
-                    self.cur_qtype = 'text'
-            else:
-                self.cur_qtype = 'text'    # Default answer type
-            self.questions.append([self.cur_qtype, None, None])
+                    qtype = 'text'    # Default answer type
 
-        if not self.options['cmd_args'].pace and (not text or 'answers' in self.options['cmd_args'].strip):
+            self.cur_qtype = qtype
+            self.questions.append({'qtype': self.cur_qtype})
+
+        elif qtype and qtype != self.cur_qtype:
+            print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], qtype, self.cur_qtype), file=sys.stderr)
+
+        if self.cur_qtype == 'text/code=python':
+            self.load_python = True
+
+        if not self.options['cmd_args'].pace and ('answers' in self.options['cmd_args'].strip or (not text and not correct_js)):
             # Strip correct answers
             return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
-        correct_html = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(text)
-        try:
-            corr_elem = ElementTree.fromstring(correct_html)
-            text = html2text(corr_elem).strip()
-            correct_html = correct_html[3:-5]
-        except Exception, excp:
-            print("    ****ANSWER-ERROR: %s: 'Answer: %s' does not parse properly as html: %s'" % (self.options["filename"], text, excp), file=sys.stderr)
+        # Handle correct answer
+        if self.cur_qtype == 'choice' and len(text) == 1:
+            correct_text = text.upper()
+            correct_html = correct_text
+        else:
+            correct_text = text
             correct_html = ''
+            if text and not correct_js:
+                try:
+                    # Render any Markdown in correct answer
+                    correct_html = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(text) if text else ''
+                    corr_elem = ElementTree.fromstring(correct_html)
+                    correct_text = html2text(corr_elem).strip()
+                    correct_html = correct_html[3:-5]
+                except Exception, excp:
+                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' does not parse properly as html: %s'" % (self.options["filename"], correct_html, excp), file=sys.stderr)
 
-        if self.options['cmd_args'].hide or self.options['cmd_args'].pace:
-            if len(text) == 1:
-                self.questions[-1][1:3] = (text.upper(), text.upper())
-            else:
-                self.questions[-1][1:3] = (text, correct_html)
-            id_str = self.get_slide_id()
-            ans_params = {'sid': id_str,
-                          'ans_type': self.cur_qtype,
-                          'ans_text': name.capitalize(),
-                          'ans_extras': '',
-                          'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (len(self.questions), id_str, self.cur_qtype),
-                          'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
-                          'inp_extras': ''
-                          }
-            if self.cur_choice:
-                ans_params['ans_extras'] = 'style="display: none;"'
-                ans_params['click_extras'] = 'style="display: none;"'
-                ans_params['inp_extras'] = 'style="display: none;"'
+        hide_answer = self.options['cmd_args'].hide or self.options['cmd_args'].pace
+        if len(self.slide_block_input) != len(self.slide_block_output):
+            hide_answer = False
+            print("    ****ANSWER-ERROR: %s: Input block count %d != output block_count %d" % (self.options["filename"], len(self.slide_block_input), len(self.slide_block_output)), file=sys.stderr)
 
-            ans_html = '''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
+        if not hide_answer:
+            # No hiding of correct answers
+            return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
+
+        self.questions[-1].update(correct=correct_text, html=correct_html, js=correct_js,
+                      prior=self.block_prior_counter, input=self.slide_block_input, output=self.slide_block_output)
+
+        id_str = self.get_slide_id()
+        ans_params = {'sid': id_str,
+                      'ans_type': self.cur_qtype,
+                      'ans_text': name.capitalize(),
+                      'ans_extras': '',
+                      'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (len(self.questions), id_str, self.cur_qtype),
+                      'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
+                      'inp_extras': ''
+                      }
+        if self.cur_choice:
+            ans_params['ans_extras'] = 'style="display: none;"'
+            ans_params['click_extras'] = 'style="display: none;"'
+            ans_params['inp_extras'] = 'style="display: none;"'
+
+        inp_elem1, inp_elem2 = '', ''
+        if self.cur_qtype.startswith('text/'):
+            inp_elem2 = '''<br><textarea id="%(sid)s-ansinput" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" %(inp_extras)s ></textarea>
+'''
+            if self.cur_qtype.startswith('text/code='):
+                inp_elem2 += '<br><button id="%(sid)s-anscheck" class="slidoc-clickable" %(click_extras)s>Check</button>\n'
+        else:
+            inp_elem1 = '''<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>'''
+
+        ans_html = ('''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
 <span id="%(sid)s-ansprefix" style="display: none;">%(ans_text)s:</span>
 <span id="%(sid)s-anstype" class="slidoc-answer-type" style="display: none;">%(ans_type)s</span>
-<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>
+'''+inp_elem1+'''
 <button id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>Answer</button>
 <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
+<span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
 <span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;"></span>
+'''+inp_elem2+'''
+<pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
 </div>
-''' % ans_params
+''') % ans_params
 
-            return choice_prefix+ans_html+'\n'
-        else:
-            return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
+        return choice_prefix+ans_html+'\n'
 
 
     def slidoc_concepts(self, name, text):
@@ -1086,6 +1202,13 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
 
+Skulpt_js = '''
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js" type="text/javascript"></script> 
+<script src="http://www.skulpt.org/static/skulpt.min.js" type="text/javascript"></script> 
+<script src="http://www.skulpt.org/static/skulpt-stdlib.js" type="text/javascript"></script> 
+'''
+
+
 Google_docs_js = '''
 <script>
 var CLIENT_ID = '%(gd_client_id)s';
@@ -1106,7 +1229,7 @@ def write_doc(path, head, tail):
 if __name__ == '__main__':
     import md2nb
 
-    strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'navigate', 'notes', 'rule', 'sections']
+    strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
     features_all = ['equation_number', 'incremental', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
@@ -1245,12 +1368,13 @@ if __name__ == '__main__':
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
+    inc_css = templates['doc_include.css'] + HtmlFormatter().get_style_defs('.highlight')
     if cmd_args.css.startswith('http:') or cmd_args.css.startswith('https:'):
         link_css = '<link rel="stylesheet" type="text/css" href="%s">\n' % cmd_args.css
-        css_html = '%s<style>%s</style>\n' % (link_css, templates['doc_include.css'])
+        css_html = '%s<style>%s</style>\n' % (link_css, inc_css)
     else:
         custom_css = md2md.read_file(cmd_args.css) if cmd_args.css else templates['doc_custom.css']
-        css_html = '<style>\n%s\n%s</style>\n' % (custom_css, templates['doc_include.css'])
+        css_html = '<style>\n%s\n%s</style>\n' % (custom_css, inc_css)
     gd_html = ''
     if cmd_args.google_docs:
         gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
@@ -1322,6 +1446,7 @@ if __name__ == '__main__':
         combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
     fprefix = None
     math_found = False
+    skulpt_load = False
     for j, f in enumerate(cmd_args.file):
         fname = fnames[j]
         filepath = f.name
@@ -1370,8 +1495,11 @@ if __name__ == '__main__':
         math_in_file = '$$' in md_text or ('`$' in md_text and '$`' in md_text)
         if math_in_file:
             math_found = True
+        if renderer.load_python:
+            skulpt_load = True
         
-        mid_params = {'math_js': math_inc if math_in_file else ''}
+        mid_params = {'math_js': math_inc if math_in_file else '',
+                      'skulpt_js': Skulpt_js if renderer.load_python else ''}
         mid_params.update(SYMS)
         if cmd_args.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
@@ -1591,7 +1719,8 @@ if __name__ == '__main__':
         if cmd_args.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
-        comb_params = {'math_js': math_inc if math_found else ''}
+        comb_params = {'math_js': math_inc if math_found else '',
+                       'skulpt_js': Skulpt_js if skulpt_load else ''}
         comb_params.update(SYMS)
         md2md.write_file(dest_dir+cmd_args.combine, Html_header, head_html,
                           mid_template % comb_params, body_prefix,

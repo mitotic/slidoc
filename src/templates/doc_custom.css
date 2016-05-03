@@ -85,7 +85,8 @@ h1, h2, h3, h4, h5, h6 { font-family: "Dosis", "Helvetica Neue", Helvetica, "Seg
 /* code {font-family: Monaco,Menlo,Consolas,"Courier New",monospace;} */
 code { font-family: Consolas,"Andale Mono WT","Andale Mono","Lucida Console","Lucida Sans Typewriter","DejaVu Sans Mono","Bitstream Vera Sans Mono","Liberation Mono","Nimbus Mono L",Monaco,"Courier New",Courier,monospace; }
 
-code.slidoc-code-output { color: #777; }
+.slidoc-block-output,
+  .slidoc-code-output { opacity: 0.7; }
 
 pre { padding: 0px 2em;}
 
