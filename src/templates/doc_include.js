@@ -764,195 +764,7 @@ Slidoc.toggleInline = function (elem) {
    return false;
 }
 
-Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, response, testResp) {
-   // Handle answer types: number, text
-    console.log("Slidoc.answerClick:", elem, slide_id, question_number, answer_type, response, testResp);
-   var setup = !elem;
-    var checkOnly = elem && elem.id.slice(-5) == 'check';
-    if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
-	alert('Please switch to slide view to answer questions in paced mode');
-	return false;
-    }
-   if (setup) {
-        elem = document.getElementById(slide_id+"-ansclick");
-	if (!elem) {
-	    console.log('Slidoc.answerClick: Setup failed for '+slide_id);
-	    return false;
-	}
-   } else {
-       // Not setup
-	if (!checkOnly && !Slidoc.answerPacedAllow())
-	    return false;
-       response = '';
-    }
 
-   var inputElem = document.getElementById(slide_id+'-ansinput');
-   if (inputElem) {
-       if (setup) {
-	   inputElem.value = response;
-       } else {
-	   response = inputElem.value.trim();
-	   if (answer_type == 'number' && isNaN(response)) {
-	       alert('Expecting a numeric value as answer');
-	       return false;
-	   } else if (Sliobj.session.paced && !checkOnly) {
-	       if (!response) {
-		   alert('Expecting a non-null answer');
-		   return false;
-	       } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
-		   alert('Please try a different answer this time!');
-		   return false;
-	       }
-	       Sliobj.lastInputValue = response;
-	   }
-       }
-       if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
-	   inputElem.disabled = 'disabled';
-    }
-
-    if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
-	Sliobj.session.remainingTries -= 1;
-
-    var callUpdate = Slidoc.answerUpdate.bind(null, setup, question_number, slide_id, answer_type, response, checkOnly);
-    if (setup && testResp) {
-	callUpdate(testResp);
-    } else if (answer_type.slice(0,10) == 'text/code=') {
-	var attr_vals = getSlideAttrs(slide_id);
-	var question_attrs = attr_vals[question_number-1];
-	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
-    } else {
-	callUpdate();
-    }
-    return false;
-}
-
-Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
-   console.log("Slidoc.choiceClick:", question_number, slide_id, choice_val);
-   var setup = !elem;
-    if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
-	alert('Please switch to slide view to answer questions in paced mode');
-	return false;
-    }
-   if (setup) {
-	var elemId = slide_id+'-choice-'+choice_val
-	elem = document.getElementById(elemId);
-	if (!elem) {
-	    console.log('Slidoc.choiceClick: Setup failed for '+elemId);
-	    return false;
-	}
-    } else {
-	// Not setup
-	if (!Slidoc.answerPacedAllow())
-	return false;
-    }
-
-   elem.style['text-decoration'] = 'line-through';
-   var choices = document.getElementsByClassName(slide_id+"-choice");
-   for (var i = 0; i < choices.length; ++i) {
-      choices[i].removeAttribute("onclick");
-      choices[i].classList.remove("slidoc-clickable");
-   }
-
-    console.log("Slidoc.choiceClick2:", slide_id);
-    var attr_vals = getSlideAttrs(slide_id);
-    if (attr_vals) {
-	var corr_answer = attr_vals[question_number-1].correct;
-	if (corr_answer) {
-            var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
-            if (corr_choice) {
-		corr_choice.style['text-decoration'] = '';
-		corr_choice.style['font-weight'] = 'bold';
-            }
-	}
-    }
-
-    if (!setup && Sliobj.session.remainingTries > 0)
-	Sliobj.session.remainingTries = 0;   // Only one try for choice response
-    Slidoc.answerUpdate(setup, question_number, slide_id, 'choice', choice_val);
-    return false;
-}
-
-var consoleOut = function() {};
-if (window.console && window.console.log)
-    consoleOut = function() {window.console.log.apply(window.console, arguments)};
-
-function execJS(code, outCallback, errCallback) {
-    // Evaluate JS expression
-    try {
-	outCallback(''+eval(code));
-    } catch(err) {
-	errCallback(''+err);
-    }
-}
-
-
-function skBuiltinRead(x) {
-    if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined)
-            throw "File not found: '" + x + "'";
-    return Sk.builtinFiles["files"][x];
-}
-
-function skRunit(code, outCallback, errCallback) { 
-    var skOutBuffer = [];
-    function skOutf(text) { 
-	console.log('skOutf:', text, skOutBuffer);
-	skOutBuffer.push(text);
-    } 
-
-    Sk.pre = "output";
-    Sk.configure({output:skOutf, read:skBuiltinRead}); 
-    //(Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = 'mycanvas';
-    var myPromise = Sk.misceval.asyncToPromise(function() {
-	return Sk.importMainWithBody("<stdin>", false, code, true);
-    });
-    myPromise.then(function(mod) {
-	console.log('skSuccess:', 'success', skOutBuffer);
-	outCallback(skOutBuffer.join(''));
-	skOutBuffer = [];
-    },
-    function(err) {
-         console.log('skErr:', err.toString());
-	 errCallback(err);
-    });
-}
-
-function execCode(codeType, code, expect, callback) {
-    // callback(correct, stdout, stderr)
-    // stderr => syntax error (correct == null)
-    // If !expect then correct == null
-    // Otherwise correct = (expect == stdout)
-    console.log('execCode:', codeType, code, expect);
-
-    if (codeType == 'text/code=test') {
-	if (code.indexOf('Syntax error') > -1)
-	    callback(null, null, 'Syntax error');
-	else if (code.indexOf('Semantic error') > -1)
-	    callback(expect ? false : null, 'Incorrect output', '');
-	else if (expect)
-	    callback(expect == 'Correct output', 'Correct output', '');
-	else
-	    callback(null, 'Correct output', '');
-    } else if (codeType == 'text/code=python') {
-	if (!window.Sk) {
-	    alert('Error: Skulpt module not loaded');
-	    return;
-	}
-	skRunit(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
-    } else if (codeType == 'text/code=javascript') {
-	execJS(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
-    }
-}
-
-function execCodeOut(expect, callback, text) {
-    console.log('execCodeOut:', expect, text);
-    var correct = expect ? (expect.trim() == text.trim()) : null;
-    callback(correct, text, '');
-}
-
-function execCodeErr(callback, err) {
-    console.log('execCodeErr:', err);
-    callback(null, '', err.toString());
-}
 
 function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
     // Execute code and compare output to expected output
@@ -1027,6 +839,114 @@ function retryAnswer() {
 	after_str = ' after '+Sliobj.params.tryDelay+' second(s)';
     }
     Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
+    return false;
+}
+
+Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
+   console.log("Slidoc.choiceClick:", question_number, slide_id, choice_val);
+   var setup = !elem;
+    if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
+	alert('Please switch to slide view to answer questions in paced mode');
+	return false;
+    }
+   if (setup) {
+	var elemId = slide_id+'-choice-'+choice_val
+	elem = document.getElementById(elemId);
+	if (!elem) {
+	    console.log('Slidoc.choiceClick: Setup failed for '+elemId);
+	    return false;
+	}
+    } else {
+	// Not setup
+	if (!Slidoc.answerPacedAllow())
+	return false;
+    }
+
+   elem.style['text-decoration'] = 'line-through';
+   var choices = document.getElementsByClassName(slide_id+"-choice");
+   for (var i = 0; i < choices.length; ++i) {
+      choices[i].removeAttribute("onclick");
+      choices[i].classList.remove("slidoc-clickable");
+   }
+
+    console.log("Slidoc.choiceClick2:", slide_id);
+    var attr_vals = getSlideAttrs(slide_id);
+    if (attr_vals) {
+	var corr_answer = attr_vals[question_number-1].correct;
+	if (corr_answer) {
+            var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
+            if (corr_choice) {
+		corr_choice.style['text-decoration'] = '';
+		corr_choice.style['font-weight'] = 'bold';
+            }
+	}
+    }
+
+    if (!setup && Sliobj.session.remainingTries > 0)
+	Sliobj.session.remainingTries = 0;   // Only one try for choice response
+    Slidoc.answerUpdate(setup, question_number, slide_id, 'choice', choice_val);
+    return false;
+}
+
+Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, response, testResp) {
+   // Handle answer types: number, text
+    console.log("Slidoc.answerClick:", elem, slide_id, question_number, answer_type, response, testResp);
+   var setup = !elem;
+    var checkOnly = elem && elem.id.slice(-5) == 'check';
+    if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
+	alert('Please switch to slide view to answer questions in paced mode');
+	return false;
+    }
+   if (setup) {
+        elem = document.getElementById(slide_id+"-ansclick");
+	if (!elem) {
+	    console.log('Slidoc.answerClick: Setup failed for '+slide_id);
+	    return false;
+	}
+   } else {
+       // Not setup
+	if (!checkOnly && !Slidoc.answerPacedAllow())
+	    return false;
+       response = '';
+    }
+
+   var inputElem = document.getElementById(slide_id+'-ansinput');
+   if (inputElem) {
+       if (setup) {
+	   inputElem.value = response;
+       } else {
+	   response = inputElem.value.trim();
+	   if (answer_type == 'number' && isNaN(response)) {
+	       alert('Expecting a numeric value as answer');
+	       return false;
+	   } else if (Sliobj.session.paced && !checkOnly) {
+	       if (!response) {
+		   alert('Expecting a non-null answer');
+		   return false;
+	       } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
+		   alert('Please try a different answer this time!');
+		   return false;
+	       }
+	       Sliobj.lastInputValue = response;
+	   }
+       }
+       if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
+	   inputElem.disabled = 'disabled';
+    }
+
+    if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
+	Sliobj.session.remainingTries -= 1;
+
+    var callUpdate = Slidoc.answerUpdate.bind(null, setup, question_number, slide_id, answer_type, response, checkOnly);
+    if (setup && testResp) {
+	callUpdate(testResp);
+    } else if (answer_type.slice(0,10) == 'text/code=') {
+	var attr_vals = getSlideAttrs(slide_id);
+	var question_attrs = attr_vals[question_number-1];
+	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
+    } else {
+	callUpdate();
+    }
     return false;
 }
 
@@ -1842,6 +1762,90 @@ var SlidocRandom = (function() {
     }
   };
 }());
+
+
+// Javascript code execution
+var consoleOut = function() {};
+if (window.console && window.console.log)
+    consoleOut = function() {window.console.log.apply(window.console, arguments)};
+
+function execJS(code, outCallback, errCallback) {
+    // Evaluate JS expression
+    try {
+	outCallback(''+eval(code));
+    } catch(err) {
+	errCallback(''+err);
+    }
+}
+
+// Skulpt python code exection
+function skBuiltinRead(x) {
+    if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined)
+            throw "File not found: '" + x + "'";
+    return Sk.builtinFiles["files"][x];
+}
+
+function skRunit(code, outCallback, errCallback) { 
+    var skOutBuffer = [];
+    function skOutf(text) { 
+	console.log('skOutf:', text, skOutBuffer);
+	skOutBuffer.push(text);
+    } 
+
+    Sk.pre = "output";
+    Sk.configure({output:skOutf, read:skBuiltinRead}); 
+    //(Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = 'mycanvas';
+    var myPromise = Sk.misceval.asyncToPromise(function() {
+	return Sk.importMainWithBody("<stdin>", false, code, true);
+    });
+    myPromise.then(function(mod) {
+	console.log('skSuccess:', 'success', skOutBuffer);
+	outCallback(skOutBuffer.join(''));
+	skOutBuffer = [];
+    },
+    function(err) {
+         console.log('skErr:', err.toString());
+	 errCallback(err);
+    });
+}
+
+function execCode(codeType, code, expect, callback) {
+    // callback(correct, stdout, stderr)
+    // stderr => syntax error (correct == null)
+    // If !expect then correct == null
+    // Otherwise correct = (expect == stdout)
+    console.log('execCode:', codeType, code, expect);
+
+    if (codeType == 'text/code=test') {
+	if (code.indexOf('Syntax error') > -1)
+	    callback(null, null, 'Syntax error');
+	else if (code.indexOf('Semantic error') > -1)
+	    callback(expect ? false : null, 'Incorrect output', '');
+	else if (expect)
+	    callback(expect == 'Correct output', 'Correct output', '');
+	else
+	    callback(null, 'Correct output', '');
+    } else if (codeType == 'text/code=python') {
+	if (!window.Sk) {
+	    alert('Error: Skulpt module not loaded');
+	    return;
+	}
+	skRunit(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
+    } else if (codeType == 'text/code=javascript') {
+	execJS(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
+    }
+}
+
+function execCodeOut(expect, callback, text) {
+    console.log('execCodeOut:', expect, text);
+    var correct = expect ? (expect.trim() == text.trim()) : null;
+    callback(correct, text, '');
+}
+
+function execCodeErr(callback, err) {
+    console.log('execCodeErr:', err);
+    callback(null, '', err.toString());
+}
 
 // Detect swipe events
 // Modified from https://blog.mobiscroll.com/working-with-touch-events/
