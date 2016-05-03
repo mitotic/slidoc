@@ -423,7 +423,7 @@ function preAnswer() {
 	    if (qentry[1] == 'choice') {
 		Slidoc.choiceClick(null, qnumber, qentry[0], qentry[2]);
 	    } else {
-		Slidoc.answerClick(null, qnumber, qentry[0], qentry[1], qentry[2]);
+		Slidoc.answerClick(null, qnumber, qentry[0], qentry[1], qentry[2], qentry[3]);
 	    }
 	}
     }
@@ -764,9 +764,9 @@ Slidoc.toggleInline = function (elem) {
    return false;
 }
 
-Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, response) {
+Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, response, testResp) {
    // Handle answer types: number, text
-   console.log("Slidoc.answerClick:", elem, slide_id, question_number, answer_type, response);
+    console.log("Slidoc.answerClick:", elem, slide_id, question_number, answer_type, response, testResp);
    var setup = !elem;
     var checkOnly = elem && elem.id.slice(-5) == 'check';
     if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
@@ -814,7 +814,9 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
 	Sliobj.session.remainingTries -= 1;
 
     var callUpdate = Slidoc.answerUpdate.bind(null, setup, question_number, slide_id, answer_type, response, checkOnly);
-    if (answer_type.slice(0,9) == 'text/code') {
+    if (setup && testResp) {
+	callUpdate(testResp);
+    } else if (answer_type.slice(0,10) == 'text/code=') {
 	var attr_vals = getSlideAttrs(slide_id);
 	var question_attrs = attr_vals[question_number-1];
 	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
@@ -958,26 +960,27 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
     // invalid_msg => syntax error when executing user code
     console.log('checkCode:', slide_id, user_code, checkOnly);
 
-    if (!question_attrs.input.length || !question_attrs.output.length) {
-	console.log('checkCode: Input/output code checks not found in '+slide_id);
+    if (!question_attrs.test.length || !question_attrs.output.length) {
+	console.log('checkCode: Test/output code checks not found in '+slide_id);
 	return callback( {correct:null, invalid:'', output:'Not checked', tests:0} );
     }
 
     var codeType = question_attrs.qtype;
 
     var codeCells = [];
-    for (var j=1; j<=question_attrs.prior; j++) {
-	// Execute all prior input cells
-	var priorCell = document.getElementById('slidoc-block-prior-'+j);
-	if (!priorCell) {
-	    console.log('checkCode: Prior cell '+j+' not found in '+slide_id);
-	    return callback({correct:null, invalid:'', output:'Missing prior cell'+j, tests:0});
+    for (var j=1; j<=question_attrs.input; j++) {
+	// Execute all input cells
+	var inputCell = document.getElementById('slidoc-block-input-'+j);
+	if (!inputCell) {
+	    console.log('checkCode: Input cell '+j+' not found in '+slide_id);
+	    return callback({correct:null, invalid:'', output:'Missing input cell'+j, tests:0});
 	}
-	codeCells.push( priorCell.textContent.trim() );
+	codeCells.push( inputCell.textContent.trim() );
     }
 
     codeCells.push(user_code);
-    var ntest = checkOnly ? 1 : question_attrs.input.length;
+    var ntest = question_attrs.test.length;
+    if (checkOnly) ntest = Math.min(ntest, 1);
 
     function checkCodeAux(index, msg, correct, stdout, stderr) {
 	console.log('checkCodeAux:', index, msg, correct, stdout, stderr);
@@ -986,18 +989,18 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	    return callback({correct:false, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
 	}
 	if (index > 0 && !correct) {
-	    console.log('checkCodeAux: Error in test input cell in '+slide_id, msg);
+	    console.log('checkCodeAux: Error in test cell in '+slide_id, msg);
 	    return callback({correct:correct, invalid:'', output:stdout, tests:index-1});
 	}
 
 	// Execute test code
 	while (index < ntest) {
-	    var inputCell = document.getElementById('slidoc-block-input-'+question_attrs.input[index]);
-	    if (!inputCell) {
-		console.log('checkCodeAux: Test input cell '+question_attrs.input[index]+' not found in '+slide_id);
-		return callback({correct:null, invalid:'', output:'Missing test input'+(index+1), tests:index});
+	    var testCell = document.getElementById('slidoc-block-test-'+question_attrs.test[index]);
+	    if (!testCell) {
+		console.log('checkCodeAux: Test cell '+question_attrs.test[index]+' not found in '+slide_id);
+		return callback({correct:null, invalid:'', output:'Missing test cell'+(index+1), tests:index});
 	    }
-	    var inputCode = inputCell.textContent.trim();
+	    var testCode = testCell.textContent.trim();
 	    
 	    var outputCell = document.getElementById('slidoc-block-output-'+question_attrs.output[index]);
 	    if (!outputCell) {
@@ -1006,9 +1009,9 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	    }
 	    var expectOutput = outputCell.textContent.trim();
 	    
-	    return execCode(codeType, codeCells.concat(inputCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, index+1, 'test code'+index));
+	    return execCode(codeType, codeCells.concat(testCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, index+1, 'test code'+index));
 	}
-	return callback({correct:true , invalid:'', output:'', tests:ntest});
+	return callback({correct:(ntest?true:null), invalid:'', output:'', tests:ntest});
     }
 
     checkCodeAux(0, '', null, '', '');
@@ -1027,8 +1030,8 @@ function retryAnswer() {
     return false;
 }
 
-Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, response, checkOnly, checkResp) {
-    console.log('Slidoc.answerUpdate: ', setup, question_number, slide_id, resp_type, response, checkOnly, checkResp);
+Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, response, checkOnly, testResp) {
+    console.log('Slidoc.answerUpdate: ', setup, question_number, slide_id, resp_type, response, checkOnly, testResp);
 
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
@@ -1044,20 +1047,20 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
     var corr_answer_js = question_attrs.js;
     console.log('Slidoc.answerUpdate:', slide_id);
 
-    if (checkResp) {
-	var ntests = question_attrs.input.length;
+    if (testResp) {
+	var ntest = question_attrs.test.length;
 	var code_output_elem = document.getElementById(slide_id+"-code-output");
 	if (checkOnly) {
 	    var msg = 'Checked';
 	    code_output_elem.textContent = msg;
-	    if (checkResp.invalid) {
+	    if (testResp.invalid) {
 		msg = 'Syntax/runtime error!';
-		code_output_elem.textContent = 'Error output:\n'+checkResp.invalid;
-	    } else if (checkResp.correct === false) {
-		msg = (ntests > 1) ? 'First check failed!' : 'Incorrect output!';
-		code_output_elem.textContent = 'Incorrect output:\n'+checkResp.output;
-	    } else if (checkResp.correct === true) {
-		msg = (ntests > 1) ? 'First check passed!' : 'Valid output!';
+		code_output_elem.textContent = 'Error output:\n'+testResp.invalid;
+	    } else if (testResp.correct === false) {
+		msg = (ntest > 1) ? 'First check failed!' : 'Incorrect output!';
+		code_output_elem.textContent = 'Incorrect output:\n'+testResp.output;
+	    } else if (testResp.correct === true) {
+		msg = (ntest > 1) ? 'First check passed!' : 'Valid output!';
 		code_output_elem.textContent = msg;
 	    }
 	    Slidoc.showPopup(msg);
@@ -1065,22 +1068,22 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 	}
 	corr_answer = '';
 	corr_answer_html = '';
-	is_correct = checkResp.correct;
-	if (checkResp.invalid) {
+	is_correct = testResp.correct;
+	if (testResp.invalid) {
 	    is_correct = false;
-	    code_output_elem.textContent = 'Error output:\n'+checkResp.invalid;
+	    code_output_elem.textContent = 'Error output:\n'+testResp.invalid;
 	} else if (is_correct) {
-	    code_output_elem.textContent = (checkResp.tests > 1) ? 'Second check passed!' : 'Valid output';
+	    code_output_elem.textContent = (testResp.tests > 1) ? 'Second check passed!' : 'Valid output';
 	} else if (is_correct === false) {
-	    if (!setup && Sliobj.session.remainingTries > 0 && ntests > 1) {
+	    if (!setup && Sliobj.session.remainingTries > 0 && ntest > 1) {
 		// Retry only if second check is present
-		code_output_elem.textContent = (checkResp.tests > 0) ? 'Second check failed!' : 'Incorrect output:\n'+checkResp.output;
+		code_output_elem.textContent = (testResp.tests > 0) ? 'Second check failed!' : 'Incorrect output:\n'+testResp.output;
 		retryAnswer();
 		return false;
 	    }
-	    code_output_elem.textContent = 'Incorrect'+((checkResp.tests > 0) ? ' second' : '')+' output:\n'+checkResp.output;
+	    code_output_elem.textContent = 'Incorrect'+((testResp.tests > 0) ? ' second' : '')+' output:\n'+testResp.output;
 	} else {
-	    code_output_elem.textContent = 'Output:\n'+(checkResp.output || '');
+	    code_output_elem.textContent = 'Output:\n'+(testResp.output || '');
 	}
 	
     } else if (corr_answer_js) {
@@ -1130,7 +1133,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		}
 	    }
 	}
-	if (!setup && !is_correct && Sliobj.session.remainingTries > 0) {
+	if (!setup && is_correct === false && Sliobj.session.remainingTries > 0) {
 	    retryAnswer();
 	    return false;
 	}
@@ -1173,13 +1176,14 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
     }
 
    if (!setup)
-       Slidoc.answerTally(is_correct, question_number, slide_id, resp_type, response);
+       Slidoc.answerTally(is_correct, question_number, slide_id, resp_type, response, testResp);
 }
 
 
-Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type, response) {
-   console.log('Slidoc.answerTally: ', is_correct, question_number, slide_id, resp_type, response);
-   Sliobj.session.questionsAttempted[question_number] = [slide_id, resp_type, response];
+Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type, response, testResp) {
+    console.log('Slidoc.answerTally: ', is_correct, question_number, slide_id, resp_type, response, testResp);
+
+    Sliobj.session.questionsAttempted[question_number] = [slide_id, resp_type, response, testResp||null];
 
     // Keep score
     Sliobj.session.questionsCount += 1;

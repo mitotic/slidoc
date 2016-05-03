@@ -521,8 +521,8 @@ class SlidocRenderer(MathRenderer):
         self.first_id = self.get_slide_id()
         self.index_id = ''                     # Set by render()
         self.qindex_id = ''                    # Set by render
-        self.block_prior_counter = 0
         self.block_input_counter = 0
+        self.block_test_counter = 0
         self.block_output_counter = 0
         self.load_python = False
 
@@ -538,7 +538,7 @@ class SlidocRenderer(MathRenderer):
         self.incremental_level = 0
         self.incremental_list = False
         self.incremental_pause = False
-        self.slide_block_input = []
+        self.slide_block_test = []
         self.slide_block_output = []
 
     def list_incremental(self, activate):
@@ -642,13 +642,20 @@ class SlidocRenderer(MathRenderer):
 
         id_str = ''
     
-        if lang == 'nb_input':
-            lang = lang[3:]
+
+        if lang in ('javascript_input','python_input'):
+            lang = lang[:-6]
             classes += ' slidoc-block-input'
             self.block_input_counter += 1
-            self.slide_block_input.append(self.block_input_counter)
             id_str = 'id="slidoc-block-input-%d"' % self.block_input_counter
-            if len(self.slide_block_input) > 1:
+
+        elif lang in ('javascript_test','python_test'):
+            lang = lang[:-5]
+            classes += ' slidoc-block-test'
+            self.block_test_counter += 1
+            self.slide_block_test.append(self.block_test_counter)
+            id_str = 'id="slidoc-block-test-%d"' % self.block_test_counter
+            if len(self.slide_block_test) > 1:
                 classes += ' slidoc-block-multi'
 
         elif lang == 'nb_output':
@@ -660,14 +667,8 @@ class SlidocRenderer(MathRenderer):
             if len(self.slide_block_output) > 1:
                 classes += ' slidoc-block-multi'
 
-        elif lang in ('nb_javascript','nb_python'):
-            lang = lang[3:]
-            classes += ' slidoc-block-prior'
-            self.block_prior_counter += 1
-            id_str = 'id="slidoc-block-prior-%d"' % self.block_prior_counter
-
         lexer = None
-        if lang and lang not in ('input', 'output'):
+        if lang and lang not in ('output',):
             classes += ' slidoc-block-lang-'+lang
             try:
                 lexer = get_lexer_by_name(lang, stripall=True)
@@ -920,16 +921,16 @@ class SlidocRenderer(MathRenderer):
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' does not parse properly as html: %s'" % (self.options["filename"], correct_html, excp), file=sys.stderr)
 
         hide_answer = self.options['cmd_args'].hide or self.options['cmd_args'].pace
-        if len(self.slide_block_input) != len(self.slide_block_output):
+        if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
-            print("    ****ANSWER-ERROR: %s: Input block count %d != output block_count %d" % (self.options["filename"], len(self.slide_block_input), len(self.slide_block_output)), file=sys.stderr)
+            print("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output)), file=sys.stderr)
 
         if not hide_answer:
             # No hiding of correct answers
             return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
 
         self.questions[-1].update(correct=correct_text, html=correct_html, js=correct_js,
-                      prior=self.block_prior_counter, input=self.slide_block_input, output=self.slide_block_output)
+                      input=self.block_input_counter, test=self.slide_block_test, output=self.slide_block_output)
 
         id_str = self.get_slide_id()
         ans_params = {'sid': id_str,

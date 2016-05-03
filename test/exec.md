@@ -17,7 +17,7 @@ def sq(x):
 
 Test it using the following call:
 
-```nb_input
+```python_test
 print sq(2.5)
 ```
 
@@ -43,7 +43,7 @@ def sq(x):
 
 Test it using the following call:
 
-```nb_input
+```python_test
 print sq(2.5)
 ```
 
@@ -53,7 +53,7 @@ to produce the following output:
 6.25
 ```
 
-```nb_input
+```python_test
 # Additional tests
 print sq(3.5)
 ```
@@ -78,7 +78,7 @@ function sq(x) {
 
 Test it using the following call:
 
-```nb_input
+```javascript_test
 sq(2.5)
 ```
 
@@ -88,7 +88,7 @@ to produce the following output:
 6.25
 ```
 
-```nb_input
+```javascript_test
 // Additional tests
 sq(3.5)
 ```
@@ -103,13 +103,13 @@ Answer: text/code=javascript
 
 ## Prior code 1 and 2
 
-```nb_python
+```python_input
 
 Prior code1
 
 ```
 
-```nb_python
+```python_input
 
 Prior code2
 
@@ -126,7 +126,7 @@ Enter code using this template
 
 ```
 
-```nb_input
+```python_test
 Test code1
 ```
 
@@ -154,7 +154,7 @@ Enter code using this template
 
 ```
 
-```nb_input
+```python_test
 Test code 2
 Semantic error
 ```
@@ -171,7 +171,7 @@ Answer: text/code=test
 
 ## Prior code 3 (with syntax error)
 
-```nb_python
+```python_input
 
 Prior code 3
 Syntax error
@@ -190,7 +190,7 @@ Enter code using this template
 
 ```
 
-```nb_input
+```python_test
 Test code 3
 ```
 
