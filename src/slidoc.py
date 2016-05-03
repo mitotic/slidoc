@@ -976,9 +976,9 @@ class SlidocRenderer(MathRenderer):
         if not text:
             return ''
 
-        if self.notes_end is not None:
-            print("    ****CONCEPT-ERROR: %s: 'Concepts: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header), file=sys.stderr)
-            return ''
+        ###if self.notes_end is not None:
+        ###    print("    ****CONCEPT-ERROR: %s: 'Concepts: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header), file=sys.stderr)
+        ###    return ''
 
         if self.slide_concepts:
             print("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header), file=sys.stderr)
@@ -1019,7 +1019,7 @@ class SlidocRenderer(MathRenderer):
 
         id_str = self.get_slide_id()+'-concepts'
         display_style = 'inline' if self.options['cmd_args'].printable else 'none'
-        tag_html = '''<div class="slidoc-concepts-container"><span class="slidoc-clickable slidoc-noslide" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
+        tag_html = '''<div class="slidoc-concepts-container slidoc-noslide"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
         if self.options["cmd_args"].index:
             first = True
@@ -1258,17 +1258,21 @@ if __name__ == '__main__':
     cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
     cmd_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
     cmd_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
+    cmd_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
     cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
     cmd_args = cmd_parser.parse_args()
     # Read first line of first file and rewind it
+    first_name = os.path.splitext(os.path.basename(cmd_args.file[0].name))[0]
     first_line = cmd_args.file[0].readline()
     cmd_args.file[0].seek(0)
     match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
     if match:
         try:
             line_args_list = shlex.split(match.group(1).strip())
-            print('slidoc: First line arguments from file', cmd_args.file[0].name, line_args_list)
+            if cmd_args.verbose:
+                print('First line arguments from file', first_name, file=sys.stderr)
+                print('    ', line_args_list, file=sys.stderr)
             line_args_dict = vars(parser.parse_args(line_args_list))
         except Exception, excp:
             sys.exit('slidoc: ERROR in parsing command options in first line of %s: %s' % (cmd_args.file[0].name, excp))
@@ -1286,7 +1290,11 @@ if __name__ == '__main__':
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
                      'index': 'ind.html', 'toc': 'toc.html', 'site_url': ''}
     
+    if cmd_args.combine is not None and not cmd_args.combine:
+        cmd_args.combine = first_name+'.html'
+
     if cmd_args.combine:
+        # Enable Q-index for combined files
         cmd_defaults['qindex'] = 'qind.html'
     elif len(cmd_args.file) == 1:
         cmd_defaults['index'] = ''
@@ -1298,7 +1306,9 @@ if __name__ == '__main__':
             setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
     effective_args = vars(cmd_args).copy()
     del effective_args['file']
-    print('slidoc: Effective argument list', argparse.Namespace(**effective_args))
+    if cmd_args.verbose:
+        print('Effective argument list', file=sys.stderr)
+        print('    ', argparse.Namespace(**effective_args), file=sys.stderr)
 
     js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,

@@ -91,9 +91,11 @@ The files in the `Publish` directory can be served from a web server,
 say by renaming `toc.html` to `index.html` using the
 `--toc=index.html` option.
 
-Alternatively, the `--combine=all.html` option can be added, which
+Alternatively, the `--combine=file.html` option can be added, which
 will combine all the lectures, table of contents and index into a
-single file `all.html`, which can be published or shared.
+single file `file.html`, which can be published or shared. If the
+filename is omitted (`--combine=`), the name of the first input file
+is used.
 
 Concepts: lecture management; index, concepts
 
@@ -765,16 +767,21 @@ Concepts: image, metadata; image, style; image, incremental
 
 ---
 
-## Interactive multiple choice question
+## Interactive questions
 
-Slidoc supports a simple format for framing multiple-choice questions,
-similar to the
+Slidoc supports a simple format for framing interactive questions.
+For multiple-choice questions, the format is similar to the
 [Aiken format](https://docs.moodle.org/24/en/Aiken_format) used by
-Learning Management Systems like Moodle.
+Learning Management Systems like Moodle. For numeric response
+questions, formulas (similar to Excel macros) may be used to randomize
+the question (see [Interactive numerical response question](#)). Text
+response ("essay") questions are also supported.
 
 The next slide contains a multiple choice question that uses the `A.. `
 notation allowing interactive response. (The space after the `..` is
-required.)  Click on a choice to view the correct answer.
+required.) Click on a choice to view the correct answer.
+
+Concepts: questions, interactive; questions, multiple-choice; questions, numeric response; questions, formulas; questions, text response
 
 ---
 
