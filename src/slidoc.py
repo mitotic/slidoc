@@ -1243,7 +1243,7 @@ if __name__ == '__main__':
     parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
     parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
-    parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,cind,qind" (if omitted, all input files are combined, unless pacing)')
+    parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
     parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
     parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION,PREREQS', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
@@ -1307,7 +1307,7 @@ if __name__ == '__main__':
                  'features': {}}
 
     combined_file = out_name+'.html'
-    config = argparse.Namespace(separate=False, toc='toc.html', index='cind.html', qindex='qind.html')
+    config = argparse.Namespace(separate=False, toc='toc.html', index='ind.html', qindex='qind.html')
     if cmd_args.index_files:
         # Separate files
         config.separate = True

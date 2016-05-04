@@ -82,20 +82,20 @@ stored in a `Lectures` subddirectory with ordered names like
 To export some or all lectures to `html` format for web publishing,
 create a sub-directory, say `Publish`. In that directory, type:
 
-    slidoc.py ../Lectures/prefix-lecture??.md
+    slidoc.py --outfile=all.html ../Lectures/prefix-lecture??.md
 
-The above command will create files named `prefix-lecture01.html` and
-so on in that directory. Additionally, it will create two files,
-`toc.html` (table of contents) and `ind.html` (concept index).
-The files in the `Publish` directory can be served from a web server,
-say by renaming `toc.html` to `index.html` using the
-`--toc=index.html` option.
+The above command will combine all the lectures, table of contents and
+index into a single file `all.html`, which can be published on the web
+or shared. (If `--outfile` is not specified, the output file name is
+derived from the first input file.)
 
-Alternatively, the `--combine=file.html` option can be added, which
-will combine all the lectures, table of contents and index into a
-single file `file.html`, which can be published or shared. If the
-filename is omitted (`--combine=`), the name of the first input file
-is used.
+Alternatively, the `--index_files=toc,ind,qind` option can be used to
+generate separate HTML files.  This will create files named
+`prefix-lecture01.html` and so on in the `Publish`
+directory. Additionally, it will create three files, `toc.html` (table
+of contents) , `ind.html` (concept index), and `qind.html` (question
+index). These are static web files which can be served from any web
+server.
 
 Concepts: lecture management; index, concepts
 
@@ -277,10 +277,10 @@ difficulty.
 To analyze concept dependency for lectures and exercises delivered,
 create a temporary subdirectory and use a command like:
 
-    slidoc.py --qindex=qind.html --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
+    slidoc.py --index_files=toc,ind,qind --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
 
 This will generate the concept dependency analysis for the first six
-lectures and the first three exercises in the files `index.html`
+lectures and the first three exercises in the files `ind.html`
 (concepts index), `qind.html` (questions index), and `xref.html`
 (cross-referencing info).
 
@@ -480,7 +480,7 @@ destination
 - `--images=import,web`: Import all image references into the document
 as data URLs (including web URLs)
 
-- `--images=import,web,embed --combine=all.html`: Import all image
+- `--images=import,web,embed`: Import all image
 references, embed them as data URLs and create a single, large,
 self-contained HTML document.
 
@@ -565,11 +565,11 @@ Concepts: reveal.js, presentation mode
 Although `slidoc` are best viewed as HTM documents, sometime you may
 need to print them or save them as PDF files.
 
-You can create a single document from a set of Markdown files using
-the `--combine=` option, open it in the browser, and select the *Show
-all chapters* option. You can then print it or save it as PDF. (The
-`--printable` option can be used to preserve internal links when
-printing, but it should not be used for web view.)
+You can create a single document from a set of Markdown files, open it
+in the browser, and select the *Show all chapters* option. You can
+then print it or save it as PDF. (The `--printable` option can be used
+to preserve internal links when printing, but it should not be used
+for web view.)
 
 To customize what appears in the document, you can use the `--strip`
 option. It accepts a list of comma-separated values from the list
