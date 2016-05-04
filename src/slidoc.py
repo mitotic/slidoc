@@ -347,8 +347,8 @@ class MathInlineLexer(mistune.InlineLexer):
                     # Link to index entry
                     tag = link[2:] or text
                     tag_hash = '#%s-concept-%s' % (self.renderer.index_id, md2md.make_id_from_text(tag))
-                    tag_html = nav_link(text, self.renderer.options['cmd_args'].site_url, self.renderer.options['cmd_args'].index,
-                                        hash=tag_hash, combine=self.renderer.options['cmd_args'].combine, target='_blank',
+                    tag_html = nav_link(text, self.renderer.options['cmd_args'].site_url, self.renderer.options['config'].index,
+                                        hash=tag_hash, separate=self.renderer.options['config'].separate, target='_blank',
                                         keep_hash=True, printable=self.renderer.options['cmd_args'].printable)
                     return tag_html
                 header_ref = md2md.ref_key(link[1:].lstrip(':'))
@@ -989,7 +989,7 @@ class SlidocRenderer(MathRenderer):
         tags = [x.strip() for x in text.split(";")]
         nn_tags = tags[1:] if tags and tags[0] == 'null' else tags[:]   # Non-null tags
 
-        if nn_tags and (self.options["cmd_args"].index or self.options["cmd_args"].qindex or self.options["cmd_args"].pace):
+        if nn_tags and (self.options["config"].index or self.options["config"].qindex or self.options["cmd_args"].pace):
             # Track/check tags
             if self.cur_qtype in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
@@ -1021,15 +1021,15 @@ class SlidocRenderer(MathRenderer):
         display_style = 'inline' if self.options['cmd_args'].printable else 'none'
         tag_html = '''<div class="slidoc-concepts-container slidoc-noslide"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
-        if self.options["cmd_args"].index:
+        if self.options["config"].index:
             first = True
             for tag in tags:
                 if not first:
                     tag_html += '; '
                 first = False
                 tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
-                tag_html += nav_link(tag, self.options['cmd_args'].site_url, self.options['cmd_args'].index,
-                                     hash=tag_hash, combine=self.options['cmd_args'].combine, target='_blank',
+                tag_html += nav_link(tag, self.options['cmd_args'].site_url, self.options['config'].index,
+                                     hash=tag_hash, separate=self.options['config'].separate, target='_blank',
                                      keep_hash=True, printable=self.options['cmd_args'].printable)
         else:
             tag_html += text
@@ -1078,7 +1078,7 @@ def click_span(text, onclick, id='', classes=['slidoc-clickable'], href=''):
     else:
         return '''<span %s class="%s" onclick="%s">%s</span>''' % (id_str, ' '.join(classes), onclick, text)
 
-def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, printable=False, target='', classes=[]):
+def nav_link(text, site_url, href, hash='', separate=False, keep_hash=False, printable=False, target='', classes=[]):
     extras = ' target="%s"' % target if target else ''
     class_list = classes[:]
     if text.startswith('&'):
@@ -1091,7 +1091,7 @@ def nav_link(text, site_url, href, hash='', combine=False, keep_hash=False, prin
     class_str = ' '.join(class_list)
     if printable:
         return '''<a class="%s" href="%s%s" onclick="Slidoc.go('%s');" %s>%s</a>'''  % (class_str, site_url, hash or href, hash or href, extras, text)
-    elif combine:
+    elif not separate:
         return '''<span class="%s" onclick="Slidoc.go('%s');" %s>%s</span>'''  % (class_str, hash or href, extras, text)
     elif href or text.startswith('&'):
         return '''<a class="%s" href="%s%s" %s>%s</a>'''  % (class_str, site_url, href+hash if hash and keep_hash else href, extras, text)
@@ -1106,11 +1106,11 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file='', index_id='', qindex_id=''):
+def md2html(source, filename, cmd_args, config, filenumber=1, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
     Global.chapter_ref_counter = defaultdict(int)
 
-    renderer = SlidocRenderer(escape=False, filename=filename, cmd_args=cmd_args, filenumber=filenumber)
+    renderer = SlidocRenderer(escape=False, filename=filename, cmd_args=cmd_args, config=config, filenumber=filenumber)
 
     content_html = MarkdownWithSlidoc(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
 
@@ -1121,10 +1121,10 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
     post_header_html = ''
     if 'navigate' not in cmd_args.strip:
         nav_html = ''
-        if cmd_args.toc:
-            nav_html += nav_link(SYMS['return'], cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0), combine=cmd_args.combine, classes=['slidoc-nosidebar', 'slidoc-noprint'], printable=cmd_args.printable) + SPACER6
-            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
-            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, combine=cmd_args.combine, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
+        if config.toc:
+            nav_html += nav_link(SYMS['return'], cmd_args.site_url, config.toc, hash='#'+make_chapter_id(0), separate=config.separate, classes=['slidoc-nosidebar', 'slidoc-noprint'], printable=cmd_args.printable) + SPACER6
+            nav_html += nav_link(SYMS['prev'], cmd_args.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
+            nav_html += nav_link(SYMS['next'], cmd_args.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=cmd_args.printable) + SPACER6
 
         pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
@@ -1158,7 +1158,7 @@ def md2html(source, filename, cmd_args, filenumber=1, prev_file='', next_file=''
         # Strip out notes
         content_html = re.sub(r"<!--slidoc-notes-block-begin\[([-\w]+)\](.*?)<!--slidoc-notes-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
-    file_toc = renderer.table_of_contents('' if cmd_args.combine else cmd_args.site_url+filename+'.html', filenumber=filenumber)
+    file_toc = renderer.table_of_contents('' if not config.separate else cmd_args.site_url+filename+'.html', filenumber=filenumber)
 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
@@ -1234,7 +1234,6 @@ if __name__ == '__main__':
     features_all = ['equation_number', 'incremental', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--combine', metavar='FILE', help='Combine all files into a single HTML file')
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
     parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
@@ -1244,15 +1243,14 @@ if __name__ == '__main__':
     parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
     parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
-    parser.add_argument('--index', metavar='FILE', help='index HTML file (default: ind.html)')
+    parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,cind,qind" (if omitted, all input files are combined, unless pacing)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
+    parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
     parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION,PREREQS', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
-    parser.add_argument('--qindex', metavar='FILE', help='Question index HTML file (default: "")')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
-    parser.add_argument('--toc', metavar='FILE', help='Table of contents file (default: toc.html)')
     parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
     cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
@@ -1262,8 +1260,10 @@ if __name__ == '__main__':
     cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
     cmd_args = cmd_parser.parse_args()
-    # Read first line of first file and rewind it
     first_name = os.path.splitext(os.path.basename(cmd_args.file[0].name))[0]
+    out_name = os.path.splitext(os.path.basename(cmd_args.outfile or cmd_args.file[0].name))[0]
+
+    # Read first line of first file and rewind it
     first_line = cmd_args.file[0].readline()
     cmd_args.file[0].seek(0)
     match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
@@ -1288,24 +1288,15 @@ if __name__ == '__main__':
 
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
-                     'index': 'ind.html', 'toc': 'toc.html', 'site_url': ''}
+                     'site_url': ''}
     
-    if cmd_args.combine is not None and not cmd_args.combine:
-        cmd_args.combine = first_name+'.html'
-
-    if cmd_args.combine:
-        # Enable Q-index for combined files
-        cmd_defaults['qindex'] = 'qind.html'
-    elif len(cmd_args.file) == 1:
-        cmd_defaults['index'] = ''
-        cmd_defaults['toc'] = ''
-
     # Assign default (non-None) values to arguments not specified anywhere
     for arg_name in cmd_defaults:
         if getattr(cmd_args, arg_name) == None:
             setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
     effective_args = vars(cmd_args).copy()
     del effective_args['file']
+
     if cmd_args.verbose:
         print('Effective argument list', file=sys.stderr)
         print('    ', argparse.Namespace(**effective_args), file=sys.stderr)
@@ -1314,20 +1305,35 @@ if __name__ == '__main__':
                  'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'features': {}}
-    if cmd_args.combine:
-        js_params['filename'] = os.path.splitext(os.path.basename(cmd_args.combine))[0]
-        print('Filename: ', js_params['filename'], file=sys.stderr)
+
+    combined_file = out_name+'.html'
+    config = argparse.Namespace(separate=False, toc='toc.html', index='cind.html', qindex='qind.html')
+    if cmd_args.index_files:
+        # Separate files
+        config.separate = True
+        combined_file = ''
+        comps = cmd_args.index_files.split(',')
+        config.toc = comps[0]+'.html' if comps[0] else ''
+        config.index = comps[1]+'.html' if len(comps) > 1 and comps[1] else ''
+        config.qindex = comps[2]+'.html' if len(comps) > 2 and comps[2] else ''
+    else:
+        # Combined file (cannot be paced)
+        js_params['filename'] = out_name
 
     hide_chapters = False
     if cmd_args.pace:
-        if cmd_args.combine:
-            sys.exit('slidoc: Error: --pace and --combine options do not work well together')
         if cmd_args.printable:
             sys.exit('slidoc: Error: --pace and --printable options do not work well together')
         hide_chapters = True
+        # Pace implies separate files
+        config.separate = True
+        combined_file = ''
+        if len(cmd_args.file) == 1 and not cmd_args.index_files:
+            # Single input file; no table of contents, by default
+            config.toc = ''
         # Index not compatible with paced
-        cmd_args.index = ''
-        cmd_args.qindex = ''
+        config.index = ''
+        config.qindex = ''
         comps = cmd_args.pace.split(',')
         if comps[0]:
             js_params['paceStrict'] = int(comps[0])
@@ -1354,7 +1360,7 @@ if __name__ == '__main__':
             gd_hmac_key = comps[3]
     
     nb_site_url = cmd_args.site_url
-    if cmd_args.combine:
+    if combined_file:
         cmd_args.site_url = ''
     if cmd_args.site_url and not cmd_args.site_url.endswith('/'):
         cmd_args.site_url += '/'
@@ -1425,7 +1431,7 @@ if __name__ == '__main__':
         reveal_pars = ''
 
     slidoc_opts = set(['embed', '_slidoc'])
-    if cmd_args.combine:
+    if combined_file:
         slidoc_opts.add('_slidoc_combine')
 
     base_mods_args = md2md.Args_obj.create_args(None, dest_dir=cmd_args.dest_dir,
@@ -1445,14 +1451,14 @@ if __name__ == '__main__':
     nb_converter_args = md2nb.Args_obj.create_args(None, **nb_mods_dict)
     index_id = make_chapter_id(len(cmd_args.file)+1)
     qindex_id = make_chapter_id(len(cmd_args.file)+2)
-    back_to_contents = nav_link('BACK TO CONTENTS', cmd_args.site_url, cmd_args.toc, hash='#'+make_chapter_id(0),
-                                combine=cmd_args.combine, classes=['slidoc-nosidebar'], printable=cmd_args.printable)+'<p></p>\n'
+    back_to_contents = nav_link('BACK TO CONTENTS', cmd_args.site_url, config.toc, hash='#'+make_chapter_id(0),
+                                separate=config.separate, classes=['slidoc-nosidebar'], printable=cmd_args.printable)+'<p></p>\n'
 
     flist = []
     all_concept_warnings = []
     outfile_buffer = []
     combined_html = []
-    if cmd_args.combine:
+    if combined_file:
         combined_html.append( '<div id="slidoc-sidebar-right-container" class="slidoc-sidebar-right-container">\n' )
         combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
     fprefix = None
@@ -1463,7 +1469,7 @@ if __name__ == '__main__':
         filepath = f.name
         md_text = f.read()
         f.close()
-        if not cmd_args.combine:
+        if config.separate:
             js_params['filename'] = fname
 
         file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
@@ -1477,8 +1483,8 @@ if __name__ == '__main__':
         if cmd_args.hide and 'hidden' in cmd_args.strip:
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+cmd_args.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
-        prev_file = '' if j == 0                    else ('#'+make_chapter_id(j) if cmd_args.combine else fnames[j-1]+".html")
-        next_file = '' if j >= len(cmd_args.file)-1 else ('#'+make_chapter_id(j+2) if cmd_args.combine else fnames[j+1]+".html")
+        prev_file = '' if j == 0                    else ('#'+make_chapter_id(j) if combined_file else fnames[j-1]+".html")
+        next_file = '' if j >= len(cmd_args.file)-1 else ('#'+make_chapter_id(j+2) if combined_file else fnames[j+1]+".html")
 
         if fprefix == None:
             fprefix = fname
@@ -1495,9 +1501,9 @@ if __name__ == '__main__':
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
         fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, cmd_args=cmd_args,
-                                                               filenumber=filenumber, prev_file=prev_file,
-                                                               next_file=next_file,
-                                                               index_id=index_id, qindex_id=qindex_id)
+                                                        config=config, filenumber=filenumber,
+                                                        prev_file=prev_file, next_file=next_file,
+                                                        index_id=index_id, qindex_id=qindex_id)
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
@@ -1517,7 +1523,7 @@ if __name__ == '__main__':
         else:
             md_prefix = chapter_prefix(j+1, 'slidoc-reg-chapter', hide=hide_chapters)
             md_suffix = '</article> <!--chapter end-->\n'
-            if cmd_args.combine:
+            if combined_file:
                 combined_html.append(md_prefix)
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
@@ -1557,7 +1563,7 @@ if __name__ == '__main__':
                 print('slidoc: Updated remote spreadsheet:', http_post(js_params['gd_sheet_url'], post_params))
     
     if not cmd_args.dry_run:
-        if not cmd_args.combine:
+        if not combined_file:
             for outname, outpath, head, tail in outfile_buffer:
                 if tail:
                     # Update "missing" reference numbers and write output file
@@ -1569,7 +1575,7 @@ if __name__ == '__main__':
         if cmd_args.notebook:
             print('Created *.ipynb files', file=sys.stderr)
 
-    if cmd_args.toc:
+    if config.toc:
         if cmd_args.toc_header:
             header_insert = md2md.read_file(cmd_args.toc_header)
             if cmd_args.toc_header.endswith('.md'):
@@ -1578,9 +1584,9 @@ if __name__ == '__main__':
             header_insert = ''
 
         toc_html = []
-        if cmd_args.index and (Global.first_tags or Global.first_qtags):
-            toc_html.append(' '+nav_link('INDEX', cmd_args.site_url, cmd_args.index, hash='#'+index_id,
-                                     combine=cmd_args.combine, printable=cmd_args.printable))
+        if config.index and (Global.first_tags or Global.first_qtags):
+            toc_html.append(' '+nav_link('INDEX', cmd_args.site_url, config.index, hash='#'+index_id,
+                                     separate=config.separate, printable=cmd_args.printable))
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in cmd_args.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
         ifile = 0
         for fname, outname, fheader, file_toc in flist:
@@ -1593,14 +1599,14 @@ if __name__ == '__main__':
             if not cmd_args.pace and cmd_args.notebook and nb_site_url:
                 nb_link = ',&nbsp; <a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
             doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+chapter_id,
-                                 combine=cmd_args.combine, printable=cmd_args.printable)
+                                 separate=config.separate, printable=cmd_args.printable)
 
             if not cmd_args.pace:
                 doc_link = nav_link('document', cmd_args.site_url, outname, hash='#'+chapter_id,
-                                    combine=cmd_args.combine, printable=cmd_args.printable)
+                                    separate=config.separate, printable=cmd_args.printable)
                 toggle_link = '''<span class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
             else:
-                doc_link = nav_link('paced', cmd_args.site_url, outname, target='_blank')
+                doc_link = nav_link('paced', cmd_args.site_url, outname, target='_blank', separate=True)
                 toggle_link = '<span class="slidoc-toc-chapters">%s</span>' % (fheader,)
             toc_html.append('<li>%s%s<span class="slidoc-nosidebar">(<em>%s%s%s</em>)</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
@@ -1620,7 +1626,7 @@ if __name__ == '__main__':
             if not cmd_args.pace:
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
-            if cmd_args.combine:
+            if combined_file:
                 toc_insert = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
                 toc_insert = click_span(SYMS['leftpair'], "Slidoc.sidebarDisplay();",
@@ -1628,37 +1634,37 @@ if __name__ == '__main__':
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</article>\n'
-            if cmd_args.combine:
+            if combined_file:
                 all_container_prefix  = '<div id="slidoc-all-container" class="slidoc-all-container">\n'
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
                 left_container_suffix = '</div> <!--slidoc-left-container-->\n'
                 combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
             else:
-                md2md.write_file(dest_dir+cmd_args.toc, Html_header, head_html,
+                md2md.write_file(dest_dir+config.toc, Html_header, head_html,
                                   mid_template % mid_params, body_prefix, toc_output, Html_footer)
-                print("Created ToC in", cmd_args.toc, file=sys.stderr)
+                print("Created ToC in", config.toc, file=sys.stderr)
 
     xref_list = []
-    if cmd_args.index and (Global.first_tags or Global.first_qtags):
-        first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.site_url, fprefix=fprefix, index_id=index_id, index_file='' if cmd_args.combine else cmd_args.index)
+    if config.index and (Global.first_tags or Global.first_qtags):
+        first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, cmd_args.site_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
         if not cmd_args.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
-            if cmd_args.qindex:
-                index_html = nav_link('QUESTION INDEX', cmd_args.site_url, cmd_args.qindex, hash='#'+qindex_id,
-                                      combine=cmd_args.combine, printable=cmd_args.printable) + '<p></p>\n' + index_html
+            if config.qindex:
+                index_html = nav_link('QUESTION INDEX', cmd_args.site_url, config.qindex, hash='#'+qindex_id,
+                                      separate=config.separate, printable=cmd_args.printable) + '<p></p>\n' + index_html
             if cmd_args.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.crossref, 'CROSS-REFERENCING')) + index_html
 
             index_output = chapter_prefix(len(cmd_args.file)+1, 'slidoc-index-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + index_html + '</article>\n'
-            if cmd_args.combine:
+            if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             else:
-                md2md.write_file(dest_dir+cmd_args.index, index_output)
-                print("Created index in", cmd_args.index, file=sys.stderr)
+                md2md.write_file(dest_dir+config.index, index_output)
+                print("Created index in", config.index, file=sys.stderr)
 
         if cmd_args.crossref:
-            if cmd_args.toc:
-                xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, cmd_args.combine or cmd_args.toc, 'BACK TO CONTENTS'))
+            if config.toc:
+                xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (cmd_args.site_url, combined_file or config.toc, 'BACK TO CONTENTS'))
             xref_list.append("<h3>Concepts cross-reference (file prefix: "+fprefix+")</h3><p></p>")
             xref_list.append("\n<b>Concepts -> files mapping:</b><br>")
             for tag in first_references:
@@ -1677,20 +1683,20 @@ if __name__ == '__main__':
             if all_concept_warnings:
                 xref_list.append('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
 
-    if cmd_args.qindex and Global.first_qtags:
+    if config.qindex and Global.first_qtags:
         import itertools
         qout_list = []
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
-        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if cmd_args.combine else cmd_args.qindex)
+        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, cmd_args.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
         qout_list.append(qindex_html)
 
         qindex_output = chapter_prefix(len(cmd_args.file)+2, 'slidoc-qindex-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
         if not cmd_args.dry_run:
-            if cmd_args.combine:
+            if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
             else:
-                md2md.write_file(dest_dir+cmd_args.qindex, qindex_output)
-                print("Created qindex in", cmd_args.qindex, file=sys.stderr)
+                md2md.write_file(dest_dir+config.qindex, qindex_output)
+                print("Created qindex in", config.qindex, file=sys.stderr)
 
         if cmd_args.crossref:
             xref_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant question that explores all the same concepts as the original question. Numeric superscript indicates the number of concepts in the sub-question shared with the original question.</p>\n')
@@ -1700,7 +1706,7 @@ if __name__ == '__main__':
                 q_id = make_file_id(fname, slide_id)
                 xref_list.append('<li><b>'+nav_link(make_q_label(fname, qnumber, fprefix)+': '+header,
                                                cmd_args.site_url, fname+'.html', hash='#'+slide_id,
-                                               combine=cmd_args.combine, keep_hash=True, printable=cmd_args.printable)+'</b>: ')
+                                               separate=config.separate, keep_hash=True, printable=cmd_args.printable)+'</b>: ')
                 ctags = concept_id.split(';')
                 n = len(ctags)
                 for m in range(n):
@@ -1714,7 +1720,7 @@ if __name__ == '__main__':
                             if sub_q_id != q_id:
                                 xref_list.append(nav_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
                                                         cmd_args.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
-                                                        combine=cmd_args.combine, keep_hash=True, printable=cmd_args.printable)
+                                                        separate=config.separate, keep_hash=True, printable=cmd_args.printable)
                                                         + ('<sup>%s</sup>, ' % sub_num) )
 
                 xref_list.append('</li>\n')
@@ -1724,16 +1730,16 @@ if __name__ == '__main__':
         md2md.write_file(dest_dir+cmd_args.crossref, ''.join(xref_list))
         print("Created crossref in", cmd_args.crossref, file=sys.stderr)
 
-    if cmd_args.combine:
+    if combined_file:
         combined_html.append( '</div><!--slidoc-sidebar-right-wrapper-->\n' )
         combined_html.append( '</div><!--slidoc-sidebar-right-container-->\n' )
-        if cmd_args.toc:
+        if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
         comb_params = {'math_js': math_inc if math_found else '',
                        'skulpt_js': Skulpt_js if skulpt_load else ''}
         comb_params.update(SYMS)
-        md2md.write_file(dest_dir+cmd_args.combine, Html_header, head_html,
+        md2md.write_file(dest_dir+combined_file, Html_header, head_html,
                           mid_template % comb_params, body_prefix,
                          '\n'.join(combined_html), Html_footer)
-        print('Created combined HTML file in '+cmd_args.combine, file=sys.stderr)
+        print('Created combined HTML file in '+combined_file, file=sys.stderr)
