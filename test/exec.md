@@ -1,4 +1,4 @@
-<!--slidoc-defaults --hide="[Aa]nswer" -->
+<!--slidoc-defaults --features=assessment -->
 # Test code execution
 
 Test file

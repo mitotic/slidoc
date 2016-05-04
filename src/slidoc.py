@@ -247,7 +247,7 @@ class MathBlockLexer(mistune.BlockLexer):
             rules = MathBlockGrammar()
         config = kwargs.get('config')
         slidoc_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule']
-        if config and 'incremental' in config.features:
+        if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
         super(MathBlockLexer, self).__init__(rules, **kwargs)
@@ -393,7 +393,7 @@ class MathInlineLexer(mistune.InlineLexer):
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         ref_class = ''
         if ref_id in Global.ref_tracker:
-            print('REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, key), file=sys.stderr)
+            print('    ****REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, key), file=sys.stderr)
             ref_id += '-duplicate-'+md2md.generate_random_label()
         else:
             num_label = '??'
@@ -449,7 +449,7 @@ class MarkdownWithMath(mistune.Markdown):
 class MarkdownWithSlidoc(MarkdownWithMath):
     def __init__(self, renderer, **kwargs):
         super(MarkdownWithSlidoc, self).__init__(renderer, **kwargs)
-        self.incremental = 'incremental' in self.renderer.options['config'].features
+        self.incremental = 'incremental_slides' in self.renderer.options['config'].features
 
     def output_block_quote(self):
         if self.incremental:
@@ -604,7 +604,7 @@ class SlidocRenderer(MathRenderer):
 
     def pause(self, text):
         """Pause in display"""
-        if 'incremental' in self.options['config'].features:
+        if 'incremental_slides' in self.options['config'].features:
             self.incremental_pause = True
             self.incremental_level += 1
             return ''
@@ -637,7 +637,10 @@ class SlidocRenderer(MathRenderer):
             # Handle forward link in current question
             self.qforward[self.slide_forward_links[0]].append(len(self.questions))
             if len(self.slide_forward_links) > 1:
-                print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link enabled." % (self.options["filename"], self.slide_number), file=sys.stderr)
+                print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]), file=sys.stderr)
+
+        if self.cur_qtype and not self.qtypes[-1]:
+            print("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number), file=sys.stderr)
 
         return self.end_notes()+self.end_hide()+suffix_html+'</section><!--slide end-->\n' 
 
@@ -756,7 +759,7 @@ class SlidocRenderer(MathRenderer):
             header_ref = md2md.ref_key(text)
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         if ref_id in Global.ref_tracker:
-            print('REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, header_ref), file=sys.stderr)
+            print('    ****REF-ERROR: Duplicate reference #%s (#%s) in slide %s' % (ref_id, header_ref, self.slide_number), file=sys.stderr)
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
@@ -842,7 +845,7 @@ class SlidocRenderer(MathRenderer):
         if not self.cur_qtype:
             self.cur_qtype = 'choice'
         elif self.cur_qtype != 'choice':
-            print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question in '%s'" % (self.options["filename"], name, self.cur_header), file=sys.stderr)
+            print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question, not %s, in '%s'" % (self.options["filename"], name, self.cur_qtype, self.cur_header or ('slide%02d' % self.slide_number)), file=sys.stderr)
             return name+'.. '
 
         prefix = ''
@@ -901,7 +904,7 @@ class SlidocRenderer(MathRenderer):
                 qtype = 'number'
                 text = ans + (' +/- '+error if error else '')
             else:
-                print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err'" % (self.options["filename"], text), file=sys.stderr)
+                print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
 
         elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/multiline', 'point', 'line'):
             # Unspecified answer
@@ -919,7 +922,7 @@ class SlidocRenderer(MathRenderer):
             self.cur_qtype = qtype
 
         elif qtype and qtype != self.cur_qtype:
-            print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], qtype, self.cur_qtype), file=sys.stderr)
+            print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number), file=sys.stderr)
 
         if self.cur_qtype == 'text/code=python':
             self.load_python = True
@@ -939,7 +942,7 @@ class SlidocRenderer(MathRenderer):
                     correct_text = html2text(corr_elem).strip()
                     correct_html = correct_html[3:-5]
                 except Exception, excp:
-                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' does not parse properly as html: %s'" % (self.options["filename"], correct_html, excp), file=sys.stderr)
+                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], correct_html, self.slide_number, excp), file=sys.stderr)
 
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
@@ -962,7 +965,7 @@ class SlidocRenderer(MathRenderer):
         hide_answer = self.options['config'].hide or self.options['config'].pace
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
-            print("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output)), file=sys.stderr)
+            print("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number), file=sys.stderr)
 
         if not hide_answer:
             # No hiding of correct answers
@@ -987,7 +990,7 @@ class SlidocRenderer(MathRenderer):
             inp_elem2 = '''<br><textarea id="%(sid)s-ansinput" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" %(inp_extras)s ></textarea>
 '''
             if self.cur_qtype.startswith('text/code='):
-                inp_elem2 += '<br><button id="%(sid)s-anscheck" class="slidoc-clickable" %(click_extras)s>Check</button>\n'
+                inp_elem2 += '<br><button id="%(sid)s-anscheck" class="slidoc-clickable" %(click_extras)s>CHECK</button>\n'
         else:
             inp_elem1 = '''<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>'''
 
@@ -1017,7 +1020,7 @@ class SlidocRenderer(MathRenderer):
         ###    return ''
 
         if self.slide_concepts:
-            print("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header), file=sys.stderr)
+            print("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)), file=sys.stderr)
             return ''
 
         self.slide_concepts = text
@@ -1036,8 +1039,8 @@ class SlidocRenderer(MathRenderer):
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
-                    if tag not in Global.first_tags and tag not in Global.sec_tags:
-                        self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header))
+                    if tag not in Global.first_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
+                        self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         print("        "+self.concept_warnings[-1], file=sys.stderr)
 
                 add_to_index(Global.first_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
@@ -1718,7 +1721,7 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['equation_number', 'incremental', 'progress_bar', 'untitled_number']
+    features_all = ['assessment', 'equation_number', 'incremental_slides', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')

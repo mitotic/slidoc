@@ -121,34 +121,12 @@ Slidoc.slideViewIncrement = function () {
     return false;
 }
 
-var Key_codes = {
-    27: 'esc',
-    35: 'end',
-    36: 'home',
-    37: 'left',
-    38: 'up',
-    39: 'right',
-    40: 'down',
-    67: 'c',
-    68: 'd',
-    69: 'e',
-    70: 'f',
-    72: 'h',
-    73: 'i',
-    77: 'm',
-    78: 'n',
-    80: 'p',
-    81: 'q',
-    83: 's',
-   191: 'qmark'
-};
-
 var Slide_help_list = [
     ['q, Escape',           'exit',  'enter/exit slide mode'],
     ['h, Home, Fn&#9668;',  'home',  'home (first) slide'],
     ['e, End, Fn&#9658;',   'end',   'end (last) slide'],
     ['p, &#9668;',          'left',  'previous slide'],
-    ['n, &#9658;',          'right', 'next slide'],
+    ['n, &#9658;, space',   'right', 'next slide'],
     ['i, &#9660;',          'i',     'incremental item'],
     ['f',                   'f',     'fullscreen mode'],
     ['m',                   'm',     'missed question concepts'],
@@ -186,6 +164,7 @@ var Slide_view_handlers = {
     'p':     function() { Slidoc.slideViewGo(false); },
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
+    'space': function() { Slidoc.slideViewGo(true); },
     'down':  Slidoc.slideViewIncrement,
     'i':     Slidoc.slideViewIncrement,
     'f':     Slidoc.docFullScreen,
@@ -194,9 +173,36 @@ var Slide_view_handlers = {
     'reset': Slidoc.resetPaced
 }
 
+var Key_codes = {
+    27: 'esc',
+    32: 'space',
+    35: 'end',
+    36: 'home',
+    37: 'left',
+    38: 'up',
+    39: 'right',
+    40: 'down',
+    67: 'c',
+    68: 'd',
+    69: 'e',
+    70: 'f',
+    72: 'h',
+    73: 'i',
+    77: 'm',
+    78: 'n',
+    80: 'p',
+    81: 'q',
+    83: 's',
+   191: 'qmark'
+};
+
 document.onkeydown = function(evt) {
-    if ((!Sliobj.currentSlide || Sliobj.questionSlide) && evt.keyCode > 44)
-	return;  // Handle printable input normally
+    if ((!Sliobj.currentSlide || Sliobj.questionSlide) && (evt.keyCode == 32 || evt.keyCode > 44))
+	return;  // Handle printable input normally (non-slide view or question slide)
+
+    var nodeName = evt.target.nodeName.toLowerCase();
+    if ((nodeName == 'input' || nodeName == 'textarea') && evt.keyCode >= 32)
+	return;  // Disable arrow key handling for input/textarea
 
     if (!(evt.keyCode in Key_codes))
 	return;
@@ -454,6 +460,7 @@ function sessionCreate(paced) {
 	    questionsMax: 0,
             questionsCount: 0,
             questionsCorrect: 0,
+            questionsSkipped: 0,
             questionsAttempted: {},
             missedConcepts: []
 	   };
@@ -1014,7 +1021,10 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 		retryAnswer();
 		return false;
 	    }
-	    code_output_elem.textContent = 'Incorrect'+((testResp.tests > 0) ? ' second' : '')+' output:\n'+testResp.output;
+	    if (testResp.tests == 0)
+		code_output_elem.textContent = 'Incorrect output:\n'+testResp.output;
+	    else
+		code_output_elem.textContent = 'Incorrect output during second check\n';
 	} else {
 	    code_output_elem.textContent = 'Output:\n'+(testResp.output || '');
 	}
@@ -1140,6 +1150,7 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 
 		// Give credit for all skipped questions
 		qWeight = 1+skip[1];
+		Sliobj.session.questionsSkipped += skip[1];
 
 		if (skip[2])
 		    toggleClassAll(true, 'slidoc-forward-link-allowed', skip[2]);

@@ -1,4 +1,4 @@
-<!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number,incremental -->
+<!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number,incremental_slides -->
 # Slidoc: A slide-oriented document management system using Markdown
 
 Slidoc manages a collection of lectures written using
@@ -190,7 +190,7 @@ Notes.
 
 ## Incremental lists
 
-Specifying the command option `--features=incremental` enables
+Specifying the command option `--features=incremental_slides` enables
 incremental display of lists and fragments in slideshows using
 [Pandoc syntax](http://pandoc.org/README.html#incremental-lists).
 
