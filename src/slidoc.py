@@ -363,7 +363,8 @@ class MathInlineLexer(mistune.InlineLexer):
                 classes = ["slidoc-clickable"]
                 if ref_id not in Global.ref_tracker:
                     # Forward link
-                    classes.append('slidoc-forward-link')
+                    self.renderer.forward_link(ref_id)
+                    classes.append('slidoc-forward-link ' + ref_id+'-forward-link')
                 if link.startswith('#:'):
                     # Numbered reference
                     if ref_id in Global.ref_tracker:
@@ -406,7 +407,7 @@ class MathInlineLexer(mistune.InlineLexer):
                     Global.ref_counter[text_key] += 1
                     num_label = "%d" % Global.ref_counter[text_key]
                 text += num_label
-            Global.ref_tracker[ref_id] = (num_label, key, ref_class)
+            self.renderer.add_ref_link(ref_id, num_label, key, ref_class)
         return '''<span id="%s" class="slidoc-referable slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
 
     def output_reflink(self, m):
@@ -470,10 +471,16 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
-        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_notes()+self.renderer.end_hide()+'</section>\n<!--last slide end-->\n'
+        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_slide('<!--last slide-->\n')
 
     
 class MathRenderer(mistune.Renderer):
+    def forward_link(self, ref_id):
+        pass
+
+    def add_ref_link(self, ref_id, num_label, key, ref_class):
+        pass
+    
     def block_math(self, text):
         return '$$%s$$' % text
 
@@ -514,7 +521,9 @@ class SlidocRenderer(MathRenderer):
         self.notes_end = None
         self.section_number = 0
         self.untitled_number = 0
+        self.qtypes = []
         self.questions = []
+        self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
         self.slide_number = 0
         self._new_slide()
@@ -528,6 +537,7 @@ class SlidocRenderer(MathRenderer):
 
     def _new_slide(self):
         self.slide_number += 1
+        self.qtypes.append('')
         self.choice_end = None
         self.cur_choice = ''
         self.cur_qtype = ''
@@ -540,10 +550,23 @@ class SlidocRenderer(MathRenderer):
         self.incremental_pause = False
         self.slide_block_test = []
         self.slide_block_output = []
+        self.slide_forward_links = []
 
     def list_incremental(self, activate):
         self.incremental_list = activate
     
+    def forward_link(self, ref_id):
+        self.slide_forward_links.append(ref_id)
+
+    def add_ref_link(self, ref_id, num_label, key, ref_class):
+        Global.ref_tracker[ref_id] = (num_label, key, ref_class)
+        if ref_id in self.qforward:
+            cur_qno = len(self.questions)
+            for qno in self.qforward.pop(ref_id):
+                # (slide_number, number of questions skipped, class for forward link)
+                skipped = cur_qno-qno-1 if self.qtypes[-1] else cur_qno-qno
+                self.questions[qno-1]['skip'] = (self.slide_number, skipped, ref_id+'-forward-link')
+
     def inline_js(self, js_func, text):
         if 'inline_js' in self.options['config'].strip:
             return '<code>%s</code>' % (mistune.escape('='+js_func+'()' if text is None else text))
@@ -597,20 +620,26 @@ class SlidocRenderer(MathRenderer):
         if self.choice_end:
             prefix = self.choice_end
 
-        self._new_slide()
-
-        hide_prefix = self.end_hide()
-        new_slide_id = self.get_slide_id()
-
-        if implicit or 'rule' in self.options['config'].strip or (hide_prefix and 'hidden' in self.options['config'].strip):
-            html = ''
+        if implicit or 'rule' in self.options['config'].strip or (self.hide_end and 'hidden' in self.options['config'].strip):
+            rule_html = ''
         elif self.options.get('use_xhtml'):
-            html = '<hr class="slidoc-noslide slidoc-noprint"/>\n'
+            rule_html = '<hr class="slidoc-noslide slidoc-noprint"/>\n'
         else:
-            html = '<hr class="slidoc-noslide slidoc-noprint">\n'
+            rule_html = '<hr class="slidoc-noslide slidoc-noprint">\n'
 
-        html += '</section><!--slide end-->\n' + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options['config'].site_url)
-        return self.end_notes()+hide_prefix+html
+        end_html = self.end_slide(rule_html)
+        self._new_slide()
+        new_slide_id = self.get_slide_id()
+        return end_html + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options['config'].site_url)
+
+    def end_slide(self, suffix_html=''):
+        if self.qtypes[-1] and self.options['config'].pace and self.slide_forward_links:
+            # Handle forward link in current question
+            self.qforward[self.slide_forward_links[0]].append(len(self.questions))
+            if len(self.slide_forward_links) > 1:
+                print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link enabled." % (self.options["filename"], self.slide_number), file=sys.stderr)
+
+        return self.end_notes()+self.end_hide()+suffix_html+'</section><!--slide end-->\n' 
 
     def list_item(self, text):
         """Rendering list item snippet. Like ``<li>``."""
@@ -729,7 +758,7 @@ class SlidocRenderer(MathRenderer):
         if ref_id in Global.ref_tracker:
             print('REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, header_ref), file=sys.stderr)
         else:
-            Global.ref_tracker[ref_id] = ('??', header_ref, '')
+            self.add_ref_link(ref_id, '??', header_ref, '')
 
         hdr.set('id', ref_id)
 
@@ -807,14 +836,11 @@ class SlidocRenderer(MathRenderer):
             type_code = params[0]
             if type_code in ("choice", "multichoice", "number", "text", "point", "line"):
                 self.cur_qtype = type_code
-                self.questions.append({'qtype': type_code})
-             
         return ''
 
     def slidoc_choice(self, name):
         if not self.cur_qtype:
             self.cur_qtype = 'choice'
-            self.questions.append({'qtype': self.cur_qtype})
         elif self.cur_qtype != 'choice':
             print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question in '%s'" % (self.options["filename"], name, self.cur_header), file=sys.stderr)
             return name+'.. '
@@ -826,7 +852,7 @@ class SlidocRenderer(MathRenderer):
 
         self.cur_choice = name
 
-        params = {'id': self.get_slide_id(), 'opt': name, 'qno': len(self.questions)}
+        params = {'id': self.get_slide_id(), 'opt': name, 'qno': len(self.questions)+1}
         if self.options['config'].hide or self.options['config'].pace:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, %(qno)d, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
         else:
@@ -858,7 +884,7 @@ class SlidocRenderer(MathRenderer):
 
         qtype = ''
         num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
-        if num_match:
+        if num_match and text.lower() != 'e':
             # Numeric default answer
             text = num_match.group(1).strip()
             ans, error = '', ''
@@ -891,17 +917,12 @@ class SlidocRenderer(MathRenderer):
                     qtype = 'text'    # Default answer type
 
             self.cur_qtype = qtype
-            self.questions.append({'qtype': self.cur_qtype})
 
         elif qtype and qtype != self.cur_qtype:
             print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s'" % (self.options["filename"], qtype, self.cur_qtype), file=sys.stderr)
 
         if self.cur_qtype == 'text/code=python':
             self.load_python = True
-
-        if not self.options['config'].pace and ('answers' in self.options['config'].strip or (not text and not correct_js)):
-            # Strip correct answers
-            return choice_prefix+name.capitalize()+':'+'<p></p>\n'
 
         # Handle correct answer
         if self.cur_qtype == 'choice' and len(text) == 1:
@@ -920,6 +941,24 @@ class SlidocRenderer(MathRenderer):
                 except Exception, excp:
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' does not parse properly as html: %s'" % (self.options["filename"], correct_html, excp), file=sys.stderr)
 
+        self.qtypes[-1] = self.cur_qtype
+        self.questions.append({})
+        self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_text)
+        if correct_html and correct_html != correct_text:
+            self.questions[-1].update(html=correct_html)
+        if correct_js:
+            self.questions[-1].update(js=correct_js)
+        if self.block_input_counter:
+            self.questions[-1].update(input=self.block_input_counter)
+        if self.slide_block_test:
+            self.questions[-1].update(test=self.slide_block_test)
+        if self.slide_block_output:
+            self.questions[-1].update(output=self.slide_block_output)
+
+        if not self.options['config'].pace and ('answers' in self.options['config'].strip or (not text and not correct_js)):
+            # Strip any correct answers
+            return choice_prefix+name.capitalize()+':'+'<p></p>\n'
+
         hide_answer = self.options['config'].hide or self.options['config'].pace
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
@@ -928,9 +967,6 @@ class SlidocRenderer(MathRenderer):
         if not hide_answer:
             # No hiding of correct answers
             return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
-
-        self.questions[-1].update(correct=correct_text, html=correct_html, js=correct_js,
-                      input=self.block_input_counter, test=self.slide_block_test, output=self.slide_block_output)
 
         id_str = self.get_slide_id()
         ans_params = {'sid': id_str,
@@ -991,7 +1027,7 @@ class SlidocRenderer(MathRenderer):
 
         if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
             # Track/check tags
-            if self.cur_qtype in ("choice", "multichoice", "number", "text", "point", "line"):
+            if self.qtypes[-1] in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
                 nn_tags.sort()
                 q_id = make_file_id(self.options["filename"], self.get_slide_id())
@@ -1048,7 +1084,7 @@ class SlidocRenderer(MathRenderer):
         prefix, suffix, end_str = self.start_block('notes', id_str, display=disp_block)
         self.notes_end = end_str
         classes = 'slidoc-clickable'
-        if self.cur_qtype:
+        if self.qtypes[-1]:
             classes += ' slidoc-question-notes'
         return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
 
@@ -1420,8 +1456,8 @@ def process_input(input_files, config_dict):
                 sheet_headers = ['name', 'id', 'Timestamp', 'revision',
                                  'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
                 row_values = [fname, fname, None, js_params['sessionRevision'],
-                                ','.join([x[0] for x in renderer.questions]),
-                                '|'.join([(x[1] or '').replace('|','/') for x in renderer.questions]),
+                                ','.join([x['qtype'] for x in renderer.questions]),
+                                '|'.join([(x['correct'] or '').replace('|','/') for x in renderer.questions]),
                                 '; '.join(sort_caseless(list(renderer.qconcepts[0]))),
                                 '; '.join(sort_caseless(list(renderer.qconcepts[1])))
                                 ]

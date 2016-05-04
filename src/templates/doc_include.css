@@ -24,8 +24,10 @@ body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
 
 body.slidoc-paced-last-slide.slidoc-expect-answer-state .slidoc-block-multi { display: none; }
+body.slidoc-paced-last-slide span.slidoc-forward-link { opacity: 0.3; }
+body.slidoc-paced-last-slide span.slidoc-forward-link.slidoc-forward-link-allowed { opacity: 1.0; }
 
-body.slidoc-paced-last-slide.slidoc-incorrect-answer-state span.slidoc-forward-link { opacity: 0.3; }
+body.slidoc-skip-optional-slide #slidoc-score-display { opacity: 0.3; }
 
 /* Sidebar view */
 body.slidoc-sidebar-view .slidoc-nosidebar {

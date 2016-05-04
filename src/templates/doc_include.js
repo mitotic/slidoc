@@ -47,6 +47,12 @@ function toggleClass(add, className, element) {
 	element.classList.remove(className);
 }
 
+function toggleClassAll(add, className, allClassName) {
+    var elems = document.getElementsByClassName(allClassName);
+    for (var j=0; j<elems.length; j++)
+	toggleClass(add, className, elems[j]);
+}
+
 function requestFullscreen(element) {
   if (element.requestFullscreen) {
     element.requestFullscreen();
@@ -256,7 +262,7 @@ function parseElem(elemId) {
     return null;
 }
 
-function getSlideAttrs(slide_id) {
+function getChapterAttrs(slide_id) {
    var chapter_id = parseSlideId(slide_id)[0];
    return chapter_id ? parseElem(chapter_id+'-01-attrs') : null;
 }
@@ -420,10 +426,10 @@ function preAnswer() {
     for (var qnumber in Sliobj.session.questionsAttempted) {
 	if (Sliobj.session.questionsAttempted.hasOwnProperty(qnumber)) {
 	    var qentry = Sliobj.session.questionsAttempted[qnumber];
-	    if (qentry[1] == 'choice') {
-		Slidoc.choiceClick(null, qnumber, qentry[0], qentry[2]);
+	    if (qentry.resp_type == 'choice') {
+		Slidoc.choiceClick(null, qnumber, qentry.slide_id, qentry.response);
 	    } else {
-		Slidoc.answerClick(null, qnumber, qentry[0], qentry[1], qentry[2], qentry[3]);
+		Slidoc.answerClick(null, qnumber, qentry.slide_id, qentry.resp_type, qentry.response, qentry.test);
 	    }
 	}
     }
@@ -444,6 +450,7 @@ function sessionCreate(paced) {
             lastTries: 0,
             remainingTries: 0,
             lastAnswersCorrect: 0,
+            skipToSlide: 0,
 	    questionsMax: 0,
             questionsCount: 0,
             questionsCorrect: 0,
@@ -772,7 +779,7 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
     // invalid_msg => syntax error when executing user code
     console.log('checkCode:', slide_id, user_code, checkOnly);
 
-    if (!question_attrs.test.length || !question_attrs.output.length) {
+    if (!question_attrs.test || !question_attrs.output) {
 	console.log('checkCode: Test/output code checks not found in '+slide_id);
 	return callback( {correct:null, invalid:'', output:'Not checked', tests:0} );
     }
@@ -780,14 +787,16 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
     var codeType = question_attrs.qtype;
 
     var codeCells = [];
-    for (var j=1; j<=question_attrs.input; j++) {
-	// Execute all input cells
-	var inputCell = document.getElementById('slidoc-block-input-'+j);
-	if (!inputCell) {
-	    console.log('checkCode: Input cell '+j+' not found in '+slide_id);
-	    return callback({correct:null, invalid:'', output:'Missing input cell'+j, tests:0});
+    if (question_attrs.input) {
+	for (var j=1; j<=question_attrs.input; j++) {
+	    // Execute all input cells
+	    var inputCell = document.getElementById('slidoc-block-input-'+j);
+	    if (!inputCell) {
+		console.log('checkCode: Input cell '+j+' not found in '+slide_id);
+		return callback({correct:null, invalid:'', output:'Missing input cell'+j, tests:0});
+	    }
+	    codeCells.push( inputCell.textContent.trim() );
 	}
-	codeCells.push( inputCell.textContent.trim() );
     }
 
     codeCells.push(user_code);
@@ -844,6 +853,12 @@ function retryAnswer() {
 
 Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
    console.log("Slidoc.choiceClick:", question_number, slide_id, choice_val);
+    var slide_num = parseSlideId(slide_id)[2];
+    var attr_vals = getChapterAttrs(slide_id);
+    var question_attrs = attr_vals[question_number-1];
+    if (question_attrs.slide != slide_num)  // Incomplete choice question; ignore
+	return false;
+
    var setup = !elem;
     if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
 	alert('Please switch to slide view to answer questions in paced mode');
@@ -859,7 +874,7 @@ Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
     } else {
 	// Not setup
 	if (!Slidoc.answerPacedAllow())
-	return false;
+	    return false;
     }
 
    elem.style['text-decoration'] = 'line-through';
@@ -869,17 +884,14 @@ Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
       choices[i].classList.remove("slidoc-clickable");
    }
 
-    console.log("Slidoc.choiceClick2:", slide_id);
-    var attr_vals = getSlideAttrs(slide_id);
-    if (attr_vals) {
-	var corr_answer = attr_vals[question_number-1].correct;
-	if (corr_answer) {
-            var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
-            if (corr_choice) {
-		corr_choice.style['text-decoration'] = '';
-		corr_choice.style['font-weight'] = 'bold';
-            }
-	}
+    console.log("Slidoc.choiceClick2:", slide_num);
+    var corr_answer = question_attrs.correct;
+    if (corr_answer) {
+        var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
+        if (corr_choice) {
+	    corr_choice.style['text-decoration'] = '';
+	    corr_choice.style['font-weight'] = 'bold';
+        }
     }
 
     if (!setup && Sliobj.session.remainingTries > 0)
@@ -941,7 +953,7 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
     if (setup && testResp) {
 	callUpdate(testResp);
     } else if (answer_type.slice(0,10) == 'text/code=') {
-	var attr_vals = getSlideAttrs(slide_id);
+	var attr_vals = getChapterAttrs(slide_id);
 	var question_attrs = attr_vals[question_number-1];
 	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
     } else {
@@ -957,18 +969,19 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 	Sliobj.session.lastTries += 1;
 
     var is_correct = null;
-    var attr_vals = getSlideAttrs(slide_id);
+    var attr_vals = getChapterAttrs(slide_id);
     if (!attr_vals)
 	return;
 
     var question_attrs = attr_vals[question_number-1];
-    var corr_answer = question_attrs.correct;
-    var corr_answer_html = question_attrs.html;
-    var corr_answer_js = question_attrs.js;
+
+    var corr_answer      = question_attrs.correct || '';
+    var corr_answer_html = question_attrs.html || '';
+    var corr_answer_js   = question_attrs.js || '';
     console.log('Slidoc.answerUpdate:', slide_id);
 
     if (testResp) {
-	var ntest = question_attrs.test.length;
+	var ntest = question_attrs.test ? question_attrs.test.length : 0;
 	var code_output_elem = document.getElementById(slide_id+"-code-output");
 	if (checkOnly) {
 	    var msg = 'Checked';
@@ -1095,20 +1108,56 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 	Slidoc.classDisplay(notes_id, 'block');
     }
 
-   if (!setup)
-       Slidoc.answerTally(is_correct, question_number, slide_id, resp_type, response, testResp);
+    if (!setup) {
+	Sliobj.session.questionsAttempted[question_number] = {slide_id: slide_id, resp_type: resp_type, response: response,
+							      test: testResp||null,
+							      expect: corr_answer, correct: is_correct};
+	Slidoc.answerTally(is_correct, question_number, slide_id, resp_type, question_attrs.skip || null);
+    }
 }
 
 
-Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type, response, testResp) {
-    console.log('Slidoc.answerTally: ', is_correct, question_number, slide_id, resp_type, response, testResp);
+Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type, skip) {
+    console.log('Slidoc.answerTally: ', is_correct, question_number, slide_id, resp_type, skip);
 
-    Sliobj.session.questionsAttempted[question_number] = [slide_id, resp_type, response, testResp||null];
+    var slide_num = parseSlideId(slide_id)[2];
+    if (slide_num < Sliobj.session.skipToSlide) {
+	saveSession();
+	return;
+    }
+    
+    var qWeight = 1;
+
+    if (Sliobj.session.paced) {
+	Sliobj.session.remainingTries = 0;
+	document.body.classList.remove('slidoc-expect-answer-state');
+	if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
+	    // 1 => Current sequence of "correct" answers
+	    if (skip && skip[0] > slide_num) {
+		// Skip ahead
+		Sliobj.session.lastAnswersCorrect = 2;
+		Sliobj.session.skipToSlide = skip[0];
+
+		// Give credit for all skipped questions
+		qWeight = 1+skip[1];
+
+		if (skip[2])
+		    toggleClassAll(true, 'slidoc-forward-link-allowed', skip[2]);
+	    } else {
+		// No skipping
+		Sliobj.session.lastAnswersCorrect = 1;
+	    }
+	} else {
+            // -1 => Current sequence with at least one incorrect answer
+	    Sliobj.session.lastAnswersCorrect = -1;
+	    document.body.classList.add('slidoc-incorrect-answer-state');
+	}
+    }
 
     // Keep score
-    Sliobj.session.questionsCount += 1;
+    Sliobj.session.questionsCount += qWeight;
     if (is_correct)
-        Sliobj.session.questionsCorrect += 1;
+        Sliobj.session.questionsCorrect += qWeight;
     Slidoc.showScore();
 
     if (Sliobj.session.paced && Sliobj.questionConcepts.length > 0) {
@@ -1129,22 +1178,15 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 	    }
 	}
     }
+    saveSession();
+}
 
-    if (Sliobj.session.paced) {
-	Sliobj.session.remainingTries = 0;
-	document.body.classList.remove('slidoc-expect-answer-state');
-	if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
-	    // 1 => Current sequence of "correct" answers
-	    Sliobj.session.lastAnswersCorrect = 1;
-	} else {
-            // -1 => Current sequence with at least one incorrect answer
-	    Sliobj.session.lastAnswersCorrect = -1;
-	    document.body.classList.add('slidoc-incorrect-answer-state');
-	}
-	Sliobj.session.lastTime = Date.now();
-        if (!Sliobj.params.gd_sheet_url || Sliobj.params.paceDelay || Sliobj.params.tryCount)
-	    sessionPut();
-    }
+function saveSession() {
+    if (!Sliobj.session.paced)
+	return;
+    Sliobj.session.lastTime = Date.now();
+    if (!Sliobj.params.gd_sheet_url || Sliobj.params.paceDelay || Sliobj.params.tryCount)
+	sessionPut();
 }
 
 Slidoc.showScore = function () {
@@ -1177,7 +1219,7 @@ Slidoc.startPaced = function () {
 
     if (!Sliobj.session.lastSlide) {
 	// Start of session
-	var attr_vals = getSlideAttrs(firstSlideId);
+	var attr_vals = getChapterAttrs(firstSlideId);
 	Sliobj.session.questionsMax = attr_vals ? attr_vals.length : 0;
 
 	if (Sliobj.questionConcepts.length > 0) {
@@ -1203,6 +1245,7 @@ Slidoc.startPaced = function () {
     document.body.classList.add('slidoc-paced-view');
     if (Sliobj.session.paceStrict)
 	document.body.classList.add('slidoc-strict-paced-view');
+    toggleClassAll(false, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
 
     var startMsg = 'Starting'+(Sliobj.session.paceStrict?' strictly':'')+' paced slideshow '+Sliobj.sessionName+':<br>';
     if (Sliobj.session.questionsMax)
@@ -1358,7 +1401,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
    if (!slides || slide_num < 1 || slide_num > slides.length)
       return false;
 
-    if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide+1 && Sliobj.session.lastAnswersCorrect <= 0) {
+    if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.session.skipToSlide) {
 	// Advance one slide at a time
 	alert('Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	return false;
@@ -1424,6 +1467,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	toggleClass(slide_num == Sliobj.session.lastSlide, 'slidoc-paced-last-slide');
 	toggleClass(Sliobj.session.remainingTries, 'slidoc-expect-answer-state');
     }
+    toggleClass(slide_num < Sliobj.session.skipToSlide, 'slidoc-skip-optional-slide');
 
     var prev_elem = document.getElementById('slidoc-slide-nav-prev');
     var next_elem = document.getElementById('slidoc-slide-nav-next');
@@ -1531,7 +1575,7 @@ function goSlide(slideHash, chained, singleChapter) {
 
     if (Sliobj.curChapterId || singleChapter) {
 	// Display only chapter containing slide
-	var newChapterId = parseSlideId(slideId.slice(0,8))[0];
+	var newChapterId = parseSlideId(slideId)[0];
 	if (!newChapterId) {
             console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
             return false;
@@ -1572,7 +1616,7 @@ function goSlide(slideHash, chained, singleChapter) {
       return false;
 
    } else if (Sliobj.session.paced) {
-	var slide_num = parseSlideId(slideId.slice(0,8))[2];
+	var slide_num = parseSlideId(slideId)[2];
        if (slide_num > Sliobj.session.lastSlide) {
 	   console.log('goSlide: Error - paced slide not reached:', slideId);
 	   return false;
