@@ -224,6 +224,8 @@ Global.ref_tracker = dict()
 Global.ref_counter = defaultdict(int)
 Global.chapter_ref_counter = defaultdict(int)
 
+Global.dup_ref_tracker = set()
+
 class MathBlockGrammar(mistune.BlockGrammar):
     def_links = re.compile(  # RE-DEFINE TO INCLUDE SINGLE QUOTES
         r'^ *\[([^^\]]+)\]: *'  # [key]:
@@ -639,8 +641,8 @@ class SlidocRenderer(MathRenderer):
             if len(self.slide_forward_links) > 1:
                 print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]), file=sys.stderr)
 
-        if self.cur_qtype and not self.qtypes[-1]:
-            print("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number), file=sys.stderr)
+        ###if self.cur_qtype and not self.qtypes[-1]:
+        ###    print("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number), file=sys.stderr)
 
         return self.end_notes()+self.end_hide()+suffix_html+'</section><!--slide end-->\n' 
 
@@ -759,7 +761,9 @@ class SlidocRenderer(MathRenderer):
             header_ref = md2md.ref_key(text)
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         if ref_id in Global.ref_tracker:
-            print('    ****REF-ERROR: Duplicate reference #%s (#%s) in slide %s' % (ref_id, header_ref, self.slide_number), file=sys.stderr)
+            if ref_id not in Global.dup_ref_tracker:
+                Global.dup_ref_tracker.add(ref_id)
+                print('    ****REF-ERROR: %s: Duplicate reference #%s in slide %s' % (self.options["filename"], header_ref, self.slide_number), file=sys.stderr)
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
@@ -1039,7 +1043,7 @@ class SlidocRenderer(MathRenderer):
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
-                    if tag not in Global.first_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
+                    if tag not in Global.first_tags and tag not in Global.sec_tags and 'assess_only' not in self.options['config'].features:
                         self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         print("        "+self.concept_warnings[-1], file=sys.stderr)
 
@@ -1721,7 +1725,7 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['assessment', 'equation_number', 'incremental_slides', 'progress_bar', 'untitled_number']
+    features_all = ['assess_only', 'equation_number', 'incremental_slides', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')

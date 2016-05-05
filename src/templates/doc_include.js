@@ -732,7 +732,7 @@ Slidoc.allDisplay = function (elem) {
 	Sliobj.curChapterId = '';
         document.body.classList.add('slidoc-all-view');
 	var elements = document.getElementsByClassName('slidoc-container');
-	for (var i = 0; i < elements.length; ++i)
+	for (var i=0; i < elements.length; i++)
 	    elements[i].style.display= null;
     } else {
 	goSlide(document.getElementById("slidoc00") ? '#slidoc00' : '#slidoc01-01', false, true);
@@ -744,7 +744,7 @@ Slidoc.classDisplay = function (className, displayValue) {
    // Set display value (string) for all elements with class
    // If !displayValue, toggle it
    var elements = document.getElementsByClassName(className);
-   for (var i = 0; i < elements.length; ++i) {
+   for (var i=0; i < elements.length; i++) {
      if (displayValue)
         elements[i].style.display = displayValue;
      else
@@ -772,7 +772,7 @@ Slidoc.toggleInlineId = function (idValue) {
 
 Slidoc.toggleInline = function (elem) {
    var elements = elem.children;
-   for (var i = 0; i < elements.length; ++i) {
+   for (var i=0; i < elements.length; i++) {
       elements[i].style.display = (elements[i].style.display=='inline') ? 'none' : 'inline';
    }
    return false;
@@ -886,7 +886,7 @@ Slidoc.choiceClick = function (elem, question_number, slide_id, choice_val) {
 
    elem.style['text-decoration'] = 'line-through';
    var choices = document.getElementsByClassName(slide_id+"-choice");
-   for (var i = 0; i < choices.length; ++i) {
+   for (var i=0; i < choices.length; i++) {
       choices[i].removeAttribute("onclick");
       choices[i].classList.remove("slidoc-clickable");
    }
@@ -1504,7 +1504,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     }
 
     slides[slide_num-1].style.display = 'block';
-    for (var i=0; i<slides.length; ++i) {
+    for (var i=0; i<slides.length; i++) {
 	if (i != slide_num-1) slides[i].style.display = 'none';
     }
     Sliobj.currentSlide = slide_num;
@@ -1569,7 +1569,7 @@ function goSlide(slideHash, chained, singleChapter) {
     if (match) {
         // Find slide containing reference
 	slideId = '';
-        for (var i=0; i<goElement.classList.length; ++i) {
+        for (var i=0; i<goElement.classList.length; i++) {
 	    var refmatch = RegExp('slidoc-referable-in-(.*)$').exec(goElement.classList[i]);
 	    if (refmatch) {
 		slideId = refmatch[1];
@@ -1608,7 +1608,7 @@ function goSlide(slideHash, chained, singleChapter) {
            Sliobj.curChapterId = newChapterId;
            var chapters = document.getElementsByClassName('slidoc-container');
            console.log('goSlide3: ', newChapterId, chapters.length);
-           for (var i = 0; i < chapters.length; ++i) {
+           for (var i=0; i < chapters.length; i++) {
 	       if (!Sliobj.sidebar || !chapters[i].classList.contains('slidoc-toc-container'))
 		   chapters[i].style.display = (chapters[i].id == newChapterId) ? null : 'none';
            }
@@ -1617,7 +1617,7 @@ function goSlide(slideHash, chained, singleChapter) {
 
    if (Sliobj.currentSlide) {
       var slides = getVisibleSlides();
-      for (var i=0; i<slides.length; ++i) {
+      for (var i=0; i<slides.length; i++) {
          if (slides[i].id == slideId) {
            Slidoc.slideViewGo(false, i+1);
            return false;
@@ -1801,19 +1801,27 @@ var SlidocRandom = (function() {
       // c and m should be co-prime
       c = 1013904223,
       seed, z;
-  return {
-    setSeed : function(val) {
-      z = seed = val || Math.round(Math.random() * m);
-    },
-    getSeed : function() {
-      return seed;
-    },
-    rand : function() {
+    function uniform() {
       // define the recurrence relationship
       z = (a * z + c) % m;
       // return a float in [0, 1) 
       // if z = m then z / m = 0 therefore (z % m) / m < 1 always
       return z / m;
+    }
+  return {
+    setSeed: function(val) {
+      z = seed = val || Math.round(Math.random() * m);
+    },
+    getSeed: function() {
+      return seed;
+    },
+    rand: function() {
+	// Value uniformly distributed between 0.0 and 1.0
+	return uniform();
+    },
+    randint: function(min, max) {
+	// Equally probable integer values between min and max (inclusive)
+	return Math.min(max, Math.floor( min + (max-min+1)*uniform() ));
     }
   };
 }());

@@ -841,7 +841,7 @@ To display a default reference value, append it, separated by `;`.
   SlidocFormulas.sqrtNumber = function(slideId)
   {
   	// Pick an integer between 2 and 19
-	var randInt = Math.floor(2 + 18*SlidocRandom.rand())
+	var randInt = SlidocRandom.randint(2,19);
 	randVals[slideId] = (0.5*randInt).toFixed(1);
 	console.log('SlidocFormulas.sqrtNumber:', slideId, SlidocRandom.getSeed(), randVals[slideId]);
 	return (randVals[slideId]*randVals[slideId]).toFixed(2);

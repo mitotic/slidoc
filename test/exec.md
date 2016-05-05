@@ -1,4 +1,4 @@
-<!--slidoc-defaults --features=assessment -->
+<!--slidoc-defaults --features=assess_only -->
 # Test code execution
 
 Test file
