@@ -83,25 +83,42 @@ function handleResponse(evt) {
 	if (!sheetName)
 	    throw('No sheet name specified');
 
-	if (sheetName == 'sessions') {
+	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
+	var rowUpdates = params.row ? JSON.parse(params.row) : null;
+
+	var getRow = params.get || '';
+	var nooverwriteRow = params.nooverwrite || '';
+
+	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+	if (sheetName == 'sessionIndex') {
 	    // Restricted sheet
-	    var token = params.token || '';
-	    var user = params.user || '';
-	    if (!token || !user)
-		throw('Invalid/missing token/user for HMAC authentication for sheet '+sheetName);
-	    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
-							 user,
-							 HMAC_KEY,
-							 Utilities.Charset.US_ASCII);
-            var b64HMAC = Utilities.base64Encode(rawHMAC);
-	    if (token != b64HMAC)
-		throw('HMAC token mismatch for sheet '+sheetName);
+	    if (!params.user || !params.token)
+		throw('Missing user/token for HMAC authentication for sheet '+sheetName);
+	    if (params.user != 'admin')
+		throw('Invalid user '+params.user+' for sheet '+sheetName);
+	    if (!validateHMAC(params.user+':'+params.token, HMAC_KEY))
+		throw('Invalid token for sheet '+sheetName);
+
+	} else if ((rowUpdates || selectedUpdates) && doc.getSheetByName('sessionIndex')) {
+	    // Creating/updating row in session; check if past submission deadline
+	    var sessionParams = getSessionParams(sheetName, ['submitTime']);
+	    var curTime = (new Date()).getTime();
+	    if (sessionParams.submitTime && curTime > sessionParams.submitTime.getTime()) {
+		if (!params.user || !params.token)
+		    throw('Past submit deadline ('+sessionParams.submitTime+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
+
+		if (!validateHMAC(params.user+':'+sheetName+':'+params.token, HMAC_KEY))
+		    throw('Invalid token for late submission to session '+sheetName);
+
+		var newSubmitTime = new Date(splitToken(params.token)[0]); // Date format: '1995-12-17T03:24:00.000Z' (need all)
+		if (curTime > newSubmitTime.getTime())
+		    throw('Past late submit deadline ('+newSubmitTime+') for session '+sheetName);
+	    }
 	}
 
 	// Check parameter consistency
 	var headers = params.headers ? JSON.parse(params.headers) : null;
 
-	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
 	var sheet = doc.getSheetByName(sheetName);
 	if (!sheet) {
 	    // Create new sheet
@@ -133,13 +150,8 @@ function handleResponse(evt) {
 	    }
 	}
 
-	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
-	var rowUpdates = params.row ? JSON.parse(params.row) : null;
 	var userId = null;
 	var userName = null;
-
-	var getRow = params.get || '';
-	var nooverwriteRow = params.nooverwrite || '';
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
 	    // No row updates
@@ -260,7 +272,7 @@ function handleResponse(evt) {
     } catch(err){
 	// if error return this
 	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": err, "row": returnValues, "messages": returnMessages.join('\n')})+jsonSuffix)
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": ''+err, "row": null, "messages": returnMessages.join('\n')})+jsonSuffix)
             .setMimeType(mimeType);
     } finally { //release lock
 	lock.releaseLock();
@@ -271,3 +283,22 @@ function setup() {
     var doc = SpreadsheetApp.getActiveSpreadsheet();
     SCRIPT_PROP.setProperty("key", doc.getId());
 }
+
+function splitToken(token) {
+    var match = RegExp('^(.+):([^:]+)$').exec(token);
+    if (!match)
+	throw('Invalid HMAC token; no colon');    
+    return [match[1], match[2]];
+}
+
+function validateHMAC(token, key) {
+    // Validates HMAC token of the form message:signature
+    var comps = splitToken(token);
+    var message = comps[0];
+    var signature = comps[1];
+    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
+						 message, key,
+						 Utilities.Charset.US_ASCII);
+    return signature == Utilities.base64Encode(rawHMAC);
+}
+

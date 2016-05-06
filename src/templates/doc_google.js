@@ -165,7 +165,7 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
     for (var j=0; j<resp.emails.length; j++) {
         var email = resp.emails[j];
         if (email.type == 'account') {
-            this.auth = {email: email.value};
+            this.auth = {email: email.value.toLowerCase()};
             break;
         }
     }
@@ -175,6 +175,7 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
     var comps = resp.displayName.split(/\s+/);
     var name = (comps.length > 1) ? comps.slice(-1)+', '+comps.slice(0,-1).join(' ') : resp.displayName;
     this.auth.displayName = name || this.auth.email;
+    this.auth.userName = this.auth.email;
     this.auth.domain = resp.domain || '';
     this.auth.image = (resp.image && resp.image.url) ? resp.image.url : ''; 
     if (this.authCallback)
@@ -182,14 +183,14 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
 }
 
 GoogleAuth.prototype.promptUserInfo = function () {
-    var name = window.prompt('Enter a unique identifier or name');
+    var name = window.prompt('Enter unique identifier assigned by instructor (or name)');
     name = (name || '').trim();
     if (!name) {
 	alert('Cancelled');
 	return;
     }
-    var email = (name.indexOf('@') >= 0) ? name : 'none@example.com';
     var id = name.replace(/[-.,'\s]+/g,'-').toLowerCase();
+    var email = (name.indexOf('@') >= 0) ? name : id+'@slidoc';
     this.onUserInfo({id: '#'+id, displayName: name,
 		     emails: [{type: 'account', value:email}] });
 }
@@ -230,8 +231,16 @@ GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, 
 
     if (outerCallback) {
         var retval = null;
-        if (result && result.row)
-            retval = (result.row.length == 0) ? {} : this.row2obj(result.row);
+        if (result) {
+	    if (result.result == 'success' && result.row)
+		retval = (result.row.length == 0) ? {} : this.row2obj(result.row);
+
+	    else if (result.result == 'error' && result.error)
+		err_msg = err_msg ? err_msg + ';' + result.error : result.error;
+
+	    if (result.messages)
+		err_msg = err_msg ? err_msg + ';' + result.messages : result.messages;
+	}
         outerCallback(retval, err_msg);
     }
 }
@@ -273,13 +282,13 @@ GoogleSheet.prototype.createSheet = function (callback) {
     this.send(params, 'createSheet', callback);
 }
 
-GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
+GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, token, user, createSheet) {
     // Specify get to retrieve the existing/overwritten row.
     // Specify nooverwrite to not overwrite any existing row with same id
     // Get with nooverwrite will return the existing row, or the newly inserted row.
     if (createSheet && this.created == null) {
         // Call putRow after creating sheet
-        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get) );
+        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get, token, user) );
         return;
     }
     this.checkCreated();
@@ -291,6 +300,10 @@ GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, cre
         params['nooverwrite'] = '1';
     if (get)
         params['get'] = '1';
+    if (token)
+        params['token'] = token;
+    if (user)
+        params['user'] = user;
     this.callbackCounter += 1;
     this.send(params, 'putRow', callback);
 }
@@ -362,8 +375,9 @@ GoogleAuthSheet.prototype.createSheet = function (callback) {
     return this.gsheet.createSheet(callback);
 }
 
-GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
-    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, createSheet);
+GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, token, createSheet) {
+    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, token, token?this.auth.userName:null,
+			      createSheet);
 }
 
 GoogleAuthSheet.prototype.updateRow = function (updateObj, callback, get) {

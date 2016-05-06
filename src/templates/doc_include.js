@@ -11,6 +11,7 @@ var MAX_INC_LEVEL = 9; // Max. incremental display level
 var Sliobj = {}; // Internal object
 
 Sliobj.params = JS_PARAMS_OBJ;
+Sliobj.lateToken = null;
 
 Sliobj.closePopup = null;
 
@@ -335,7 +336,7 @@ function slidocReadyPaced(newSession, prereqs, prevSession) {
 	}
     }
 	
-    sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true});
+    sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true, retry: true});
 }
 
 function slidocReadyAux(session) {
@@ -364,7 +365,7 @@ function slidocReadyAux(session) {
     if (!Sliobj.session) {
 	// New paced session
 	Sliobj.session = sessionCreate(paceParam);
-	sessionPut();
+	sessionPut(null, null, {retry: true});
     }
 
     // Restore random seed for session
@@ -467,7 +468,7 @@ function sessionCreate(paced) {
 }
 
 var Auth_sheet = null;
-var Session_fields = ['startTime', 'lastSlide', 'questionsCount', 'questionsCorrect', 'session_hidden'];
+var Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'session_hidden'];
 
 function sessionAbort(err_msg) {
     Slidoc.classDisplay('slidoc-slide', 'none');
@@ -475,12 +476,13 @@ function sessionAbort(err_msg) {
     document.body.textContent = err_msg;
 }
 
-function sessionGetPutAux(callback, result, err_msg) {
-    console.log('Slidoc.sessionGetPutAux: ', callback, result, err_msg);
+function sessionGetPutAux(callback, retryCall, result, err_msg) {
+    console.log('Slidoc.sessionGetPutAux: ', callback, retryCall, result, err_msg);
     var session = null;
     if (!result) {
 	console.log('Slidoc.sessionGetPutAux: ERROR '+err_msg, result);
     } else if (!result.id) {
+	// Null object {} returned, indicating non-presence for get
 	if (callback)
 	    callback(null);
 	return;
@@ -497,7 +499,15 @@ function sessionGetPutAux(callback, result, err_msg) {
 	if (callback)
 	    callback(session);
     } else {
-	sessionAbort('Session aborted. Error in accessing session info from Google Docs: '+err_msg);
+	if (retryCall && err_msg && err_msg.indexOf('request authorization token') > -1) {
+	    var token = window.prompt('Late submission. Enter authorization token for user '+GService.gauth.auth.email+', if you have one.');
+	    if (token) {
+		Sliobj.lateToken = token;
+		retryCall();
+		return;
+	    }
+	}
+	sessionAbort('Error in accessing session info from Google Docs: '+err_msg+' (session aborted)');
     }
 }
 
@@ -526,11 +536,12 @@ function setupAuthSheet(name) {
     }
 }
 
-function sessionGet(name, callback) {
+function sessionGet(name, callback, retry) {
     if (Sliobj.params.gd_sheet_url) {
 	// Google Docs storage
 	setupAuthSheet(name);
-	Auth_sheet.getRow(sessionGetPutAux.bind(null, callback), true);
+	var retryCall = retry ? sessionGet.bind(null, name, callback, retry) : null;
+	Auth_sheet.getRow(sessionGetPutAux.bind(null, callback, retryCall), true);
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
@@ -566,7 +577,9 @@ function sessionPut(session, callback, opts) {
 	var rowObj = {};
 	for (var j=0; j<Session_fields.length; j++) {
 	    var header = Session_fields[j];
-	    if (header.slice(0,6) != 'hidden') {
+	    if (header == 'lateToken') {
+		rowObj[header] = Sliobj.lateToken;
+	    } else if (header.slice(0,6) != 'hidden') {
 		rowObj[header] = session[header];
 	    }
 	}
@@ -578,7 +591,9 @@ function sessionPut(session, callback, opts) {
 	///comps.join('')+'';
 	rowObj.session_hidden = base64str;
 	setupAuthSheet(Sliobj.sessionName);
-	Auth_sheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null), !!opts.get, !!opts.createSheet);
+	var retryCall = opts.retry ? sessionPut.bind(null, session, callback, opts) : null;
+	Auth_sheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall),
+			  !!opts.get, Sliobj.lateToken, !!opts.createSheet);
 
     } else {
 	// Local storage
@@ -1289,7 +1304,7 @@ Slidoc.endPaced = function () {
 	document.body.classList.remove('slidoc-paced-view');
 	Sliobj.session.paced = false;
     }
-    sessionPut(null, null, {force: true});
+    sessionPut(null, null, {force: true, retry: true});
 }
 
 Slidoc.answerPacedAllow = function () {

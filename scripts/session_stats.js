@@ -1,4 +1,9 @@
 // Create sheet with session statistics
+// To install this script:
+// Click on Tools > Script Editor, creating the script Stats.gs.
+//     Overwrite the template code with this code and Save.
+// Resources > Current project’s triggers.
+//     In the dropdowns select 'onOpen’, 'From spreadsheet’, and 'On Open’, then click on 'Save’.
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -42,18 +47,12 @@ function sessionStatsSheet() {
 
 	var sessionColIndex = indexColumns(sessionSheet);
 
-	indexSheet = doc.getSheetByName('sessions');
-	if (!indexSheet)
-	    throw('Index sheet sessions not found');
-	var indexColIndex = indexColumns(indexSheet);
-	var indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2);
-	var sessionRow = indexRowIndex[sessionName];
-
-	var p_concepts = indexSheet.getSheetValues(sessionRow, indexColIndex['primary_qconcepts'], 1, 1)[0][0].split('; ');
-	var s_concepts = indexSheet.getSheetValues(sessionRow, indexColIndex['secondary_qconcepts'], 1, 1)[0][0].split('; ');
-	
+	var sessionParams = getSessionParams(sessionName, ['primary_qconcepts', 'secondary_qconcepts']);
+	var p_concepts = sessionParams.primary_qconcepts.split('; ');
+	var s_concepts = sessionParams.secondary_qconcepts.split('; ');
+	 
 	// Session stats headers
-	var statHeaders = ['name', 'id', 'Timestamp', 'lastSlide', 'correct', 'count', 'skipped'];
+	var statHeaders = ['name', 'id', 'Timestamp', 'lateToken', 'lastSlide', 'correct', 'count', 'skipped'];
 	for (var j=0; j<p_concepts.length; j++)
 	    statHeaders.push('p:'+p_concepts[j]);
 	for (var j=0; j<s_concepts.length; j++)
@@ -76,6 +75,7 @@ function sessionStatsSheet() {
 	var idCol = sessionColIndex['id'];
 	var nameCol = sessionColIndex['name'];
 	var timeCol = sessionColIndex['Timestamp'];
+	var lateCol = sessionColIndex['lateToken'];
 	var lastCol = sessionColIndex['lastSlide'];
 
 	// Stats sheet columns
@@ -83,14 +83,16 @@ function sessionStatsSheet() {
 	var statNameCol = 1;
 	var statIdCol = 2;
 	var statTimeCol = 3;
-	var statLastCol = 4;
-	var statQuestionCol = 5;
+	var statLateCol = 4;
+	var statLastCol = 5;
+	var statQuestionCol = 6;
 	var nqstats = 3
 	var statConceptsCol = statQuestionCol + nqstats;
 
 	statSheet.getRange(statStartRow, statNameCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, nameCol, nids, 1));
 	statSheet.getRange(statStartRow,   statIdCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow,   idCol, nids, 1));
 	statSheet.getRange(statStartRow, statTimeCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, timeCol, nids, 1));
+	statSheet.getRange(statStartRow, statLateCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, lateCol, nids, 1));
 	statSheet.getRange(statStartRow, statLastCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, lastCol, nids, 1));
 
 	var hiddenSessionCol = sessionColIndex['session_hidden'];
@@ -138,4 +140,20 @@ function indexRows(sheet, indexCol, startRow) {
     for (var j=0; j<rowIds.length; j++)
 	rowIndex[rowIds[j][0]] = j+startRow;
     return rowIndex;
+}
+
+function getSessionParams(sessionName, colNames) {
+    // Return parameters in list colNames for sessionName from sessionIndex sheet
+    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var indexSheet = doc.getSheetByName('sessionIndex');
+    if (!indexSheet)
+	throw('Index sheet sessionIndex not found');
+    var indexColIndex = indexColumns(indexSheet);
+    var indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2);
+    var sessionRow = indexRowIndex[sessionName];
+    var retVals = {};
+    for (var j=0; j < colNames.length; j++) {
+	retVals[colNames[j]] = indexSheet.getSheetValues(sessionRow, indexColIndex[colNames[j]], 1, 1)[0][0];
+    }
+    return retVals;
 }
