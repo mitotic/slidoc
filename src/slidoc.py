@@ -1171,7 +1171,7 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
 
         pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
-        tail_html = '<div class="slidoc-noslide slidoc-nosidebar slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
+        tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
 
     if 'contents' not in config.strip:
         chapter_id = make_chapter_id(filenumber)

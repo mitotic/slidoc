@@ -1586,7 +1586,7 @@ function goSlide(slideHash, chained, singleChapter) {
 
     if (Sliobj.curChapterId || singleChapter) {
 	// Display only chapter containing slide
-	var newChapterId = parseSlideId(slideId)[0];
+	var newChapterId = parseSlideId(slideId.slice(0,8))[0]; // Slice because slideId may be index ref
 	if (!newChapterId) {
             console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
             return false;
@@ -1627,9 +1627,9 @@ function goSlide(slideHash, chained, singleChapter) {
       return false;
 
    } else if (Sliobj.session.paced) {
-	var slide_num = parseSlideId(slideId)[2];
-       if (slide_num > Sliobj.session.lastSlide) {
-	   console.log('goSlide: Error - paced slide not reached:', slideId);
+       var slide_num = parseSlideId(slideId)[2];
+       if (!slide_num || slide_num > Sliobj.session.lastSlide) {
+	   console.log('goSlide: Error - paced slide not reached:', slide_num, slideId);
 	   return false;
        }
    }

@@ -1,4 +1,4 @@
-// Create sheet with concept statistics
+// Create sheet with session statistics
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -6,15 +6,15 @@ var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property servi
  function onOpen() {
    var ss = SpreadsheetApp.getActiveSpreadsheet();
    var menuEntries = [];
-   menuEntries.push({name: "Generate concept stats", functionName: "conceptStatsSheet"});
+   menuEntries.push({name: "Generate session stats", functionName: "sessionStatsSheet"});
    menuEntries.push(null); // line separator
 
    ss.addMenu("Slidoc", menuEntries);
  }
  
 
-function conceptStatsSheet() {
-    // Create concept stats  sheet
+function sessionStatsSheet() {
+    // Create session stats sheet
 
     var ui = SpreadsheetApp.getUi();
     var response = ui.prompt('Enter session name', ui.ButtonSet.YES_NO);
@@ -52,8 +52,8 @@ function conceptStatsSheet() {
 	var p_concepts = indexSheet.getSheetValues(sessionRow, indexColIndex['primary_qconcepts'], 1, 1)[0][0].split('; ');
 	var s_concepts = indexSheet.getSheetValues(sessionRow, indexColIndex['secondary_qconcepts'], 1, 1)[0][0].split('; ');
 	
-	// Concept headers
-	var statHeaders = ['name', 'id'];
+	// Session stats headers
+	var statHeaders = ['name', 'id', 'Timestamp', 'lastSlide', 'correct', 'count', 'skipped'];
 	for (var j=0; j<p_concepts.length; j++)
 	    statHeaders.push('p:'+p_concepts[j]);
 	for (var j=0; j<s_concepts.length; j++)
@@ -61,7 +61,7 @@ function conceptStatsSheet() {
 	var nconcepts = p_concepts.length + s_concepts.length;
 
 	// New stat sheet
-	var statSheetName = sessionName+'-concepts';
+	var statSheetName = sessionName+'-stats';
 	statSheet = doc.getSheetByName(statSheetName);
 	if (!statSheet)
 	    statSheet = doc.insertSheet(statSheetName);
@@ -70,26 +70,55 @@ function conceptStatsSheet() {
 	statHeaderRange.setValues([statHeaders]);
 	statHeaderRange.setWrap(true);
 
+	// Session sheet columns
+	var startRow = 2;
 	var nids = sessionSheet.getLastRow()-1;
 	var idCol = sessionColIndex['id'];
 	var nameCol = sessionColIndex['name'];
-	statSheet.getRange(3, 1, nids, 1).setValues(sessionSheet.getSheetValues(2, nameCol, nids, 1));
-	statSheet.getRange(3, 2, nids, 1).setValues(sessionSheet.getSheetValues(2, idCol, nids, 1));
+	var timeCol = sessionColIndex['Timestamp'];
+	var lastCol = sessionColIndex['lastSlide'];
+
+	// Stats sheet columns
+	var statStartRow = 3; // Leave blank row for formulas
+	var statNameCol = 1;
+	var statIdCol = 2;
+	var statTimeCol = 3;
+	var statLastCol = 4;
+	var statQuestionCol = 5;
+	var nqstats = 3
+	var statConceptsCol = statQuestionCol + nqstats;
+
+	statSheet.getRange(statStartRow, statNameCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, nameCol, nids, 1));
+	statSheet.getRange(statStartRow,   statIdCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow,   idCol, nids, 1));
+	statSheet.getRange(statStartRow, statTimeCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, timeCol, nids, 1));
+	statSheet.getRange(statStartRow, statLastCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, lastCol, nids, 1));
+
 	var hiddenSessionCol = sessionColIndex['session_hidden'];
-	var hiddenSessionCol = sessionColIndex['session_hidden'];
-	var hiddenVals = sessionSheet.getSheetValues(2, hiddenSessionCol, nids, 1);
+	var hiddenVals = sessionSheet.getSheetValues(startRow, hiddenSessionCol, nids, 1);
+	var questionTallies = [];
 	var conceptTallies = [];
-	for (var j=0; j<hiddenVals.length; j++) {
+	var nullConcepts = [];
+	for (var j=0; j<nconcepts; j++) nullConcepts.push('');
+
+	for (var j=0; j<nids; j++) {
 	    var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
 	    var savedSession = JSON.parse(jsonSession);
-	    var missedFraction = [];
+	    questionTallies.push([savedSession.questionsCorrect, savedSession.questionsCount, savedSession.questionsSkipped]);
+
 	    var missedConcepts = savedSession.missedConcepts;
-	    for (var m=0; m<2; m++)
-		for (var k=0; k<missedConcepts[m].length; k++)
-		    missedFraction.push(missedConcepts[m][k][0]/Math.max(1,missedConcepts[m][k][1]));
-	    conceptTallies.push(missedFraction);
+	    if (missedConcepts.length) {
+		var missedFraction = [];
+		for (var m=0; m<missedConcepts.length; m++)
+		    for (var k=0; k<missedConcepts[m].length; k++)
+			missedFraction.push(missedConcepts[m][k][0]/Math.max(1,missedConcepts[m][k][1]));
+		conceptTallies.push(missedFraction);
+	    } else {
+		conceptTallies.push(nullConcepts);
+	    }
 	}
-	statSheet.getRange(3, 3, conceptTallies.length, nconcepts).setValues(conceptTallies);
+	statSheet.getRange(statStartRow, statQuestionCol, nids, nqstats).setValues(questionTallies);
+	if (nconcepts)
+	    statSheet.getRange(statStartRow, statConceptsCol, nids, nconcepts).setValues(conceptTallies);
     } finally { //release lock
 	lock.releaseLock();
     }
