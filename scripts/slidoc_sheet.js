@@ -83,12 +83,9 @@ function handleResponse(evt) {
 	if (!sheetName)
 	    throw('No sheet name specified');
 
-	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
-	var rowUpdates = params.row ? JSON.parse(params.row) : null;
-
-	var getRow = params.get || '';
-	var nooverwriteRow = params.nooverwrite || '';
-
+	var pastSubmitDeadline = false;
+	var validLateToken = false;
+	var submitTime = null;
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
 	if (sheetName == 'sessionIndex') {
 	    // Restricted sheet
@@ -99,20 +96,25 @@ function handleResponse(evt) {
 	    if (!validateHMAC(params.user+':'+params.token, HMAC_KEY))
 		throw('Invalid token for sheet '+sheetName);
 
-	} else if ((rowUpdates || selectedUpdates) && doc.getSheetByName('sessionIndex')) {
+	} else if (doc.getSheetByName('sessionIndex')) {
 	    // Creating/updating row in session; check if past submission deadline
 	    var sessionParams = getSessionParams(sheetName, ['submitTime']);
 	    var curTime = (new Date()).getTime();
-	    if (sessionParams.submitTime && curTime > sessionParams.submitTime.getTime()) {
-		if (!params.user || !params.token)
-		    throw('Past submit deadline ('+sessionParams.submitTime+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
-
-		if (!validateHMAC(params.user+':'+sheetName+':'+params.token, HMAC_KEY))
-		    throw('Invalid token for late submission to session '+sheetName);
-
-		var newSubmitTime = new Date(splitToken(params.token)[0]); // Date format: '1995-12-17T03:24:00.000Z' (need all)
-		if (curTime > newSubmitTime.getTime())
-		    throw('Past late submit deadline ('+newSubmitTime+') for session '+sheetName);
+	    submitTime = sessionParams.submitTime;
+	    pastSubmitDeadline = (submitTime && curTime > submitTime.getTime())
+	    if (pastSubmitDeadline && params.user && params.token) {
+		validLateToken = validateHMAC(params.user+':'+sheetName+':'+params.token, HMAC_KEY);
+		if (validLateToken) {
+		    submitTime = new Date(splitToken(params.token)[0]); // Date format: '1995-12-17T03:24:00.000Z' (need all)
+		    pastSubmitDeadline = (curTime > submitTime.getTime());
+		} else {
+		    returnMessages.push('Warning: Invalid token for late submission to session '+sheetName);
+		}
+	    }
+	    if (pastSubmitDeadline) {
+		returnMessages.push('Warning: Past submit deadline ('+submitTime+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
+	    } else if ( (submitTime.getTime() - curTime) < 2*60*60*1000) {
+		returnMessages.push('Warning: Nearing submit deadline ('+submitTime+') for session '+sheetName+'.');
 	    }
 	}
 
@@ -149,6 +151,12 @@ function handleResponse(evt) {
 		    throw('Column header mismatch: '+headers[j]+' vs. '+columnHeaders[j]+' in sheet '+sheetName);
 	    }
 	}
+
+	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
+	var rowUpdates = params.row ? JSON.parse(params.row) : null;
+
+	var getRow = params.get || '';
+	var nooverwriteRow = params.nooverwrite || '';
 
 	var userId = null;
 	var userName = null;
@@ -188,11 +196,19 @@ function handleResponse(evt) {
 	    if (newRow && getRow && !rowUpdates) {
 		// Row does not exist; return empty list
 		returnValues = [];
+
+	    } else if (pastSubmitDeadline && (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) ) {
+		if (!params.user || !params.token)
+		    throw('Past submit deadline ('+submitTime+') for session '+sheetName+'. (If valid excuse, request authorization token.)')
+		else
+		    throw('Invalid token for late submission to session '+sheetName);
+
 	    } else {
 		if (newRow) {
 		    // New user; insert row in sorted order of name
 		    if (!userName || !rowUpdates)
 			throw('User name and row parameters required to create a new row for id '+userId);
+
 		    var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name']+1, sheet.getLastRow(), 1);
 		    userRow = sheet.getLastRow()+1;
 		    for (var j=0; j<names.length; j++) {

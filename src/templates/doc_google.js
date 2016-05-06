@@ -220,6 +220,10 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
 }
     
 GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, err_msg) {
+    // outerCallback(obj, err_msg, messages)
+    // obj == null on error
+    // obj == {} for non-existent row
+    // obj == {id: ..., name: ..., } for returned row
     console.log('GoogleSheet: callback', callbackType, result, err_msg);
     this.callbackCounter -= 1;
 
@@ -231,6 +235,7 @@ GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, 
 
     if (outerCallback) {
         var retval = null;
+	var messages = null;
         if (result) {
 	    if (result.result == 'success' && result.row)
 		retval = (result.row.length == 0) ? {} : this.row2obj(result.row);
@@ -239,9 +244,9 @@ GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, 
 		err_msg = err_msg ? err_msg + ';' + result.error : result.error;
 
 	    if (result.messages)
-		err_msg = err_msg ? err_msg + ';' + result.messages : result.messages;
+		messages = result.messages.split('\n');
 	}
-        outerCallback(retval, err_msg);
+        outerCallback(retval, err_msg, messages);
     }
 }
 
@@ -328,7 +333,7 @@ GoogleSheet.prototype.updateRow = function (updateObj, callback, get) {
 }
 
 GoogleSheet.prototype.getRow = function (id, callback, createSheet) {
-    // callback(obj, err_msg)
+    // callback(obj, err_msg, messages)
     // obj == null on error
     // obj == {} for non-existent row
     // obj == {id: ..., name: ..., } for returned row

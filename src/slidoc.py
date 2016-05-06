@@ -1212,6 +1212,51 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
+# 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
+Index_fields = ['name', 'id', 'Timestamp', 'submitTime', 'revision',
+                'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
+Manage_fields =  ['name', 'id', 'email', 'Timestamp']
+Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect',
+                  'session_hidden']
+
+def update_session_index(sheet_url, hmac_key, session_name, revision, submit_time, questions, p_concepts, s_concepts):
+    index_sheet = 'sessionIndex'
+    user = 'admin'
+    user_token = gen_hmac_token(hmac_key, user)
+
+    get_params = {'sheet': index_sheet, 'id': session_name, 'get': '1', 'user': user, 'token': user_token}
+    retval = http_post(sheet_url, get_params)
+    if retval['result'] != 'success':
+        if retval['error'].find('Headers must be specified for new sheet') == -1:
+            sys.exit("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
+    prev_row = retval.get('row')
+    if prev_row:
+        revision_col = Index_fields.index('revision')
+        if prev_row[revision_col] != revision:
+            print('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision), file=sys.stderr)
+
+    row_values = [session_name, session_name, None, submit_time, revision,
+                ','.join([x['qtype'] for x in questions]),
+                '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
+                '; '.join(sort_caseless(list(p_concepts))),
+                '; '.join(sort_caseless(list(s_concepts)))
+                                ]
+    post_params = {'sheet': index_sheet, 'user': user, 'token': user_token,
+                   'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
+                  }
+    retval = http_post(sheet_url, post_params)
+    if retval['result'] != 'success':
+        sys.exit("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
+    print('slidoc: Updated remote spreadsheet index:', session_name, file=sys.stderr)
+
+                
+def create_session_sheet(sheet_url, session_name):
+    post_params = {'sheet': session_name, 'headers': json.dumps(Manage_fields+Session_fields)}
+    retval = http_post(sheet_url, post_params)
+    if retval['result'] != 'success':
+        sys.exit("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
+    print('slidoc: Created remote spreadsheet:', session_name, file=sys.stderr)
+
 
 def process_input(input_files, config_dict):
     tem_dict = config_dict.copy()
@@ -1222,11 +1267,13 @@ def process_input(input_files, config_dict):
     out_name = os.path.splitext(os.path.basename(config.outfile or input_files[0].name))[0]
     combined_file = out_name+'.html'
 
-    js_params = {'filename': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
+    js_params = {'sessionName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'features': {}}
 
+    js_params['sessionFields'] = Session_fields
+        
     if config.index_files:
         # Separate files
         config.separate = True
@@ -1237,7 +1284,7 @@ def process_input(input_files, config_dict):
         config.qindex = comps[2]+'.html' if len(comps) > 2 and comps[2] else ''
     elif not config.pace:
         # Combined file (cannot be paced)
-        js_params['filename'] = out_name
+        js_params['sessionName'] = out_name
 
     hide_chapters = False
     if config.pace:
@@ -1392,7 +1439,7 @@ def process_input(input_files, config_dict):
         md_text = f.read()
         f.close()
         if config.separate:
-            js_params['filename'] = fname
+            js_params['sessionName'] = fname
 
         file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
 
@@ -1468,20 +1515,12 @@ def process_input(input_files, config_dict):
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
             if gd_hmac_key:
-                user = 'admin'
-                user_token = gen_hmac_token(gd_hmac_key, user)
-                sheet_headers = ['name', 'id', 'Timestamp', 'submitTime', 'revision',
-                                 'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
-                row_values = [fname, fname, None, gd_submit_time, js_params['sessionRevision'],
-                                ','.join([x['qtype'] for x in renderer.questions]),
-                                '|'.join([(x['correct'] or '').replace('|','/') for x in renderer.questions]),
-                                '; '.join(sort_caseless(list(renderer.qconcepts[0]))),
-                                '; '.join(sort_caseless(list(renderer.qconcepts[1])))
-                                ]
-                post_params = {'sheet': 'sessionIndex', 'user': user, 'token': user_token,
-                               'headers': json.dumps(sheet_headers), 'row': json.dumps(row_values)
-                               }
-                print('slidoc: Updated remote spreadsheet:', http_post(js_params['gd_sheet_url'], post_params))
+                update_session_index(js_params['gd_sheet_url'], gd_hmac_key, fname, js_params['sessionRevision'],
+                                      gd_submit_time, renderer.questions, renderer.qconcepts[0], renderer.qconcepts[1])
+
+            if js_params['gd_sheet_url']:
+                create_session_sheet(js_params['gd_sheet_url'], js_params['sessionName'])
+                
 
     if not config.dry_run:
         if not combined_file:
@@ -1676,7 +1715,10 @@ def sort_caseless(list):
 def http_post(url, params_dict):
     data = urllib.urlencode(params_dict)
     req = urllib2.Request(url, data)
-    response = urllib2.urlopen(req) 
+    try:
+        response = urllib2.urlopen(req)
+    except Exception, excp:
+        sys.exit('ERROR in accessing URL %s: %s' % (url, excp))
     result = response.read()
     try:
         result = json.loads(result)

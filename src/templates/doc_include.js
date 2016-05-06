@@ -11,6 +11,7 @@ var MAX_INC_LEVEL = 9; // Max. incremental display level
 var Sliobj = {}; // Internal object
 
 Sliobj.params = JS_PARAMS_OBJ;
+
 Sliobj.lateToken = null;
 
 Sliobj.closePopup = null;
@@ -294,7 +295,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.prevSidebar = false;
 
     var paceParam = (Sliobj.params.paceStrict !== null);
-    Sliobj.sessionName = paceParam ? Sliobj.params.filename : '';
+    Sliobj.sessionName = paceParam ? Sliobj.params.sessionName : '';
 
     var newSession = sessionCreate(paceParam);
 
@@ -366,6 +367,11 @@ function slidocReadyAux(session) {
 	// New paced session
 	Sliobj.session = sessionCreate(paceParam);
 	sessionPut(null, null, {retry: true});
+    }
+
+    if (Sliobj.lateToken) {
+	Sliobj.session.lateToken = Sliobj.lateToken;
+	Sliobj.lateToken = '';
     }
 
     // Restore random seed for session
@@ -448,6 +454,7 @@ function sessionCreate(paced) {
 	    revision: Sliobj.params.sessionRevision,
 	    paced: paced || false,
 	    completed: false,
+	    lateToken: '',
 	    paceStrict: Sliobj.params.paceStrict || 0,
 	    randomSeed: SlidocRandom.getSeed(),        // Save random seed
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
@@ -456,7 +463,7 @@ function sessionCreate(paced) {
 	    lastSlide: 0,
             lastTries: 0,
             remainingTries: 0,
-            lastAnswersCorrect: 0,
+            lastAnswersCorrect: 1,
             skipToSlide: 0,
 	    questionsMax: 0,
             questionsCount: 0,
@@ -468,7 +475,6 @@ function sessionCreate(paced) {
 }
 
 var Auth_sheet = null;
-var Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'session_hidden'];
 
 function sessionAbort(err_msg) {
     Slidoc.classDisplay('slidoc-slide', 'none');
@@ -476,35 +482,56 @@ function sessionAbort(err_msg) {
     document.body.textContent = err_msg;
 }
 
-function sessionGetPutAux(callback, retryCall, result, err_msg) {
-    console.log('Slidoc.sessionGetPutAux: ', callback, retryCall, result, err_msg);
+function sessionGetPutAux(callback, retryCall, result, err_msg, messages) {
+    console.log('Slidoc.sessionGetPutAux: ', !!callback, !!retryCall, result, err_msg, messages);
     var session = null;
-    if (!result) {
-	console.log('Slidoc.sessionGetPutAux: ERROR '+err_msg, result);
-    } else if (!result.id) {
-	// Null object {} returned, indicating non-presence for get
-	if (callback)
-	    callback(null);
-	return;
-    } else {
-	try {
-	    session = JSON.parse( atob(result.session_hidden.replace(/\s+/, '')) );
-	} catch(err) {
-	    console.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
-	    err_msg = 'Parsing error';
+    var nullReturn = false;
+    if (result) {
+	if (!result.id) {
+	    // Null object {} returned, indicating non-presence for get
+	    nullReturn = true;
+	} else {
+	    try {
+		session = JSON.parse( atob(result.session_hidden.replace(/\s+/, '')) );
+	    } catch(err) {
+		console.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
+		err_msg = 'Parsing error';
+	    }
 	}
     }
 
-    if (session) {
+    var lateWarning = 'Warning: Past submit deadline';
+    var nearingWarning = 'Warning: Nearing submit deadline';
+    var invalidWarning = 'Warning: Invalid token for late submission';
+    if (session || nullReturn) {
+	if (messages) {
+	    var alerts = [];
+	    for (var j=0; j < messages.length; j++) {
+		if (messages[j].slice(0,nearingWarning.length) == nearingWarning ||
+		    messages[j].slice(0,lateWarning.length) == lateWarning) {
+		    if (session && !session.completed)
+			alerts.push(messages[j]);
+		} else if (messages[j].slice(0,invalidWarning.length) == invalidWarning) {
+		    alerts.push(messages[j]);
+		}
+	    }
+	    if (alerts.length)
+		Slidoc.showPopup(alerts.join('<br>\n'));
+	}
 	if (callback)
 	    callback(session);
-    } else {
-	if (retryCall && err_msg && err_msg.indexOf('request authorization token') > -1) {
-	    var token = window.prompt('Late submission. Enter authorization token for user '+GService.gauth.auth.email+', if you have one.');
-	    if (token) {
-		Sliobj.lateToken = token;
-		retryCall();
-		return;
+    } else if (retryCall) {
+	if (err_msg) {
+	    if (err_msg.indexOf('request authorization token') > -1) {
+		var token = window.prompt('Late submission. Enter authorization token for user '+GService.gauth.auth.email+', if you have one.');
+		if (token) {
+		    if (Sliobj.session)
+			Sliobj.session.lateToken = token;
+		    else
+			Sliobj.lateToken = token;
+		    retryCall();
+		    return;
+		}
 	    }
 	}
 	sessionAbort('Error in accessing session info from Google Docs: '+err_msg+' (session aborted)');
@@ -531,7 +558,7 @@ function sessionManage() {
 function setupAuthSheet(name) {
     if (!Auth_sheet) {
 	var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
-	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Session_fields,
+	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Sliobj.params.sessionFields,
 						  GService.gauth.auth, useJSONP);
     }
 }
@@ -558,7 +585,7 @@ function sessionGet(name, callback, retry) {
 
 function sessionPut(session, callback, opts) {
     // Remote saving only happens if session.paced is true or force is true
-    // opts = {nooverwrite:, get: , createSheet:, force: }
+    // opts = {nooverwrite:, get:, createSheet:, force: }
     console.log("sessionPut:", Sliobj.sessionName, session, callback, opts);
     if (!Sliobj.sessionName) {
 	if (callback)
@@ -575,11 +602,9 @@ function sessionPut(session, callback, opts) {
 	    return;
 	}
 	var rowObj = {};
-	for (var j=0; j<Session_fields.length; j++) {
-	    var header = Session_fields[j];
-	    if (header == 'lateToken') {
-		rowObj[header] = Sliobj.lateToken;
-	    } else if (header.slice(0,6) != 'hidden') {
+	for (var j=0; j<Sliobj.params.sessionFields.length; j++) {
+	    var header = Sliobj.params.sessionFields[j];
+	    if (header.slice(0,6) != 'hidden') {
 		rowObj[header] = session[header];
 	    }
 	}
@@ -593,7 +618,7 @@ function sessionPut(session, callback, opts) {
 	setupAuthSheet(Sliobj.sessionName);
 	var retryCall = opts.retry ? sessionPut.bind(null, session, callback, opts) : null;
 	Auth_sheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall),
-			  !!opts.get, Sliobj.lateToken, !!opts.createSheet);
+			  !!opts.get, session.lateToken || Sliobj.lateToken, !!opts.createSheet);
 
     } else {
 	// Local storage
@@ -862,7 +887,7 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 
 function retryAnswer() {
     Sliobj.session.lastTime = Date.now();
-    Sliobj.session.lastAnswersCorrect = -1;   // Incorrect answer
+    Sliobj.session.lastAnswersCorrect = -2;   // Incorrect answer
     document.body.classList.add('slidoc-incorrect-answer-state');
     var after_str = '';
     if (Sliobj.params.tryDelay) {
@@ -1157,10 +1182,10 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 	Sliobj.session.remainingTries = 0;
 	document.body.classList.remove('slidoc-expect-answer-state');
 	if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
-	    // 1 => Current sequence of "correct" answers
+	    // 2 => Current sequence of "correct" answers
 	    if (skip && skip[0] > slide_num) {
 		// Skip ahead
-		Sliobj.session.lastAnswersCorrect = 2;
+		Sliobj.session.lastAnswersCorrect = 1;
 		Sliobj.session.skipToSlide = skip[0];
 
 		// Give credit for all skipped questions
@@ -1171,11 +1196,11 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
 		    toggleClassAll(true, 'slidoc-forward-link-allowed', skip[2]);
 	    } else {
 		// No skipping
-		Sliobj.session.lastAnswersCorrect = 1;
+		Sliobj.session.lastAnswersCorrect = 2;
 	    }
 	} else {
-            // -1 => Current sequence with at least one incorrect answer
-	    Sliobj.session.lastAnswersCorrect = -1;
+            // -2 => Current sequence with at least one incorrect answer
+	    Sliobj.session.lastAnswersCorrect = -2;
 	    document.body.classList.add('slidoc-incorrect-answer-state');
 	}
     }
@@ -1461,12 +1486,14 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 
 	Sliobj.session.lastTries = 0;
 	if (Sliobj.questionSlide) {
-	    if (Sliobj.session.lastAnswersCorrect != 1 && Sliobj.session.lastAnswersCorrect != -1)
+	    if (Sliobj.session.lastAnswersCorrect == 0) // Previous question unanswered; assume incorrect
+		Sliobj.session.lastAnswersCorrect = -2;
+	    else if (Sliobj.session.lastAnswersCorrect != 2 && Sliobj.session.lastAnswersCorrect != -2) // New seq. of questions
 		Sliobj.session.lastAnswersCorrect = 0;
 	    Sliobj.session.remainingTries = Sliobj.params.tryCount;
 	} else {
-            // 2 => Last sequence of questions was answered correctly
-	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 2 : 0;
+            // 1 => Last sequence of questions was answered correctly
+	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 1 : -1;
 	    Sliobj.session.remainingTries = 0;
 	    if (Sliobj.params.paceDelay)
 		Slidoc.delayIndicator(Sliobj.params.paceDelay, 'slidoc-slide-nav-next');
