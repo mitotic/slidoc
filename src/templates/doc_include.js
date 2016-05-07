@@ -308,7 +308,7 @@ Slidoc.slidocReady = function (auth) {
 	}
 	if (Sliobj.params.sessionPrereqs) {
 	    // Retrieve prerequisite session(s)
-	    var prereqs = Sliobj.params.sessionPrereqs.split(':');
+	    var prereqs = Sliobj.params.sessionPrereqs.split(',');
 	    sessionGet(prereqs[0], slidocReadyPaced.bind(null, newSession, prereqs));
 	} else {
 	    slidocReadyPaced(newSession)
@@ -463,7 +463,7 @@ function sessionCreate(paced) {
 	    lastSlide: 0,
             lastTries: 0,
             remainingTries: 0,
-            lastAnswersCorrect: 1,
+            lastAnswersCorrect: 0,
             skipToSlide: 0,
 	    questionsMax: 0,
             questionsCount: 0,
@@ -887,8 +887,10 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 
 function retryAnswer() {
     Sliobj.session.lastTime = Date.now();
-    Sliobj.session.lastAnswersCorrect = -2;   // Incorrect answer
-    document.body.classList.add('slidoc-incorrect-answer-state');
+    if (Sliobj.params.tryCount) {
+	Sliobj.session.lastAnswersCorrect = -2;   // Incorrect answer
+	document.body.classList.add('slidoc-incorrect-answer-state');
+    }
     var after_str = '';
     if (Sliobj.params.tryDelay) {
 	Slidoc.delayIndicator(Sliobj.params.tryDelay, slide_id+'-ansclick');
@@ -1181,27 +1183,29 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
     if (Sliobj.session.paced) {
 	Sliobj.session.remainingTries = 0;
 	document.body.classList.remove('slidoc-expect-answer-state');
-	if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
-	    // 2 => Current sequence of "correct" answers
-	    if (skip && skip[0] > slide_num) {
-		// Skip ahead
-		Sliobj.session.lastAnswersCorrect = 1;
-		Sliobj.session.skipToSlide = skip[0];
+	if (Sliobj.params.tryCount) {
+	    if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
+		// 2 => Current sequence of "correct" answers
+		if (skip && skip[0] > slide_num) {
+		    // Skip ahead
+		    Sliobj.session.lastAnswersCorrect = 1;
+		    Sliobj.session.skipToSlide = skip[0];
 
-		// Give credit for all skipped questions
-		qWeight = 1+skip[1];
-		Sliobj.session.questionsSkipped += skip[1];
+		    // Give credit for all skipped questions
+		    qWeight = 1+skip[1];
+		    Sliobj.session.questionsSkipped += skip[1];
 
-		if (skip[2])
-		    toggleClassAll(true, 'slidoc-forward-link-allowed', skip[2]);
+		    if (skip[2]) // Re-enable forward links for this slide
+			toggleClassAll(true, 'slidoc-forward-link-allowed', skip[2]);
+		} else {
+		    // No skipping
+		    Sliobj.session.lastAnswersCorrect = 2;
+		}
 	    } else {
-		// No skipping
-		Sliobj.session.lastAnswersCorrect = 2;
+		// -2 => Current sequence with at least one incorrect answer
+		Sliobj.session.lastAnswersCorrect = -2;
+		document.body.classList.add('slidoc-incorrect-answer-state');
 	    }
-	} else {
-            // -2 => Current sequence with at least one incorrect answer
-	    Sliobj.session.lastAnswersCorrect = -2;
-	    document.body.classList.add('slidoc-incorrect-answer-state');
 	}
     }
 
@@ -1296,7 +1300,8 @@ Slidoc.startPaced = function () {
     document.body.classList.add('slidoc-paced-view');
     if (Sliobj.session.paceStrict)
 	document.body.classList.add('slidoc-strict-paced-view');
-    toggleClassAll(false, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
+    // Allow forward link only if no try requirement
+    toggleClassAll(!Sliobj.params.tryCount, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
 
     var startMsg = 'Starting'+(Sliobj.session.paceStrict?' strictly':'')+' paced slideshow '+Sliobj.sessionName+':<br>';
     if (Sliobj.session.questionsMax)
@@ -1452,7 +1457,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
    if (!slides || slide_num < 1 || slide_num > slides.length)
       return false;
 
-    if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.session.skipToSlide) {
+    if (Sliobj.session.paced && Sliobj.params.tryCount && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.session.skipToSlide) {
 	// Advance one slide at a time
 	alert('Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	return false;
@@ -1486,9 +1491,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 
 	Sliobj.session.lastTries = 0;
 	if (Sliobj.questionSlide) {
-	    if (Sliobj.session.lastAnswersCorrect == 0) // Previous question unanswered; assume incorrect
-		Sliobj.session.lastAnswersCorrect = -2;
-	    else if (Sliobj.session.lastAnswersCorrect != 2 && Sliobj.session.lastAnswersCorrect != -2) // New seq. of questions
+	    if (Sliobj.session.lastAnswersCorrect != 2 && Sliobj.session.lastAnswersCorrect != -2) // New seq. of questions
 		Sliobj.session.lastAnswersCorrect = 0;
 	    Sliobj.session.remainingTries = Sliobj.params.tryCount;
 	} else {
@@ -1516,7 +1519,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     }
 
     if (Sliobj.session.paced) {
-	toggleClass(Sliobj.session.lastAnswersCorrect < 0, 'slidoc-incorrect-answer-state');
+	toggleClass(Sliobj.params.tryCount && Sliobj.session.lastAnswersCorrect < 0, 'slidoc-incorrect-answer-state');
 	toggleClass(slide_num == Sliobj.session.lastSlide, 'slidoc-paced-last-slide');
 	toggleClass(Sliobj.session.remainingTries, 'slidoc-expect-answer-state');
     }

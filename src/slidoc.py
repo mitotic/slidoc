@@ -19,12 +19,14 @@ from __future__ import print_function
 
 import argparse
 import base64
+import datetime
 import hashlib
 import hmac
 import os
 import re
 import shlex
 import sys
+import time
 import urllib
 import urllib2
 
@@ -1213,13 +1215,13 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Index_fields = ['name', 'id', 'Timestamp', 'submitTime', 'revision',
+Index_fields = ['name', 'id', 'Timestamp', 'dueDate', 'revision',
                 'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
 Manage_fields =  ['name', 'id', 'email', 'Timestamp']
 Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect',
                   'session_hidden']
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, submit_time, questions, p_concepts, s_concepts):
+def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, p_concepts, s_concepts):
     index_sheet = 'sessionIndex'
     user = 'admin'
     user_token = gen_hmac_token(hmac_key, user)
@@ -1235,7 +1237,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, submit_tim
         if prev_row[revision_col] != revision:
             print('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision), file=sys.stderr)
 
-    row_values = [session_name, session_name, None, submit_time, revision,
+    row_values = [session_name, session_name, None, due_date, revision,
                 ','.join([x['qtype'] for x in questions]),
                 '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
                 '; '.join(sort_caseless(list(p_concepts))),
@@ -1309,13 +1311,8 @@ def process_input(input_files, config_dict):
             js_params['tryCount'] = int(comps[2])
         if len(comps) > 3 and comps[3].isdigit():
             js_params['tryDelay'] = int(comps[3])
-        if len(comps) > 4:
-            js_params['sessionRevision'] = comps[4]
-        if len(comps) > 5:
-            js_params['sessionPrereqs'] = comps[5]
 
     gd_hmac_key = ''
-    gd_submit_time = None
     if config.google_docs:
         if not config.pace:
             sys.exit('slidoc: Error: Must use --google_docs with --pace')
@@ -1324,9 +1321,7 @@ def process_input(input_files, config_dict):
         if len(comps) > 1:
             gd_hmac_key = comps[1]
         if len(comps) > 2:
-            gd_submit_time = comps[2]       # Like '1995-12-17T03:24:00.000Z'
-        if len(comps) > 3:
-            js_params['gd_client_id'], js_params['gd_api_key'] = comps[3:5]
+            js_params['gd_client_id'], js_params['gd_api_key'] = comps[2:4]
     
     nb_site_url = config.site_url
     if combined_file:
@@ -1435,14 +1430,27 @@ def process_input(input_files, config_dict):
     skulpt_load = False
     for j, f in enumerate(input_files):
         fname = fnames[j]
-        filepath = f.name
-        md_text = f.read()
-        f.close()
         if config.separate:
             js_params['sessionName'] = fname
 
-        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
+        if not j or config.separate:
+            # First file or separate files
+            file_config = parse_first_line(f, fname, parser, {}, include_args=Select_file_args,
+                                           verbose=config.verbose)
+            due_date = config.due_date or file_config.due_date if config.pace else None
+            js_params['sessionPrereqs'] = config.prereqs or file_config.prereqs
+            js_params['sessionRevision'] = config.revision or file_config.revision
+            if due_date and not due_date.endswith(':00.000Z'):
+                try:
+                    due_date = datetime.datetime.utcfromtimestamp(time.mktime(time.strptime(due_date, "%Y-%m-%dT%H:%M"))).strftime("%Y-%m-%dT%H:%M:00.000Z")
+                except Exception, excp:
+                    sys.exit("Error in parsing due date '%s' in file %s; expect local time to be formatted like 2016-05-04T11:59 (%s)" % (due_date, fname, excp))
 
+        filepath = f.name
+        md_text = f.read()
+        f.close()
+
+        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
 
         base_parser = md2md.Parser(base_mods_args)
         slide_parser = md2md.Parser(slide_mods_args)
@@ -1516,7 +1524,7 @@ def process_input(input_files, config_dict):
 
             if gd_hmac_key:
                 update_session_index(js_params['gd_sheet_url'], gd_hmac_key, fname, js_params['sessionRevision'],
-                                      gd_submit_time, renderer.questions, renderer.qconcepts[0], renderer.qconcepts[1])
+                                      due_date, renderer.questions, renderer.qconcepts[0], renderer.qconcepts[1])
 
             if js_params['gd_sheet_url']:
                 create_session_sheet(js_params['gd_sheet_url'], js_params['sessionName'])
@@ -1567,8 +1575,8 @@ def process_input(input_files, config_dict):
                 toggle_link = '''<span class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
             else:
                 doc_link = nav_link('paced', config.site_url, outname, target='_blank', separate=True)
-                if gd_submit_time:
-                    doc_link += ':due '+(gd_submit_time[:-5] if gd_submit_time.endswith(':00.000Z') else gd_submit_time)
+                if due_date:
+                    doc_link += ':due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
                 toggle_link = '<span class="slidoc-toc-chapters">%s</span>' % (fheader,)
             toc_html.append('<li>%s%s<span class="slidoc-nosidebar">(<em>%s%s%s</em>)</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
@@ -1775,6 +1783,39 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
+Select_file_args = set(['due_date', 'prereqs', 'revision'])
+    
+def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), verbose=False):
+    # Read first line of first file and rewind it
+    first_line = file.readline()
+    file.seek(0)
+    match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
+    if not match:
+        return argparse.Namespace(**cmd_args_dict)
+    try:
+        line_args_list = shlex.split(match.group(1).strip())
+        line_args_dict = vars(parser.parse_args(line_args_list))
+        for arg_name in line_args_dict.keys():
+            if include_args and arg_name not in include_args:
+                del line_args_dict[arg_name]
+            elif exclude_args and arg_name in exclude_args:
+                del line_args_dict[arg_name]
+        if verbose:
+            print('Selected first line arguments from file', fname, argparse.Namespace(**line_args_dict), file=sys.stderr)
+    except Exception, excp:
+        sys.exit('slidoc: ERROR in parsing command options in first line of %s: %s' % (file.name, excp))
+
+    for arg_name in cmd_args_dict:
+        if arg_name not in line_args_dict:
+            # Argument not specified in file line (copy from command line)
+            line_args_dict[arg_name] = cmd_args_dict[arg_name]
+        elif cmd_args_dict[arg_name] != None:
+            # Argument also specified in command line (override)
+            line_args_dict[arg_name] = cmd_args_dict[arg_name]
+
+    return argparse.Namespace(**line_args_dict)
+
+
 if __name__ == '__main__':
     import md2nb
 
@@ -1785,8 +1826,9 @@ if __name__ == '__main__':
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
     parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
+    parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
     parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
-    parser.add_argument('--google_docs', help='spreadsheet_url,hmac_key,submit_time[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
+    parser.add_argument('--google_docs', help='spreadsheet_url,hmac_key[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
     parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
     parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
@@ -1794,8 +1836,10 @@ if __name__ == '__main__':
     parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
     parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
-    parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY,REVISION,PREREQS', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+    parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+    parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+    parser.add_argument('--revision', metavar='REVISION', help='File revision')
     parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
     parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
     parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
@@ -1807,32 +1851,11 @@ if __name__ == '__main__':
     cmd_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
     cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
-    cmd_args = cmd_parser.parse_args()
-    first_name = os.path.splitext(os.path.basename(cmd_args.file[0].name))[0]
+    cmd_args_orig = cmd_parser.parse_args()
+    first_name = os.path.splitext(os.path.basename(cmd_args_orig.file[0].name))[0]
 
-    # Read first line of first file and rewind it
-    first_line = cmd_args.file[0].readline()
-    cmd_args.file[0].seek(0)
-    match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
-    if match:
-        try:
-            line_args_list = shlex.split(match.group(1).strip())
-            if cmd_args.verbose:
-                print('First line arguments from file', first_name, file=sys.stderr)
-                print('    ', line_args_list, file=sys.stderr)
-            line_args_dict = vars(parser.parse_args(line_args_list))
-        except Exception, excp:
-            sys.exit('slidoc: ERROR in parsing command options in first line of %s: %s' % (cmd_args.file[0].name, excp))
-
-        cmd_args_dict = vars(cmd_args)
-        for arg_name in cmd_args_dict:
-            if arg_name not in line_args_dict:
-                # Argument not specified in file line (copy from command line)
-                line_args_dict[arg_name] = cmd_args_dict[arg_name]
-            elif cmd_args_dict[arg_name] != None:
-                # Argument also specified in command line (override)
-                line_args_dict[arg_name] = cmd_args_dict[arg_name]
-        cmd_args = argparse.Namespace(**line_args_dict)
+    cmd_args = parse_first_line(cmd_args_orig.file[0], first_name, parser, vars(cmd_args_orig),
+                                exclude_args=Select_file_args, verbose=cmd_args_orig.verbose)
 
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',

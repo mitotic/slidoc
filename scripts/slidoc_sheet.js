@@ -85,7 +85,7 @@ function handleResponse(evt) {
 
 	var pastSubmitDeadline = false;
 	var validLateToken = false;
-	var submitTime = null;
+	var dueDate = null;
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
 	if (sheetName == 'sessionIndex') {
 	    // Restricted sheet
@@ -98,23 +98,23 @@ function handleResponse(evt) {
 
 	} else if (doc.getSheetByName('sessionIndex')) {
 	    // Creating/updating row in session; check if past submission deadline
-	    var sessionParams = getSessionParams(sheetName, ['submitTime']);
+	    var sessionParams = getSessionParams(sheetName, ['dueDate']);
 	    var curTime = (new Date()).getTime();
-	    submitTime = sessionParams.submitTime;
-	    pastSubmitDeadline = (submitTime && curTime > submitTime.getTime())
+	    dueDate = sessionParams.dueDate;
+	    pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
 	    if (pastSubmitDeadline && params.user && params.token) {
 		validLateToken = validateHMAC(params.user+':'+sheetName+':'+params.token, HMAC_KEY);
 		if (validLateToken) {
-		    submitTime = new Date(splitToken(params.token)[0]); // Date format: '1995-12-17T03:24:00.000Z' (need all)
-		    pastSubmitDeadline = (curTime > submitTime.getTime());
+		    dueDate = new Date(splitToken(params.token)[0]); // Date format: '1995-12-17T03:24:00.000Z' (need all)
+		    pastSubmitDeadline = (curTime > dueDate.getTime());
 		} else {
 		    returnMessages.push('Warning: Invalid token for late submission to session '+sheetName);
 		}
 	    }
 	    if (pastSubmitDeadline) {
-		returnMessages.push('Warning: Past submit deadline ('+submitTime+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
-	    } else if ( (submitTime.getTime() - curTime) < 2*60*60*1000) {
-		returnMessages.push('Warning: Nearing submit deadline ('+submitTime+') for session '+sheetName+'.');
+		returnMessages.push('Warning: Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
+	    } else if ( (dueDate.getTime() - curTime) < 2*60*60*1000) {
+		returnMessages.push('Warning: Nearing submit deadline ('+dueDate+') for session '+sheetName+'.');
 	    }
 	}
 
@@ -199,7 +199,7 @@ function handleResponse(evt) {
 
 	    } else if (pastSubmitDeadline && (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) ) {
 		if (!params.user || !params.token)
-		    throw('Past submit deadline ('+submitTime+') for session '+sheetName+'. (If valid excuse, request authorization token.)')
+		    throw('Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request authorization token.)')
 		else
 		    throw('Invalid token for late submission to session '+sheetName);
 
@@ -243,7 +243,7 @@ function handleResponse(evt) {
 			} else if (newRow || (colHeader != 'id' && colHeader != 'name') ) {
 			    // Id and name cannot be updated programmatically
 			    // (If necessary to change name manually, then re-sort manually)
-			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'time') {
+			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = new Date(colValue); } catch (err) {}
 			    }
 			    rowValues[j] = colValue;
@@ -266,7 +266,7 @@ function handleResponse(evt) {
 				rowValues[headerColumn] =  new Date();
 			} else if (colHeader != 'id' && colHeader != 'name') {
 			    // Update row values for header (except for id and name)
-			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'time') {
+			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = new Date(colValue); } catch (err) {}
 			    }
 			    rowValues[headerColumn] = colValue;
