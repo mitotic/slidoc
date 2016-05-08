@@ -19,14 +19,10 @@ from __future__ import print_function
 
 import argparse
 import base64
-import datetime
-import hashlib
-import hmac
 import os
 import re
 import shlex
 import sys
-import time
 import urllib
 import urllib2
 
@@ -35,6 +31,7 @@ from collections import defaultdict, OrderedDict
 import json
 import mistune
 import md2md
+import sliauth
 
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
@@ -50,13 +47,6 @@ SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
-
-def gen_hmac_token(key, message):
-    return base64.b64encode(hmac.new(key, message, hashlib.md5).digest())
-
-def gen_late_token(key, email, session_name, date_str):
-    # Use date string '1995-12-17T03:24:00.000Z' (need the 00.000Z part due to bug in GoogleApps)
-    return date_str+':'+gen_hmac_token(key, '%s:%s:%s' % (email, session_name, date_str) )
 
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
@@ -1052,7 +1042,7 @@ class SlidocRenderer(MathRenderer):
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
-                    if tag not in Global.first_tags and tag not in Global.sec_tags and 'assess_only' not in self.options['config'].features:
+                    if tag not in Global.first_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
                         self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         print("        "+self.concept_warnings[-1], file=sys.stderr)
 
@@ -1222,9 +1212,9 @@ Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'ques
                   'session_hidden']
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, p_concepts, s_concepts):
-    index_sheet = 'sessionIndex'
+    index_sheet = 'slidoc_sessions'
     user = 'admin'
-    user_token = gen_hmac_token(hmac_key, user)
+    user_token = sliauth.gen_hmac_token(hmac_key, user)
 
     get_params = {'sheet': index_sheet, 'id': session_name, 'get': '1', 'user': user, 'token': user_token}
     retval = http_post(sheet_url, get_params)
@@ -1249,11 +1239,14 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         sys.exit("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
-    print('slidoc: Updated remote spreadsheet index:', session_name, file=sys.stderr)
+    print('slidoc: Updated remote index sheet %s for session %s' % (index_sheet, session_name), file=sys.stderr)
 
                 
-def create_session_sheet(sheet_url, session_name):
-    post_params = {'sheet': session_name, 'headers': json.dumps(Manage_fields+Session_fields)}
+def create_session_sheet(sheet_url, hmac_key, session_name):
+    user = 'admin'
+    user_token = sliauth.gen_hmac_token(hmac_key, user)
+    post_params = {'user': user, 'token': user_token, 'sheet': session_name,
+                    'headers': json.dumps(Manage_fields+Session_fields)}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         sys.exit("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
@@ -1437,14 +1430,9 @@ def process_input(input_files, config_dict):
             # First file or separate files
             file_config = parse_first_line(f, fname, parser, {}, include_args=Select_file_args,
                                            verbose=config.verbose)
-            due_date = config.due_date or file_config.due_date if config.pace else None
-            js_params['sessionPrereqs'] = config.prereqs or file_config.prereqs
-            js_params['sessionRevision'] = config.revision or file_config.revision
-            if due_date and not due_date.endswith(':00.000Z'):
-                try:
-                    due_date = datetime.datetime.utcfromtimestamp(time.mktime(time.strptime(due_date, "%Y-%m-%dT%H:%M"))).strftime("%Y-%m-%dT%H:%M:00.000Z")
-                except Exception, excp:
-                    sys.exit("Error in parsing due date '%s' in file %s; expect local time to be formatted like 2016-05-04T11:59 (%s)" % (due_date, fname, excp))
+            due_date = sliauth.get_utc_date(config.due_date or file_config.due_date if config.pace else None)
+            js_params['sessionPrereqs'] = config.prereqs or file_config.prereqs or ''
+            js_params['sessionRevision'] = config.revision or file_config.revision or ''
 
         filepath = f.name
         md_text = f.read()
@@ -1527,7 +1515,7 @@ def process_input(input_files, config_dict):
                                       due_date, renderer.questions, renderer.qconcepts[0], renderer.qconcepts[1])
 
             if js_params['gd_sheet_url']:
-                create_session_sheet(js_params['gd_sheet_url'], js_params['sessionName'])
+                create_session_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['sessionName'])
                 
 
     if not config.dry_run:
@@ -1820,13 +1808,13 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['assess_only', 'equation_number', 'incremental_slides', 'progress_bar', 'untitled_number']
+    features_all = ['assessment', 'equation_number', 'incremental_slides', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
     parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
     parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
-    parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
+    parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
     parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
     parser.add_argument('--google_docs', help='spreadsheet_url,hmac_key[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
     parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')

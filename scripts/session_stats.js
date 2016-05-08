@@ -143,11 +143,11 @@ function indexRows(sheet, indexCol, startRow) {
 }
 
 function getSessionParams(sessionName, colNames) {
-    // Return parameters in list colNames for sessionName from sessionIndex sheet
+    // Return parameters in list colNames for sessionName from slidoc_sessions sheet
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var indexSheet = doc.getSheetByName('sessionIndex');
+    var indexSheet = doc.getSheetByName('slidoc_sessions');
     if (!indexSheet)
-	throw('Index sheet sessionIndex not found');
+	throw('Index sheet slidoc_sessions not found');
     var indexColIndex = indexColumns(indexSheet);
     var indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2);
     var sessionRow = indexRowIndex[sessionName];

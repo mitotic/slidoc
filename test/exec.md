@@ -1,4 +1,4 @@
-<!--slidoc-defaults --features=assess_only --prereqs=skip -->
+<!--slidoc-defaults --features=assessment --prereqs=skip -->
 # Test code execution
 
 Test file

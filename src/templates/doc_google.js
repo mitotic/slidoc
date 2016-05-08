@@ -175,23 +175,26 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
     var comps = resp.displayName.split(/\s+/);
     var name = (comps.length > 1) ? comps.slice(-1)+', '+comps.slice(0,-1).join(' ') : resp.displayName;
     this.auth.displayName = name || this.auth.email;
-    this.auth.userName = this.auth.email;
+    this.auth.userName = this.auth.email;   // Use lowercased email as user name
+    this.auth.token = resp.token || '';
     this.auth.domain = resp.domain || '';
     this.auth.image = (resp.image && resp.image.url) ? resp.image.url : ''; 
     if (this.authCallback)
 	this.authCallback(this.auth);
 }
 
-GoogleAuth.prototype.promptUserInfo = function () {
-    var name = window.prompt('Enter unique identifier assigned by instructor (or name)');
+GoogleAuth.prototype.promptUserInfo = function (user, token) {
+    if (user && user.slice(-7) == '@slidoc')
+	user = user.slice(0, -7);
+    var name = window.prompt('Enter username assigned by instructor (or your name):', user || '');
     name = (name || '').trim();
     if (!name) {
 	alert('Cancelled');
 	return;
     }
     var id = name.replace(/[-.,'\s]+/g,'-').toLowerCase();
-    var email = (name.indexOf('@') >= 0) ? name : id+'@slidoc';
-    this.onUserInfo({id: '#'+id, displayName: name,
+    var email = (name.indexOf('@') >= 0) ? name.toLowerCase() : id+'@slidoc';
+    this.onUserInfo({id: '#'+id, displayName: name, token: token || '',
 		     emails: [{type: 'account', value:email}] });
 }
 
@@ -211,10 +214,11 @@ function GoogleSheet(url, sheetName, fields, useJSONP, user, token) {
 }
 
 GoogleSheet.prototype.send = function(params, callType, callback) {
-    if (this.token) {
-	params.user = this.user;  // NOTE: modifies params in calling function
-	params.token = this.token;  // NOTE: modifies params in calling function
-    }
+    params = JSON.parse(JSON.stringify(params));
+    if (this.user)
+	params.user = this.user;
+    if (this.token)
+	params.token = this.token;
     GService.sendData(params, this.url, this.callback.bind(this, callType, callback),
 		      this.useJSONP);
 }
@@ -287,13 +291,13 @@ GoogleSheet.prototype.createSheet = function (callback) {
     this.send(params, 'createSheet', callback);
 }
 
-GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, token, user, createSheet) {
+GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, writetoken, createSheet) {
     // Specify get to retrieve the existing/overwritten row.
     // Specify nooverwrite to not overwrite any existing row with same id
     // Get with nooverwrite will return the existing row, or the newly inserted row.
     if (createSheet && this.created == null) {
         // Call putRow after creating sheet
-        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get, token, user) );
+        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get, writetoken) );
         return;
     }
     this.checkCreated();
@@ -305,10 +309,8 @@ GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, tok
         params['nooverwrite'] = '1';
     if (get)
         params['get'] = '1';
-    if (token)
-        params['token'] = token;
-    if (user)
-        params['user'] = user;
+    if (writetoken)
+        params['writetoken'] = writetoken;
     this.callbackCounter += 1;
     this.send(params, 'putRow', callback);
 }
@@ -355,7 +357,7 @@ GoogleSheet.prototype.getRow = function (id, callback, createSheet) {
 function GoogleAuthSheet(url, sheetName, fields, auth, useJSONP) {
     if (!auth || !auth.id)
 	throw('GoogleAuthSheet: Error - auth.id not defined!');
-    this.gsheet = new GoogleSheet(url, sheetName, fields, useJSONP);
+    this.gsheet = new GoogleSheet(url, sheetName, fields, useJSONP, auth.userName, auth.token);
     this.auth = auth;
 }
 
@@ -380,9 +382,8 @@ GoogleAuthSheet.prototype.createSheet = function (callback) {
     return this.gsheet.createSheet(callback);
 }
 
-GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, token, createSheet) {
-    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, token, token?this.auth.userName:null,
-			      createSheet);
+GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, writetoken, createSheet) {
+    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, writetoken, createSheet);
 }
 
 GoogleAuthSheet.prototype.updateRow = function (updateObj, callback, get) {

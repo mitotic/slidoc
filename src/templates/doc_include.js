@@ -30,7 +30,11 @@ document.onreadystatechange = function(event) {
 	if (Sliobj.params.gd_client_id) {
 	    // Google client load will authenticate
 	} else if (Sliobj.params.gd_sheet_url) {
-	    GService.gauth.promptUserInfo();
+	    var localAuth = localGet('auth');
+	    if (localAuth)
+		GService.gauth.promptUserInfo(localAuth.userName, localAuth.token);
+	    else
+		GService.gauth.promptUserInfo();
 	} else {
 	    Slidoc.slidocReady(null);
 	}
@@ -110,7 +114,7 @@ Slidoc.showConcepts = function (msg) {
 }
 
 Slidoc.slideViewIncrement = function () {
-    if (!Sliobj.currentSlide || !Sliobj.maxIncrement || !('incremental' in Sliobj.params.features))
+    if (!Sliobj.currentSlide || !Sliobj.maxIncrement || !('incremental_slides' in Sliobj.params.features))
         return;
 
     if (Sliobj.curIncrement < Sliobj.maxIncrement) {
@@ -138,6 +142,9 @@ var Slide_help_list = [
 Slidoc.slideViewHelp = function () {
     var html = '<b>Help</b><table class="slidoc-slide-help-table">';
     var help_list = Slide_help_list.slice();
+    if (Sliobj.params.gd_sheet_url && GService.gauth && GService.gauth.auth) {
+	html += '<tr><td colspan="3">'+'User: '+GService.gauth.auth.userName+'</td></tr>';
+    }
     if (Sliobj.params.paceStrict !== null && !Sliobj.params.gd_sheet_url) {
 	html += '<tr><td colspan="3"><hr></td></tr>';
 	help_list.splice(0,0,['', 'reset', 'Reset paced session'], ['', '', '']);
@@ -337,7 +344,7 @@ function slidocReadyPaced(newSession, prereqs, prevSession) {
 	}
     }
 	
-    sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true, retry: true});
+    sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true, retry: 'ready'});
 }
 
 function slidocReadyAux(session) {
@@ -366,7 +373,7 @@ function slidocReadyAux(session) {
     if (!Sliobj.session) {
 	// New paced session
 	Sliobj.session = sessionCreate(paceParam);
-	sessionPut(null, null, {retry: true});
+	sessionPut(null, null, {retry: 'new'});
     }
 
     if (Sliobj.lateToken) {
@@ -482,8 +489,8 @@ function sessionAbort(err_msg) {
     document.body.textContent = err_msg;
 }
 
-function sessionGetPutAux(callback, retryCall, result, err_msg, messages) {
-    console.log('Slidoc.sessionGetPutAux: ', !!callback, !!retryCall, result, err_msg, messages);
+function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messages) {
+    console.log('Slidoc.sessionGetPutAux: ', !!callback, !!retryCall, retryType, result, err_msg, messages);
     var session = null;
     var nullReturn = false;
     if (result) {
@@ -504,15 +511,20 @@ function sessionGetPutAux(callback, retryCall, result, err_msg, messages) {
     var nearingWarning = 'Warning: Nearing submit deadline';
     var invalidWarning = 'Warning: Invalid token for late submission';
     if (session || nullReturn) {
+	if (retryType == 'end_paced')
+	    alert('Completed session saved successfully to Google Docs');
+	else if (retryType == 'ready' && Sliobj.params.gd_sheet_url && !Sliobj.params.gd_client_id)
+	    localPut('auth', GService.gauth.auth); // Save auth info on successful start
+	
 	if (messages) {
 	    var alerts = [];
 	    for (var j=0; j < messages.length; j++) {
 		if (messages[j].slice(0,nearingWarning.length) == nearingWarning ||
 		    messages[j].slice(0,lateWarning.length) == lateWarning) {
 		    if (session && !session.completed)
-			alerts.push(messages[j]);
+			alerts.push('<em>Warning:</em><br>'+messages[j].slice(8));
 		} else if (messages[j].slice(0,invalidWarning.length) == invalidWarning) {
-		    alerts.push(messages[j]);
+		    alerts.push('<em>Warning:</em><br>'+messages[j].slice(8));
 		}
 	    }
 	    if (alerts.length)
@@ -520,15 +532,34 @@ function sessionGetPutAux(callback, retryCall, result, err_msg, messages) {
 	}
 	if (callback)
 	    callback(session);
+
     } else if (retryCall) {
 	if (err_msg) {
-	    if (err_msg.indexOf('request authorization token') > -1) {
-		var token = window.prompt('Late submission. Enter authorization token for user '+GService.gauth.auth.email+', if you have one.');
-		if (token) {
+	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
+	    if (err_msg.indexOf('Need token for authentication') > -1 ||
+ 	        err_msg.indexOf('Invalid token for authenticating user') > -1) {
+		var token = window.prompt(prefix+'Enter authentication token for user '+GService.gauth.auth.userName+':');
+		if (token && token.trim()) {
+		    Auth_sheet.gsheet.token = token.trim();
+		    GService.gauth.auth.token = token.trim();
+		    retryCall();
+		    return;
+		}
+		
+	    } else if (err_msg.indexOf('request late submission token') > -1 ||
+		       err_msg.indexOf('Invalid token for late submission to session') > -1) {
+		var token = window.prompt(prefix+"Enter late submission token, if you have one. Otherwise enter 'none' to submit late without credit.");
+		if (token && token.trim()) {
 		    if (Sliobj.session)
-			Sliobj.session.lateToken = token;
+			Sliobj.session.lateToken = token.trim();
 		    else
 			Sliobj.lateToken = token;
+		    retryCall();
+		    return;
+		}
+	    } else if (retryType == 'ready' || retryType == 'new' || retryType == 'end_paced') {
+		var conf_msg = 'Error in saving'+((retryType == 'end_paced') ? ' completed':'')+' session to Google Docs: '+err_msg+' Retry?';
+		if (window.confirm(conf_msg)) {
 		    retryCall();
 		    return;
 		}
@@ -568,7 +599,7 @@ function sessionGet(name, callback, retry) {
 	// Google Docs storage
 	setupAuthSheet(name);
 	var retryCall = retry ? sessionGet.bind(null, name, callback, retry) : null;
-	Auth_sheet.getRow(sessionGetPutAux.bind(null, callback, retryCall), true);
+	Auth_sheet.getRow(sessionGetPutAux.bind(null, callback, retryCall, retry||''), true);
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
@@ -617,7 +648,7 @@ function sessionPut(session, callback, opts) {
 	rowObj.session_hidden = base64str;
 	setupAuthSheet(Sliobj.sessionName);
 	var retryCall = opts.retry ? sessionPut.bind(null, session, callback, opts) : null;
-	Auth_sheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall),
+	Auth_sheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall, opts.retry||''),
 			  !!opts.get, session.lateToken || Sliobj.lateToken, !!opts.createSheet);
 
     } else {
@@ -1334,7 +1365,7 @@ Slidoc.endPaced = function () {
 	document.body.classList.remove('slidoc-paced-view');
 	Sliobj.session.paced = false;
     }
-    sessionPut(null, null, {force: true, retry: true});
+    sessionPut(null, null, {force: true, retry: 'end_paced'});
 }
 
 Slidoc.answerPacedAllow = function () {
@@ -1507,9 +1538,9 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    Slidoc.endPaced();
 	    var msg = '<b>Paced session completed.</b><br>';
 	    if (Sliobj.params.gd_sheet_url)
-		msg += 'Session stats will be submitted to Google Docs.<br>';
+		msg += 'Wait for confirmation that session stats have been submitted to Google Docs.<br>';
 	    if (!Sliobj.session.paced)
-		msg += 'You may now exit the slideshow and access this document normally.<br>';
+		msg += 'After that, you may exit the slideshow and access this document normally.<br>';
 	    Slidoc.showConcepts(msg);
 
 	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {
@@ -1535,7 +1566,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
-    if ('incremental' in Sliobj.params.features) {
+    if ('incremental_slides' in Sliobj.params.features) {
 	for (var j=1; j<=MAX_INC_LEVEL; j++) {
 	    if (slides[slide_num-1].querySelector('.slidoc-incremental'+j)) {
 		Sliobj.maxIncrement = j;
