@@ -1207,7 +1207,7 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Index_fields = ['name', 'id', 'Timestamp', 'dueDate', 'revision',
                 'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
-Manage_fields =  ['name', 'id', 'email', 'Timestamp']
+Manage_fields =  ['name', 'id', 'email', 'user', 'Timestamp']
 Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect',
                   'session_hidden']
 
@@ -1246,7 +1246,7 @@ def create_session_sheet(sheet_url, hmac_key, session_name):
     user = 'admin'
     user_token = sliauth.gen_hmac_token(hmac_key, user)
     post_params = {'user': user, 'token': user_token, 'sheet': session_name,
-                    'headers': json.dumps(Manage_fields+Session_fields)}
+                   'headers': json.dumps(Manage_fields+Session_fields)}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         sys.exit("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))

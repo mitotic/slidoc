@@ -13,6 +13,7 @@ var Sliobj = {}; // Internal object
 Sliobj.params = JS_PARAMS_OBJ;
 
 Sliobj.lateToken = null;
+Sliobj.authSheet = null;
 
 Sliobj.closePopup = null;
 Sliobj.popupQueue = [];
@@ -509,8 +510,6 @@ function sessionCreate(paced) {
 	   };
 }
 
-var Auth_sheet = null;
-
 function sessionAbort(err_msg) {
     Slidoc.classDisplay('slidoc-slide', 'none');
     alert(err_msg);
@@ -571,8 +570,9 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
 		    Slidoc.userLoginCallback(null);
 		    return;
 		} else {
-		    Auth_sheet.gsheet.token = token.trim();
 		    GService.gauth.auth.token = token.trim();
+		    if (Sliobj.authSheet)
+			Sliobj.authSheet.gsheet.token = token.trim();
 		    retryCall();
 		    return;
 		}
@@ -618,19 +618,20 @@ function sessionManage() {
 }
 
 function setupAuthSheet(name) {
-    if (!Auth_sheet) {
+    if (!Sliobj.authSheet || Sliobj.authSheet.gsheet.sheetName != name) {
 	var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
-	Auth_sheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Sliobj.params.sessionFields,
-						  GService.gauth.auth, useJSONP);
+	Sliobj.authSheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name, Sliobj.params.sessionFields,
+						        GService.gauth.auth, useJSONP);
     }
+    return Sliobj.authSheet;
 }
 
 function sessionGet(name, callback, retry) {
     if (Sliobj.params.gd_sheet_url) {
 	// Google Docs storage
-	setupAuthSheet(name);
+	var authSheet = setupAuthSheet(name);
 	var retryCall = retry ? sessionGet.bind(null, name, callback, retry) : null;
-	Auth_sheet.getRow(sessionGetPutAux.bind(null, callback, retryCall, retry||''), true);
+	authSheet.getRow(sessionGetPutAux.bind(null, callback, retryCall, retry||''), true);
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
@@ -677,9 +678,9 @@ function sessionPut(session, callback, opts) {
 	///    comps.push(base64str.slice(j,j+80));
 	///comps.join('')+'';
 	rowObj.session_hidden = base64str;
-	setupAuthSheet(Sliobj.sessionName);
+	var authSheet = setupAuthSheet(Sliobj.sessionName);
 	var retryCall = opts.retry ? sessionPut.bind(null, session, callback, opts) : null;
-	Auth_sheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall, opts.retry||''),
+	authSheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall, opts.retry||''),
 			  !!opts.get, session.lateToken || Sliobj.lateToken, !!opts.createSheet);
 
     } else {

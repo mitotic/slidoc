@@ -50,14 +50,15 @@ function handleResponse(evt) {
     // The list contains updated row values if get=true; otherwise it is just an empty list.
     // PARAMETERS
     // sheet: 'sheet name' (required)
-    // headers: ['name', 'id', 'email', 'Timestamp', 'field1', ...] (name and id required for sheet creation)
+    // headers: ['name', 'id', 'email', 'user', 'Timestamp', 'field1', ...] (name and id required for sheet creation)
+    // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
+    // id: unique id number or lowercase email (required if creating or updating a row, and row parameter is not specified)
+    // user: unique user name (or just copy of the email address)
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
     // If the special name Timestamp occurs in the list, the timestamp is automatically updated.
-    // row: ['name_value', 'id_value', 'email_value', null, 'field1_value', ...]
+    // row: ['name_value', 'id_value', 'email_value', 'user_value', null, 'field1_value', ...]
     //       null value implies no update (except for Timestamp)
     // get: true to retrieve row (id must be specified) (otherwise only [] is returned on success)
-    // id: unique id  (required if creating or updating a row, and row parameter is not specified)
-    // name: sortable name (required if creating a row, and row parameter is not specified)
     // Can add row with fewer columns than already present.
     // This allows user to add additional columns without affecting script actions.
     // (User added columns are returned on gets and selective updates, but not row updates.)
@@ -155,9 +156,7 @@ function handleResponse(evt) {
 	    throw('No columns in sheet '+sheetName);
 
 	var columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0];
-	var columnIndex = {};
-	for (var j=0; j<columnHeaders.length; j++)
-	    columnIndex[columnHeaders[j]] = j;
+	var columnIndex = indexColumns(sheet);
 
 	if (headers) {
 	    if (headers.length > columnHeaders.length)
@@ -187,8 +186,8 @@ function handleResponse(evt) {
 		if (rowUpdates.length > columnHeaders.length)
 		    throw('row_headers length exceeds no. of columns in sheet');
 
-		userId = rowUpdates[columnIndex['id']] || null;
-		userName = rowUpdates[columnIndex['name']] || null;
+		userId = rowUpdates[columnIndex['id']-1] || null;
+		userName = rowUpdates[columnIndex['name']-1] || null;
 	    } else {
 		userId = params.id || null;
 		userName = params.name || null;
@@ -198,7 +197,7 @@ function handleResponse(evt) {
 		throw('User id must be specified for updates/gets');
 
 	    var numStickyRows = 1;  // Headers etc.
-	    var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id']+1, sheet.getLastRow(), 1);
+	    var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow(), 1);
 	    var userRow = -1;
             for (var j=0; j<ids.length; j++) {
 		// Unique ID
@@ -226,7 +225,7 @@ function handleResponse(evt) {
 		    if (!userName || !rowUpdates)
 			throw('User name and row parameters required to create a new row for id '+userId);
 
-		    var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name']+1, sheet.getLastRow(), 1);
+		    var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow(), 1);
 		    userRow = sheet.getLastRow()+1;
 		    for (var j=0; j<names.length; j++) {
 			if (names[j][0] > userName) {
@@ -280,13 +279,13 @@ function handleResponse(evt) {
 			var headerColumn = columnIndex[colHeader];
 			if (colValue == null) {
 			    if (colHeader == "Timestamp")
-				rowValues[headerColumn] =  new Date();
+				rowValues[headerColumn-1] =  new Date();
 			} else if (colHeader != 'id' && colHeader != 'name') {
 			    // Update row values for header (except for id and name)
 			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
 			    }
-			    rowValues[headerColumn] = colValue;
+			    rowValues[headerColumn-1] = colValue;
 			}
 		    }
 		}

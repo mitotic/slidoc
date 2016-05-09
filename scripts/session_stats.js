@@ -12,6 +12,7 @@ var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property servi
    var ss = SpreadsheetApp.getActiveSpreadsheet();
    var menuEntries = [];
    menuEntries.push({name: "Generate session stats", functionName: "sessionStatsSheet"});
+   menuEntries.push({name: "Update grades sheet", functionName: "updateGradeSheet"});
    menuEntries.push(null); // line separator
 
    ss.addMenu("Slidoc", menuEntries);

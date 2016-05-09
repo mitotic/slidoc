@@ -214,7 +214,7 @@ function GoogleSheet(url, sheetName, fields, useJSONP, user, token) {
     this.useJSONP = !!useJSONP;
     this.user = user || '';
     this.token = token || '';
-    this.headers = ['name', 'id', 'email', 'Timestamp'].concat(fields);
+    this.headers = ['name', 'id', 'email', 'user', 'Timestamp'].concat(fields);
     this.created = null;
     this.callbackCounter = 0;
     this.columnIndex = {};
@@ -383,6 +383,7 @@ GoogleAuthSheet.prototype.extendObj = function (obj, fullRow) {
     if (fullRow) {
 	extObj.name = this.auth.displayName;
 	extObj.email = this.auth.email;
+	extObj.user = this.auth.userName;
     }
     return extObj;
 }
