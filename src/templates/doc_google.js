@@ -183,18 +183,27 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-GoogleAuth.prototype.promptUserInfo = function (user, token) {
+GoogleAuth.prototype.promptUserInfo = function (user, callback) {
     if (user && user.slice(-7) == '@slidoc')
 	user = user.slice(0, -7);
-    var name = window.prompt('Enter username assigned by instructor (or your name):', user || '');
-    name = (name || '').trim();
-    if (!name) {
-	alert('Cancelled');
+    var prompt = 'Enter username or email '+(callback ? '(blank to logout)':'') + ':';
+    var name = window.prompt(prompt, user || '');
+    if (!name || !name.trim()) {
+	if (callback) {
+	    callback(null);
+	} else {
+	    document.body.textContent = 'Login cancelled (reload page to restart)';
+	    alert('Cancelled');
+	}
 	return;
     }
+    name = name.trim();
+    if (callback)
+	this.authCallback = callback;
+
     var id = name.replace(/[-.,'\s]+/g,'-').toLowerCase();
     var email = (name.indexOf('@') >= 0) ? name.toLowerCase() : id+'@slidoc';
-    this.onUserInfo({id: '#'+id, displayName: name, token: token || '',
+    this.onUserInfo({id: '#'+id, displayName: name, token: '',
 		     emails: [{type: 'account', value:email}] });
 }
 

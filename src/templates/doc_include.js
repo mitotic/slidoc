@@ -15,6 +15,7 @@ Sliobj.params = JS_PARAMS_OBJ;
 Sliobj.lateToken = null;
 
 Sliobj.closePopup = null;
+Sliobj.popupQueue = [];
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
@@ -31,14 +32,16 @@ document.onreadystatechange = function(event) {
 	    // Google client load will authenticate
 	} else if (Sliobj.params.gd_sheet_url) {
 	    var localAuth = localGet('auth');
-	    if (localAuth)
-		GService.gauth.promptUserInfo(localAuth.userName, localAuth.token);
-	    else
+	    if (localAuth) {
+		GService.gauth.auth = localAuth;
+		Slidoc.slidocReady(localAuth);
+	    } else {
 		GService.gauth.promptUserInfo();
+	    }
 	} else {
 	    Slidoc.slidocReady(null);
 	}
-    } catch(err) {console.log("slidocReady: ERROR", err, err.stack);}
+    } catch(err) {console.log("onreadystatechange: ERROR", err, err.stack);}
 }
 
 function unescapeAngles(text) {
@@ -90,6 +93,22 @@ Slidoc.docFullScreen = function (exit) {
 	requestFullscreen(document.documentElement);
 }
 
+Slidoc.userLogin = function () {
+    GService.gauth.promptUserInfo(GService.gauth.auth.userName, Slidoc.userLoginCallback);
+}
+
+Slidoc.userLoginCallback = function (auth) {
+    console.log('Slidoc.userLoginCallback:', auth);
+
+    if (auth) {
+	localPut('auth', auth);
+	location.reload(true);
+    } else {
+	localDel('auth');
+	sessionAbort('Logged out');
+    }
+}
+
 Slidoc.resetPaced = function () {
     if (Sliobj.params.gd_sheet_url) {
 	alert('Cannot reset session linked to Google Docs');
@@ -128,7 +147,7 @@ Slidoc.slideViewIncrement = function () {
 }
 
 var Slide_help_list = [
-    ['q, Escape',           'exit',  'enter/exit slide mode'],
+    ['q, Escape',           'exit',  'exit slide mode'],
     ['h, Home, Fn&#9668;',  'home',  'home (first) slide'],
     ['e, End, Fn&#9658;',   'end',   'end (last) slide'],
     ['p, &#9668;',          'left',  'previous slide'],
@@ -139,26 +158,35 @@ var Slide_help_list = [
     ['?',                   'qmark', 'help']
     ]
 
-Slidoc.slideViewHelp = function () {
-    var html = '<b>Help</b><table class="slidoc-slide-help-table">';
-    var help_list = Slide_help_list.slice();
-    if (Sliobj.params.gd_sheet_url && GService.gauth && GService.gauth.auth) {
-	html += '<tr><td colspan="3">'+'User: '+GService.gauth.auth.userName+'</td></tr>';
+Slidoc.viewHelp = function () {
+    var html = '';
+    var hr = '<tr><td colspan="3"><hr></td></tr>';
+    if (Sliobj.sessionName) {
+	html += 'Session <b>' + Sliobj.sessionName + '</b>';
+	if (Sliobj.session.revision)
+	    html += ', ' + Sliobj.session.revision;
+	if (Sliobj.session.questionsMax)
+	    html += ' (' + Sliobj.session.questionsMax + ' questions)';
+	html += '<br>';
+	if (Sliobj.params.gd_sheet_url && GService.gauth && GService.gauth.auth)
+	    html += 'User: <span class="slidoc-clickable" onclick="Slidoc.userLogin();">'+GService.gauth.auth.userName+'</span><br>';
     }
-    if (Sliobj.params.paceStrict !== null && !Sliobj.params.gd_sheet_url) {
-	html += '<tr><td colspan="3"><hr></td></tr>';
-	help_list.splice(0,0,['', 'reset', 'Reset paced session'], ['', '', '']);
-    }
+    html += '<table class="slidoc-slide-help-table">';
+    if (Sliobj.params.paceStrict !== null && !Sliobj.params.gd_sheet_url)
+	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
-    for (var j=0; j<help_list.length; j++) {
-	var x = help_list[j];
-	if (x[1])
-	    html += '<tr><td>' + x[0] + '</td><td><span class="slidoc-clickable" onclick="Slidoc.handleKey('+ "'"+x[1]+"'"+ ');">' + x[2] + '</span></td></tr>';
-	else
-	    html += '<tr><td colspan="3"><hr></td></tr>';
+    if (Sliobj.currentSlide) {
+	for (var j=0; j<Slide_help_list.length; j++)
+	    html += formatHelp(Slide_help_list[j]);
+    } else {
+	html += formatHelp(['Escape', 'unesc', 'enter slide mode']);
     }
     html += '</table>';
     Slidoc.showPopup(html);
+}
+
+function formatHelp(help_entry) {  // help_entry = [keyboard_shortcuts, key_code, description]
+    return '<tr><td>' + help_entry[0] + '</td><td><span class="slidoc-clickable" onclick="Slidoc.handleKey('+ "'"+help_entry[1]+"'"+ ');">' + help_entry[2] + '</span></td></tr>';
 }
 
 var Slide_view_handlers = {
@@ -178,7 +206,7 @@ var Slide_view_handlers = {
     'i':     Slidoc.slideViewIncrement,
     'f':     Slidoc.docFullScreen,
     'm':     Slidoc.showConcepts,
-    'qmark': Slidoc.slideViewHelp,
+    'qmark': Slidoc.viewHelp,
     'reset': Slidoc.resetPaced
 }
 
@@ -238,15 +266,15 @@ Slidoc.handleKey = function (keyName) {
 	if (keyName == 'esc')   { Sliobj.chainActive[1](); return false; }
 	if (keyName == 'right') { Sliobj.chainActive[2](); return false; }
 
-    } else if (Sliobj.curChapterId) {
-	var chapNum = parseSlideId(Sliobj.curChapterId)[1];
-	var chapters = document.getElementsByClassName('slidoc-reg-chapter');
-	if (keyName == 'left'  && chapNum > 1)  { goSlide('#slidoc'+('00'+(chapNum-1)).slice(-2)+'-01'); return false; }
-	if (keyName == 'right' && chapNum < chapters.length)  { goSlide('#slidoc'+('00'+(chapNum+1)).slice(-2)+'-01'); return false; }
-	if (keyName == 'esc')   { Slidoc.slideViewStart(); return false; }
-
     } else {
-	if (keyName == 'esc')   { Slidoc.slideViewStart(); return false; }
+	if (keyName == 'esc' || keyName == 'unesc')   { Slidoc.slideViewStart(); return false; }
+
+	if (Sliobj.curChapterId) {
+	    var chapNum = parseSlideId(Sliobj.curChapterId)[1];
+	    var chapters = document.getElementsByClassName('slidoc-reg-chapter');
+	    if (keyName == 'left'  && chapNum > 1)  { goSlide('#slidoc'+('00'+(chapNum-1)).slice(-2)+'-01'); return false; }
+	    if (keyName == 'right' && chapNum < chapters.length)  { goSlide('#slidoc'+('00'+(chapNum+1)).slice(-2)+'-01'); return false; }
+	}
     }
 	
    return;
@@ -486,7 +514,7 @@ var Auth_sheet = null;
 function sessionAbort(err_msg) {
     Slidoc.classDisplay('slidoc-slide', 'none');
     alert(err_msg);
-    document.body.textContent = err_msg;
+    document.body.textContent = err_msg + ' (reload page to restart)';
 }
 
 function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messages) {
@@ -538,8 +566,11 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
 	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
 	    if (err_msg.indexOf('Need token for authentication') > -1 ||
  	        err_msg.indexOf('Invalid token for authenticating user') > -1) {
-		var token = window.prompt(prefix+'Enter authentication token for user '+GService.gauth.auth.userName+':');
-		if (token && token.trim()) {
+		var token = window.prompt(prefix+'Enter authentication token for user '+GService.gauth.auth.userName+' (or blank to logout)');
+		if (!token || !token.trim()) {
+		    Slidoc.userLoginCallback(null);
+		    return;
+		} else {
 		    Auth_sheet.gsheet.token = token.trim();
 		    GService.gauth.auth.token = token.trim();
 		    retryCall();
@@ -548,7 +579,7 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
 		
 	    } else if (err_msg.indexOf('request late submission token') > -1 ||
 		       err_msg.indexOf('Invalid token for late submission to session') > -1) {
-		var token = window.prompt(prefix+"Enter late submission token, if you have one. Otherwise enter 'none' to submit late without credit.");
+		var token = window.prompt(prefix+"Enter late submission token, if you have one, for user "+GService.gauth.auth.userName+" and session "+Sliobj.sessionName+". Otherwise enter 'none' to submit late without credit.");
 		if (token && token.trim()) {
 		    if (Sliobj.session)
 			Sliobj.session.lateToken = token.trim();
@@ -1832,6 +1863,7 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
     // Only one of innerHTML or divElemId needs to be non-null
     if (Sliobj.closePopup) {
 	console.log('Slidoc.showPopup: Popup already open');
+	Sliobj.popupQueue.push([innerHTML||null, divElemId||null]);
 	return;
     }
 
@@ -1860,6 +1892,10 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 	    overlayElem.style.display = 'none';
 	    divElem.style.display = 'none';
 	    Sliobj.closePopup = null;
+	    if (Sliobj.popupQueue.length) {
+		var args = Sliobj.popupQueue.shift();
+		Slidoc.showPopup(args[0], args[1]);
+	    }
 	}
 	
 	closeElem.onclick = Sliobj.closePopup;
