@@ -54,6 +54,7 @@ function onreadystateaux() {
     } else if (Sliobj.params.gd_sheet_url) {
 	var localAuth = localGet('auth');
 	if (localAuth) {
+	    Slidoc.showPopup('Accessing Google Docs ...', null, 1000);
 	    GService.gauth.auth = localAuth;
 	    Slidoc.slidocReady(localAuth);
 	} else {
@@ -1886,11 +1887,12 @@ Slidoc.chainUpdate = function (queryStr) {
 
 // Popup: http://www.loginradius.com/engineering/simple-popup-tutorial/
 
-Slidoc.showPopup = function (innerHTML, divElemId) {
+Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
     // Only one of innerHTML or divElemId needs to be non-null
     if (Sliobj.closePopup) {
 	console.log('Slidoc.showPopup: Popup already open');
-	Sliobj.popupQueue.push([innerHTML||null, divElemId||null]);
+	if (!autoCloseMillisec)
+	    Sliobj.popupQueue.push([innerHTML||null, divElemId||null]);
 	return;
     }
 
@@ -1926,6 +1928,8 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 	}
 	
 	closeElem.onclick = Sliobj.closePopup;
+	if (autoCloseMillisec)
+	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }
 }
 
