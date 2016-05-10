@@ -290,7 +290,7 @@ Slidoc.inputKeyDown = function (evt) {
 
 function parseSlideId(slideId) {
     // Return chapterId, chapter number, slide number (or 0)
-    var match = RegExp('(slidoc(\\d+))(-(\\d+))?$').exec(slideId);
+    var match = /(slidoc(\d+))(-(\d+))?$/.exec(slideId);
     if (!match) return [null, 0, 0];
     return [match[1], parseInt(match[2]), match[4] ? parseInt(match[4]) : 0];
 }
@@ -416,7 +416,7 @@ function slidocReadyAux(session) {
 	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
 	var slideId = '';
 	for (var k=0; k<jsSpans[j].classList.length; k++) {
-	    var refmatch = RegExp('slidoc-inline-js-in-(.*)$').exec(jsSpans[j].classList[k]);
+	    var refmatch = /slidoc-inline-js-in-(.*)$/.exec(jsSpans[j].classList[k]);
 	    if (refmatch) {
 		slideId = refmatch[1];
 		break;
@@ -719,7 +719,7 @@ function getBaseURL() {
 function getParameter(name, number, queryStr) {
    // Set number to true, if expecting an integer value. Returns null if valid parameter is not present.
    // If queryStr is specified, it is used instead of location.search
-   var match = RegExp('[?&]' + name + '=([^&]*)').exec(queryStr || window.location.search);
+   var match = /[?&]' + name + '=([^&]*)/.exec(queryStr || window.location.search);
    if (!match)
       return null;
    var value = decodeURIComponent(match[1].replace(/\+/g, ' '));
@@ -1084,7 +1084,7 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
     var corr_answer      = question_attrs.correct || '';
     var corr_answer_html = question_attrs.html || '';
     var corr_answer_js = '';
-    var jsmatch = RegExp('^=(\w+)\(\)(;(.+))?$').exec(corr_answer);
+    var jsmatch = /^=(\w+)\(\)(;(.+))?$/.exec(corr_answer);
     if (jsmatch) {
 	corr_answer_js = jsmatch[1];
 	corr_answer = jsmatch[3] ? jsmatch[3] : '';
@@ -1373,9 +1373,9 @@ Slidoc.startPaced = function () {
 	startMsg += '&nbsp;&nbsp;<em>There are '+Sliobj.session.questionsMax+' questions.</em><br>';
     if (Sliobj.params.gd_sheet_url) {
 	if (Sliobj.params.paceDelay || Sliobj.params.tryCount)
-	    startMsg += '&nbsp;&nbsp;<em>Session stats will be submitted after each answered question.</em><br>';
+	    startMsg += '&nbsp;&nbsp;<em>Answers will be submitted after each answered question.</em><br>';
 	else
-	    startMsg += '&nbsp;&nbsp;<em>Session stats will only be submitted when you reach the last slide.</em><br>';
+	    startMsg += '&nbsp;&nbsp;<em>Answers will only be submitted when you reach the last slide.&nbsp;&nbsp;<br>If you do not complete and move to a different computer, you will have to start over again.</em><br>';
     }
     startMsg += '<ul>';
     if (Sliobj.params.paceDelay)
@@ -1674,13 +1674,13 @@ function goSlide(slideHash, chained, singleChapter) {
    }
 
     // Locate reference
-    var match = RegExp('slidoc-ref-(.*)$').exec(slideId);
+    var match = /slidoc-ref-(.*)$/.exec(slideId);
     console.log('goSlide2a: ', match, slideId);
     if (match) {
         // Find slide containing reference
 	slideId = '';
         for (var i=0; i<goElement.classList.length; i++) {
-	    var refmatch = RegExp('slidoc-referable-in-(.*)$').exec(goElement.classList[i]);
+	    var refmatch = /slidoc-referable-in-(.*)$/.exec(goElement.classList[i]);
 	    if (refmatch) {
 		slideId = refmatch[1];
 		slideHash = '#'+slideId;

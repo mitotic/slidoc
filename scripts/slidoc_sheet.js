@@ -121,6 +121,7 @@ function handleResponse(evt) {
 		if (headers[j].slice(-6).toLowerCase() == 'hidden')
 		    sheet.hideColumns(j+1);
 	    }
+	    sheet.getRange('1:1').setFontWeight('bold');
 	}
 
 	if (!sheet.getLastColumn())

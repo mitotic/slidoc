@@ -51,7 +51,7 @@ function sessionAnswerSheet() {
 	for (var j=0; j<questions.length; j++) {
 	    var qprefix = 'q'+(j+1);
 	    var testCode = (questions[j].slice(0,10) == 'text/code=');
-	    var inlineJS = (RegExp('^=(\w+)\(\)').exec(answers[j]));
+	    var inlineJS = /^=(\w+)\(\)/.exec(answers[j]);
 	    var respColName = qprefix;
 	    if (answers[j] && !inlineJS) {
 		if (questions[j] == 'choice')
@@ -77,13 +77,14 @@ function sessionAnswerSheet() {
 
 	// New answers sheet
 	var answerSheetName = sessionName+'-answers';
-	answerSheet = doc.getSheetByName(answerSheetName);
+	var answerSheet = doc.getSheetByName(answerSheetName);
 	if (!answerSheet)
 	    answerSheet = doc.insertSheet(answerSheetName);
 	answerSheet.clear()
 	var answerHeaderRange = answerSheet.getRange(1, 1, 1, answerHeaders.length);
 	answerHeaderRange.setValues([answerHeaders]);
 	answerHeaderRange.setWrap(true);
+	answerSheet.getRange('1:1').setFontWeight('bold');
 
 	// Session sheet columns
 	var startRow = 2;

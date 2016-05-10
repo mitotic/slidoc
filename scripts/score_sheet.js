@@ -4,7 +4,12 @@
 //     Overwrite the template code with this code and Save.
 //
 // Use the menu item "Update scores for session" to run this script and update score for a particular session
-// in the 'scores' sheet (which is automatically created)
+// in the 'scores' sheet (which is automatically created, if need be)
+//
+// You may also create the 'scores' sheet yourself:
+//   - Put headers in the first row. The first four are usually 'name', 'id', 'email', 'user'
+//   - 'id' is the only required column, which should be unique for each user and used to index sessions
+//   - Any custom header names should begin with an underscore, to avoid being mistaken for session names
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -44,7 +49,7 @@ function updateScoreSheet() {
 	try { questionsMax = parseInt(sessionParams.questionsMax); } catch(err) {}
 
 	var sessionStartRow = 2;
-	var scoreStartRow = 3; // Leave blank row for formulas
+	var scoreStartRow = 2;
 
 	// New score sheet
 	var scoreHeaders = ['name', 'id', 'email', 'user'];
@@ -57,6 +62,7 @@ function updateScoreSheet() {
 	    var nidsSession = sessionSheet.getLastRow()-sessionStartRow+1;
 	    scoreSheet.getRange(1, 1, 1, scoreHeaders.length).setValues(sessionSheet.getSheetValues(1, 1, 1, scoreHeaders.length));
 	    scoreSheet.getRange(scoreStartRow, 1, nidsSession, scoreHeaders.length).setValues(sessionSheet.getSheetValues(sessionStartRow, 1, nidsSession, scoreHeaders.length));
+	    scoreSheet.getRange('1:1').setFontWeight('bold');
 	}
 
 	// Session sheet columns
@@ -74,8 +80,11 @@ function updateScoreSheet() {
 	    scoreSessionCol = scoreColIndex[sessionName];
 	} else {
 	    scoreSessionCol = 0;
-	    for (var jcol=scoreHeaders.length+1; jcol<=scoreColHeaders.length; jcol++) {
-		if (sessionName < scoreColHeaders[jcol-1]) {
+	    for (var jcol=1; jcol<=scoreColHeaders.length; jcol++) {
+		var colHeader = scoreColHeaders[jcol-1];
+		if (colHeader != 'name' && colHeader != 'id' && colHeader != 'email' && colHeader != 'user' &&
+		    colHeader.slice(0,1) != '_' && sessionName < colHeader) {
+		    // Insert new session columns in sorted order
 		    scoreSheet.insertColumnBefore(jcol);
 		    scoreSessionCol = jcol;
 		    break;
@@ -84,6 +93,9 @@ function updateScoreSheet() {
 	    if (!scoreSessionCol)
 		scoreSessionCol = scoreColHeaders.length + 1;
 	    scoreSheet.getRange(1, scoreSessionCol, 1, 1).setValues([[sessionName]]);
+
+	    var c = colIndexToChar( scoreSessionCol );
+	    scoreSheet.getRange(c+scoreStartRow+':'+c).setNumberFormat('0.00');
 	}
 	var nids = scoreSheet.getLastRow()-scoreStartRow+1;
 

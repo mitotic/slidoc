@@ -73,6 +73,7 @@ function sessionStatSheet() {
 	var statHeaderRange = statSheet.getRange(1, 1, 1, statHeaders.length);
 	statHeaderRange.setValues([statHeaders]);
 	statHeaderRange.setWrap(true);
+	statSheet.getRange('1:1').setFontWeight('bold');
 
 	// Session sheet columns
 	var startRow = 2;
