@@ -968,27 +968,44 @@ open response question
 
 Slidoc paced sessions may be linked to a Google Docs spreadsheet. The
 spreadhseet will be updated with information for each user such as the
-last access time, slides viewed, questions answered etc. To create
-the link you will need to attach the script `scripts/slidoc_sheet.js`
-to your Google Docs spreadsheet using the `Tools->Script Editor...`
-menu item. Instructions are provided in the comments section of
-`slidoc_sheet.js` and additional information may be found in this
+last access time, slides viewed, questions answered etc. To create the
+link, first create a Google Docs spreadsheet, say `sheets101`. Then
+attach the script `scripts/slidoc_sheets.js` to `sheets101` using the
+`Tools->Script Editor...` menu item. Complete instructions are
+provided in the comments in `slidoc_sheets.js`.  Additional
+information may also be found in this
 [blog post](http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/).
 After attaching the script, you can use the *Current web app URL* for
-the spreadsheet in the command line to generate the HTML documents:
+`sheets101` in the command line to generate the HTML documents:
 
     slidoc.py --google_docs=spreadsheet_url ... 
 
-By default, users will use a unique name or other identifier when they
-start a paced session. If you want the users to authenticate using
-their Google account, additional steps are necessary as described in
-the Notes below.
+By default, users will use a unique user name or other identifier
+(such as email address) when they start a paced session. The Google
+Docs spreadhsheet `sheets101` will contain a separate sheet for each
+session, and also an index sheet named `slidoc_sessions`, with
+information about all sessions, including any submission due dates
+(which can be edited).
+
+When you set up `slidoc_sheets.js`, you have the option of specifying
+a secret key that you can use to generate login and/or late submission
+tokens. The secret can be any printable character string (usually
+without spaces). If you use a key, include it in the `slidoc` command,
+and use the `sliauth.py` command to generate access tokens:
+
+    slidoc.py --google_docs=spreadsheet_url,key --due_date 2016-05-03T23:59 ...
+    sliauth.py -k key user_name(s) # For login tokens 
+    sliauth.py -k key -s session_name --due_date 2016-05-10T23:59 user_name(s) # For late submission tokens 
+
+Instead of token access, you can require users to authenticate using
+their Google account, using additional steps as described in the Notes
+below.
 
 Notes: You will need to create a Web Application attached to your
 Google account, obtain its `ClientID` and `API key` and use it as
 follows:
 
-    slidoc.py --google_docs=spreadsheet_url,client_id,apiKey ...
+    slidoc.py --google_docs=spreadsheet_url,hmac_key,client_id,apiKey ...
 
 [Getting access keys for your application:](https://developers.google.com/api-client-library/javascript/features/authentication#overview)
 To get access keys, go to the
@@ -1002,6 +1019,8 @@ For authorized access, you must also tell Google your website's
 protocol and domain. In return, Google generates a client ID. Your
 application submits this to the Google Auth server to get an OAuth 2.0
 access token.
+
+Concepts: google docs; due date; login token; late submission token
 
 ---
 
