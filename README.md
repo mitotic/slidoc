@@ -246,18 +246,32 @@ filename as the key. It is enabled by the option:
 The Notes portion of a question slide is hidden until a correct
 response is received or all tries are exhausted.
 
-Notes: Slides can normally be advanced only one at a time in paced
-mode. This means that "slide skipping", i.e., forward slide navigation
-through [internal links](#int-link) is disabled. However, if a set of
-consecutive questions is answered correctly, forward slide navigation
-is enabled until the next question slide is reached. Thus, a forward
-slide link could be included in the Notes portion of the final
-question in a sequence (or the following non-question slides) to
-enable *adaptive testing*.  If you answer the sequence of questions
-correctly, you can skip the next several slides, which may contain
-additional questions aimed at those who failed to answer correctly.
+Concepts: paced mode
 
-Concepts: paced mode; adaptive testing
+---
+
+## Adaptive assessment in paced mode
+
+Slides can normally be advanced only one at a time in paced mode. This
+means that "slide skipping", i.e., forward slide navigation through
+[internal links](#int-link) is typically not used in paced
+mode. However, if a set of consecutive questions is answered
+correctly, forward slide navigation is enabled. Thus, a single forward
+slide link can be included in the final question in a sequence to
+enable *adaptive assessment*. (The forward link could be hidden in the
+Notes portion, so that it only becomes visible after the question is
+answered.)
+
+If you answer the sequence of questions correctly, you earn the
+privilege of skipping the next several slides (up to the forward link
+destination). The skipped portion may contain extra questions and
+explanatory material aimed at those who failed to answer
+correctly. Those who earn the privilege of skipping the extra
+questions automatically receive full credit for those
+questions. However, they may still choose to answer some or all of the
+extra questions (without penalty for answering incorrectly).
+
+Concepts: adaptive assessment 
 
 ---
 
@@ -829,25 +843,30 @@ To display a default reference value, append it, separated by `;`.
 
 <script>
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
-// Use anonymous function wrapper to save persistent values.
-// Define formulas as function attributes to global object SlidocFormulas.
-// First argument to formula function is the slideId.
-// For answers, there is also second argument, the question attributes.
-// Use SlidocRandom.rand() to generate repeatable uniform random number between 0 and 1
+// Use anonymous function wrapper to save any persistent values.
+// Define formulas as function attributes attached to global object SlidocFormulas.
+// First argument to formula function is the slideId string.
+// For answers, there is also second argument, the question attributes object.
+// Use SlidocRandom.rand() to generate uniform random number between 0 and 1.
+// Use SlidocRandom.randint() to pick equally probable integer values between min and max (inclusive).
+// (Random number choices will only change if the session is reset.)
 //
 (function() {
-  var randVals = {}; // Persistent value
+  var randVals = {}; // Optional persistent value (do not use SlidocRandom here)
 
-  SlidocFormulas.sqrtNumber = function(slideId)
+  SlidocFormulas.ready = function(session) {} // Optional initialization; called only once
+
+  SlidocFormulas.sqrtNumber = function(slideId) 
   {
-  	// Pick an integer between 2 and 19
+  	// Pick a random integer between 2 and 19, and then divide by 2
 	var randInt = SlidocRandom.randint(2,19);
 	randVals[slideId] = (0.5*randInt).toFixed(1);
 	console.log('SlidocFormulas.sqrtNumber:', slideId, SlidocRandom.getSeed(), randVals[slideId]);
 	return (randVals[slideId]*randVals[slideId]).toFixed(2);
   }
 
-  SlidocFormulas.sqrtAnswer = function(slideId, questionAttrs) {
+  SlidocFormulas.sqrtAnswer = function(slideId, questionAttrs)
+  {
 	console.log('SlidocFormulas.sqrtAnswer:', slideId, questionAttrs);
 	return randVals[slideId]+' +/- '+'0.1';
   }

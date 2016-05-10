@@ -3,6 +3,7 @@
 var Slidoc = {};  // External object
 
 var SlidocFormulas = {};  // Inline JS object
+var SlidocRandom = null;
 
 ///UNCOMMENT: (function(Slidoc) {
 
@@ -20,29 +21,49 @@ Sliobj.popupQueue = [];
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
 
+function sessionAbort(err_msg, err_trace) {
+    try { Slidoc.classDisplay('slidoc-slide', 'none'); } catch(err) {}
+    alert(err_msg);
+    document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
+}
+
+function abortOnError(boundFunc) {
+    // Usage: abortOnError(func.bind(null, arg1, arg2, ...))
+    try {
+	return boundFunc();
+    } catch(err) {
+	console.log("abortCallOnError: ERROR", err, err.stack);
+	sessionAbort(''+err, ''+err.stack);
+    }
+}
+
 document.onreadystatechange = function(event) {
     console.log('onreadystatechange:', document.readyState);
     if (document.readyState != "interactive")
       return;
-    try {
-	if (Sliobj.params.gd_sheet_url)
-	    document.body.classList.add('slidoc-remote-view');
-
-	if (Sliobj.params.gd_client_id) {
-	    // Google client load will authenticate
-	} else if (Sliobj.params.gd_sheet_url) {
-	    var localAuth = localGet('auth');
-	    if (localAuth) {
-		GService.gauth.auth = localAuth;
-		Slidoc.slidocReady(localAuth);
-	    } else {
-		GService.gauth.promptUserInfo();
-	    }
-	} else {
-	    Slidoc.slidocReady(null);
-	}
-    } catch(err) {console.log("onreadystatechange: ERROR", err, err.stack);}
+    return abortOnError(onreadystateaux);
 }
+
+function onreadystateaux() {
+    console.log('onreadystateaux:');
+    if (Sliobj.params.gd_sheet_url)
+	document.body.classList.add('slidoc-remote-view');
+
+    if (Sliobj.params.gd_client_id) {
+	// Google client load will authenticate
+    } else if (Sliobj.params.gd_sheet_url) {
+	var localAuth = localGet('auth');
+	if (localAuth) {
+	    GService.gauth.auth = localAuth;
+	    Slidoc.slidocReady(localAuth);
+	} else {
+	    GService.gauth.promptUserInfo();
+	}
+    } else {
+	Slidoc.slidocReady(null);
+    }
+}
+
 
 function unescapeAngles(text) {
     return text.replace('&lt;', '<').replace('&gt;', '>')
@@ -311,10 +332,15 @@ function getChapterAttrs(slide_id) {
 }
 
 Slidoc.slidocReady = function (auth) {
-    console.log("Slidoc.slidocReady:", auth);
+    return abortOnError(slidocReadyAux.bind(null, auth));
+}
+
+function slidocReadyAux(auth) {
+    console.log("slidocReadyAux:", auth);
     sessionManage();
 
     Slidoc.delayIndicator = ('progress_bar' in Sliobj.params.features) ? progressBar : delayElement;
+    SlidocRandom = LCRandom;
 
     Sliobj.ChainQuery = '';
     Sliobj.chainActive = null;
@@ -334,7 +360,7 @@ Slidoc.slidocReady = function (auth) {
 
     var newSession = sessionCreate(paceParam);
 
-    console.log("Slidoc.slidocReady2:", Sliobj.sessionName, paceParam);
+    console.log("Slidoc.slidocReadyAux2:", Sliobj.sessionName, paceParam);
     if (Sliobj.sessionName) {
 	// Paced named session
 	if (Sliobj.params.gd_sheet_url && !auth) {
@@ -350,7 +376,7 @@ Slidoc.slidocReady = function (auth) {
 	}
     
     } else {
-	slidocReadyAux(newSession);
+	slidocSetup(newSession);
     }
 }
 
@@ -372,11 +398,15 @@ function slidocReadyPaced(newSession, prereqs, prevSession) {
 	}
     }
 	
-    sessionPut(newSession, slidocReadyAux, {nooverwrite: true, get: true, createSheet: true, retry: 'ready'});
+    sessionPut(newSession, slidocSetup, {nooverwrite: true, get: true, createSheet: true, retry: 'ready'});
 }
 
-function slidocReadyAux(session) {
-    console.log('slidocReadyAux:', session);
+function slidocSetup(session) {
+    return abortOnError(slidocSetupAux.bind(null, session));
+}
+
+function slidocSetupAux(session) {
+    console.log('slidocSetupAux:', session);
     Sliobj.session = session;
     var paceParam = (Sliobj.params.paceStrict !== null);
 
@@ -503,12 +533,6 @@ function sessionCreate(paced) {
             questionsAttempted: {},
             missedConcepts: []
 	   };
-}
-
-function sessionAbort(err_msg) {
-    Slidoc.classDisplay('slidoc-slide', 'none');
-    alert(err_msg);
-    document.body.textContent = err_msg + ' (reload page to restart)';
 }
 
 function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messages) {
@@ -1906,7 +1930,7 @@ Slidoc.showPopup = function (innerHTML, divElemId) {
 }
 
 // Linear Congruential Random Number Generator  https://gist.github.com/Protonk/5367430
-var SlidocRandom = (function() {
+var LCRandom = (function() {
   // Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
       // m is basically chosen to be large (as it is the max period)
       // and for its relationships to a and c
