@@ -5,21 +5,25 @@
 // Resources > Current project’s triggers.
 //     In the dropdowns select 'onOpen’, 'From spreadsheet’, and 'On Open’, then click on 'Save’.
 
+// Use the menu item "Display session statistics" to run this script and create/overwrite the sheet
+// 'sessionName-stats' displaying session statistics
+
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
  // The onOpen function is executed automatically every time a Spreadsheet is loaded
  function onOpen() {
    var ss = SpreadsheetApp.getActiveSpreadsheet();
    var menuEntries = [];
-   menuEntries.push({name: "Generate session stats", functionName: "sessionStatsSheet"});
-   menuEntries.push({name: "Update grades sheet", functionName: "updateGradeSheet"});
+   menuEntries.push({name: "Display session answers", functionName: "sessionAnswerSheet"});
+   menuEntries.push({name: "Display session statistics", functionName: "sessionStatSheet"});
    menuEntries.push(null); // line separator
+   menuEntries.push({name: "Update scores for session", functionName: "updateScoreSheet"});
 
    ss.addMenu("Slidoc", menuEntries);
  }
  
 
-function sessionStatsSheet() {
+function sessionStatSheet() {
     // Create session stats sheet
 
     var ui = SpreadsheetApp.getUi();

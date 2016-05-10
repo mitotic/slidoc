@@ -12,7 +12,6 @@ var Sliobj = {}; // Internal object
 
 Sliobj.params = JS_PARAMS_OBJ;
 
-Sliobj.lateToken = null;
 Sliobj.authSheet = null;
 
 Sliobj.closePopup = null;
@@ -405,11 +404,6 @@ function slidocReadyAux(session) {
 	sessionPut(null, null, {retry: 'new'});
     }
 
-    if (Sliobj.lateToken) {
-	Sliobj.session.lateToken = Sliobj.lateToken;
-	Sliobj.lateToken = '';
-    }
-
     // Restore random seed for session
     SlidocRandom.setSeed(Sliobj.session.randomSeed);
 
@@ -501,6 +495,7 @@ function sessionCreate(paced) {
             remainingTries: 0,
             lastAnswersCorrect: 0,
             skipToSlide: 0,
+	    sessionScore: 0.0,
 	    questionsMax: 0,
             questionsCount: 0,
             questionsCorrect: 0,
@@ -517,6 +512,7 @@ function sessionAbort(err_msg) {
 }
 
 function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messages) {
+    // For sessionPut, session should be bound to this function as 'this'
     console.log('Slidoc.sessionGetPutAux: ', !!callback, !!retryCall, retryType, result, err_msg, messages);
     var session = null;
     var nullReturn = false;
@@ -577,14 +573,11 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
 		    return;
 		}
 		
-	    } else if (err_msg.indexOf('request late submission token') > -1 ||
+	    } else if (this && err_msg.indexOf('request late submission token') > -1 ||
 		       err_msg.indexOf('Invalid token for late submission to session') > -1) {
 		var token = window.prompt(prefix+"Enter late submission token, if you have one, for user "+GService.gauth.auth.userName+" and session "+Sliobj.sessionName+". Otherwise enter 'none' to submit late without credit.");
 		if (token && token.trim()) {
-		    if (Sliobj.session)
-			Sliobj.session.lateToken = token.trim();
-		    else
-			Sliobj.lateToken = token;
+		    this.lateToken = token.trim();
 		    retryCall();
 		    return;
 		}
@@ -680,8 +673,9 @@ function sessionPut(session, callback, opts) {
 	rowObj.session_hidden = base64str;
 	var authSheet = setupAuthSheet(Sliobj.sessionName);
 	var retryCall = opts.retry ? sessionPut.bind(null, session, callback, opts) : null;
-	authSheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(null, callback||null, retryCall, opts.retry||''),
-			  !!opts.get, session.lateToken || Sliobj.lateToken, !!opts.createSheet);
+	// Bind session to this in sessionGetPutAux
+	authSheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(session, callback||null, retryCall, opts.retry||''),
+			  !!opts.get, !!opts.createSheet);
 
     } else {
 	// Local storage
@@ -1089,7 +1083,13 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
 
     var corr_answer      = question_attrs.correct || '';
     var corr_answer_html = question_attrs.html || '';
-    var corr_answer_js   = question_attrs.js || '';
+    var corr_answer_js = '';
+    var jsmatch = RegExp('^=(\w+)\(\)(;(.+))?$').exec(corr_answer);
+    if (jsmatch) {
+	corr_answer_js = jsmatch[1];
+	corr_answer = jsmatch[3] ? jsmatch[3] : '';
+    }
+
     console.log('Slidoc.answerUpdate:', slide_id);
 
     if (testResp) {
@@ -1226,7 +1226,8 @@ Slidoc.answerUpdate = function (setup, question_number, slide_id, resp_type, res
     if (!setup) {
 	Sliobj.session.questionsAttempted[question_number] = {slide_id: slide_id, resp_type: resp_type, response: response,
 							      test: testResp||null,
-							      expect: corr_answer, correct: is_correct};
+							      expect: corr_answer,
+							      correct: is_correct ? 1 : ((is_correct === false) ? 0 : '')};
 	Slidoc.answerTally(is_correct, question_number, slide_id, resp_type, question_attrs.skip || null);
     }
 }
@@ -1276,6 +1277,7 @@ Slidoc.answerTally = function (is_correct, question_number, slide_id, resp_type,
     Sliobj.session.questionsCount += qWeight;
     if (is_correct)
         Sliobj.session.questionsCorrect += qWeight;
+    Sliobj.session.sessionScore = 100*Sliobj.session.questionsCorrect/Sliobj.session.questionsMax;
     Slidoc.showScore();
 
     if (Sliobj.session.paced && Sliobj.questionConcepts.length > 0) {
@@ -1310,7 +1312,7 @@ function saveSession() {
 Slidoc.showScore = function () {
     var scoreElem = document.getElementById('slidoc-score-display');
     if (scoreElem && Sliobj.session.questionsCount)
-	scoreElem.textContent = Sliobj.session.questionsCorrect+'/'+Sliobj.session.questionsCount;
+	scoreElem.textContent = Sliobj.session.questionsCorrect+'/'+Sliobj.session.questionsMax;
 }
 
 function conceptStats(tags, tallies) {

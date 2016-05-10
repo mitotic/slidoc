@@ -89,9 +89,6 @@ function handleResponse(evt) {
 	    throw('No sheet name specified');
 
 	var validUserToken = '';
-	var allowLateMods = !REQUIRE_LATE_TOKEN;
-	var pastSubmitDeadline = false;
-	var dueDate = null;
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
 	if (sheetName == 'slidoc_sessions' || REQUIRE_LOGIN_TOKEN) {
 	    // Restricted sheet/login required
@@ -107,32 +104,6 @@ function handleResponse(evt) {
 	    // Restricted sheet
 	    if (params.user != 'admin')
 		throw('Invalid user '+params.user+' for sheet '+sheetName);
-	} else if (doc.getSheetByName('slidoc_sessions')) {
-	    // Creating/updating row in session; check if past submission deadline
-	    var sessionParams = getSessionParams(sheetName, ['dueDate']);
-	    dueDate = sessionParams.dueDate;
-	    if (dueDate) {
-		var curTime = (new Date()).getTime();
-		pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
-		if (!allowLateMods && pastSubmitDeadline && params.writetoken) {
-		    if (params.writetoken.slice(0,4).toLowerCase() == 'none') {
-			// Late submission without token
-			allowLateMods = true;
-		    } else if (validateHMAC(params.user+':'+sheetName+':'+params.writetoken, HMAC_KEY)) {
-			dueDate = createDate(splitToken(params.writetoken)[0]); // Date format: '1995-12-17T03:24Z'
-			pastSubmitDeadline = (curTime > dueDate.getTime());
-		    } else {
-			returnMessages.push('Warning: Invalid token for late submission by user '+params.user+' to session '+sheetName);
-		    }
-		}
-		if (!allowLateMods) {
-		    if (pastSubmitDeadline) {
-			returnMessages.push('Warning: Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
-		    } else if ( (dueDate.getTime() - curTime) < 2*60*60*1000) {
-			returnMessages.push('Warning: Nearing submit deadline ('+dueDate+') for session '+sheetName+'.');
-		    }
-		}
-	    }
 	}
 
 	// Check parameter consistency
@@ -212,14 +183,47 @@ function handleResponse(evt) {
 		// Row does not exist; return empty list
 		returnValues = [];
 
-	    } else if (!allowLateMods && pastSubmitDeadline && (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) ) {
-		// Creating/modifying row; require 
-		if (!params.writetoken)
-		    throw('Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request late submission token.)')
-		else
-		    throw('Invalid token for late submission to session '+sheetName);
-
 	    } else {
+		var allowLateMods = !REQUIRE_LATE_TOKEN;
+		var pastSubmitDeadline = false;
+		var dueDate = null;
+		if (sheetName != 'slidoc_sessions' && doc.getSheetByName('slidoc_sessions')) {
+		    // Check if past submission deadline
+		    var lateToken = (rowUpdates && columnIndex['lateToken']) ? (rowUpdates[columnIndex['lateToken']-1] || null) : null;
+		    var sessionParams = getSessionParams(sheetName, ['dueDate']);
+		    dueDate = sessionParams.dueDate;
+		    if (dueDate) {
+			var curTime = (new Date()).getTime();
+			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
+			if (!allowLateMods && pastSubmitDeadline && lateToken) {
+			    if (lateToken == 'none') {
+				// Late submission without token
+				allowLateMods = true;
+			    } else if (validateHMAC(params.user+':'+sheetName+':'+lateToken, HMAC_KEY)) {
+				dueDate = createDate(splitToken(lateToken)[0]); // Date format: '1995-12-17T03:24Z'
+				pastSubmitDeadline = (curTime > dueDate.getTime());
+			    } else {
+				returnMessages.push('Warning: Invalid token for late submission by user '+params.user+' to session '+sheetName);
+			    }
+			}
+			if (!allowLateMods) {
+			    if (pastSubmitDeadline) {
+				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
+					// Creating/modifying row; require valid lateToken
+					if (!lateToken)
+					    throw('Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request late submission token.)')
+					else
+					    throw('Invalid token for late submission to session '+sheetName);
+				    } else {
+					returnMessages.push('Warning: Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
+				    }
+			    } else if ( (dueDate.getTime() - curTime) < 2*60*60*1000) {
+				returnMessages.push('Warning: Nearing submit deadline ('+dueDate+') for session '+sheetName+'.');
+			    }
+			}
+		    }
+		}
+
 		if (newRow) {
 		    // New user; insert row in sorted order of name
 		    if (!userName || !rowUpdates)
@@ -323,15 +327,15 @@ function splitToken(token) {
     return [match[1], match[2]];
 }
 
-function createDate(dateStr) {
+function createDate(date) {
     // Ensure that UTC date string ends in :00.000Z (needed to workaround bug in Google Apps)
-    if (dateStr.slice(-1) == 'Z') {
-	if (dateStr.length == 17)      // yyyy-mm-ddThh:mmZ
-	    dateStr = dateStr.slice(0,-1) + ':00.000Z';
-	else if (dateStr.length == 20) // yyyy-mm-ddThh:mm:ssZ
-	    dateStr = dateStr.slice(0,-1) + '.000Z';
+    if (typeof date === 'string' && date.slice(-1) == 'Z') {
+	if (date.length == 17)      // yyyy-mm-ddThh:mmZ
+	    date = date.slice(0,-1) + ':00.000Z';
+	else if (date.length == 20) // yyyy-mm-ddThh:mm:ssZ
+	    date = date.slice(0,-1) + '.000Z';
     }
-    return new Date(dateStr);
+    return new Date(date);
 }
 
 function validateHMAC(token, key) {

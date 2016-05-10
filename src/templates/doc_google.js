@@ -300,13 +300,13 @@ GoogleSheet.prototype.createSheet = function (callback) {
     this.send(params, 'createSheet', callback);
 }
 
-GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, writetoken, createSheet) {
+GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
     // Specify get to retrieve the existing/overwritten row.
     // Specify nooverwrite to not overwrite any existing row with same id
     // Get with nooverwrite will return the existing row, or the newly inserted row.
     if (createSheet && this.created == null) {
         // Call putRow after creating sheet
-        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get, writetoken) );
+        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get) );
         return;
     }
     this.checkCreated();
@@ -318,8 +318,6 @@ GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, wri
         params['nooverwrite'] = '1';
     if (get)
         params['get'] = '1';
-    if (writetoken)
-        params['writetoken'] = writetoken;
     this.callbackCounter += 1;
     this.send(params, 'putRow', callback);
 }
@@ -392,8 +390,8 @@ GoogleAuthSheet.prototype.createSheet = function (callback) {
     return this.gsheet.createSheet(callback);
 }
 
-GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, writetoken, createSheet) {
-    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, writetoken, createSheet);
+GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
+    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, createSheet);
 }
 
 GoogleAuthSheet.prototype.updateRow = function (updateObj, callback, get) {

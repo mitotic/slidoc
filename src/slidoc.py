@@ -949,7 +949,10 @@ class SlidocRenderer(MathRenderer):
 
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
-        self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_text)
+        correct_val = correct_text
+        if correct_js and not correct_val.startswith('='):
+            correct_val = '='+correct_js+'();'+correct_text
+        self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if correct_js:
@@ -1205,10 +1208,10 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Index_fields = ['name', 'id', 'Timestamp', 'dueDate', 'revision',
+Index_fields = ['name', 'id', 'Timestamp', 'dueDate', 'revision', 'questionsMax',
                 'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
 Manage_fields =  ['name', 'id', 'email', 'user', 'Timestamp']
-Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect',
+Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'sessionScore',
                   'session_hidden']
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, p_concepts, s_concepts):
@@ -1227,7 +1230,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
         if prev_row[revision_col] != revision:
             print('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision), file=sys.stderr)
 
-    row_values = [session_name, session_name, None, due_date, revision,
+    row_values = [session_name, session_name, None, due_date, revision, len(questions),
                 ','.join([x['qtype'] for x in questions]),
                 '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
                 '; '.join(sort_caseless(list(p_concepts))),
