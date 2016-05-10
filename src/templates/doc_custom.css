@@ -112,6 +112,7 @@ body.slidoc-slide-view { font-size: 150%; }
 body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */
+#slidoc-submitted-display {color: green; font-size: 0.8em; padding-right: 5px;}
 #slidoc-score-display {color: #2980B9; font-size: 0.8em; padding-right: 5px;}
 .slidoc-incorrect-answer-state #slidoc-score-display {color: red;}
 

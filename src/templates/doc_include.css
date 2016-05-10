@@ -79,7 +79,7 @@ body.slidoc-slide-view:not(.slidoc-display-incremental9) .slidoc-incremental9 { 
 /* Popup */
 #slidoc-popup-overlay {
     display: none;
-    position: absolute;
+    position: fixed;
     z-index: 2000;
     opacity: 0.7;
     top: 0;

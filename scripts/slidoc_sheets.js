@@ -64,6 +64,7 @@
 
 
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
+var ADMIN_USER = 'admin';
 
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
@@ -150,7 +151,7 @@ function handleResponse(evt) {
 	}
 	if (sheetName == 'slidoc_sessions') {
 	    // Restricted sheet
-	    if (params.user != 'admin')
+	    if (params.user != ADMIN_USER)
 		throw('Invalid user '+params.user+' for sheet '+sheetName);
 	}
 
@@ -302,11 +303,11 @@ function handleResponse(evt) {
 	    
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
-		    // Timestamp is always updated, unless it is specified
+		    // Timestamp is always updated, unless it is specified by admin
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
-			if (colValue == null) {
+			if (colValue == null || (colHeader == 'Timestamp' && validUserToken != ADMIN_USER)) {
 			    if (colHeader == 'Timestamp')
 				rowValues[j] = new Date();
 			} else if (newRow || (colHeader != 'id' && colHeader != 'name') ) {
@@ -330,7 +331,7 @@ function handleResponse(evt) {
 			    throw('Field '+colHeader+' not found in sheet');
 
 			var headerColumn = columnIndex[colHeader];
-			if (colValue == null) {
+			if (colValue == null || (colHeader == 'Timestamp' && validUserToken != ADMIN_USER)) {
 			    if (colHeader == "Timestamp")
 				rowValues[headerColumn-1] =  new Date();
 			} else if (colHeader != 'id' && colHeader != 'name') {

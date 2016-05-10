@@ -184,14 +184,16 @@ Slidoc.viewHelp = function () {
     var html = '';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     if (Sliobj.sessionName) {
-	html += 'Session <b>' + Sliobj.sessionName + '</b>';
+	if (Sliobj.params.gd_sheet_url && GService.gauth && GService.gauth.auth)
+	    html += 'User: <b>'+GService.gauth.auth.userName+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogin();">switch</span>)<br>';
+	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
 	if (Sliobj.session.questionsMax)
 	    html += ' (' + Sliobj.session.questionsMax + ' questions)';
+	if (Sliobj.params.gd_sheet_url)
+	    html += Sliobj.session.submitTime ? ', Submitted' : ', NOT SUBMITTED';
 	html += '<br>';
-	if (Sliobj.params.gd_sheet_url && GService.gauth && GService.gauth.auth)
-	    html += 'User: <span class="slidoc-clickable" onclick="Slidoc.userLogin();">'+GService.gauth.auth.userName+'</span><br>';
     }
     html += '<table class="slidoc-slide-help-table">';
     if (Sliobj.params.paceStrict !== null && !Sliobj.params.gd_sheet_url)
@@ -435,6 +437,8 @@ function slidocSetupAux(session) {
 	sessionPut(null, null, {retry: 'new'});
     }
 
+    // New/restored ression
+    
     // Restore random seed for session
     SlidocRandom.setSeed(Sliobj.session.randomSeed);
 
@@ -460,6 +464,9 @@ function slidocSetupAux(session) {
     
     if (Sliobj.session.questionsCount)
 	Slidoc.showScore();
+
+    if (Sliobj.params.gd_sheet_url && Sliobj.session.submitTime)
+	showSubmitted();
 
     var toc_elem = document.getElementById("slidoc00");
     if (!toc_elem && Sliobj.session.paced) {
@@ -520,6 +527,7 @@ function sessionCreate(paced) {
 	    randomSeed: SlidocRandom.getSeed(),        // Save random seed
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
             startTime: Date.now(),
+	    submitTime: null,
             lastTime: 0,
 	    lastSlide: 0,
             lastTries: 0,
@@ -559,10 +567,12 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
     var nearingWarning = 'Warning: Nearing submit deadline';
     var invalidWarning = 'Warning: Invalid token for late submission';
     if (session || nullReturn) {
-	if (retryType == 'end_paced')
+	if (retryType == 'end_paced') {
 	    alert('Completed session saved successfully to Google Docs');
-	else if (retryType == 'ready' && Sliobj.params.gd_sheet_url && !Sliobj.params.gd_client_id)
+	    showSubmitted();
+	} else if (retryType == 'ready' && Sliobj.params.gd_sheet_url && !Sliobj.params.gd_client_id) {
 	    localPut('auth', GService.gauth.auth); // Save auth info on successful start
+	}
 	
 	if (messages) {
 	    var alerts = [];
@@ -1340,6 +1350,22 @@ Slidoc.showScore = function () {
 	scoreElem.textContent = Sliobj.session.questionsCorrect+'/'+Sliobj.session.questionsMax;
 }
 
+function showSubmitted() {
+    var submitElem = document.getElementById('slidoc-submitted-display');
+    if (submitElem) {
+	submitElem.innerHTML = (Sliobj.session.lateToken == 'none') ? '&#9083;' : '&#x2714;';
+    }
+}
+
+Slidoc.submittedAlert = function () {
+    var msg = 'Submitted to Google Docs on '+ (new Date(Sliobj.session.submitTime));
+    if (Sliobj.session.lateToken)
+	msg += ' LATE';
+    if (Sliobj.session.lateToken == 'none')
+	msg += ' (NO CREDIT)';
+    alert(msg);
+}
+
 function conceptStats(tags, tallies) {
     var scores = [];
     for (var j=0; j<tags.length; j++) {
@@ -1419,6 +1445,7 @@ Slidoc.startPaced = function () {
 Slidoc.endPaced = function () {
     console.log('Slidoc.endPaced: ');
     Sliobj.session.completed = true;
+    Sliobj.session.submitTime = Date.now();
     if (!Sliobj.session.paceStrict) {
 	// If pace can end, unpace
 	document.body.classList.remove('slidoc-paced-view');
@@ -1931,6 +1958,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
 	if (autoCloseMillisec)
 	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }
+    window.scrollTo(0,0);
 }
 
 // Linear Congruential Random Number Generator  https://gist.github.com/Protonk/5367430
