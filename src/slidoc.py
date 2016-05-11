@@ -48,6 +48,14 @@ SPACER3 = '&nbsp;&nbsp;&nbsp;'
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
+def parse_number(s):
+    if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
+        return int(s)
+    try:
+        return float(s)
+    except Exception:
+        return None
+    
 def make_file_id(filename, id_str, fprefix=''):
     return filename[len(fprefix):] + '#' + id_str
     
@@ -239,6 +247,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
     slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
+    slidoc_weight =   re.compile(r'^ {0,3}(Weight):(.*?)(\n|$)')
     minirule =        re.compile(r'^(--) *(?:\n+|$)')
     pause =           re.compile(r'^(\.\.\.) *(?:\n+|$)')
 
@@ -247,7 +256,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -291,6 +300,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_notes(self, m):
          self.tokens.append({
             'type': 'slidoc_notes',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_weight(self, m):
+         self.tokens.append({
+            'type': 'slidoc_weight',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -441,6 +457,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_notes(self):
         return self.renderer.slidoc_notes(self.token['name'], self.token['text'])
 
+    def output_slidoc_weight(self):
+        return self.renderer.slidoc_weight(self.token['name'], self.token['text'])
+
     def output_minirule(self):
         return self.renderer.minirule()
 
@@ -524,6 +543,9 @@ class SlidocRenderer(MathRenderer):
         self.untitled_number = 0
         self.qtypes = []
         self.questions = []
+        self.cum_weights = []
+        self.cum_gweights = []
+        self.grade_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
         self.slide_number = 0
@@ -562,11 +584,16 @@ class SlidocRenderer(MathRenderer):
     def add_ref_link(self, ref_id, num_label, key, ref_class):
         Global.ref_tracker[ref_id] = (num_label, key, ref_class)
         if ref_id in self.qforward:
-            cur_qno = len(self.questions)
+            last_qno = len(self.cum_weights)  # cum_weights are only appended at end of slide
             for qno in self.qforward.pop(ref_id):
-                # (slide_number, number of questions skipped, class for forward link)
-                skipped = cur_qno-qno-1 if self.qtypes[-1] else cur_qno-qno
-                self.questions[qno-1]['skip'] = (self.slide_number, skipped, ref_id+'-forward-link')
+                skipped = last_qno - qno
+                skip_weight = self.cum_weights[-1] - self.cum_weights[qno-1]
+                skip_gweight = self.cum_gweights[-1] - self.cum_gweights[qno-1]
+                if not skip_gweight:
+                    # (slide_number, number of questions skipped, weight of questions skipped, class for forward link)
+                    self.questions[qno-1]['skip'] = (self.slide_number, skipped, skip_weight, ref_id+'-forward-link')
+                else:
+                    print("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number), file=sys.stderr)
 
     def inline_js(self, js_func, text):
         if 'inline_js' in self.options['config'].strip:
@@ -634,11 +661,23 @@ class SlidocRenderer(MathRenderer):
         return end_html + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options['config'].site_url)
 
     def end_slide(self, suffix_html=''):
-        if self.qtypes[-1] and self.options['config'].pace and self.slide_forward_links:
-            # Handle forward link in current question
-            self.qforward[self.slide_forward_links[0]].append(len(self.questions))
-            if len(self.slide_forward_links) > 1:
-                print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]), file=sys.stderr)
+        if self.qtypes[-1]:
+            if len(self.questions) == 1:
+                self.cum_weights.append(self.questions[-1]['weight'])
+                self.cum_gweights.append(self.questions[-1]['gweight'])
+            else:
+                self.cum_weights.append(self.questions[-1]['weight'] + self.cum_weights[-1])
+                self.cum_gweights.append(self.questions[-1]['gweight']+ self.cum_gweights[-1])
+
+            if 'grade_comments' in self.options['config'].features and self.qtypes[-1].startswith('text/'):
+                qno = 'q%d' % len(self.questions)
+                self.grade_fields += [qno+'_response', qno+'_grade_'+str(self.questions[-1]['gweight']), qno+'_comments']
+
+            if self.options['config'].pace and self.slide_forward_links:
+                # Handle forward link in current question
+                self.qforward[self.slide_forward_links[0]].append(len(self.questions))
+                if len(self.slide_forward_links) > 1:
+                    print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]), file=sys.stderr)
 
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    print("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number), file=sys.stderr)
@@ -952,7 +991,8 @@ class SlidocRenderer(MathRenderer):
         correct_val = correct_text
         if correct_js and not correct_val.startswith('='):
             correct_val = '='+correct_js+'();'+correct_text
-        self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val)
+        self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
+                                  weight=1, gweight=0)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if correct_js:
@@ -1009,6 +1049,11 @@ class SlidocRenderer(MathRenderer):
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
 <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
 <span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;"></span>
+<span id="%(sid)s-grade" class="slidoc-grade" style="display: none;"><em>Grade:</em>
+  <span id="%(sid)s-gradetext" class="slidoc-gradetext"></span></span>
+<div id="%(sid)s-comments" class="slidoc-comments" style="display: none;"><em>Comments:</em>
+  <span id="%(sid)s-commentstext" class="slidoc-commentstext"></span></div>
+<div id="%(sid)s-comments" class="slidoc-comments"></div>
 '''+inp_elem2+'''
 <pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
 </div>
@@ -1016,6 +1061,28 @@ class SlidocRenderer(MathRenderer):
 
         return choice_prefix+ans_html+'\n'
 
+
+    def slidoc_weight(self, name, text):
+        if not text:
+            return ''
+
+        if not self.qtypes[-1]:
+            print("    ****WEIGHT-ERROR: %s: Unexpected 'Weight: %s' line in non-question slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+            return ''
+        weight, gweight = None, None
+        match = re.match(r'^([0-9\.]+)(\s*,\s*([0-9\.]+))?$', text)
+        if match:
+            weight = parse_number(match.group(1))
+            gweight = parse_number(match.group(3)) if match.group(3) is not None else 0
+
+        if weight is None or (match.group(3) is not None and gweight is None):
+            print("    ****WEIGHT-ERROR: %s: Error in parsing 'Weight: %s' line ignored; expected 'Weight: number[,number]' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+            return ''
+
+        gweight = gweight or 0
+        self.questions[-1].update(weight=weight, gweight=gweight)
+
+        return '<em>Weight: %s%s<em>' % (weight, ', '+str(gweight) if gweight else '')
 
     def slidoc_concepts(self, name, text):
         if not text:
@@ -1208,13 +1275,15 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Index_fields = ['name', 'id', 'Timestamp', 'dueDate', 'revision', 'questionsMax',
-                'questions', 'answers', 'primary_qconcepts', 'secondary_qconcepts']
 Manage_fields =  ['name', 'id', 'email', 'user', 'Timestamp']
-Session_fields = ['startTime', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'sessionScore',
+Session_fields = ['initTimestamp', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'sessionScore',
                   'session_hidden']
+Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',
+                'scoreWeight', 'gradeWeight', 'fieldsMin', 'questions', 'answers',
+                'primary_qconcepts', 'secondary_qconcepts']
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, p_concepts, s_concepts):
+def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
+                         p_concepts, s_concepts):
     index_sheet = 'slidoc_sessions'
     user = 'admin'
     user_token = sliauth.gen_hmac_token(hmac_key, user)
@@ -1230,7 +1299,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
         if prev_row[revision_col] != revision:
             print('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision), file=sys.stderr)
 
-    row_values = [session_name, session_name, None, due_date, revision, len(questions),
+    row_values = [session_name, session_name, revision, None, due_date, None,
+                len(questions), score_weights, grade_weights, len(Manage_fields)+len(Session_fields),
                 ','.join([x['qtype'] for x in questions]),
                 '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
                 '; '.join(sort_caseless(list(p_concepts))),
@@ -1245,11 +1315,11 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     print('slidoc: Updated remote index sheet %s for session %s' % (index_sheet, session_name), file=sys.stderr)
 
                 
-def create_session_sheet(sheet_url, hmac_key, session_name):
+def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
     user = 'admin'
     user_token = sliauth.gen_hmac_token(hmac_key, user)
     post_params = {'user': user, 'token': user_token, 'sheet': session_name,
-                   'headers': json.dumps(Manage_fields+Session_fields)}
+                   'headers': json.dumps(Manage_fields+Session_fields+grade_fields)}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         sys.exit("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
@@ -1266,11 +1336,13 @@ def process_input(input_files, config_dict):
     combined_file = out_name+'.html'
 
     js_params = {'sessionName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
+                 'questionsMax': 0, 'scoreWeight': 0, 'gradeWeight': 0,
                  'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'features': {}}
 
     js_params['sessionFields'] = Session_fields
+    js_params['gradeFields'] = []
         
     if config.index_files:
         # Separate files
@@ -1319,6 +1391,9 @@ def process_input(input_files, config_dict):
         if len(comps) > 2:
             js_params['gd_client_id'], js_params['gd_api_key'] = comps[2:4]
     
+    if not gd_hmac_key and 'grade_comments' in config.features:
+        sys.exit("slidoc: Error: hmac_key must be specified for feature 'grade_comments'")
+
     nb_site_url = config.site_url
     if combined_file:
         config.site_url = ''
@@ -1441,8 +1516,6 @@ def process_input(input_files, config_dict):
         md_text = f.read()
         f.close()
 
-        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
-
         base_parser = md2md.Parser(base_mods_args)
         slide_parser = md2md.Parser(slide_mods_args)
         md_text_modified = slide_parser.parse(md_text, filepath)
@@ -1472,6 +1545,14 @@ def process_input(input_files, config_dict):
                                                         prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
+        js_params['questionsMax'] = len(renderer.questions)
+        js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
+        js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+        if renderer.grade_fields:
+            gweights = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+            js_params['gradeFields'] = ['q_grades_'+str(gweights)] + renderer.grade_fields
+        else:
+            js_params['gradeFields'] = []
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
@@ -1485,6 +1566,9 @@ def process_input(input_files, config_dict):
         mid_params = {'math_js': math_inc if math_in_file else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else ''}
         mid_params.update(SYMS)
+
+        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
+
         if config.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
@@ -1515,10 +1599,12 @@ def process_input(input_files, config_dict):
 
             if gd_hmac_key:
                 update_session_index(js_params['gd_sheet_url'], gd_hmac_key, fname, js_params['sessionRevision'],
-                                      due_date, renderer.questions, renderer.qconcepts[0], renderer.qconcepts[1])
+                                      due_date, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
+                                      renderer.qconcepts[0], renderer.qconcepts[1])
 
             if js_params['gd_sheet_url']:
-                create_session_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['sessionName'])
+                create_session_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['sessionName'],
+                                     js_params['gradeFields'])
                 
 
     if not config.dry_run:
@@ -1811,7 +1897,7 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['assessment', 'equation_number', 'incremental_slides', 'progress_bar', 'untitled_number']
+    features_all = ['assessment', 'equation_number', 'grade_comments', 'incremental_slides', 'progress_bar', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')

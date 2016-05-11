@@ -103,6 +103,9 @@ a, a:visited,
 
 .slidoc-clickable.slidoc-toc-sections { padding: 0.3em 0 0 1em; }
 
+/* Grade/comments */
+.slidoc-grade, .slidoc-comments { color: red; }
+
 /* Notes */
 .slidoc-notes { padding: 0px 1em; font-size: 95%; }
 .slidoc-notes p {margin: 0.3em 0;}

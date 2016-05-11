@@ -65,6 +65,7 @@
 
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
 var ADMIN_USER = 'admin';
+var INDEX_SHEET = 'slidoc_sessions';
 
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
@@ -99,13 +100,14 @@ function handleResponse(evt) {
     // The list contains updated row values if get=true; otherwise it is just an empty list.
     // PARAMETERS
     // sheet: 'sheet name' (required)
-    // headers: ['name', 'id', 'email', 'user', 'Timestamp', 'field1', ...] (name and id required for sheet creation)
+    // headers: ['name', 'id', 'email', 'user', 'Timestamp', 'initTimestamp', 'field2', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     // id: unique id number or lowercase email (required if creating or updating a row, and row parameter is not specified)
     // user: unique user name (or just copy of the email address)
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
-    // If the special name Timestamp occurs in the list, the timestamp is automatically updated.
-    // row: ['name_value', 'id_value', 'email_value', 'user_value', null, 'field1_value', ...]
+    // If the special name initTimestamp occurs in the list, the timestamp is initialized when the row is added.
+    // If the special name Timestamp occurs in the list, the timestamp is automatically updated on each write.
+    // row: ['name_value', 'id_value', 'email_value', 'user_value', null, null, 'field1_value', ...]
     //       null value implies no update (except for Timestamp)
     // get: true to retrieve row (id must be specified) (otherwise only [] is returned on success)
     // Can add row with fewer columns than already present.
@@ -139,7 +141,7 @@ function handleResponse(evt) {
 
 	var validUserToken = '';
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-	if (sheetName == 'slidoc_sessions' || REQUIRE_LOGIN_TOKEN) {
+	if (sheetName == INDEX_SHEET || REQUIRE_LOGIN_TOKEN) {
 	    // Restricted sheet/login required
 	    if (!params.user)
 		throw('Need user name and token for authentication');
@@ -149,7 +151,7 @@ function handleResponse(evt) {
 		throw('Invalid token for authenticating user '+params.user);
 	    validUserToken = params.user;
 	}
-	if (sheetName == 'slidoc_sessions') {
+	if (sheetName == INDEX_SHEET) {
 	    // Restricted sheet
 	    if (params.user != ADMIN_USER)
 		throw('Invalid user '+params.user+' for sheet '+sheetName);
@@ -166,11 +168,20 @@ function handleResponse(evt) {
 	    doc.insertSheet(sheetName);
 	    sheet = doc.getSheetByName(sheetName);
 	    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+	    sheet.getRange('1:1').setFontWeight('bold');
 	    for (var j=0; j<headers.length; j++) {
 		if (headers[j].slice(-6).toLowerCase() == 'hidden')
 		    sheet.hideColumns(j+1);
+		if (headers[j].slice(-4).toLowerCase() == 'date' || headers[j].slice(-4).toLowerCase() == 'time') {
+		    ///var c = colIndexToChar(j+1);
+		    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
+		}
 	    }
-	    sheet.getRange('1:1').setFontWeight('bold');
+	    if (sheetName == INDEX_SHEET) {
+		var protection = sheet.protect().setDescription('protected');
+		protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
+		protection.setDomainEdit(false);
+	    }
 	}
 
 	if (!sheet.getLastColumn())
@@ -184,7 +195,7 @@ function handleResponse(evt) {
 		throw('Number of headers exceeds that present in sheet '+sheetName);
 	    for (var j=0; j<headers.length; j++) {
 		if (headers[j] != columnHeaders[j])
-		    throw('Column header mismatch: '+headers[j]+' vs. '+columnHeaders[j]+' in sheet '+sheetName);
+		    throw('Column header mismatch: Expected '+headers[j]+' but found '+columnHeaders[j]+' in sheet '+sheetName+'; delete it or edit headers.');
 	    }
 	}
 
@@ -234,16 +245,23 @@ function handleResponse(evt) {
 		returnValues = [];
 
 	    } else {
+		var curDate = new Date();
 		var allowLateMods = !REQUIRE_LATE_TOKEN;
 		var pastSubmitDeadline = false;
 		var dueDate = null;
-		if (sheetName != 'slidoc_sessions' && doc.getSheetByName('slidoc_sessions')) {
+		var gradeDate = null;
+		var fieldsMin = columnHeaders.length;
+		if (sheetName != INDEX_SHEET && doc.getSheetByName(INDEX_SHEET)) {
+		    // Session parameters
+		    var sessionParams = getSessionParams(sheetName, ['dueDate', 'gradeDate', 'fieldsMin']);
+		    dueDate = sessionParams.dueDate;
+		    gradeDate = sessionParams.gradeDate;
+		    fieldsMin = sessionParams.fieldsMin;
+
 		    // Check if past submission deadline
 		    var lateToken = (rowUpdates && columnIndex['lateToken']) ? (rowUpdates[columnIndex['lateToken']-1] || null) : null;
-		    var sessionParams = getSessionParams(sheetName, ['dueDate']);
-		    dueDate = sessionParams.dueDate;
 		    if (dueDate) {
-			var curTime = (new Date()).getTime();
+			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
 			    if (lateToken == 'none') {
@@ -304,14 +322,44 @@ function handleResponse(evt) {
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
+		    if (rowUpdates.length > fieldsMin) {
+			// Check if there are any non-null values for grade columns
+			var nonNullGradeColumn = false;
+			for (var j=fieldsMin; j < columnHeaders.length; j++) {
+			    if (rowUpdates[j] != null) {
+				nonNullGradeColumn = true;
+				break;
+			    }
+			}
+			if (nonNullGradeColumn) {
+			    // Blank out non-response grade columns if any grade column is non-null
+			    for (var j=fieldsMin; j < columnHeaders.length; j++) {
+				if (columnHeaders[j].slice(-9) != '_response')
+				    rowUpdates[j] = '';
+			    }
+			}
+			if (columnHeaders[fieldsMin].slice(0,8) == 'q_grades') {
+			    // Column to hold sum of all grades
+			    var gradedCells = [];
+			    for (var j=fieldsMin+1; j < columnHeaders.length; j++) {
+				if (/^q(\d+)_grade/.exec(columnHeaders[j]))
+				    gradedCells.push(colIndexToChar(j+1) + userRow);
+			    }
+			    rowUpdates[fieldsMin] = gradedCells.length ? ('=' + gradedCells.join('+')) : '';
+			}
+		    }
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
-			if (colValue == null || (colHeader == 'Timestamp' && validUserToken != ADMIN_USER)) {
-			    if (colHeader == 'Timestamp')
-				rowValues[j] = new Date();
-			} else if (newRow || (colHeader != 'id' && colHeader != 'name') ) {
-			    // Id and name cannot be updated programmatically
+			if (colHeader == 'Timestamp' && (colValue == null || validUserToken != ADMIN_USER)) {
+			    // Timestamp is always updated, unless it is specified by admin
+			    rowValues[j] = curDate;
+			} else if (colHeader == 'initTimestamp' && newRow) {
+			    rowValues[j] = curDate;
+			} else if (colValue == null) {
+			    // Do not modify field
+			} else if (newRow || (colHeader != 'id' && colHeader != 'name' && colHeader != 'initTimestamp') ) {
+			    // Id, name, initTimestamp cannot be updated programmatically
 			    // (If necessary to change name manually, then re-sort manually)
 			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
@@ -331,11 +379,15 @@ function handleResponse(evt) {
 			    throw('Field '+colHeader+' not found in sheet');
 
 			var headerColumn = columnIndex[colHeader];
-			if (colValue == null || (colHeader == 'Timestamp' && validUserToken != ADMIN_USER)) {
-			    if (colHeader == "Timestamp")
-				rowValues[headerColumn-1] =  new Date();
-			} else if (colHeader != 'id' && colHeader != 'name') {
-			    // Update row values for header (except for id and name)
+			if (headerColumn > fieldsMin) // Cannot selectively update grade columns
+			    continue;
+			if (colHeader == 'Timestamp' && (colValue == null || validUserToken != ADMIN_USER)) {
+			    // Timestamp is always updated, unless it is specified by admin
+			    rowValues[headerColumn-1] = curDate;
+			} else if (colValue == null) {
+			    // Do not modify field
+			} else if (colHeader != 'id' && colHeader != 'name' && colHeader != 'initTimestamp') {
+			    // Update row values for header (except for id, name, initTimestamp)
 			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
 			    }
@@ -348,6 +400,12 @@ function handleResponse(evt) {
 		if (rowUpdates || selectedUpdates)
 		    userRange.setValues([rowValues]);
 		returnValues = getRow ? rowValues : [];
+
+		if (!gradeDate && returnValues.length > fieldsMin) {
+		    // If session not graded, nullify columns to be graded
+		    for (var j=fieldsMin; j < columnHeaders.length; j++)
+			returnValues[j] = null;
+		}
 	    }
 	}
 
@@ -368,6 +426,22 @@ function handleResponse(evt) {
 function setup() {
     var doc = SpreadsheetApp.getActiveSpreadsheet();
     SCRIPT_PROP.setProperty("key", doc.getId());
+}
+
+function parseNumber(x) {
+    try {
+	var retval;
+	if (!isNaN(x))
+	    return x;
+	if (/^[\+\-]?\d+$/.exec()) {
+	    retval = parseInt(x);
+	} else {
+            retval = parseFloat(x);
+	}
+	return isNaN(retval) ? null : retval;
+    } catch(err) {
+        return null;
+    }
 }
 
 function splitToken(token) {
@@ -424,7 +498,7 @@ function indexRows(sheet, indexCol, startRow) {
 function getSessionParams(sessionName, colNames) {
     // Return parameters in list colNames for sessionName from slidoc_sessions sheet
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var indexSheet = doc.getSheetByName('slidoc_sessions');
+    var indexSheet = doc.getSheetByName(INDEX_SHEET);
     if (!indexSheet)
 	throw('Index sheet slidoc_sessions not found');
     var indexColIndex = indexColumns(indexSheet);
@@ -432,6 +506,8 @@ function getSessionParams(sessionName, colNames) {
     var sessionRow = indexRowIndex[sessionName];
     var retVals = {};
     for (var j=0; j < colNames.length; j++) {
+	if (!(colNames[j] in indexColIndex))
+	    throw('Column '+colNames[j]+' not found in session index');
 	retVals[colNames[j]] = indexSheet.getSheetValues(sessionRow, indexColIndex[colNames[j]], 1, 1)[0][0];
     }
     return retVals;
@@ -704,9 +780,9 @@ function updateScoreSheet() {
 
 	var sessionColIndex = indexColumns(sessionSheet);
 
-	var sessionParams = getSessionParams(sessionName, ['questionsMax']);
-	var questionsMax = 0;
-	try { questionsMax = parseInt(sessionParams.questionsMax); } catch(err) {}
+	var sessionParams = getSessionParams(sessionName, ['scoreWeight', 'gradeWeight']);
+	var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
+	var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
 
 	var sessionStartRow = 2;
 	var scoreStartRow = 2;
@@ -770,11 +846,15 @@ function updateScoreSheet() {
 
 	var scoreFormulas = [];
 	for (var j=0; j<nids; j++) {
-	    if (questionsMax)
+	    if (gradeWeight) {
+		scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ('+scoreWeight+'*'+ vlookup('sessionScore', j+scoreStartRow)+'+100*'+vlookup('q_grades_'+gradeWeight, j+scoreStartRow)+')/('+scoreWeight+'+'+gradeWeight + ') )']);
+	    } else if (scoreWeight) {
 		scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('sessionScore', j+scoreStartRow) + ')']);
+	    }
 	}
 
-	scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas)
+	if (scoreFormulas.length)
+	    scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas)
 
 
     } finally { //release lock
