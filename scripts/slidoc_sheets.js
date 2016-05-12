@@ -332,9 +332,9 @@ function handleResponse(evt) {
 			    }
 			}
 			if (nonNullGradeColumn) {
-			    // Blank out non-response grade columns if any grade column is non-null
+			    // Blank out non-response/explain grade columns if any grade column is non-null
 			    for (var j=fieldsMin; j < columnHeaders.length; j++) {
-				if (columnHeaders[j].slice(-9) != '_response')
+				if (columnHeaders[j].slice(-9) != '_response' && columnHeaders[j].slice(-8) != '_explain')
 				    rowUpdates[j] = '';
 			    }
 			}
@@ -551,7 +551,7 @@ function sessionAnswerSheet() {
 	var answerHeaders = sessionSheet.getSheetValues(1, 1, 1, copyCols)[0];
 
 	var respCols = [];
-	var extraCols = ['expect', 'correct', 'text'];
+	var extraCols = ['expect', 'correct', 'test'];
 	for (var j=0; j<questions.length; j++) {
 	    var qprefix = 'q'+(j+1);
 	    var testCode = (questions[j].slice(0,10) == 'text/code=');
@@ -621,6 +621,8 @@ function sessionAnswerSheet() {
 		    var qprefix = 'q'+qno;
 		    // Copy responses
 		    rowVals[respCols[qno-1]-1] = (qAttempted[qno].response || '');
+		    if (qAttempted[qno].explain)
+			rowVals[respCols[qno-1]-1] += '\nEXPLANATION: ' + qAttempted[qno].explain;
 		    // Copy extras
 		    for (var m=0; m<extraCols.length; m++) {
 			var attr = extraCols[m];

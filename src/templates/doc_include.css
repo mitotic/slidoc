@@ -51,6 +51,13 @@ body.slidoc-sidebar-view .slidoc-all-container {
     box-sizing: border-box;
 }
 
+/* Answers */
+.slidoc-check-button,
+ .slidoc-render-button {
+     display: block; }
+
+.slidoc-render-text { border: 1px solid maroon; padding: 5px;}
+
 /* Incremental display */
 body.slidoc-slide-view:not(.slidoc-display-incremental1) .slidoc-incremental1 { visibility: hidden; }
 body.slidoc-slide-view:not(.slidoc-display-incremental2) .slidoc-incremental2 { visibility: hidden; }

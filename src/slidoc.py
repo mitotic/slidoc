@@ -491,7 +491,7 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
-        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_slide('<!--last slide-->\n')
+        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_slide(last_slide=True)
 
     
 class MathRenderer(mistune.Renderer):
@@ -557,6 +557,7 @@ class SlidocRenderer(MathRenderer):
         self.block_test_counter = 0
         self.block_output_counter = 0
         self.load_python = False
+        self.render_math = False
 
     def _new_slide(self):
         self.slide_number += 1
@@ -660,8 +661,11 @@ class SlidocRenderer(MathRenderer):
         new_slide_id = self.get_slide_id()
         return end_html + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options['config'].site_url)
 
-    def end_slide(self, suffix_html=''):
+    def end_slide(self, suffix_html='', last_slide=False):
         if self.qtypes[-1]:
+            # Question slide
+            if self.options['config'].pace and last_slide:
+                sys.exit('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
             if len(self.questions) == 1:
                 self.cum_weights.append(self.questions[-1]['weight'])
                 self.cum_gweights.append(self.questions[-1]['gweight'])
@@ -669,9 +673,18 @@ class SlidocRenderer(MathRenderer):
                 self.cum_weights.append(self.questions[-1]['weight'] + self.cum_weights[-1])
                 self.cum_gweights.append(self.questions[-1]['gweight']+ self.cum_gweights[-1])
 
-            if 'grade_comments' in self.options['config'].features and self.qtypes[-1].startswith('text/'):
+            if 'grade_comments' in self.options['config'].features:
                 qno = 'q%d' % len(self.questions)
-                self.grade_fields += [qno+'_response', qno+'_grade_'+str(self.questions[-1]['gweight']), qno+'_comments']
+                fields = []
+                if self.qtypes[-1].startswith('text/'):
+                    fields = [qno+'_response']
+                elif self.questions[-1].get('explain'):
+                    fields = [qno+'_response', qno+'_explain']
+                if fields:
+                    self.grade_fields += fields
+                    if self.questions[-1]['gweight']:
+                        self.grade_fields += [qno+'_grade_'+str(self.questions[-1]['gweight'])]
+                    self.grade_fields += [qno+'_comments']
 
             if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
@@ -682,7 +695,7 @@ class SlidocRenderer(MathRenderer):
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    print("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number), file=sys.stderr)
 
-        return self.end_notes()+self.end_hide()+suffix_html+'</section><!--slide end-->\n' 
+        return self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end'))
 
     def list_item(self, text):
         """Rendering list item snippet. Like ``<li>``."""
@@ -915,6 +928,12 @@ class SlidocRenderer(MathRenderer):
             choice_prefix = self.choice_end
             self.choice_end = ''
 
+        explain = ''
+        explain_match = re.match(r'^.*\s+(explain(=(\w+))?)\s*$', text)
+        if explain_match:
+            text = text[:-len(explain_match.group(0))].strip()
+            explain = explain_match.group(3) or 'text'
+            
         correct_js = ''
         js_match = MathInlineGrammar.inline_js.match(text)
         if js_match:
@@ -948,7 +967,7 @@ class SlidocRenderer(MathRenderer):
             else:
                 print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
 
-        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/multiline', 'point', 'line'):
+        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/math', 'text/multiline', 'point', 'line'):
             # Unspecified answer
             qtype = text.lower()
             text = ''
@@ -986,13 +1005,17 @@ class SlidocRenderer(MathRenderer):
                 except Exception, excp:
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], correct_html, self.slide_number, excp), file=sys.stderr)
 
+        textarea_input = self.cur_qtype.startswith('text/')
+        if textarea_input:
+            explain = ''      # Explain not compatible with textarea input
+
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
         correct_val = correct_text
         if correct_js and not correct_val.startswith('='):
             correct_val = '='+correct_js+'();'+correct_text
         self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
-                                  weight=1, gweight=0)
+                                  explain=explain, weight=1, gweight=0)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if correct_js:
@@ -1031,20 +1054,30 @@ class SlidocRenderer(MathRenderer):
             ans_params['click_extras'] = 'style="display: none;"'
             ans_params['inp_extras'] = 'style="display: none;"'
 
-        inp_elem1, inp_elem2 = '', ''
-        if self.cur_qtype.startswith('text/'):
+        inp_elem1, inp_elem2, explain_elem = '', '', ''
+        render_elem = '''<button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button" onclick="Slidoc.renderText(this, '%(qno)d', '%(sid)s');">Render</button>\n<div id="%(sid)s-render-text" class="slidoc-render-text"></div>\n''' % ({'sid': id_str, 'qno': len(self.questions)})
+        if textarea_input:
             inp_elem2 = '''<br><textarea id="%(sid)s-ansinput" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" %(inp_extras)s ></textarea>
 '''
             if self.cur_qtype.startswith('text/code='):
-                inp_elem2 += '<br><button id="%(sid)s-anscheck" class="slidoc-clickable" %(click_extras)s>CHECK</button>\n'
+                inp_elem2 += '<button id="%(sid)s-anscheck" class="slidoc-clickable slidoc-check-button" %(click_extras)s>CHECK</button>\n'
+            elif self.cur_qtype == 'text/math':
+                inp_elem2 += render_elem
+                self.render_math = True
         else:
             inp_elem1 = '''<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>'''
+            if explain:
+                explain_elem = '''<br><textarea id="%(sid)s-ansexplain" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" >Explain</textarea>
+'''
+                if explain == 'math':
+                    explain_elem += render_elem
+                    self.render_math = True
 
         ans_html = ('''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
 <span id="%(sid)s-ansprefix" style="display: none;">%(ans_text)s:</span>
 <span id="%(sid)s-anstype" class="slidoc-answer-type" style="display: none;">%(ans_type)s</span>
 '''+inp_elem1+'''
-<button id="%(sid)s-ansclick" class="slidoc-clickable" %(click_extras)s>Answer</button>
+<button id="%(sid)s-ansclick" class="slidoc-clickable slidoc-answer-button" %(click_extras)s>Answer</button>
 <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
 <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
 <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
@@ -1053,8 +1086,8 @@ class SlidocRenderer(MathRenderer):
   <span id="%(sid)s-gradetext" class="slidoc-gradetext"></span></span>
 <div id="%(sid)s-comments" class="slidoc-comments" style="display: none;"><em>Comments:</em>
   <span id="%(sid)s-commentstext" class="slidoc-commentstext"></span></div>
-<div id="%(sid)s-comments" class="slidoc-comments"></div>
 '''+inp_elem2+'''
+'''+explain_elem+'''
 <pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
 </div>
 ''') % ans_params
@@ -1080,6 +1113,10 @@ class SlidocRenderer(MathRenderer):
             return ''
 
         gweight = gweight or 0
+
+        if gweight and not self.qtypes[-1].startswith('text/') and not self.questions[-1].get('explain'):
+            print("    ****WEIGHT-ERROR: %s: Unexpected grade weight %d line in non-graded/explained slide %s" % (self.options["filename"], gweight, self.slide_number), file=sys.stderr)
+
         self.questions[-1].update(weight=weight, gweight=gweight)
 
         return '<em>Weight: %s%s<em>' % (weight, ', '+str(gweight) if gweight else '')
@@ -1545,19 +1582,21 @@ def process_input(input_files, config_dict):
                                                         prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
-        js_params['questionsMax'] = len(renderer.questions)
-        js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
-        js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
-        if renderer.grade_fields:
-            gweights = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
-            js_params['gradeFields'] = ['q_grades_'+str(gweights)] + renderer.grade_fields
-        else:
-            js_params['gradeFields'] = []
+        if config.pace:
+            js_params['questionsMax'] = len(renderer.questions)
+            js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
+            js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+            if renderer.grade_fields:
+                gweights = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+                js_params['gradeFields'] = ['q_grades_'+str(gweights)] + renderer.grade_fields
+            else:
+                js_params['gradeFields'] = []
+
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
-
-        math_in_file = '$$' in md_text or ('`$' in md_text and '$`' in md_text)
+        
+        math_in_file = renderer.render_math or '$$' in md_text or ('`$' in md_text and '$`' in md_text)
         if math_in_file:
             math_found = True
         if renderer.load_python:
