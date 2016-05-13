@@ -69,7 +69,7 @@ class Parser(object):
     annotation_re =    re.compile( r'^Annotation:')
     answer_re =        re.compile( r'^(Answer|Ans):')
     concepts_re =      re.compile( r'^Concepts:')
-    inline_math_re =   re.compile(r"^`\$(.+?)\$`")
+    inline_math_re =   re.compile( r'^\\\((.+?)\\\)')
     notes_re =         re.compile( r'^Notes:')
     ref_re =           re.compile(r'''^ {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *$''')
     ref_def_re =  re.compile(r'''(^|\n) {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *(\n+|$)''')
@@ -78,7 +78,10 @@ class Parser(object):
                                                    r'([\s\S]+?)\s*'
                                                    r'\1 *(?:\n+|$)' ) ),
                  ('indented',          re.compile( r'^( {4}[^\n]+\n*)+') ),
-                 ('block_math',        re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
+                 ('backtick_block_math',re.compile( r'^`\\\[(.*?)\\\]`', re.DOTALL) ),  # Must appear before block_math
+                 ('block_math',        re.compile( r'^\\\[(.*?)\\\]', re.DOTALL) ),
+                 ('backtex_block_math',re.compile( r'^`\$\$(.*?)\$\$`', re.DOTALL) ),
+                 ('tex_block_math',    re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ),
@@ -474,11 +477,20 @@ class Parser(object):
                     else:
                         self.output.append(matched.group(0))
 
+                elif rule_name == 'backtick_block_math':
+                    self.math_block(matched.group(0), matched.group(1))
+
+                elif rule_name == 'backtex_block_math':
+                    self.math_block(matched.group(0), matched.group(1), tex=True)
+
                 elif rule_name == 'block_math':
-                    self.math_block(matched.group(0))
+                    self.math_block(matched.group(0), matched.group(1))
+
+                elif rule_name == 'tex_block_math':
+                    self.math_block(matched.group(0), matched.group(1), tex=True)
 
                 elif rule_name == 'latex_environment':
-                    self.math_block(matched.group(0), latex=True)
+                    self.math_block(matched.group(0), matched.group(2), latex=True)
 
                 elif rule_name == 'hrule':
                     self.hrule(matched.group(1))
@@ -528,8 +540,17 @@ class Parser(object):
                                 line = self.header_attr_re.sub(r'\1', line)
                             # Strip slidoc extension for internal references
                             line = self.internal_ref_re.sub(r'\1', line)
+
                         if self.cmd_args.backtick_off:
-                            line = re.sub(r"(^|[^`])`\$(.+?)\$`", r"\1$\2$", line)
+                            line = re.sub(r"(^|[^`])`\\\((.+?)\\\)`", r"\1\(\2\)", line)
+                        elif self.cmd_args.backtick_on:
+                            line = re.sub(r"(^|[^`])\\\((.+?)\\\)", r"\1`\(\2\)`", line)
+
+                        if self.cmd_args.tex_math:
+                            line = re.sub(r"\\\((.+?)\\\)", r"$\1$", line)
+                        else:
+                            line = re.sub(r"(^|[^$])\$(.+?)\$", r"\1\(\2\)", line)
+
                         self.buffered_markdown.append(line+'\n')
 
             else:
@@ -656,12 +677,16 @@ class Parser(object):
         if 'rule' not in self.cmd_args.strip and 'markup' not in self.cmd_args.strip:
             self.buffered_markdown.append(text+'\n\n')
 
-    def math_block(self, content, latex=False):
+    def math_block(self, content, inner, latex=False, tex=False):
         if 'markup' not in self.cmd_args.strip:
-            if latex or not self.cmd_args.backtick_on:
-                self.output.append(content)
+            if self.cmd_args.tex_math:
+                self.output.append('$$'+inner+'$$')
+            elif not latex and self.cmd_args.backtick_on:
+                self.output.append(r'`\['+inner+r'\]`')
+            elif not latex:
+                self.output.append(r'\['+inner+r'\]')
             else:
-                self.output.append("`"+content+"`")
+                self.output.append(content)
 
     def process_buffer(self):
         if not self.buffered_markdown:
@@ -696,7 +721,7 @@ class ArgsObj(object):
         return argparse.Namespace(**arg_vals)
 
 Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', 'strip'],
-                    bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'overwrite', 'unfence'],
+                    bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'overwrite', 'tex_math', 'unfence'],
                     defaults= {'image_dir': 'images'})
 
 def make_arg_set(arg_value, arg_all_list):
@@ -728,6 +753,7 @@ if __name__ == '__main__':
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
+    parser.add_argument('--tex_math', help='Use $..$ and $$...$$ notation for math', action="store_true")
     parser.add_argument('--unfence', help='Convert fenced code block to indented blocks', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()

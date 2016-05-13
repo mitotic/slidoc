@@ -2,8 +2,8 @@
 
 """Slidoc is a Markdown based lecture management system.
 Markdown filters with mistune, with support for MathJax, keyword indexing etc.
-Use $$ ... $$ for block math
-Use `$ ... $` for inline math (use ``$stuff`` for inline code that has dollar signs at the beginning/end)
+Use \[ ... \] for LaTeX-style block math
+Use \( ... \) for LaTeX-style inline math
 Used from markdown.py
 
 See slidoc.md for examples and test cases in Markdown.
@@ -240,7 +240,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
         r'''(?: +['"(]([^\n]+)['")])? *(?:\n+|$)'''
     )
 
-    block_math = re.compile(r'^\$\$(.*?)\$\$', re.DOTALL)
+    block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
@@ -263,7 +263,7 @@ class MathBlockLexer(mistune.BlockLexer):
         super(MathBlockLexer, self).__init__(rules, **kwargs)
 
     def parse_block_math(self, m):
-        """Parse a $$math$$ block"""
+        """Parse a \[math\] block"""
         self.tokens.append({
             'type': 'block_math',
             'text': m.group(1)
@@ -323,9 +323,9 @@ class MathBlockLexer(mistune.BlockLexer):
     
 class MathInlineGrammar(mistune.InlineGrammar):
     slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
-    math =          re.compile(r"^`\$(.+?)\$`")
+    math =          re.compile(r"^\\\((.+?)\\\)")
     inline_js =     re.compile(r"^`=(\w+)\(\)(;([^`\n]+))?`")
-    block_math =    re.compile(r"^\$\$(.+?)\$\$", re.DOTALL)
+    block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
         r'^\[('
@@ -502,13 +502,13 @@ class MathRenderer(mistune.Renderer):
         pass
     
     def block_math(self, text):
-        return '$$%s$$' % text
+        return r'\[%s\]' % text
 
     def latex_environment(self, name, text):
         return r'\begin{%s}%s\end{%s}' % (name, text, name)
 
     def inline_math(self, text):
-        return '`$%s$`' % text
+        return r'\(%s\)' % text
 
     def block_code(self, code, lang=None):
         """Rendering block level code. ``pre > code``.
@@ -1428,9 +1428,6 @@ def process_input(input_files, config_dict):
         if len(comps) > 2:
             js_params['gd_client_id'], js_params['gd_api_key'] = comps[2:4]
     
-    if not gd_hmac_key and 'grade_comments' in config.features:
-        sys.exit("slidoc: Error: hmac_key must be specified for feature 'grade_comments'")
-
     nb_site_url = config.site_url
     if combined_file:
         config.site_url = ''
@@ -1447,6 +1444,9 @@ def process_input(input_files, config_dict):
     config.strip = md2md.make_arg_set(config.strip, strip_all)
     if len(input_files) == 1:
         config.strip.add('chapters')
+
+    if not gd_hmac_key and 'grade_comments' in config.features:
+        sys.exit("slidoc: Error: hmac_key must be specified for feature 'grade_comments'")
 
     if config.dest_dir and not os.path.isdir(config.dest_dir):
         sys.exit("Destination directory %s does not exist" % config.dest_dir)
@@ -1597,7 +1597,7 @@ def process_input(input_files, config_dict):
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
         
-        math_in_file = renderer.render_markdown or '$$' in md_text or ('`$' in md_text and '$`' in md_text)
+        math_in_file = renderer.render_markdown or (r'\[' in md_text and r'\]' in md_text) or (r'\(' in md_text and r'\)' in md_text)
         if math_in_file:
             math_found = True
         if renderer.render_markdown:
@@ -1633,7 +1633,8 @@ def process_input(input_files, config_dict):
 
             if config.slides:
                 reveal_pars['reveal_title'] = fname
-                reveal_pars['reveal_md'] = re.sub(r'(^|\n)\$\$(.+?)\$\$', r'`\1$$\2$$`', md_text_modified, flags=re.DOTALL)
+                # Wrap inline math in backticks to protect from backslashes being removed
+                reveal_pars['reveal_md'] = re.sub(r'(^|\n)\\\[(.+?)\\\]', r'`\1`\[\2\]`', re.sub(r'\\\((.+?)\\\)', r'`\(\1\)`', md_text_modified), flags=re.DOTALL)
                 md2md.write_file(dest_dir+fname+"-slides.html", templates['reveal_template.html'] % reveal_pars)
 
             if config.notebook:
@@ -1881,11 +1882,11 @@ if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extr
 
 function MDEscapeInline(whole, inner) {
     // Escape special characters in inline formulas (from Markdown processing)
-    return "\\`$" + inner.replace(/\*/g, "\\*").replace(/\_/g, "\\_") + "$\\`";
+    return "\\\\(" + inner.replace(/\*/g, "\\*").replace(/\_/g, "\\_") + "\\\\)";
 }
 
 PagedownConverter.hooks.chain("preSpanGamut", function (text, runSpanGamut) {
-    return text.replace(/`~D(.+?)~D`/g, MDEscapeInline);
+    return text.replace(/\\\((.+?)\\\)/g, MDEscapeInline);
 });
 
 PagedownConverter.hooks.chain("preBlockGamut", function (text, runBlockGamut) {
@@ -1907,7 +1908,7 @@ function MDConverter(mdText, stripOuter) {
 Mathjax_js = r'''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
     tex2jax: {
-      inlineMath: [ ['`$','$`'], ["$$$","$$$"] ],
+      inlineMath: [ ["\\(","\\)"] ],
       processEscapes: false
     }%s
   });

@@ -634,24 +634,24 @@ slide format and to test `slidoc.py`
 
 ## Inline and block formulas
 
-Inline Latex-style formulas are supported via the backtick-dollar ... dollar-backtick
-syntax. For example,
+Inline formulas are supported using the LaTeX-style syntax. For
+example,
 
-    `$ \alpha = \beta *\gamma* \delta $`
+    \(\alpha = \beta *\gamma* \delta\)
 
-renders inline as `$\alpha = \beta *\gamma* \delta$`
+renders inline as \(\alpha = \beta *\gamma* \delta\)
 
-Block equations are also supported using the double-dollar syntax:
+Block equations are also supported using the LaTeX syntax:
 
-    $$
-    \alpha = \beta *\gamma* \delta
-    $$
+    \[
+      \alpha = \beta *\gamma* \delta
+    \]
 
 renders as
 
-$$
+\[
 \alpha = \beta *\gamma* \delta
-$$
+\]
 
 Can also use Latex-style equation blocks:
 
@@ -670,24 +670,16 @@ which renders as
 Using the `--features=equation_number` option for automatic equation numbering, you
 can refer to the above equation inline as
 
-    `$\ref{eq:a}$`
+    \(\ref{eq:a}\)
 
-which renders as (`$\ref{eq:a}$`)
+which renders as (\(\ref{eq:a}\))
 
 Concepts: equations; mathjax 
 
-Notes: Equations are also allowed in notes: `$\alpha = \omega$` 
+Notes: Equations are also allowed in notes: \(\alpha = \omega\) 
 
 (The ``--`` separator below can be used to create additional
 vertical slides containing notes in `reveal.js`.)
-
---
-
-Use double backticks (or multiple lines) for inline code with
-dollar signs at beginning/end:
-``$ beginning dollar``,
-``ending dollar
-$``)
 
 ---
 
