@@ -557,7 +557,7 @@ class SlidocRenderer(MathRenderer):
         self.block_test_counter = 0
         self.block_output_counter = 0
         self.load_python = False
-        self.render_math = False
+        self.render_markdown = False
 
     def _new_slide(self):
         self.slide_number += 1
@@ -967,7 +967,7 @@ class SlidocRenderer(MathRenderer):
             else:
                 print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
 
-        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/math', 'text/multiline', 'point', 'line'):
+        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/markdown', 'text/multiline', 'point', 'line'):
             # Unspecified answer
             qtype = text.lower()
             text = ''
@@ -1061,17 +1061,17 @@ class SlidocRenderer(MathRenderer):
 '''
             if self.cur_qtype.startswith('text/code='):
                 inp_elem2 += '<button id="%(sid)s-anscheck" class="slidoc-clickable slidoc-check-button" %(click_extras)s>CHECK</button>\n'
-            elif self.cur_qtype == 'text/math':
+            elif self.cur_qtype == 'text/markdown':
                 inp_elem2 += render_elem
-                self.render_math = True
+                self.render_markdown = True
         else:
             inp_elem1 = '''<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>'''
             if explain:
                 explain_elem = '''<br><textarea id="%(sid)s-ansexplain" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" >Explain</textarea>
 '''
-                if explain == 'math':
+                if explain == 'markdown':
                     explain_elem += render_elem
-                    self.render_math = True
+                    self.render_markdown = True
 
         ans_html = ('''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
 <span id="%(sid)s-ansprefix" style="display: none;">%(ans_text)s:</span>
@@ -1535,6 +1535,7 @@ def process_input(input_files, config_dict):
         combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
     fprefix = None
     math_found = False
+    pagedown_load = False
     skulpt_load = False
     for j, f in enumerate(input_files):
         fname = fnames[j]
@@ -1596,13 +1597,16 @@ def process_input(input_files, config_dict):
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
         
-        math_in_file = renderer.render_math or '$$' in md_text or ('`$' in md_text and '$`' in md_text)
+        math_in_file = renderer.render_markdown or '$$' in md_text or ('`$' in md_text and '$`' in md_text)
         if math_in_file:
             math_found = True
+        if renderer.render_markdown:
+            pagedown_load = True
         if renderer.load_python:
             skulpt_load = True
         
         mid_params = {'math_js': math_inc if math_in_file else '',
+                      'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else ''}
         mid_params.update(SYMS)
 
@@ -1823,6 +1827,7 @@ def process_input(input_files, config_dict):
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
         comb_params = {'math_js': math_inc if math_found else '',
+                       'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else ''}
         comb_params.update(SYMS)
         md2md.write_file(dest_dir+combined_file, Html_header, head_html,
@@ -1864,7 +1869,42 @@ Toc_header = '''
 
 '''
 
-Mathjax_js = '''<script type="text/x-mathjax-config">
+Pagedown_js = r'''
+<script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Converter.js'></script>
+<script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Sanitizer.js'></script>
+<script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Extra.js'></script>
+<script>
+// Need latest version of Markdown for hooks
+var PagedownConverter = new Markdown.getSanitizingConverter();
+if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
+    Markdown.Extra.init(PagedownConverter, {extensions: ["fenced_code_gfm"]});
+
+function MDEscapeInline(whole, inner) {
+    // Escape special characters in inline formulas (from Markdown processing)
+    return "\\`$" + inner.replace(/\*/g, "\\*").replace(/\_/g, "\\_") + "$\\`";
+}
+
+PagedownConverter.hooks.chain("preSpanGamut", function (text, runSpanGamut) {
+    return text.replace(/`~D(.+?)~D`/g, MDEscapeInline);
+});
+
+PagedownConverter.hooks.chain("preBlockGamut", function (text, runBlockGamut) {
+    return text.replace(/^ {0,3}~D~D *\n((?:.*?\n)+?) {0,3}~D~D *$/gm, function (whole, inner) {
+        return "<blockquote>"+whole+"</blockquote>\n";
+    });
+});
+
+function MDConverter(mdText, stripOuter) {
+    var html = PagedownConverter.makeHtml(mdText);
+    if (stripOuter && html.substr(0,3) == "<p>" && html.substr(html.length-4) == "</p>") {
+	    html = html.substr(3, html.length-7);
+    }
+    return html.replace(/<a href=([^> ]+)>/g, '<a href=$1 target="_blank">');
+}
+</script>
+'''
+
+Mathjax_js = r'''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
     tex2jax: {
       inlineMath: [ ['`$','$`'], ["$$$","$$$"] ],
@@ -1875,14 +1915,14 @@ Mathjax_js = '''<script type="text/x-mathjax-config">
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
 
-Skulpt_js = '''
+Skulpt_js = r'''
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js" type="text/javascript"></script> 
 <script src="http://www.skulpt.org/static/skulpt.min.js" type="text/javascript"></script> 
 <script src="http://www.skulpt.org/static/skulpt-stdlib.js" type="text/javascript"></script> 
 '''
 
 
-Google_docs_js = '''
+Google_docs_js = r'''
 <script>
 var CLIENT_ID = '%(gd_client_id)s';
 var API_KEY = '%(gd_api_key)s';

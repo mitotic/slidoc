@@ -1074,7 +1074,7 @@ function checkAnswerStatus(setup, question_number, slide_id, question_attrs, exp
     if (setup) {
 	if (explain != null && explainElem && question_attrs.explain) {
 	    explainElem.value = explain;
-	    renderDisplay(slide_id, explainElem, question_attrs.explain == 'math', true)
+	    renderDisplay(slide_id, explainElem, question_attrs.explain == 'markdown', true)
 	}
     } else if (question_attrs.explain && explainElem && (!explainElem.value.trim() || explainElem.value.trim() == 'Explain')) {
 	alert('Please provide an explain for the answer');
@@ -1170,7 +1170,7 @@ Slidoc.answerClick = function (elem, question_number, slide_id, answer_type, res
        if (setup) {
 	   inputElem.value = response;
 	   if (question_attrs.qtype.slice(0,5) == 'text/')
-	       renderDisplay(slide_id, inputElem, question_attrs.qtype.slice(-4) == 'math', true); 
+	       renderDisplay(slide_id, inputElem, question_attrs.qtype.slice(-8) == 'markdown', true); 
        } else {
 	   response = inputElem.value.trim();
 	   if (answer_type == 'number' && isNaN(response)) {
@@ -1466,17 +1466,22 @@ Slidoc.showScore = function () {
     }
 }
 
-function renderDisplay(slide_id, inputElem, renderMath, hide) {
+function renderDisplay(slide_id, inputElem, renderMarkdown, hide) {
     var renderElem = document.getElementById(slide_id+"-render-text");
     var renderButton = document.getElementById(slide_id+"-render-button");
+    var mdText = inputElem.value;
     if (renderElem) {
 	if (hide) {
 	    inputElem.style.display = 'none';
 	    if (renderButton) renderButton.style.display = 'none';
 	}
-	renderElem.textContent = inputElem.value;
-	if (window.MathJax && renderMath)
-	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, renderElem.id]);
+	if (renderMarkdown) {
+	    renderElem.innerHTML = MDConverter(mdText, true);
+	    if (window.MathJax)
+		MathJax.Hub.Queue(["Typeset", MathJax.Hub, renderElem.id]);
+	} else {
+	    renderElem.textContent = mdText;
+	}
     }
 }
     
@@ -1486,10 +1491,10 @@ Slidoc.renderText = function(elem, question_number, slide_id) {
     var question_attrs = attr_vals[question_number-1];
     if (question_attrs.explain) {
 	var explainElem = document.getElementById(slide_id+"-ansexplain");
-	renderDisplay(slide_id, explainElem, question_attrs.explain.slice(-4) == 'math')
+	renderDisplay(slide_id, explainElem, question_attrs.explain.slice(-8) == 'markdown')
     } else {
 	var inputElem = document.getElementById(slide_id+"-ansinput");
-	renderDisplay(slide_id, inputElem, question_attrs.qtype.slice(-4) == 'math');
+	renderDisplay(slide_id, inputElem, question_attrs.qtype.slice(-8) == 'markdown');
     }
 }
 
