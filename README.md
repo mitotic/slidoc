@@ -639,9 +639,14 @@ example,
 
     \(\alpha = \beta *\gamma* \delta\)
 
-renders inline as \(\alpha = \beta *\gamma* \delta\)
+renders inline as \(\alpha = \beta *\gamma* \delta\). Enable the
+`--features=tex_math` option if you want to use the TeX `$` syntax:
 
-Block equations are also supported using the LaTeX syntax:
+    $\alpha = \beta *\gamma* \delta$
+
+which would render as $\alpha = \beta *\gamma* \delta$.
+
+Block equations are also supported using the LaTeX block syntax:
 
     \[
       \alpha = \beta *\gamma* \delta

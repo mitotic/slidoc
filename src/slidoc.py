@@ -323,9 +323,10 @@ class MathBlockLexer(mistune.BlockLexer):
     
 class MathInlineGrammar(mistune.InlineGrammar):
     slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
-    math =          re.compile(r"^\\\((.+?)\\\)")
-    inline_js =     re.compile(r"^`=(\w+)\(\)(;([^`\n]+))?`")
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
+    inline_math =   re.compile(r"^\\\((.+?)\\\)")
+    tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
+    inline_js =     re.compile(r"^`=(\w+)\(\)(;([^`\n]+))?`")
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
         r'^\[('
@@ -338,15 +339,20 @@ class MathInlineLexer(mistune.InlineLexer):
         if rules is None:
             rules = MathInlineGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['slidoc_choice', 'block_math', 'math', 'internal_ref', 'inline_js']
+        slidoc_rules = ['slidoc_choice', 'block_math', 'inline_math', 'inline_js', 'internal_ref']
+        if 'config' in renderer.options and 'tex_math' in renderer.options['config'].features:
+            slidoc_rules += ['tex_inline_math']
         self.default_rules = slidoc_rules + mistune.InlineLexer.default_rules
         super(MathInlineLexer, self).__init__(renderer, rules, **kwargs)
 
     def output_slidoc_choice(self, m):
         return self.renderer.slidoc_choice(m.group(1).upper())
 
-    def output_math(self, m):
+    def output_inline_math(self, m):
         return self.renderer.inline_math(m.group(1))
+
+    def output_tex_inline_math(self, m):
+        return self.renderer.inline_math(m.group(1)+m.group(2))
 
     def output_inline_js(self, m):
         return self.renderer.inline_js(m.group(1), m.group(3))
@@ -1003,7 +1009,9 @@ class SlidocRenderer(MathRenderer):
                     correct_text = html2text(corr_elem).strip()
                     correct_html = correct_html[3:-5]
                 except Exception, excp:
-                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], correct_html, self.slide_number, excp), file=sys.stderr)
+                    import traceback
+                    traceback.print_exc()
+                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp), file=sys.stderr)
 
         textarea_input = self.cur_qtype.startswith('text/')
         if textarea_input:
@@ -1476,7 +1484,12 @@ def process_input(input_files, config_dict):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
-    math_inc = Mathjax_js % ( ', TeX: { equationNumbers: { autoNumber: "AMS" } }' if 'equation_number' in config.features else '')
+    mathjax_config = []
+    if 'equation_number' in config.features:
+        mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
+    if 'tex_math' in config.features:
+        mathjax_config.append( r"tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
+    math_inc = Mathjax_js % ','.join(mathjax_config)
     
     fnames = []
     for f in input_files:
@@ -1634,7 +1647,12 @@ def process_input(input_files, config_dict):
             if config.slides:
                 reveal_pars['reveal_title'] = fname
                 # Wrap inline math in backticks to protect from backslashes being removed
-                reveal_pars['reveal_md'] = re.sub(r'(^|\n)\\\[(.+?)\\\]', r'`\1`\[\2\]`', re.sub(r'\\\((.+?)\\\)', r'`\(\1\)`', md_text_modified), flags=re.DOTALL)
+                md_text_reveal = re.sub(r'\\\((.+?)\\\)', r'`\(\1\)`', md_text_modified)
+                md_text_reveal = re.sub(r'(^|\n)\\\[(.+?)\\\]', r'\1`\[\2\]`', md_text_reveal, flags=re.DOTALL)
+                if 'tex_math' in config.features:
+                    md_text_reveal = re.sub(r'(^|[^\\\$])\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)', r'\1`$\2\3$`', md_text_reveal)
+                    md_text_reveal = re.sub(r'(^|\n)\$\$(.*?)\$\$', r'\1`$$\2\3$$`', md_text_reveal, flags=re.DOTALL)
+                reveal_pars['reveal_md'] = md_text_reveal
                 md2md.write_file(dest_dir+fname+"-slides.html", templates['reveal_template.html'] % reveal_pars)
 
             if config.notebook:
@@ -1870,47 +1888,16 @@ Toc_header = '''
 
 '''
 
+# Need latest version of Markdown for hooks
 Pagedown_js = r'''
 <script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Converter.js'></script>
 <script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Sanitizer.js'></script>
 <script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Extra.js'></script>
-<script>
-// Need latest version of Markdown for hooks
-var PagedownConverter = new Markdown.getSanitizingConverter();
-if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
-    Markdown.Extra.init(PagedownConverter, {extensions: ["fenced_code_gfm"]});
-
-function MDEscapeInline(whole, inner) {
-    // Escape special characters in inline formulas (from Markdown processing)
-    return "\\\\(" + inner.replace(/\*/g, "\\*").replace(/\_/g, "\\_") + "\\\\)";
-}
-
-PagedownConverter.hooks.chain("preSpanGamut", function (text, runSpanGamut) {
-    return text.replace(/\\\((.+?)\\\)/g, MDEscapeInline);
-});
-
-PagedownConverter.hooks.chain("preBlockGamut", function (text, runBlockGamut) {
-    return text.replace(/^ {0,3}~D~D *\n((?:.*?\n)+?) {0,3}~D~D *$/gm, function (whole, inner) {
-        return "<blockquote>"+whole+"</blockquote>\n";
-    });
-});
-
-function MDConverter(mdText, stripOuter) {
-    var html = PagedownConverter.makeHtml(mdText);
-    if (stripOuter && html.substr(0,3) == "<p>" && html.substr(html.length-4) == "</p>") {
-	    html = html.substr(3, html.length-7);
-    }
-    return html.replace(/<a href=([^> ]+)>/g, '<a href=$1 target="_blank">');
-}
-</script>
 '''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
-    tex2jax: {
-      inlineMath: [ ["\\(","\\)"] ],
-      processEscapes: false
-    }%s
+    %s
   });
 </script>
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
@@ -1977,7 +1964,7 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['assessment', 'equation_number', 'grade_comments', 'incremental_slides', 'progress_bar', 'untitled_number']
+    features_all = ['assessment', 'equation_number', 'grade_comments', 'incremental_slides', 'progress_bar', 'tex_math', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')

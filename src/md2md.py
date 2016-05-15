@@ -225,13 +225,16 @@ class Parser(object):
             if link.startswith('#'):
                 if link == '#' or link == '##':
                     link += text.strip()
-                if 'pandoc' in self.cmd_args.images:
+                if self.cmd_args.pandoc:
                     if link.startswith('##'):
-                        return text+'(number)'
+                        return '[%s](%s)' % (text, link[1:])
+                    elif link.startswith('#'):
+                        return '[%s](%s)' % (text, link)
                     return '[%s](%s%s)' % (text, link, quote_pad_title(title))
             return orig_content
 
-        if title and 'pandoc' in self.cmd_args.images:
+        # Link to image
+        if title and self.cmd_args.pandoc:
             attrs = []
             for attr in shlex.split(title):
                 if attr.startswith('.'):
@@ -340,9 +343,11 @@ class Parser(object):
                 return orig_content
             if key == '#' or key == '##':
                 key += text.strip()
-            if 'pandoc' in self.cmd_args.images:
+            if self.cmd_args.pandoc:
                 if key.startswith('##'):
-                    return text+'(number)'
+                    return '[%s]: %s' % (text, key[1:])
+                elif key.startswith('#'):
+                    return '[%s]: %s' % (text, key)
                 return text
             else:
                 return orig_content
@@ -535,7 +540,7 @@ class Parser(object):
                             if self.slidoc_choice_re.match(line):
                                 # Strip slidoc extension for interactive multiple-choice
                                 line = re.sub('\.\.', '.', line, count=1)
-                            if 'pandoc' not in self.cmd_args.images:
+                            if not self.cmd_args.pandoc:
                                 # Strip slidoc extension for header attributes (Only the # case)
                                 line = self.header_attr_re.sub(r'\1', line)
                             # Strip slidoc extension for internal references
@@ -546,10 +551,10 @@ class Parser(object):
                         elif self.cmd_args.backtick_on:
                             line = re.sub(r"(^|[^`])\\\((.+?)\\\)", r"\1`\(\2\)`", line)
 
-                        if self.cmd_args.tex_math:
+                        if self.cmd_args.tex_math or self.cmd_args.pandoc:
                             line = re.sub(r"\\\((.+?)\\\)", r"$\1$", line)
-                        else:
-                            line = re.sub(r"(^|[^$])\$(.+?)\$", r"\1\(\2\)", line)
+                        elif self.cmd_args.latex_math:
+                            line = re.sub(r"(^|[^\\\$])\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)", r"\1\(\2\3\)", line)
 
                         self.buffered_markdown.append(line+'\n')
 
@@ -679,11 +684,13 @@ class Parser(object):
 
     def math_block(self, content, inner, latex=False, tex=False):
         if 'markup' not in self.cmd_args.strip:
-            if self.cmd_args.tex_math:
-                self.output.append('$$'+inner+'$$')
-            elif not latex and self.cmd_args.backtick_on:
+            if self.cmd_args.tex_math or self.cmd_args.pandoc:
+                self.output.append(r'$$'+inner+r'$$')
+            elif latex:
+                self.output.append(content)
+            elif self.cmd_args.backtick_on:
                 self.output.append(r'`\['+inner+r'\]`')
-            elif not latex:
+            elif self.cmd_args.latex_math:
                 self.output.append(r'\['+inner+r'\]')
             else:
                 self.output.append(content)
@@ -721,7 +728,8 @@ class ArgsObj(object):
         return argparse.Namespace(**arg_vals)
 
 Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', 'strip'],
-                    bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'overwrite', 'tex_math', 'unfence'],
+                    bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'latex_math',
+                                'overwrite', 'pandoc', 'tex_math', 'unfence'],
                     defaults= {'image_dir': 'images'})
 
 def make_arg_set(arg_value, arg_all_list):
@@ -751,7 +759,9 @@ if __name__ == '__main__':
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
     parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web,pandoc] to process images', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
+    parser.add_argument('--latex_math', help='Use \\(..\\) and \\[...\\] notation for math', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
+    parser.add_argument('--pandoc', help='Convert to Pandoc markdown', action="store_true")
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--tex_math', help='Use $..$ and $$...$$ notation for math', action="store_true")
     parser.add_argument('--unfence', help='Convert fenced code block to indented blocks', action="store_true")

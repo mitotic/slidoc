@@ -44,6 +44,16 @@ document.onreadystatechange = function(event) {
 
 function onreadystateaux() {
     console.log('onreadystateaux:');
+    if (window.Markdown) {
+	var PagedownConverter = new Markdown.getSanitizingConverter();
+	if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
+	    Markdown.Extra.init(PagedownConverter, {extensions: ["fenced_code_gfm"]});
+
+	// Need latest version of Markdown for hooks
+	PagedownConverter.hooks.chain("preSpanGamut", MDPreSpanGamut);
+	PagedownConverter.hooks.chain("preBlockGamut", MDPreBlockGamut);
+    }
+
     if (Sliobj.params.gd_sheet_url)
 	document.body.classList.add('slidoc-remote-view');
 
@@ -2105,6 +2115,61 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
     }
     window.scrollTo(0,0);
 }
+
+// Pagedown helpers
+
+function MDEscapeInlineLatex(whole, inner) {
+    // Escape special characters in inline formulas (from Markdown processing)
+    return "\\\\(" + inner.replace(/\*/g, "\\*").replace(/\_/g, "\\_") + "\\\\)";
+}
+
+function MDEscapeInlineTex(whole, p1, p2, p3) {
+    // Escape special characters in inline formulas (from Markdown processing)
+    return p1+"$" + (p2+p3).replace(/\*/g, "\\*").replace(/\_/g, "\\_") + "$";
+}
+
+function MDPreSpanGamut(text, runSpanGamut, texMath) {
+    text = text.replace(/\\\((.+?)\\\)/g, MDEscapeInlineLatex);
+    if (texMath || 'tex_math' in Sliobj.params.features)
+	text = text.replace(/(^|[^\\\$])\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)/g, MDEscapeInlineTex);
+    return text;
+}
+
+function MDPreSpanTest() {
+    var inOut = [ ['$_$', '$\\_$'],
+		  ['$*$', '$\\*$'],
+		  ['$$*$', '$$*$'],
+		  ['$*$$', '$*$$'],
+		  ['$*\\$*$', '$\\*\\$\\*$'],
+		  ['$*\\$', '$*\\$'],
+		  ['\\$*$', '\\$*$'],
+		  ['$*\n$', '$*\n$'],
+		  ['$\\alpha*$*', '$\\alpha\\*$*'],
+		  ['$$', '$$'],
+		];
+    for (var j=0; j<inOut.length; j++) {
+	var out = MDPreSpanGamut(inOut[j][0], null, true);
+	if (out != inOut[j][1])
+	    alert(" Error j="+j+": MDPreSpantest('"+inOut[j][0]+"') yields '"+out+"', but expected '"+inOut[j][1]+"'");
+    }
+}
+
+function MDEscapeBlock(whole, inner) {
+        return "<blockquote>"+whole+"</blockquote>\n";
+}
+
+function MDPreBlockGamut(text, runBlockGamut) {
+    return text.replace(/^ {0,3}\\\[ *\n((?:.*?\n)+?) {0,3}\\\] *$/gm, MDEscapeBlock).replace(/^ {0,3}~D~D *\n((?:.*?\n)+?) {0,3}~D~D *$/gm, MDEscapeBlock)
+}
+
+function MDConverter(mdText, stripOuter) {
+    var html = PagedownConverter.makeHtml(mdText);
+    if (stripOuter && html.substr(0,3) == "<p>" && html.substr(html.length-4) == "</p>") {
+	    html = html.substr(3, html.length-7);
+    }
+    return html.replace(/<a href=([^> ]+)>/g, '<a href=$1 target="_blank">');
+}
+
 
 // Linear Congruential Random Number Generator  https://gist.github.com/Protonk/5367430
 var LCRandom = (function() {
