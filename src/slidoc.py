@@ -1446,15 +1446,16 @@ def process_input(input_files, config_dict):
 
     config.images = set(config.images.split(',')) if config.images else set()
 
-    config.features = md2md.make_arg_set(config.features, features_all)
-    js_params['features'] = dict([(x, 1) for x in config.features])
+    if config.features is None:
+        cmd_features_set = None
+    else:
+        cmd_features_set = md2md.make_arg_set(config.features, features_all)
+        js_params['features'] = dict([(x, 1) for x in cmd_features_set])
+    config.features = None
 
     config.strip = md2md.make_arg_set(config.strip, strip_all)
     if len(input_files) == 1:
         config.strip.add('chapters')
-
-    if not gd_hmac_key and 'grade_comments' in config.features:
-        sys.exit("slidoc: Error: hmac_key must be specified for feature 'grade_comments'")
 
     if config.dest_dir and not os.path.isdir(config.dest_dir):
         sys.exit("Destination directory %s does not exist" % config.dest_dir)
@@ -1484,13 +1485,6 @@ def process_input(input_files, config_dict):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
-    mathjax_config = []
-    if 'equation_number' in config.features:
-        mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
-    if 'tex_math' in config.features:
-        mathjax_config.append( r"tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
-    math_inc = Mathjax_js % ','.join(mathjax_config)
-    
     fnames = []
     for f in input_files:
         fcomp = os.path.splitext(os.path.basename(f.name))
@@ -1562,6 +1556,22 @@ def process_input(input_files, config_dict):
             due_date = sliauth.get_utc_date(config.due_date or file_config.due_date if config.pace else None)
             js_params['sessionPrereqs'] = config.prereqs or file_config.prereqs or ''
             js_params['sessionRevision'] = config.revision or file_config.revision or ''
+            config.features = cmd_features_set or set()
+            if file_config.features and (cmd_features_set is None or 'override' not in cmd_features_set):
+                # Merge features from each file (unless 'override' feature is present, for command line to override)
+                config.features = config.features.union( set(file_config.features.split(',')) )
+                
+            js_params['features'] = dict([(x, 1) for x in config.features])
+
+            mathjax_config = []
+            if 'equation_number' in config.features:
+                mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
+            if 'tex_math' in config.features:
+                mathjax_config.append( r"tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
+            math_inc = Mathjax_js % ','.join(mathjax_config)
+    
+        if not gd_hmac_key and 'grade_comments' in config.features:
+            sys.exit("slidoc: Error: hmac_key must be specified for feature 'grade_comments'")
 
         filepath = f.name
         md_text = f.read()
@@ -1927,7 +1937,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'prereqs', 'revision'])
+Select_file_args = set(['due_date', 'features', 'prereqs', 'revision'])
     
 def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), verbose=False):
     # Read first line of first file and rewind it
@@ -1964,7 +1974,7 @@ if __name__ == '__main__':
     import md2nb
 
     strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['assessment', 'equation_number', 'grade_comments', 'incremental_slides', 'progress_bar', 'tex_math', 'untitled_number']
+    features_all = ['assessment', 'equation_number', 'grade_comments', 'incremental_slides', 'override', 'progress_bar', 'tex_math', 'untitled_number']
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
