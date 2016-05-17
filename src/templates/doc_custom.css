@@ -111,7 +111,8 @@ a, a:visited,
 .slidoc-notes p {margin: 0.3em 0;}
 
 /* Views */
-body.slidoc-slide-view { font-size: 150%; }
+body.slidoc-slide-view .slidoc-slide { font-size: 150%; }
+body.slidoc-slide-view .slidoc-nav-overlay { font-size: 120%; }
 body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */

@@ -137,24 +137,31 @@ function handleResponse(evt) {
 
 	var sheetName = params.sheet;
 	if (!sheetName)
-	    throw('No sheet name specified');
+	    throw('Error:SHEETNAME::No sheet name specified');
 
-	var validUserToken = '';
+	var restrictedSheet = (sheetName == INDEX_SHEET);
+	var adminUser = '';
+	var authUser = '';
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-	if (sheetName == INDEX_SHEET || REQUIRE_LOGIN_TOKEN) {
-	    // Restricted sheet/login required
-	    if (!params.user)
-		throw('Need user name and token for authentication');
+	if (params.admin) {
 	    if (!params.token)
-		throw('Need token for authentication');
-	    if (!validateHMAC(params.user+':'+params.token, HMAC_KEY))
-		throw('Invalid token for authenticating user '+params.user);
-	    validUserToken = params.user;
+		throw('Error:NEED_ADMIN_TOKEN:Need token for admin authentication');
+	    if (!validateHMAC('admin:'+params.admin+':'+params.token, HMAC_KEY))
+		throw("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.admin+"'");
+	    adminUser = params.admin;
+	} else if (REQUIRE_LOGIN_TOKEN) {
+	    if (!params.id)
+		throw('Error:NEED_ID:Need id for authentication');
+	    if (!params.token)
+		throw('Error:NEED_TOKEN:Need token for id authentication');
+	    if (!validateHMAC('id:'+params.id+':'+params.token, HMAC_KEY))
+		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+params.id+"'");
+	    authUser = params.id;
 	}
-	if (sheetName == INDEX_SHEET) {
-	    // Restricted sheet
-	    if (params.user != ADMIN_USER)
-		throw('Invalid user '+params.user+' for sheet '+sheetName);
+
+	if (restrictedSheet) {
+	    if (!adminUser)
+		throw("Error::Must be admin user to access sheet '"+sheetName+"'");
 	}
 
 	// Check parameter consistency
@@ -164,7 +171,7 @@ function handleResponse(evt) {
 	if (!sheet) {
 	    // Create new sheet
 	    if (!headers)
-		throw('Headers must be specified for new sheet '+sheetName);
+		throw("Error::Headers must be specified for new sheet '"+sheetName+"'");
 	    doc.insertSheet(sheetName);
 	    sheet = doc.getSheetByName(sheetName);
 	    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -177,7 +184,7 @@ function handleResponse(evt) {
 		    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
 		}
 	    }
-	    if (sheetName == INDEX_SHEET) {
+	    if (restrictedSheet) {
 		var protection = sheet.protect().setDescription('protected');
 		protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
 		protection.setDomainEdit(false);
@@ -185,17 +192,17 @@ function handleResponse(evt) {
 	}
 
 	if (!sheet.getLastColumn())
-	    throw('No columns in sheet '+sheetName);
+	    throw("Error::No columns in sheet '"+sheetName+"'");
 
 	var columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0];
 	var columnIndex = indexColumns(sheet);
 
 	if (headers) {
 	    if (headers.length > columnHeaders.length)
-		throw('Number of headers exceeds that present in sheet '+sheetName);
+		throw("Error::Number of headers exceeds that present in sheet '"+sheetName+"'");
 	    for (var j=0; j<headers.length; j++) {
 		if (headers[j] != columnHeaders[j])
-		    throw('Column header mismatch: Expected '+headers[j]+' but found '+columnHeaders[j]+' in sheet '+sheetName+'; delete it or edit headers.');
+		    throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.");
 	    }
 	}
 
@@ -206,27 +213,36 @@ function handleResponse(evt) {
 	var nooverwriteRow = params.nooverwrite || '';
 
 	var userId = null;
-	var userName = null;
+	var displayName = null;
+
+	if (!adminUser && selectedUpdates)
+	    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
 	    // No row updates
 	    returnValues = [];
 	} else {
 	    if (rowUpdates && selectedUpdates) {
-		throw('Cannot specify both rowUpdates and selectedUpdates');
+		throw('Error::Cannot specify both rowUpdates and selectedUpdates');
 	    } else if (rowUpdates) {
 		if (rowUpdates.length > columnHeaders.length)
-		    throw('row_headers length exceeds no. of columns in sheet');
+		    throw("Error::row_headers length exceeds no. of columns in sheet '"+sheetName+"'");
+
 
 		userId = rowUpdates[columnIndex['id']-1] || null;
-		userName = rowUpdates[columnIndex['name']-1] || null;
+		displayName = rowUpdates[columnIndex['name']-1] || null;
+
+		// Security check
+		if (params.id && params.id != userId)
+		    throw("Error::Mismatch between params.id '%s' and userId in row '%s'" % (params.id, userId))
+		if (params.name && params.name != displayName)
+		    throw("Error::Mismatch between params.name '%s' and displayName in row '%s'" % (params.name, displayName))
 	    } else {
 		userId = params.id || null;
-		userName = params.name || null;
 	    }
 
 	    if (!userId)
-		throw('User id must be specified for updates/gets');
+		throw('Error::User id must be specified for updates/gets');
 
 	    var numStickyRows = 1;  // Headers etc.
 	    var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow(), 1);
@@ -238,12 +254,18 @@ function handleResponse(evt) {
 		    break;
 		}
 	    }
-	    //returnMessages.push('DEBUG:userRow, userid: '+userRow+', '+userId);
+	    //returnMessages.push('Debug::userRow, userid: '+userRow+', '+userId);
 	    var newRow = (userRow < 0);
+
+	    if (adminUser && !restrictedSheet && newRow)
+		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
+
 	    if (newRow && getRow && !rowUpdates) {
 		// Row does not exist; return empty list
 		returnValues = [];
 
+	    } else if (newRow && selectedUpdates) {
+		throw('Error::Selected updates cannot be applied to new row');
 	    } else {
 		var curDate = new Date();
 		var allowLateMods = !REQUIRE_LATE_TOKEN;
@@ -251,42 +273,50 @@ function handleResponse(evt) {
 		var dueDate = null;
 		var gradeDate = null;
 		var fieldsMin = columnHeaders.length;
-		if (sheetName != INDEX_SHEET && doc.getSheetByName(INDEX_SHEET)) {
+		if (!restrictedSheet && doc.getSheetByName(INDEX_SHEET)) {
 		    // Session parameters
 		    var sessionParams = getSessionParams(sheetName, ['dueDate', 'gradeDate', 'fieldsMin']);
 		    dueDate = sessionParams.dueDate;
 		    gradeDate = sessionParams.gradeDate;
 		    fieldsMin = sessionParams.fieldsMin;
 
-		    // Check if past submission deadline
-		    var lateToken = (rowUpdates && columnIndex['lateToken']) ? (rowUpdates[columnIndex['lateToken']-1] || null) : null;
 		    if (dueDate) {
+			// Check if past submission deadline
+			var lateTokenCol = columnIndex['lateToken'];
+			var lateToken = null;
+			if (lateTokenCol) {
+			    lateToken = (rowUpdates && rowUpdates.length >= lateTokenCol) ? (rowUpdates[lateTokenCol-1] || null) : null;
+			    if (!lateToken && !newRow)
+				lateToken = sheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] || null;
+			}
+
 			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
 			    if (lateToken == 'none') {
 				// Late submission without token
 				allowLateMods = true;
-			    } else if (validateHMAC(params.user+':'+sheetName+':'+lateToken, HMAC_KEY)) {
+			    } else if (validateHMAC('late:'+userId+':'+sheetName+':'+lateToken, HMAC_KEY)) {
 				dueDate = createDate(splitToken(lateToken)[0]); // Date format: '1995-12-17T03:24Z'
 				pastSubmitDeadline = (curTime > dueDate.getTime());
 			    } else {
-				returnMessages.push('Warning: Invalid token for late submission by user '+params.user+' to session '+sheetName);
+				returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
 			    }
 			}
+			returnMessages.push("Info:DUE_DATE:"+dueDate.getTime());
 			if (!allowLateMods) {
 			    if (pastSubmitDeadline) {
 				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
 					// Creating/modifying row; require valid lateToken
 					if (!lateToken)
-					    throw('Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request late submission token.)')
+					    throw("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'. (If valid excuse, request late submission token.)")
 					else
-					    throw('Invalid token for late submission to session '+sheetName);
+					    throw("Error:INVALID_LATE_TOKEN:Invalid token for late submission to session '"+sheetName+"'");
 				    } else {
-					returnMessages.push('Warning: Past submit deadline ('+dueDate+') for session '+sheetName+'. (If valid excuse, request authorization token.)');
+					returnMessages.push("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'. (If valid excuse, request late submission token.)");
 				    }
 			    } else if ( (dueDate.getTime() - curTime) < 2*60*60*1000) {
-				returnMessages.push('Warning: Nearing submit deadline ('+dueDate+') for session '+sheetName+'.');
+				returnMessages.push("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline ("+dueDate+") for session '"+sheetName+"'.");
 			    }
 			}
 		    }
@@ -294,13 +324,13 @@ function handleResponse(evt) {
 
 		if (newRow) {
 		    // New user; insert row in sorted order of name
-		    if (!userName || !rowUpdates)
-			throw('User name and row parameters required to create a new row for id '+userId);
+		    if (!displayName || !rowUpdates)
+			throw('Error::User name and row parameters required to create a new row for id '+userId);
 
 		    var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow(), 1);
 		    userRow = sheet.getLastRow()+1;
 		    for (var j=0; j<names.length; j++) {
-			if (names[j][0] > userName) {
+			if (names[j][0] > displayName) {
 			    userRow = j+1+numStickyRows
 			    break;
 			}
@@ -311,7 +341,7 @@ function handleResponse(evt) {
 			// Simply return existing row
 			rowUpdates = null;
 		    } else {
-			throw('Do not specify nooverwrite=1 to overwrite existing rows');
+			throw('Error::Do not specify nooverwrite=1 to overwrite existing rows');
 		    }
 		}
 
@@ -322,6 +352,8 @@ function handleResponse(evt) {
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
+		    if (adminUser && !restrictedSheet)
+			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
 		    if (rowUpdates.length > fieldsMin) {
 			// Check if there are any non-null values for grade columns
 			var nonNullGradeColumn = false;
@@ -351,7 +383,7 @@ function handleResponse(evt) {
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
-			if (colHeader == 'Timestamp' && (colValue == null || validUserToken != ADMIN_USER)) {
+			if (colHeader == 'Timestamp' && (colValue == null || !adminUser)) {
 			    // Timestamp is always updated, unless it is specified by admin
 			    rowValues[j] = curDate;
 			} else if (colHeader == 'initTimestamp' && newRow) {
@@ -371,17 +403,22 @@ function handleResponse(evt) {
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
+		    if (!adminUser)
+			throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
+
 		    for (var j=0; j<selectedUpdates.length; j++) {
 			var colHeader = selectedUpdates[j][0];
 			var colValue = selectedUpdates[j][1];
 			
 			if (!(colHeader in columnIndex))
-			    throw('Field '+colHeader+' not found in sheet');
+			    throw("Error::Field "+colHeader+" not found in sheet '"+sheetName+"'");
 
 			var headerColumn = columnIndex[colHeader];
-			if (headerColumn > fieldsMin) // Cannot selectively update grade columns
-			    continue;
-			if (colHeader == 'Timestamp' && (colValue == null || validUserToken != ADMIN_USER)) {
+
+			if (headerColumn <= fieldsMin || colHeader.slice(-9) == '_response' || colHeader.slice(-8) == '_explain')
+			    throw("Error::admin user may not update user-defined columns in sheet '"+sheetName+"'");
+
+			if (colHeader == 'Timestamp' && (colValue == null || !adminUser)) {
 			    // Timestamp is always updated, unless it is specified by admin
 			    rowValues[headerColumn-1] = curDate;
 			} else if (colValue == null) {

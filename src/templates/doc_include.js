@@ -20,6 +20,7 @@ var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
 
 function sessionAbort(err_msg, err_trace) {
+    localDel('auth');
     try { Slidoc.classDisplay('slidoc-slide', 'none'); } catch(err) {}
     alert(err_msg);
     document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
@@ -35,9 +36,39 @@ function abortOnError(boundFunc) {
     }
 }
 
+function localPut(key, obj) {
+   window.localStorage['slidoc_'+key] = JSON.stringify(obj);
+}
+
+function localDel(key) {
+   delete window.localStorage['slidoc_'+key];
+}
+
+function localGet(key) {
+   try {
+      return JSON.parse(window.localStorage['slidoc_'+key]);
+   } catch(err) {
+     return null;
+   }
+}
+
+function getParameterByName(name) {
+    var match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+    return match && decodeURIComponent(match[1].replace(/\+/g, ' '));
+}
+
+if (getParameterByName('reset')) {
+    if (window.confirm('Reset all local sessions?')) {
+	localDel('sessions');
+	localDel('auth');
+	alert('All local sessions reset');
+	location = location.href.split('?')[0];
+    }
+}
+
 document.onreadystatechange = function(event) {
     console.log('onreadystatechange:', document.readyState);
-    if (document.readyState != "interactive")
+    if (document.readyState != "interactive" || !document.body)
       return;
     return abortOnError(onreadystateaux);
 }
@@ -123,16 +154,30 @@ Slidoc.docFullScreen = function (exit) {
 	requestFullscreen(document.documentElement);
 }
 
-Slidoc.userLogin = function () {
-    GService.gauth.promptUserInfo(GService.gauth.auth.userName, Slidoc.userLoginCallback);
+Slidoc.userLogout = function () {
+    if (!window.confirm('Do want to logout user '+GService.gauth.auth.userName+'?'))
+	return false;
+    localDel('auth');
+    sessionAbort('Logged out');
 }
 
-Slidoc.userLoginCallback = function (auth) {
+Slidoc.userLogin = function () {
+    console.log('Slidoc.userLogin:');
+    GService.gauth.promptUserInfo(GService.gauth.auth.userName, '', Slidoc.userLoginCallback.bind(null, null));
+}
+
+Slidoc.userLoginCallback = function (retryCall, auth) {
     console.log('Slidoc.userLoginCallback:', auth);
 
     if (auth) {
 	localPut('auth', auth);
-	location.reload(true);
+	if (retryCall) {
+	    if (Sliobj.authSheet)
+		Sliobj.authSheet.gsheet.token = token.trim();
+	    retryCall();
+	} else {
+	    location.reload(true);
+	}
     } else {
 	localDel('auth');
 	sessionAbort('Logged out');
@@ -194,7 +239,7 @@ Slidoc.viewHelp = function () {
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     if (Sliobj.sessionName) {
 	if (Sliobj.params.gd_sheet_url && GService.gauth && GService.gauth.auth)
-	    html += 'User: <b>'+GService.gauth.auth.userName+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogin();">switch</span>)<br>';
+	    html += 'User: <b>'+GService.gauth.auth.userName+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
@@ -203,6 +248,8 @@ Slidoc.viewHelp = function () {
 	if (Sliobj.params.gd_sheet_url)
 	    html += Sliobj.session.submitTime ? ', Submitted' : ', NOT SUBMITTED';
 	html += '<br>';
+	if (Sliobj.dueDate)
+	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
 	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && Sliobj.feedback.q_grades != null)
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
     }
@@ -372,6 +419,7 @@ function slidocReadyAux(auth) {
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
     Sliobj.questionConcepts = [];
+    Sliobj.dueDate = null;
     Sliobj.sidebar = false;
     Sliobj.prevSidebar = false;
 
@@ -632,10 +680,10 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
 	    }
 	}
     }
+    var parse_msg_re = /^(\w+):(\w*):(.*)$/;
+    var match = parse_msg_re.exec(err_msg || '');
+    var err_type = match ? match[2] : '';
 
-    var lateWarning = 'Warning: Past submit deadline';
-    var nearingWarning = 'Warning: Nearing submit deadline';
-    var invalidWarning = 'Warning: Invalid token for late submission';
     if (session || nullReturn) {
 	if (retryType == 'end_paced') {
 	    alert('Completed session saved successfully to Google Docs');
@@ -647,12 +695,16 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
 	if (messages) {
 	    var alerts = [];
 	    for (var j=0; j < messages.length; j++) {
-		if (messages[j].slice(0,nearingWarning.length) == nearingWarning ||
-		    messages[j].slice(0,lateWarning.length) == lateWarning) {
+		var match = parse_msg_re.exec(messages[j]);
+		var msg_type = match ? match[2] : '';
+		if (match && match[1] == 'Info') {
+		    if (msg_type == 'DUE_DATE')
+			try { Sliobj.dueDate = new Date(parseInt(match[3])); } catch(err) { console.log('DUE_DATE error:', err); }
+		} else if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
 		    if (session && !session.completed)
-			alerts.push('<em>Warning:</em><br>'+messages[j].slice(8));
-		} else if (messages[j].slice(0,invalidWarning.length) == invalidWarning) {
-		    alerts.push('<em>Warning:</em><br>'+messages[j].slice(8));
+			alerts.push('<em>Warning:</em><br>'+match[3]);
+		} else if (msg_type == 'INVALID_LATE_TOKEN') {
+		    alerts.push('<em>Warning:</em><br>'+match[3]);
 		}
 	    }
 	    if (alerts.length)
@@ -664,22 +716,19 @@ function sessionGetPutAux(callback, retryCall, retryType, result, err_msg, messa
     } else if (retryCall) {
 	if (err_msg) {
 	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
-	    if (err_msg.indexOf('Need token for authentication') > -1 ||
- 	        err_msg.indexOf('Invalid token for authenticating user') > -1) {
-		var token = window.prompt(prefix+'Enter authentication token for user '+GService.gauth.auth.userName+' (or blank to logout)');
-		if (!token || !token.trim()) {
-		    Slidoc.userLoginCallback(null);
-		    return;
-		} else {
-		    GService.gauth.auth.token = token.trim();
-		    if (Sliobj.authSheet)
-			Sliobj.authSheet.gsheet.token = token.trim();
-		    retryCall();
-		    return;
-		}
-		
-	    } else if (this && err_msg.indexOf('request late submission token') > -1 ||
-		       err_msg.indexOf('Invalid token for late submission to session') > -1) {
+	    if (err_type == 'INVALID_ADMIN_TOKEN') {
+		GService.gauth.promptUserInfo(GService.gauth.auth.userName,
+					      'Invalid admin token. Please re-enter',
+					      Slidoc.userLoginCallback.bind(null, retryCall));
+		return;
+
+	    } else if (err_type == 'NEED_TOKEN' || err_type == 'INVALID_TOKEN') {
+		GService.gauth.promptUserInfo(GService.gauth.auth.userName,
+					      'Invalid username/token. Please re-enter',
+					      Slidoc.userLoginCallback.bind(null, retryCall));
+		return;
+
+	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
 		var token = window.prompt(prefix+"Enter late submission token, if you have one, for user "+GService.gauth.auth.userName+" and session "+Sliobj.sessionName+". Otherwise enter 'none' to submit late without credit.");
 		if (token && token.trim()) {
 		    this.lateToken = token.trim();
@@ -718,9 +767,14 @@ function sessionManage() {
 function setupAuthSheet(name) {
     if (!Sliobj.authSheet || Sliobj.authSheet.gsheet.sheetName != name) {
 	var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
-	Sliobj.authSheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name,
-							Sliobj.params.sessionFields.concat(Sliobj.params.gradeFields),
-						        GService.gauth.auth, useJSONP);
+	var adminUser = GService.gauth.auth.adminKey ? 'admin' : '';
+	try {
+	    Sliobj.authSheet = new GService.GoogleAuthSheet(Sliobj.params.gd_sheet_url, name,
+							    Sliobj.params.sessionFields.concat(Sliobj.params.gradeFields),
+						            GService.gauth.auth, useJSONP, adminUser);
+	} catch(err) {
+	    sessionAbort(''+err);
+	}
     }
     return Sliobj.authSheet;
 }
@@ -731,7 +785,11 @@ function sessionGet(name, callback, retry) {
 	// Google Docs storage
 	var authSheet = setupAuthSheet(name);
 	var retryCall = retry ? sessionGet.bind(null, name, callback, retry) : null;
-	authSheet.getRow(sessionGetPutAux.bind(null, callback, retryCall, retry||''), true);
+	try {
+	    authSheet.getRow(sessionGetPutAux.bind(null, callback, retryCall, retry||''), true);
+	} catch(err) {
+	    sessionAbort(''+err);
+	}
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
@@ -793,8 +851,12 @@ function sessionPut(session, callback, opts) {
 	var authSheet = setupAuthSheet(Sliobj.sessionName);
 	var retryCall = opts.retry ? sessionPut.bind(null, session, callback, opts) : null;
 	// Bind session to this in sessionGetPutAux
-	authSheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(session, callback||null, retryCall, opts.retry||''),
-			  !!opts.get, !!opts.createSheet);
+	try {
+	    authSheet.putRow(rowObj, !!opts.nooverwrite, sessionGetPutAux.bind(session, callback||null, retryCall, opts.retry||''),
+			     !!opts.get, !!opts.createSheet);
+	} catch(err) {
+	    sessionAbort(''+err);
+	}
 
     } else {
 	// Local storage
@@ -809,22 +871,6 @@ function sessionPut(session, callback, opts) {
 		callback(opts.get ? sessionObj[Sliobj.sessionName] : null);
 	}
     }
-}
-
-function localPut(key, obj) {
-   window.localStorage['slidoc_'+key] = JSON.stringify(obj);
-}
-
-function localDel(key) {
-   delete window.localStorage['slidoc_'+key];
-}
-
-function localGet(key) {
-   try {
-      return JSON.parse(window.localStorage['slidoc_'+key]);
-   } catch(err) {
-     return null;
-   }
 }
 
 function make_id_from_text(text) {
@@ -2081,7 +2127,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
     if (!divElemId) divElemId = 'slidoc-generic-popup';
     var divElem = document.getElementById(divElemId);
     var closeElem = document.getElementById(divElem.id+'-close');
-    var overlayElem = document.getElementById('slidoc-popup-overlay');
+    var overlayElem = document.getElementById('slidoc-generic-overlay');
     if (!overlayElem) {
 	alert('slidoc: INTERNAL ERROR - no overlay for popup ');
     } else if (!divElem) {

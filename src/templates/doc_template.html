@@ -11,14 +11,14 @@
 
 <button id="slidoc-google-login-button" style="display: none;">Google Login</button>
 
-<div id="slidoc-top-right" class="slidoc-top-right slidoc-noprint">
+<div id="slidoc-top-right" class="slidoc-top-right slidoc-noprint slidoc-nav-overlay">
 <span id="slidoc-submitted-display" class="slidoc-clickable" onclick="Slidoc.submittedAlert();"></span>
 <span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
 <span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>&nbsp;
 <span class="slidoc-clickable" onclick="Slidoc.viewHelp();">?</span>
 </div>
 
-<table class="slidoc-slide-nav slidoc-slideonly">
+<table class="slidoc-slide-nav slidoc-slideonly slidoc-nav-overlay">
 <tr><td id="slidoc-slide-nav-counter" class="slidoc-slide-nav-counter" colspan="3" align=center valign=bottom></td></tr>
 <tr>
 <td id="slidoc-slide-nav-prev" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(false);">%(prev)s</td>
@@ -30,11 +30,27 @@
 <td></td></tr>
 </table>
 
-<div id="slidoc-progressbar-container" class="slidoc-slideonly"><span id="slidoc-progressbar" ></span></div>
+<div id="slidoc-progressbar-container" class="slidoc-slideonly slidoc-nav-overlay"><span id="slidoc-progressbar" ></span></div>
 
 <div id="slidoc-bottom-right" class="slidoc-bottom-right slidoc-noslide slidoc-noprint">
 <span id="slidoc-sidebar-button" class="slidoc-clickable-sym slidoc-nosidebar" onclick="Slidoc.sidebarDisplay();" style="display: none;">%(rightpair)s</span>
 <span class="slidoc-clickable-sym slidoc-sidebaronly" onclick="Slidoc.sidebarDisplay();">%(leftpair)s</span>
 <span class="slidoc-clickable-sym"  onclick="Slidoc.slideViewStart();">%(square)s</span>
+</div>
+
+<div id="gdoc-login-overlay" class="slidoc-popup-overlay"></div>
+
+<div id="gdoc-login-popup" class="gdoc-login-popup slidoc-popup" style="display: none;">
+Session: <b>%(session_name)s</b>
+<p>
+  This is a "smart document" that submits your responses to Google Docs.
+  Please login following directions provided by your instructor.
+</p>
+<div><b id="gdoc-login-message"></b></div>
+Username/email: <input id="gdoc-login-user" type="text" class="gdoc-login-user"></input>
+<p></p>
+Token: <input id="gdoc-login-token" type="password" class="gdoc-login-token"></input>
+<p></p>
+<button id="gdoc-login-button" class="gdoc-login-button">Login</button>
 </div>
 

@@ -1331,9 +1331,9 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                          p_concepts, s_concepts):
     index_sheet = 'slidoc_sessions'
     user = 'admin'
-    user_token = sliauth.gen_hmac_token(hmac_key, user)
+    user_token = sliauth.gen_admin_token(hmac_key, user)
 
-    get_params = {'sheet': index_sheet, 'id': session_name, 'get': '1', 'user': user, 'token': user_token}
+    get_params = {'sheet': index_sheet, 'id': session_name, 'get': '1', 'admin': user, 'token': user_token}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
         if retval['error'].find('Headers must be specified for new sheet') == -1:
@@ -1351,7 +1351,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                 '; '.join(sort_caseless(list(p_concepts))),
                 '; '.join(sort_caseless(list(s_concepts)))
                                 ]
-    post_params = {'sheet': index_sheet, 'user': user, 'token': user_token,
+    post_params = {'sheet': index_sheet, 'admin': user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
                   }
     retval = http_post(sheet_url, post_params)
@@ -1362,8 +1362,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                 
 def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
     user = 'admin'
-    user_token = sliauth.gen_hmac_token(hmac_key, user)
-    post_params = {'user': user, 'token': user_token, 'sheet': session_name,
+    user_token = sliauth.gen_admin_token(hmac_key, user)
+    post_params = {'admin': user, 'token': user_token, 'sheet': session_name,
                    'headers': json.dumps(Manage_fields+Session_fields+grade_fields)}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
@@ -1628,7 +1628,8 @@ def process_input(input_files, config_dict):
         if renderer.load_python:
             skulpt_load = True
         
-        mid_params = {'math_js': math_inc if math_in_file else '',
+        mid_params = {'session_name': fname,
+                      'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else ''}
         mid_params.update(SYMS)
