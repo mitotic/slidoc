@@ -15,6 +15,28 @@ body:not(.slidoc-remote-view) .slidoc-remoteonly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly {
     display: none; }
 
+/* Answer/grading control */
+body:not(.slidoc-admin-view) .slidoc-adminonly { display: none; }
+body.slidoc-admin-view .slidoc-noadmin { display: none; }
+
+section:not(.slidoc-answered-view) .slidoc-answeredonly { display: none; }
+section:not(.slidoc-grading-view) .slidoc-gradingonly { display: none; }
+section:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
+
+section.slidoc-answered-view .slidoc-noanswered { display: none; }
+section.slidoc-grading-view .slidoc-nograding { display: none; }
+section.slidoc-graded-view .slidoc-nograded { display: none; }
+
+section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-noanswered-grading { display: none; }
+
+section.slidoc-nogradespan .slidoc-grade-span { display: none; }
+
+div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-button { display: none; }
+div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-box { display: none; }
+div.slidoc-answer-container:not(.slidoc-code-check) .slidoc-check-button { display: none; }
+div.slidoc-answer-container:not(.slidoc-multiline-answer):not(.slidoc-explain-answer) .slidoc-answer-textarea { display: none; }
+div.slidoc-answer-container.slidoc-multiline-answer .slidoc-answer-input { display: none; }
+
 /* Navigation */
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }
 .slidoc-bottom-right { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; opacity: 0.5; }

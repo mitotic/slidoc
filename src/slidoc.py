@@ -538,6 +538,47 @@ class MathRenderer(mistune.Renderer):
 class SlidocRenderer(MathRenderer):
     header_attr_re = re.compile(r'^.*?(\s*\{\s*(#\S+)?([^#\}]*)?\s*\})\s*$')
 
+    # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
+    answer_template = '''
+  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly">Answer:</span>
+  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered" cols="60" rows="5"></textarea>
+  <span class="slidoc-answer-span slidoc-answeredonly">
+    <span id="%(sid)s-response-span"></span>
+    <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
+    <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
+    <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
+    <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
+  </span>
+'''                
+
+    grading_template = '''
+  <span class="slidoc-grade-span slidoc-answeredonly">
+    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Enter</button>
+    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.saveClick(this,'%(sid)s');">Save</button>
+    <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix"><em>Grade:</em></span>
+    <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
+    <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
+    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix"></span>
+  </span>
+'''
+
+    comments_template_a = '''
+  <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="5" >  </textarea>
+'''
+    render_template = '''
+  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button slidoc-noanswered-grading" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
+'''
+    comments_template_b = '''              
+<div id="%(sid)s-comments" class="slidoc-comments slidoc-answeredonly"><em>Comments:</em>
+  <span id="%(sid)s-comments-content" class="slidoc-comments-content"></span>
+</div>
+'''
+    code_template = '''
+  <button id="%(sid)s-check-button" class="slidoc-clickable slidoc-check-button  slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this,'%(sid)s');">Render</button>
+  <pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
+'''
     def __init__(self, **kwargs):
         super(SlidocRenderer, self).__init__(**kwargs)
         self.file_header = ''
@@ -918,7 +959,7 @@ class SlidocRenderer(MathRenderer):
 
         params = {'id': self.get_slide_id(), 'opt': name, 'qno': len(self.questions)+1}
         if self.options['config'].hide or self.options['config'].pace:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, %(qno)d, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice">%(opt)s</span>. ''' % params
 
@@ -934,11 +975,11 @@ class SlidocRenderer(MathRenderer):
             choice_prefix = self.choice_end
             self.choice_end = ''
 
-        explain = ''
+        explain_answer = ''
         explain_match = re.match(r'^.*\s+(explain(=(\w+))?)\s*$', text)
         if explain_match:
             text = text[:-len(explain_match.group(0))].strip()
-            explain = explain_match.group(3) or 'text'
+            explain_answer = explain_match.group(3) or 'text'
             
         correct_js = ''
         js_match = MathInlineGrammar.inline_js.match(text)
@@ -1013,17 +1054,18 @@ class SlidocRenderer(MathRenderer):
                     traceback.print_exc()
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp), file=sys.stderr)
 
-        textarea_input = self.cur_qtype.startswith('text/')
-        if textarea_input:
-            explain = ''      # Explain not compatible with textarea input
+        grade_comments = 'grade_comments' in self.options['config'].features
+        multiline_answer = self.cur_qtype.startswith('text/')
+        if multiline_answer:
+            explain_answer = ''      # Explain not compatible with textarea input
 
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
         correct_val = correct_text
         if correct_js and not correct_val.startswith('='):
             correct_val = '='+correct_js+'();'+correct_text
-        self.questions[-1].update(qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
-                                  explain=explain, weight=1, gweight=0)
+        self.questions[-1].update(qnumber=len(self.questions), qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
+                                  explain=explain_answer, weight=1, gweight=0)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if correct_js:
@@ -1049,57 +1091,47 @@ class SlidocRenderer(MathRenderer):
             return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
 
         id_str = self.get_slide_id()
-        ans_params = {'sid': id_str,
-                      'ans_type': self.cur_qtype,
-                      'ans_text': name.capitalize(),
-                      'ans_extras': '',
-                      'click_extras': '''onclick="Slidoc.answerClick(this, %d, '%s', '%s');"''' % (len(self.questions), id_str, self.cur_qtype),
-                      'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
-                      'inp_extras': ''
-                      }
-        if self.cur_choice:
-            ans_params['ans_extras'] = 'style="display: none;"'
-            ans_params['click_extras'] = 'style="display: none;"'
-            ans_params['inp_extras'] = 'style="display: none;"'
+        self.render_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
 
-        inp_elem1, inp_elem2, explain_elem = '', '', ''
-        render_elem = '''<button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button" onclick="Slidoc.renderText(this, '%(qno)d', '%(sid)s');">Render</button>\n<div id="%(sid)s-render-text" class="slidoc-render-text"></div>\n''' % ({'sid': id_str, 'qno': len(self.questions)})
-        if textarea_input:
-            inp_elem2 = '''<br><textarea id="%(sid)s-ansinput" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" %(inp_extras)s ></textarea>
-'''
-            if self.cur_qtype.startswith('text/code='):
-                inp_elem2 += '<button id="%(sid)s-anscheck" class="slidoc-clickable slidoc-check-button" %(click_extras)s>CHECK</button>\n'
-            elif self.cur_qtype == 'text/markdown':
-                inp_elem2 += render_elem
-                self.render_markdown = True
+        ans_classes = ''
+        if multiline_answer:
+            ans_classes += ' slidoc-multiline-answer'
+        if explain_answer:
+            ans_classes += ' slidoc-explain-answer'
+        if self.cur_qtype == 'choice':
+            ans_classes += ' slidoc-choice-answer'
+        if self.cur_qtype.startswith('text/code='):
+            ans_classes += ' slidoc-code-check'
+
+        ans_params = { 'sid': id_str,
+                       'qno': len(self.questions),
+                       'ans_classes': ans_classes,
+                       'inp_type': 'number' if self.cur_qtype == 'number' else 'text' }
+
+        html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s" data-qnumber="%(qno)d">\n'''+self.answer_template
+
+        if grade_comments:
+            html_template += self.grading_template     # Hidden later by doc_include.js, if zero gweight
+            html_template += self.comments_template_a
+
+        if self.render_markdown:
+            html_template += self.render_template
+
+        if grade_comments:
+            html_template += self.comments_template_b
+
+        if self.cur_qtype.startswith('text/code'):
+            html_template += '''  <pre id="%(sid)s-response-div" class="slidoc-response-div"></pre>\n'''
         else:
-            inp_elem1 = '''<input id="%(sid)s-ansinput" type="%(inp_type)s" class="slidoc-answer-input" %(inp_extras)s onkeydown="Slidoc.inputKeyDown(event);"></input>'''
-            if explain:
-                explain_elem = '''<br><textarea id="%(sid)s-ansexplain" name="textarea" class="slidoc-answer-textarea" cols="60" rows="5" >Explain</textarea>
-'''
-                if explain == 'markdown':
-                    explain_elem += render_elem
-                    self.render_markdown = True
+            html_template += '''  <div id="%(sid)s-response-div" class="slidoc-response-div"></div>\n'''
 
-        ans_html = ('''<div id="%(sid)s-answer" class="slidoc-answer-container" %(ans_extras)s>
-<span id="%(sid)s-ansprefix" style="display: none;">%(ans_text)s:</span>
-<span id="%(sid)s-anstype" class="slidoc-answer-type" style="display: none;">%(ans_type)s</span>
-'''+inp_elem1+'''
-<button id="%(sid)s-ansclick" class="slidoc-clickable slidoc-answer-button" %(click_extras)s>Answer</button>
-<span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
-<span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
-<span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
-<span id="%(sid)s-correct" class="slidoc-correct-answer" style="display: none;"></span>
-<span id="%(sid)s-grade" class="slidoc-grade" style="display: none;"><em>Grade:</em>
-  <span id="%(sid)s-gradetext" class="slidoc-gradetext"></span></span>
-<div id="%(sid)s-comments" class="slidoc-comments" style="display: none;"><em>Comments:</em>
-  <span id="%(sid)s-commentstext" class="slidoc-commentstext"></span></div>
-'''+inp_elem2+'''
-'''+explain_elem+'''
-<pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
-</div>
-''') % ans_params
+        if self.cur_qtype.startswith('text/code='):
+            html_template += self.code_template
 
+        html_template +='''</div>\n'''
+
+        ans_html = html_template % ans_params
+            
         return choice_prefix+ans_html+'\n'
 
 

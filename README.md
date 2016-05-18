@@ -895,7 +895,7 @@ considered correct.
 
 Write a python function to add two numbers.
 
-Answer: text/multiline
+Answer: text/code
 
 Concepts: questions, text response 
 

@@ -21,7 +21,12 @@ function gen_admin_token(key, user_id) {
 }
 
 function gen_late_token(key, email, session_name, date_str) {
-    // Use date string of the form '1995-12-17T03:24'
+    // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
+    var date = new Date(date_str);
+    if (date_str.slice(-1) != 'Z') {  // Convert local time to UTC
+	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
+	date_str = date.toISOString().slice(0,16)+'Z';
+    }
     return date_str+':'+gen_hmac_token(key, 'late:'+email+':'+session_name+':'+date_str);
 }
 
