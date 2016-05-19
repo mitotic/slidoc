@@ -4,9 +4,9 @@
 Slidoc manages a collection of lectures written using
 [Markdown](https://daringfireball.net/projects/markdown/), which is a
 very simple and popular markup syntax. The lectures can include text,
-images and interactive questions. Markdown files are plain text files
+equations, images and interactive questions. Markdown files are plain text files
 saved using extension `.md`. They can be edited using text editors
-like Emacs, vi, [Atom](https://atom.io/), and Sublime Text.
+like Emacs, vi, [Atom](https://atom.io/), and [StackEdit](https://stackedit.io). 
 
 Slidoc publishes the Markdown files as static HTML files,
 [reveal.js](http://lab.hakim.se/reveal-js/) slideshows and
@@ -31,12 +31,13 @@ The design goals of Slidoc documents are:
 
  4. Track understanding of concepts.
 
-This README.md provides documentation, examples and tests for Slidoc.
+This README file provides documentation, examples and tests for Slidoc.
 
 Notes: Using the widely-used Markdown file format, with some
-extensions, accomplishes the first goal. With this format, plain text
-editors and many other open source tools (such as pandoc) can be used
-to edit and process the files. Version control is easy and sites like
+extensions for equations and interactivity, accomplishes the first
+goal. With this format, plain text editors and many other open source
+tools (such as [Pandoc](http://pandoc.org)) can be used to edit and
+process the files. Version control is easy and sites like
 [GitHub](https://github.com) can be used to store and share the files.
 
 The remaining goals are achieved using plain vanilla HTML files with
@@ -95,7 +96,12 @@ generate separate HTML files.  This will create files named
 directory. Additionally, it will create three files, `toc.html` (table
 of contents) , `ind.html` (concept index), and `qind.html` (question
 index). These are static web files which can be served from any web
-server.
+server. In addition to free services such as
+[public Dropbox folders](http://www.dropboxwiki.com/tips-and-tricks/host-websites-with-dropbox),
+[Github project web sites](https://pages.github.com), low-cost web
+hosting services like [Site44](https://www.site44.com) and
+[NearlyFreeSpeech.net](https://www.nearlyfreespeech.net) are also worth
+considering.
 
 Concepts: lecture management; index, concepts
 
@@ -828,7 +834,7 @@ What is the square root of `=sqrtNumber();6.25`?
 
 Answer: `=sqrtAnswer();2.5 +/- 0.1`
 
-Concepts: questions, numeric response; questions, formulas
+Concepts: questions, numeric response; questions, formulas; questions, randomized
 
 Notes: An optional error range may be provided after `+/-`.
 
