@@ -554,11 +554,11 @@ class SlidocRenderer(MathRenderer):
 '''                
 
     grading_template = '''
+  <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
+  <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
   <span class="slidoc-grade-span slidoc-answeredonly">
-    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Enter</button>
-    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.saveClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix"><em>Grade:</em></span>
-    <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
+    <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-adminonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
     <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix"></span>
   </span>
@@ -575,10 +575,21 @@ class SlidocRenderer(MathRenderer):
   <span id="%(sid)s-comments-content" class="slidoc-comments-content"></span>
 </div>
 '''
+    response_div_template = '''  <div id="%(sid)s-response-div" class="slidoc-response-div"></div>\n'''
+    response_pre_template = '''  <pre id="%(sid)s-response-div" class="slidoc-response-div"></pre>\n'''
+
     code_template = '''
   <button id="%(sid)s-check-button" class="slidoc-clickable slidoc-check-button  slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this,'%(sid)s');">Render</button>
   <pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
 '''
+
+    # Suffixes of input/textarea elements that need to be cleaned up
+    input_suffixes = ['-answer-input', '-answer-textarea', '-grade-input', '-comments-textarea']
+
+    # Suffixes of span/div/pre elements that need to be cleaned up
+    content_suffixes = ['-response-span', '-correct-mark', '-wrong-mark', '-any-mark', '-answer-correct',
+                        '-grade-content','-comments-content', '-response-div', '-code-output'] 
+    
     def __init__(self, **kwargs):
         super(SlidocRenderer, self).__init__(**kwargs)
         self.file_header = ''
@@ -1121,9 +1132,9 @@ class SlidocRenderer(MathRenderer):
             html_template += self.comments_template_b
 
         if self.cur_qtype.startswith('text/code'):
-            html_template += '''  <pre id="%(sid)s-response-div" class="slidoc-response-div"></pre>\n'''
+            html_template += self.response_pre_template
         else:
-            html_template += '''  <div id="%(sid)s-response-div" class="slidoc-response-div"></div>\n'''
+            html_template += self.response_div_template
 
         if self.cur_qtype.startswith('text/code='):
             html_template += self.code_template
@@ -1511,7 +1522,7 @@ def process_input(input_files, config_dict):
         if js_params['gd_client_id']:
             gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
-            gd_html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.min.js"></script>\n'
+            gd_html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
 
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
     body_prefix = templates['doc_include.html']
@@ -1638,15 +1649,21 @@ def process_input(input_files, config_dict):
                                                         prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
+        if not j:
+            answer_elements = {}
+            for suffix in renderer.content_suffixes:
+                answer_elements[suffix] = 0;
+            for suffix in renderer.input_suffixes:
+                answer_elements[suffix] = 1;
+            js_params['answer_elements'] = answer_elements
         if config.pace:
             js_params['questionsMax'] = len(renderer.questions)
             js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
             js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
-            if renderer.grade_fields:
-                gweights = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
-                js_params['gradeFields'] = ['q_grades_'+str(gweights)] + renderer.grade_fields
-            else:
-                js_params['gradeFields'] = []
+            js_params['gradeFields'] = renderer.grade_fields[:] if renderer.grade_fields else []
+            if js_params['gradeWeight'] and js_params['gradeFields']:
+                # Include column for total grades
+                js_params['gradeFields'] = ['q_grades_'+str(js_params['gradeWeight'])] + js_params['gradeFields']
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
@@ -1888,7 +1905,8 @@ def process_input(input_files, config_dict):
         if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
-        comb_params = {'math_js': math_inc if math_found else '',
+        comb_params = {'session_name': first_name,
+                       'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else ''}
         comb_params.update(SYMS)

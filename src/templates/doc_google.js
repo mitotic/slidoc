@@ -30,6 +30,10 @@ function gen_late_token(key, email, session_name, date_str) {
     return date_str+':'+gen_hmac_token(key, 'late:'+email+':'+session_name+':'+date_str);
 }
 
+function GAuthUserEmail(userName) {
+    return (userName.indexOf('@') >= 0) ? userName : userName.replace(/[-.,'\s]+/g,'-')+'@slidoc';
+}
+
 var GService = {};
 
 function GServiceJSONP(callback_index, json_text) {
@@ -134,7 +138,7 @@ GService.sendData = function (data, url, callback, useJSONP) {
   XHR.send(urlEncodedData);
 }
 
-function GoogleAuth(clientId, apiKey, loginButtonId, authCallback) {
+function GoogleProfile(clientId, apiKey, loginButtonId, authCallback) {
     //Include script src="https://apis.google.com/js/client.js?onload=handleClientLoad"
     // authCallback(this.auth)
     this.clientId = clientId;
@@ -145,22 +149,22 @@ function GoogleAuth(clientId, apiKey, loginButtonId, authCallback) {
     this.auth = null;
 }
 
-GoogleAuth.prototype.onLoad = function () {
-    console.log('GoogleAuth.onLoad:');
+GoogleProfile.prototype.onLoad = function () {
+    console.log('GoogleProfile.onLoad:');
     gapi.client.setApiKey(this.apiKey);
     window.setTimeout(this.requestAuth.bind(this, true), 5);
 }
 
 
-GoogleAuth.prototype.requestAuth = function (immediate) {
-    console.log('GoogleAuth.requestAuth:');
+GoogleProfile.prototype.requestAuth = function (immediate) {
+    console.log('GoogleProfile.requestAuth:');
     gapi.auth.authorize({client_id: this.clientId, scope: this.scopes, immediate: immediate},
                         this.onAuth.bind(this));
     return false;
 }
 
-GoogleAuth.prototype.onAuth = function (result) {
-    console.log('GoogleAuth.onAuth:', result);
+GoogleProfile.prototype.onAuth = function (result) {
+    console.log('GoogleProfile.onAuth:', result);
     var loginButton = document.getElementById(this.loginButtonId);
     if (!loginButton) {
         alert('No login button');
@@ -178,14 +182,14 @@ GoogleAuth.prototype.onAuth = function (result) {
     }
 }
 
-GoogleAuth.prototype.requestUserInfo = function () {
-    console.log('GoogleAuth.requestUserInfo:');
+GoogleProfile.prototype.requestUserInfo = function () {
+    console.log('GoogleProfile.requestUserInfo:');
     var req = gapi.client.plus.people.get({userId: 'me'});
     req.execute(this.onUserInfo.bind(this));
 }
 
-GoogleAuth.prototype.onUserInfo = function (resp) {
-    console.log('GoogleAuth.onUserInfo:', resp);
+GoogleProfile.prototype.onUserInfo = function (resp) {
+    console.log('GoogleProfile.onUserInfo:', resp);
     if (!resp.emails || !resp.id)
         return;
 
@@ -198,6 +202,7 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
     }
     if (!this.auth)
         return;
+    this.auth.validated = null;
     this.auth.id = resp.id;
     var comps = resp.displayName.split(/\s+/);
     var name = (comps.length > 1) ? comps.slice(-1)+', '+comps.slice(0,-1).join(' ') : resp.displayName;
@@ -211,7 +216,7 @@ GoogleAuth.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-GoogleAuth.prototype.promptUserInfo = function (user, msg, callback) {
+GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
     if (user && user.slice(-7) == '@slidoc')
 	user = user.slice(0, -7);
     var loginElem = document.getElementById('gdoc-login-popup');
@@ -221,29 +226,30 @@ GoogleAuth.prototype.promptUserInfo = function (user, msg, callback) {
     loginUserElem.value = user || '';
     document.getElementById('gdoc-login-message').textContent = msg || '';
 
-    var gauth = this;
+    var gprofile = this; // Because 'this' is re-bound on callback
     document.getElementById('gdoc-login-button').onclick = function (evt) {
 	loginElem.style.display = 'none';
         loginOverlay.style.display = 'none';
 	var loginUser = loginUserElem.value;
 	var loginToken = loginTokenElem.value;
 
-	if (!loginUser || !loginUser.trim()) {
-	    alert('Please provide user name for login');
-	    return false;
-	}
-	loginUser = loginUser.trim().toLowerCase();
-
-	var email = (loginUser.indexOf('@') >= 0) ? loginUser : loginUser.replace(/[-.,'\s]+/g,'-')+'@slidoc';
 	var adminKey = '';
 	if (loginToken.slice(0,6) == 'admin:') {
 	    // A token of the form 'admin:hmac_key' is used by the admin user to sign on as any user
 	    adminKey = loginToken.slice(6);
 	    loginToken = gen_admin_token(adminKey, 'admin');
 	}
+
+	if (!adminKey && (!loginUser || !loginUser.trim())) {
+	    alert('Please provide user name for login');
+	    return false;
+	}
+	loginUser = loginUser.trim().toLowerCase();
+
+	var email = loginUser ? GAuthUserEmail(loginUser) : '';
 	if (callback)
-	    this.authCallback = callback;
-	gauth.onUserInfo({adminKey: adminKey, id: email, displayName: loginUser, token: loginToken,
+	    gprofile.authCallback = callback;
+	gprofile.onUserInfo({adminKey: adminKey, id: email, displayName: loginUser, token: loginToken,
 			  emails: [{type: 'account', value:email}] });
     }
 	
@@ -253,62 +259,81 @@ GoogleAuth.prototype.promptUserInfo = function (user, msg, callback) {
 }
 
 
-function GoogleSheet(url, sheetName, fields, useJSONP, id, token, admin) {
+function GoogleSheet(url, sheetName, fields, useJSONP) {
     this.url = url;
     this.fields = fields;
     this.sheetName = sheetName;
     this.useJSONP = !!useJSONP;
-    this.id = id || '';
-    this.token = token || '';
-    this.admin = admin || '';
     this.headers = ['name', 'id', 'email', 'user', 'Timestamp'].concat(fields);
-    this.created = null;
     this.callbackCounter = 0;
     this.columnIndex = {};
+    this.timestamps = {};
+    this.cacheAll = null;
+    this.roster = null;
     for (var j=0; j<this.headers.length; j++)
         this.columnIndex[this.headers[j]] = j;
 }
 
 GoogleSheet.prototype.send = function(params, callType, callback) {
     params = JSON.parse(JSON.stringify(params));
-    if (this.id)
-	params.id = this.id;
-    if (this.token)
-	params.token = this.token;
-    if (this.admin)
-	params.admin = this.admin;
-    GService.sendData(params, this.url, this.callback.bind(this, callType, callback),
+    if (!params.id && GService.gprofile.auth.id)
+	params.id = GService.gprofile.auth.id;
+
+    if (GService.gprofile.auth.token)
+	params.token = GService.gprofile.auth.token;
+
+    if (GService.gprofile.auth.adminKey)
+	params.admin = 'admin';
+    params.sheet = this.sheetName;
+
+    var userId = params.id||null;
+    if (userId && this.timestamps[userId])             // Send current timestamp for user
+	params.timestamp = this.timestamps[userId];
+
+    GService.sendData(params, this.url, this.callback.bind(this, userId, callType, callback),
 		      this.useJSONP);
 }
     
-GoogleSheet.prototype.callback = function (callbackType, outerCallback, result, err_msg) {
-    // outerCallback(obj, err_msg, messages)
+GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, result, err_msg) {
+    // outerCallback(obj, {error: err_msg, messages: messages})
     // obj == null on error
     // obj == {} for non-existent row
     // obj == {id: ..., name: ..., } for returned row
-    console.log('GoogleSheet: callback', callbackType, result, err_msg);
+    console.log('GoogleSheet: callback', userId, callbackType, result, err_msg);
     this.callbackCounter -= 1;
 
     if (!result)
         console.log('GoogleSheet: '+callbackType+' callback: ERROR '+err_msg);
 
-    if (callbackType == 'createSheet')
-        this.created = result && result.result == 'success';
-
     if (outerCallback) {
         var retval = null;
-	var messages = null;
+	var extras = {error: '', messages: null};
         if (result) {
-	    if (result.result == 'success' && result.row)
-		retval = (result.row.length == 0) ? {} : this.row2obj(result.row);
+	    if (result.result == 'success' && result.value) {
+		if (callbackType != 'getAll') {
+		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value);
+		} else {
+		    retval = {};
+		    for (var j=0; j<result.value.length; j++) {
+			var row = result.value[j];
+			if (row.length) {
+			    var rowObj = this.row2obj(row);
+			    retval[rowObj.id] = rowObj;
+			}
+		    }
+		}
+
+		if (userId && result.timestamp)                 // Send update timestamp for user
+		    this.timestamps[userId] = result.timestamp;
+	    }
 
 	    else if (result.result == 'error' && result.error)
-		err_msg = err_msg ? err_msg + ';' + result.error : result.error;
+		extras.error = err_msg ? err_msg + ';' + result.error : result.error;
 
 	    if (result.messages)
-		messages = result.messages.split('\n');
+		extras.messages = result.messages.split('\n');
 	}
-        outerCallback(retval, err_msg, messages);
+        outerCallback(retval, extras);
     }
 }
 
@@ -338,138 +363,172 @@ GoogleSheet.prototype.obj2row = function(obj) {
     return row;
 }
 
-function gdocAbort(msg) {
-    document.body.textContent = msg;
-    throw('Aborted: '+msg);
-}
-
-GoogleSheet.prototype.checkCreated = function () {
-    if (!this.created)
-        gdocAbort('GoogleSheet: Sheet '+this.sheetName+' not created');
-}
-
 GoogleSheet.prototype.createSheet = function (callback) {
-    var params = { sheet: this.sheetName, headers: JSON.stringify(this.headers) };
+    var params = { headers: JSON.stringify(this.headers) };
     this.callbackCounter += 1;
     this.send(params, 'createSheet', callback);
 }
 
-GoogleSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet, retval, err_msg, messages) {
-    // Specify get to retrieve the existing/overwritten row.
-    // Specify nooverwrite to not overwrite any existing row with same id
-    // Get with nooverwrite will return the existing row, or the newly inserted row.
-    console.log('GoogleSheet.putRow:', createSheet);
+GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
+    // opts = {get:, id:, nooverwrite:}
+    // Specify opts.id to override id
+    // Specify opts.get to retrieve the existing/overwritten row.
+    // Specify opts.nooverwrite to not overwrite any existing row with same id
+    // opts.get with opts.nooverwrite will return the existing row, or the newly inserted row.
+    console.log('GoogleSheet.putRow:', opts);
+
     if (!rowObj.id || !rowObj.name)
-        throw('GoogleSheet: Must provide id and name to put row');
-    if (createSheet && this.created == null) {
-        // Call putRow after creating sheet
-        this.createSheet( this.putRow.bind(this, rowObj, nooverwrite, callback, get, null) ); // null needed to prevent looping
-        return;
-    } else if (err_msg) {
-	callback(null, err_msg, messages);
-    }
-    this.checkCreated();
+        throw('GoogleSheet.putRow: Must provide id and name to put row');
+
+    if (this.cacheAll)
+        throw('GoogleSheet.putRow: Cannot putRow when caching');
+
     var row = this.obj2row(rowObj);
-    var params = {sheet: this.sheetName, row: JSON.stringify(row)};
-    if (nooverwrite)
-        params['nooverwrite'] = '1';
-    if (get)
-        params['get'] = '1';
+    var params = {row: JSON.stringify(row)};
+    if (opts.id)
+        params.id = opts.id;
+    if (opts.get)
+        params.get = '1';
+    if (opts.nooverwrite)
+        params.nooverwrite = '1';
+    if (this.timestamps[rowObj.id])
+	params.timestamp = this.timestamps[rowObj.id];
+
     this.callbackCounter += 1;
     this.send(params, 'putRow', callback);
 }
 
-GoogleSheet.prototype.updateRow = function (updateObj, callback, get) {
+GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet, retval, extras) {
+    // opts = {get:, id:, nooverwrite:}
+    // Fills in id, name etc. from GService.gprofile.auth before calling putRow
+    console.log('GoogleSheet.authPutRow:', opts, !!callback, createSheet, retval, extras);
+    if (createSheet) {
+        // Call authPutRow after creating sheet
+        this.createSheet( this.authPutRow.bind(this, rowObj, opts, callback, null) ); // createSheet=null needed to prevent looping
+        return;
+    } else if (extras && extras.error) {
+	callback(null, extras);
+	return;
+    }
+
+    var extObj = {};
+    for (var j=0; j < this.fields.length; j++) {
+        var header = this.fields[j];
+        if (header in rowObj)
+            extObj[header] = rowObj[header]
+    }
+    var auth = GService.gprofile.auth;
+    extObj.id = opts.id || auth.id;
+    extObj.name = auth.displayName || '';
+    extObj.email = auth.email || '';
+    extObj.user = auth.userName || '';
+    return this.putRow(extObj, opts, callback, createSheet);
+}
+
+GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     // Only works with existing rows
     // Specify get to return updated row
+    // opts = {get:}
+    console.log('GoogleSheet.updateRow:', updateObj, opts);
     if (!updateObj.id)
-        throw('GoogleSheet: Must provide id to update row');
-    this.checkCreated();
+        throw('GoogleSheet.updateRow: Must provide id to update row');
+
+    var cachedRow = null;
+    if (this.cacheAll) {
+	// Update headers in cached copy
+	cachedRow = this.cacheAll[updateObj.id];
+	if (!cachedRow)
+	    throw("GoogleSheet.updateRow: id '"+updateObj.id+"'not found in cache");
+    }
+
     var updates = [];
     var keys = Object.keys(updateObj);
     for (var j=0; j<keys.length; j++) {
        var key = keys[j];
        if (!(key in this.columnIndex))
-           throw('GoogleSheet: Invalid column header: '+key);
-       updates.push( [key, updateObj[key]] );
+           throw('GoogleSheet.updateRow: Invalid column header: '+key);
+	updates.push( [key, updateObj[key]] );
+	if (cachedRow && key != 'id' && key != 'Timestamp' && key in cachedRow) // Update cached row
+	    cachedRow[key] = updateObj[key]
     }
-    var params = {sheet: this.sheetName, id: updateObj.id, get: (get?'1':''), update: JSON.stringify(updates)};
+
+    var params = {id: updateObj.id, update: JSON.stringify(updates)};
+    if (opts.get)
+        params.get = '1';
+
+    if (this.timestamps[updateObj.id])
+	params.timestamp = this.timestamps[updateObj.id];
+
     this.callbackCounter += 1;
     this.send(params, 'updateRow', callback);
 }
 
-GoogleSheet.prototype.getRow = function (id, callback, createSheet, retval, err_msg, messages) {
-    // callback(obj, err_msg, messages)
+GoogleSheet.prototype.getRow = function (id, callback) {
+    // If !id, GService.gprofile.auth.id is used
+    // callback(obj, extras)
     // obj == null on error
     // obj == {} for non-existent row
     // obj == {id: ..., name: ..., } for returned row
-    if (!callback)
-        throw('GoogleSheet: Must specify callback for getRow');
+    console.log('GoogleSheet.getRow:', id, !!callback);
 
-    if (createSheet && this.created == null) {
-        // Call getRow after creating sheet
-        this.createSheet( this.getRow.bind(this, id, callback, null) );
-        return;
-    } else if (err_msg) {
-	callback(null, err_msg, messages);
+    if (!id) id = GService.gprofile.auth.id;
+
+    if (!id)
+        throw('GoogleSheet.getRow: Null id for getRow');
+    if (!callback)
+        throw('GoogleSheet.getRow: Must specify callback for getRow');
+
+    if (this.cacheAll) {
+	if (id in this.cacheAll)
+	    callback(this.cacheAll[id], {error: '', messages: ['Info:FROM_CACHE:']});
+	else
+	    callback(null, {error: "id '"+id+"' not found in cache", messages: []});
+	return;
     }
-    this.checkCreated();
-    var params = {sheet: this.sheetName, id: id, get: '1'};
+
+    var params = {id: id, get: '1'};
     this.callbackCounter += 1;
     this.send(params, 'getRow', callback);
 }
 
 
-function GoogleAuthSheet(url, sheetName, fields, auth, useJSONP, adminUser) {
-    if (!auth || !auth.id)
-	throw('GoogleAuthSheet: Error - auth.id not defined!');
-    this.gsheet = new GoogleSheet(url, sheetName, fields, useJSONP, auth.id, auth.token, adminUser);
-    this.auth = auth;
-    this.admin = adminUser || '';
+GoogleSheet.prototype.getAll = function (callback) {
+    // callback(obj, extras)
+    // obj == null on error
+    // obj == {} for empty sheet
+    // obj == {id: {id: ..., name: ..., }} for returned rows
+    if (!callback)
+        throw('GoogleSheet: Must specify callback for getAll');
+
+    var params = {all: '1', get: '1'};
+    this.callbackCounter += 1;
+    this.send(params, 'getAll', callback);
 }
 
-GoogleAuthSheet.prototype.extendObj = function (obj, fullRow) {
-    var extObj = {};
-    for (var j=0; j < this.gsheet.fields.length; j++) {
-        var header = this.gsheet.fields[j];
-        if (header in obj)
-            extObj[header] = obj[header]
+GoogleSheet.prototype.getRoster = function() {
+    return this.roster;
+}
+
+GoogleSheet.prototype.initCache = function(allRows) {
+    this.cacheAll = allRows;
+    var ids = Object.keys(allRows);
+    this.roster = [];
+    for (var j=0; j<ids.length; j++) {
+	var rowObj = allRows[ids[j]];
+	this.timestamps[ids[j]] = (new Date(rowObj.Timestamp)).getTime();
+	this.roster.push([rowObj.name, ids[j]]);
     }
-    if ('Timestamp' in obj)
-        extObj.Timestamp = obj.Timestamp;
-    extObj.id = this.auth.id;
-    if (fullRow) {
-	extObj.name = this.auth.displayName || '';
-	extObj.email = this.auth.email || '';
-	extObj.user = this.auth.userName || '';
-    }
-    return extObj;
-}
-
-GoogleAuthSheet.prototype.createSheet = function (callback) {
-    return this.gsheet.createSheet(callback);
-}
-
-GoogleAuthSheet.prototype.putRow = function (rowObj, nooverwrite, callback, get, createSheet) {
-    return this.gsheet.putRow(this.extendObj(rowObj, true), nooverwrite, callback, get, createSheet);
-}
-
-GoogleAuthSheet.prototype.updateRow = function (updateObj, callback, get) {
-    return this.gsheet.updateRow(this.extendObj(updateObj), callback, get);
-}
-
-GoogleAuthSheet.prototype.getRow = function (callback, createSheet) {
-    return this.gsheet.getRow(this.auth.id, callback, createSheet);
+    this.roster.sort(function(a,b){ if (a[0] != b[0]) {return (a[0] > b[0]) ? 1 : -1} else {return (a[1] > b[1]) ? 1 : -1}});
+    console.log('GoogleSheet.initCache:', this.roster);
 }
 
 GService.GoogleSheet = GoogleSheet;
-GService.GoogleAuthSheet = GoogleAuthSheet;
 
-GService.gauth = new GoogleAuth(CLIENT_ID, API_KEY, LOGIN_BUTTON_ID, AUTH_CALLBACK);
+GService.gprofile = new GoogleProfile(CLIENT_ID, API_KEY, LOGIN_BUTTON_ID, AUTH_CALLBACK);
 
 GService.onGoogleAPILoad = function () {
     console.log('GService.onGoogleAPILoad:');
-    GService.gauth.onLoad();
+    GService.gprofile.onLoad();
 }
 
 })(GService, CLIENT_ID, API_KEY, LOGIN_BUTTON_ID, AUTH_CALLBACK);

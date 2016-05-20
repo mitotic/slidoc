@@ -16,16 +16,16 @@ body:not(.slidoc-incremental-view) .slidoc-incrementalonly {
     display: none; }
 
 /* Answer/grading control */
-body:not(.slidoc-admin-view) .slidoc-adminonly { display: none; }
 body.slidoc-admin-view .slidoc-noadmin { display: none; }
+body.slidoc-graded-view .slidoc-nograded { display: none; }
+body:not(.slidoc-admin-view) .slidoc-adminonly { display: none; }
+body:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
 
 section:not(.slidoc-answered-view) .slidoc-answeredonly { display: none; }
 section:not(.slidoc-grading-view) .slidoc-gradingonly { display: none; }
-section:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
 
 section.slidoc-answered-view .slidoc-noanswered { display: none; }
 section.slidoc-grading-view .slidoc-nograding { display: none; }
-section.slidoc-graded-view .slidoc-nograded { display: none; }
 
 section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-noanswered-grading { display: none; }
 
@@ -74,8 +74,11 @@ body.slidoc-sidebar-view .slidoc-all-container {
 }
 
 /* Answers */
-.slidoc-check-button,
- .slidoc-render-button {
+.slidoc-answer-textarea,
+  .slidoc-comments-textarea,
+  .slidoc-check-button,
+  .slidoc-grade-button,
+  .slidoc-render-button {
      display: block; }
 
 .slidoc-render-text { border: 1px solid maroon; padding: 5px;}

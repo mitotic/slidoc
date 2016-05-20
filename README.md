@@ -41,7 +41,7 @@ process the files. Version control is easy and sites like
 [GitHub](https://github.com) can be used to store and share the files.
 
 The remaining goals are achieved using plain vanilla HTML files with
-embedded Javascript allows easy navigation between slides and
+embedded Javascript, allowing easy navigation between slides and
 lectures. The format is mobile-friendly and allows "index navigation",
 i.e., scrolling through portions of different lectures that discuss
 same concept. The embedded Javascript also provides interactivity,
@@ -157,15 +157,10 @@ relevant to the slide. If there is no primary concept, then the
 special concept `null` should be specified as the first
 concept. Additional concepts are treated as secondary concepts.
 
-Notes are additional material that are displayed in the printed
-version of the lecture. For normal slideshows, notes are not visible
-in the main slide, but are normally displayed in vertical slides below
-the main slide. (The separator `--` may be used to generate multiple
-Notes slides in the vertical.)
-
-An alternative presentation mode, with two views, is also available
-for slideshows. In this case, notes are not displayed in the normal
-view but only displayed in the presenter view.
+Notes are additional material that appear below the main content. In
+slideshow mode (see below), notes are normally shown collapsed (or
+hidden) in the slide for compactness, but may be expanded and scrolled
+into view.
 
 ---
 
@@ -535,11 +530,17 @@ Concepts: reveal.js; slideshow, reveal.js
 Notes: To customize the presentation further, edit the
 `templates/reveal_template.html` template file.
 
+Notes appear as a vertical slide. The separator `--` may be used to
+split up the notes as multiple slides in the vertical. An alternative
+presentation mode, with two views, is also available. In this case,
+notes are not displayed in the normal view but only displayed in the
+presenter view.
+
 ---
 
 ## reveal.js shortcuts
 
-In a `reaveal.js` slideshow, the following keyboard shortcuts may be
+In a `reveal.js` slideshow, the following keyboard shortcuts may be
 useful:
 
 - `f` to enter fullscreen mode, `ESC` to exit

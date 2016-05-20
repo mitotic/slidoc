@@ -71,6 +71,7 @@ var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
 
 var TRUNCATE_DIGEST = 8;
+var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -206,11 +207,12 @@ function handleResponse(evt) {
 	    }
 	}
 
+	var getRow = params.get || '';
+	var allRows = params.all || '';
+	var nooverwriteRow = params.nooverwrite || '';
+
 	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
 	var rowUpdates = params.row ? JSON.parse(params.row) : null;
-
-	var getRow = params.get || '';
-	var nooverwriteRow = params.nooverwrite || '';
 
 	var userId = null;
 	var displayName = null;
@@ -218,9 +220,18 @@ function handleResponse(evt) {
 	if (!adminUser && selectedUpdates)
 	    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
+	var timestamp = null;
+	var numStickyRows = 1;  // Headers etc.
+
 	if (!rowUpdates && !selectedUpdates && !getRow) {
-	    // No row updates
+	    // No row updates/gets
 	    returnValues = [];
+	} else if (getRow && allRows) {
+	    // Get all rows and columns
+	    if (sheet.getLastRow() > numStickyRows)
+		returnValues = sheet.getRange(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, columnHeaders.length).getValues();
+	    else
+		returnValues = [];
 	} else {
 	    if (rowUpdates && selectedUpdates) {
 		throw('Error::Cannot specify both rowUpdates and selectedUpdates');
@@ -243,15 +254,15 @@ function handleResponse(evt) {
 
 	    if (!userId)
 		throw('Error::User id must be specified for updates/gets');
-
-	    var numStickyRows = 1;  // Headers etc.
-	    var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow(), 1);
 	    var userRow = -1;
-            for (var j=0; j<ids.length; j++) {
-		// Unique ID
-		if (ids[j][0] == userId) {
-		    userRow = j+1+numStickyRows;
-		    break;
+	    if (sheet.getLastRow() > numStickyRows) {
+		var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1);
+		for (var j=0; j<ids.length; j++) {
+		    // Unique ID
+		    if (ids[j][0] == userId) {
+			userRow = j+1+numStickyRows;
+			break;
+		    }
 		}
 	    }
 	    //returnMessages.push('Debug::userRow, userid: '+userRow+', '+userId);
@@ -327,12 +338,14 @@ function handleResponse(evt) {
 		    if (!displayName || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId);
 
-		    var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow(), 1);
 		    userRow = sheet.getLastRow()+1;
-		    for (var j=0; j<names.length; j++) {
-			if (names[j][0] > displayName) {
-			    userRow = j+1+numStickyRows
-			    break;
+		    if (sheet.getLastRow() > numStickyRows) {
+			var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
+			for (var j=0; j<names.length; j++) {
+			    if (names[j][0] > displayName) {
+				userRow = j+1+numStickyRows
+				break;
+			    }
 			}
 		    }
 		    sheet.insertRowBefore(userRow);
@@ -348,43 +361,50 @@ function handleResponse(evt) {
 		var maxCol = rowUpdates ? rowUpdates.length : columnHeaders.length;
 		var userRange = sheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
+
+		timestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
+		if (timestamp && params.timestamp && parseNumber(params.timestamp) && timestamp > parseNumber(params.timestamp))
+		    throw('Error::Row timestamp too old by '+Math.ceil((timestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another browser session?');
 	    
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
 		    if (adminUser && !restrictedSheet)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
+
 		    if (rowUpdates.length > fieldsMin) {
-			// Check if there are any non-null values for grade columns
-			var nonNullGradeColumn = false;
+			// Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values)
+			var nonNullExtraColumn = false;
+			var totalCells = [];
+			var adminColumns = {};
 			for (var j=fieldsMin; j < columnHeaders.length; j++) {
-			    if (rowUpdates[j] != null) {
-				nonNullGradeColumn = true;
-				break;
-			    }
+			    if (rowUpdates[j] != null)
+				nonNullExtraColumn = true;
+			    var hmatch = QFIELD_RE.exec(columnHeaders[j]);
+			    if (hmatch && hmatch[2] == 'grade') // Grade value to summed
+				totalCells.push(colIndexToChar(j+1) + userRow);
+			    if (!hmatch || (hmatch[2] != 'response' && hmatch[2] != 'explain')) // Non-response/explain admin column
+				adminColumns[columnHeaders[j]] = 1;
 			}
-			if (nonNullGradeColumn) {
-			    // Blank out non-response/explain grade columns if any grade column is non-null
+			if (nonNullExtraColumn) {
+			    // Blank out admin columns if any extra column is non-null
+			    // Failsafe: ensures admin-entered grades will be blanked out if response/explain are updated
 			    for (var j=fieldsMin; j < columnHeaders.length; j++) {
-				if (columnHeaders[j].slice(-9) != '_response' && columnHeaders[j].slice(-8) != '_explain')
+				if (columnHeaders[j] in adminColumns)
 				    rowUpdates[j] = '';
 			    }
 			}
-			if (columnHeaders[fieldsMin].slice(0,8) == 'q_grades') {
-			    // Column to hold sum of all grades
-			    var gradedCells = [];
-			    for (var j=fieldsMin+1; j < columnHeaders.length; j++) {
-				if (/^q(\d+)_grade/.exec(columnHeaders[j]))
-				    gradedCells.push(colIndexToChar(j+1) + userRow);
-			    }
-			    rowUpdates[fieldsMin] = gradedCells.length ? ('=' + gradedCells.join('+')) : '';
+			if (columnHeaders[fieldsMin].slice(0,8) == 'q_grades' && totalCells.length) {
+			    // Computed admin column to hold sum of all grades
+			    rowUpdates[fieldsMin] = ( '=' + totalCells.join('+') );
 			}
+			returnMessages.push("Debug:total:"+nonNullExtraColumn+Object.keys(adminColumns)+'=' + totalCells.join('+'));
 		    }
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
 			if (colHeader == 'Timestamp' && (colValue == null || !adminUser)) {
-			    // Timestamp is always updated, unless it is specified by admin
+			    // Timestamp is always updated, unless it is explicitly specified by admin
 			    rowValues[j] = curDate;
 			} else if (colHeader == 'initTimestamp' && newRow) {
 			    rowValues[j] = curDate;
@@ -415,16 +435,16 @@ function handleResponse(evt) {
 
 			var headerColumn = columnIndex[colHeader];
 
-			if (headerColumn <= fieldsMin || colHeader.slice(-9) == '_response' || colHeader.slice(-8) == '_explain')
-			    throw("Error::admin user may not update user-defined columns in sheet '"+sheetName+"'");
-
 			if (colHeader == 'Timestamp' && (colValue == null || !adminUser)) {
-			    // Timestamp is always updated, unless it is specified by admin
+			    // Timestamp is always updated, unless it is explicitly specified by admin
 			    rowValues[headerColumn-1] = curDate;
 			} else if (colValue == null) {
 			    // Do not modify field
 			} else if (colHeader != 'id' && colHeader != 'name' && colHeader != 'initTimestamp') {
 			    // Update row values for header (except for id, name, initTimestamp)
+			    if (headerColumn <= fieldsMin || !/^q\d+_(comments|grade_[0-9.]+)$/.exec(colHeader))
+				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
+
 			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
 			    }
@@ -436,9 +456,13 @@ function handleResponse(evt) {
 		// Save updated row
 		if (rowUpdates || selectedUpdates)
 		    userRange.setValues([rowValues]);
+
+		// Return updated timestamp
+		timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
+		
 		returnValues = getRow ? rowValues : [];
 
-		if (!gradeDate && returnValues.length > fieldsMin) {
+		if (!adminUser && !gradeDate && returnValues.length > fieldsMin) {
 		    // If session not graded, nullify columns to be graded
 		    for (var j=fieldsMin; j < columnHeaders.length; j++)
 			returnValues[j] = null;
@@ -448,12 +472,14 @@ function handleResponse(evt) {
 
 	// return json success results
 	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "row": returnValues, "messages": returnMessages.join('\n')})+jsonSuffix)
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "value": returnValues, "timestamp": timestamp,
+							 "messages": returnMessages.join('\n')})+jsonSuffix)
             .setMimeType(mimeType);
     } catch(err){
 	// if error return this
 	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": ''+err, "row": null, "messages": returnMessages.join('\n')})+jsonSuffix)
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": ''+err, "value": null,
+							 "messages": returnMessages.join('\n')})+jsonSuffix)
             .setMimeType(mimeType);
     } finally { //release lock
 	lock.releaseLock();
