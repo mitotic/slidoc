@@ -46,7 +46,8 @@ SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
-        'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
+        'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
+        'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -1364,7 +1365,7 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields =  ['name', 'id', 'email', 'user', 'Timestamp']
-Session_fields = ['initTimestamp', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'sessionScore',
+Session_fields = ['initTimestamp', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
                   'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',
                 'scoreWeight', 'gradeWeight', 'fieldsMin', 'questions', 'answers',
@@ -1372,7 +1373,7 @@ Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', '
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
                          p_concepts, s_concepts):
-    index_sheet = 'slidoc_sessions'
+    index_sheet = 'sessions_slidoc'
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
 
@@ -1425,7 +1426,7 @@ def process_input(input_files, config_dict):
 
     js_params = {'sessionName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'scoreWeight': 0, 'gradeWeight': 0,
-                 'paceStrict': None, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
+                 'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'features': {}}
 
@@ -1460,13 +1461,15 @@ def process_input(input_files, config_dict):
         config.qindex = ''
         comps = config.pace.split(',')
         if comps[0]:
-            js_params['paceStrict'] = int(comps[0])
+            js_params['paceLevel'] = int(comps[0])
         if len(comps) > 1 and comps[1].isdigit():
             js_params['paceDelay'] = int(comps[1])
         if len(comps) > 2 and comps[2].isdigit():
             js_params['tryCount'] = int(comps[2])
         if len(comps) > 3 and comps[3].isdigit():
             js_params['tryDelay'] = int(comps[3])
+        if not js_params['paceLevel']:
+            sys.exit('slidoc: Error: --pace=0 argument should be omitted')
 
     gd_hmac_key = ''
     if config.google_docs:
@@ -1494,7 +1497,11 @@ def process_input(input_files, config_dict):
     else:
         cmd_features_set = md2md.make_arg_set(config.features, features_all)
         js_params['features'] = dict([(x, 1) for x in cmd_features_set])
-    config.features = None
+
+    if config.separate:
+        config.features = None
+    else:
+        config.features = config.features or set()
 
     config.strip = md2md.make_arg_set(config.strip, strip_all)
     if len(input_files) == 1:
@@ -1523,6 +1530,13 @@ def process_input(input_files, config_dict):
             gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
             gd_html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
+
+    answer_elements = {}
+    for suffix in SlidocRenderer.content_suffixes:
+        answer_elements[suffix] = 0;
+    for suffix in SlidocRenderer.input_suffixes:
+        answer_elements[suffix] = 1;
+    js_params['answer_elements'] = answer_elements
 
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
     body_prefix = templates['doc_include.html']
@@ -1592,8 +1606,8 @@ def process_input(input_files, config_dict):
         if config.separate:
             js_params['sessionName'] = fname
 
-        if not j or config.separate:
-            # First file or separate files
+        if config.separate:
+            # Separate files (also paced)
             file_config = parse_first_line(f, fname, parser, {}, include_args=Select_file_args,
                                            verbose=config.verbose)
             due_date = sliauth.get_utc_date(config.due_date or file_config.due_date if config.pace else None)
@@ -1606,6 +1620,8 @@ def process_input(input_files, config_dict):
                 
             js_params['features'] = dict([(x, 1) for x in config.features])
 
+        if not j or config.separate:
+            # First file or separate files
             mathjax_config = []
             if 'equation_number' in config.features:
                 mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
@@ -1649,14 +1665,8 @@ def process_input(input_files, config_dict):
                                                         prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
-        if not j:
-            answer_elements = {}
-            for suffix in renderer.content_suffixes:
-                answer_elements[suffix] = 0;
-            for suffix in renderer.input_suffixes:
-                answer_elements[suffix] = 1;
-            js_params['answer_elements'] = answer_elements
         if config.pace:
+            # File-specific js_params
             js_params['questionsMax'] = len(renderer.questions)
             js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
             js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
@@ -1995,11 +2005,12 @@ def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), inc
     first_line = file.readline()
     file.seek(0)
     match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
-    if not match:
-        return argparse.Namespace(**cmd_args_dict)
     try:
-        line_args_list = shlex.split(match.group(1).strip())
-        line_args_dict = vars(parser.parse_args(line_args_list))
+        if match:
+            line_args_list = shlex.split(match.group(1).strip())
+            line_args_dict = vars(parser.parse_args(line_args_list))
+        else:
+            line_args_dict = dict([(arg_name, None) for arg_name in include_args]) if include_args else {}
         for arg_name in line_args_dict.keys():
             if include_args and arg_name not in include_args:
                 del line_args_dict[arg_name]
@@ -2059,8 +2070,10 @@ if __name__ == '__main__':
     cmd_args_orig = cmd_parser.parse_args()
     first_name = os.path.splitext(os.path.basename(cmd_args_orig.file[0].name))[0]
 
+    # Do not exclude args if combined file
+    exclude_args = Select_file_args if cmd_args_orig.index_files or cmd_args_orig.pace else None
     cmd_args = parse_first_line(cmd_args_orig.file[0], first_name, parser, vars(cmd_args_orig),
-                                exclude_args=Select_file_args, verbose=cmd_args_orig.verbose)
+                                exclude_args=exclude_args, verbose=cmd_args_orig.verbose)
 
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',

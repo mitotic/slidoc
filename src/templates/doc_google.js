@@ -190,8 +190,10 @@ GoogleProfile.prototype.requestUserInfo = function () {
 
 GoogleProfile.prototype.onUserInfo = function (resp) {
     console.log('GoogleProfile.onUserInfo:', resp);
-    if (!resp.emails || !resp.id)
+    if (!resp.adminKey && (!resp.emails || !resp.id)) {
+	alert('GAuth: ERROR no user specified');
         return;
+    }
 
     for (var j=0; j<resp.emails.length; j++) {
         var email = resp.emails[j];
@@ -200,8 +202,10 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
             break;
         }
     }
-    if (!this.auth)
+    if (!this.auth) {
+	alert('GAuth: ERROR no user auth');
         return;
+    }
     this.auth.validated = null;
     this.auth.id = resp.id;
     var comps = resp.displayName.split(/\s+/);
@@ -212,6 +216,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
     this.auth.domain = resp.domain || '';
     this.auth.image = (resp.image && resp.image.url) ? resp.image.url : ''; 
     this.auth.adminKey = resp.adminKey || '';
+    this.auth.remember = resp.remember || false;
     if (this.authCallback)
 	this.authCallback(this.auth);
 }
@@ -223,7 +228,9 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
     var loginOverlay = document.getElementById('gdoc-login-overlay');
     var loginUserElem = document.getElementById('gdoc-login-user');
     var loginTokenElem = document.getElementById('gdoc-login-token');
+    var loginRememberElem = document.getElementById('gdoc-login-remember');
     loginUserElem.value = user || '';
+    loginRememberElem.checked =  !!GService.gprofile.auth && GService.gprofile.auth.remember;
     document.getElementById('gdoc-login-message').textContent = msg || '';
 
     var gprofile = this; // Because 'this' is re-bound on callback
@@ -232,6 +239,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
         loginOverlay.style.display = 'none';
 	var loginUser = loginUserElem.value;
 	var loginToken = loginTokenElem.value;
+	var loginRemember = loginRememberElem.checked;
 
 	var adminKey = '';
 	if (loginToken.slice(0,6) == 'admin:') {
@@ -250,7 +258,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	if (callback)
 	    gprofile.authCallback = callback;
 	gprofile.onUserInfo({adminKey: adminKey, id: email, displayName: loginUser, token: loginToken,
-			  emails: [{type: 'account', value:email}] });
+			     emails: [{type: 'account', value:email}], remember: !!loginRemember});
     }
 	
     loginElem.style.display = 'block';
@@ -375,7 +383,7 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
     // Specify opts.get to retrieve the existing/overwritten row.
     // Specify opts.nooverwrite to not overwrite any existing row with same id
     // opts.get with opts.nooverwrite will return the existing row, or the newly inserted row.
-    console.log('GoogleSheet.putRow:', opts);
+    console.log('GoogleSheet.putRow:', rowObj, opts);
 
     if (!rowObj.id || !rowObj.name)
         throw('GoogleSheet.putRow: Must provide id and name to put row');

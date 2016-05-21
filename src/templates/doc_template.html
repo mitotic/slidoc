@@ -10,8 +10,9 @@
 <body>
 
 <button id="slidoc-google-login-button" style="display: none;">Google Login</button>
-
 <div id="slidoc-top-right" class="slidoc-top-right slidoc-noprint slidoc-nav-overlay">
+<span class="slidoc-adminonly">%(pencil)s</span>
+<select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
 <span id="slidoc-submitted-display" class="slidoc-clickable" onclick="Slidoc.submittedAlert();"></span>
 <span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
 <span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>&nbsp;
@@ -50,6 +51,7 @@ Session: <b>%(session_name)s</b>
 Username/email: <input id="gdoc-login-user" type="text" class="gdoc-login-user"></input>
 <p></p>
 Token: <input id="gdoc-login-token" type="password" class="gdoc-login-token"></input>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Remember: <input id="gdoc-login-remember" type="checkbox" class="gdoc-login-remember"></input>
 <p></p>
 <button id="gdoc-login-button" class="gdoc-login-button">Login</button>
 </div>

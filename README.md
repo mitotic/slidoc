@@ -4,9 +4,15 @@
 Slidoc manages a collection of lectures written using
 [Markdown](https://daringfireball.net/projects/markdown/), which is a
 very simple and popular markup syntax. The lectures can include text,
-equations, images and interactive questions. Markdown files are plain text files
-saved using extension `.md`. They can be edited using text editors
-like Emacs, vi, [Atom](https://atom.io/), and [StackEdit](https://stackedit.io). 
+equations, images and interactive questions. Markdown files are plain
+text files saved using extension `.md`. They can be edited using text
+editors like Emacs, vi, [Atom](https://atom.io/), and
+[StackEdit](https://stackedit.io). The
+[Markdown Preview Plus](https://atom.io/packages/markdown-preview-plus)
+package for Atom supports live rendering of Markdown (with math) while
+you edit. There is also a
+[Chrome extension](https://chrome.google.com/webstore/detail/markdown-preview-plus/febilkbfcbhebfnokafefeacimjdckgl?hl=en-US)
+of the same name to render Markdown in the browser.
 
 Slidoc publishes the Markdown files as static HTML files,
 [reveal.js](http://lab.hakim.se/reveal-js/) slideshows and
@@ -60,17 +66,14 @@ needed. Download from [Github](https://github.com/mitotic/slidoc) and
 unzip/untar to install. To test, publish this `README.md` file in a
 temporary directory using the following command:
 
-    ../src/slidoc.py --slides=black ../README.md
+    ../src/slidoc.py ../README.md
 
-Open the `toc.html` file created by the above command in a browser.
+Open the `README.html` file created by the above command in a browser.
 
 Slidoc uses [mistune](https://github.com/lepture/mistune) for HTML
 exports, which is included in the `src` directory for
 convenience. HTML documents produced by Slidoc automatically load the
-[Mathjax](https://www.mathjax.org) library to display equations and
-[reveal.js](https://github.com/hakimel/reveal.js/) for slideshows
-(except for presentation mode, which requires the `notes` plugin for
-`reveal.js` to be installed in a web-accessible directory).
+[Mathjax](https://www.mathjax.org) library to display equations.
 
 ---
 
@@ -97,11 +100,11 @@ directory. Additionally, it will create three files, `toc.html` (table
 of contents) , `ind.html` (concept index), and `qind.html` (question
 index). These are static web files which can be served from any web
 server. In addition to free services such as
-[public Dropbox folders](http://www.dropboxwiki.com/tips-and-tricks/host-websites-with-dropbox),
-[Github project web sites](https://pages.github.com), low-cost web
+[public Dropbox folders](http://www.dropboxwiki.com/tips-and-tricks/host-websites-with-dropbox)
+and [Github project web sites](https://pages.github.com), low-cost web
 hosting services like [Site44](https://www.site44.com) and
-[NearlyFreeSpeech.net](https://www.nearlyfreespeech.net) are also worth
-considering.
+[NearlyFreeSpeech.net](https://www.nearlyfreespeech.net) are also
+worth considering.
 
 Concepts: lecture management; index, concepts
 
@@ -195,7 +198,7 @@ Specifying the command option `--features=incremental_slides` enables
 incremental display of lists and fragments in slideshows using
 [Pandoc syntax](http://pandoc.org/README.html#incremental-lists).
 
-> - Block quoted lists are displayed incrementally.
+> - Block quoted lists (like this) are displayed incrementally.
 
 > - Use the *Down* arrow to display incremental elements.
 
@@ -212,7 +215,7 @@ incremental display (see [Another slide with images](#)).
 
 ...
 
-More incremental paragraph display.
+Final paragraph.
 
 Concepts: incremental display; lists, incremental 
 
@@ -226,23 +229,20 @@ sequence of slides. Information about the state of a paced slideshow
 is saved in the persistent local storage of the browser, using the
 filename as the key. It is enabled by the option:
 
-    --pace=pace_strict,delay_sec,try_count,try_delay,revision,prereqs
+    --pace=pace_level,delay_sec,try_count,try_delay
 
-* `pace_strict` if non-zero, implies that document may only be viewed as a
-  slideshow. If zero, switching to scrolling view is allowed.
+* `pace_level` if non-zero, implies that document is to be viewed in
+  in an incremental fashion, as a slideshow, until the last slide is
+  reached. (If less than two, switching to scrolling view is
+  permitted.)
 
 * `delay_sec` if non-zero, forces a minimum delay between slides
 
 * `try_count` if non-zero, forces each question to be attempted at
   least this many times (except for multiple-choice, where only one
-  attempt is forced).
+  attempt is required).
 
 * `try_delay` if non-zero, forces a wait after an incorrect attempt.
-
-* `revision` if not a null string, updates the session, discarding old revisions.
-
-* `prereqs` optional colon-separated string of prerequisite session names
-  (to be completed before this paced session can be attempted).
 
 The Notes portion of a question slide is hidden until a correct
 response is received or all tries are exhausted.
@@ -843,7 +843,9 @@ Embedded javascript functions may be used as formulas, using the notation
 
     =function_name()
 
-To display a default reference value, append it, separated by `;`.
+To display a default reference value, append it, separated by a
+semicolon (`;`). View the raw Markdown text for this document to see
+the embedded javascript code that randomizes the question.
 
 <script>
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
@@ -970,7 +972,7 @@ Notes: All answers are assumed correct.
 
 ## Open text response question
 
-To be or note to be-that is the question. What is the answer?
+To be or not to be - that is the question. What is the answer?
 
 Answer: text
 
