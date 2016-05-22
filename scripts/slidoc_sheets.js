@@ -45,6 +45,11 @@
 //       Change Project Version to New and click Update (the web app URL remains the same)
 //       (If you changed the menu, you may need to close the spreadsheet and re-open it to see the changes.)
 //
+// ROSTER
+//  You may optionally create a 'roster_slidoc' sheet containing ['name', 'id', 'email', 'altid'] in the first four columns.
+//  The 'name', 'email' and 'altid' values will be copied from this column to sesssion sheets (using 'id' as the index).
+//  If roster_slidoc sheet is present and user id is not present in it, user will not be allowed to access sessions.
+//
 // USING THE SLIDOC MENU
 //  - "Display session answers" to create/overwrite the sheet
 //    'sessionName-answers' displaying all the answers
@@ -52,20 +57,25 @@
 //  - "Display session statistics" to create/overwrite the sheet
 //    'sessionName-stats' displaying session statistics
 //
-//  - "Update scores for session" to update score for a particular session
+//  - "Update scores for sessions" to update score for all sessions
 //    in the 'scores_slidoc' sheet (which is automatically created, if need be)
 //
 // You may also create the 'scores_slidoc' sheet yourself:
-//   - Put headers in the first row. The first four are usually 'name', 'id', 'email', 'user'
-//   - 'id' is the only required column, which should be unique for each user and used to index sessions
-//   - Any custom header names should begin with an underscore, to avoid being mistaken for session names.
+//   - Put headers in the first row. The first four are usually 'name', 'id', 'email', 'altid'
+//   - 'id' is the only required column, which should be unique for each user and used to index sessions.
+//   - a column is created for each session, with an underscore prefixed to the session name.
+//   - Any custom header names should not begin with an underscore, to avoid being mistaken for session names.
 //   - "Update scores for session" menu action will only update session columns with lookup formulas.
-//   - If you add new user rows, then you could simply copy the lookup formula from existing rows.
+//   - If you add new user rows, then you can simply copy the lookup formula from existing rows.
 
 
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
 var ADMIN_USER = 'admin';
 var INDEX_SHEET = 'sessions_slidoc';
+var ROSTER_SHEET = 'roster_slidoc';
+var SCORES_SHEET = 'scores_slidoc';
+
+var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
@@ -82,7 +92,10 @@ function onOpen() {
    menuEntries.push({name: "Display session answers", functionName: "sessionAnswerSheet"});
    menuEntries.push({name: "Display session statistics", functionName: "sessionStatSheet"});
    menuEntries.push(null); // line separator
-   menuEntries.push({name: "Update scores for session", functionName: "updateScoreSheet"});
+   menuEntries.push({name: "Update scores for all sessions", functionName: "updateScoreSheet"});
+   menuEntries.push(null); // line separator
+   menuEntries.push({name: "Email authentication tokens", functionName: "emailTokens"});
+   menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
 
    ss.addMenu("Slidoc", menuEntries);
 }
@@ -101,14 +114,15 @@ function handleResponse(evt) {
     // The list contains updated row values if get=true; otherwise it is just an empty list.
     // PARAMETERS
     // sheet: 'sheet name' (required)
-    // headers: ['name', 'id', 'email', 'user', 'Timestamp', 'initTimestamp', 'field2', ...] (name and id required for sheet creation)
+    // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'field2', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     // id: unique id number or lowercase email (required if creating or updating a row, and row parameter is not specified)
-    // user: unique user name (or just copy of the email address)
+    // email: optional
+    // altid: alternate, perhaps numeric, id (optional, used for information only)
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
     // If the special name initTimestamp occurs in the list, the timestamp is initialized when the row is added.
     // If the special name Timestamp occurs in the list, the timestamp is automatically updated on each write.
-    // row: ['name_value', 'id_value', 'email_value', 'user_value', null, null, 'field1_value', ...]
+    // row: ['name_value', 'id_value', 'email_value', 'altid_value', null, null, 'field1_value', ...]
     //       null value implies no update (except for Timestamp)
     // get: true to retrieve row (id must be specified) (otherwise only [] is returned on success)
     // Can add row with fewer columns than already present.
@@ -163,6 +177,20 @@ function handleResponse(evt) {
 	if (restrictedSheet) {
 	    if (!adminUser)
 		throw("Error::Must be admin user to access sheet '"+sheetName+"'");
+	}
+
+	var rosterValues = [];
+	var rosterSheet = doc.getSheetByName(ROSTER_SHEET);
+	if (rosterSheet && !adminUser) {
+	    // Check user access
+	    if (!params.id)
+		throw('Error:NEED_ID:Must specify user id to lookup roster')
+	    try {
+		// Copy user info from roster
+		rosterValues = lookupValues(params.id, MIN_HEADERS, ROSTER_SHEET, true);
+	    } catch(err) {
+		throw("Error:NEED_ROSTER_ENTRY:User id '"+params.id+"' not found in roster");
+	    }
 	}
 
 	// Check parameter consistency
@@ -265,7 +293,7 @@ function handleResponse(evt) {
 		    }
 		}
 	    }
-	    //returnMessages.push('Debug::userRow, userid: '+userRow+', '+userId);
+	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues);
 	    var newRow = (userRow < 0);
 
 	    if (adminUser && !restrictedSheet && newRow)
@@ -286,7 +314,7 @@ function handleResponse(evt) {
 		var fieldsMin = columnHeaders.length;
 		if (!restrictedSheet && doc.getSheetByName(INDEX_SHEET)) {
 		    // Session parameters
-		    var sessionParams = getSessionParams(sheetName, ['dueDate', 'gradeDate', 'fieldsMin']);
+		    var sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'fieldsMin'], INDEX_SHEET);
 		    dueDate = sessionParams.dueDate;
 		    gradeDate = sessionParams.gradeDate;
 		    fieldsMin = sessionParams.fieldsMin;
@@ -307,11 +335,16 @@ function handleResponse(evt) {
 			    if (lateToken == 'none') {
 				// Late submission without token
 				allowLateMods = true;
-			    } else if (validateHMAC('late:'+userId+':'+sheetName+':'+lateToken, HMAC_KEY)) {
-				dueDate = createDate(splitToken(lateToken)[0]); // Date format: '1995-12-17T03:24Z'
-				pastSubmitDeadline = (curTime > dueDate.getTime());
 			    } else {
-				returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
+				var comps = splitToken(lateToken);
+				var dateStr = comps[0];
+				var tokenStr = comps[1];
+				if (genLateToken(HMAC_KEY, userId, sheetName, dateStr) == tokenStr) {
+				dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
+				    pastSubmitDeadline = (curTime > dueDate.getTime());
+				} else {
+				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
+				}
 			    }
 			}
 			returnMessages.push("Info:DUE_DATE:"+dueDate.getTime());
@@ -365,7 +398,7 @@ function handleResponse(evt) {
 
 		timestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
 		if (timestamp && params.timestamp && parseNumber(params.timestamp) && timestamp > parseNumber(params.timestamp))
-		    throw('Error::Row timestamp too old by '+Math.ceil((timestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another browser session?');
+		    throw('Error::Row timestamp too old by '+Math.ceil((timestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another active browser session?');
 
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
@@ -401,6 +434,7 @@ function handleResponse(evt) {
 			}
 			returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+'=' + totalCells.join('+'));
 		    }
+
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
@@ -411,8 +445,8 @@ function handleResponse(evt) {
 			    rowValues[j] = curDate;
 			} else if (colValue == null) {
 			    // Do not modify field
-			} else if (newRow || (colHeader != 'id' && colHeader != 'name' && colHeader != 'initTimestamp') ) {
-			    // Id, name, initTimestamp cannot be updated programmatically
+			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader != 'initTimestamp') ) {
+			    // Id, name, email, altid, initTimestamp cannot be updated programmatically
 			    // (If necessary to change name manually, then re-sort manually)
 			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
@@ -420,6 +454,10 @@ function handleResponse(evt) {
 			    rowValues[j] = colValue;
 			}
 		    }
+
+		    // Copy user info from roster (if available)
+		    for (var j=0; j<rosterValues.length; j++)
+			rowValues[j] = rosterValues[j];
 
 		    // Save updated row
 		    userRange.setValues([rowValues]);
@@ -445,8 +483,8 @@ function handleResponse(evt) {
 			    modValue = curDate;
 			} else if (colValue == null) {
 			    // Do not modify field
-			} else if (colHeader != 'id' && colHeader != 'name' && colHeader != 'initTimestamp') {
-			    // Update row values for header (except for id, name, initTimestamp)
+			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader != 'initTimestamp') {
+			    // Update row values for header (except for id, name, email, altid, initTimestamp)
 			    if (headerColumn <= fieldsMin || !/^q\d+_(comments|grade_[0-9.]+)$/.exec(colHeader))
 				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 
@@ -531,16 +569,35 @@ function createDate(date) {
     return new Date(date);
 }
 
+function genHmacToken(key, message) {
+    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
+						 message, key,
+						 Utilities.Charset.US_ASCII);
+    return Utilities.base64Encode(rawHMAC).slice(0,TRUNCATE_DIGEST);
+}
+
+function genUserToken(key, userId) {
+    // Generates user token using HMAC key
+    return genHmacToken(key, 'id:'+userId);
+}
+
+function genLateToken(key, userId, sessionName, dateStr) {
+    // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
+    if (dateStr.slice(-1) != 'Z') {  // Convert local time to UTC
+	var date = createDate(dateStr+'Z');
+	// Adjust for local time zone
+	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
+	dateStr = date.toISOString().slice(0,16)+'Z';
+    }
+    return dateStr+':'+genHmacToken(key, 'late:'+userId+':'+sessionName+':'+dateStr);
+}
+
 function validateHMAC(token, key) {
     // Validates HMAC token of the form message:signature
     var comps = splitToken(token);
     var message = comps[0];
     var signature = comps[1];
-    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
-						 message, key,
-						 Utilities.Charset.US_ASCII);
-    var encodedHMAC = Utilities.base64Encode(rawHMAC)
-    return signature == encodedHMAC.slice(0,TRUNCATE_DIGEST);
+    return genHmacToken(key, message) == signature;
 }
 
 
@@ -564,53 +621,83 @@ function indexRows(sheet, indexCol, startRow) {
     return rowIndex;
 }
 
-function getSessionParams(sessionName, colNames) {
-    // Return parameters in list colNames for sessionName from sessions_slidoc sheet
+function getColumns(header, sheetName, colCount, skipRows) {
+    skipRows = skipRows || 1;
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var indexSheet = doc.getSheetByName(INDEX_SHEET);
+    var sheet = doc.getSheetByName(sheetName);
+    var colIndex = indexColumns(sheet);
+    if (!(header in colIndex))
+	throw('Column '+header+' not found in sheet '+sheetName);
+    if (colCount && colCount > 1) {
+	// Multiple columns (list of lists)
+	return sheet.getSheetValues(1+skipRows, colIndex[header], sheet.getLastRow()-skipRows, colCount)
+    } else {
+	// Single column
+	var vals = sheet.getSheetValues(1+skipRows, colIndex[header], sheet.getLastRow()-skipRows, 1);
+	var retvals = [];
+	for (var j=0; j<vals.length; j++)
+	    retvals.push(vals[j][0]);
+	return retvals;
+    }
+}
+
+function lookupValues(idValue, colNames, sheetName, listReturn) {
+    // Return parameters in list colNames for idValue from sessions_slidoc sheet
+    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var indexSheet = doc.getSheetByName(sheetName);
     if (!indexSheet)
-	throw('Index sheet sessions_slidoc not found');
+	throw('Index sheet '+sheetName+' not found');
     var indexColIndex = indexColumns(indexSheet);
     var indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2);
-    var sessionRow = indexRowIndex[sessionName];
+    var sessionRow = indexRowIndex[idValue];
+    if (!sessionRow)
+	throw('ID value '+idValue+' not found in index sheet '+sheetName)
     var retVals = {};
+    var listVals = [];
     for (var j=0; j < colNames.length; j++) {
 	if (!(colNames[j] in indexColIndex))
-	    throw('Column '+colNames[j]+' not found in session index');
+	    throw('Column '+colNames[j]+' not found in index sheet '+sheetName);
 	retVals[colNames[j]] = indexSheet.getSheetValues(sessionRow, indexColIndex[colNames[j]], 1, 1)[0][0];
+	listVals.push(retVals[colNames[j]]);
     }
-    return retVals;
+    return listReturn ? listVals : retVals;
 }
 
 function notify(message, title) {
     SpreadsheetApp.getActiveSpreadsheet().toast(message, title||'');
 }
 
-function sessionPrompt() {
+function getPrompt(title, message) {
+    var ui = SpreadsheetApp.getUi();
+    var response = ui.prompt(title||'', message||'', ui.ButtonSet.YES_NO);
+    
+    if (response.getSelectedButton() == ui.Button.YES) {
+	return response.getResponseText().trim() || '';
+    } else if (response.getSelectedButton() == ui.Button.NO) {
+	return null;
+    } else {
+	return null;
+    }
+}
+
+function getSessionName(prompt) {
     // Returns current slidoc session name or prompts for one
     try {
 	// Check if active sheet is a slidoc sheet
 	var sessionName = SpreadsheetApp.getActiveSheet().getName();
-	var sessionParams = getSessionParams(sessionName, ['scoreWeight']);
+	var sessionParams = lookupValues(sessionName, ['scoreWeight'], INDEX_SHEET);
 	return sessionName;
     } catch(err) {
-	var ui = SpreadsheetApp.getUi();
-	var response = ui.prompt('Slidoc', 'Enter session name', ui.ButtonSet.YES_NO);
-
-	if (response.getSelectedButton() == ui.Button.YES) {
-	    return response.getResponseText().trim() || '';
-	} else if (response.getSelectedButton() == ui.Button.NO) {
+	if (!prompt)
 	    return null;
-	} else {
-	    return null;
-	}
+	return getPrompt('Slidoc', 'Enter session name');
     }
 }
 
 function sessionAnswerSheet() {
     // Create session answers sheet
 
-    var sessionName = sessionPrompt();
+    var sessionName = getSessionName(true);
 
     var lock = LockService.getPublicLock();
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
@@ -619,13 +706,13 @@ function sessionAnswerSheet() {
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
 	var sessionSheet = doc.getSheetByName(sessionName);
 	if (!sessionSheet)
-	    throw('Sheet not found '+sessionName);
+	    throw('Sheet not found: '+sessionName);
 	if (!sessionSheet.getLastColumn())
-	    throw('No columns in sheet '+sessionName);
+	    throw('No columns in sheet: '+sessionName);
 
 	var sessionColIndex = indexColumns(sessionSheet);
 
-	var sessionParams = getSessionParams(sessionName, ['questions', 'answers']);
+	var sessionParams = lookupValues(sessionName, ['questions', 'answers'], INDEX_SHEET);
 	var questions = sessionParams.questions.split(',');
 	var answers = sessionParams.answers.split('|');
 
@@ -729,7 +816,7 @@ function sessionAnswerSheet() {
 function sessionStatSheet() {
     // Create session stats sheet
 
-    var sessionName = sessionPrompt();
+    var sessionName = getSessionName(true);
 
     var lock = LockService.getPublicLock();
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
@@ -744,17 +831,30 @@ function sessionStatSheet() {
 
 	var sessionColIndex = indexColumns(sessionSheet);
 
-	var sessionParams = getSessionParams(sessionName, ['primary_qconcepts', 'secondary_qconcepts']);
+	// Session sheet columns
+	var sessionStartRow = 2;
+	var nids = sessionSheet.getLastRow()-1;
+
+	var sessionParams = lookupValues(sessionName, ['primary_qconcepts', 'secondary_qconcepts'], INDEX_SHEET);
 	var p_concepts = sessionParams.primary_qconcepts ? sessionParams.primary_qconcepts.split('; ') : [];
 	var s_concepts = sessionParams.secondary_qconcepts ? sessionParams.secondary_qconcepts.split('; ') : [];
 	 
 	// Session stats headers
-	var statHeaders = ['name', 'id', 'Timestamp', 'lateToken', 'lastSlide', 'correct', 'count', 'skipped'];
+	var sessionCopyCols = ['name', 'id', 'Timestamp', 'lateToken', 'lastSlide'];
+	var statExtraCols = ['correct', 'count', 'skipped']
+
+	var statHeaders = sessionCopyCols.concat(statExtraCols) ;
 	for (var j=0; j<p_concepts.length; j++)
 	    statHeaders.push('p:'+p_concepts[j]);
 	for (var j=0; j<s_concepts.length; j++)
 	    statHeaders.push('s:'+s_concepts[j]);
 	var nconcepts = p_concepts.length + s_concepts.length;
+
+	// Stats sheet columns
+	var statStartRow = 3; // Leave blank row for formulas
+	var statQuestionCol = sessionCopyCols.length+1;
+	var nqstats = statExtraCols.length;
+	var statConceptsCol = statQuestionCol + nqstats;
 
 	// New stat sheet
 	var statSheetName = sessionName+'-stats';
@@ -767,34 +867,17 @@ function sessionStatSheet() {
 	statHeaderRange.setWrap(true);
 	statSheet.getRange('1:1').setFontWeight('bold');
 
-	// Session sheet columns
-	var startRow = 2;
-	var nids = sessionSheet.getLastRow()-1;
-	var idCol = sessionColIndex['id'];
-	var nameCol = sessionColIndex['name'];
-	var timeCol = sessionColIndex['Timestamp'];
-	var lateCol = sessionColIndex['lateToken'];
-	var lastCol = sessionColIndex['lastSlide'];
+	var statColIndex = indexColumns(statSheet);
 
-	// Stats sheet columns
-	var statStartRow = 3; // Leave blank row for formulas
-	var statNameCol = 1;
-	var statIdCol = 2;
-	var statTimeCol = 3;
-	var statLateCol = 4;
-	var statLastCol = 5;
-	var statQuestionCol = 6;
-	var nqstats = 3
-	var statConceptsCol = statQuestionCol + nqstats;
-
-	statSheet.getRange(statStartRow, statNameCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, nameCol, nids, 1));
-	statSheet.getRange(statStartRow,   statIdCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow,   idCol, nids, 1));
-	statSheet.getRange(statStartRow, statTimeCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, timeCol, nids, 1));
-	statSheet.getRange(statStartRow, statLateCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, lateCol, nids, 1));
-	statSheet.getRange(statStartRow, statLastCol, nids, 1).setValues(sessionSheet.getSheetValues(startRow, lastCol, nids, 1));
+	for (var j=0; j<sessionCopyCols.length; j++) {
+	    var colHeader = sessionCopyCols[j];
+	    var sessionCol = sessionColIndex[colHeader];
+	    var statCol = statColIndex[colHeader];
+	    statSheet.getRange(statStartRow, statCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1));
+	}
 
 	var hiddenSessionCol = sessionColIndex['session_hidden'];
-	var hiddenVals = sessionSheet.getSheetValues(startRow, hiddenSessionCol, nids, 1);
+	var hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1);
 	var questionTallies = [];
 	var conceptTallies = [];
 	var nullConcepts = [];
@@ -826,106 +909,203 @@ function sessionStatSheet() {
     notify('Created sheet '+statSheetName, 'Slidoc Stats');
 }
 
+function emailTokens() {
+    // Send authentication tokens
+    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var rosterSheet = doc.getSheetByName(ROSTER_SHEET);
+    if (!rosterSheet)
+	throw('Roster sheet '+ROSTER_SHEET+' not found!');
+    var userId = getPrompt('Email authentication tokens', "User id, or 'all'");
+    if (!userId)
+	return;
+    var emailList;
+    if (userId != 'all') {
+	emailList = [ [userId, lookupValues(userId,['email'],ROSTER_SHEET,true)[0] ] ];
+    } else {
+	emailList = getColumns('id', ROSTER_SHEET, 2);
+    }
+    for (var j=0; j<emailList.length; j++)
+	if (emailList[j][1].indexOf('@') <= 0)
+	    throw("Invalid email address '"+emailList[j][1]+"' for user ID '"+emailList[j][0]+"'");
+
+    var subject = 'Slidoc authentication token';
+    var emails = [];
+    for (var j=0; j<emailList.length; j++) {
+	var token = genUserToken(HMAC_KEY, emailList[j][0]);
+	var message = 'Authentication token for user ID '+emailList[j][0]+' is '+token;
+	MailApp.sendEmail(emailList[j][1], subject, message);
+	emails.push(emailList[j][1]);
+    }
+
+    notify('Emailed '+emails.length+' token(s) to '+emails.join(', '));
+}
+
+
+function emailLateToken() {
+    // Send late token
+    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var rosterSheet = doc.getSheetByName(ROSTER_SHEET);
+    if (!rosterSheet)
+	throw('Roster sheet '+ROSTER_SHEET+' not found!');
+
+    var sessionName = getSessionName();
+    if (sessionName) {
+	var userId = getPrompt('Email late submission token for session '+sessionName, "UserID");
+	if (!userId)
+	    return;
+    } else {
+	var text = getPrompt('Email late submission token', "UserID, session");
+	if (!text)
+	    return;
+	var comps = text.trim().split(/\s*,\s*/);
+	var userId = comps[0];
+	sessionName = comps[1];
+    }
+    var email = lookupValues(userId,['email'], ROSTER_SHEET, true)[0];
+    if (email.indexOf('@') <= 0)
+	throw("Invalid email address '"+email+"' for user ID '"+userId+"'");
+
+    var dateStr = getPrompt('New submission date/time', "'yyyy-mm-ddTmm:hh' (or 'yyyy-mm-dd', implying 'T23:59')");
+    if (!dateStr)
+	return;
+    if (dateStr.indexOf('T') < 0)
+	dateStr += 'T23:59';
+
+    var subject = 'Slidoc late submission token';
+    var token = genLateToken(HMAC_KEY, userId, sessionName, dateStr);
+    var message = 'Late submission token for user ID '+userId+' and session '+sessionName+' is '+token;
+    MailApp.sendEmail(email, subject, message);
+
+    notify('Emailed late submission token to '+userId+' <'+email+'>');
+}
+
+
 function updateScoreSheet() {
     // Update scores sheet
-
-    var sessionName = sessionPrompt();
 
     var lock = LockService.getPublicLock();
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-	var sessionSheet = doc.getSheetByName(sessionName);
-	if (!sessionSheet)
-	    throw('Sheet not found '+sessionName);
-	if (!sessionSheet.getLastColumn())
-	    throw('No columns in sheet '+sessionName);
-	if (sessionSheet.getLastRow() < 2)
-	    throw('No data rows in sheet '+sessionName);
 
-	var sessionColIndex = indexColumns(sessionSheet);
+	var sessionNames = getColumns('id', INDEX_SHEET);
+	var validNames = [];
+	var validSheet = null;
+	for (var m=0; m<sessionNames.length; m++) {
+	    // Ensure all sessions exist
+	    var sessionName = sessionNames[m];
+	    var sessionSheet = doc.getSheetByName(sessionName);
+	    if (!sessionSheet) {
+		SpreadsheetApp.getUi().alert('Sheet not found: '+sessionName);
+	    } else if (!sessionSheet.getLastColumn()) {
+		SpreadsheetApp.getUi().alert('No columns in sheet '+sessionName);
+	    } else if (sessionSheet.getLastRow() < 2) {
+		SpreadsheetApp.getUi().alert('No data rows in sheet '+sessionName);
+	    } else {
+		validNames.push(sessionName);
+		validSheet = sessionSheet;
+	    }
+	}
 
-	var sessionParams = getSessionParams(sessionName, ['scoreWeight', 'gradeWeight']);
-	var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
-	var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
+	if (!validSheet)
+	    throw('No valid session sheet');
 
 	var sessionStartRow = 2;
 	var scoreStartRow = 2;
 
 	// New score sheet
-	var scoreHeaders = ['name', 'id', 'email', 'user'];
-	var scoreSheetName = 'scores_slidoc';
+	var scoreSheetName = SCORES_SHEET;
 	scoreSheet = doc.getSheetByName(scoreSheetName);
 	if (!scoreSheet) {
+	    // Create session score sheet
 	    scoreSheet = doc.insertSheet(scoreSheetName);
-	    // Session scores headers
+	    // Copy user info from roster
+	    var userInfoSheet = doc.getSheetByName(ROSTER_SHEET);
+	    if (!userInfoSheet)  // Copy user info from last valid session
+		userInfoSheet = validSheet;
+	    var nidsSession = userInfoSheet.getLastRow()-sessionStartRow+1;
+	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
 
-	    var nidsSession = sessionSheet.getLastRow()-sessionStartRow+1;
-	    scoreSheet.getRange(1, 1, 1, scoreHeaders.length).setValues(sessionSheet.getSheetValues(1, 1, 1, scoreHeaders.length));
-	    scoreSheet.getRange(scoreStartRow, 1, nidsSession, scoreHeaders.length).setValues(sessionSheet.getSheetValues(sessionStartRow, 1, nidsSession, scoreHeaders.length));
+	    scoreSheet.getRange(scoreStartRow, 1, nidsSession, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(sessionStartRow, 1, nidsSession, MIN_HEADERS.length));
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
 	}
 
-	// Session sheet columns
-	var idCol = sessionColIndex['id'];
-	var lateCol = sessionColIndex['lateToken'];
-	var correctCol = sessionColIndex['questionsCorrect'];
+	for (var m=0; m<validNames.length; m++) {
+	    var sessionName = validNames[m];
+	    var sessionSheet = doc.getSheetByName(sessionName);
+	    var sessionColIndex = indexColumns(sessionSheet);
 
-	var idColChar = colIndexToChar( idCol );
-	var correctColChar = colIndexToChar( correctCol );
+	    var sessionParams = lookupValues(sessionName, ['scoreWeight', 'gradeWeight'], INDEX_SHEET);
+	    var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
+	    var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
 
-	var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
-	var scoreColIndex = indexColumns(scoreSheet);
-	var scoreSessionCol;
-	if (sessionName in scoreColIndex) {
-	    scoreSessionCol = scoreColIndex[sessionName];
-	} else {
-	    scoreSessionCol = 0;
-	    for (var jcol=1; jcol<=scoreColHeaders.length; jcol++) {
-		var colHeader = scoreColHeaders[jcol-1];
-		if (colHeader != 'name' && colHeader != 'id' && colHeader != 'email' && colHeader != 'user' &&
-		    colHeader.slice(0,1) != '_' && sessionName < colHeader) {
-		    // Insert new session columns in sorted order
-		    scoreSheet.insertColumnBefore(jcol);
-		    scoreSessionCol = jcol;
-		    break;
+
+	    // Session sheet columns
+	    var idCol = sessionColIndex['id'];
+	    var lateCol = sessionColIndex['lateToken'];
+	    var correctCol = sessionColIndex['questionsCorrect'];
+
+	    var idColChar = colIndexToChar( idCol );
+	    var correctColChar = colIndexToChar( correctCol );
+
+	    var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
+	    var scoreColIndex = indexColumns(scoreSheet);
+	    var sessionColName = '_'+sessionName;
+	    var scoreSessionCol;
+	    if (sessionColName in scoreColIndex) {
+		scoreSessionCol = scoreColIndex[sessionColName];
+	    } else {
+		scoreSessionCol = scoreColHeaders.length+1;
+
+		for (var jcol=1; jcol<=scoreColHeaders.length; jcol++) {
+		    var colHeader = scoreColHeaders[jcol-1];
+		    if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(0,1) == '_') {
+			// Session header column
+			if (sessionName < colHeader) {
+			    // Insert new session column in sorted order
+			    scoreSheet.insertColumnBefore(jcol);
+			    scoreSessionCol = jcol;
+			    break;
+			} else {
+			    // Prepare to insert after
+			    scoreSessionCol = jcol+1;
+			}
+		    }
+		}
+		scoreSheet.getRange(1, scoreSessionCol, 1, 1).setValues([[sessionColName]]);
+
+		var c = colIndexToChar( scoreSessionCol );
+		scoreSheet.getRange(c+scoreStartRow+':'+c).setNumberFormat('0.00');
+	    }
+
+	    var nids = scoreSheet.getLastRow()-scoreStartRow+1;
+
+	    var idCol = sessionColIndex['id'];
+	    var idColChar = colIndexToChar( idCol );
+	    function vlookup(colName, scoreRowIndex) {
+		var nameCol = sessionColIndex[colName];
+		var nameColChar = colIndexToChar( nameCol );
+		var sessionRange = sessionName+'!$'+idColChar+'$'+sessionStartRow+':$'+nameColChar;
+		return 'VLOOKUP($'+idColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-idCol+1)+', false)';
+	    }
+
+	    var scoreFormulas = [];
+	    for (var j=0; j<nids; j++) {
+		if (gradeWeight) {
+		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ('+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades_'+gradeWeight, j+scoreStartRow)+')/('+scoreWeight+'+'+gradeWeight + ') )']);
+		} else if (scoreWeight) {
+		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('weightedCorrect', j+scoreStartRow) + ')']);
 		}
 	    }
-	    if (!scoreSessionCol)
-		scoreSessionCol = scoreColHeaders.length + 1;
-	    scoreSheet.getRange(1, scoreSessionCol, 1, 1).setValues([[sessionName]]);
-
-	    var c = colIndexToChar( scoreSessionCol );
-	    scoreSheet.getRange(c+scoreStartRow+':'+c).setNumberFormat('0.00');
+	    
+	    if (scoreFormulas.length)
+		scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas)
 	}
-	var nids = scoreSheet.getLastRow()-scoreStartRow+1;
-
-	var idCol = sessionColIndex['id'];
-	var idColChar = colIndexToChar( idCol );
-	function vlookup(colName, scoreRowIndex) {
-	    var nameCol = sessionColIndex[colName];
-	    var nameColChar = colIndexToChar( nameCol );
-	    var sessionRange = sessionName+'!$'+idColChar+'$'+sessionStartRow+':$'+nameColChar;
-	    return 'VLOOKUP($'+idColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-idCol+1)+', false)';
-	}
-
-	var scoreFormulas = [];
-	for (var j=0; j<nids; j++) {
-	    if (gradeWeight) {
-		scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ('+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades_'+gradeWeight, j+scoreStartRow)+')/('+scoreWeight+'+'+gradeWeight + ') )']);
-	    } else if (scoreWeight) {
-		scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('weightedCorrect', j+scoreStartRow) + ')']);
-	    }
-	}
-
-	if (scoreFormulas.length)
-	    scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas)
-
 
     } finally { //release lock
 	lock.releaseLock();
     }
 
-    notify("Added column "+sessionName+" to sheet scores_slidoc", 'Slidoc Scores');
+    notify("Update "+SCORES_SHEET+" for sessions "+validNames.join(', '), 'Slidoc Scores');
 }

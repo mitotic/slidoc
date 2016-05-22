@@ -25,9 +25,9 @@ def gen_user_token(key, user_id):
 def gen_admin_token(key, admin_user_id):
     return gen_hmac_token(key, 'admin:'+admin_user_id)
 
-def gen_late_token(key, email, session_name, date_str):
+def gen_late_token(key, user_id, session_name, date_str):
     # Use date string of the form '1995-12-17T03:24'
-    token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s' % (email, session_name, date_str) )
+    token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s' % (user_id, session_name, date_str) )
     return token
 
 def get_utc_date(date_time):
@@ -54,9 +54,8 @@ if __name__ == '__main__':
         sys.exit('Must specify HMAC key')
 
     for user in cmd_args.user:
-        email = user.lower() if '@' in user else user.lower()+'@slidoc'
         if cmd_args.due_date:
-            token = gen_late_token(cmd_args.key, email, cmd_args.session, get_utc_date(cmd_args.due_date))
+            token = gen_late_token(cmd_args.key, user, cmd_args.session, get_utc_date(cmd_args.due_date))
         else:
-            token = gen_user_token(cmd_args.key, email)
+            token = gen_user_token(cmd_args.key, user)
         print(user+':',  token)

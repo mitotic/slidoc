@@ -1364,7 +1364,7 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Manage_fields =  ['name', 'id', 'email', 'user', 'Timestamp']
+Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp']
 Session_fields = ['initTimestamp', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
                   'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',

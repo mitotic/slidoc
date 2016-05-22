@@ -58,7 +58,7 @@ function setupCache(auth, callback) {
 		    return
 		}
 		if (!auth.id) // Pick the first user
-		    pickUser(auth, null, roster[0][1]);
+		    pickUser(auth, roster[0][1]);
 		
 		var switchElem = document.getElementById('slidoc-switch-user');
 		if (switchElem && roster.length) {
@@ -254,7 +254,7 @@ Slidoc.docFullScreen = function (exit) {
 }
 
 Slidoc.userLogout = function () {
-    if (!window.confirm('Do want to logout user '+GService.gprofile.auth.userName+'?'))
+    if (!window.confirm('Do want to logout user '+GService.gprofile.auth.id+'?'))
 	return false;
     localDel('auth');
     sessionAbort('Logged out');
@@ -262,7 +262,7 @@ Slidoc.userLogout = function () {
 
 Slidoc.userLogin = function () {
     console.log('Slidoc.userLogin:');
-    GService.gprofile.promptUserInfo(GService.gprofile.auth.userName, '', Slidoc.userLoginCallback.bind(null, null));
+    GService.gprofile.promptUserInfo(GService.gprofile.auth.id, '', Slidoc.userLoginCallback.bind(null, null));
 }
 
 Slidoc.userLoginCallback = function (retryCall, auth) {
@@ -338,7 +338,7 @@ Slidoc.viewHelp = function () {
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     if (Sliobj.sessionName) {
 	if (Sliobj.params.gd_sheet_url && GService.gprofile && GService.gprofile.auth)
-	    html += 'User: <b>'+GService.gprofile.auth.userName+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	    html += 'User: <b>'+GService.gprofile.auth.id+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
@@ -523,26 +523,22 @@ function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
 	ansElem.textContent = textValue;
 }
 
-function pickUser(auth, loginUser, loginId) {
-    console.log('pickUser:', auth, loginUser, loginId);
+function pickUser(auth, userId) {
+    console.log('pickUser:', auth, userId);
     if (!auth.adminKey) {
-	sessionAbort('Only admin can change user');
+	sessionAbort('Only admin can pick user');
 	return;
     }
-    if (!loginUser)
-	loginUser = loginId.split('@')[0];
-    if (!loginId)
-	loginId = GAuthUserEmail(loginUser);
-    auth.displayName = loginUser;
-    auth.userName = loginId;
-    auth.email = loginId;
-    auth.id = loginId;
+    auth.displayName = userId;
+    auth.id = userId;
+    auth.email = (userId.indexOf('@')>0) ? userId : '';
+    auth.altid = '';
 }
 
 function handleSwitchUser() {
     var userId = this.options[this.selectedIndex].value;
     console.log('handleSwitchUser:', userId);
-    pickUser(GService.gprofile.auth, null, userId);
+    pickUser(GService.gprofile.auth, userId);
     slidocReadyAux1(GService.gprofile.auth);
 }
 
@@ -921,6 +917,7 @@ function sessionGetPutAux(callback, retryCall, retryType, result, extras) {
     var parse_msg_re = /^(\w+):(\w*):(.*)$/;
     var match = parse_msg_re.exec(err_msg || '');
     var err_type = match ? match[2] : '';
+    var err_info = match ? match[3] : ''
     if (session || nullReturn) {
 
 	if (retryType == 'end_paced') {
@@ -938,12 +935,12 @@ function sessionGetPutAux(callback, retryCall, retryType, result, extras) {
 		var msg_type = match ? match[2] : '';
 		if (match && match[1] == 'Info') {
 		    if (msg_type == 'DUE_DATE')
-			try { Sliobj.dueDate = new Date(parseInt(match[3])); } catch(err) { console.log('DUE_DATE error:', err); }
+			try { Sliobj.dueDate = new Date(parseInt(err_info)); } catch(err) { console.log('DUE_DATE error:', err); }
 		} else if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
 		    if (session && !session.completed)
-			alerts.push('<em>Warning:</em><br>'+match[3]);
+			alerts.push('<em>Warning:</em><br>'+err_info);
 		} else if (msg_type == 'INVALID_LATE_TOKEN') {
-		    alerts.push('<em>Warning:</em><br>'+match[3]);
+		    alerts.push('<em>Warning:</em><br>'+err_info);
 		}
 	    }
 	    if (alerts.length)
@@ -963,20 +960,25 @@ function sessionGetPutAux(callback, retryCall, retryType, result, extras) {
     } else if (retryCall) {
 	if (err_msg) {
 	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
-	    if (err_type == 'INVALID_ADMIN_TOKEN') {
-		GService.gprofile.promptUserInfo(GService.gprofile.auth.userName,
+	    if (err_type == 'NEED_ROSTER_ENTRY') {
+		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
+					      err_info+'. Please re-enter or request access.',
+					      Slidoc.userLoginCallback.bind(null, retryCall));
+		return;
+	    } else if (err_type == 'INVALID_ADMIN_TOKEN') {
+		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
 					      'Invalid admin token. Please re-enter',
 					      Slidoc.userLoginCallback.bind(null, retryCall));
 		return;
 
 	    } else if (err_type == 'NEED_TOKEN' || err_type == 'INVALID_TOKEN') {
-		GService.gprofile.promptUserInfo(GService.gprofile.auth.userName,
+		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
 					      'Invalid username/token. Please re-enter',
 					      Slidoc.userLoginCallback.bind(null, retryCall));
 		return;
 
 	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
-		var token = window.prompt(prefix+"Enter late submission token, if you have one, for user "+GService.gprofile.auth.userName+" and session "+Sliobj.sessionName+". Otherwise enter 'none' to submit late without credit.");
+		var token = window.prompt(prefix+"Enter late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise enter 'none' to submit late without credit.");
 		if (token && token.trim()) {
 		    this.lateToken = token.trim();
 		    retryCall();

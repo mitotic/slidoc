@@ -20,18 +20,14 @@ function gen_admin_token(key, user_id) {
     return gen_hmac_token(key, 'admin:'+user_id);
 }
 
-function gen_late_token(key, email, session_name, date_str) {
+function gen_late_token(key, user_id, session_name, date_str) {
     // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
     var date = new Date(date_str);
     if (date_str.slice(-1) != 'Z') {  // Convert local time to UTC
 	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
 	date_str = date.toISOString().slice(0,16)+'Z';
     }
-    return date_str+':'+gen_hmac_token(key, 'late:'+email+':'+session_name+':'+date_str);
-}
-
-function GAuthUserEmail(userName) {
-    return (userName.indexOf('@') >= 0) ? userName : userName.replace(/[-.,'\s]+/g,'-')+'@slidoc';
+    return date_str+':'+gen_hmac_token(key, 'late:'+user_id+':'+session_name+':'+date_str);
 }
 
 var GService = {};
@@ -190,40 +186,45 @@ GoogleProfile.prototype.requestUserInfo = function () {
 
 GoogleProfile.prototype.onUserInfo = function (resp) {
     console.log('GoogleProfile.onUserInfo:', resp);
-    if (!resp.adminKey && (!resp.emails || !resp.id)) {
-	alert('GAuth: ERROR no user specified');
+    if (!resp.emails) {
+	alert('GAuth: ERROR no emails specified');
         return;
     }
 
+    var email = '';
     for (var j=0; j<resp.emails.length; j++) {
         var email = resp.emails[j];
         if (email.type == 'account') {
-            this.auth = {email: email.value.toLowerCase()};
+	    email = email.value.toLowerCase()
             break;
         }
     }
-    if (!this.auth) {
-	alert('GAuth: ERROR no user auth');
+    if (!resp.adminKey && !resp.id && !email) {
+	alert('GAuth: ERROR no user id or email specified');
         return;
     }
-    this.auth.validated = null;
-    this.auth.id = resp.id;
+
+    this.auth = {};
+    this.auth.email = email;
+    this.auth.id = resp.id || email;
+    this.auth.altid = '';
+
     var comps = resp.displayName.split(/\s+/);
     var name = (comps.length > 1) ? comps.slice(-1)+', '+comps.slice(0,-1).join(' ') : resp.displayName;
-    this.auth.displayName = name || this.auth.email;
-    this.auth.userName = this.auth.email;   // Use lowercased email as user name
+
+    this.auth.displayName = name || this.auth.id || this.auth.email;
     this.auth.token = resp.token || '';
     this.auth.domain = resp.domain || '';
     this.auth.image = (resp.image && resp.image.url) ? resp.image.url : ''; 
     this.auth.adminKey = resp.adminKey || '';
     this.auth.remember = resp.remember || false;
+    this.auth.validated = null;
+
     if (this.authCallback)
 	this.authCallback(this.auth);
 }
 
 GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
-    if (user && user.slice(-7) == '@slidoc')
-	user = user.slice(0, -7);
     var loginElem = document.getElementById('gdoc-login-popup');
     var loginOverlay = document.getElementById('gdoc-login-overlay');
     var loginUserElem = document.getElementById('gdoc-login-user');
@@ -237,8 +238,8 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
     document.getElementById('gdoc-login-button').onclick = function (evt) {
 	loginElem.style.display = 'none';
         loginOverlay.style.display = 'none';
-	var loginUser = loginUserElem.value;
-	var loginToken = loginTokenElem.value;
+	var loginUser = loginUserElem.value.trim().toLowerCase();
+	var loginToken = loginTokenElem.value.trim();
 	var loginRemember = loginRememberElem.checked;
 
 	var adminKey = '';
@@ -248,16 +249,15 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    loginToken = gen_admin_token(adminKey, 'admin');
 	}
 
-	if (!adminKey && (!loginUser || !loginUser.trim())) {
+	if (!adminKey && !loginUser) {
 	    alert('Please provide user name for login');
 	    return false;
 	}
-	loginUser = loginUser.trim().toLowerCase();
 
-	var email = loginUser ? GAuthUserEmail(loginUser) : '';
+	var email = (loginUser.indexOf('@')>0) ? loginUser : '';
 	if (callback)
 	    gprofile.authCallback = callback;
-	gprofile.onUserInfo({adminKey: adminKey, id: email, displayName: loginUser, token: loginToken,
+	gprofile.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginUser, token: loginToken,
 			     emails: [{type: 'account', value:email}], remember: !!loginRemember});
     }
 	
@@ -266,13 +266,13 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
     window.scrollTo(0,0);
 }
 
-
+    var PRE_HEADERS = ['name', 'id', 'email', 'altid', 'Timestamp'];
 function GoogleSheet(url, sheetName, fields, useJSONP) {
     this.url = url;
     this.fields = fields;
     this.sheetName = sheetName;
     this.useJSONP = !!useJSONP;
-    this.headers = ['name', 'id', 'email', 'user', 'Timestamp'].concat(fields);
+    this.headers = PRE_HEADERS.concat(fields);
     this.callbackCounter = 0;
     this.columnIndex = {};
     this.timestamps = {};
@@ -429,7 +429,7 @@ GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet
     extObj.id = opts.id || auth.id;
     extObj.name = auth.displayName || '';
     extObj.email = auth.email || '';
-    extObj.user = auth.userName || '';
+    extObj.altid = auth.altid || '';
     return this.putRow(extObj, opts, callback, createSheet);
 }
 
