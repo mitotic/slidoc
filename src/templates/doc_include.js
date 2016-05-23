@@ -56,7 +56,7 @@ function setupCache(auth, callback) {
 	    if (callback) {
 		var roster = gsheet.getRoster();
 		if (!roster.length) {
-		    sessionAbort('No user sessions available');
+		    sessionAbort('No users available for session '+Sliobj.sessionName);
 		    return
 		}
 		if (!auth.id) // Pick the first user
@@ -474,8 +474,17 @@ Slidoc.inputKeyDown = function (evt) {
 function parseSlideId(slideId) {
     // Return chapterId, chapter number, slide number (or 0)
     var match = /(slidoc(\d+))(-(\d+))?$/.exec(slideId);
-    if (!match) return [null, 0, 0];
-    return [match[1], parseInt(match[2]), match[4] ? parseInt(match[4]) : 0];
+    if (match)
+	return [match[1], parseInt(match[2]), match[4] ? parseInt(match[4]) : 0];
+    var chapters = document.getElementsByClassName('slidoc-reg-chapter');
+
+    if (slideId.slice(0,20) == 'slidoc-index-concept')
+	return ['slidoc'+zeroPad(chapters.length+1,2), chapters.length+1, 0];
+
+    if (slideId.slice(0,21) == 'slidoc-qindex-concept')
+	return ['slidoc'+zeroPad(chapters.length+2,2), chapters.length+2, 0];
+    
+    return [null, 0, 0];
 }
 
 function parseElem(elemId) {
@@ -802,11 +811,12 @@ function slidocSetupAux(session, feedback) {
     // Not paced
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
+	// Table of contents included in file
 	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
-	if (parseSlideId(slideHash)[0]) {
+	if (parseSlideId(slideHash)[0])
 	    goSlide(slideHash, false, true);
-	} else if (slideHash.slice(0,21) == '#slidoc-index-concept') {
-	    goSlide('#slidoc'+zeroPad(chapters.length+1,2), false, true);
+	if (slideHash.slice(0,21) == '#slidoc-index-concept') {
+	    // Directly jump to index element
 	    var elem = document.getElementById(slideHash.slice(1));
 	    if (elem) {
 		elem = elem.firstChild;
@@ -818,13 +828,21 @@ function slidocSetupAux(session, feedback) {
 		else if (elem.href)
 		    window.location = elem.href;
 	    } else {
-		setTimeout(function(){window.location = slideHash;}, 200);
+		setTimeout(function(){location.hash = slideHash;}, 200);
 	    }
 	}
 	if (document.getElementById("slidoc-sidebar-button"))
 	    document.getElementById("slidoc-sidebar-button").style.display = null;
-	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
-	    Slidoc.sidebarDisplay()
+
+	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches) {
+	    Slidoc.sidebarDisplay();
+	    if (chapters && chapters.length == 1) {
+		// Display contents for single chapter
+		var toggleElem = document.getElementById("slidoc-toc-chapters-toggle");
+		if (toggleElem && toggleElem.onclick)
+		    toggleElem.onclick();
+	    }
+	}
     }
 }
 
@@ -2350,7 +2368,7 @@ function goSlide(slideHash, chained, singleChapter) {
 
     if (Sliobj.curChapterId || singleChapter) {
 	// Display only chapter containing slide
-	var newChapterId = parseSlideId(slideId.slice(0,8))[0]; // Slice because slideId may be index ref
+	var newChapterId = parseSlideId(slideId)[0];
 	if (!newChapterId) {
             console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
             return false;

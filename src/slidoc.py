@@ -105,40 +105,57 @@ def html2text(element):
     text += (element.tail or "")
     return text
 
-def add_to_index(first_tags, sec_tags, tags, filename, slide_id, header=''):
+def add_to_index(primary_tags, sec_tags, tags, filename, slide_id, header='', qconcepts=None):
     if not tags:
         return
 
     # Save tags in proper case and then lowercase tags
     for tag in tags:
-        if tag not in Global.all_tags:
+        if tag and tag not in Global.all_tags:
             Global.all_tags[tag.lower()] = tag
         
     tags = [x.lower() for x in tags]
 
-    if tags[0] != 'null':
-        # List non-null primary tag
-        if filename not in first_tags[tags[0]]:
-            first_tags[tags[0]][filename] = []
+    # By default assume only first tag is primary
+    primary_tags_offset = 1
+    sec_tags_offset = 1
+    for j, tag in enumerate(tags):
+        if not tag:
+            # Null tag (if present) demarcates primary and secondary tags
+            primary_tags_offset = j
+            sec_tags_offset = j+1
+            break
 
-        first_tags[tags[0]][filename].append( (slide_id, header) )
+    p_tags = [x for x in tags[:primary_tags_offset] if x]
+    s_tags = [x for x in tags[sec_tags_offset:] if x]
+        
+    for tag in p_tags:
+        # Primary tags
+        if qconcepts:
+            qconcepts[0].add(tag)
 
-    for tag in tags[1:]:
+        if filename not in primary_tags[tag]:
+            primary_tags[tag][filename] = []
+
+        primary_tags[tag][filename].append( (slide_id, header) )
+
+    for tag in s_tags:
         # Secondary tags
-        if tag == 'null':
-            continue
+        if qconcepts:
+            qconcepts[1].add(tag)
+
         if filename not in sec_tags[tag]:
             sec_tags[tag][filename] = []
 
         sec_tags[tag][filename].append( (slide_id, header) )
 
 
-def make_index(first_tags, sec_tags, site_url, question=False, fprefix='', index_id='', index_file=''):
+def make_index(primary_tags, sec_tags, site_url, question=False, fprefix='', index_id='', index_file=''):
     # index_file would be null string for combined file
     id_prefix = 'slidoc-qindex-' if question else 'slidoc-index-'
     covered_first = defaultdict(dict)
     first_references = OrderedDict()
-    tag_list = list(set(first_tags.keys()+sec_tags.keys()))
+    tag_list = list(set(primary_tags.keys()+sec_tags.keys()))
     tag_list.sort()
     out_list = []
     first_letters = []
@@ -158,13 +175,13 @@ def make_index(first_tags, sec_tags, site_url, question=False, fprefix='', index
         else:
             tag_str = '___, ' + ','.join(tag_str.split(',')[1:])
         
-        for fname, ref_list in first_tags[tag].items():
+        for fname, ref_list in primary_tags[tag].items():
             # File includes this tag as primary tag
             if tag not in covered_first[fname]:
                 covered_first[fname][tag] = ref_list[0]
 
         # Get sorted list of files with at least one reference (primary or secondary) to tag
-        files = list(set(first_tags[tag].keys()+sec_tags[tag].keys()))
+        files = list(set(primary_tags[tag].keys()+sec_tags[tag].keys()))
         files.sort()
 
         first_ref_list = []
@@ -174,7 +191,7 @@ def make_index(first_tags, sec_tags, site_url, question=False, fprefix='', index
 
         tag_index = []
         for fname in files:
-            f_index  = [(fname, slide_id, header, 1) for slide_id, header in first_tags[tag].get(fname,[])]
+            f_index  = [(fname, slide_id, header, 1) for slide_id, header in primary_tags[tag].get(fname,[])]
             f_index += [(fname, slide_id, header, 2) for slide_id, header in sec_tags[tag].get(fname,[])]
             tag_index += f_index
             assert f_index, 'Expect at least one reference to tag in '+fname
@@ -219,9 +236,9 @@ class Dummy(object):
 
 Global = Dummy()
 
-Global.first_tags = defaultdict(OrderedDict)
+Global.primary_tags = defaultdict(OrderedDict)
 Global.sec_tags = defaultdict(OrderedDict)
-Global.first_qtags = defaultdict(OrderedDict)
+Global.primary_qtags = defaultdict(OrderedDict)
 Global.sec_qtags = defaultdict(OrderedDict)
 
 Global.all_tags = {}
@@ -1192,7 +1209,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_concepts = text
 
         tags = [x.strip() for x in text.split(";")]
-        nn_tags = tags[1:] if tags and tags[0] == 'null' else tags[:]   # Non-null tags
+        nn_tags = [x for x in tags if x]   # Non-null tags
 
         if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
             # Track/check tags
@@ -1205,18 +1222,14 @@ class SlidocRenderer(MathRenderer):
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
-                    if tag not in Global.first_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
+                    if tag not in Global.primary_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
                         self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         print("        "+self.concept_warnings[-1], file=sys.stderr)
 
-                add_to_index(Global.first_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
-                if tags[0] != 'null':
-                    self.qconcepts[0].add(tags[0])
-                if tags[1:]:
-                    self.qconcepts[1].update(set(tags[1:]))
+                add_to_index(Global.primary_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header, qconcepts=self.qconcepts)
             else:
                 # Not question
-                add_to_index(Global.first_tags, Global.sec_tags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
+                add_to_index(Global.primary_tags, Global.sec_tags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
 
         if 'concepts' in self.options['config'].strip:
             # Strip concepts
@@ -1505,8 +1518,10 @@ def process_input(input_files, config_dict):
 
     if config.separate:
         config.features = None
+    elif config.features:
+        config.features = set(config.features.split(','))
     else:
-        config.features = config.features or set()
+        config.features = set()
 
     config.strip = md2md.make_arg_set(config.strip, strip_all)
     if len(input_files) == 1:
@@ -1635,7 +1650,10 @@ def process_input(input_files, config_dict):
             if 'tex_math' in config.features:
                 mathjax_config.append( r"tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
             math_inc = Mathjax_js % ','.join(mathjax_config)
-    
+
+        if not config.features.issubset(set(features_all)):
+            abort('Error: Unknown feature(s): '+','.join(list(config.features.difference(set(features_all)))) )
+            
         if not gd_hmac_key and 'grade_response' in config.features:
             abort("slidoc: Error: hmac_key must be specified for feature 'grade_response'")
 
@@ -1768,7 +1786,7 @@ def process_input(input_files, config_dict):
             header_insert = ''
 
         toc_html = []
-        if config.index and (Global.first_tags or Global.first_qtags):
+        if config.index and (Global.primary_tags or Global.primary_qtags):
             toc_html.append(' '+nav_link('INDEX', config.site_url, config.index, hash='#'+index_chapter_id,
                                      separate=config.separate, printable=config.printable))
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
@@ -1786,13 +1804,13 @@ def process_input(input_files, config_dict):
             if not config.pace:
                 doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
                                     separate=config.separate, printable=config.printable)
-                toggle_link = '''<span class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
+                toggle_link = '''<span id="slidoc-toc-chapters-toggle" class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
             else:
                 doc_str = 'paced exercise'
                 if due_date:
                     doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
                 doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
-                toggle_link = '<span class="slidoc-toc-chapters">%s</span>' % (fheader,)
+                toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
             toc_html.append('<li>%s%s<span class="slidoc-nosidebar"> (%s)%s%s</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
             if not config.pace:
@@ -1832,8 +1850,8 @@ def process_input(input_files, config_dict):
                 print("Created ToC in", config.toc, file=sys.stderr)
 
     xref_list = []
-    if config.index and (Global.first_tags or Global.first_qtags):
-        first_references, covered_first, index_html = make_index(Global.first_tags, Global.sec_tags, config.site_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
+    if config.index and (Global.primary_tags or Global.primary_qtags):
+        first_references, covered_first, index_html = make_index(Global.primary_tags, Global.sec_tags, config.site_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
         if not config.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
             if config.qindex:
@@ -1870,11 +1888,11 @@ def process_input(input_files, config_dict):
             if all_concept_warnings:
                 xref_list.append('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
 
-    if config.qindex and Global.first_qtags:
+    if config.qindex and Global.primary_qtags:
         import itertools
         qout_list = []
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
-        first_references, covered_first, qindex_html = make_index(Global.first_qtags, Global.sec_qtags, config.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
+        first_references, covered_first, qindex_html = make_index(Global.primary_qtags, Global.sec_qtags, config.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
         qout_list.append(qindex_html)
 
         qindex_output = chapter_prefix(len(input_files)+2, 'slidoc-qindex-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'

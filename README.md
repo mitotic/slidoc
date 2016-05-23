@@ -1,21 +1,18 @@
 <!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number,incremental_slides -->
 # Slidoc: A slide-oriented document management system using Markdown
 
-Slidoc manages a collection of lectures written using
+Slidoc manages a collection of lectures and exercises written using
 [Markdown](https://daringfireball.net/projects/markdown/), which is a
-very simple and popular markup syntax. The lectures can include text,
-equations, images and interactive questions. Markdown files are plain
-text files saved using extension `.md`. They can be edited using text
-editors like Emacs, vi, [Atom](https://atom.io/), and
-[StackEdit](https://stackedit.io). The
-[Markdown Preview Plus](https://atom.io/packages/markdown-preview-plus)
-package for Atom supports live rendering of Markdown (with math) while
-you edit. There is also a
-[Chrome extension](https://chrome.google.com/webstore/detail/markdown-preview-plus/febilkbfcbhebfnokafefeacimjdckgl?hl=en-US)
-of the same name to render Markdown in the browser.
+very simple and popular markup syntax. The lectures and exercises can
+include text, images, interactive questions, and equations (using LaTeX
+notation).
 
-Slidoc publishes the Markdown files as static HTML files,
-[reveal.js](http://lab.hakim.se/reveal-js/) slideshows and
+Markdown files are plain text files saved using extension `.md`. They
+can be edited using text editors like Emacs, vi,
+[Atom](https://atom.io/), and
+[StackEdit](https://stackedit.io). Slidoc can publish the Markdown
+files as static HTML files,
+[reveal.js](http://lab.hakim.se/reveal-js/) slideshows and/or
 [Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/).
 It can also create a table of contents, generate an index, manage
 questions and analyze concept dependencies.
@@ -54,7 +51,7 @@ same concept. The embedded Javascript also provides interactivity,
 allowing users to answer embedded questions, tallying scores and
 tracking understanding of concepts.
 
-Concepts: Slidoc, design goals; slides, markdown
+Concepts: Slidoc, design goals; slides, Markdown
 
 ---
 
@@ -110,6 +107,21 @@ Concepts: lecture management; index, concepts
 
 ---
 
+## Editing Markdown
+
+Markdown files are plain text files saved using extension `.md`. They
+can be edited using text editors like Emacs, vi,
+[Atom](https://atom.io/), and [StackEdit](https://stackedit.io).  The
+[Markdown Preview Plus](https://atom.io/packages/markdown-preview-plus)
+package for Atom supports live rendering of Markdown (with math) while
+you edit. There is also a
+[Chrome extension](https://chrome.google.com/webstore/detail/markdown-preview-plus/febilkbfcbhebfnokafefeacimjdckgl?hl=en-US)
+of the same name to render Markdown in the browser.
+
+Concepts: Markdown, editing
+
+---
+
 ## Slidoc document structure
 
 Slidoc recognizes several extensions to standard Markdown to
@@ -128,6 +140,8 @@ process slides in a lecture.
 Notes: Any Level 1 header other than the first one will be treated
 like a Level 2 header.
 
+Concepts: ; Slidoc, document structure
+
 ---
 
 ## Concepts and Notes
@@ -145,9 +159,11 @@ Example:
 
 Concept lists are used generate an automatic concept index. Indexing
 is done separately for regular slides and question slides. Slidoc
-supports concept chain naviagtion. Starting from the index, you can
+supports concept chain navigation. Starting from the index, you can
 easily navigate between all places in the document where a particular
 concept is discussed.
+
+Concepts: concepts, list; concepts, multiple;; concepts, tracking
 
 Notes:
 Concept lists are semicolon-separated and use the syntax `topic,
@@ -156,9 +172,11 @@ subtopic` where `topic/subtopic` is a space-separated phrase and
 displayed in the printed version of the lecture.
 
 The first concept in the list is assumed to be the primary concept
-relevant to the slide. If there is no primary concept, then the
-special concept `null` should be specified as the first
-concept. Additional concepts are treated as secondary concepts.
+relevant to the slide. Additional concepts are treated as secondary
+concepts. If there is no primary concept, then the concept list should
+start with a semicolon (see previous slide). If there are multiple
+primary concepts, then a double semicolon should be used to separate
+them from secondary concepts (as in this slide).
 
 Notes are additional material that appear below the main content. In
 slideshow mode (see below), notes are normally shown collapsed (or
@@ -893,7 +911,7 @@ Notes: The upper-case OR is used to separate correct answer options,
 which are not case-sensitive. If a correct answer option includes a
 space (e.g., `T Rex`, it is compared to the user response with
 normalized spaces, i.e, `T Rex` would be considered correct, but not
-`TRex`. If the correct answer option does not include a space, such as
+`TRex`). If the correct answer option does not include a space, such as
 the answer to a coding question, then all spaces are stripped from the
 user response before comparison, i.e., `T.Rex` and `T. Rex` would be
 considered correct.
@@ -1006,27 +1024,38 @@ After attaching the script, you can use the *Current web app URL* for
     slidoc.py --google_docs=spreadsheet_url ... 
 
 By default, users will use a unique user name or other identifier
-(such as email address) when they start a paced session. The Google
-Docs spreadhsheet `sheets101` will contain a separate sheet for each
-session, and also an index sheet named `slidoc_sessions`, with
+(such as the email address) when they start a paced session. The
+Google Docs spreadsheet `sheets101` will contain a separate sheet for
+each session, and also an index sheet named `sessions_slidoc`, with
 information about all sessions, including any submission due dates
-(which can be edited).
+(which can be edited). You can also choose to create a `roster_slidoc`
+sheet to restrict user access (see comments in `slidoc_sheets.js` for
+more).  The spreadsheet will display a `Slidoc` menu for managing
+users and analyzing sessions.
 
 When you set up `slidoc_sheets.js`, you have the option of specifying
-a secret key that you can use to generate login and/or late submission
-tokens. The secret can be any printable character string (usually
-without spaces). If you use a key, include it in the `slidoc` command,
-and use the `sliauth.py` command to generate access tokens:
+a secret HMAC key that you can use to generate login and/or late
+submission tokens. The secret can be any printable character string
+(usually without spaces). If you use a secret key, include it in the
+`slidoc` command, and use the `sliauth.py` command to generate access
+tokens:
 
     slidoc.py --google_docs=spreadsheet_url,key --due_date 2016-05-03T23:59 ...
     sliauth.py -k key user_name(s) # For login tokens 
     sliauth.py -k key -s session_name --due_date 2016-05-10T23:59 user_name(s) # For late submission tokens 
 
-Instead of token access, you can require users to authenticate using
-their Google account, using additional steps as described in the Notes
-below.
+The `Slidoc` menu in the spreadsheet can also be used to automatically
+generate and email login tokens and late submission tokens to users
+(if the `roster_slidoc` sheet is set up). User may use the late
+submission token `none` to submit late without credit.
 
-Notes: You will need to create a Web Application attached to your
+Submitted sessions can be graded by logging in with user name `admin`
+and HMAC key as the token. Change the `gradeDate` entry in the
+`sessions_slidoc` sheet to a non-null date value to release the grades
+to users after completion of grading.
+
+Notes: Instead of token access, you can require users to authenticate using
+their Google account. You will need to create a Web Application attached to your
 Google account, obtain its `ClientID` and `API key` and use it as
 follows:
 

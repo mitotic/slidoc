@@ -242,16 +242,22 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	var loginToken = loginTokenElem.value.trim();
 	var loginRemember = loginRememberElem.checked;
 
-	var adminKey = '';
-	if (loginToken.slice(0,6) == 'admin:') {
-	    // A token of the form 'admin:hmac_key' is used by the admin user to sign on as any user
-	    adminKey = loginToken.slice(6);
-	    loginToken = gen_admin_token(adminKey, 'admin');
-	}
-
-	if (!adminKey && !loginUser) {
+	if (!loginUser) {
 	    alert('Please provide user name for login');
 	    return false;
+	}
+
+	if (!loginToken) {
+	    alert('Please provide token for login');
+	    return false;
+	}
+
+	var adminKey = '';
+	if (/admin(\s|$)/.exec(loginUser)) {
+	    // Login as admin user using HMAC key. To select specific user initially, use "admin username"
+	    loginUser = loginUser.slice(5).trim();
+	    adminKey = loginToken;
+	    loginToken = gen_admin_token(adminKey, 'admin');
 	}
 
 	var email = (loginUser.indexOf('@')>0) ? loginUser : '';
@@ -356,7 +362,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 
 GoogleSheet.prototype.row2obj = function(row) {
     if (row.length != this.headers.length)
-	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet:  expected '+this.headers.length+' but got '+row.length+' (extra grading columns?)');
+	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet:  expected '+this.headers.length+' but got '+row.length+' (Enable grade_response feature for extra grading columns?)');
 
     var obj = {};
     for (var j=0; j<row.length; j++)
