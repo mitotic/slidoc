@@ -114,7 +114,7 @@ function handleResponse(evt) {
     // The list contains updated row values if get=true; otherwise it is just an empty list.
     // PARAMETERS
     // sheet: 'sheet name' (required)
-    // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'field2', ...] (name and id required for sheet creation)
+    // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     // id: unique id number or lowercase email (required if creating or updating a row, and row parameter is not specified)
     // email: optional
@@ -122,7 +122,7 @@ function handleResponse(evt) {
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
     // If the special name initTimestamp occurs in the list, the timestamp is initialized when the row is added.
     // If the special name Timestamp occurs in the list, the timestamp is automatically updated on each write.
-    // row: ['name_value', 'id_value', 'email_value', 'altid_value', null, null, 'field1_value', ...]
+    // row: ['name_value', 'id_value', 'email_value', 'altid_value', null, null, null, 'field1_value', ...]
     //       null value implies no update (except for Timestamp)
     // get: true to retrieve row (id must be specified) (otherwise only [] is returned on success)
     // Can add row with fewer columns than already present.
@@ -137,6 +137,7 @@ function handleResponse(evt) {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     var returnValues = null;
+    var returnInfo = {};
     var returnMessages = [];
     var jsonPrefix = '';
     var jsonSuffix = '';
@@ -248,7 +249,7 @@ function handleResponse(evt) {
 	if (!adminUser && selectedUpdates)
 	    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
-	var timestamp = null;
+	returnInfo.timestamp = null;
 	var numStickyRows = 1;  // Headers etc.
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
@@ -319,7 +320,7 @@ function handleResponse(evt) {
 		    gradeDate = sessionParams.gradeDate;
 		    fieldsMin = sessionParams.fieldsMin;
 
-		    if (dueDate) {
+		    if (dueDate && !adminUser) {
 			// Check if past submission deadline
 			var lateTokenCol = columnIndex['lateToken'];
 			var lateToken = null;
@@ -339,15 +340,15 @@ function handleResponse(evt) {
 				var comps = splitToken(lateToken);
 				var dateStr = comps[0];
 				var tokenStr = comps[1];
-				if (genLateToken(HMAC_KEY, userId, sheetName, dateStr) == tokenStr) {
-				dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
+				if (genLateToken(HMAC_KEY, userId, sheetName, dateStr) == lateToken) {
+				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
 				    pastSubmitDeadline = (curTime > dueDate.getTime());
 				} else {
 				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
 				}
 			    }
 			}
-			returnMessages.push("Info:DUE_DATE:"+dueDate.getTime());
+			returnInfo.dueDate = dueDate;
 			if (!allowLateMods) {
 			    if (pastSubmitDeadline) {
 				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
@@ -396,9 +397,9 @@ function handleResponse(evt) {
 		var userRange = sheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 
-		timestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
-		if (timestamp && params.timestamp && parseNumber(params.timestamp) && timestamp > parseNumber(params.timestamp))
-		    throw('Error::Row timestamp too old by '+Math.ceil((timestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another active browser session?');
+		returnInfo.timestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
+		if (returnInfo.timestamp && params.timestamp && parseNumber(params.timestamp) && returnInfo.timestamp > parseNumber(params.timestamp))
+		    throw('Error::Row timestamp too old by '+Math.ceil((returnInfo.timestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another active browser session?');
 
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
@@ -438,20 +439,28 @@ function handleResponse(evt) {
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
-			if (colHeader == 'Timestamp' && (colValue == null || !adminUser)) {
+			if (colHeader == 'Timestamp') {
 			    // Timestamp is always updated, unless it is explicitly specified by admin
-			    rowValues[j] = curDate;
+			    if (adminUser && colValue) {
+				try { rowValues[j] = createDate(colValue); } catch (err) {}
+			    } else {
+				rowValues[j] = curDate;
+			    }
 			} else if (colHeader == 'initTimestamp' && newRow) {
 			    rowValues[j] = curDate;
+			} else if (colHeader == 'submitTimestamp' && params.submit) {
+			    rowValues[j] = curDate;
+			    returnInfo.submitTimestamp = curDate;
 			} else if (colValue == null) {
 			    // Do not modify field
-			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader != 'initTimestamp') ) {
-			    // Id, name, email, altid, initTimestamp cannot be updated programmatically
+			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') ) {
+			    // Id, name, email, altid, *Timestamp cannot be updated programmatically
 			    // (If necessary to change name manually, then re-sort manually)
-			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
-				try { colValue = createDate(colValue); } catch (err) {}
+			    if (colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
+				try { rowValues[j] = createDate(colValue); } catch (err) { }
+			    } else {
+				rowValues[j] = colValue;
 			    }
-			    rowValues[j] = colValue;
 			}
 		    }
 
@@ -478,17 +487,21 @@ function handleResponse(evt) {
 			var headerColumn = columnIndex[colHeader];
 			var modValue = null;
 
-			if (colHeader == 'Timestamp' && (colValue == null || !adminUser)) {
+			if (colHeader == 'Timestamp') {
 			    // Timestamp is always updated, unless it is explicitly specified by admin
-			    modValue = curDate;
+			    if (adminUser && colValue) {
+				try { modValue = createDate(colValue); } catch (err) {}
+			    } else {
+				modValue = curDate;
+			    }
 			} else if (colValue == null) {
 			    // Do not modify field
-			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader != 'initTimestamp') {
-			    // Update row values for header (except for id, name, email, altid, initTimestamp)
+			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
+			    // Update row values for header (except for id, name, email, altid, *Timestamp)
 			    if (headerColumn <= fieldsMin || !/^q\d+_(comments|grade_[0-9.]+)$/.exec(colHeader))
 				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 
-			    if (colHeader == 'Timestamp' || colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
+			    if (colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
 			    }
 			    modValue = colValue;
@@ -502,7 +515,7 @@ function handleResponse(evt) {
 		}
 		
 		// Return updated timestamp
-		timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
+		returnInfo.timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
 		
 		returnValues = getRow ? rowValues : [];
 
@@ -516,7 +529,7 @@ function handleResponse(evt) {
 
 	// return json success results
 	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "value": returnValues, "timestamp": timestamp,
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "value": returnValues, "info": returnInfo,
 							 "messages": returnMessages.join('\n')})+jsonSuffix)
             .setMimeType(mimeType);
     } catch(err){

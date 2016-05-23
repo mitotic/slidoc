@@ -12,8 +12,8 @@ body:not(.slidoc-all-view) .slidoc-allonly,
 body:not(.slidoc-slide-view) .slidoc-slideonly,
 body:not(.slidoc-paced-view) .slidoc-pacedonly,
 body:not(.slidoc-remote-view) .slidoc-remoteonly,
-body::not(.slidoc-incremental-view) .slidoc-incrementalonly,
-body:.slidoc-completed-view:not(.slidoc-admin-view) .slidoc-incrementalonly {
+body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
+body.slidoc-completed-view:not(.slidoc-admin-view) .slidoc-incrementalonly {
     display: none; }
 
 /* Answer/grading control */
@@ -21,6 +21,8 @@ body.slidoc-admin-view .slidoc-noadmin { display: none; }
 body.slidoc-graded-view .slidoc-nograded { display: none; }
 body:not(.slidoc-admin-view) .slidoc-adminonly { display: none; }
 body:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
+
+body:not(.slidoc-admin-view):not(.slidoc-graded-view) .slidoc-admin-graded { display: none; }
 
 section:not(.slidoc-answered-view) .slidoc-answeredonly { display: none; }
 section:not(.slidoc-grading-view) .slidoc-gradingonly { display: none; }

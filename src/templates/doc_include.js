@@ -13,6 +13,8 @@ var CACHE_GRADING = true; // If true, cache all rows for grading
 
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
 
+var SYMS = {correctMark: '&#x2714;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
+
 var Sliobj = {}; // Internal object
 Sliobj.params = JS_PARAMS_OBJ;
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.sessionName : '';
@@ -46,8 +48,8 @@ function setupCache(auth, callback) {
     // Cache all rows for grading
     console.log('setupCache:', auth);
     var gsheet = getSheet(Sliobj.sessionName);
-    function allCallback(allRows, extras) {
-	console.log('allCallback:', allRows, extras);
+    function allCallback(allRows, retStatus) {
+	console.log('allCallback:', allRows, retStatus);
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -175,9 +177,6 @@ function onreadystateaux() {
 	PagedownConverter.hooks.chain("preSpanGamut", MDPreSpanGamut);
 	PagedownConverter.hooks.chain("preBlockGamut", MDPreBlockGamut);
     }
-
-    if (Sliobj.params.gd_sheet_url)
-	document.body.classList.add('slidoc-remote-view');
 
     if (Sliobj.params.gd_client_id) {
 	// Google client load will authenticate
@@ -345,7 +344,7 @@ Slidoc.viewHelp = function () {
 	if (Sliobj.params.questionsMax)
 	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
 	if (Sliobj.params.gd_sheet_url)
-	    html += Sliobj.session.submitTime ? ', Submitted' : ', NOT SUBMITTED';
+	    html += Sliobj.submitTimestamp ? ', Submitted '+Sliobj.submitTimestamp : ', NOT SUBMITTED';
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
@@ -544,8 +543,8 @@ function handleSwitchUser() {
 
 Slidoc.slidocReady = function (auth) {
     console.log("slidocReady:", auth);
-    Sliobj.adminLevel = auth && !!auth.adminKey;
-    if (CACHE_GRADING && Sliobj.adminLevel && Sliobj.sessionName) {
+    Sliobj.adminState = auth && !!auth.adminKey;
+    if (CACHE_GRADING && Sliobj.adminState && Sliobj.sessionName) {
 	toggleClass(true, 'slidoc-admin-view');
 	setupCache(auth, slidocReadyAux1);
     } else {
@@ -566,7 +565,7 @@ function slidocReadyAux2(auth) {
 	throw('slidocReadyAux2: Missing/null auth');
 
     if (Sliobj.closePopup)
-	Sliobj.closePopup();
+	Sliobj.closePopup(true);
     Sliobj.closePopup = null;
     Sliobj.popupQueue = [];
     Slidoc.delayIndicator = ('progress_bar' in Sliobj.params.features) ? progressBar : delayElement;
@@ -601,7 +600,7 @@ function slidocReadyAux2(auth) {
 	    return false;
 	}
 
-	if (Sliobj.adminLevel) {
+	if (Sliobj.adminState) {
 	    // Retrieve session, possibly from cache (without creating)
 	    sessionGet(null, Sliobj.sessionName, slidocSetup, 'ready')
 	} else if (Sliobj.params.sessionPrereqs) {
@@ -648,7 +647,7 @@ function slidocSetupAux(session, feedback) {
     Sliobj.feedback = feedback || null;
     var unhideChapters = false;
 
-    if (Sliobj.adminLevel && !Sliobj.session) {
+    if (Sliobj.adminState && !Sliobj.session) {
 	sessionAbort('Admin user: session not found for user');
 	return;
     }
@@ -670,7 +669,7 @@ function slidocSetupAux(session, feedback) {
 	unhideChapters = true;
     }
 
-    if (Sliobj.adminLevel) {
+    if (Sliobj.adminState) {
 	if (!Sliobj.session) {
 	    sessionAbort('Admin user: cannot administer null session');
 	    return;
@@ -712,8 +711,11 @@ function slidocSetupAux(session, feedback) {
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var slideElem = document.getElementById(slide_id);
 
-	    // Hide grade entry for questions with zero grade weight (workaround for Weight: parsing after Answer:)
+	    // Hide grade entry for questions with zero grade weight (workaround for Weight: being parsed after Answer:)
 	    toggleClass(!question_attrs.gweight, 'slidoc-nogradespan', slideElem);
+	    var suffixElem = document.getElementById(slide_id+'-gradesuffix')
+	    if (suffixElem && question_attrs.gweight)
+		suffixElem.textContent = '/'+question_attrs.gweight;
 
 	    if (!Sliobj.firstTime) {
 		// Clean-up slide-specific view styles for question slides
@@ -761,14 +763,20 @@ function slidocSetupAux(session, feedback) {
 	    jsSpans[j].innerHTML = val;
     }
 
-    if (Sliobj.adminLevel)
+    if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');
 
-    if (Sliobj.session.completed || Sliobj.adminLevel) // Suppress incremental display
-	toggleClass(true, 'slidoc-completed-view');
-    
+    if (Sliobj.params.gd_sheet_url)
+	toggleClass(true, 'slidoc-remote-view');
+
     if (Sliobj.session.questionsCount)
 	Slidoc.showScore();
+
+    if (Sliobj.session.completed || Sliobj.adminState) // Suppress incremental display
+	toggleClass(true, 'slidoc-completed-view');
+    
+    if (Sliobj.feedback) // If any non-null feedback, activate graded view
+	toggleClass(true, 'slidoc-graded-view');
 
     showSubmitted();
 
@@ -855,6 +863,7 @@ function unpackSession(row) {
     var result = {};
     // Unpack hidden session
     result.session = JSON.parse( atob(row.session_hidden.replace(/\s+/, '')) );
+
     var keys = Object.keys(row);
     var feedback = {};
 
@@ -869,12 +878,12 @@ function unpackSession(row) {
 	    if (!(qnumber in feedback))
 		feedback[qnumber] = {};
 	    feedback[qnumber][hmatch[2]] = value;
-	    if (value != null)
+	    if (value != '')
 		count += 1;
-	} else if (/^q_grades/.exec(key)) {
+	} else if (/^q_grades/.exec(key) && !isNaN(value)) {
 	    // Total grade
 	    feedback.q_grades = value;
-	    if (value != null)
+	    if (value)
 		count += 1;
 	}
     }
@@ -883,13 +892,13 @@ function unpackSession(row) {
     return result;
 }
 
-function sessionGetPutAux(callback, retryCall, retryType, result, extras) {
+function sessionGetPutAux(callback, retryCall, retryType, result, retStatus) {
     // For sessionPut, session should be bound to this function as 'this'
-    console.log('Slidoc.sessionGetPutAux: ', !!callback, !!retryCall, retryType, result, extras);
+    console.log('Slidoc.sessionGetPutAux: ', !!callback, !!retryCall, retryType, result, retStatus);
     var session = null;
     var feedback = null;
     var nullReturn = false;
-    var err_msg = extras.error || '';
+    var err_msg = retStatus.error || '';
     var testCallback = null;
     if (Sliobj.testScript.callback) {
 	testCallback = Sliobj.testScript.callback;
@@ -905,9 +914,10 @@ function sessionGetPutAux(callback, retryCall, retryType, result, extras) {
 		var unpacked = unpackSession(result);
 		session = unpacked.session;
 		feedback = unpacked.feedback;
-		// If any non-null feedback, activate graded view
-		if (feedback)
-		    toggleClass(true, 'slidoc-graded-view');
+		session.lateToken = result.lateToken || '';
+		Sliobj.submitTimestamp = null;
+		if (result.submitTimestamp)
+		    try { Sliobj.submitTimestamp = new Date(result.submitTimestamp); } catch(err) {}
 	    } catch(err) {
 		console.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
 		err_msg = 'Parsing error '+err_msg;
@@ -920,23 +930,31 @@ function sessionGetPutAux(callback, retryCall, retryType, result, extras) {
     var err_info = match ? match[3] : ''
     if (session || nullReturn) {
 
+	if (retStatus && retStatus.info) {
+	    if (retStatus.info.dueDate)
+		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { console.log('DUE_DATE error: '+retStatus.info.dueDate, err); }
+	    if (retStatus.info.submitTimestamp)
+		try { Sliobj.submitTimestamp = new Date(retStatus.info.submitTimestamp); } catch(err) { console.log('SUBMIT_TIME error: '+retStatus.info.submitTimestamp, err); Sliobj.submitTimestamp = null; }
+	    
+	}
 	if (retryType == 'end_paced') {
-	    alert('Completed session saved successfully to Google Docs');
+	    if (Sliobj.submitTimestamp) {
+		showCompletionStatus();
+	    } else {
+		alert('Error in submitting session; no submit time');
+	    }
 	    showSubmitted();
 	} else if (retryType == 'ready' && Sliobj.params.gd_sheet_url && !Sliobj.params.gd_client_id) {
 	    if (GService.gprofile.auth.remember)
 		localPut('auth', GService.gprofile.auth); // Save auth info on successful start
 	}
-	
-	if (extras && extras.messages) {
+
+	if (retStatus && retStatus.messages) {
 	    var alerts = [];
-	    for (var j=0; j < extras.messages.length; j++) {
-		var match = parse_msg_re.exec(extras.messages[j]);
+	    for (var j=0; j < retStatus.messages.length; j++) {
+		var match = parse_msg_re.exec(retStatus.messages[j]);
 		var msg_type = match ? match[2] : '';
-		if (match && match[1] == 'Info') {
-		    if (msg_type == 'DUE_DATE')
-			try { Sliobj.dueDate = new Date(parseInt(err_info)); } catch(err) { console.log('DUE_DATE error:', err); }
-		} else if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
+		if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
 		    if (session && !session.completed)
 			alerts.push('<em>Warning:</em><br>'+err_info);
 		} else if (msg_type == 'INVALID_LATE_TOKEN') {
@@ -1052,6 +1070,10 @@ function sessionPut(userId, session, opts, callback) {
     // callback(session, feedback)
     // opts = {nooverwrite:, get:, force: }
     console.log("sessionPut:", userId, Sliobj.sessionName, session, callback, opts);
+    if (Sliobj.adminState) {
+	alert('Internal error: admin user cannot update row');
+	return;
+    }
     if (!Sliobj.sessionName) {
 	if (callback)
 	    callback(null);
@@ -1074,6 +1096,7 @@ function sessionPut(userId, session, opts, callback) {
 	if (userId) putOpts.id = userId;
 	if (opts.nooverwrite) putOpts.nooverwrite = 1;
 	if (opts.get) putOpts.get = 1;
+	if (opts.submit) putOpts.submit = 1;
 
 	var rowObj = {};
 	for (var j=0; j<Sliobj.params.sessionFields.length; j++) {
@@ -1449,6 +1472,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, testResp, qfee
 	   if ('comments' in qfeedback && qfeedback.comments != null) {
 	       setAnswerElement(slide_id, "-comments-textarea", qfeedback.comments);
 	       setAnswerElement(slide_id, "-comments-content", qfeedback.comments);
+	       renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
 	   }
        }
    } else {
@@ -1615,9 +1639,9 @@ Slidoc.answerUpdate = function (setup, slide_id, response, checkOnly, testResp) 
 	}
     }
     // Display correctness of response
-    setAnswerElement(slide_id, "-correct-mark", '', is_correct ? " &#x2714;&nbsp;" : "");
-    setAnswerElement(slide_id, "-wrong-mark", '', (is_correct === false) ? " &#x2718;&nbsp;" : "");
-    setAnswerElement(slide_id, "-any-mark", '', (is_correct === null) ? '<b>&#9083;</b>' : "");  // Not check mark
+    setAnswerElement(slide_id, '-correct-mark', '', is_correct ? ' '+SYMS['correctMark']+'&nbsp;' : '');
+    setAnswerElement(slide_id, '-wrong-mark', '', (is_correct === false) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
+    setAnswerElement(slide_id, '-any-mark', '', (is_correct === null) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
     
     // Display correct answer
     setAnswerElement(slide_id, "-answer-correct", corr_answer||'', corr_answer_html);
@@ -1790,31 +1814,53 @@ function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
 Slidoc.renderText = function(elem, slide_id) {
     console.log("Slidoc.renderText:", elem, slide_id);
     var question_attrs = getQuestionAttrs(slide_id);
-    if (question_attrs.explain) {
-	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain.slice(-8) == 'markdown')
+    if (Sliobj.adminState) {
+	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
     } else {
-	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
+	if (question_attrs.explain) {
+	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain.slice(-8) == 'markdown')
+	} else {
+	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
+	}
     }
 }
 
 function showSubmitted() {
-    var submitElem = document.getElementById('slidoc-submitted-display');
-    if (Sliobj.params.gd_sheet_url && Sliobj.session.submitTime) {
-	if (submitElem)
-	    submitElem.innerHTML = (Sliobj.session.lateToken == 'none') ? '&#9083;' : '&#x2714;';
+    var submitElem = document.getElementById('slidoc-submit-display');
+    if (!submitElem || !Sliobj.params.gd_sheet_url)
+	return;
+    if (Sliobj.submitTimestamp) {
+	submitElem.innerHTML = (Sliobj.session.lateToken == 'none') ? SYMS['xBoxMark'] : SYMS['correctMark'];
     } else {
-	if (submitElem)
-	    submitElem.innerHTML = '';
+	submitElem.innerHTML = Sliobj.session.completed ? SYMS['wrongMark'] : SYMS['anyMark'];
     }
 }
 
-Slidoc.submittedAlert = function () {
-    var msg = 'Submitted to Google Docs on '+ (new Date(Sliobj.session.submitTime));
-    if (Sliobj.session.lateToken)
-	msg += ' LATE';
-    if (Sliobj.session.lateToken == 'none')
-	msg += ' (NO CREDIT)';
-    alert(msg);
+Slidoc.submitStatus = function () {
+    console.log('Slidoc.submitStatus: ');
+    if (Sliobj.submitTimestamp) {
+	var msg = 'Submitted to Google Docs on '+ (new Date(Sliobj.submitTimestamp));
+	if (Sliobj.session.lateToken)
+	    msg += ' LATE';
+	if (Sliobj.session.lateToken == 'none')
+	    msg += ' (NO CREDIT)';
+	alert(msg);
+    } else {
+	var html = 'Session '+(Sliobj.session.completed ? 'completed, but':'')+' not submitted.'
+	if (!Sliobj.adminState)
+	    html += ' Click <span class="slidoc-clickable" onclick="Slidoc.submitSession();">here</span> to submit session'+((Sliobj.session.lastSlide < getVisibleSlides().length) ? 'without reaching the last slide':'');
+	Slidoc.showPopup(html);
+    }
+}
+
+Slidoc.submitSession = function () {
+    console.log('Slidoc.submitSession: ');
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    if (!window.confirm('Do you really want to submit session without reaching the last slide?'))
+	return;
+    Sliobj.session.lastSlide = getVisibleSlides().length;
+    Slidoc.endPaced();
 }
 
 function conceptStats(tags, tallies) {
@@ -1835,6 +1881,10 @@ function conceptStats(tags, tallies) {
 
 Slidoc.gradeClick = function (elem, slide_id) {
     console.log("Slidoc.gradeClick:", elem, slide_id);
+    if (!Sliobj.session.completed) {
+	if (!window.confirm('User '+GService.gprofile.auth.id+' has not yet completed session '+Sliobj.sessionName+'. Are you sure you want to grade it?'))
+	    return;
+    }
     var slideElem = document.getElementById(slide_id);
     var question_attrs = getQuestionAttrs(slide_id);
     var qfeedback = Sliobj.feedback ? (Sliobj.feedback[question_attrs.qnumber] || null) : null;
@@ -1846,7 +1896,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var commentsArea = document.getElementById(slide_id+'-comments-textarea');
 	var commentsValue = commentsArea.value.trim();
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
-	setAnswerElement(slide_id, '-comments-content', commentsValue);
+	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true)
 
 	var gradeField = 'q'+question_attrs.qnumber+'_grade_'+question_attrs.gweight;
 	var commentsField = 'q'+question_attrs.qnumber+'_comments';
@@ -1879,8 +1929,8 @@ function gradeUpdate(qnumber, updates, callback) {
     }
 }
 
-function gradeUpdateAux(userId, qnumber, callback, result, extras) {
-    console.log('gradeUpdateAux: ', userId, qnumber, !!callback, result, extras);
+function gradeUpdateAux(userId, qnumber, callback, result, retStatus) {
+    console.log('gradeUpdateAux: ', userId, qnumber, !!callback, result, retStatus);
     // Update grade and comments only after successful saving?
     // Move on to next user if slideshow mode, else to next question
     if (result) {
@@ -1947,13 +1997,13 @@ Slidoc.startPaced = function () {
 Slidoc.endPaced = function () {
     console.log('Slidoc.endPaced: ');
     Sliobj.session.completed = true;
-    Sliobj.session.submitTime = Date.now();
     if (Sliobj.session.paceLevel <= 1) {
 	// If pace can end, unpace
 	document.body.classList.remove('slidoc-paced-view');
 	Sliobj.session.paced = false;
     }
-    sessionPut(null, null, {force: true, retry: 'end_paced'});
+    sessionPut(null, null, {force: true, retry: 'end_paced', submit: true});
+    showCompletionStatus();
 }
 
 Slidoc.answerPacedAllow = function () {
@@ -1968,6 +2018,26 @@ Slidoc.answerPacedAllow = function () {
 	}
     }
     return true;
+}
+
+function showCompletionStatus() {
+    var msg = '<b>Paced session completed.</b><br>';
+    if (Sliobj.submitTimestamp) {
+	if (Sliobj.closePopup) {
+	    Sliobj.closePopup(true);
+	    msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.submitTimestamp+'<br>';
+	    if (!Sliobj.session.paced)
+		msg += 'You may now exit the slideshow and access this document normally.<br>';
+	} else {
+	    alert('Completed session submitted successfully to Google Docs at '+Sliobj.submitTimestamp);
+	    return;
+	}
+    } else if (Sliobj.params.gd_sheet_url) {
+	msg += 'Do not close this popup. Wait for confirmation that session has been submitted to Google Docs<br>';
+    } else if (!Sliobj.session.paced) {
+	msg += 'You may now exit the slideshow and access this document normally.<br>';
+    }
+    Slidoc.showConcepts(msg);
 }
 
 function getCurrentlyVisibleSlide(slides) {
@@ -2124,12 +2194,6 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	if (Sliobj.session.lastSlide == slides.length) {
 	    // Last slide
 	    Slidoc.endPaced();
-	    var msg = '<b>Paced session completed.</b><br>';
-	    if (Sliobj.params.gd_sheet_url)
-		msg += 'Wait for confirmation that session stats have been submitted to Google Docs.<br>';
-	    if (!Sliobj.session.paced)
-		msg += 'Pacing completed; you may now exit the slideshow and access this document normally.<br>';
-	    Slidoc.showConcepts(msg);
 
 	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {
 	    // Not last slide; save updated session (if not transient and not remote)
@@ -2446,13 +2510,17 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
 	overlayElem.style.display = 'block';
 	divElem.style.display = 'block';
 
-	Sliobj.closePopup = function () {
+	Sliobj.closePopup = function (closeAll) {
 	    overlayElem.style.display = 'none';
 	    divElem.style.display = 'none';
 	    Sliobj.closePopup = null;
-	    if (Sliobj.popupQueue && Sliobj.popupQueue.length) {
-		var args = Sliobj.popupQueue.shift();
-		Slidoc.showPopup(args[0], args[1]);
+	    if (closeAll) {
+		Sliobj.popupQueue = [];
+	    } else {
+		if (Sliobj.popupQueue && Sliobj.popupQueue.length) {
+		    var args = Sliobj.popupQueue.shift();
+		    Slidoc.showPopup(args[0], args[1]);
+		}
 	    }
 	}
 	

@@ -558,10 +558,10 @@ class SlidocRenderer(MathRenderer):
   <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
   <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
   <span class="slidoc-grade-span slidoc-answeredonly">
-    <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix"><em>Grade:</em></span>
+    <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
     <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-adminonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
-    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix"></span>
+    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded"></span>
   </span>
 '''
 
@@ -572,7 +572,7 @@ class SlidocRenderer(MathRenderer):
   <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button slidoc-noanswered-grading" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
 '''
     comments_template_b = '''              
-<div id="%(sid)s-comments" class="slidoc-comments slidoc-answeredonly"><em>Comments:</em>
+<div id="%(sid)s-comments" class="slidoc-comments slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
   <span id="%(sid)s-comments-content" class="slidoc-comments-content"></span>
 </div>
 '''
@@ -1364,8 +1364,8 @@ def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp']
-Session_fields = ['initTimestamp', 'lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
+Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp']
+Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
                   'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',
                 'scoreWeight', 'gradeWeight', 'fieldsMin', 'questions', 'answers',

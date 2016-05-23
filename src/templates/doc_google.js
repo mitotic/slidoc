@@ -266,7 +266,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
     window.scrollTo(0,0);
 }
 
-    var PRE_HEADERS = ['name', 'id', 'email', 'altid', 'Timestamp'];
+var PRE_HEADERS = ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp'];
 function GoogleSheet(url, sheetName, fields, useJSONP) {
     this.url = url;
     this.fields = fields;
@@ -315,7 +315,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 
     if (outerCallback) {
         var retval = null;
-	var extras = {error: '', messages: null};
+	var retStatus = {error: '', info: null, messages: null};
         if (result) {
 	    if (result.result == 'success' && result.value) {
 		if (callbackType != 'getAll') {
@@ -331,17 +331,19 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		    }
 		}
 
-		if (userId && result.timestamp)                 // Send update timestamp for user
-		    this.timestamps[userId] = result.timestamp;
+		retStatus.info = result.info || {};
+
+		if (userId && retStatus.info.timestamp)                 // Send update timestamp for user
+		    this.timestamps[userId] = retStatus.info.timestamp;
 	    }
 
 	    else if (result.result == 'error' && result.error)
-		extras.error = err_msg ? err_msg + ';' + result.error : result.error;
+		retStatus.error = err_msg ? err_msg + ';' + result.error : result.error;
 
 	    if (result.messages)
-		extras.messages = result.messages.split('\n');
+		retStatus.messages = result.messages.split('\n');
 	}
-        outerCallback(retval, extras);
+        outerCallback(retval, retStatus);
     }
 }
 
@@ -378,7 +380,7 @@ GoogleSheet.prototype.createSheet = function (callback) {
 }
 
 GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
-    // opts = {get:, id:, nooverwrite:}
+    // opts = {get:, id:, nooverwrite:, submit:}
     // Specify opts.id to override id
     // Specify opts.get to retrieve the existing/overwritten row.
     // Specify opts.nooverwrite to not overwrite any existing row with same id
@@ -399,6 +401,8 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
         params.get = '1';
     if (opts.nooverwrite)
         params.nooverwrite = '1';
+    if (opts.submit)
+        params.submit = '1';
     if (this.timestamps[rowObj.id])
 	params.timestamp = this.timestamps[rowObj.id];
 
@@ -406,16 +410,16 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
     this.send(params, 'putRow', callback);
 }
 
-GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet, retval, extras) {
-    // opts = {get:, id:, nooverwrite:}
+GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet, retval, retStatus) {
+    // opts = {get:, id:, nooverwrite:, submit:}
     // Fills in id, name etc. from GService.gprofile.auth before calling putRow
-    console.log('GoogleSheet.authPutRow:', opts, !!callback, createSheet, retval, extras);
+    console.log('GoogleSheet.authPutRow:', opts, !!callback, createSheet, retval, retStatus);
     if (createSheet) {
         // Call authPutRow after creating sheet
         this.createSheet( this.authPutRow.bind(this, rowObj, opts, callback, null) ); // createSheet=null needed to prevent looping
         return;
-    } else if (extras && extras.error) {
-	callback(null, extras);
+    } else if (retStatus && retStatus.error) {
+	callback(null, retStatus);
 	return;
     }
 
@@ -473,10 +477,10 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
 
 GoogleSheet.prototype.getRow = function (id, callback) {
     // If !id, GService.gprofile.auth.id is used
-    // callback(obj, extras)
-    // obj == null on error
-    // obj == {} for non-existent row
-    // obj == {id: ..., name: ..., } for returned row
+    // callback(result, retStatus)
+    // result == null on error
+    // result == {} for non-existent row
+    // result == {id: ..., name: ..., } for returned row
     console.log('GoogleSheet.getRow:', id, !!callback);
 
     if (!id) id = GService.gprofile.auth.id;
@@ -501,10 +505,10 @@ GoogleSheet.prototype.getRow = function (id, callback) {
 
 
 GoogleSheet.prototype.getAll = function (callback) {
-    // callback(obj, extras)
-    // obj == null on error
-    // obj == {} for empty sheet
-    // obj == {id: {id: ..., name: ..., }} for returned rows
+    // callback(result, retStatus)
+    // result == null on error
+    // result == {} for empty sheet
+    // result == {id: {id: ..., name: ..., }} for returned rows
     if (!callback)
         throw('GoogleSheet: Must specify callback for getAll');
 
@@ -522,9 +526,13 @@ GoogleSheet.prototype.initCache = function(allRows) {
     var ids = Object.keys(allRows);
     this.roster = [];
     for (var j=0; j<ids.length; j++) {
-	var rowObj = allRows[ids[j]];
-	this.timestamps[ids[j]] = (new Date(rowObj.Timestamp)).getTime();
-	this.roster.push([rowObj.name, ids[j]]);
+	if (ids[j]) {
+	    var rowObj = allRows[ids[j]];
+	    if (rowObj.name && rowObj.Timestamp) {
+		this.roster.push([rowObj.name, ids[j]]);
+		this.timestamps[ids[j]] = (new Date(rowObj.Timestamp)).getTime();
+	    }
+	}
     }
     this.roster.sort(function(a,b){ if (a[0] != b[0]) {return (a[0] > b[0]) ? 1 : -1} else {return (a[1] > b[1]) ? 1 : -1}});
     console.log('GoogleSheet.initCache:', this.roster);

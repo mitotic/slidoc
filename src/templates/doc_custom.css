@@ -104,6 +104,7 @@ a, a:visited,
 .slidoc-clickable.slidoc-toc-sections { padding: 0.3em 0 0 1em; }
 
 /* Grade/comments */
+.slidoc-response-div { background-color: lightgray; padding: 5px; margin: 7px; }
 .slidoc-grade, .slidoc-comments { color: red; }
 
 /* Notes */
@@ -116,7 +117,7 @@ body.slidoc-slide-view .slidoc-nav-overlay { font-size: 120%; }
 body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-left: 1em;}
 
 /* Score tally */
-#slidoc-submitted-display {color: green; font-size: 0.8em; padding-right: 5px;}
+#slidoc-submit-display {color: #2980B9; font-size: 0.8em; padding-right: 5px;}
 #slidoc-score-display {color: #2980B9; font-size: 0.8em; padding-right: 5px;}
 .slidoc-incorrect-answer-state #slidoc-score-display {color: red;}
 
