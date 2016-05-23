@@ -1462,11 +1462,11 @@ def process_input(input_files, config_dict):
         comps = config.pace.split(',')
         if comps[0]:
             js_params['paceLevel'] = int(comps[0])
-        if len(comps) > 1 and comps[1].isdigit():
+        if len(comps) > 1 and comps[1]:
             js_params['paceDelay'] = int(comps[1])
-        if len(comps) > 2 and comps[2].isdigit():
+        if len(comps) > 2 and comps[2]:
             js_params['tryCount'] = int(comps[2])
-        if len(comps) > 3 and comps[3].isdigit():
+        if len(comps) > 3 and comps[3]:
             js_params['tryDelay'] = int(comps[3])
         if not js_params['paceLevel']:
             sys.exit('slidoc: Error: --pace=0 argument should be omitted')
@@ -2052,7 +2052,7 @@ if __name__ == '__main__':
     parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
     parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
     parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
-    parser.add_argument('--pace', metavar='PACE_STRICT,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+    parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
     parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
     parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
     parser.add_argument('--revision', metavar='REVISION', help='File revision')

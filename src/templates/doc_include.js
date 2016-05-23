@@ -561,7 +561,7 @@ function slidocReadyAux1(auth) {
 function slidocReadyAux2(auth) {
     console.log("slidocReadyAux2:", auth);
 
-    if (!auth || !auth.id)
+    if (Sliobj.params.gd_sheet_url && (!auth || !auth.id))
 	throw('slidocReadyAux2: Missing/null auth');
 
     if (Sliobj.closePopup)

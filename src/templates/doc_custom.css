@@ -104,7 +104,9 @@ a, a:visited,
 .slidoc-clickable.slidoc-toc-sections { padding: 0.3em 0 0 1em; }
 
 /* Grade/comments */
-.slidoc-response-div { background-color: lightgray; padding: 5px; margin: 7px; }
+.slidoc-response-div       { background-color: lightgray; margin: 7px; padding: 5px; }
+.slidoc-response-div:empty { background-color: lightgray; margin: 7px; padding: 0px; }
+
 .slidoc-grade, .slidoc-comments { color: red; }
 
 /* Notes */
