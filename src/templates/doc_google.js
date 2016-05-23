@@ -317,6 +317,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
         var retval = null;
 	var retStatus = {error: '', info: null, messages: null};
         if (result) {
+	    try {
 	    if (result.result == 'success' && result.value) {
 		if (callbackType != 'getAll') {
 		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value);
@@ -342,16 +343,21 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 
 	    if (result.messages)
 		retStatus.messages = result.messages.split('\n');
+	    } catch(err) {
+		retval = null;
+		retStatus.error = 'ERROR in GoogleSheet.callback: '+err;
+		console.log(retStatus.error);
+	    }
 	}
+	
         outerCallback(retval, retStatus);
     }
 }
 
 GoogleSheet.prototype.row2obj = function(row) {
-    if (row.length != this.headers.length) {
-        console.log('GoogleSheet: row2obj: row length error: got '+row.length+' but expected '+this.headers.length);
-        return null;
-    }
+    if (row.length != this.headers.length)
+	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet:  expected '+this.headers.length+' but got '+row.length+' (extra grading columns?)');
+
     var obj = {};
     for (var j=0; j<row.length; j++)
         obj[this.headers[j]] = row[j];

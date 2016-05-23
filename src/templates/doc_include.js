@@ -77,7 +77,7 @@ function setupCache(auth, callback) {
 		callback(auth);
 	    }
 	} else {
-	    var err_msg = 'Failed to setup Google Docs cache';
+	    var err_msg = 'Failed to setup Google Docs cache: ' + (retStatus ? retStatus.error : '');
 	    alert(err_msg);
 	    sessionAbort(err_msg);
 	    return;
@@ -283,6 +283,7 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
 }
 
 Slidoc.resetPaced = function () {
+    console.log('Slidoc.resetPaced:');
     if (Sliobj.params.gd_sheet_url) {
 	alert('Cannot reset session linked to Google Docs');
 	return false;
@@ -352,7 +353,7 @@ Slidoc.viewHelp = function () {
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
     }
     html += '<table class="slidoc-slide-help-table">';
-    if (Sliobj.params.paceLevel && !Sliobj.params.gd_sheet_url)
+    if (Sliobj.params.paceLevel && !Sliobj.params.gd_sheet_url && !Sliobj.chainActive)
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
     if (Sliobj.currentSlide) {
@@ -449,6 +450,8 @@ Slidoc.handleKey = function (keyName) {
     } else {
 	if (keyName == 'esc' || keyName == 'unesc')   { Slidoc.slideViewStart(); return false; }
 
+	if (keyName == 'reset') { Slidoc.resetPaced(); return false; }
+	
 	if (Sliobj.curChapterId) {
 	    var chapNum = parseSlideId(Sliobj.curChapterId)[1];
 	    var chapters = document.getElementsByClassName('slidoc-reg-chapter');
@@ -783,17 +786,41 @@ function slidocSetupAux(session, feedback) {
     // Setup completed; branch out
     Sliobj.firstTime = false;
     var toc_elem = document.getElementById("slidoc00");
-    if (!toc_elem && Sliobj.session.paced) {
-	Slidoc.startPaced(); // Will call preAnswer later
-	return false;
-    } else {
-	preAnswer();
+    if (!toc_elem && Sliobj.session) {
+	if (Sliobj.session.paced || Sliobj.session.completed) {
+	    var firstSlideId = getVisibleSlides()[0].id;
+	    Sliobj.questionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
+	}
+	if (Sliobj.session.paced) {
+	    Slidoc.startPaced(); // Will call preAnswer later
+	    return false;
+	} else if (Sliobj.session.questionsAttempted) {
+	    preAnswer();
+	}
     }
 
+    // Not paced
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
 	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
-	goSlide(slideHash, false, true);
+	if (parseSlideId(slideHash)[0]) {
+	    goSlide(slideHash, false, true);
+	} else if (slideHash.slice(0,21) == '#slidoc-index-concept') {
+	    goSlide('#slidoc'+zeroPad(chapters.length+1,2), false, true);
+	    var elem = document.getElementById(slideHash.slice(1));
+	    if (elem) {
+		elem = elem.firstChild;
+		while (elem && elem.tagName != 'A') { elem = elem.nextSibling; }
+	    }
+	    if (elem && elem.tagName == 'A') {
+		if (elem.onclick)
+		    setTimeout(function(){ elem.onclick();}, 200);
+		else if (elem.href)
+		    window.location = elem.href;
+	    } else {
+		setTimeout(function(){window.location = slideHash;}, 200);
+	    }
+	}
 	if (document.getElementById("slidoc-sidebar-button"))
 	    document.getElementById("slidoc-sidebar-button").style.display = null;
 	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches)
@@ -1394,7 +1421,7 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
 	    textareaElem.value = explain;
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
 	}
-    } else if (question_attrs.explain && textareaElem && (!textareaElem.value.trim() || textareaElem.value.trim() == 'Explain')) {
+    } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim()) {
 	alert('Please provide an explanation for the answer');
 	return false;
     }
@@ -1405,7 +1432,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val, explain) {
    console.log("Slidoc.choiceClick:", slide_id, choice_val);
     var slide_num = parseSlideId(slide_id)[2];
     var question_attrs = getQuestionAttrs(slide_id);
-    if (question_attrs.slide != slide_num)  // Incomplete choice question; ignore
+    if (!question_attrs || question_attrs.slide != slide_num)  // Incomplete choice question; ignore
 	return false;
 
    var setup = !elem;
@@ -1873,7 +1900,8 @@ function conceptStats(tags, tallies) {
 
     var html = '<table class="slidoc-missed-concepts-table">';
     for (var j=0; j<scores.length; j++) {
-	html += '<tr><td>'+scores[j][0]+':</td><td>'+scores[j][1]+'/'+scores[j][2]+'</td></tr>';
+	var tagId = 'slidoc-index-concept-' + make_id_from_text(scores[j][0]);
+	html += '<tr><td><a href="'+Sliobj.params.conceptIndexFile+'#'+tagId+'" target="_blank">'+scores[j][0]+'</a>:</td><td>'+scores[j][1]+'/'+scores[j][2]+'</td></tr>';
     }
     html += '</table>';
     return html;
@@ -1890,10 +1918,20 @@ Slidoc.gradeClick = function (elem, slide_id) {
     var qfeedback = Sliobj.feedback ? (Sliobj.feedback[question_attrs.qnumber] || null) : null;
     var startGrading = elem && elem.classList.contains('slidoc-gstart-click');
     toggleClass(startGrading, 'slidoc-grading-view', slideElem);
-    if (!startGrading) {
-	var gradeInput = document.getElementById(slide_id+'-grade-input');
+    var gradeInput = document.getElementById(slide_id+'-grade-input');
+    var commentsArea = document.getElementById(slide_id+'-comments-textarea');
+    var quotedResponse = '';
+    if (startGrading) {
+	if (!commentsArea.value && 'quote_response' in Sliobj.params.features) {
+	    // Pre-fill comments area with indented response (as for email)
+	    var textareaElem = document.getElementById(slide_id+'-answer-textarea');
+	    quotedResponse = textareaElem.value.replace(/(^|\n)(?=.)/g, '\n> ');
+	    commentsArea.value = quotedResponse;
+	}
+    } else {
 	var gradeValue = gradeInput.value.trim();
-	var commentsArea = document.getElementById(slide_id+'-comments-textarea');
+	if (quotedResponse && commentsArea.value == quotedResponse) // No comments on response
+	    commentsArea.value = '';
 	var commentsValue = commentsArea.value.trim();
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
 	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true)
@@ -1940,8 +1978,6 @@ function gradeUpdateAux(userId, qnumber, callback, result, retStatus) {
 Slidoc.startPaced = function () {
     console.log('Slidoc.startPaced: ');
     var firstSlideId = getVisibleSlides()[0].id;
-    var qConcepts = parseElem(firstSlideId+'-qconcepts');
-    Sliobj.questionConcepts = qConcepts || [];
 
     if (!Sliobj.session.lastSlide) {
 	// Start of session
@@ -2159,7 +2195,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
 	console.log('Slidoc.slideViewGo2:', slide_num, Sliobj.session.lastSlide);
-	if (slide_num == slides.length && Sliobj.params.gd_sheet_url && !Sliobj.params.tryCount && Sliobj.session.questionsCount < Sliobj.params.questionsMax) {
+	if (slide_num == slides.length && Sliobj.session.questionsCount < Sliobj.params.questionsMax) {
 	    if (!window.confirm('You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?'))
 		return false;
 	}

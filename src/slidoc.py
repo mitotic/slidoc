@@ -31,6 +31,7 @@ from collections import defaultdict, OrderedDict
 import json
 import mistune
 import md2md
+import md2nb
 import sliauth
 
 from pygments import highlight
@@ -209,7 +210,7 @@ def make_index(first_tags, sec_tags, site_url, question=False, fprefix='', index
 
     out_list.append(close_ul)
         
-    out_list = ['<b>INDEX</b><blockquote>\n'] + ["&nbsp;&nbsp;".join(['<a href="#%s" class="slidoc-clickable">%s</a>' % (id_prefix+x.upper(), x.upper()) for x in first_letters])] + ['</blockquote>'] + out_list
+    out_list = ['<b id="%s">INDEX</b><blockquote>\n' % index_id] + ["&nbsp;&nbsp;".join(['<a href="#%s" class="slidoc-clickable">%s</a>' % (id_prefix+x.upper(), x.upper()) for x in first_letters])] + ['</blockquote>'] + out_list
     return first_references, covered_first, ''.join(out_list)
 
 
@@ -544,7 +545,7 @@ class SlidocRenderer(MathRenderer):
   <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly">Answer:</span>
   <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
   <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered" onkeydown="Slidoc.inputKeyDown(event);"></input>
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered" cols="60" rows="5"></textarea>
+
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
     <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
@@ -552,6 +553,8 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
     <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
   </span>
+  %(explain)s
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered" cols="60" rows="5"></textarea>
 '''                
 
     grading_template = '''
@@ -724,7 +727,7 @@ class SlidocRenderer(MathRenderer):
         if self.qtypes[-1]:
             # Question slide
             if self.options['config'].pace and last_slide:
-                sys.exit('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
+                abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
             if len(self.questions) == 1:
                 self.cum_weights.append(self.questions[-1]['weight'])
                 self.cum_gweights.append(self.questions[-1]['gweight'])
@@ -732,7 +735,7 @@ class SlidocRenderer(MathRenderer):
                 self.cum_weights.append(self.questions[-1]['weight'] + self.cum_weights[-1])
                 self.cum_gweights.append(self.questions[-1]['gweight']+ self.cum_gweights[-1])
 
-            if 'grade_comments' in self.options['config'].features:
+            if 'grade_response' in self.options['config'].features:
                 qno = 'q%d' % len(self.questions)
                 fields = []
                 if self.qtypes[-1].startswith('text/'):
@@ -1066,7 +1069,7 @@ class SlidocRenderer(MathRenderer):
                     traceback.print_exc()
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp), file=sys.stderr)
 
-        grade_comments = 'grade_comments' in self.options['config'].features
+        grade_response = 'grade_response' in self.options['config'].features
         multiline_answer = self.cur_qtype.startswith('text/')
         if multiline_answer:
             explain_answer = ''      # Explain not compatible with textarea input
@@ -1118,18 +1121,19 @@ class SlidocRenderer(MathRenderer):
         ans_params = { 'sid': id_str,
                        'qno': len(self.questions),
                        'ans_classes': ans_classes,
-                       'inp_type': 'number' if self.cur_qtype == 'number' else 'text' }
+                       'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
+                       'explain': ('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if explain_answer else ''}
 
         html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s" data-qnumber="%(qno)d">\n'''+self.answer_template
 
-        if grade_comments:
+        if grade_response:
             html_template += self.grading_template     # Hidden later by doc_include.js, if zero gweight
             html_template += self.comments_template_a
 
         if self.render_markdown:
             html_template += self.render_template
 
-        if grade_comments:
+        if grade_response:
             html_template += self.comments_template_b
 
         if self.cur_qtype.startswith('text/code'):
@@ -1381,7 +1385,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
         if retval['error'].find('Headers must be specified for new sheet') == -1:
-            sys.exit("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
+            abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
     prev_row = retval.get('row')
     if prev_row:
         revision_col = Index_fields.index('revision')
@@ -1400,7 +1404,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                   }
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
-        sys.exit("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
+        abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
     print('slidoc: Updated remote index sheet %s for session %s' % (index_sheet, session_name), file=sys.stderr)
 
                 
@@ -1411,7 +1415,7 @@ def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
                    'headers': json.dumps(Manage_fields+Session_fields+grade_fields)}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
-        sys.exit("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
+        abort("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
     print('slidoc: Created remote spreadsheet:', session_name, file=sys.stderr)
 
 
@@ -1432,6 +1436,7 @@ def process_input(input_files, config_dict):
 
     js_params['sessionFields'] = Session_fields
     js_params['gradeFields'] = []
+    js_params['conceptIndexFile'] = 'index.html'  # Need command line option for this
         
     if config.index_files:
         # Separate files
@@ -1448,7 +1453,7 @@ def process_input(input_files, config_dict):
     hide_chapters = False
     if config.pace:
         if config.printable:
-            sys.exit('slidoc: Error: --pace and --printable options do not work well together')
+            abort('slidoc: Error: --pace and --printable options do not work well together')
         hide_chapters = True
         # Pace implies separate files
         config.separate = True
@@ -1469,12 +1474,12 @@ def process_input(input_files, config_dict):
         if len(comps) > 3 and comps[3]:
             js_params['tryDelay'] = int(comps[3])
         if not js_params['paceLevel']:
-            sys.exit('slidoc: Error: --pace=0 argument should be omitted')
+            abort('slidoc: Error: --pace=0 argument should be omitted')
 
     gd_hmac_key = ''
     if config.google_docs:
         if not config.pace:
-            sys.exit('slidoc: Error: Must use --google_docs with --pace')
+            abort('slidoc: Error: Must use --google_docs with --pace')
         comps = config.google_docs.split(',')
         js_params['gd_sheet_url'] = comps[0]
         if len(comps) > 1:
@@ -1508,7 +1513,7 @@ def process_input(input_files, config_dict):
         config.strip.add('chapters')
 
     if config.dest_dir and not os.path.isdir(config.dest_dir):
-        sys.exit("Destination directory %s does not exist" % config.dest_dir)
+        abort("Destination directory %s does not exist" % config.dest_dir)
     dest_dir = config.dest_dir+"/" if config.dest_dir else ''
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
@@ -1547,10 +1552,10 @@ def process_input(input_files, config_dict):
         fcomp = os.path.splitext(os.path.basename(f.name))
         fnames.append(fcomp[0])
         if fcomp[1] != '.md':
-            sys.exit('Invalid file extension for '+f.name)
+            abort('Invalid file extension for '+f.name)
 
         if config.notebook and os.path.exists(fcomp[0]+'.ipynb') and not config.overwrite and not config.dry_run:
-            sys.exit("File %s.ipynb already exists. Delete it or specify --overwrite" % fcomp[0])
+            abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fcomp[0])
 
     if config.slides:
         reveal_themes = config.slides.split(',')
@@ -1585,8 +1590,10 @@ def process_input(input_files, config_dict):
     if 'rule' in config.strip:
         nb_mods_dict['strip'] += ',rule'
     nb_converter_args = md2nb.Args_obj.create_args(None, **nb_mods_dict)
-    index_id = make_chapter_id(len(input_files)+1)
-    qindex_id = make_chapter_id(len(input_files)+2)
+    index_id = 'slidoc-index'
+    qindex_id = 'slidoc-qindex'
+    index_chapter_id = make_chapter_id(len(input_files)+1)
+    qindex_chapter_id = make_chapter_id(len(input_files)+2)
     back_to_contents = nav_link('BACK TO CONTENTS', config.site_url, config.toc, hash='#'+make_chapter_id(0),
                                 separate=config.separate, classes=['slidoc-nosidebar'], printable=config.printable)+'<p></p>\n'
 
@@ -1629,8 +1636,8 @@ def process_input(input_files, config_dict):
                 mathjax_config.append( r"tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
             math_inc = Mathjax_js % ','.join(mathjax_config)
     
-        if not gd_hmac_key and 'grade_comments' in config.features:
-            sys.exit("slidoc: Error: hmac_key must be specified for feature 'grade_comments'")
+        if not gd_hmac_key and 'grade_response' in config.features:
+            abort("slidoc: Error: hmac_key must be specified for feature 'grade_response'")
 
         filepath = f.name
         md_text = f.read()
@@ -1762,7 +1769,7 @@ def process_input(input_files, config_dict):
 
         toc_html = []
         if config.index and (Global.first_tags or Global.first_qtags):
-            toc_html.append(' '+nav_link('INDEX', config.site_url, config.index, hash='#'+index_id,
+            toc_html.append(' '+nav_link('INDEX', config.site_url, config.index, hash='#'+index_chapter_id,
                                      separate=config.separate, printable=config.printable))
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
         ifile = 0
@@ -1771,23 +1778,22 @@ def process_input(input_files, config_dict):
             chapter_id = make_chapter_id(ifile)
             slide_link = ''
             if not config.pace and config.slides:
-                slide_link = ',&nbsp; <a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>' % (config.site_url, fname+"-slides.html", 'slides')
+                slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.site_url, fname+"-slides.html", 'slides')
             nb_link = ''
             if not config.pace and config.notebook and nb_site_url:
-                nb_link = ',&nbsp; <a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
-            doc_link = nav_link('document', config.site_url, outname, hash='#'+chapter_id,
-                                 separate=config.separate, printable=config.printable)
+                nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
 
             if not config.pace:
-                doc_link = nav_link('document', config.site_url, outname, hash='#'+chapter_id,
+                doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
                                     separate=config.separate, printable=config.printable)
                 toggle_link = '''<span class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
             else:
-                doc_link = nav_link('paced', config.site_url, outname, target='_blank', separate=True)
+                doc_str = 'paced exercise'
                 if due_date:
-                    doc_link += ':due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
+                    doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
+                doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
                 toggle_link = '<span class="slidoc-toc-chapters">%s</span>' % (fheader,)
-            toc_html.append('<li>%s%s<span class="slidoc-nosidebar">(<em>%s%s%s</em>)</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
+            toc_html.append('<li>%s%s<span class="slidoc-nosidebar"> (%s)%s%s</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
             if not config.pace:
                 f_toc_html = ('\n<div id="%s-toc-sections" class="slidoc-toc-sections" style="display: none;">' % chapter_id)+file_toc+'\n<p></p></div>'
@@ -1812,7 +1818,9 @@ def process_input(input_files, config_dict):
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
-            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+'<br>'+''.join(toc_html)+'</article>\n'
+            if toc_insert:
+                toc_insert += '<br>'
+            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+''.join(toc_html)+'</article>\n'
             if combined_file:
                 all_container_prefix  = '<div id="slidoc-all-container" class="slidoc-all-container">\n'
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
@@ -1829,7 +1837,7 @@ def process_input(input_files, config_dict):
         if not config.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
             if config.qindex:
-                index_html = nav_link('QUESTION INDEX', config.site_url, config.qindex, hash='#'+qindex_id,
+                index_html = nav_link('QUESTION INDEX', config.site_url, config.qindex, hash='#'+qindex_chapter_id,
                                       separate=config.separate, printable=config.printable) + '<p></p>\n' + index_html
             if config.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.site_url, config.crossref, 'CROSS-REFERENCING')) + index_html
@@ -1937,7 +1945,7 @@ def http_post(url, params_dict):
     try:
         response = urllib2.urlopen(req)
     except Exception, excp:
-        sys.exit('ERROR in accessing URL %s: %s' % (url, excp))
+        abort('ERROR in accessing URL %s: %s' % (url, excp))
     result = response.read()
     try:
         result = json.loads(result)
@@ -2019,7 +2027,7 @@ def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), inc
         if verbose:
             print('Selected first line arguments from file', fname, argparse.Namespace(**line_args_dict), file=sys.stderr)
     except Exception, excp:
-        sys.exit('slidoc: ERROR in parsing command options in first line of %s: %s' % (file.name, excp))
+        abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (file.name, excp))
 
     for arg_name in cmd_args_dict:
         if arg_name not in line_args_dict:
@@ -2031,36 +2039,39 @@ def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), inc
 
     return argparse.Namespace(**line_args_dict)
 
+def abort(msg):
+    if __name__ == '__main__':
+        sys.exit(msg)
+    else:
+        raise Exception(msg)
+
+strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
+features_all = ['assessment', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'tex_math', 'untitled_number']
+
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
+parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
+parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
+parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
+parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
+parser.add_argument('--google_docs', help='spreadsheet_url,hmac_key[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
+parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
+parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
+parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
+parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
+parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
+parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
+parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
+parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
+parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+parser.add_argument('--revision', metavar='REVISION', help='File revision')
+parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
+parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
+parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
+parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
 if __name__ == '__main__':
-    import md2nb
-
-    strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-    features_all = ['assessment', 'equation_number', 'grade_comments', 'incremental_slides', 'override', 'progress_bar', 'tex_math', 'untitled_number']
-
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
-    parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
-    parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
-    parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
-    parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
-    parser.add_argument('--google_docs', help='spreadsheet_url,hmac_key[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
-    parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
-    parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
-    parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
-    parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
-    parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-    parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
-    parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
-    parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
-    parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
-    parser.add_argument('--revision', metavar='REVISION', help='File revision')
-    parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
-    parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
-    parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
-    parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
-
     cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
     cmd_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
     cmd_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
