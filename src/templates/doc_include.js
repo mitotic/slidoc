@@ -1925,6 +1925,14 @@ function conceptStats(tags, tallies) {
     return html;
 }
 
+Slidoc.quoteText = function(elem, slide_id) {
+    // Pre-fill comments area with indented response (as for email)
+    console.log("Slidoc.quoteText:", elem, slide_id);
+    var commentsArea = document.getElementById(slide_id+'-comments-textarea');
+    var textareaElem = document.getElementById(slide_id+'-answer-textarea');
+    commentsArea.value += textareaElem.value.replace(/(^|\n)(?=.)/g, '\n> ');
+}
+
 Slidoc.gradeClick = function (elem, slide_id) {
     console.log("Slidoc.gradeClick:", elem, slide_id);
     if (!Sliobj.session.completed) {
@@ -1938,18 +1946,11 @@ Slidoc.gradeClick = function (elem, slide_id) {
     toggleClass(startGrading, 'slidoc-grading-view', slideElem);
     var gradeInput = document.getElementById(slide_id+'-grade-input');
     var commentsArea = document.getElementById(slide_id+'-comments-textarea');
-    var quotedResponse = '';
     if (startGrading) {
-	if (!commentsArea.value && 'quote_response' in Sliobj.params.features) {
-	    // Pre-fill comments area with indented response (as for email)
-	    var textareaElem = document.getElementById(slide_id+'-answer-textarea');
-	    quotedResponse = textareaElem.value.replace(/(^|\n)(?=.)/g, '\n> ');
-	    commentsArea.value = quotedResponse;
-	}
+	if (!commentsArea.value && 'quote_response' in Sliobj.params.features)
+	    Slidoc.quoteText(null, slide_id);
     } else {
 	var gradeValue = gradeInput.value.trim();
-	if (quotedResponse && commentsArea.value == quotedResponse) // No comments on response
-	    commentsArea.value = '';
 	var commentsValue = commentsArea.value.trim();
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
 	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true)
@@ -1962,7 +1963,6 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
 	gradeUpdate(question_attrs.qnumber, updates);
-
     }
 }
 

@@ -584,12 +584,14 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded"></span>
   </span>
 '''
-
     comments_template_a = '''
   <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="5" >  </textarea>
 '''
     render_template = '''
   <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button slidoc-noanswered-grading" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
+'''
+    quote_template = '''
+  <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
 '''
     comments_template_b = '''              
 <div id="%(sid)s-comments" class="slidoc-comments slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
@@ -1149,6 +1151,9 @@ class SlidocRenderer(MathRenderer):
 
         if self.render_markdown:
             html_template += self.render_template
+
+        if multiline_answer or explain_answer:
+            html_template += self.quote_template
 
         if grade_response:
             html_template += self.comments_template_b
