@@ -30,9 +30,10 @@ section:not(.slidoc-grading-view) .slidoc-gradingonly { display: none; }
 section.slidoc-answered-view .slidoc-noanswered { display: none; }
 section.slidoc-grading-view .slidoc-nograding { display: none; }
 
-section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-noanswered-grading { display: none; }
+body.slidoc-admin-view section:not(.slidoc-answered-view) .slidoc-render-button { display: none; }
+section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-render-button { display: none; }
 
-section.slidoc-nogradespan .slidoc-grade-span { display: none; }
+section.slidoc-nogradediv .slidoc-grade-div { display: none; }
 
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-button { display: none; }
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-box { display: none; }
@@ -44,6 +45,8 @@ div.slidoc-answer-container.slidoc-multiline-answer .slidoc-answer-input { displ
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }
 .slidoc-bottom-right { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; opacity: 0.5; }
 .slidoc-top-right    { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; opacity: 0.8; }
+
+body:not(.slidoc-admin-view):not(.slidoc-incremental-view) .slidoc-slide-nav-down { display: none; }
 
 body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
@@ -79,8 +82,7 @@ body.slidoc-sidebar-view .slidoc-all-container {
 /* Answers */
 .slidoc-answer-textarea,
   .slidoc-comments-textarea,
-  .slidoc-check-button,
-  .slidoc-grade-button {
+  .slidoc-check-button {
      display: block; }
 
 .slidoc-render-text { border: 1px solid maroon; padding: 5px;}

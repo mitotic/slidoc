@@ -20,14 +20,17 @@
 </div>
 
 <table class="slidoc-slide-nav slidoc-slideonly slidoc-nav-overlay">
-<tr><td id="slidoc-slide-nav-counter" class="slidoc-slide-nav-counter" colspan="3" align=center valign=bottom></td></tr>
+<tr class=" slidoc-noadmin"><td id="slidoc-slide-nav-counter" class="slidoc-slide-nav-counter" colspan="3" align=center valign=bottom></td></tr>
+<tr class=" slidoc-adminonly"><td></td>
+<td id="slidoc-slide-nav-up" class="slidoc-clickable-sym" onclick="Slidoc.prevUser();">%(up)s</td>
+<td></td></tr>
 <tr>
 <td id="slidoc-slide-nav-prev" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(false);">%(prev)s</td>
 <td id="slidoc-slide-nav-end" class="slidoc-clickable-sym" onclick="Slidoc.slideViewEnd();">%(circle)s</td>
 <td id="slidoc-slide-nav-next" class="slidoc-clickable-sym" onclick="Slidoc.slideViewGo(true);">%(next)s</td>
 </tr>
 <tr><td></td>
-<td id="slidoc-slide-nav-down" class="slidoc-clickable-sym slidoc-incrementalonly" onclick="Slidoc.slideViewIncrement();">%(down)s</td>
+<td id="slidoc-slide-nav-down" class="slidoc-clickable-sym slidoc-slide-nav-down" onclick="Slidoc.slideViewIncrement();">%(down)s</td>
 <td></td></tr>
 </table>
 

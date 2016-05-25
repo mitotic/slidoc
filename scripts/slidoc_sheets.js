@@ -310,6 +310,7 @@ function handleResponse(evt) {
 		var curDate = new Date();
 		var allowLateMods = !REQUIRE_LATE_TOKEN;
 		var pastSubmitDeadline = false;
+		var partialSubmission = false;
 		var dueDate = null;
 		var gradeDate = null;
 		var fieldsMin = columnHeaders.length;
@@ -333,7 +334,12 @@ function handleResponse(evt) {
 			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
-			    if (lateToken == 'none') {
+			    if (lateToken == 'partial' && !newRow && rowUpdates) {
+				partialSubmission = true;
+				rowUpdates = null;
+				selectedUpdates = [ ['Timestamp', null], ['submitTimestamp', null], ['lateToken', lateToken] ];
+				returnMessages.push("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
+			    } else if (lateToken == 'none') {
 				// Late submission without token
 				allowLateMods = true;
 			    } else {
@@ -349,7 +355,7 @@ function handleResponse(evt) {
 			    }
 			}
 			returnInfo.dueDate = dueDate;
-			if (!allowLateMods) {
+			if (!allowLateMods && !partialSubmission) {
 			    if (pastSubmitDeadline) {
 				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
 					// Creating/modifying row; require valid lateToken
@@ -461,6 +467,9 @@ function handleResponse(evt) {
 			    } else {
 				rowValues[j] = colValue;
 			    }
+			} else {
+			    if (rowValues[j] !== colValue)
+				throw("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'");
 			}
 		    }
 
@@ -474,7 +483,7 @@ function handleResponse(evt) {
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!adminUser)
+		    if (!adminUser && !partialSubmission)
 			throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
 		    for (var j=0; j<selectedUpdates.length; j++) {
@@ -494,17 +503,25 @@ function handleResponse(evt) {
 			    } else {
 				modValue = curDate;
 			    }
+			} else if (colHeader == 'submitTimestamp') {
+			    if (partialSubmission) {
+				modValue = curDate;
+				returnInfo.submitTimestamp = curDate;
+			    }
 			} else if (colValue == null) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (headerColumn <= fieldsMin || !/^q\d+_(comments|grade_[0-9.]+)$/.exec(colHeader))
+			    if (!restrictedSheet && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade_[0-9.]+)$/.exec(colHeader)) )
 				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 
 			    if (colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
 				try { colValue = createDate(colValue); } catch (err) {}
 			    }
 			    modValue = colValue;
+			} else {
+			    if (rowValues[j] !== colValue)
+				throw("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'");
 			}
 			if (modValue !== null) {
 			    rowValues[headerColumn-1] = modValue;

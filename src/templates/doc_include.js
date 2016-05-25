@@ -15,6 +15,10 @@ var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
 
 var SYMS = {correctMark: '&#x2714;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
 
+var uagent = navigator.userAgent.toLowerCase();
+var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
+var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
+
 var Sliobj = {}; // Internal object
 Sliobj.params = JS_PARAMS_OBJ;
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.sessionName : '';
@@ -26,17 +30,21 @@ for (var j=0; j<Sliobj.params.gradeFields.length; j++)
 Sliobj.testScript = {callback: null, steps: [], curstep: 0};
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
+Sliobj.gradingSlide = 0;
 
 Sliobj.sheets = {};
 function getSheet(name) {
     if (Sliobj.sheets[name])
 	return Sliobj.sheets[name];
-    var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
+
     var fields = Sliobj.params.sessionFields;
     if (name == Sliobj.params.sessionName)
 	fields = fields.concat(Sliobj.params.gradeFields);
     try {
-	Sliobj.sheets[name] = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, name, fields, useJSONP);
+	Sliobj.sheets[name] = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, name,
+						       Sliobj.params.sessionFields.slice(0,4),
+						       Sliobj.params.sessionFields.slice(4).concat(Sliobj.params.gradeFields),
+						       useJSONP);
     } catch(err) {
 	sessionAbort(''+err, err.stack);
     }
@@ -59,22 +67,39 @@ function setupCache(auth, callback) {
 		    sessionAbort('No users available for session '+Sliobj.sessionName);
 		    return
 		}
-		if (!auth.id) // Pick the first user
-		    pickUser(auth, roster[0][1]);
+		Sliobj.userList = [];
+		Sliobj.userGrades = {};
+		for (var j=0; j<roster.length; j++) {
+		    var id = roster[j][1];
+		    Sliobj.userList.push(id);
+		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], grading: null};
+		}
+
+		var userId = auth.id;
+		if (userId && !(userId in Sliobj.userGrades)) {
+		    alert('Error: user ID '+userId+' not found for this session');
+		    userId = '';
+		}
+		if (!userId)  // Pick the first user ID
+		    userId = Sliobj.userList[0];
+		Sliobj.gradingUser = Sliobj.userGrades[userId].index;
 		
 		var switchElem = document.getElementById('slidoc-switch-user');
 		if (switchElem && roster.length) {
 		    for (var j=0; j<roster.length; j++) {
 			var option = document.createElement("option");
+			option.id = 'slidoc-switch-user-'+(j+1);
 			option.value = roster[j][1];
-			option.text = roster[j][0];
+			option.text = (j+1)+' '+roster[j][0];
 			switchElem.appendChild(option);
-			if (option.value == auth.id)
+			if (option.value == userId)
 			    option.selected = true;
 		    }
-		    switchElem.onchange = handleSwitchUser;
+		    switchElem.onchange = switchUser;
 		}
-		callback(auth);
+		selectUser(auth, callback);
+		for (var j=0; j<Sliobj.userList.length; j++)
+		    gsheet.getRow(Sliobj.userList[j], checkGradingCallback.bind(null, Sliobj.userList[j]));
 	    }
 	} else {
 	    var err_msg = 'Failed to setup Google Docs cache: ' + (retStatus ? retStatus.error : '');
@@ -90,10 +115,6 @@ function setupCache(auth, callback) {
     }
 }
 
-
-
-var uagent = navigator.userAgent.toLowerCase();
-var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
 
 function sessionAbort(err_msg, err_trace) {
     localDel('auth');
@@ -307,7 +328,17 @@ Slidoc.showConcepts = function (msg) {
     Slidoc.showPopup(html || (Sliobj.session.lastSlide ? 'Not tracking concepts!' : 'Concepts tracked only in paced mode!') );
 }
 
+Slidoc.prevUser = function () {
+    if (!Sliobj.gradingUser)
+	return;
+    Slidoc.nextUser(false);
+}
+
 Slidoc.slideViewIncrement = function () {
+    if (Sliobj.gradingUser) {
+	Slidoc.nextUser(true);
+	return;
+    }
     if (!Sliobj.currentSlide || !Sliobj.maxIncrement || !('incremental_slides' in Sliobj.params.features))
         return;
 
@@ -345,7 +376,7 @@ Slidoc.viewHelp = function () {
 	if (Sliobj.params.questionsMax)
 	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
 	if (Sliobj.params.gd_sheet_url)
-	    html += Sliobj.submitTimestamp ? ', Submitted '+Sliobj.submitTimestamp : ', NOT SUBMITTED';
+	    html += Sliobj.session.submitted ? ', Submitted '+Sliobj.session.submitted : ', NOT SUBMITTED';
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
@@ -383,6 +414,7 @@ var Slide_view_handlers = {
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
     'space': function() { Slidoc.slideViewGo(true); },
+    'up':    Slidoc.prevUser,
     'down':  Slidoc.slideViewIncrement,
     'i':     Slidoc.slideViewIncrement,
     'f':     Slidoc.docFullScreen,
@@ -534,8 +566,17 @@ function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
 	ansElem.textContent = textValue;
 }
 
-function pickUser(auth, userId) {
-    console.log('pickUser:', auth, userId);
+function switchUser() {
+    var userId = this.options[this.selectedIndex].value;
+    Sliobj.gradingUser = Sliobj.userGrades[userId].index;
+    console.log('switchUser:', userId);
+    //selectUser(GService.gprofile.auth, slidocReadyAux1);
+    selectUser(GService.gprofile.auth);
+}
+
+function selectUser(auth, callback) {
+    var userId = Sliobj.userList[Sliobj.gradingUser-1];
+    console.log('selectUser:', auth, userId);
     if (!auth.adminKey) {
 	sessionAbort('Only admin can pick user');
 	return;
@@ -544,18 +585,65 @@ function pickUser(auth, userId) {
     auth.id = userId;
     auth.email = (userId.indexOf('@')>0) ? userId : '';
     auth.altid = '';
+
+    Sliobj.gradingSlide = Sliobj.currentSlide || 0;
+    if (callback) {
+	callback(auth);  // Usually callback slidocReadyAux1
+    } else {
+	var gsheet = getSheet(Sliobj.sessionName);
+	gsheet.getRow(userId, selectUserCallback.bind(null, userId));
+    }
 }
 
-function handleSwitchUser() {
-    var userId = this.options[this.selectedIndex].value;
-    console.log('handleSwitchUser:', userId);
-    pickUser(GService.gprofile.auth, userId);
-    slidocReadyAux1(GService.gprofile.auth);
+function selectUserCallback(userId, result, retStatus) {
+    console.log('selectUserCallback:', userId, result, retStatus);
+    if (!result) {
+	sessionAbort('ERROR in selectUserCallback: '+ retStatus.error);
+	return;
+    }
+    var unpacked = unpackSession(result);
+    Sliobj.session = unpacked.session;
+    Sliobj.feedback = unpacked.feedback || null;
+    prepGradeSession(Sliobj.session);
+    injectJS(Sliobj.session);
+    preAnswer();
 }
+
+Slidoc.nextUser = function (forward) {
+    if (!Sliobj.gradingUser)
+	return;
+    if (!forward && Sliobj.gradingUser > 1)
+	Sliobj.gradingUser -= 1;
+    else if (forward && Sliobj.gradingUser < Sliobj.userList.length)
+	Sliobj.gradingUser += 1;
+    else
+	return;
+    var option = document.getElementById('slidoc-switch-user-'+Sliobj.gradingUser);
+    if (option)
+	option.selected = true;
+    //selectUser(GService.gprofile.auth, slidocReadyAux1);
+    selectUser(GService.gprofile.auth);
+}
+
 
 Slidoc.slidocReady = function (auth) {
     console.log("slidocReady:", auth);
     Sliobj.adminState = auth && !!auth.adminKey;
+    Sliobj.userList = null;
+    Sliobj.userGrades = null;
+    Sliobj.gradingUser = 0;
+    Sliobj.indexSheet = null;
+    Sliobj.gradeDate = '';
+    if (Sliobj.adminState) {
+	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
+						     Sliobj.params.indexFields.slice(0,2),
+						     Sliobj.params.indexFields.slice(2), useJSONP);
+	Sliobj.indexSheet.getRow(Sliobj.sessionName, function (result, retStatus) {
+	    if (result && result.gradeDate)
+		Sliobj.gradeDate = result.gradeDate;
+	});
+    }
+
     if (CACHE_GRADING && Sliobj.adminState && Sliobj.sessionName) {
 	toggleClass(true, 'slidoc-admin-view');
 	setupCache(auth, slidocReadyAux1);
@@ -635,7 +723,7 @@ function slidocReadyPaced(newSession, prereqs, prevSession, prevFeedback) {
 	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not attempted!");
 	    return;
 	}
-	if (!prevSession.completed) {
+	if (!prevSession.submitted) {
 	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not completed!");
 	    return;
 	}
@@ -657,6 +745,8 @@ function slidocSetupAux(session, feedback) {
     console.log('slidocSetupAux:', session, feedback);
     Sliobj.session = session;
     Sliobj.feedback = feedback || null;
+    var prevGradingSlide = Sliobj.gradingSlide;
+    Sliobj.gradingSlide = 0;
     var unhideChapters = false;
 
     if (Sliobj.adminState && !Sliobj.session) {
@@ -686,11 +776,11 @@ function slidocSetupAux(session, feedback) {
 	    sessionAbort('Admin user: cannot administer null session');
 	    return;
 	}
-	Sliobj.session.paced = false; // Unpace session, but this update will not be saved to Google Docs
+	prepGradeSession(Sliobj.session);
 	if (Sliobj.params.paceLevel)
 	    unhideChapters = true;
-    }
-    
+    }    
+
     if (!Sliobj.session) {
 	// New paced session
 	Sliobj.session = sessionCreate();
@@ -724,7 +814,7 @@ function slidocSetupAux(session, feedback) {
 	    var slideElem = document.getElementById(slide_id);
 
 	    // Hide grade entry for questions with zero grade weight (workaround for Weight: being parsed after Answer:)
-	    toggleClass(!question_attrs.gweight, 'slidoc-nogradespan', slideElem);
+	    toggleClass(!question_attrs.gweight, 'slidoc-nogradediv', slideElem);
 	    var suffixElem = document.getElementById(slide_id+'-gradesuffix')
 	    if (suffixElem && question_attrs.gweight)
 		suffixElem.textContent = '/'+question_attrs.gweight;
@@ -751,29 +841,7 @@ function slidocSetupAux(session, feedback) {
     }
 
     // New/restored ression
-    
-    // Restore random seed for session
-    SlidocRandom.setSeed(Sliobj.session.randomSeed);
-
-    // Inject inline JS
-    if (SlidocFormulas.ready)
-	SlidocFormulas.ready(Sliobj.session);
-
-    var jsSpans = document.getElementsByClassName('slidoc-inline-js');
-    for (var j=0; j<jsSpans.length; j++) {
-	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
-	var slideId = '';
-	for (var k=0; k<jsSpans[j].classList.length; k++) {
-	    var refmatch = /slidoc-inline-js-in-(.*)$/.exec(jsSpans[j].classList[k]);
-	    if (refmatch) {
-		slideId = refmatch[1];
-		break;
-	    }
-	}
-	var val = slidocCall(jsFunc, slideId);
-	if (val)
-	    jsSpans[j].innerHTML = val;
-    }
+    injectJS(Sliobj.session);
 
     if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');
@@ -784,7 +852,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.session.questionsCount)
 	Slidoc.showScore();
 
-    if (Sliobj.session.completed || Sliobj.adminState) // Suppress incremental display
+    if (Sliobj.session.submitted || Sliobj.adminState) // Suppress incremental display
 	toggleClass(true, 'slidoc-completed-view');
     
     if (Sliobj.feedback) // If any non-null feedback, activate graded view
@@ -796,15 +864,19 @@ function slidocSetupAux(session, feedback) {
     Sliobj.firstTime = false;
     var toc_elem = document.getElementById("slidoc00");
     if (!toc_elem && Sliobj.session) {
-	if (Sliobj.session.paced || Sliobj.session.completed) {
+	if (Sliobj.session.paced || Sliobj.session.submitted) {
 	    var firstSlideId = getVisibleSlides()[0].id;
 	    Sliobj.questionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
 	}
 	if (Sliobj.session.paced) {
 	    Slidoc.startPaced(); // Will call preAnswer later
 	    return false;
-	} else if (Sliobj.session.questionsAttempted) {
+	} else {
 	    preAnswer();
+	}
+	if (Sliobj.adminState && prevGradingSlide) {
+	    Slidoc.slideViewStart();
+	    Slidoc.slideViewGo(true, prevGradingSlide);
 	}
     }
 
@@ -846,6 +918,39 @@ function slidocSetupAux(session, feedback) {
     }
 }
 
+function prepGradeSession(session) {
+    // Modify session for grading
+    session.paced = false; // Unpace session, but this update will not be saved to Google Docs
+    session.submitted = session.submitted || 'GRADING'; // Complete session, but these updates will not be saved to Google Docs
+    session.lastSlide = Sliobj.params.pacedSlides;
+}
+
+function injectJS(session) {
+    // Inject inline JS
+
+    // Restore random seed for session
+    SlidocRandom.setSeed(session.randomSeed);
+
+    if (SlidocFormulas.ready)
+	SlidocFormulas.ready(session);
+
+    var jsSpans = document.getElementsByClassName('slidoc-inline-js');
+    for (var j=0; j<jsSpans.length; j++) {
+	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
+	var slideId = '';
+	for (var k=0; k<jsSpans[j].classList.length; k++) {
+	    var refmatch = /slidoc-inline-js-in-(.*)$/.exec(jsSpans[j].classList[k]);
+	    if (refmatch) {
+		slideId = refmatch[1];
+		break;
+	    }
+	}
+	var val = slidocCall(jsFunc, slideId);
+	if (val)
+	    jsSpans[j].innerHTML = val;
+    }
+}
+
 function slidocCall(jsFunc, slide_id, question_attrs) {
     // Invoke inline JS function
     console.log('slidocCall:', jsFunc, slide_id, question_attrs);
@@ -861,6 +966,67 @@ function slidocCall(jsFunc, slide_id, question_attrs) {
     }
 }
 
+function checkGradingCallback(userId, result, retStatus) {
+    console.log('checkGradingCallback:', userId, result, retStatus);
+    if (!result) {
+	sessionAbort('ERROR in checkGradingCallback: '+ retStatus.error);
+	return;
+    }
+    var unpacked = unpackSession(result);
+    checkGradingStatus(userId, unpacked.session, unpacked.feedback);
+}
+function checkGradingStatus(userId, session, feedback) {
+    console.log('checkGradingStatus:', userId);
+    if (Sliobj.userGrades[userId].grading)
+	return;
+    var firstSlideId = getVisibleSlides()[0].id;
+    var attr_vals = getChapterAttrs(firstSlideId);
+    var chapter_id = parseSlideId(firstSlideId)[0];
+    var updates = {id: userId, Timestamp: null};
+    var need_grading = {};
+    var need_updates = 0;
+    for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
+	var question_attrs = attr_vals[qnumber-1];
+	var qfeedback = feedback ? (feedback[qnumber] || null) : null;
+	if (qfeedback && qfeedback.grade !== '') // Graded
+	    continue;
+	// Needs grading
+	if (qnumber in session.questionsAttempted) {
+	    need_grading[qnumber] = 1;
+	} else {
+	    // Unattempted
+	    need_updates += 1;
+	    var gradeField = 'q'+question_attrs.qnumber+'_grade_'+question_attrs.gweight;
+	    var commentsField = 'q'+question_attrs.qnumber+'_comments';
+	    updates[gradeField] = 0;
+	    updates[commentsField] = 'Not attempted';
+	}
+    }
+    console.log('checkGradingStatus2:', need_grading, updates);
+
+    Sliobj.userGrades[userId].grading = need_grading;
+    updateGradingStatus(userId);
+
+    if (need_updates) {
+	// Set unattempted grades to zero
+	var gsheet = getSheet(Sliobj.sessionName);
+
+	try {
+	    gsheet.updateRow(updates, {});
+	} catch(err) {
+	    sessionAbort(''+err, err.stack);
+	}
+    }
+}
+
+function updateGradingStatus(userId) {
+    var option = document.getElementById('slidoc-switch-user-'+Sliobj.userGrades[userId].index);
+    var count = Object.keys(Sliobj.userGrades[userId].grading).length;
+    var c = count || '\u2714';
+    if (option)
+	option.text = Sliobj.userGrades[userId].index+' '+Sliobj.userGrades[userId].name+' '+c;
+}
+
 function preAnswer() {
     // Pre-answer questions (and display notes for those)
     for (var qnumber in Sliobj.session.questionsAttempted) {
@@ -868,11 +1034,32 @@ function preAnswer() {
 	    var qentry = Sliobj.session.questionsAttempted[qnumber];
 	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	    if (qentry.resp_type == 'choice') {
-		Slidoc.choiceClick(null, qentry.slide_id, qentry.response, qentry.explain||null);
+		Slidoc.choiceClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qfeedback);
 	    } else {
 		Slidoc.answerClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qentry.test, qfeedback);
 	    }
 	}
+    }
+    if (Sliobj.session.submitted)
+	showCorrectAnswers();
+}
+
+function showCorrectAnswers() {
+    console.log('showCorrectAnswers');
+    var firstSlideId = getVisibleSlides()[0].id;
+    var attr_vals = getChapterAttrs(firstSlideId);
+    var chapter_id = parseSlideId(firstSlideId)[0];
+    for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
+	if (qnumber in Sliobj.session.questionsAttempted)
+	    continue;
+	var question_attrs = attr_vals[qnumber-1];
+	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
+	if (question_attrs.qtype == 'choice') {
+		Slidoc.choiceClick(null, slide_id, '', question_attrs.explain, qfeedback);
+	    } else {
+		Slidoc.answerClick(null, slide_id, '', question_attrs.explain, null, qfeedback);
+	    }
     }
 }
 
@@ -881,7 +1068,7 @@ function sessionCreate() {
     return {version: Sliobj.params.sessionVersion,
 	    revision: Sliobj.params.sessionRevision,
 	    paced: Sliobj.params.paceLevel > 0,
-	    completed: false,
+	    submitted: null,
 	    lateToken: '',
 	    paceLevel: Sliobj.params.paceLevel || 0,
 	    randomSeed: SlidocRandom.getSeed(),        // Save random seed
@@ -908,6 +1095,11 @@ function unpackSession(row) {
     var result = {};
     // Unpack hidden session
     result.session = JSON.parse( atob(row.session_hidden.replace(/\s+/, '')) );
+    result.session.lateToken = row.lateToken || '';
+    if (row.submitTimestamp) {
+	result.session.submitted = row.submitTimestamp;
+	result.session.lastSlide = Sliobj.params.pacedSlides;
+    }
 
     var keys = Object.keys(row);
     var feedback = {};
@@ -959,10 +1151,6 @@ function sessionGetPutAux(callback, retryCall, retryType, result, retStatus) {
 		var unpacked = unpackSession(result);
 		session = unpacked.session;
 		feedback = unpacked.feedback;
-		session.lateToken = result.lateToken || '';
-		Sliobj.submitTimestamp = null;
-		if (result.submitTimestamp)
-		    try { Sliobj.submitTimestamp = new Date(result.submitTimestamp); } catch(err) {}
 	    } catch(err) {
 		console.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
 		err_msg = 'Parsing error '+err_msg;
@@ -978,12 +1166,14 @@ function sessionGetPutAux(callback, retryCall, retryType, result, retStatus) {
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.dueDate)
 		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { console.log('DUE_DATE error: '+retStatus.info.dueDate, err); }
-	    if (retStatus.info.submitTimestamp)
-		try { Sliobj.submitTimestamp = new Date(retStatus.info.submitTimestamp); } catch(err) { console.log('SUBMIT_TIME error: '+retStatus.info.submitTimestamp, err); Sliobj.submitTimestamp = null; }
-	    
+	    if (retStatus.info.submitTimestamp) {
+		Sliobj.session.submitted = retStatus.info.submitTimestamp;
+		Sliobj.session.lastSlide = Sliobj.params.pacedSlides;
+		showCorrectAnswers();
+	    }
 	}
 	if (retryType == 'end_paced') {
-	    if (Sliobj.submitTimestamp) {
+	    if (Sliobj.session.submitted) {
 		showCompletionStatus();
 	    } else {
 		alert('Error in submitting session; no submit time');
@@ -999,8 +1189,11 @@ function sessionGetPutAux(callback, retryCall, retryType, result, retStatus) {
 	    for (var j=0; j < retStatus.messages.length; j++) {
 		var match = parse_msg_re.exec(retStatus.messages[j]);
 		var msg_type = match ? match[2] : '';
-		if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
-		    if (session && !session.completed)
+		if (msg_type == 'PARTIAL_SUBMISSION') {
+		    alerts.push('<em>Warning:</em><br>'+err_info+'. Reloading page');
+		    location.reload(true);
+		} else if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
+		    if (session && !session.submitted)
 			alerts.push('<em>Warning:</em><br>'+err_info);
 		} else if (msg_type == 'INVALID_LATE_TOKEN') {
 		    alerts.push('<em>Warning:</em><br>'+err_info);
@@ -1041,7 +1234,12 @@ function sessionGetPutAux(callback, retryCall, retryType, result, retStatus) {
 		return;
 
 	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
-		var token = window.prompt(prefix+"Enter late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise enter 'none' to submit late without credit.");
+		var prompt = prefix+"Enter late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise ";
+		if (Sliobj.params.tryCount && Object.keys(Sliobj.session.questionsAttempted).length)
+		    prompt += "enter 'partial' to submit and view correct answers.";
+		else
+		    prompt += "enter 'none' to submit late without credit.";
+		var token = window.prompt(prompt);
 		if (token && token.trim()) {
 		    this.lateToken = token.trim();
 		    retryCall();
@@ -1446,8 +1644,8 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
     return true;
 }
 
-Slidoc.choiceClick = function (elem, slide_id, choice_val, explain) {
-   console.log("Slidoc.choiceClick:", slide_id, choice_val);
+Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
+   console.log("Slidoc.choiceClick:", slide_id, choice_val, explain, qfeedback);
     var slide_num = parseSlideId(slide_id)[2];
     var question_attrs = getQuestionAttrs(slide_id);
     if (!question_attrs || question_attrs.slide != slide_num)  // Incomplete choice question; ignore
@@ -1457,19 +1655,34 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val, explain) {
     if (!checkAnswerStatus(setup, slide_id, question_attrs, explain))
 	return false;
     if (setup) {
-	var elemId = slide_id+'-choice-'+choice_val
-	elem = document.getElementById(elemId);
-	if (!elem) {
-	    console.log('Slidoc.choiceClick: Setup failed for '+elemId);
-	    return false;
+	if (choice_val) {
+	    var elemId = slide_id+'-choice-'+choice_val
+	    elem = document.getElementById(elemId);
+	    if (!elem) {
+		console.log('Slidoc.choiceClick: Setup failed for '+elemId);
+		return false;
+	    }
 	}
+       if (qfeedback) {
+	   if ('grade' in qfeedback && qfeedback.grade != null) {
+	       setAnswerElement(slide_id, "-grade-input", ''+qfeedback.grade);
+	       setAnswerElement(slide_id, "-grade-content", ''+qfeedback.grade);
+	   }
+
+	   if ('comments' in qfeedback && qfeedback.comments != null) {
+	       setAnswerElement(slide_id, "-comments-textarea", qfeedback.comments);
+	       setAnswerElement(slide_id, "-comments-content", qfeedback.comments);
+	       renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
+	   }
+       }
     } else {
 	// Not setup
 	if (!Slidoc.answerPacedAllow())
 	    return false;
     }
 
-   elem.style['text-decoration'] = 'line-through';
+    if (elem)
+	elem.style['text-decoration'] = 'line-through';
    var choices = document.getElementsByClassName(slide_id+"-choice");
    for (var i=0; i < choices.length; i++) {
       choices[i].removeAttribute("onclick");
@@ -1816,7 +2029,7 @@ Slidoc.showScore = function () {
     if (!scoreElem)
 	return;
     if (Sliobj.session.questionsCount) {
-	if (Sliobj.session.completed && Sliobj.params.scoreWeight)
+	if (Sliobj.session.submitted && Sliobj.params.scoreWeight)
 	    scoreElem.textContent = Sliobj.session.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
 	else
 	    scoreElem.textContent = Sliobj.session.questionsCorrect+'/'+Sliobj.params.questionsMax;
@@ -1874,28 +2087,34 @@ function showSubmitted() {
     var submitElem = document.getElementById('slidoc-submit-display');
     if (!submitElem || !Sliobj.params.gd_sheet_url)
 	return;
-    if (Sliobj.submitTimestamp) {
+    if (Sliobj.session.submitted) {
 	submitElem.innerHTML = (Sliobj.session.lateToken == 'none') ? SYMS['xBoxMark'] : SYMS['correctMark'];
     } else {
-	submitElem.innerHTML = Sliobj.session.completed ? SYMS['wrongMark'] : SYMS['anyMark'];
+	submitElem.innerHTML = Sliobj.session.submitted ? SYMS['wrongMark'] : SYMS['anyMark'];
     }
 }
 
 Slidoc.submitStatus = function () {
     console.log('Slidoc.submitStatus: ');
-    if (Sliobj.submitTimestamp) {
-	var msg = 'Submitted to Google Docs on '+ (new Date(Sliobj.submitTimestamp));
+    var html = '';
+    if (Sliobj.session.submitted) {
+	html += 'User '+GService.gprofile.auth.id+' submitted session to Google Docs on '+ Sliobj.session.submitted;
 	if (Sliobj.session.lateToken)
-	    msg += ' LATE';
+	    html += ' LATE';
 	if (Sliobj.session.lateToken == 'none')
-	    msg += ' (NO CREDIT)';
-	alert(msg);
+	    html += ' (NO CREDIT)';
     } else {
-	var html = 'Session '+(Sliobj.session.completed ? 'completed, but':'')+' not submitted.'
+	var html = 'Session '+(Sliobj.session.submitted ? 'completed, but':'')+' not submitted.'
 	if (!Sliobj.adminState)
 	    html += ' Click <span class="slidoc-clickable" onclick="Slidoc.submitSession();">here</span> to submit session'+((Sliobj.session.lastSlide < getVisibleSlides().length) ? 'without reaching the last slide':'');
-	Slidoc.showPopup(html);
     }
+    if (Sliobj.adminState) {
+	if (Sliobj.gradeDate)
+	    html += '<hr>Grades released to students at '+Sliobj.gradeDate;
+	else
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span';
+    }
+    Slidoc.showPopup(html);
 }
 
 Slidoc.submitSession = function () {
@@ -1904,8 +2123,26 @@ Slidoc.submitSession = function () {
 	Sliobj.closePopup();
     if (!window.confirm('Do you really want to submit session without reaching the last slide?'))
 	return;
-    Sliobj.session.lastSlide = getVisibleSlides().length;
     Slidoc.endPaced();
+}
+
+Slidoc.releaseGrades = function () {
+    console.log('Slidoc.releaseGrades: ');
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    if (!window.confirm('Confirm releasing grades to students?'))
+	return;
+    
+    var updates = {id: Sliobj.sessionName, gradeDate: new Date()};
+    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback);
+}
+
+function releaseGradesCallback(result, retStatus){
+    console.log('releaseGradesCallback:', result, retStatus);
+    if (result)
+	alert('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students');
+    else
+	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');
 }
 
 function conceptStats(tags, tallies) {
@@ -1935,21 +2172,20 @@ Slidoc.quoteText = function(elem, slide_id) {
 
 Slidoc.gradeClick = function (elem, slide_id) {
     console.log("Slidoc.gradeClick:", elem, slide_id);
-    if (!Sliobj.session.completed) {
-	if (!window.confirm('User '+GService.gprofile.auth.id+' has not yet completed session '+Sliobj.sessionName+'. Are you sure you want to grade it?'))
-	    return;
-    }
-    var slideElem = document.getElementById(slide_id);
-    var question_attrs = getQuestionAttrs(slide_id);
-    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[question_attrs.qnumber] || null) : null;
-    var startGrading = elem && elem.classList.contains('slidoc-gstart-click');
-    toggleClass(startGrading, 'slidoc-grading-view', slideElem);
+
     var gradeInput = document.getElementById(slide_id+'-grade-input');
     var commentsArea = document.getElementById(slide_id+'-comments-textarea');
+    if (!elem && gradeInput.value)  // Grading already completed; do not automatically start
+	return false;
+
+    var startGrading = !elem || elem.classList.contains('slidoc-gstart-click');
+    toggleClass(startGrading, 'slidoc-grading-view', document.getElementById(slide_id));
     if (startGrading) {
 	if (!commentsArea.value && 'quote_response' in Sliobj.params.features)
 	    Slidoc.quoteText(null, slide_id);
+	setTimeout(function(){gradeInput.focus();}, 200);
     } else {
+	var question_attrs = getQuestionAttrs(slide_id);
 	var gradeValue = gradeInput.value.trim();
 	var commentsValue = commentsArea.value.trim();
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
@@ -1962,12 +2198,12 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var updates = {id: GService.gprofile.auth.id};
 	updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
-	gradeUpdate(question_attrs.qnumber, updates);
+	gradeUpdate(slide_id, question_attrs.qnumber, updates);
     }
 }
 
-function gradeUpdate(qnumber, updates, callback) {
-    console.log('gradeUpdate: ', qnumber, updates, !!callback);
+function gradeUpdate(slide_id, qnumber, updates, callback) {
+    console.log('gradeUpdate: ', slide_id, qnumber, updates, !!callback);
     var updateObj = {};
     var keys = Object.keys(updates);
     for (var j=0; j<keys.length; j++)
@@ -1979,22 +2215,36 @@ function gradeUpdate(qnumber, updates, callback) {
 
     try {
 	gsheet.updateRow(updateObj, {}, sessionGetPutAux.bind(null, 
- 		           gradeUpdateAux.bind(null, updateObj.id, qnumber, callback), retryCall, 'gradeUpdate') );
+ 		         gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, callback), retryCall, 'gradeUpdate') );
     } catch(err) {
 	sessionAbort(''+err, err.stack);
     }
 }
 
-function gradeUpdateAux(userId, qnumber, callback, result, retStatus) {
-    console.log('gradeUpdateAux: ', userId, qnumber, !!callback, result, retStatus);
-    // Update grade and comments only after successful saving?
+function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
+    console.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
     // Move on to next user if slideshow mode, else to next question
-    if (result) {
+    if (Sliobj.currentSlide) {
+	if (Sliobj.gradingUser < Sliobj.userList.length) {
+	    Slidoc.nextUser(true);
+	    setTimeout(function(){Slidoc.gradeClick(null, slide_id);}, 200);
+	}
+    } else {
+	var attr_vals = getChapterAttrs(slide_id);
+	if (qnumber < attr_vals.length) {
+	    // Go to next question slide
+	    var new_slide = parseSlideId(slide_id)[0]+'-'+zeroPad(attr_vals[qnumber].slide,2);
+	    goSlide('#'+new_slide);
+	    setTimeout(function(){Slidoc.gradeClick(null, new_slide);}, 200);
+	}
     }
+    delete Sliobj.userGrades[userId].grading[qnumber];
+    updateGradingStatus(userId);
 }
 
 Slidoc.startPaced = function () {
     console.log('Slidoc.startPaced: ');
+
     var firstSlideId = getVisibleSlides()[0].id;
 
     if (!Sliobj.session.lastSlide) {
@@ -2019,6 +2269,16 @@ Slidoc.startPaced = function () {
     Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-'); // Hide notes for slide view
     Slidoc.classDisplay('slidoc-question-notes', 'none'); // Hide notes toggle for pacing
     preAnswer();
+
+    var curDate = new Date();
+    if (Sliobj.dueDate && curDate > Sliobj.dueDate) {
+	// Past submit deadline
+	if (!Sliobj.session.submitted && Sliobj.params.tryCount) {
+	    Slidoc.endPaced();
+	    return;
+	}
+    }
+
     document.body.classList.add('slidoc-paced-view');
     if (Sliobj.session.paceLevel > 1)
 	document.body.classList.add('slidoc-strict-paced-view');
@@ -2050,7 +2310,8 @@ Slidoc.startPaced = function () {
 
 Slidoc.endPaced = function () {
     console.log('Slidoc.endPaced: ');
-    Sliobj.session.completed = true;
+    if (!Sliobj.params.gd_sheet_url)       // For remote sessions, successful submission will complete session
+	Sliobj.session.submitted = ''+(new Date());
     if (Sliobj.session.paceLevel <= 1) {
 	// If pace can end, unpace
 	document.body.classList.remove('slidoc-paced-view');
@@ -2076,14 +2337,14 @@ Slidoc.answerPacedAllow = function () {
 
 function showCompletionStatus() {
     var msg = '<b>Paced session completed.</b><br>';
-    if (Sliobj.submitTimestamp) {
+    if (Sliobj.session.submitted) {
 	if (Sliobj.closePopup) {
 	    Sliobj.closePopup(true);
-	    msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.submitTimestamp+'<br>';
+	    msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.session.submitted+'<br>';
 	    if (!Sliobj.session.paced)
 		msg += 'You may now exit the slideshow and access this document normally.<br>';
 	} else {
-	    alert('Completed session submitted successfully to Google Docs at '+Sliobj.submitTimestamp);
+	    alert('Completed session submitted successfully to Google Docs at '+Sliobj.session.submitted);
 	    return;
 	}
     } else if (Sliobj.params.gd_sheet_url) {

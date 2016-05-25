@@ -41,6 +41,7 @@ from pygments.util import ClassNotFound
 
 from xml.etree import ElementTree
 
+INDEX_SHEET = 'sessions_slidoc'
 MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
@@ -575,14 +576,14 @@ class SlidocRenderer(MathRenderer):
 '''                
 
     grading_template = '''
-  <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
-  <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
-  <span class="slidoc-grade-span slidoc-answeredonly">
+  <div class="slidoc-grade-div slidoc-answeredonly">
+    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
+    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
     <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-adminonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
     <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded"></span>
-  </span>
+  </div>
 '''
     comments_template_a = '''
   <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="5" >  </textarea>
@@ -1395,11 +1396,10 @@ Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', '
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
                          p_concepts, s_concepts):
-    index_sheet = 'sessions_slidoc'
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
 
-    get_params = {'sheet': index_sheet, 'id': session_name, 'get': '1', 'admin': user, 'token': user_token}
+    get_params = {'sheet': INDEX_SHEET, 'id': session_name, 'get': '1', 'admin': user, 'token': user_token}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
         if retval['error'].find('Headers must be specified for new sheet') == -1:
@@ -1417,13 +1417,13 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                 '; '.join(sort_caseless(list(p_concepts))),
                 '; '.join(sort_caseless(list(s_concepts)))
                                 ]
-    post_params = {'sheet': index_sheet, 'admin': user, 'token': user_token,
+    post_params = {'sheet': INDEX_SHEET, 'admin': user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
                   }
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
-    print('slidoc: Updated remote index sheet %s for session %s' % (index_sheet, session_name), file=sys.stderr)
+    print('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name), file=sys.stderr)
 
                 
 def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
@@ -1447,12 +1447,12 @@ def process_input(input_files, config_dict):
     combined_file = out_name+'.html'
 
     js_params = {'sessionName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
-                 'questionsMax': 0, 'scoreWeight': 0, 'gradeWeight': 0,
+                 'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0,
                  'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
-                 'features': {}}
+                 'index_sheet': INDEX_SHEET, 'indexFields':Index_fields,
+                 'sessionFields':Manage_fields+Session_fields, 'features': {}}
 
-    js_params['sessionFields'] = Session_fields
     js_params['gradeFields'] = []
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option for this
         
@@ -1698,6 +1698,7 @@ def process_input(input_files, config_dict):
         if config.pace:
             # File-specific js_params
             js_params['questionsMax'] = len(renderer.questions)
+            js_params['pacedSlides'] = renderer.slide_number
             js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
             js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
             js_params['gradeFields'] = renderer.grade_fields[:] if renderer.grade_fields else []

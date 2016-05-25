@@ -272,13 +272,13 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
     window.scrollTo(0,0);
 }
 
-var PRE_HEADERS = ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp'];
-function GoogleSheet(url, sheetName, fields, useJSONP) {
+function GoogleSheet(url, sheetName, preHeaders, fields, useJSONP) {
     this.url = url;
-    this.fields = fields;
     this.sheetName = sheetName;
+    this.preHeaders = preHeaders;
+    this.fields = fields;
+    this.headers = preHeaders.concat(fields);
     this.useJSONP = !!useJSONP;
-    this.headers = PRE_HEADERS.concat(fields);
     this.callbackCounter = 0;
     this.columnIndex = {};
     this.timestamps = {};
@@ -362,7 +362,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 
 GoogleSheet.prototype.row2obj = function(row) {
     if (row.length != this.headers.length)
-	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet:  expected '+this.headers.length+' but got '+row.length+' (Enable grade_response feature for extra grading columns?)');
+	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet: expected '+this.headers.length+' but got '+row.length+' (Enable grade_response feature for extra grading columns?)');
 
     var obj = {};
     for (var j=0; j<row.length; j++)
@@ -442,10 +442,10 @@ GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet
             extObj[header] = rowObj[header]
     }
     var auth = GService.gprofile.auth;
-    extObj.id = opts.id || auth.id;
     extObj.name = auth.displayName || '';
-    extObj.email = auth.email || '';
-    extObj.altid = auth.altid || '';
+    extObj.id = opts.id || auth.id;
+    for (var j=2; j<this.preHeaders.length; j++)
+	extObj[preHeaders[j]] = auth[preHeaders[j]] || '';
     return this.putRow(extObj, opts, callback, createSheet);
 }
 
