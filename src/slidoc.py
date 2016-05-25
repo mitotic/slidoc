@@ -2119,6 +2119,8 @@ if __name__ == '__main__':
         if getattr(cmd_args, arg_name) == None:
             setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
 
+    if cmd_args.pace == '0':
+        cmd_args.pace = None
     config_dict = vars(cmd_args)
     input_files = config_dict.pop('file')
 

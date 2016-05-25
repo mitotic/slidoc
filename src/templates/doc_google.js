@@ -399,7 +399,7 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
     // opts.get with opts.nooverwrite will return the existing row, or the newly inserted row.
     console.log('GoogleSheet.putRow:', rowObj, opts);
 
-    if (!rowObj.id || !rowObj.name)
+    if (!rowObj.id || (opts.nooverwrite && !rowObj.name))
         throw('GoogleSheet.putRow: Must provide id and name to put row');
 
     if (this.cacheAll)
@@ -442,10 +442,13 @@ GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet
             extObj[header] = rowObj[header]
     }
     var auth = GService.gprofile.auth;
-    extObj.name = auth.displayName || '';
     extObj.id = opts.id || auth.id;
-    for (var j=2; j<this.preHeaders.length; j++)
-	extObj[preHeaders[j]] = auth[preHeaders[j]] || '';
+    if (opts.nooverwrite) {
+	// Creating/reading row, but not updating it; copy management fields
+	extObj.name = auth.displayName || '';
+	for (var j=2; j<this.preHeaders.length; j++)
+	    extObj[this.preHeaders[j]] = auth[this.preHeaders[j]] || '';
+    }
     return this.putRow(extObj, opts, callback, createSheet);
 }
 

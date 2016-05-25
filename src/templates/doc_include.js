@@ -90,7 +90,7 @@ function setupCache(auth, callback) {
 			var option = document.createElement("option");
 			option.id = 'slidoc-switch-user-'+(j+1);
 			option.value = roster[j][1];
-			option.text = (j+1)+' '+roster[j][0];
+			option.text = (j+1)+'. '+roster[j][0];
 			switchElem.appendChild(option);
 			if (option.value == userId)
 			    option.selected = true;
@@ -547,6 +547,25 @@ function getQuestionAttrs(slide_id) {
     return attr_vals ? attr_vals[question_number-1] : null;
 }
 
+function clearAnswerElements() {
+    console.log('clearAnswerElements');
+    var slides = document.getElementsByClassName('slidoc-slide');
+    var suffixes = Object.keys(Sliobj.params.answer_elements);
+    for (var k=0; k<slides.length; k++) {
+	for (var j=0; j<suffixes.length; j++) {
+	    var ansElem = document.getElementById(slides[k].id+suffixes[j]);
+	    if (ansElem) {
+		if (Sliobj.params.answer_elements[suffixes[j]]) {
+		    ansElem.value = '';
+		    ansElem.disabled = null;
+		} else {
+		    ansElem.innerHTML = '';
+		}
+	    }
+	}
+    }
+}
+
 function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
     // Safely set value/content of answer element in slide_id with suffix
     if (!(suffix in Sliobj.params.answer_elements)) {
@@ -606,6 +625,7 @@ function selectUserCallback(userId, result, retStatus) {
     Sliobj.feedback = unpacked.feedback || null;
     prepGradeSession(Sliobj.session);
     injectJS(Sliobj.session);
+    showSubmitted();
     preAnswer();
 }
 
@@ -869,7 +889,7 @@ function slidocSetupAux(session, feedback) {
 	    Sliobj.questionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
 	}
 	if (Sliobj.session.paced) {
-	    Slidoc.startPaced(); // Will call preAnswer later
+	    Slidoc.startPaced(); // This will call preAnswer later
 	    return false;
 	} else {
 	    preAnswer();
@@ -878,6 +898,8 @@ function slidocSetupAux(session, feedback) {
 	    Slidoc.slideViewStart();
 	    Slidoc.slideViewGo(true, prevGradingSlide);
 	}
+    } else {
+	clearAnswerElements();
     }
 
     // Not paced
@@ -1024,20 +1046,22 @@ function updateGradingStatus(userId) {
     var count = Object.keys(Sliobj.userGrades[userId].grading).length;
     var c = count || '\u2714';
     if (option)
-	option.text = Sliobj.userGrades[userId].index+' '+Sliobj.userGrades[userId].name+' '+c;
+	option.text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' '+c;
 }
 
 function preAnswer() {
     // Pre-answer questions (and display notes for those)
-    for (var qnumber in Sliobj.session.questionsAttempted) {
-	if (Sliobj.session.questionsAttempted.hasOwnProperty(qnumber)) {
-	    var qentry = Sliobj.session.questionsAttempted[qnumber];
-	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	    if (qentry.resp_type == 'choice') {
-		Slidoc.choiceClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qfeedback);
-	    } else {
-		Slidoc.answerClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qentry.test, qfeedback);
-	    }
+    console.log('preAnswer');
+    clearAnswerElements();
+    var keys = Object.keys(Sliobj.session.questionsAttempted);
+    for (var j=0; j<keys.length; j++) {
+	var qnumber = keys[j];
+	var qentry = Sliobj.session.questionsAttempted[qnumber];
+	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
+	if (qentry.resp_type == 'choice') {
+	    Slidoc.choiceClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qfeedback);
+	} else {
+	    Slidoc.answerClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qentry.test, qfeedback);
 	}
     }
     if (Sliobj.session.submitted)
@@ -2467,8 +2491,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	return false;
     }
 
-    var question_attrs = getQuestionAttrs(slides[slide_num-1].id);
-    Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
+    var question_attrs = getQuestionAttrs(slides[slide_num-1].id);  // New slide
     Sliobj.lastInputValue = null;
 
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
@@ -2479,10 +2502,12 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 		return false;
 	}
 	if (Sliobj.questionSlide && Sliobj.session.remainingTries) {
+	    // Current (not new) slide is question slide
 	    var tryCount =  (Sliobj.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
 	    alert('Please answer before proceeding. You have '+tryCount+' try(s)');
 	    return false;
 	} else if (!Sliobj.questionSlide && Sliobj.params.paceDelay) {
+	    // Current (not new) slide is not question slide
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
 	    if (delta < Sliobj.params.paceDelay) {
 		alert('Please wait '+ Math.ceil(Sliobj.params.paceDelay-delta) + ' second(s)');
@@ -2492,6 +2517,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
         // Update session for new slide
 	Sliobj.session.lastSlide = slide_num; 
 	Sliobj.session.lastTime = Date.now();
+	Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
 
 	Sliobj.session.lastTries = 0;
 	if (Sliobj.questionSlide) {
@@ -2514,6 +2540,8 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    // Not last slide; save updated session (if not transient and not remote)
 	    sessionPut();
 	}
+    } else {
+	Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
     }
 
     if (Sliobj.session.paced) {
