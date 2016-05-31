@@ -16,6 +16,9 @@ body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
 body.slidoc-completed-view:not(.slidoc-admin-view) .slidoc-incrementalonly {
     display: none; }
 
+/* Plugin display */
+div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
+
 /* Answer/grading control */
 body.slidoc-admin-view .slidoc-noadmin { display: none; }
 body.slidoc-graded-view .slidoc-nograded { display: none; }
@@ -31,13 +34,13 @@ section.slidoc-answered-view .slidoc-noanswered { display: none; }
 section.slidoc-grading-view .slidoc-nograding { display: none; }
 
 body.slidoc-admin-view section:not(.slidoc-answered-view) .slidoc-render-button { display: none; }
+body:not(.slidoc-admin-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
 section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-render-button { display: none; }
 
 section.slidoc-nogradediv .slidoc-grade-div { display: none; }
 
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-button { display: none; }
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-box { display: none; }
-div.slidoc-answer-container:not(.slidoc-code-check) .slidoc-check-button { display: none; }
 div.slidoc-answer-container:not(.slidoc-multiline-answer):not(.slidoc-explain-answer) .slidoc-answer-textarea { display: none; }
 div.slidoc-answer-container.slidoc-multiline-answer .slidoc-answer-input { display: none; }
 
@@ -52,7 +55,8 @@ body:not(.slidoc-admin-view):not(.slidoc-incremental-view) .slidoc-slide-nav-dow
 body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
 
-body.slidoc-paced-last-slide.slidoc-expect-answer-state .slidoc-block-multi { display: none; }
+body.slidoc-slide-view .slidoc-block-multi { display: none; }
+body:not(.slidoc-completed-view) .slidoc-block-multi { display: none; }
 body.slidoc-paced-last-slide span.slidoc-forward-link { opacity: 0.3; }
 body.slidoc-paced-last-slide span.slidoc-forward-link.slidoc-forward-link-allowed { opacity: 1.0; }
 
@@ -83,7 +87,7 @@ body.slidoc-sidebar-view .slidoc-all-container {
 /* Answers */
 .slidoc-answer-textarea,
   .slidoc-comments-textarea,
-  .slidoc-check-button {
+  .slidoc-render-button {
      display: block; }
 
 .slidoc-render-text { border: 1px solid maroon; padding: 5px;}

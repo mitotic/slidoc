@@ -263,6 +263,8 @@ class MathBlockGrammar(mistune.BlockGrammar):
     block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
+    plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*{(.*?)PluginEnd:\s*(\n|$)',
+                                                re.DOTALL)
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
@@ -276,7 +278,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -292,6 +294,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_latex_environment(self, m):
         self.tokens.append({
             'type': 'latex_environment',
+            'name': m.group(1),
+            'text': m.group(2)
+        })
+
+    def parse_plugin_definition(self, m):
+        self.tokens.append({
+            'type': 'plugin_definition',
             'name': m.group(1),
             'text': m.group(2)
         })
@@ -346,7 +355,7 @@ class MathInlineGrammar(mistune.InlineGrammar):
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
-    inline_js =     re.compile(r"^`=(\w+)\(\)(;([^`\n]+))?`")
+    inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\)(;([^`\n]+))?`")
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
         r'^\[('
@@ -375,7 +384,7 @@ class MathInlineLexer(mistune.InlineLexer):
         return self.renderer.inline_math(m.group(1)+m.group(2))
 
     def output_inline_js(self, m):
-        return self.renderer.inline_js(m.group(1), m.group(3))
+        return self.renderer.inline_js(m.group(1), m.group(2), m.group(4))
 
     def output_block_math(self, m):
         return self.renderer.block_math(m.group(1))
@@ -471,6 +480,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_latex_environment(self):
         return self.renderer.latex_environment(self.token['name'], self.token['text'])
 
+    def output_plugin_definition(self):
+        return self.renderer.plugin_definition(self.token['name'], self.token['text'])
+
     def output_slidoc_header(self):
         return self.renderer.slidoc_header(self.token['name'], self.token['text'])
 
@@ -562,17 +574,18 @@ class SlidocRenderer(MathRenderer):
     answer_template = '''
   <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly">Answer:</span>
   <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
-  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
     <span id="%(sid)s-correct-mark" class="slidoc-correct-answer"></span>
+    <span id="%(sid)s-partcorrect-mark" class="slidoc-partcorrect-answer"></span>
     <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
     <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
     <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
   </span>
   %(explain)s
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered" cols="60" rows="5"></textarea>
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin" cols="60" rows="5"></textarea>
 '''                
 
     grading_template = '''
@@ -589,7 +602,7 @@ class SlidocRenderer(MathRenderer):
   <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="5" >  </textarea>
 '''
     render_template = '''
-  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button slidoc-noanswered-grading" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
+  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
 '''
     quote_template = '''
   <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
@@ -599,20 +612,15 @@ class SlidocRenderer(MathRenderer):
   <span id="%(sid)s-comments-content" class="slidoc-comments-content"></span>
 </div>
 '''
-    response_div_template = '''  <div id="%(sid)s-response-div" class="slidoc-response-div"></div>\n'''
-    response_pre_template = '''  <pre id="%(sid)s-response-div" class="slidoc-response-div"></pre>\n'''
-
-    code_template = '''
-  <button id="%(sid)s-check-button" class="slidoc-clickable slidoc-check-button  slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this,'%(sid)s');">Render</button>
-  <pre><code id="%(sid)s-code-output" class="slidoc-code-output"></code></pre>
-'''
+    response_div_template = '''  <div id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></div>\n'''
+    response_pre_template = '''  <pre id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></pre>\n'''
 
     # Suffixes of input/textarea elements that need to be cleaned up
     input_suffixes = ['-answer-input', '-answer-textarea', '-grade-input', '-comments-textarea']
 
     # Suffixes of span/div/pre elements that need to be cleaned up
-    content_suffixes = ['-response-span', '-correct-mark', '-wrong-mark', '-any-mark', '-answer-correct',
-                        '-grade-content','-comments-content', '-response-div', '-code-output'] 
+    content_suffixes = ['-response-span', '-correct-mark', '-partcorrect-mark', '-wrong-mark', '-any-mark', '-answer-correct',
+                        '-grade-content','-comments-content', '-response-div'] 
     
     def __init__(self, **kwargs):
         super(SlidocRenderer, self).__init__(**kwargs)
@@ -640,6 +648,7 @@ class SlidocRenderer(MathRenderer):
         self.block_output_counter = 0
         self.load_python = False
         self.render_markdown = False
+        self.plugin_defs = {}
 
     def _new_slide(self):
         self.slide_number += 1
@@ -678,14 +687,18 @@ class SlidocRenderer(MathRenderer):
                 else:
                     print("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number), file=sys.stderr)
 
-    def inline_js(self, js_func, text):
+    def inline_js(self, plugin_name, action, text):
+        js_func = plugin_name + '.' + action
+        if action in ('create', 'globalInit', 'init', 'disable', 'display', 'expect', 'response'):
+            print("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s()` in slide %s" % (self.options["filename"], js_func, self.slide_number), file=sys.stderr)
+            
         if 'inline_js' in self.options['config'].strip:
             return '<code>%s</code>' % (mistune.escape('='+js_func+'()' if text is None else text))
         slide_id = self.get_slide_id()
         classes = 'slidoc-inline-js'
         if slide_id:
             classes += ' slidoc-inline-js-in-'+slide_id
-        return '<code class="%s" data-slidoc-js-function="%s">%s</code>' % (classes, js_func.replace('<', '&lt;').replace('>', '&gt;'), mistune.escape('='+js_func+'()' if text is None else text))
+        return '<code class="%s" data-slidoc-js-function="%s">%s</code>' % (classes, js_func, mistune.escape('='+js_func+'()' if text is None else text))
 
     def get_chapter_id(self):
         return make_chapter_id(self.options['filenumber'])
@@ -808,7 +821,6 @@ class SlidocRenderer(MathRenderer):
         classes = 'slidoc-block-code slidoc-block-code-in-%s' % slide_id
 
         id_str = ''
-    
 
         if lang in ('javascript_input','python_input'):
             lang = lang[:-6]
@@ -987,7 +999,7 @@ class SlidocRenderer(MathRenderer):
 
         prefix = ''
         if not self.cur_choice:
-            prefix = '<blockquote>\n'
+            prefix = '</p><blockquote><p>\n'
             self.choice_end = '</blockquote>\n'
 
         self.cur_choice = name
@@ -999,15 +1011,19 @@ class SlidocRenderer(MathRenderer):
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice">%(opt)s</span>. ''' % params
 
     
+    def plugin_definition(self, name, text):
+        self.plugin_defs[name] = parse_plugin(name, name+' = {'+text)
+        return ''
+
     def slidoc_answer(self, name, text):
         if self.cur_answer:
             # Ignore multiple answers
             return ''
         self.cur_answer = True
 
-        choice_prefix = ''
+        html_prefix = ''
         if self.choice_end:
-            choice_prefix = self.choice_end
+            html_prefix = self.choice_end
             self.choice_end = ''
 
         explain_answer = ''
@@ -1015,19 +1031,35 @@ class SlidocRenderer(MathRenderer):
         if explain_match:
             text = text[:-len(explain_match.group(0))].strip()
             explain_answer = explain_match.group(3) or 'text'
-            
-        correct_js = ''
-        js_match = MathInlineGrammar.inline_js.match(text)
-        if js_match:
-            # Inline JS answer; strip function call
-            if 'inline_js' not in self.options['config'].strip:
-                correct_js = js_match.group(1)
-            text = text[len(js_match.group(0)):].strip()
-            if js_match.group(3) is not None:
-                text = js_match.group(3) + text
-            elif not text and correct_js:
-                text = '='+correct_js+'()'
 
+        slide_id = self.get_slide_id()
+        plugin_name = ''
+        plugin_action = ''
+        plugin_match = re.match(r'^(\w+)\.(expect|response)\(\)(;(.+))?$', text)
+        if text.lower() in ('text/x-python', 'text/x-javascript', 'text/x-test'):
+            plugin_name = 'code'
+            plugin_action = 'response'
+        elif plugin_match:
+            plugin_name = plugin_match.group(1)
+            plugin_action = plugin_match.group(2)
+            text = plugin_match.group(4) or ''
+
+        if plugin_name:
+            plugin_def = self.plugin_defs.get(plugin_name)
+            if not plugin_def:
+                plugin_def = self.options['plugin_defs'].get(plugin_name)
+                if not plugin_def:
+                    abort('ERROR Plugin '+plugin_name+' not defined!')
+            if 'inline_js' in self.options['config'].strip and plugin_action == 'expect':
+                plugin_name = ''
+                plugin_action = ''
+            else:
+                plugin_params = {'slide_id': slide_id,
+                                'plugin_name': plugin_name,
+                                'plugin_label': 'slidoc-plugin-'+plugin_name,
+                                'plugin_id': slide_id+'-plugin-'+plugin_name }
+                html_prefix += ('<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-slide-id="%(slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">'+plugin_def.get('Body', '')+'</div><!--%(plugin_id)s-body-->') % plugin_params
+            
         qtype = ''
         num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
         if num_match and text.lower() != 'e':
@@ -1049,7 +1081,7 @@ class SlidocRenderer(MathRenderer):
             else:
                 print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
 
-        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/code', 'text/code=python', 'text/code=javascript', 'text/code=test', 'text/markdown', 'text/multiline', 'point', 'line'):
+        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/x-code', 'text/x-python', 'text/x-javascript', 'text/x-test', 'text/markdown', 'text/multiline', 'point', 'line'):
             # Unspecified answer
             qtype = text.lower()
             text = ''
@@ -1067,7 +1099,7 @@ class SlidocRenderer(MathRenderer):
         elif qtype and qtype != self.cur_qtype:
             print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number), file=sys.stderr)
 
-        if self.cur_qtype == 'text/code=python':
+        if self.cur_qtype == 'text/x-python':
             self.load_python = True
 
         # Handle correct answer
@@ -1077,7 +1109,7 @@ class SlidocRenderer(MathRenderer):
         else:
             correct_text = text
             correct_html = ''
-            if text and not correct_js:
+            if text and not plugin_name:
                 try:
                     # Render any Markdown in correct answer
                     correct_html = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(text) if text else ''
@@ -1096,15 +1128,16 @@ class SlidocRenderer(MathRenderer):
 
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
-        correct_val = correct_text
-        if correct_js and not correct_val.startswith('='):
-            correct_val = '='+correct_js+'();'+correct_text
+        if plugin_name:
+            correct_val = plugin_name + '.' + plugin_action + '()'
+            if correct_text:
+                correct_val = correct_val + ';' + correct_text
+        else:
+            correct_val = correct_text
         self.questions[-1].update(qnumber=len(self.questions), qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
                                   explain=explain_answer, weight=1, gweight=0)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
-        if correct_js:
-            self.questions[-1].update(js=correct_js)
         if self.block_input_counter:
             self.questions[-1].update(input=self.block_input_counter)
         if self.slide_block_test:
@@ -1112,9 +1145,9 @@ class SlidocRenderer(MathRenderer):
         if self.slide_block_output:
             self.questions[-1].update(output=self.slide_block_output)
 
-        if not self.options['config'].pace and ('answers' in self.options['config'].strip or (not text and not correct_js)):
+        if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
-            return choice_prefix+name.capitalize()+':'+'<p></p>\n'
+            return html_prefix+name.capitalize()+':'+'<p></p>\n'
 
         hide_answer = self.options['config'].hide or self.options['config'].pace
         if len(self.slide_block_test) != len(self.slide_block_output):
@@ -1123,7 +1156,7 @@ class SlidocRenderer(MathRenderer):
 
         if not hide_answer:
             # No hiding of correct answers
-            return choice_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
+            return html_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
 
         id_str = self.get_slide_id()
         self.render_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
@@ -1135,8 +1168,8 @@ class SlidocRenderer(MathRenderer):
             ans_classes += ' slidoc-explain-answer'
         if self.cur_qtype == 'choice':
             ans_classes += ' slidoc-choice-answer'
-        if self.cur_qtype.startswith('text/code='):
-            ans_classes += ' slidoc-code-check'
+        if plugin_name and plugin_action != 'expect':
+            ans_classes += ' slidoc-answer-plugin'
 
         ans_params = { 'sid': id_str,
                        'qno': len(self.questions),
@@ -1159,19 +1192,16 @@ class SlidocRenderer(MathRenderer):
         if grade_response:
             html_template += self.comments_template_b
 
-        if self.cur_qtype.startswith('text/code'):
+        if self.cur_qtype == 'text/x-code':
             html_template += self.response_pre_template
         else:
             html_template += self.response_div_template
-
-        if self.cur_qtype.startswith('text/code='):
-            html_template += self.code_template
 
         html_template +='''</div>\n'''
 
         ans_html = html_template % ans_params
             
-        return choice_prefix+ans_html+'\n'
+        return html_prefix+ans_html+'\n'
 
 
     def slidoc_weight(self, name, text):
@@ -1330,11 +1360,11 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-def md2html(source, filename, config, filenumber=1, prev_file='', next_file='', index_id='', qindex_id=''):
+def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
     Global.chapter_ref_counter = defaultdict(int)
 
-    renderer = SlidocRenderer(escape=False, filename=filename, config=config, filenumber=filenumber)
+    renderer = SlidocRenderer(escape=False, filename=filename, config=config, filenumber=filenumber, plugin_defs=plugin_defs)
 
     content_html = MarkdownWithSlidoc(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
 
@@ -1436,6 +1466,42 @@ def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
         abort("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
     print('slidoc: Created remote spreadsheet:', session_name, file=sys.stderr)
 
+def parse_plugin(name, text):
+    if not re.match(r'^\s*'+name+r'\s*=\s*{', text):
+        abort("Plugin definition must start with '"+name+" = {'")
+    comps = re.split(r'\n/\*\s*Plugin(Head|Body):', text)
+    plugin_def = {}
+    part = 'JS'
+    for comp in comps:
+        if not part:
+            part = comp
+            continue
+        if part == 'JS':
+            comp = 'SlidocPlugins.'+comp.lstrip()
+        else:
+            comp = comp.rstrip()
+            if comp.endswith('*/'):
+                comp = comp[:-2]
+        plugin_def[part] = comp
+        part = ''
+    return plugin_def
+
+def plugin_heads(plugin_defs):
+    if not plugin_defs:
+        return ''
+    plugin_list = plugin_defs.keys()
+    plugin_list.sort()
+    plugin_code = []
+    for plugin_name in plugin_list:
+        plugin_code.append('\n')
+        plugin_head = plugin_defs[plugin_name].get('Head', '') 
+        if plugin_head:
+            plugin_params = {'plugin_name': plugin_name,
+                             'plugin_label': 'slidoc-plugin-'+plugin_name}
+            plugin_code.append((plugin_head % plugin_params)+'\n')
+        plugin_code.append('<script>(function() {\n'+plugin_defs[plugin_name]['JS'].strip()+'\n})();</script>\n')
+    return ''.join(plugin_code)
+
 
 def process_input(input_files, config_dict):
     tem_dict = config_dict.copy()
@@ -1443,8 +1509,14 @@ def process_input(input_files, config_dict):
 
     config = argparse.Namespace(**tem_dict)
 
+    scriptdir = os.path.dirname(os.path.realpath(__file__))
     out_name = os.path.splitext(os.path.basename(config.outfile or input_files[0].name))[0]
     combined_file = out_name+'.html'
+
+    base_plugin_list = ['code']
+    base_plugin_defs = {}
+    for plugin_name in base_plugin_list:
+        base_plugin_defs[plugin_name] = parse_plugin( plugin_name, md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js') )
 
     js_params = {'sessionName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0,
@@ -1535,7 +1607,6 @@ def process_input(input_files, config_dict):
     if config.dest_dir and not os.path.isdir(config.dest_dir):
         abort("Destination directory %s does not exist" % config.dest_dir)
     dest_dir = config.dest_dir+"/" if config.dest_dir else ''
-    scriptdir = os.path.dirname(os.path.realpath(__file__))
     templates = {}
     for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_google.js',
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
@@ -1567,6 +1638,7 @@ def process_input(input_files, config_dict):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
+    comb_plugin_defs = {}
     fnames = []
     for f in input_files:
         fcomp = os.path.splitext(os.path.basename(f.name))
@@ -1692,7 +1764,7 @@ def process_input(input_files, config_dict):
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
         fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=config, filenumber=filenumber,
-                                                        prev_file=prev_file, next_file=next_file,
+                                                        plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
         if config.pace:
@@ -1710,6 +1782,7 @@ def process_input(input_files, config_dict):
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
         
+        comb_plugin_defs.update(renderer.plugin_defs)
         math_in_file = renderer.render_markdown or (r'\[' in md_text and r'\]' in md_text) or (r'\(' in md_text and r'\)' in md_text)
         if math_in_file:
             math_found = True
@@ -1724,8 +1797,6 @@ def process_input(input_files, config_dict):
                       'skulpt_js': Skulpt_js if renderer.load_python else ''}
         mid_params.update(SYMS)
 
-        file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
-
         if config.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
@@ -1736,7 +1807,11 @@ def process_input(input_files, config_dict):
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
             else:
-                head = file_head_html + (mid_template % mid_params) + body_prefix
+                file_plugin_defs = base_plugin_defs.copy()
+                file_plugin_defs.update(renderer.plugin_defs)
+                file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
+
+                head = file_head_html + plugin_heads(file_plugin_defs) + (mid_template % mid_params) + body_prefix
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html):
                     # Still some missing reference numbers; output file later
@@ -1952,7 +2027,9 @@ def process_input(input_files, config_dict):
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else ''}
         comb_params.update(SYMS)
-        md2md.write_file(dest_dir+combined_file, Html_header, head_html,
+        all_plugin_defs = base_plugin_defs.copy()
+        all_plugin_defs.update(comb_plugin_defs)
+        md2md.write_file(dest_dir+combined_file, Html_header, head_html+plugin_heads(all_plugin_defs),
                           mid_template % comb_params, body_prefix,
                          '\n'.join(combined_html), Html_footer)
         print('Created combined HTML file in '+combined_file, file=sys.stderr)

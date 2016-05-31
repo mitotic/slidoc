@@ -2,7 +2,8 @@
 
 var Slidoc = {};  // External object
 
-var SlidocFormulas = {};  // Inline JS object
+var SlidocPlugins = {}; // JS plugins
+var SlidocPluginManager = {}; // JS plugins manager
 var SlidocRandom = null;
 
 ///UNCOMMENT: (function(Slidoc) {
@@ -13,7 +14,7 @@ var CACHE_GRADING = true; // If true, cache all rows for grading
 
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
 
-var SYMS = {correctMark: '&#x2714;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
+var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
@@ -28,9 +29,12 @@ for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
 
 Sliobj.testScript = {callback: null, steps: [], curstep: 0};
+Sliobj.adminState = null;
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
 Sliobj.gradingSlide = 0;
+Sliobj.activePlugins = {};
+Sliobj.pluginList = [];
 
 Sliobj.sheets = {};
 function getSheet(name) {
@@ -65,7 +69,6 @@ function setupCache(auth, callback) {
 		var roster = gsheet.getRoster();
 		if (!roster.length) {
 		    sessionAbort('No users available for session '+Sliobj.sessionName);
-		    return
 		}
 		Sliobj.userList = [];
 		Sliobj.userGrades = {};
@@ -105,7 +108,6 @@ function setupCache(auth, callback) {
 	    var err_msg = 'Failed to setup Google Docs cache: ' + (retStatus ? retStatus.error : '');
 	    alert(err_msg);
 	    sessionAbort(err_msg);
-	    return;
 	}
     }
     try {
@@ -115,12 +117,18 @@ function setupCache(auth, callback) {
     }
 }
 
-
+var debugAbort = true;
+var sessionAborted = false;
 function sessionAbort(err_msg, err_trace) {
+    if (sessionAborted)
+	return;
+    sessionAborted = true;
     localDel('auth');
     try { Slidoc.classDisplay('slidoc-slide', 'none'); } catch(err) {}
-    alert(err_msg);
-    document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
+    alert((debugAbort ? 'DEBUG: ':'')+err_msg);
+    if (!debugAbort)
+	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
+    throw(err_msg);
 }
 
 function abortOnError(boundFunc) {
@@ -186,9 +194,30 @@ document.onreadystatechange = function(event) {
     return abortOnError(onreadystateaux);
 }
 
+function checkPlugins() {
+    console.log('checkPlugins:');
+    Sliobj.activePlugins = {};
+    Sliobj.pluginList = [];
+    var allBodies = document.getElementsByClassName('slidoc-plugin-body');
+    for (var j=0; j<allBodies.length; j++) {
+	var pluginName = allBodies[j].dataset.plugin;
+	if (!(pluginName in SlidocPlugins))
+	    sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax errors');
+	if (!(pluginName in Sliobj.activePlugins)) {
+	    Sliobj.pluginList.push(pluginName);
+	    Sliobj.activePlugins[pluginName] = Sliobj.pluginList.length;
+	}
+
+	var slide_id = allBodies[j].dataset.slideId;
+	if (SlidocPluginManager.hasAction(pluginName, 'create'))
+	    SlidocPluginManager.call(pluginName, 'create', slide_id);
+    }
+}
+
 var PagedownConverter = null;
 function onreadystateaux() {
     console.log('onreadystateaux:');
+    checkPlugins();
     if (window.Markdown) {
 	PagedownConverter = new Markdown.getSanitizingConverter();
 	if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
@@ -214,6 +243,8 @@ function onreadystateaux() {
 	Slidoc.slidocReady(null);
     }
 }
+
+function isNumber(x) { return !isNaN(x); }
 
 function zeroPad(num, pad) {
     // Pad num with zeros to make pad digits
@@ -547,6 +578,81 @@ function getQuestionAttrs(slide_id) {
     return attr_vals ? attr_vals[question_number-1] : null;
 }
 
+SlidocPluginManager.hasAction = function (pluginName, action) {
+    var pluginDef = SlidocPlugins[pluginName];
+    if (!pluginDef)
+	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
+    return action in pluginDef;
+}
+
+function makePluginThis(pluginName, action, slide_id) {
+    var qattributes = slide_id ? getQuestionAttrs(slide_id) : null;
+    var pluginId = slide_id ? (slide_id + '-plugin-' + pluginName) : '';
+    var pluginDef = SlidocPlugins[pluginName];
+    if (!pluginDef)
+	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
+
+    var globalSeed = null
+    var globalRandom = null;
+    var randomSeed = null
+    var randomNumber = null;
+    if (action != 'create') {
+	// Seed for all instances of the plugin
+	globalSeed = Sliobj.session.randomSeed + Sliobj.activePlugins[pluginName];
+	globalRandom = SlidocRandom.randomNumber.bind(null, globalSeed);
+	if (slide_id) {
+	    // Seed for each slide instance of the plugin
+	    var comps = parseSlideId(slide_id);
+	    randomSeed = globalSeed + 256*((1+comps[1])*256 + comps[2]);
+	    randomNumber = SlidocRandom.randomNumber.bind(null, randomSeed);
+	}
+    }
+
+    var pluginThis = {adminState: Sliobj.adminState,
+		      globalSeed: globalSeed,
+		      randomSeed: randomSeed,
+		      globalRandom: globalRandom,
+		      randomNumber: randomNumber,
+		      sessionName: Sliobj.sessionName,
+		      slideId: slide_id || '',
+		      pluginId: pluginId,
+		      qattributes: qattributes || null};
+    pluginThis.def = pluginDef;
+    if (action == 'create') {
+	pluginThis.persist = null;
+    } else {
+	if (!(pluginName in Sliobj.session.plugins))
+	    Sliobj.session.plugins[pluginName] = {};
+	pluginThis.persist = Sliobj.session.plugins[pluginName];
+    }
+    return pluginThis;
+}
+
+SlidocPluginManager.call = function (pluginName, action, slide_id) //... extra arguments
+{   // action == 'create' inserts/modified DOM elements called per slide after document is ready
+    // action == 'globalInit' resets global plugin properties for all slides (called at start/switch of session)
+    // action == 'init' resets plugin properties for each slide (called at start/switch of session)
+    // action == 'display' displays recorded user response (called at start/switch of session for each question)
+    // action == 'disable' disables plugin (after user response has been recorded)
+    // action == 'expect' returns expected correct answer
+    // action == 'response' records user response and uses callback to return a pluginResp object of the form:
+    //    {name:pluginName, score:1/0/0.75/.../null, invalid: invalid_msg, output:output, tests:0/1/2}
+    var extraArgs = Array.prototype.slice.call(arguments).slice(3);
+    console.log('SlidocPluginManager.call:', pluginName, action, slide_id, extraArgs);
+    var pluginThis = makePluginThis(pluginName, action, slide_id);
+    if (!(action in pluginThis.def))
+	throw('ERROR Action '+action+' not defined for plugin '+pluginName+' not found');
+
+    if (!(pluginName in Sliobj.activePlugins))
+	throw('INTERNAL ERROR Plugin '+pluginName+' not activated');
+
+    try {
+	return SlidocPlugins[pluginName][action].apply(pluginThis, extraArgs);
+    } catch(err) {
+	sessionAbort('ERROR in calling plugin '+pluginName+'.'+action+': '+err, err.stack);
+    }
+}
+
 function clearAnswerElements() {
     console.log('clearAnswerElements');
     var slides = document.getElementsByClassName('slidoc-slide');
@@ -598,7 +704,6 @@ function selectUser(auth, callback) {
     console.log('selectUser:', auth, userId);
     if (!auth.adminKey) {
 	sessionAbort('Only admin can pick user');
-	return;
     }
     auth.displayName = userId;
     auth.id = userId;
@@ -618,13 +723,12 @@ function selectUserCallback(userId, result, retStatus) {
     console.log('selectUserCallback:', userId, result, retStatus);
     if (!result) {
 	sessionAbort('ERROR in selectUserCallback: '+ retStatus.error);
-	return;
     }
     var unpacked = unpackSession(result);
     Sliobj.session = unpacked.session;
     Sliobj.feedback = unpacked.feedback || null;
     prepGradeSession(Sliobj.session);
-    injectJS(Sliobj.session);
+    initSessionPlugins(Sliobj.session);
     showSubmitted();
     preAnswer();
 }
@@ -654,6 +758,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.gradingUser = 0;
     Sliobj.indexSheet = null;
     Sliobj.gradeDate = '';
+
     if (Sliobj.adminState) {
 	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
 						     Sliobj.params.indexFields.slice(0,2),
@@ -717,7 +822,6 @@ function slidocReadyAux2(auth) {
 	// Paced named session
 	if (Sliobj.params.gd_sheet_url && !auth) {
 	    sessionAbort('Session aborted. Google Docs authentication error.');
-	    return false;
 	}
 
 	if (Sliobj.adminState) {
@@ -741,11 +845,9 @@ function slidocReadyPaced(newSession, prereqs, prevSession, prevFeedback) {
     if (prereqs) {
 	if (!prevSession) {
 	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not attempted!");
-	    return;
 	}
 	if (!prevSession.submitted) {
 	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not completed!");
-	    return;
 	}
 	if (prereqs.length > 1) {
 	    prereqs = prereqs.slice(1);
@@ -771,7 +873,6 @@ function slidocSetupAux(session, feedback) {
 
     if (Sliobj.adminState && !Sliobj.session) {
 	sessionAbort('Admin user: session not found for user');
-	return;
     }
 
     if (Sliobj.session.version != Sliobj.params.sessionVersion) {
@@ -794,7 +895,6 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.adminState) {
 	if (!Sliobj.session) {
 	    sessionAbort('Admin user: cannot administer null session');
-	    return;
 	}
 	prepGradeSession(Sliobj.session);
 	if (Sliobj.params.paceLevel)
@@ -861,7 +961,7 @@ function slidocSetupAux(session, feedback) {
     }
 
     // New/restored ression
-    injectJS(Sliobj.session);
+    initSessionPlugins(Sliobj.session);
 
     if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');
@@ -947,44 +1047,48 @@ function prepGradeSession(session) {
     session.lastSlide = Sliobj.params.pacedSlides;
 }
 
-function injectJS(session) {
-    // Inject inline JS
-
+function initSessionPlugins(session) {
     // Restore random seed for session
-    SlidocRandom.setSeed(session.randomSeed);
+    console.log('initSessionPlugins');
+    for (var j=0; j<Sliobj.pluginList.length; j++) {
+	var pluginName = Sliobj.pluginList[j];
+	var pluginThis = makePluginThis(pluginName, 'globalInit', slide_id);
+	SlidocRandom.setSeed(pluginThis.globalSeed);
+	if (SlidocPluginManager.hasAction(pluginName, 'globalInit'))
+	    SlidocPluginManager.call(pluginName, 'globalInit');
+    }
 
-    if (SlidocFormulas.ready)
-	SlidocFormulas.ready(session);
+    var allBodies = document.getElementsByClassName('slidoc-plugin-body');
+    var allBodyIds = [];
+    for (var j=0; j<allBodies.length; j++)
+	allBodyIds.push(allBodies[j].id);
+    allBodyIds.sort();   // Need to call init method in sequence to preserve global random number generation order
+    for (var j=0; j<allBodyIds.length; j++) {
+	var bodyElem = document.getElementById(allBodyIds[j]);
+	var pluginName = bodyElem.dataset.plugin;
+	var slide_id = bodyElem.dataset.slideId;
+	var pluginThis = makePluginThis(pluginName, 'init', slide_id);
+	SlidocRandom.setSeed(pluginThis.randomSeed);
+	if (SlidocPluginManager.hasAction(pluginName, 'init'))
+	    SlidocPluginManager.call(pluginName, 'init', slide_id);
+    }
+
 
     var jsSpans = document.getElementsByClassName('slidoc-inline-js');
     for (var j=0; j<jsSpans.length; j++) {
 	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
-	var slideId = '';
+	var slide_id = '';
 	for (var k=0; k<jsSpans[j].classList.length; k++) {
 	    var refmatch = /slidoc-inline-js-in-(.*)$/.exec(jsSpans[j].classList[k]);
 	    if (refmatch) {
-		slideId = refmatch[1];
+		slide_id = refmatch[1];
 		break;
 	    }
 	}
-	var val = slidocCall(jsFunc, slideId);
+	var comps = jsFunc.split('.');
+	var val = SlidocPluginManager.call(comps[0], comps[1], slide_id);
 	if (val)
 	    jsSpans[j].innerHTML = val;
-    }
-}
-
-function slidocCall(jsFunc, slide_id, question_attrs) {
-    // Invoke inline JS function
-    console.log('slidocCall:', jsFunc, slide_id, question_attrs);
-    if (!(jsFunc in SlidocFormulas))
-	return '';
-
-    try {
-	return SlidocFormulas[jsFunc](slide_id);
-    } catch(err) {
-	var msg = 'Error in function '+jsFunc+': '+err;
-	console.log('slidoc-inline-js:', msg );
-	return msg
     }
 }
 
@@ -992,7 +1096,6 @@ function checkGradingCallback(userId, result, retStatus) {
     console.log('checkGradingCallback:', userId, result, retStatus);
     if (!result) {
 	sessionAbort('ERROR in checkGradingCallback: '+ retStatus.error);
-	return;
     }
     var unpacked = unpackSession(result);
     checkGradingStatus(userId, unpacked.session, unpacked.feedback);
@@ -1061,7 +1164,7 @@ function preAnswer() {
 	if (qentry.resp_type == 'choice') {
 	    Slidoc.choiceClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qfeedback);
 	} else {
-	    Slidoc.answerClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qentry.test, qfeedback);
+	    Slidoc.answerClick(null, qentry.slide_id, qentry.response, qentry.explain||null, qentry.plugin, qfeedback);
 	}
     }
     if (Sliobj.session.submitted)
@@ -1088,17 +1191,16 @@ function showCorrectAnswers() {
 }
 
 function sessionCreate() {
-    SlidocRandom.setSeed(); // Initialize random seed
+    var randomSeed = SlidocRandom.getRandomSeed();
     return {version: Sliobj.params.sessionVersion,
 	    revision: Sliobj.params.sessionRevision,
 	    paced: Sliobj.params.paceLevel > 0,
 	    submitted: null,
 	    lateToken: '',
 	    paceLevel: Sliobj.params.paceLevel || 0,
-	    randomSeed: SlidocRandom.getSeed(),        // Save random seed
+	    randomSeed: randomSeed,        // Save random seed
             expiryTime: Date.now() + 180*86400,    // 180 day lifetime
             startTime: Date.now(),
-	    submitTime: null,
             lastTime: 0,
 	    lastSlide: 0,
             lastTries: 0,
@@ -1111,6 +1213,7 @@ function sessionCreate() {
             weightedCount: 0,
             weightedCorrect: 0,
             questionsAttempted: {},
+	    plugins: {},
             missedConcepts: []
 	   };
 }
@@ -1139,9 +1242,9 @@ function unpackSession(row) {
 	    if (!(qnumber in feedback))
 		feedback[qnumber] = {};
 	    feedback[qnumber][hmatch[2]] = value;
-	    if (value != '')
+	    if (value != null && value != '')
 		count += 1;
-	} else if (/^q_grades/.exec(key) && !isNaN(value)) {
+	} else if (/^q_grades/.exec(key) && isNumber(value)) {
 	    // Total grade
 	    feedback.q_grades = value;
 	    if (value)
@@ -1569,73 +1672,8 @@ Slidoc.toggleInline = function (elem) {
    return false;
 }
 
-
-function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
-    // Execute code and compare output to expected output
-    // callback( {correct:true/false/null, invalid: invalid_msg, output:output, tests:0/1/2} )
-    // invalid_msg => syntax error when executing user code
-    console.log('checkCode:', slide_id, user_code, checkOnly);
-
-    if (!question_attrs.test || !question_attrs.output) {
-	console.log('checkCode: Test/output code checks not found in '+slide_id);
-	return callback( {correct:null, invalid:'', output:'Not checked', tests:0} );
-    }
-
-    var codeType = question_attrs.qtype;
-
-    var codeCells = [];
-    if (question_attrs.input) {
-	for (var j=1; j<=question_attrs.input; j++) {
-	    // Execute all input cells
-	    var inputCell = document.getElementById('slidoc-block-input-'+j);
-	    if (!inputCell) {
-		console.log('checkCode: Input cell '+j+' not found in '+slide_id);
-		return callback({correct:null, invalid:'', output:'Missing input cell'+j, tests:0});
-	    }
-	    codeCells.push( inputCell.textContent.trim() );
-	}
-    }
-
-    codeCells.push(user_code);
-    var ntest = question_attrs.test.length;
-    if (checkOnly) ntest = Math.min(ntest, 1);
-
-    function checkCodeAux(index, msg, correct, stdout, stderr) {
-	console.log('checkCodeAux:', index, msg, correct, stdout, stderr);
-	if (stderr) {
-	    console.log('checkCodeAux: Error', msg, stderr);
-	    return callback({correct:false, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
-	}
-	if (index > 0 && !correct) {
-	    console.log('checkCodeAux: Error in test cell in '+slide_id, msg);
-	    return callback({correct:correct, invalid:'', output:stdout, tests:index-1});
-	}
-
-	// Execute test code
-	while (index < ntest) {
-	    var testCell = document.getElementById('slidoc-block-test-'+question_attrs.test[index]);
-	    if (!testCell) {
-		console.log('checkCodeAux: Test cell '+question_attrs.test[index]+' not found in '+slide_id);
-		return callback({correct:null, invalid:'', output:'Missing test cell'+(index+1), tests:index});
-	    }
-	    var testCode = testCell.textContent.trim();
-	    
-	    var outputCell = document.getElementById('slidoc-block-output-'+question_attrs.output[index]);
-	    if (!outputCell) {
-		console.log('checkCodeAux: Test output cell '+question_attrs.output[index]+' not found in '+slide_id);
-		return callback({correct:null, invalid:'', output:'Missing test output'+(index+1), tests:index});
-	    }
-	    var expectOutput = outputCell.textContent.trim();
-	    
-	    return execCode(codeType, codeCells.concat(testCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, index+1, 'test code'+index));
-	}
-	return callback({correct:(ntest?true:null), invalid:'', output:'', tests:ntest});
-    }
-
-    checkCodeAux(0, '', null, '', '');
-}
-
-function retryAnswer() {
+SlidocPluginManager.retryAnswer = function (msg) {
+    console.log('SlidocPluginManager.retryAnswer:', msg);
     Sliobj.session.lastTime = Date.now();
     if (Sliobj.params.tryCount) {
 	Sliobj.session.lastAnswersCorrect = -2;   // Incorrect answer
@@ -1646,7 +1684,7 @@ function retryAnswer() {
 	Slidoc.delayIndicator(Sliobj.params.tryDelay, slide_id+'-answer-click');
 	after_str = ' after '+Sliobj.params.tryDelay+' second(s)';
     }
-    Slidoc.showPopup('Incorrect.<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
+    Slidoc.showPopup((msg || 'Incorrect.')+'<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
     return false;
 }
 
@@ -1725,13 +1763,13 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
 
     if (!setup && Sliobj.session.remainingTries > 0)
 	Sliobj.session.remainingTries = 0;   // Only one try for choice response
-    Slidoc.answerUpdate(setup, slide_id, choice_val);
+    Slidoc.answerUpdate(setup, slide_id, false, choice_val);
     return false;
 }
 
-Slidoc.answerClick = function (elem, slide_id, response, explain, testResp, qfeedback) {
+Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qfeedback) {
    // Handle answer types: number, text
-    console.log("Slidoc.answerClick:", elem, slide_id, response, explain, testResp, qfeedback);
+    console.log("Slidoc.answerClick:", elem, slide_id, response, explain, pluginResp, qfeedback);
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
@@ -1764,122 +1802,98 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, testResp, qfee
        response = '';
     }
 
-   var multiline = question_attrs.qtype.slice(0,5) == 'text/';
-   var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
-   if (inpElem) {
-       if (setup) {
-	   inpElem.value = response;
-       } else {
-	   response = inpElem.value.trim();
-	   if (question_attrs.qtype == 'number' && isNaN(response)) {
-	       alert('Expecting a numeric value as answer');
-	       return false;
-	   } else if (Sliobj.session.paced && !checkOnly) {
-	       if (!response) {
-		   alert('Expecting a non-null answer');
-		   return false;
-	       } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
-		   alert('Please try a different answer this time!');
-		   return false;
-	       }
-	       Sliobj.lastInputValue = response;
-	   }
-       }
-       if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
-	   inpElem.disabled = 'disabled';
-    }
+    var pluginMatch = /^(\w+)\.response\(\)(;(.+))?$/.exec(question_attrs.correct || '');
+    if (pluginMatch) {
+	var pluginName = pluginMatch[1];
+	if (setup) {
+	    SlidocPluginManager.call(pluginName, 'display', slide_id, response, pluginResp);
+	    Slidoc.answerUpdate(setup, slide_id, false, response, pluginResp);
+	} else {
+	    if (Sliobj.session.remainingTries > 0)
+		Sliobj.session.remainingTries -= 1;
 
-    if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
-	Sliobj.session.remainingTries -= 1;
+	    var retryMsg = SlidocPluginManager.call(pluginName, 'response', slide_id,
+				      (Sliobj.session.remainingTries > 0),
+				      Slidoc.answerUpdate.bind(null, setup, slide_id, false));
+	    if (retryMsg)
+		SlidocPluginManager.retryAnswer(retryMsg);
+	}
+	if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
+	    SlidocPluginManager.call(pluginName, 'disable', slide_id);
 
-    var callUpdate = Slidoc.answerUpdate.bind(null, setup, slide_id, response, checkOnly);
-    if (setup && testResp) {
-	callUpdate(testResp);
-    } else if (question_attrs.qtype.slice(0,10) == 'text/code=') {
+    }  else {
+	var multiline = question_attrs.qtype.slice(0,5) == 'text/';
+	var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
+	if (inpElem) {
+	    if (setup) {
+		inpElem.value = response;
+	    } else {
+		response = inpElem.value.trim();
+		if (question_attrs.qtype == 'number' && isNaN(response)) {
+		    alert('Expecting a numeric value as answer');
+		    return false;
+		} else if (Sliobj.session.paced && !checkOnly) {
+		    if (!response) {
+			alert('Expecting a non-null answer');
+			return false;
+		    } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
+			alert('Please try a different answer this time!');
+			return false;
+		    }
+		    Sliobj.lastInputValue = response;
+		}
+	    }
+	    if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
+		inpElem.disabled = 'disabled';
+	}
+
+	if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
+	    Sliobj.session.remainingTries -= 1;
+
+    var callUpdate = Slidoc.answerUpdate.bind(null, setup, slide_id, checkOnly, response);
+    if (setup && pluginResp) {
+	callUpdate(pluginResp);
+    } else if (question_attrs.qtype != 'text/x-code' && question_attrs.qtype.slice(0,7) == 'text/x-') {
 	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
     } else {
 	callUpdate();
     }
+    }
     return false;
 }
 
-Slidoc.answerUpdate = function (setup, slide_id, response, checkOnly, testResp) {
-    console.log('Slidoc.answerUpdate: ', setup, slide_id, response, checkOnly, testResp);
+Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp) {
+    console.log('Slidoc.answerUpdate: ', setup, slide_id, checkOnly, response, pluginResp);
 
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
 
-    var is_correct = null;
+    var qscore = '';
     var question_attrs = getQuestionAttrs(slide_id);
 
     var corr_answer      = question_attrs.correct || '';
     var corr_answer_html = question_attrs.html || '';
-    var corr_answer_js = '';
-    var jsmatch = /^=(\w+)\(\)(;(.+))?$/.exec(corr_answer);
-    if (jsmatch) {
-	corr_answer_js = jsmatch[1];
-	corr_answer = jsmatch[3] ? jsmatch[3] : '';
-    }
 
     console.log('Slidoc.answerUpdate:', slide_id);
 
-    if (testResp) {
-	var ntest = question_attrs.test ? question_attrs.test.length : 0;
-	var code_output_elem = document.getElementById(slide_id+"-code-output");
-	if (checkOnly) {
-	    var msg = 'Checked';
-	    var code_msg = msg;
-	    if (testResp.invalid) {
-		msg = 'Syntax/runtime error!';
-		code_msg = 'Error output:\n'+testResp.invalid;
-	    } else if (testResp.correct === false) {
-		msg = (ntest > 1) ? 'First check failed!' : 'Incorrect output!';
-		code_msg = 'Incorrect output:\n'+testResp.output;
-	    } else if (testResp.correct === true) {
-		msg = (ntest > 1) ? 'First check passed!' : 'Valid output!';
-		code_msg = msg;
-	    }
-	    setAnswerElement(slide_id, "-code-output", code_msg);
-	    Slidoc.showPopup(msg);
-	    return false;
-	}
+    if (pluginResp) {
+	qscore = pluginResp.score;
 	corr_answer = '';
-	corr_answer_html = '';
-	is_correct = testResp.correct;
-	var code_msg = '';
-	if (testResp.invalid) {
-	    is_correct = false;
-	    code_msg = 'Error output:\n'+testResp.invalid;
-	} else if (is_correct) {
-	    code_msg = (testResp.tests > 1) ? 'Second check passed!' : 'Valid output';
-	} else if (is_correct === false) {
-	    if (!setup && Sliobj.session.remainingTries > 0 && ntest > 1) {
-		// Retry only if second check is present
-		code_msg = (testResp.tests > 0) ? 'Second check failed!' : 'Incorrect output:\n'+testResp.output;
-		retryAnswer();
-		return false;
+    } else {
+	var pluginMatch = /^(\w+)\.expect\(\)(;(.+))?$/.exec(corr_answer);
+	if (pluginMatch) {
+	    var pluginName = pluginMatch[1];
+	    var val = SlidocPluginManager.call(pluginName, 'expect', slide_id);
+	    if (val) {
+		corr_answer = val;
+		corr_answer_html = '<code>'+corr_answer+'</code>';
+	    } else {
+		corr_answer = pluginMatch[3] ? pluginMatch[3] : '';
 	    }
-	    if (testResp.tests == 0)
-		code_msg = 'Incorrect output:\n'+testResp.output;
-	    else
-		code_msg = 'Incorrect output during second check\n';
-	} else {
-	    code_msg = 'Output:\n'+(testResp.output || '');
 	}
-	setAnswerElement(slide_id, "-code-output", code_msg);
-	
-    } else if (corr_answer_js) {
-	var val = slidocCall(corr_answer_js, slide_id, question_attrs);
-	if (val) {
-	    corr_answer = val;
-	    corr_answer_html = '<code>'+corr_answer+'</code>';
-	}
-    }
-
-    if (corr_answer || corr_answer_js) {
 	if (corr_answer) {
 	    // Check response against correct answer
-	    is_correct = false;
+	    qscore = 0;
 	    if (question_attrs.qtype == 'number') {
 		// Check if numeric answer is correct
 		var corr_value = null;
@@ -1896,7 +1910,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, checkOnly, testResp) 
 		} catch(err) {console.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
 		
 		if (corr_value !== null && resp_value != null)
-		    is_correct = Math.abs(resp_value - corr_value) <= 1.001*corr_error;
+		    qscore = (Math.abs(resp_value - corr_value) <= 1.001*corr_error) ? 1 : 0;
 	    } else {
 		// Check if non-numeric answer is correct (all spaces are removed before comparison)
 		var norm_resp = response.trim().toLowerCase();
@@ -1905,25 +1919,26 @@ Slidoc.answerUpdate = function (setup, slide_id, response, checkOnly, testResp) 
 		    var norm_corr = correct_options[k].trim().toLowerCase().replace(/\s+/, ' ');
 		    if (norm_corr.indexOf(' ') > 0) {
 			// Correct answer has space(s); compare using normalized spaces
-			is_correct = (norm_resp.replace(/\s+/, ' ') == norm_corr);
+			qscore = (norm_resp.replace(/\s+/, ' ') == norm_corr) ? 1 : 0;
 		    } else {
 			// Strip all spaces from response
-			is_correct = (norm_resp.replace(/\s+/, '') == norm_corr);
+			qscore = (norm_resp.replace(/\s+/, '') == norm_corr) ? 1 : 0;
 		    }
-		    if (is_correct)
+		    if (qscore)
 			break;
 		}
 	    }
-	}
-	if (!setup && is_correct === false && Sliobj.session.remainingTries > 0) {
-	    retryAnswer();
-	    return false;
+	    if (!setup && isNumber(qscore) && qscore < 1 && Sliobj.session.remainingTries > 0) {
+	        SlidocPluginManager.retryAnswer();
+	        return false;
+	    }
 	}
     }
     // Display correctness of response
-    setAnswerElement(slide_id, '-correct-mark', '', is_correct ? ' '+SYMS['correctMark']+'&nbsp;' : '');
-    setAnswerElement(slide_id, '-wrong-mark', '', (is_correct === false) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
-    setAnswerElement(slide_id, '-any-mark', '', (is_correct === null) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
+    setAnswerElement(slide_id, '-correct-mark', '', qscore === 1 ? ' '+SYMS['correctMark']+'&nbsp;' : '');
+    setAnswerElement(slide_id, '-partcorrect-mark', '', (isNumber(qscore) && qscore > 0 && qscore < 1) ? ' '+SYMS['partcorrectMark']+'&nbsp;' : '');
+    setAnswerElement(slide_id, '-wrong-mark', '', (qscore === 0) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
+    setAnswerElement(slide_id, '-any-mark', '', isNaN(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
     
     // Display correct answer
     setAnswerElement(slide_id, "-answer-correct", corr_answer||'', corr_answer_html);
@@ -1940,6 +1955,9 @@ Slidoc.answerUpdate = function (setup, slide_id, response, checkOnly, testResp) 
     // Question has been answered
     var slideElem = document.getElementById(slide_id);
     slideElem.classList.add('slidoc-answered-view');
+
+    if (pluginResp)
+	SlidocPluginManager.call(pluginResp.name, 'disable', slide_id);
 
     if (question_attrs.qtype.slice(0,5) == 'text/') {
 	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
@@ -1959,16 +1977,16 @@ Slidoc.answerUpdate = function (setup, slide_id, response, checkOnly, testResp) 
 							      resp_type: question_attrs.qtype,
 							      response: response,
 							      explain: explain,
-							      test: testResp||null,
+							      plugin: pluginResp||null,
 							      expect: corr_answer,
-							      correct: is_correct ? 1 : ((is_correct === false) ? 0 : '')};
-	Slidoc.answerTally(is_correct, slide_id, question_attrs);
+							      score: isNaN(qscore) ? '': qscore};
+	Slidoc.answerTally(qscore, slide_id, question_attrs);
     }
 }
 
 
-Slidoc.answerTally = function (is_correct, slide_id, question_attrs) {
-    console.log('Slidoc.answerTally: ', is_correct, slide_id, question_attrs);
+Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
+    console.log('Slidoc.answerTally: ', qscore, slide_id, question_attrs);
 
     var slide_num = parseSlideId(slide_id)[2];
     if (slide_num < Sliobj.session.skipToSlide) {
@@ -1984,7 +2002,7 @@ Slidoc.answerTally = function (is_correct, slide_id, question_attrs) {
 	Sliobj.session.remainingTries = 0;
 	document.body.classList.remove('slidoc-expect-answer-state');
 	if (Sliobj.params.tryCount) {
-	    if (is_correct && Sliobj.session.lastAnswersCorrect >= 0) {
+	    if (qscore === 1 && Sliobj.session.lastAnswersCorrect >= 0) {
 		// 2 => Current sequence of "correct" answers
 		if (skip && skip[0] > slide_num) {
 		    // Skip ahead
@@ -2013,9 +2031,9 @@ Slidoc.answerTally = function (is_correct, slide_id, question_attrs) {
     // Keep score
     Sliobj.session.questionsCount += qSkipfac;
     Sliobj.session.weightedCount += qWeight;
-    if (is_correct) {
+    if (qscore) {
         Sliobj.session.questionsCorrect += qSkipfac;
-        Sliobj.session.weightedCorrect += qWeight;
+        Sliobj.session.weightedCorrect += qscore*qWeight;
     }
     Slidoc.showScore();
 
@@ -2023,11 +2041,9 @@ Slidoc.answerTally = function (is_correct, slide_id, question_attrs) {
 	// Track missed concepts
 	var concept_elem = document.getElementById(slide_id+"-concepts");
 	var concepts = concept_elem ? concept_elem.textContent.split('; ') : ['null'];
-	var miss_count = is_correct ? 0 : 1;
+	var miss_count = (isNaN(qscore) || qscore === 1) ? 0 : 1;
 	
 	for (var j=0; j<concepts.length; j++) {
-	    if (concepts[j] == 'null')
-		continue;
 	    var m = (j == 0) ? 0 : 1;   // Primary/secondary concept
 	    for (var k=0; k<Sliobj.questionConcepts[m].length; k++) {
 		if (concepts[j] == Sliobj.questionConcepts[m][k]) {
@@ -2056,7 +2072,7 @@ Slidoc.showScore = function () {
 	if (Sliobj.session.submitted && Sliobj.params.scoreWeight)
 	    scoreElem.textContent = Sliobj.session.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
 	else
-	    scoreElem.textContent = Sliobj.session.questionsCorrect+'/'+Sliobj.params.questionsMax;
+	    scoreElem.textContent = Sliobj.session.questionsCount+'/'+Sliobj.params.questionsMax;
     } else {
 	scoreElem.textContent = '';
     }
@@ -2361,18 +2377,21 @@ Slidoc.answerPacedAllow = function () {
 
 function showCompletionStatus() {
     var msg = '<b>Paced session completed.</b><br>';
-    if (Sliobj.session.submitted) {
-	if (Sliobj.closePopup) {
-	    Sliobj.closePopup(true);
-	    msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.session.submitted+'<br>';
-	    if (!Sliobj.session.paced)
-		msg += 'You may now exit the slideshow and access this document normally.<br>';
-	} else {
-	    alert('Completed session submitted successfully to Google Docs at '+Sliobj.session.submitted);
-	    return;
+    if (Sliobj.params.gd_sheet_url) {
+	if (Sliobj.session.submitted) {
+	    if (Sliobj.closePopup) {
+		// Re-display popup
+		Sliobj.closePopup(true);
+		msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.session.submitted+'<br>';
+		if (!Sliobj.session.paced)
+		    msg += 'You may now exit the slideshow and access this document normally.<br>';
+	    } else {
+		alert('Completed session submitted successfully to Google Docs at '+Sliobj.session.submitted);
+		return;
+	    }
+	} else  {
+	    msg += 'Do not close this popup. Wait for confirmation that session has been submitted to Google Docs<br>';
 	}
-    } else if (Sliobj.params.gd_sheet_url) {
-	msg += 'Do not close this popup. Wait for confirmation that session has been submitted to Google Docs<br>';
     } else if (!Sliobj.session.paced) {
 	msg += 'You may now exit the slideshow and access this document normally.<br>';
     }
@@ -2934,120 +2953,58 @@ var LCRandom = (function() {
   // Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
       // m is basically chosen to be large (as it is the max period)
       // and for its relationships to a and c
-  var m = 4294967296,
+  var nbytes = 4;
+  var sequences = {};
+  var m = Math.pow(2,nbytes*8),
       // a - 1 should be divisible by m's prime factors
       a = 1664525,
       // c and m should be co-prime
-      c = 1013904223,
-      seed, z;
-    function uniform() {
+      c = 1013904223;
+  function initSequence(seedValue) {
+      // Start new random number sequence using seed value as the label
+      var label = seedValue || '';
+      sequences[label] = seedValue || Math.round(Math.random() * m);
+      return label;
+  }
+  function uniform(seedValue) {
       // define the recurrence relationship
-      z = (a * z + c) % m;
+      var label = seedValue || '';
+      if (!(label in sequences))
+	  throw('Random number generator not initialized properly');
+      sequences[label] = (a * sequences[label] + c) % m;
       // return a float in [0, 1) 
-      // if z = m then z / m = 0 therefore (z % m) / m < 1 always
-      return z / m;
-    }
+      // if sequences[label] = m then sequences[label] / m = 0 therefore (sequences[label] % m) / m < 1 always
+      return sequences[label] / m;
+  }
   return {
+    getRandomSeed: function() {
+	return Math.round(Math.random() * m);
+    },
     setSeed: function(val) {
-      z = seed = val || Math.round(Math.random() * m);
+	// Set seed to val, or a random number if val is null
+	return initSequence(val);
     },
-    getSeed: function() {
-      return seed;
+    setSeedMD5: function(seedKey, labelStr) {  // NOTE USED YET
+	// Set seed to HMAC of labelStr and seedKey
+	return initSequence( parseInt(md5(labelStr, ''+seedKey).slice(0,nbytes*2), 16) );
     },
-    rand: function() {
-	// Value uniformly distributed between 0.0 and 1.0
-	return uniform();
-    },
-    randint: function(min, max) {
+    randomNumber: function(seedValue, min, max) {
 	// Equally probable integer values between min and max (inclusive)
-	return Math.min(max, Math.floor( min + (max-min+1)*uniform() ));
+	// If min is omitted, equally probable integer values between 1 and max
+	// If both omitted, value uniformly distributed between 0.0 and 1.0 (<1.0)
+	if (isNaN(min))
+	    return uniform(seedValue);
+	else {
+	    if (isNaN(max)) {
+		max = min;
+		min = 1;
+	    }
+	    return Math.min(max, Math.floor( min + (max-min+1)*uniform(seedValue) ));
+	}
     }
   };
 }());
 
-
-// Javascript code execution
-var consoleOut = function() {};
-if (window.console && window.console.log)
-    consoleOut = function() {window.console.log.apply(window.console, arguments)};
-
-function execJS(code, outCallback, errCallback) {
-    // Evaluate JS expression
-    try {
-	outCallback(''+eval(code));
-    } catch(err) {
-	errCallback(''+err);
-    }
-}
-
-// Skulpt python code exection
-function skBuiltinRead(x) {
-    if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined)
-            throw "File not found: '" + x + "'";
-    return Sk.builtinFiles["files"][x];
-}
-
-function skRunit(code, outCallback, errCallback) { 
-    var skOutBuffer = [];
-    function skOutf(text) { 
-	console.log('skOutf:', text, skOutBuffer);
-	skOutBuffer.push(text);
-    } 
-
-    Sk.pre = "output";
-    Sk.configure({output:skOutf, read:skBuiltinRead}); 
-    //(Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = 'mycanvas';
-    var myPromise = Sk.misceval.asyncToPromise(function() {
-	return Sk.importMainWithBody("<stdin>", false, code, true);
-    });
-    myPromise.then(function(mod) {
-	console.log('skSuccess:', 'success', skOutBuffer);
-	outCallback(skOutBuffer.join(''));
-	skOutBuffer = [];
-    },
-    function(err) {
-         console.log('skErr:', err.toString());
-	 errCallback(err);
-    });
-}
-
-function execCode(codeType, code, expect, callback) {
-    // callback(correct, stdout, stderr)
-    // stderr => syntax error (correct == null)
-    // If !expect then correct == null
-    // Otherwise correct = (expect == stdout)
-    console.log('execCode:', codeType, code, expect);
-
-    if (codeType == 'text/code=test') {
-	if (code.indexOf('Syntax error') > -1)
-	    callback(null, null, 'Syntax error');
-	else if (code.indexOf('Semantic error') > -1)
-	    callback(expect ? false : null, 'Incorrect output', '');
-	else if (expect)
-	    callback(expect == 'Correct output', 'Correct output', '');
-	else
-	    callback(null, 'Correct output', '');
-    } else if (codeType == 'text/code=python') {
-	if (!window.Sk) {
-	    alert('Error: Skulpt module not loaded');
-	    return;
-	}
-	skRunit(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
-    } else if (codeType == 'text/code=javascript') {
-	execJS(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
-    }
-}
-
-function execCodeOut(expect, callback, text) {
-    console.log('execCodeOut:', expect, text);
-    var correct = expect ? (expect.trim() == text.trim()) : null;
-    callback(correct, text, '');
-}
-
-function execCodeErr(callback, err) {
-    console.log('execCodeErr:', err);
-    callback(null, '', err.toString());
-}
 
 // Detect swipe events
 // Modified from https://blog.mobiscroll.com/working-with-touch-events/

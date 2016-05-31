@@ -751,11 +751,11 @@ function sessionAnswerSheet() {
 	var answerHeaders = sessionSheet.getSheetValues(1, 1, 1, copyCols)[0];
 
 	var respCols = [];
-	var extraCols = ['expect', 'correct', 'test'];
+	var extraCols = ['expect', 'score', 'plugin'];
 	for (var j=0; j<questions.length; j++) {
 	    var qprefix = 'q'+(j+1);
-	    var testCode = (questions[j].slice(0,10) == 'text/code=');
-	    var inlineJS = /^=(\w+)\(\)/.exec(answers[j]);
+	    var pluginResponse = /^(\w+).response()\(\)/.exec(answers[j]);
+	    var inlineJS = /^(\w+).expect()\(\)/.exec(answers[j]);
 	    var respColName = qprefix;
 	    if (answers[j] && !inlineJS) {
 		if (questions[j] == 'choice')
@@ -767,10 +767,10 @@ function sessionAnswerSheet() {
 	    respCols.push(answerHeaders.length);
 	    if (inlineJS)
 		answerHeaders.push(qprefix+'_expect');
-	    if (answers[j] || testCode)
-		answerHeaders.push(qprefix+'_correct');
-	    if (testCode)
-		answerHeaders.push(qprefix+'_test');
+	    if (answers[j] || pluginResponse)
+		answerHeaders.push(qprefix+'_score');
+	    if (pluginResponse)
+		answerHeaders.push(qprefix+'_plugin');
 	}
 	Logger.log('ansHeaders: '+answerHeaders);
 	var ansHeaderCols = {};

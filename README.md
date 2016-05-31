@@ -849,9 +849,43 @@ Notes:
 
 ## Interactive numerical response question
 
-What is the square root of `=sqrtNumber();6.25`?
+What is the square root of `=sqrtTest.number();6.25`?
 
-Answer: `=sqrtAnswer();2.5 +/- 0.1`
+
+PluginDef: sqrtTest = {
+// Sample code for embedding Javascript formulas ("macros") in questions and answers.
+// Plugin object sqrtTest is automatically attached to global object SlidocPlugins
+// Special function init is called for each slide. 
+// Define formulas as functions in the plugin object.
+// Special function expect should return the expected answer. 
+// Use this.pluginId for a slide-specific ID.
+// Use this.randomNumber() to generate uniform random number between 0 and 1.
+// Use this.randomNumber(min, max) to pick equally probable integer values between min and max (inclusive).
+// (Random number choices will only change if the session is reset.)
+// Define any persistent objects after the plugin object (in an anonymous namespace). 
+//
+    init: function() {
+	    console.log('sqrtTest.init:', this.pluginId);
+  	    // Pick a random integer between 2 and 19, and then divide by 2 
+	    var randInt = this.randomNumber(2,19);
+	    randVals[this.pluginId] = (0.5*randInt).toFixed(1);
+    },
+
+    number: function() {
+	    console.log('sqrtTest.number:', this.pluginId, randVals[this.pluginId]);
+	    return (randVals[this.pluginId]*randVals[this.pluginId]).toFixed(2);
+    },
+
+    expect: function() {
+	    console.log('sqrtTest.expect:', this.pluginId, randVals[this.pluginId]);
+	    return randVals[this.pluginId]+' +/- '+'0.1';
+    }
+}
+var randVals = {}; // Optional persistent object
+PluginEnd:
+
+
+Answer: sqrtTest.expect();2.5 +/- 0.1
 
 Concepts: questions, numeric response; questions, formulas; questions, randomized
 
@@ -859,43 +893,11 @@ Notes: An optional error range may be provided after `+/-`.
 
 Embedded javascript functions may be used as formulas, using the notation
 
-    =function_name()
+    =plugin_name.func_name()
 
 To display a default reference value, append it, separated by a
 semicolon (`;`). View the raw Markdown text for this document to see
 the embedded javascript code that randomizes the question.
-
-<script>
-// Sample code for embedding Javascript formulas ("macros") in questions and answers.
-// Use anonymous function wrapper to save any persistent values.
-// Define formulas as function attributes attached to global object SlidocFormulas.
-// First argument to formula function is the slideId string.
-// For answers, there is also second argument, the question attributes object.
-// Use SlidocRandom.rand() to generate uniform random number between 0 and 1.
-// Use SlidocRandom.randint() to pick equally probable integer values between min and max (inclusive).
-// (Random number choices will only change if the session is reset.)
-//
-(function() {
-  var randVals = {}; // Optional persistent value (do not use SlidocRandom here)
-
-  SlidocFormulas.ready = function(session) {} // Optional initialization; called only once
-
-  SlidocFormulas.sqrtNumber = function(slideId) 
-  {
-  	// Pick a random integer between 2 and 19, and then divide by 2
-	var randInt = SlidocRandom.randint(2,19);
-	randVals[slideId] = (0.5*randInt).toFixed(1);
-	console.log('SlidocFormulas.sqrtNumber:', slideId, SlidocRandom.getSeed(), randVals[slideId]);
-	return (randVals[slideId]*randVals[slideId]).toFixed(2);
-  }
-
-  SlidocFormulas.sqrtAnswer = function(slideId, questionAttrs)
-  {
-	console.log('SlidocFormulas.sqrtAnswer:', slideId, questionAttrs);
-	return randVals[slideId]+' +/- '+'0.1';
-  }
-})();
-</script>
 
 ---
 
