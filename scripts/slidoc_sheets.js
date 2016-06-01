@@ -520,7 +520,7 @@ function handleResponse(evt) {
 			    }
 			    modValue = colValue;
 			} else {
-			    if (rowValues[j] !== colValue)
+			    if (rowValues[headerColumn-1] !== colValue)
 				throw("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'");
 			}
 			if (modValue !== null) {

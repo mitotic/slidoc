@@ -646,9 +646,10 @@ class SlidocRenderer(MathRenderer):
         self.block_input_counter = 0
         self.block_test_counter = 0
         self.block_output_counter = 0
-        self.load_python = False
         self.render_markdown = False
         self.plugin_defs = {}
+        self.plugin_loads = set()
+        self.load_python = False
 
     def _new_slide(self):
         self.slide_number += 1
@@ -694,6 +695,9 @@ class SlidocRenderer(MathRenderer):
             
         if 'inline_js' in self.options['config'].strip:
             return '<code>%s</code>' % (mistune.escape('='+js_func+'()' if text is None else text))
+
+        self.plugin_loads.add(plugin_name)
+
         slide_id = self.get_slide_id()
         classes = 'slidoc-inline-js'
         if slide_id:
@@ -1060,6 +1064,9 @@ class SlidocRenderer(MathRenderer):
                                 'plugin_id': slide_id+'-plugin-'+plugin_name }
                 html_prefix += ('<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-slide-id="%(slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">'+plugin_def.get('Body', '')+'</div><!--%(plugin_id)s-body-->') % plugin_params
             
+        if plugin_name:
+            self.plugin_loads.add(plugin_name)
+
         qtype = ''
         num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
         if num_match and text.lower() != 'e':
@@ -1486,13 +1493,15 @@ def parse_plugin(name, text):
         part = ''
     return plugin_def
 
-def plugin_heads(plugin_defs):
+def plugin_heads(plugin_defs, plugin_loads):
     if not plugin_defs:
         return ''
     plugin_list = plugin_defs.keys()
     plugin_list.sort()
     plugin_code = []
     for plugin_name in plugin_list:
+        if plugin_name not in plugin_loads:
+            continue
         plugin_code.append('\n')
         plugin_head = plugin_defs[plugin_name].get('Head', '') 
         if plugin_head:
@@ -1523,11 +1532,11 @@ def process_input(input_files, config_dict):
                  'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'index_sheet': INDEX_SHEET, 'indexFields':Index_fields,
-                 'sessionFields':Manage_fields+Session_fields, 'features': {}}
+                 'sessionFields':Manage_fields+Session_fields, 'features': {} }
 
     js_params['gradeFields'] = []
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option for this
-        
+
     if config.index_files:
         # Separate files
         config.separate = True
@@ -1608,7 +1617,7 @@ def process_input(input_files, config_dict):
         abort("Destination directory %s does not exist" % config.dest_dir)
     dest_dir = config.dest_dir+"/" if config.dest_dir else ''
     templates = {}
-    for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_google.js',
+    for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_google.js', 'doc_test.js',
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
@@ -1619,13 +1628,16 @@ def process_input(input_files, config_dict):
     else:
         custom_css = md2md.read_file(config.css) if config.css else templates['doc_custom.css']
         css_html = '<style>\n%s\n%s</style>\n' % (custom_css, inc_css)
-    gd_html = ''
+
+    add_scripts = ''
+    if config.test_script:
+        add_scripts += '\n<script>\n%s</script>\n' % templates['doc_test.js']
     if config.google_docs:
-        gd_html += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
+        add_scripts += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
         if js_params['gd_client_id']:
-            gd_html += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
+            add_scripts += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
-            gd_html += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
+            add_scripts += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
 
     answer_elements = {}
     for suffix in SlidocRenderer.content_suffixes:
@@ -1634,11 +1646,12 @@ def process_input(input_files, config_dict):
         answer_elements[suffix] = 1;
     js_params['answer_elements'] = answer_elements
 
-    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
+    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + add_scripts
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
     comb_plugin_defs = {}
+    comb_plugin_loads = set()
     fnames = []
     for f in input_files:
         fcomp = os.path.splitext(os.path.basename(f.name))
@@ -1758,7 +1771,7 @@ def process_input(input_files, config_dict):
                     break
                 fprefix = fprefix[:-1]
 
-        filenumber = j+1
+        filenumber = 1 if config.pace else j+1
 
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
@@ -1783,6 +1796,7 @@ def process_input(input_files, config_dict):
         flist.append( (fname, outname, fheader, file_toc) )
         
         comb_plugin_defs.update(renderer.plugin_defs)
+        comb_plugin_loads.update(renderer.plugin_loads)
         math_in_file = renderer.render_markdown or (r'\[' in md_text and r'\]' in md_text) or (r'\(' in md_text and r'\)' in md_text)
         if math_in_file:
             math_found = True
@@ -1800,7 +1814,7 @@ def process_input(input_files, config_dict):
         if config.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
-            md_prefix = chapter_prefix(j+1, 'slidoc-reg-chapter', hide=hide_chapters)
+            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=hide_chapters)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -1809,9 +1823,9 @@ def process_input(input_files, config_dict):
             else:
                 file_plugin_defs = base_plugin_defs.copy()
                 file_plugin_defs.update(renderer.plugin_defs)
-                file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + gd_html
+                file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + add_scripts
 
-                head = file_head_html + plugin_heads(file_plugin_defs) + (mid_template % mid_params) + body_prefix
+                head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html):
                     # Still some missing reference numbers; output file later
@@ -2029,7 +2043,7 @@ def process_input(input_files, config_dict):
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
-        md2md.write_file(dest_dir+combined_file, Html_header, head_html+plugin_heads(all_plugin_defs),
+        md2md.write_file(dest_dir+combined_file, Html_header, head_html+plugin_heads(all_plugin_defs, comb_plugin_loads),
                           mid_template % comb_params, body_prefix,
                          '\n'.join(combined_html), Html_footer)
         print('Created combined HTML file in '+combined_file, file=sys.stderr)
@@ -2170,6 +2184,7 @@ parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
+parser.add_argument('--test_script', help='Enable test script', action="store_true", default=None)
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
 if __name__ == '__main__':
