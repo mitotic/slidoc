@@ -13,7 +13,7 @@
 //
 // var TestScripts = {};
 // TestScripts.basic = [
-//   ['ready', 0, 0, 'next'],
+//   ['ready'],
 //   ['+loginPrompt', 0, 500, 'login'],
 //   ['+lateTokenPrompt', 0, 0, 'lateToken', ['none']],
 //   ['initSession', 0, 0, 'reset'],

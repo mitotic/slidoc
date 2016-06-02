@@ -571,8 +571,9 @@ class SlidocRenderer(MathRenderer):
     header_attr_re = re.compile(r'^.*?(\s*\{\s*(#\S+)?([^#\}]*)?\s*\})\s*$')
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
+    ansprefix_template = '''<span id="%(sid)s-answer-prefix" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
-  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly">Answer:</span>
+  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly" data-qnumber="%(qno)d">Answer:</span>
   <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
   <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
@@ -1152,9 +1153,11 @@ class SlidocRenderer(MathRenderer):
         if self.slide_block_output:
             self.questions[-1].update(output=self.slide_block_output)
 
+        id_str = self.get_slide_id()
+        ans_params = { 'sid': id_str, 'qno': len(self.questions)}
         if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
-            return html_prefix+name.capitalize()+':'+'<p></p>\n'
+            return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
         hide_answer = self.options['config'].hide or self.options['config'].pace
         if len(self.slide_block_test) != len(self.slide_block_output):
@@ -1163,9 +1166,8 @@ class SlidocRenderer(MathRenderer):
 
         if not hide_answer:
             # No hiding of correct answers
-            return html_prefix+name.capitalize()+': '+correct_html+'<p></p>\n'
+            return html_prefix+(self.ansprefix_template % ans_params)+': '+correct_html+'<p></p>\n'
 
-        id_str = self.get_slide_id()
         self.render_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
 
         ans_classes = ''
@@ -1178,13 +1180,11 @@ class SlidocRenderer(MathRenderer):
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'
 
-        ans_params = { 'sid': id_str,
-                       'qno': len(self.questions),
-                       'ans_classes': ans_classes,
-                       'inp_type': 'number' if self.cur_qtype == 'number' else 'text',
-                       'explain': ('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if explain_answer else ''}
+        ans_params.update(ans_classes=ans_classes,
+                        inp_type='number' if self.cur_qtype == 'number' else 'text',
+                        explain=('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if explain_answer else '')
 
-        html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s" data-qnumber="%(qno)d">\n'''+self.answer_template
+        html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s">\n'''+self.answer_template
 
         if grade_response:
             html_template += self.grading_template     # Hidden later by doc_include.js, if zero gweight
@@ -1547,7 +1547,11 @@ def process_input(input_files, config_dict):
         config.qindex = comps[2]+'.html' if len(comps) > 2 and comps[2] else ''
     elif not config.pace:
         # Combined file (cannot be paced)
-        js_params['sessionName'] = out_name
+        if len(input_files) > 1 and not config.outfile:
+            config.separate = True
+            combined_file = ''        
+        else:
+            js_params['sessionName'] = out_name
 
     hide_chapters = False
     if config.pace:
@@ -1771,7 +1775,7 @@ def process_input(input_files, config_dict):
                     break
                 fprefix = fprefix[:-1]
 
-        filenumber = 1 if config.pace else j+1
+        filenumber = j+1
 
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
@@ -2176,7 +2180,7 @@ parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, i
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
 parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-parser.add_argument('--outfile', metavar='NAME', help='Base name of HTML output file')
+parser.add_argument('--outfile', metavar='NAME', help='Base name of combined HTML output file')
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
