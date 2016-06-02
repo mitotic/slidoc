@@ -87,12 +87,11 @@ create a sub-directory, say `Publish`. In that directory, type:
 
 The above command will combine all the lectures, table of contents and
 index into a single file `all.html`, which can be published on the web
-or shared. (If `--outfile` is not specified, the output file name is
-derived from the first input file.)
+or shared.
 
-Alternatively, the `--index_files=toc,ind,qind` option can be used to
-generate separate HTML files.  This will create files named
-`prefix-lecture01.html` and so on in the `Publish`
+Alternatively, the `--index_files=toc,ind,qind` option can be used
+instead of `--outfile` to generate separate HTML files.  This will
+create files named `prefix-lecture01.html` and so on in the `Publish`
 directory. Additionally, it will create three files, `toc.html` (table
 of contents) , `ind.html` (concept index), and `qind.html` (question
 index). These are static web files which can be served from any web
@@ -104,6 +103,9 @@ hosting services like [Site44](https://www.site44.com) and
 worth considering.
 
 Concepts: lecture management; index, concepts
+
+Notes: The `--index_files=,ind,` option can be used with null arguments
+to control generation of index files.
 
 ---
 

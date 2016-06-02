@@ -1,6 +1,11 @@
 code = {
 
-    create: function() {Slidoc.log('SlidocPlugins.code.create:');},
+    setup: { initSetup: function() {Slidoc.log('SlidocPlugins.code.setup.initSetup:');},
+	     initSlide: function(slideId) {Slidoc.log('SlidocPlugins.code.setup.initSlide:', slideId);}
+	   },
+
+    global: { initGlobal: function() {Slidoc.log('SlidocPlugins.code.global.initGlobal:');}
+	   },
 
     disable: function() {
 	Slidoc.log('SlidocPlugins.code.disable:');
@@ -19,14 +24,14 @@ code = {
 
     response: function (retry, callback) {
 	Slidoc.log('SlidocPlugins.code.response:', this, retry, !!callback);
-	var inputValue = this.def.getInput(this.pluginId);
+	var inputValue = this.getInput(this.pluginId);
 	checkCode(this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
     checkCode: function (elem) {
 	Slidoc.log('SlidocPlugins.code.checkCode:', elem);
-	checkCode(this.slideId+'', this.qattributes, this.def.getInput(this.pluginId), true,
+	checkCode(this.slideId+'', this.qattributes, this.getInput(this.pluginId), true,
 		  checkCodeCallback.bind(this) );
     },
 
@@ -252,7 +257,7 @@ function execCodeErr(callback, err) {
 </style>
 */
 /* PluginBody:
-<button id="%(plugin_id)s-check-button" class="slidoc-clickable %(plugin_label)s-check-button" onclick="SlidocPluginManager.call('%(plugin_name)s','checkCode','%(slide_id)s',this);">Check</button>
+<button id="%(plugin_id)s-check-button" class="slidoc-clickable %(plugin_label)s-check-button" onclick="SlidocPluginManager.action('%(plugin_name)s','checkCode','%(slide_id)s',this);">Check</button>
 <textarea id="%(plugin_id)s-textarea" class="%(plugin_label)s-textarea" cols="60" rows="5"></textarea>
 <pre><code id="%(plugin_id)s-output" class="%(plugin_label)s-output"></code></pre>
 */

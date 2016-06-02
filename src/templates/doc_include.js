@@ -33,7 +33,10 @@ Sliobj.firstTime = true;
 Sliobj.closePopup = null;
 Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
+Sliobj.pluginSetup = null;
 Sliobj.pluginData = null;
+
+Sliobj.debugging = true;
 
 Sliobj.testScript = null;
 Sliobj.testStep = getParameter('teststep');
@@ -77,6 +80,11 @@ Slidoc.logDump = function (regexp) {
 }
 
 Slidoc.log = function() {
+    if (Sliobj.debugging) {
+	console.log.apply(console, arguments);
+	return;
+    }
+    
     var args = Array.prototype.slice.call(arguments);
     var match = /^([\.\w]+)(:\s*|\s+|$)(ERROR|WARNING)?/i.exec(''+arguments[0]);
     if (match && match[3] && match[3].toUpperCase() == 'ERROR') {
@@ -89,6 +97,24 @@ Slidoc.log = function() {
     if ( (Sliobj.logRe && Sliobj.logRe.exec(''+arguments[0])) || !match ||
 		    (match && match[3] && (match[3].toUpperCase() == 'ERROR' || match[3].toUpperCase() == 'WARNING')) )
 	console.log.apply(console, arguments);
+}
+
+function copyAttributes(oldObj, newObj, excludeAttributes) {
+    newObj = newObj || {};
+    var keys = Object.keys(oldObj);
+    for (var j=0; j<keys.length; j++) {
+	var key = keys[j];
+	if (excludeAttributes && excludeAttributes.indexOf(key) >= 0)
+	    continue;
+	newObj[key] = oldObj[key];
+    }
+    return newObj;
+}
+
+function object2Class(obj, excludeAttributes) {
+    var anonFunc = function () {};
+    copyAttributes(obj, anonFunc.prototype, excludeAttributes);
+    return anonFunc;
 }
 
 Sliobj.sheets = {};
@@ -172,7 +198,6 @@ function setupCache(auth, callback) {
     }
 }
 
-var debugAbort = true;
 var sessionAborted = false;
 function sessionAbort(err_msg, err_trace) {
     if (sessionAborted)
@@ -180,8 +205,8 @@ function sessionAbort(err_msg, err_trace) {
     sessionAborted = true;
     localDel('auth');
     try { Slidoc.classDisplay('slidoc-slide', 'none'); } catch(err) {}
-    alert((debugAbort ? 'DEBUG: ':'')+err_msg);
-    if (!debugAbort)
+    alert((Sliobj.debugging ? 'DEBUG: ':'')+err_msg);
+    if (!Sliobj.debugging)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
     throw(err_msg);
 }
@@ -192,7 +217,7 @@ function abortOnError(boundFunc) {
 	return boundFunc();
     } catch(err) {
 	console.log("abortOnError: ERROR", err, err.stack);
-	sessionAbort('abortOnError: ERROR '+err, err.stack);
+	sessionAbort('abortOnError: '+err, err.stack);
     }
 }
 
@@ -251,8 +276,9 @@ document.onreadystatechange = function(event) {
     return abortOnError(onreadystateaux);
 }
 
-function checkPlugins() {
-    Slidoc.log('checkPlugins:');
+function setupPlugins() {
+    Slidoc.log('setupPlugins:');
+    Sliobj.pluginSetup = {};
     Sliobj.activePlugins = {};
     Sliobj.pluginList = [];
     var allBodies = document.getElementsByClassName('slidoc-plugin-body');
@@ -263,18 +289,21 @@ function checkPlugins() {
 	if (!(pluginName in Sliobj.activePlugins)) {
 	    Sliobj.pluginList.push(pluginName);
 	    Sliobj.activePlugins[pluginName] = Sliobj.pluginList.length;
+	    var pluginInstance = createPluginInstance(pluginName, '', true);
+	    SlidocPluginManager.optCall(pluginInstance, 'initSetup');
+	} else {
+	    var pluginInstance = Sliobj.pluginSetup[pluginName];
 	}
 
 	var slide_id = allBodies[j].dataset.slideId;
-	if (SlidocPluginManager.hasAction(pluginName, 'create'))
-	    SlidocPluginManager.call(pluginName, 'create', slide_id);
+	SlidocPluginManager.optCall(pluginInstance, 'initSlide', slide_id);
     }
 }
 
 var PagedownConverter = null;
 function onreadystateaux() {
     Slidoc.log('onreadystateaux:');
-    checkPlugins();
+    setupPlugins();
     if (window.Markdown) {
 	PagedownConverter = new Markdown.getSanitizingConverter();
 	if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
@@ -641,73 +670,111 @@ function getQuestionAttrs(slide_id) {
     return attr_vals ? attr_vals[question_number-1] : null;
 }
 
-SlidocPluginManager.hasAction = function (pluginName, action) {
-    var pluginDef = SlidocPlugins[pluginName];
-    if (!pluginDef)
-	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
-    return action in pluginDef;
+SlidocPluginManager.optCall = function (pluginInstance, action) //... extra arguments
+{
+    if (action in pluginInstance)
+	return SlidocPluginManager.invoke.apply(null, arguments);
+    else
+	return null;	 
 }
 
-function makePluginThis(pluginName, slide_id, nosession) {
-    Slidoc.log('makePluginThis:', pluginName, slide_id, nosession);
-    var pluginDef = SlidocPlugins[pluginName];
-    if (!pluginDef)
-	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
+SlidocPluginManager.action = function (pluginName, action, slide_id) //... extra arguments
+{
+    var extraArgs = Array.prototype.slice.call(arguments).slice(3);
+    Slidoc.log('SlidocPluginManager.action:', pluginName, action, slide_id, extraArgs);
+    if (!(pluginName in Sliobj.activePlugins))
+	throw('INTERNAL ERROR Plugin '+pluginName+' not activated');
 
-    var qattributes = slide_id ? getQuestionAttrs(slide_id) : null;
-    var pluginId = slide_id ? (slide_id + '-plugin-' + pluginName) : '';
-    var pluginThis = {adminState: Sliobj.adminState,
-		      sessionName: Sliobj.sessionName,
-		      slideId: slide_id || '',
-		      pluginId: pluginId,
-		      qattributes: qattributes || null,
-		      def: pluginDef,
-		      global: null,
-		      persist: null};
-    if (!nosession) {
-	if (!(pluginName in Sliobj.session.plugins))
-	    Sliobj.session.plugins[pluginName] = {};
-	pluginThis.persist = Sliobj.session.plugins[pluginName];
+    var pluginInstance = Sliobj.pluginData[pluginName][slide_id || '']
+    if (!(pluginName in Sliobj.activePlugins))
+	throw('INTERNAL ERROR Plugin '+pluginName+" instance not found for slide '"+slide_id+"'");
 
-	if (!slide_id) {
-	    // Global seed for all instances of the plugin
-	    pluginThis.randomSeed = Sliobj.session.randomSeed + Sliobj.activePlugins[pluginName];
-	    pluginThis.randomNumber = SlidocRandom.randomNumber.bind(null, pluginThis.randomSeed);
-	} else {
-	    // Seed for each slide instance of the plugin
-	    pluginThis.global = Sliobj.pluginData[pluginName][''];
-	    var comps = parseSlideId(slide_id);
-	    pluginThis.randomSeed = pluginThis.global.randomSeed + 256*((1+comps[1])*256 + comps[2]);
-	    pluginThis.randomNumber = SlidocRandom.randomNumber.bind(null, pluginThis.randomSeed);
-	}
-
-    }
-    return pluginThis;
+    return SlidocPluginManager.invoke.apply(null, [pluginInstance, action].concat(extraArgs));
 }
 
-SlidocPluginManager.call = function (pluginName, action, slide_id) //... extra arguments
-{   // action == 'create' inserts/modified DOM elements called per slide after document is ready
-    // action == 'globalInit' resets global plugin properties for all slides (called at start/switch of session)
+SlidocPluginManager.invoke = function (pluginInstance, action) //... extra arguments
+{   // action == 'initSetup' initial setup after document is ready
+    // action == 'initSlide' inserts/modified DOM elements called per slide after document is ready
+    // action == 'initGlobal' resets global plugin properties for all slides (called at start/switch of session)
     // action == 'init' resets plugin properties for each slide (called at start/switch of session)
     // action == 'display' displays recorded user response (called at start/switch of session for each question)
     // action == 'disable' disables plugin (after user response has been recorded)
     // action == 'expect' returns expected correct answer
     // action == 'response' records user response and uses callback to return a pluginResp object of the form:
     //    {name:pluginName, score:1/0/0.75/.../null, invalid: invalid_msg, output:output, tests:0/1/2}
-    var extraArgs = Array.prototype.slice.call(arguments).slice(3);
-    Slidoc.log('SlidocPluginManager.call:', pluginName, action, slide_id, extraArgs);
-    var pluginThis = (action == 'create') ? makePluginThis(pluginName, '', true) : Sliobj.pluginData[pluginName][slide_id || ''];
-    if (!(action in pluginThis.def))
-	throw('ERROR Action '+action+' not defined for plugin '+pluginName+' not found');
 
-    if (!(pluginName in Sliobj.activePlugins))
-	throw('INTERNAL ERROR Plugin '+pluginName+' not activated');
+    var extraArgs = Array.prototype.slice.call(arguments).slice(2);
+    Slidoc.log('SlidocPluginManager.invoke:', pluginInstance, action, extraArgs);
+
+    if (!(action in pluginInstance))
+	throw('ERROR Plugin action '+pluginInstance.name+'.'+action+' not defined');
 
     try {
-	return SlidocPlugins[pluginName][action].apply(pluginThis, extraArgs);
+	return pluginInstance[action].apply(pluginInstance, extraArgs);
     } catch(err) {
-	sessionAbort('ERROR in calling plugin '+pluginName+'.'+action+': '+err, err.stack);
+	sessionAbort('ERROR in invoking plugin '+pluginInstance.name+'.'+action+': '+err, err.stack);
     }
+}
+
+function createPluginInstance(pluginName, slide_id, nosession) {
+    Slidoc.log('createPluginInstance:', pluginName, slide_id, nosession);
+    var pluginDef = SlidocPlugins[pluginName];
+    if (!pluginDef)
+	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
+
+    var defCopy;
+    if (nosession)
+	defCopy = pluginDef.setup || {};
+    else if (!slide_id)
+	defCopy = pluginDef.global || {};
+    else
+	defCopy = copyAttributes(pluginDef, ['setup', 'global']);
+    defCopy.name = pluginName;
+    defCopy.adminState = Sliobj.adminState;
+    defCopy.sessionName = Sliobj.sessionName;
+    if (nosession) {
+	defCopy.setup = null;
+	defCopy.global = null;
+	defCopy.persist = null;
+    } else {
+	defCopy.setup = Sliobj.pluginSetup[pluginName];
+
+	if (!(pluginName in Sliobj.pluginData))
+	    Sliobj.pluginData[pluginName] = {};
+
+	if (!(pluginName in Sliobj.session.plugins))
+	    Sliobj.session.plugins[pluginName] = {};
+
+	defCopy.persist = Sliobj.session.plugins[pluginName];
+
+	if (!slide_id) {
+	    // Global seed for all instances of the plugin
+	    defCopy.global = null;
+	    defCopy.slideId = '';
+	    defCopy.randomSeed = Sliobj.session.randomSeed + Sliobj.activePlugins[pluginName];
+	    defCopy.randomNumber = SlidocRandom.randomNumber.bind(null, defCopy.randomSeed);
+	} else {
+	    // Seed for each slide instance of the plugin
+	    defCopy.global = Sliobj.pluginData[pluginName][''];
+	    defCopy.slideId = slide_id;
+	    var comps = parseSlideId(slide_id);
+	    defCopy.randomSeed = defCopy.global.randomSeed + 256*((1+comps[1])*256 + comps[2]);
+	    defCopy.randomNumber = SlidocRandom.randomNumber.bind(null, defCopy.randomSeed);
+	    defCopy.qattributes = getQuestionAttrs(slide_id);
+	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
+	}
+
+    }
+    var pluginClass = object2Class(defCopy);
+    var pluginInstance = new pluginClass();
+    if (nosession)
+	Sliobj.pluginSetup[pluginName] = pluginInstance;
+    else if (!slide_id)
+	Sliobj.pluginData[pluginName][''] = pluginInstance;
+    else
+	Sliobj.pluginData[pluginName][slide_id] = pluginInstance;
+
+    return pluginInstance;
 }
 
 function clearAnswerElements() {
@@ -1108,12 +1175,9 @@ function initSessionPlugins(session) {
     Sliobj.pluginData = {};
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginName = Sliobj.pluginList[j];
-	var pluginThis = makePluginThis(pluginName);
-	Sliobj.pluginData[pluginName] = {};
-	Sliobj.pluginData[pluginName][''] = pluginThis;
-	SlidocRandom.setSeed(pluginThis.globalSeed);
-	if (SlidocPluginManager.hasAction(pluginName, 'globalInit'))
-	    SlidocPluginManager.call(pluginName, 'globalInit');
+	var pluginInstance = createPluginInstance(pluginName);
+	SlidocRandom.setSeed(pluginInstance.randomSeed);
+	SlidocPluginManager.optCall(pluginInstance, 'initGlobal');
     }
 
     var allBodies = document.getElementsByClassName('slidoc-plugin-body');
@@ -1121,17 +1185,15 @@ function initSessionPlugins(session) {
     for (var j=0; j<allBodies.length; j++)
 	allBodyIds.push(allBodies[j].id);
     allBodyIds.sort();   // Need to call init method in sequence to preserve global random number generation order
+
     for (var j=0; j<allBodyIds.length; j++) {
 	var bodyElem = document.getElementById(allBodyIds[j]);
 	var pluginName = bodyElem.dataset.plugin;
 	var slide_id = bodyElem.dataset.slideId;
-	var pluginThis = makePluginThis(pluginName, slide_id);
-	Sliobj.pluginData[pluginName][slide_id] = pluginThis;
-	SlidocRandom.setSeed(pluginThis.randomSeed);
-	if (SlidocPluginManager.hasAction(pluginName, 'init'))
-	    SlidocPluginManager.call(pluginName, 'init', slide_id);
+	var pluginInstance = createPluginInstance(pluginName, slide_id);
+	SlidocRandom.setSeed(pluginInstance.randomSeed);
+	SlidocPluginManager.optCall(pluginInstance, 'init');
     }
-
 
     var jsSpans = document.getElementsByClassName('slidoc-inline-js');
     for (var j=0; j<jsSpans.length; j++) {
@@ -1145,7 +1207,7 @@ function initSessionPlugins(session) {
 	    }
 	}
 	var comps = jsFunc.split('.');
-	var val = SlidocPluginManager.call(comps[0], comps[1], slide_id);
+	var val = SlidocPluginManager.action(comps[0], comps[1], slide_id);
 	if (val)
 	    jsSpans[j].innerHTML = val;
     }
@@ -1862,20 +1924,20 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
     if (pluginMatch) {
 	var pluginName = pluginMatch[1];
 	if (setup) {
-	    SlidocPluginManager.call(pluginName, 'display', slide_id, response, pluginResp);
+	    SlidocPluginManager.action(pluginName, 'display', slide_id, response, pluginResp);
 	    Slidoc.answerUpdate(setup, slide_id, false, response, pluginResp);
 	} else {
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries -= 1;
 
-	    var retryMsg = SlidocPluginManager.call(pluginName, 'response', slide_id,
+	    var retryMsg = SlidocPluginManager.action(pluginName, 'response', slide_id,
 				      (Sliobj.session.remainingTries > 0),
 				      Slidoc.answerUpdate.bind(null, setup, slide_id, false));
 	    if (retryMsg)
 		SlidocPluginManager.retryAnswer(retryMsg);
 	}
 	if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
-	    SlidocPluginManager.call(pluginName, 'disable', slide_id);
+	    SlidocPluginManager.action(pluginName, 'disable', slide_id);
 
     }  else {
 	var multiline = question_attrs.qtype.slice(0,5) == 'text/';
@@ -1939,7 +2001,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 	var pluginMatch = /^(\w+)\.expect\(\)(;(.+))?$/.exec(corr_answer);
 	if (pluginMatch) {
 	    var pluginName = pluginMatch[1];
-	    var val = SlidocPluginManager.call(pluginName, 'expect', slide_id);
+	    var val = SlidocPluginManager.action(pluginName, 'expect', slide_id);
 	    if (val) {
 		corr_answer = val;
 		corr_answer_html = '<code>'+corr_answer+'</code>';
@@ -2013,7 +2075,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     slideElem.classList.add('slidoc-answered-view');
 
     if (pluginResp)
-	SlidocPluginManager.call(pluginResp.name, 'disable', slide_id);
+	SlidocPluginManager.action(pluginResp.name, 'disable', slide_id);
 
     if (question_attrs.qtype.slice(0,5) == 'text/') {
 	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
@@ -2303,10 +2365,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 
 function gradeUpdate(slide_id, qnumber, updates, callback) {
     Slidoc.log('gradeUpdate: ', slide_id, qnumber, updates, !!callback);
-    var updateObj = {};
-    var keys = Object.keys(updates);
-    for (var j=0; j<keys.length; j++)
-	updateObj[keys[j]] = updates[keys[j]];
+    var updateObj = copyAttributes(updates);
     updateObj.Timestamp = null;  // Ensure that Timestamp is updated
 
     var gsheet = getSheet(Sliobj.sessionName);

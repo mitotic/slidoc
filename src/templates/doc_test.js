@@ -104,7 +104,7 @@ TestScript.prototype.reportEvent = function (eventName) {
     var action = commands[3];
     this.showStatus();
     this.curstep++;
-    Slidoc.log('TestScript.reportEvent:C ', this.curstep);
+
     if (slideNum) {
 	if (!Slidoc.getCurrentSlideId())
 	    Slidoc.slideViewStart();

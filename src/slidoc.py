@@ -267,7 +267,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
-    slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)(\n|$)')
+    slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     slidoc_weight =   re.compile(r'^ {0,3}(Weight):(.*?)(\n|$)')
     minirule =        re.compile(r'^(--) *(?:\n+|$)')
