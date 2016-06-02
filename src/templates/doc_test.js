@@ -37,7 +37,7 @@ function TestScript(activeScript, scripts) {
 Slidoc.TestScript = TestScript;
 
 TestScript.prototype.advanceStep = function () {
-    console.log('TestScript.advanceStep:');
+    Slidoc.log('TestScript.advanceStep:');
     var stepEvent = this.stepEvent;
     if (!stepEvent)
 	return false;
@@ -67,7 +67,7 @@ TestScript.prototype.reportEvent = function (eventName) {
     if (this.stepEvent)
 	this.advanceStep();
 
-    console.log('TestScript.reportEvent: ', this.curstep, eventName);
+    Slidoc.log('TestScript.reportEvent: ', this.curstep, eventName);
     var curScript = this.scripts[this.activeScript];
     while (this.curstep < curScript.length) {
 	var expectEvent = curScript[this.curstep][0];
@@ -86,7 +86,7 @@ TestScript.prototype.reportEvent = function (eventName) {
 	    break;
 	this.curstep++;
     }
-    console.log('TestScript.reportEvent2: ', this.curstep, expectName);
+    Slidoc.log('TestScript.reportEvent:B ', this.curstep, expectName);
     if (this.curstep >= curScript.length) {
 	this.activeScript = '';
 	alert("TestScript "+this.activeScript+" completed all steps");
@@ -104,7 +104,7 @@ TestScript.prototype.reportEvent = function (eventName) {
     var action = commands[3];
     this.showStatus();
     this.curstep++;
-    console.log('TestScript.reportEvent3: ', this.curstep);
+    Slidoc.log('TestScript.reportEvent:C ', this.curstep);
     if (slideNum) {
 	if (!Slidoc.getCurrentSlideId())
 	    Slidoc.slideViewStart();
@@ -129,7 +129,7 @@ TestScript.prototype.eventAction = function(commands) {
     var action = commands[3];
     var args = (commands.length > 4) ? commands[4] : null;
     var slide_id = Slidoc.getCurrentSlideId();
-    console.log('TestScript.eventAction: ', this.curstep, slideNum, delay, action, args, slide_id);
+    Slidoc.log('TestScript.eventAction: ', this.curstep, slideNum, delay, action, args, slide_id);
     try {
 	switch (action) {
 	case 'login':
@@ -206,7 +206,7 @@ TestScript.prototype.eventAction = function(commands) {
 	}
     } catch(err) {
 	this.activeScript = '';
-	console.log('TestScript.eventAction: ERROR '+err, err.stack);
+	Slidoc.log('TestScript.eventAction: ERROR '+err, err.stack);
 	alert('ERROR in eventAction: '+err);
     }
     return null;

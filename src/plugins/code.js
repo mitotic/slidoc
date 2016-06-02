@@ -1,9 +1,9 @@
 code = {
 
-    create: function() {console.log('SlidocPlugins.code.create:');},
+    create: function() {Slidoc.log('SlidocPlugins.code.create:');},
 
     disable: function() {
-	console.log('SlidocPlugins.code.disable:');
+	Slidoc.log('SlidocPlugins.code.disable:');
 	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
 	var checkButton = document.getElementById(this.pluginId+'-check-button');
 	textAreaElem.disabled = 'disabled';
@@ -11,21 +11,21 @@ code = {
     },
 
     display: function (response, pluginResp) {
-	console.log('SlidocPlugins.code.display:', this, response, pluginResp);
+	Slidoc.log('SlidocPlugins.code.display:', this, response, pluginResp);
 	var textareaElem = document.getElementById(this.pluginId+'-textarea');
 	textareaElem.value = response || '';
 	codeResponseCallback.bind(this)(false, null, response, pluginResp);
     },
 
     response: function (retry, callback) {
-	console.log('SlidocPlugins.code.response:', this, retry, !!callback);
+	Slidoc.log('SlidocPlugins.code.response:', this, retry, !!callback);
 	var inputValue = this.def.getInput(this.pluginId);
 	checkCode(this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
     checkCode: function (elem) {
-	console.log('SlidocPlugins.code.checkCode:', elem);
+	Slidoc.log('SlidocPlugins.code.checkCode:', elem);
 	checkCode(this.slideId+'', this.qattributes, this.def.getInput(this.pluginId), true,
 		  checkCodeCallback.bind(this) );
     },
@@ -37,7 +37,7 @@ code = {
 }
 
 function checkCodeCallback(pluginResp) {
-    console.log('checkCodeCallback:', this, pluginResp)
+    Slidoc.log('checkCodeCallback:', this, pluginResp)
     var outputElem = document.getElementById(this.pluginId+'-output');
     var ntest = this.qattributes.test ? this.qattributes.test.length : 0;
     var msg = 'Checked';
@@ -60,7 +60,7 @@ function checkCodeCallback(pluginResp) {
 }
 
 function codeResponseCallback(retry, callback, response, pluginResp) {
-    console.log('codeResponseCallback:', this, retry, !!callback, response, pluginResp)
+    Slidoc.log('codeResponseCallback:', this, retry, !!callback, response, pluginResp)
     var outputElem = document.getElementById(this.pluginId+'-output');
     if (pluginResp) {
 	var ntest = this.qattributes.test ? this.qattributes.test.length : 0;
@@ -96,10 +96,10 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
     // Execute code and compare output to expected output
     // callback( {name:'code', score:1/0/null, invalid: invalid_msg, output:output, tests:0/1/2} )
     // invalid_msg => syntax error when executing user code
-    console.log('checkCode:', slide_id, question_attrs, user_code, checkOnly);
+    Slidoc.log('checkCode:', slide_id, question_attrs, user_code, checkOnly);
 
     if (!question_attrs.test || !question_attrs.output) {
-	console.log('checkCode: Test/output code checks not found in '+slide_id);
+	Slidoc.log('checkCode: Error - Test/output code checks not found in '+slide_id);
 	return callback( {name:'code', score:null, invalid:'', output:'Not checked', tests:0} );
     }
 
@@ -111,7 +111,7 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	    // Execute all input cells
 	    var inputCell = document.getElementById('slidoc-block-input-'+j);
 	    if (!inputCell) {
-		console.log('checkCode: Input cell '+j+' not found in '+slide_id);
+		Slidoc.log('checkCode: Error - Input cell '+j+' not found in '+slide_id);
 		return callback({name:'code', score:null, invalid:'', output:'Missing input cell'+j, tests:0});
 	    }
 	    codeCells.push( inputCell.textContent.trim() );
@@ -123,13 +123,13 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
     if (checkOnly) ntest = Math.min(ntest, 1);
 
     function checkCodeAux(index, msg, score, stdout, stderr) {
-	console.log('checkCodeAux:', index, msg, score, stdout, stderr);
+	Slidoc.log('checkCodeAux:', index, msg, score, stdout, stderr);
 	if (stderr) {
-	    console.log('checkCodeAux: Error', msg, stderr);
+	    Slidoc.log('checkCodeAux: Error', msg, stderr);
 	    return callback({name:'code', score:0, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
 	}
 	if (index > 0 && !score) {
-	    console.log('checkCodeAux: Error in test cell in '+slide_id, msg);
+	    Slidoc.log('checkCodeAux: Error in test cell in '+slide_id, msg);
 	    // Do not display actual second check output (to avoid leaking test details)
 	    var outmsg = (index == 1) ? stdout : 'Second check failed!'
 	    return callback({name:'code', score:score, invalid:'', output:outmsg, tests:index-1});
@@ -139,14 +139,14 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	while (index < ntest) {
 	    var testCell = document.getElementById('slidoc-block-test-'+question_attrs.test[index]);
 	    if (!testCell) {
-		console.log('checkCodeAux: Test cell '+question_attrs.test[index]+' not found in '+slide_id);
+		Slidoc.log('checkCodeAux: Error - Test cell '+question_attrs.test[index]+' not found in '+slide_id);
 		return callback({name:'code', score:null, invalid:'', output:'Missing test cell'+(index+1), tests:index});
 	    }
 	    var testCode = testCell.textContent.trim();
 	    
 	    var outputCell = document.getElementById('slidoc-block-output-'+question_attrs.output[index]);
 	    if (!outputCell) {
-		console.log('checkCodeAux: Test output cell '+question_attrs.output[index]+' not found in '+slide_id);
+		Slidoc.log('checkCodeAux: Error - Test output cell '+question_attrs.output[index]+' not found in '+slide_id);
 		return callback({name:'code', score:null, invalid:'', output:'Missing test output'+(index+1), tests:index});
 	    }
 	    var expectOutput = outputCell.textContent.trim();
@@ -184,7 +184,7 @@ function skBuiltinRead(x) {
 function skRunit(code, outCallback, errCallback) { 
     var skOutBuffer = [];
     function skOutf(text) { 
-	console.log('skOutf:', text, skOutBuffer);
+	Slidoc.log('skOutf:', text, skOutBuffer);
 	skOutBuffer.push(text);
     } 
 
@@ -195,12 +195,12 @@ function skRunit(code, outCallback, errCallback) {
 	return Sk.importMainWithBody("<stdin>", false, code, true);
     });
     myPromise.then(function(mod) {
-	console.log('skSuccess:', 'success', skOutBuffer);
+	Slidoc.log('skSuccess:', 'success', skOutBuffer);
 	outCallback(skOutBuffer.join(''));
 	skOutBuffer = [];
     },
     function(err) {
-         console.log('skErr:', err.toString());
+         Slidoc.log('skErr:', err.toString());
 	 errCallback(err);
     });
 }
@@ -210,7 +210,7 @@ function execCode(codeType, code, expect, callback) {
     // stderr => syntax error (score == null)
     // If !expect then score == null
     // Otherwise score = 1 for (expect == stdout), 0 otherwise
-    console.log('execCode:', codeType, code, expect);
+    Slidoc.log('execCode:', codeType, code, expect);
 
     if (codeType == 'text/x-test') {
 	if (code.indexOf('Syntax error') > -1)
@@ -233,13 +233,13 @@ function execCode(codeType, code, expect, callback) {
 }
 
 function execCodeOut(expect, callback, text) {
-    console.log('execCodeOut:', expect, text);
+    Slidoc.log('execCodeOut:', expect, text);
     var score = expect ? ((expect.trim() == text.trim())?1:0) : '';
     callback(score, text, '');
 }
 
 function execCodeErr(callback, err) {
-    console.log('execCodeErr:', err);
+    Slidoc.log('execCodeErr:', err);
     callback(null, '', err.toString());
 }
 

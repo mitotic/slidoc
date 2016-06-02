@@ -39,7 +39,8 @@ Sliobj.testScript = null;
 Sliobj.testStep = getParameter('teststep');
 
 Slidoc.enableTesting = function(activeScript, scripts) {
-    Sliobj.testScript = new Slidoc.TestScript(activeScript, scripts);
+    if (Slidoc.TestScript)
+	Sliobj.testScript = new Slidoc.TestScript(activeScript, scripts);
 }
 Slidoc.reportEvent = function (eventName) {
     if (Sliobj.testScript)
@@ -53,6 +54,41 @@ Slidoc.advanceStep = function () {
     if (Sliobj.testStep && Sliobj.testScript && Sliobj.testScript.stepEvent)
 	return Sliobj.testScript.advanceStep();
     return false;
+}
+
+Sliobj.logMax = 200;
+Sliobj.logQueue = [];
+Sliobj.logRe = null;
+
+Slidoc.logMatch = function (regexp) {
+    Sliobj.logRe = regexp || null;
+}
+
+Slidoc.logDump = function (regexp) {
+    for (var j=0; j<Sliobj.logQueue.length; j++) {
+	var args = JSON.parse(Sliobj.logQueue[j]);
+	if (!regexp || regexp.exec(args[0])) {
+	    args[0] = (regexp ? '+ ':'- ') + args[0];
+	    console.log.apply(console, args);
+	}
+    }
+    if (!regexp)
+	Sliobj.logQueue = [];
+}
+
+Slidoc.log = function() {
+    var args = Array.prototype.slice.call(arguments);
+    var match = /^([\.\w]+)(:\s*|\s+|$)(ERROR|WARNING)?/i.exec(''+arguments[0]);
+    if (match && match[3] && match[3].toUpperCase() == 'ERROR') {
+	Slidoc.logDump();
+    } else {
+	Sliobj.logQueue.push(JSON.stringify(args));
+	if (Sliobj.logQueue.length > Sliobj.logMax)
+	    Sliobj.logQueue.shift();
+    }
+    if ( (Sliobj.logRe && Sliobj.logRe.exec(''+arguments[0])) || !match ||
+		    (match && match[3] && (match[3].toUpperCase() == 'ERROR' || match[3].toUpperCase() == 'WARNING')) )
+	console.log.apply(console, arguments);
 }
 
 Sliobj.sheets = {};
@@ -77,10 +113,10 @@ function getSheet(name) {
 
 function setupCache(auth, callback) {
     // Cache all rows for grading
-    console.log('setupCache:', auth);
+    Slidoc.log('setupCache:', auth);
     var gsheet = getSheet(Sliobj.sessionName);
     function allCallback(allRows, retStatus) {
-	console.log('allCallback:', allRows, retStatus);
+	Slidoc.log('allCallback:', allRows, retStatus);
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -208,7 +244,7 @@ if (resetParam) {
 }
 
 document.onreadystatechange = function(event) {
-    console.log('onreadystatechange:', document.readyState);
+    Slidoc.log('onreadystatechange:', document.readyState);
     if (document.readyState != "interactive" || !document.body)
 	return;
     Slidoc.reportEvent('ready');
@@ -216,7 +252,7 @@ document.onreadystatechange = function(event) {
 }
 
 function checkPlugins() {
-    console.log('checkPlugins:');
+    Slidoc.log('checkPlugins:');
     Sliobj.activePlugins = {};
     Sliobj.pluginList = [];
     var allBodies = document.getElementsByClassName('slidoc-plugin-body');
@@ -237,7 +273,7 @@ function checkPlugins() {
 
 var PagedownConverter = null;
 function onreadystateaux() {
-    console.log('onreadystateaux:');
+    Slidoc.log('onreadystateaux:');
     checkPlugins();
     if (window.Markdown) {
 	PagedownConverter = new Markdown.getSanitizingConverter();
@@ -334,12 +370,12 @@ Slidoc.userLogout = function () {
 }
 
 Slidoc.userLogin = function () {
-    console.log('Slidoc.userLogin:');
+    Slidoc.log('Slidoc.userLogin:');
     GService.gprofile.promptUserInfo(GService.gprofile.auth.id, '', Slidoc.userLoginCallback.bind(null, null));
 }
 
 Slidoc.userLoginCallback = function (retryCall, auth) {
-    console.log('Slidoc.userLoginCallback:', auth);
+    Slidoc.log('Slidoc.userLoginCallback:', auth);
 
     if (auth) {
 	if (auth.remember)
@@ -357,7 +393,7 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
 }
 
 Slidoc.resetPaced = function () {
-    console.log('Slidoc.resetPaced:');
+    Slidoc.log('Slidoc.resetPaced:');
     if (Sliobj.params.gd_sheet_url) {
 	if (!Slidoc.testingActive())
 	    alert('Cannot reset session linked to Google Docs');
@@ -516,7 +552,7 @@ document.onkeydown = function(evt) {
 }
 
 Slidoc.handleKey = function (keyName) {
-    console.log('Slidoc.handleKey:', keyName);
+    Slidoc.log('Slidoc.handleKey:', keyName);
     if (keyName == 'right' && Slidoc.advanceStep())
 	return false;
 
@@ -554,7 +590,7 @@ Slidoc.handleKey = function (keyName) {
 };
 
 Slidoc.inputKeyDown = function (evt) {
-    console.log('Slidoc.inputKeyDown', evt.keyCode, evt.target, evt.target.id);
+    Slidoc.log('Slidoc.inputKeyDown', evt.keyCode, evt.target, evt.target.id);
     if (evt.keyCode == 13) {
 	var inputElem = document.getElementById(evt.target.id.replace('-input', '-click'));
 	inputElem.onclick();
@@ -583,7 +619,7 @@ function parseElem(elemId) {
 	if (elem && elem.textContent) {
 	    return JSON.parse(atob(elem.textContent));
 	}
-    } catch (err) {console.log('parseElem: '+elemId+' JSON/Base64 parse error'); }
+    } catch (err) {Slidoc.log('parseElem: Error in parsing '+elemId+' JSON/Base64'); }
     return null;
 }
 
@@ -613,7 +649,7 @@ SlidocPluginManager.hasAction = function (pluginName, action) {
 }
 
 function makePluginThis(pluginName, slide_id, nosession) {
-    console.log('makePluginThis:', pluginName, slide_id, nosession);
+    Slidoc.log('makePluginThis:', pluginName, slide_id, nosession);
     var pluginDef = SlidocPlugins[pluginName];
     if (!pluginDef)
 	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
@@ -659,7 +695,7 @@ SlidocPluginManager.call = function (pluginName, action, slide_id) //... extra a
     // action == 'response' records user response and uses callback to return a pluginResp object of the form:
     //    {name:pluginName, score:1/0/0.75/.../null, invalid: invalid_msg, output:output, tests:0/1/2}
     var extraArgs = Array.prototype.slice.call(arguments).slice(3);
-    console.log('SlidocPluginManager.call:', pluginName, action, slide_id, extraArgs);
+    Slidoc.log('SlidocPluginManager.call:', pluginName, action, slide_id, extraArgs);
     var pluginThis = (action == 'create') ? makePluginThis(pluginName, '', true) : Sliobj.pluginData[pluginName][slide_id || ''];
     if (!(action in pluginThis.def))
 	throw('ERROR Action '+action+' not defined for plugin '+pluginName+' not found');
@@ -675,7 +711,7 @@ SlidocPluginManager.call = function (pluginName, action, slide_id) //... extra a
 }
 
 function clearAnswerElements() {
-    console.log('clearAnswerElements');
+    Slidoc.log('clearAnswerElements:');
     var slides = document.getElementsByClassName('slidoc-slide');
     var suffixes = Object.keys(Sliobj.params.answer_elements);
     for (var k=0; k<slides.length; k++) {
@@ -696,12 +732,12 @@ function clearAnswerElements() {
 function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
     // Safely set value/content of answer element in slide_id with suffix
     if (!(suffix in Sliobj.params.answer_elements)) {
-	console.log("setAnswerElement: ERROR Invalid suffix '"+suffix+"'");
+	Slidoc.log("setAnswerElement: ERROR Invalid suffix '"+suffix+"'");
 	return false;
     }
     var ansElem = document.getElementById(slide_id+suffix);
     if (!ansElem) {
-	console.log("setAnswerElement: ERROR Element '"+slide_id+suffix+"' not found!");
+	Slidoc.log("setAnswerElement: ERROR Element '"+slide_id+suffix+"' not found!");
 	return false;
     }
     if (Sliobj.params.answer_elements[suffix])
@@ -715,14 +751,14 @@ function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
 function switchUser() {
     var userId = this.options[this.selectedIndex].value;
     Sliobj.gradingUser = Sliobj.userGrades[userId].index;
-    console.log('switchUser:', userId);
+    Slidoc.log('switchUser:', userId);
     //selectUser(GService.gprofile.auth, slidocReadyAux1);
     selectUser(GService.gprofile.auth);
 }
 
 function selectUser(auth, callback) {
     var userId = Sliobj.userList[Sliobj.gradingUser-1];
-    console.log('selectUser:', auth, userId);
+    Slidoc.log('selectUser:', auth, userId);
     if (!auth.adminKey) {
 	sessionAbort('Only admin can pick user');
     }
@@ -740,7 +776,7 @@ function selectUser(auth, callback) {
 }
 
 function selectUserCallback(userId, result, retStatus) {
-    console.log('selectUserCallback:', userId, result, retStatus);
+    Slidoc.log('selectUserCallback:', userId, result, retStatus);
     if (!result) {
 	sessionAbort('ERROR in selectUserCallback: '+ retStatus.error);
     }
@@ -772,7 +808,7 @@ Slidoc.nextUser = function (forward) {
 
 
 Slidoc.slidocReady = function (auth) {
-    console.log("slidocReady:", auth);
+    Slidoc.log('slidocReady:', auth);
     Sliobj.adminState = auth && !!auth.adminKey;
     Sliobj.userList = null;
     Sliobj.userGrades = null;
@@ -800,12 +836,12 @@ Slidoc.slidocReady = function (auth) {
 	
 
 function slidocReadyAux1(auth) {
-    console.log("slidocReadyAux1:", auth);
+    Slidoc.log("slidocReadyAux1:", auth);
     return abortOnError(slidocReadyAux2.bind(null, auth));
 }
 
 function slidocReadyAux2(auth) {
-    console.log("slidocReadyAux2:", auth);
+    Slidoc.log("slidocReadyAux2:", auth);
 
     if (Sliobj.params.gd_sheet_url && (!auth || !auth.id))
 	throw('slidocReadyAux2: Missing/null auth');
@@ -838,7 +874,7 @@ function slidocReadyAux2(auth) {
 
     var newSession = sessionCreate();
 
-    console.log("slidocReadyAux2b:", Sliobj.sessionName, Sliobj.params.paceLevel);
+    Slidoc.log("slidocReadyAux2:B", Sliobj.sessionName, Sliobj.params.paceLevel);
     if (Sliobj.sessionName) {
 	// Paced named session
 	if (Sliobj.params.gd_sheet_url && !auth) {
@@ -862,7 +898,7 @@ function slidocReadyAux2(auth) {
 }
 
 function slidocReadyPaced(newSession, prereqs, prevSession, prevFeedback) {
-    console.log('slidocReadyPaced:', newSession, prereqs, prevSession, prevFeedback);
+    Slidoc.log('slidocReadyPaced:', newSession, prereqs, prevSession, prevFeedback);
     if (prereqs) {
 	if (!prevSession) {
 	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not attempted!");
@@ -885,7 +921,7 @@ function slidocSetup(session, feedback) {
 }
 
 function slidocSetupAux(session, feedback) {
-    console.log('slidocSetupAux:', session, feedback);
+    Slidoc.log('slidocSetupAux:', session, feedback);
     Sliobj.session = session;
     Sliobj.feedback = feedback || null;
     var unhideChapters = false;
@@ -1068,7 +1104,7 @@ function prepGradeSession(session) {
 
 function initSessionPlugins(session) {
     // Restore random seed for session
-    console.log('initSessionPlugins');
+    Slidoc.log('initSessionPlugins:');
     Sliobj.pluginData = {};
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginName = Sliobj.pluginList[j];
@@ -1116,7 +1152,7 @@ function initSessionPlugins(session) {
 }
 
 function checkGradingCallback(userId, result, retStatus) {
-    console.log('checkGradingCallback:', userId, result, retStatus);
+    Slidoc.log('checkGradingCallback:', userId, result, retStatus);
     if (!result) {
 	sessionAbort('ERROR in checkGradingCallback: '+ retStatus.error);
     }
@@ -1124,7 +1160,7 @@ function checkGradingCallback(userId, result, retStatus) {
     checkGradingStatus(userId, unpacked.session, unpacked.feedback);
 }
 function checkGradingStatus(userId, session, feedback) {
-    console.log('checkGradingStatus:', userId);
+    Slidoc.log('checkGradingStatus:', userId);
     if (Sliobj.userGrades[userId].grading)
 	return;
     var firstSlideId = getVisibleSlides()[0].id;
@@ -1152,7 +1188,7 @@ function checkGradingStatus(userId, session, feedback) {
 	    updates[commentsField] = 'Not attempted';
 	}
     }
-    console.log('checkGradingStatus2:', need_grading, updates);
+    Slidoc.log('checkGradingStatus:B', need_grading, updates);
 
     Sliobj.userGrades[userId].grading = need_grading;
     updateGradingStatus(userId);
@@ -1179,7 +1215,7 @@ function updateGradingStatus(userId) {
 
 function preAnswer() {
     // Pre-answer questions (and display notes for those)
-    console.log('preAnswer');
+    Slidoc.log('preAnswer:');
     var firstSlideId = getVisibleSlides()[0].id;
     var chapter_id = parseSlideId(firstSlideId)[0];
     clearAnswerElements();
@@ -1200,7 +1236,7 @@ function preAnswer() {
 }
 
 function showCorrectAnswers() {
-    console.log('showCorrectAnswers');
+    Slidoc.log('showCorrectAnswers:');
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
@@ -1286,7 +1322,7 @@ function unpackSession(row) {
 
 function sessionGetPutAux(callType, callback, retryCall, retryType, result, retStatus) {
     // For sessionPut, session should be bound to this function as 'this'
-    console.log('Slidoc.sessionGetPutAux: ', callType, !!callback, !!retryCall, retryType, result, retStatus);
+    Slidoc.log('Slidoc.sessionGetPutAux: ', callType, !!callback, !!retryCall, retryType, result, retStatus);
     var session = null;
     var feedback = null;
     var nullReturn = false;
@@ -1302,7 +1338,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 		session = unpacked.session;
 		feedback = unpacked.feedback;
 	    } catch(err) {
-		console.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
+		Slidoc.log('Slidoc.sessionGetPutAux: ERROR in parsing session_hidden', err)
 		err_msg = 'Parsing error '+err_msg;
 	    }
 	}
@@ -1315,7 +1351,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.dueDate)
-		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { console.log('DUE_DATE error: '+retStatus.info.dueDate, err); }
+		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err); }
 	    if (retStatus.info.submitTimestamp) {
 		Sliobj.session.submitted = retStatus.info.submitTimestamp;
 		Sliobj.session.lastSlide = Sliobj.params.pacedSlides;
@@ -1455,7 +1491,7 @@ function sessionPut(userId, session, opts, callback) {
     // Remote saving only happens if session.paced is true or force is true
     // callback(session, feedback)
     // opts = {nooverwrite:, get:, force: }
-    console.log("sessionPut:", userId, Sliobj.sessionName, session, callback, opts);
+    Slidoc.log('sessionPut:', userId, Sliobj.sessionName, session, !!callback, opts);
     if (Sliobj.adminState) {
 	alert('Internal error: admin user cannot update row');
 	return;
@@ -1693,7 +1729,7 @@ Slidoc.toggleInline = function (elem) {
 }
 
 SlidocPluginManager.retryAnswer = function (msg) {
-    console.log('SlidocPluginManager.retryAnswer:', msg);
+    Slidoc.log('SlidocPluginManager.retryAnswer:', msg);
     Sliobj.session.lastTime = Date.now();
     if (Sliobj.params.tryCount) {
 	Sliobj.session.lastAnswersCorrect = -2;   // Incorrect answer
@@ -1727,7 +1763,7 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
 }
 
 Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
-   console.log("Slidoc.choiceClick:", slide_id, choice_val, explain, qfeedback);
+   Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val, explain, qfeedback);
     var slide_num = parseSlideId(slide_id)[2];
     var question_attrs = getQuestionAttrs(slide_id);
     if (!question_attrs || question_attrs.slide != slide_num)  // Incomplete choice question; ignore
@@ -1741,7 +1777,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
 	    var elemId = slide_id+'-choice-'+choice_val
 	    elem = document.getElementById(elemId);
 	    if (!elem) {
-		console.log('Slidoc.choiceClick: Setup failed for '+elemId);
+		Slidoc.log('Slidoc.choiceClick: Error - Setup failed for '+elemId);
 		return false;
 	    }
 	}
@@ -1771,7 +1807,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
       choices[i].classList.remove("slidoc-clickable");
    }
 
-    console.log("Slidoc.choiceClick2:", slide_num);
+    Slidoc.log("Slidoc.choiceClick:B", slide_num);
     var corr_answer = question_attrs.correct;
     if (corr_answer) {
         var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
@@ -1789,7 +1825,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
 
 Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qfeedback) {
    // Handle answer types: number, text
-    console.log("Slidoc.answerClick:", elem, slide_id, response, explain, pluginResp, qfeedback);
+    Slidoc.log('Slidoc.answerClick:', elem, slide_id, response, explain, pluginResp, qfeedback);
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
@@ -1800,7 +1836,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
     if (setup) {
         elem = document.getElementById(slide_id+"-answer-click");
 	if (!elem) {
-	    console.log('Slidoc.answerClick: Setup failed for '+slide_id);
+	    Slidoc.log('Slidoc.answerClick: Error - Setup failed for '+slide_id);
 	    return false;
 	}
        if (qfeedback) {
@@ -1883,7 +1919,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 }
 
 Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp) {
-    console.log('Slidoc.answerUpdate: ', setup, slide_id, checkOnly, response, pluginResp);
+    Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, checkOnly, response, pluginResp);
 
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
@@ -1894,7 +1930,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     var corr_answer      = question_attrs.correct || '';
     var corr_answer_html = question_attrs.html || '';
 
-    console.log('Slidoc.answerUpdate:', slide_id);
+    Slidoc.log('Slidoc.answerUpdate:', slide_id);
 
     if (pluginResp) {
 	qscore = pluginResp.score;
@@ -1923,11 +1959,11 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 		    corr_value = parseFloat(comps[0]);
 		    if (comps.length > 1)
 			corr_error = parseFloat(comps[1]);
-		} catch(err) {console.log('Slidoc.answerUpdate: Error in correct numeric answer:'+corr_answer);}
+		} catch(err) {Slidoc.log('Slidoc.answerUpdate: Error in correct numeric answer:'+corr_answer);}
 		var resp_value = null;
 		try {
 		    resp_value = parseFloat(response);
-		} catch(err) {console.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
+		} catch(err) {Slidoc.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
 		
 		if (corr_value !== null && resp_value != null)
 		    qscore = (Math.abs(resp_value - corr_value) <= 1.001*corr_error) ? 1 : 0;
@@ -2006,7 +2042,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 
 
 Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
-    console.log('Slidoc.answerTally: ', qscore, slide_id, question_attrs);
+    Slidoc.log('Slidoc.answerTally: ', qscore, slide_id, question_attrs);
 
     Slidoc.reportEvent('answerTally');
     
@@ -2102,22 +2138,22 @@ Slidoc.showScore = function () {
 
 function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
     if (!(inputSuffix in Sliobj.params.answer_elements)) {
-	console.log("renderDisplay: ERROR Invalid suffix '"+inputSuffix+"'");
+	Slidoc.log("renderDisplay: ERROR Invalid suffix '"+inputSuffix+"'");
 	return false;
     }
     var inputElem = document.getElementById(slide_id+inputSuffix)
     if (!inputElem) {
-	console.log("renderDisplay: ERROR Element '"+slide_id+inputSuffix+"' not found!");
+	Slidoc.log("renderDisplay: ERROR Element '"+slide_id+inputSuffix+"' not found!");
 	return false;
     }
 
     if (!(renderSuffix in Sliobj.params.answer_elements)) {
-	console.log("renderDisplay: ERROR Invalid suffix '"+renderSuffix+"'");
+	Slidoc.log("renderDisplay: ERROR Invalid suffix '"+renderSuffix+"'");
 	return false;
     }
     var renderElem = document.getElementById(slide_id+renderSuffix)
     if (!renderElem) {
-	console.log("renderDisplay: ERROR Element '"+slide_id+renderSuffix+"' not found!");
+	Slidoc.log("renderDisplay: ERROR Element '"+slide_id+renderSuffix+"' not found!");
 	return false;
     }
 
@@ -2132,7 +2168,7 @@ function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
 }
     
 Slidoc.renderText = function(elem, slide_id) {
-    console.log("Slidoc.renderText:", elem, slide_id);
+    Slidoc.log("Slidoc.renderText:", elem, slide_id);
     var question_attrs = getQuestionAttrs(slide_id);
     if (Sliobj.adminState) {
 	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
@@ -2157,7 +2193,7 @@ function showSubmitted() {
 }
 
 Slidoc.submitStatus = function () {
-    console.log('Slidoc.submitStatus: ');
+    Slidoc.log('Slidoc.submitStatus: ');
     var html = '';
     if (Sliobj.session.submitted) {
 	html += 'User '+GService.gprofile.auth.id+' submitted session to Google Docs on '+ Sliobj.session.submitted;
@@ -2180,7 +2216,7 @@ Slidoc.submitStatus = function () {
 }
 
 Slidoc.submitSession = function () {
-    console.log('Slidoc.submitSession: ');
+    Slidoc.log('Slidoc.submitSession: ');
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     if (!window.confirm('Do you really want to submit session without reaching the last slide?'))
@@ -2189,7 +2225,7 @@ Slidoc.submitSession = function () {
 }
 
 Slidoc.releaseGrades = function () {
-    console.log('Slidoc.releaseGrades: ');
+    Slidoc.log('Slidoc.releaseGrades: ');
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     if (!window.confirm('Confirm releasing grades to students?'))
@@ -2200,7 +2236,7 @@ Slidoc.releaseGrades = function () {
 }
 
 function releaseGradesCallback(result, retStatus){
-    console.log('releaseGradesCallback:', result, retStatus);
+    Slidoc.log('releaseGradesCallback:', result, retStatus);
     if (result)
 	alert('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students');
     else
@@ -2226,14 +2262,14 @@ function conceptStats(tags, tallies) {
 
 Slidoc.quoteText = function(elem, slide_id) {
     // Pre-fill comments area with indented response (as for email)
-    console.log("Slidoc.quoteText:", elem, slide_id);
+    Slidoc.log("Slidoc.quoteText:", elem, slide_id);
     var commentsArea = document.getElementById(slide_id+'-comments-textarea');
     var textareaElem = document.getElementById(slide_id+'-answer-textarea');
     commentsArea.value += textareaElem.value.replace(/(^|\n)(?=.)/g, '\n> ');
 }
 
 Slidoc.gradeClick = function (elem, slide_id) {
-    console.log("Slidoc.gradeClick:", elem, slide_id);
+    Slidoc.log("Slidoc.gradeClick:", elem, slide_id);
 
     var gradeInput = document.getElementById(slide_id+'-grade-input');
     var commentsArea = document.getElementById(slide_id+'-comments-textarea');
@@ -2257,7 +2293,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var gradeField = 'q'+question_attrs.qnumber+'_grade_'+question_attrs.gweight;
 	var commentsField = 'q'+question_attrs.qnumber+'_comments';
 	if (!(gradeField in Sliobj.gradeFieldsObj))
-	    console.log('Slidoc.gradeClick: ERROR grade field '+gradeField+' not found in sheet');
+	    Slidoc.log('Slidoc.gradeClick: ERROR grade field '+gradeField+' not found in sheet');
 	var updates = {id: GService.gprofile.auth.id};
 	updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
@@ -2266,7 +2302,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 }
 
 function gradeUpdate(slide_id, qnumber, updates, callback) {
-    console.log('gradeUpdate: ', slide_id, qnumber, updates, !!callback);
+    Slidoc.log('gradeUpdate: ', slide_id, qnumber, updates, !!callback);
     var updateObj = {};
     var keys = Object.keys(updates);
     for (var j=0; j<keys.length; j++)
@@ -2285,7 +2321,7 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
 }
 
 function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
-    console.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
+    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
     Slidoc.reportEvent('gradeUpdate');
     if (!Slidoc.testingActive()) {
     // Move on to next user if slideshow mode, else to next question
@@ -2309,7 +2345,7 @@ function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) 
 }
 
 Slidoc.startPaced = function () {
-    console.log('Slidoc.startPaced: ');
+    Slidoc.log('Slidoc.startPaced: ');
 
     var firstSlideId = getVisibleSlides()[0].id;
 
@@ -2375,7 +2411,7 @@ Slidoc.startPaced = function () {
 }
 
 Slidoc.endPaced = function () {
-    console.log('Slidoc.endPaced: ');
+    Slidoc.log('Slidoc.endPaced: ');
     if (!Sliobj.params.gd_sheet_url)       // For remote sessions, successful submission will complete session
 	Sliobj.session.submitted = ''+(new Date());
     if (Sliobj.session.paceLevel <= 1) {
@@ -2519,7 +2555,7 @@ Slidoc.slideViewGoLast = function () {
 }
 
 Slidoc.slideViewGo = function (forward, slide_num) {
-   console.log('Slidoc.slideViewGo:', forward, slide_num);
+   Slidoc.log('Slidoc.slideViewGo:', forward, slide_num);
    if (!Sliobj.currentSlide)
       return false;
 
@@ -2543,7 +2579,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
-	console.log('Slidoc.slideViewGo2:', slide_num, Sliobj.session.lastSlide);
+	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
 	if (slide_num == slides.length && Sliobj.session.questionsCount < Sliobj.params.questionsMax) {
 	    if (!Slidoc.testingActive() && !window.confirm('You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?'))
 		return false;
@@ -2605,7 +2641,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
     var counterElem = document.getElementById('slidoc-slide-nav-counter');
     counterElem.textContent = ((slides.length <= 9) ? slide_num : zeroPad(slide_num,2))+'/'+slides.length;
 
-    console.log('Slidoc.slideViewGo3:', slide_num, slides[slide_num-1]);
+    Slidoc.log('Slidoc.slideViewGo:C', slide_num, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
     if ('incremental_slides' in Sliobj.params.features) {
@@ -2648,7 +2684,7 @@ Slidoc.go = function (slideHash, chained) {
 function goSlide(slideHash, chained, singleChapter) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
-    console.log("goSlide:", slideHash, chained);
+    Slidoc.log("goSlide:", slideHash, chained);
     if (Sliobj.session.paced && Sliobj.session.paceLevel > 1 && !Sliobj.currentSlide && !singleChapter) {
 	alert('Slidoc: InternalError: strict paced mode without slideView');
 	return false;
@@ -2668,9 +2704,9 @@ function goSlide(slideHash, chained, singleChapter) {
 	slideId = 'slidoc01-01';
 
    var goElement = document.getElementById(slideId);
-   console.log('goSlide2: ', slideId, chained, goElement);
+   Slidoc.log('goSlide:B ', slideId, chained, goElement);
    if (!goElement) {
-      console.log('goSlide: Error - unable to find element', slideHash);
+      Slidoc.log('goSlide: Error - unable to find element', slideHash);
       return false;
    }
 
@@ -2683,7 +2719,7 @@ function goSlide(slideHash, chained, singleChapter) {
 
     // Locate reference
     var match = /slidoc-ref-(.*)$/.exec(slideId);
-    console.log('goSlide2a: ', match, slideId);
+    Slidoc.log('goSlide:C ', match, slideId);
     if (match) {
         // Find slide containing reference
 	slideId = '';
@@ -2692,12 +2728,12 @@ function goSlide(slideHash, chained, singleChapter) {
 	    if (refmatch) {
 		slideId = refmatch[1];
 		slideHash = '#'+slideId;
-                console.log('goSlide2b: ', slideHash);
+                Slidoc.log('goSlide:D ', slideHash);
 		break;
 	    }
 	}
         if (!slideId) {
-            console.log('goSlide: Error - unable to find slide containing header:', slideHash);
+            Slidoc.log('goSlide: Error - unable to find slide containing header:', slideHash);
             return false;
         }
     }
@@ -2706,7 +2742,7 @@ function goSlide(slideHash, chained, singleChapter) {
 	// Display only chapter containing slide
 	var newChapterId = parseSlideId(slideId)[0];
 	if (!newChapterId) {
-            console.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
+            Slidoc.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
             return false;
 	}
        if (newChapterId != Sliobj.curChapterId) {
@@ -2720,12 +2756,12 @@ function goSlide(slideHash, chained, singleChapter) {
 	   }
            var newChapterElem = document.getElementById(newChapterId);
            if (!newChapterElem) {
-               console.log('goSlide: Error - unable to find chapter:', newChapterId);
+               Slidoc.log('goSlide: Error - unable to find chapter:', newChapterId);
                return false;
            }
            Sliobj.curChapterId = newChapterId;
            var chapters = document.getElementsByClassName('slidoc-container');
-           console.log('goSlide3: ', newChapterId, chapters.length);
+           Slidoc.log('goSlide:E ', newChapterId, chapters.length);
            for (var i=0; i < chapters.length; i++) {
 	       if (!Sliobj.sidebar || !chapters[i].classList.contains('slidoc-toc-container'))
 		   chapters[i].style.display = (chapters[i].id == newChapterId) ? null : 'none';
@@ -2741,18 +2777,18 @@ function goSlide(slideHash, chained, singleChapter) {
            return false;
          }
       }
-      console.log('goSlide: Error - slideshow slide not in view:', slideId);
+      Slidoc.log('goSlide: Error - slideshow slide not in view:', slideId);
       return false;
 
    } else if (Sliobj.session.paced) {
        var slide_num = parseSlideId(slideId)[2];
        if (!slide_num || slide_num > Sliobj.session.lastSlide) {
-	   console.log('goSlide: Error - paced slide not reached:', slide_num, slideId);
+	   Slidoc.log('goSlide: Error - paced slide not reached:', slide_num, slideId);
 	   return false;
        }
    }
 
-   console.log('goSlide4: ', slideHash);
+   Slidoc.log('goSlide:F ', slideHash);
    location.hash = slideHash;
 
    if (chained && Sliobj.ChainQuery)  // Set up new chain link
@@ -2766,7 +2802,7 @@ Slidoc.chainLink = function (newindex, queryStr, urlPath) {
    // Returns next/prev chain URL: /(prefix)(newtag0).html?index=1&taglist=...#newtag1
    // tag = fsuffix#id
    // If not urlPath, return the new query string+hash (without the path)
-   console.log("Slidoc.chainLink:", newindex, queryStr, urlPath);
+   Slidoc.log("Slidoc.chainLink:", newindex, queryStr, urlPath);
    var tagindex = getParameter('tagindex', true, queryStr);
    var taglist = (getParameter('taglist', false, queryStr) || '').split(";");
    var curcomps = taglist[tagindex-1].split("#");
@@ -2782,25 +2818,25 @@ Slidoc.chainLink = function (newindex, queryStr, urlPath) {
 
 Slidoc.chainURL = function (newindex) {
    // Return URL to load next link in concept chain
-   console.log("Slidoc.chainURL:", newindex);
+   Slidoc.log("Slidoc.chainURL:", newindex);
    return Slidoc.chainLink(newindex, location.search, location.pathname);
 }
 
 Slidoc.chainNav = function (newindex) {
    // Navigate to next link in concept chain
-   console.log("Slidoc.chainNav:", newindex);
+   Slidoc.log("Slidoc.chainNav:", newindex);
    if (!Sliobj.ChainQuery)
       return false;
    var comps = Slidoc.chainLink(newindex, Sliobj.ChainQuery).split('#');
    Sliobj.ChainQuery = comps[0];
    goSlide('#'+comps[1], true);
-    console.log("Slidoc.chainNav2:", location.hash);
+    Slidoc.log("Slidoc.chainNav:B", location.hash);
    return false;
 }
 
 Slidoc.chainStart = function (queryStr, slideHash) {
    // Go to first link in concept chain
-    console.log("Slidoc.chainStart:", slideHash, queryStr);
+    Slidoc.log("Slidoc.chainStart:", slideHash, queryStr);
     Sliobj.ChainQuery = queryStr;
     goSlide(slideHash, true);
     return false;
@@ -2809,14 +2845,14 @@ Slidoc.chainStart = function (queryStr, slideHash) {
 Slidoc.chainUpdate = function (queryStr) {
     queryStr = queryStr || location.search;
     var tagid = location.hash.substr(1);
-    console.log("Slidoc.chainUpdate:", queryStr, tagid);
+    Slidoc.log("Slidoc.chainUpdate:", queryStr, tagid);
 
     var ichain_elem = document.getElementById(tagid+"-ichain");
     if (!ichain_elem)
        return false;
 
     var tagindex = getParameter('tagindex', true, queryStr);
-    console.log("Slidoc.chainUpdate2:", tagindex);
+    Slidoc.log("Slidoc.chainUpdate:B", tagindex);
     if (!tagindex)
       return false;
 
@@ -2865,7 +2901,7 @@ Slidoc.chainUpdate = function (queryStr) {
         }
     }
     Sliobj.chainActive = [prevFunc, conceptFunc, nextFunc];
-    console.log("Slidoc.chainUpdate:4", location.hash);
+    Slidoc.log("Slidoc.chainUpdate:D", location.hash);
 }
 
 // Popup: http://www.loginradius.com/engineering/simple-popup-tutorial/
@@ -2883,7 +2919,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
 	}
     }
     if (Sliobj.closePopup) {
-	console.log('Slidoc.showPopup: Popup already open');
+	Slidoc.log('Slidoc.showPopup: Popup already open');
 	if (!autoCloseMillisec)
 	    Sliobj.popupQueue.push([innerHTML||null, divElemId||null]);
 	return;
@@ -3075,7 +3111,7 @@ function testTouch(evt) {
 }
  
 function onTouchStart(evt) {
-    console.log('onTouchStart:');
+    Slidoc.log('onTouchStart:');
     if (testTouch(evt) && !touchAction) {
         touchAction = true;
 
@@ -3104,7 +3140,7 @@ function onTouchMove(evt) {
         touchEndY = getCoord(evt, 'Y');
         touchDiffX = touchEndX - touchStartX;
         touchDiffY = touchEndY - touchStartY;
-        console.log('onTouchMove: dx, dy, sort, swipe, scroll', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll);
+        Slidoc.log('onTouchMove: dx, dy, sort, swipe, scroll', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll);
  
         if (!touchSort && !touchSwipe && !touchScroll) {
             if (Math.abs(touchDiffY) > scrollThresholdY && Math.abs(touchDiffY) > 0.5*Math.abs(touchDiffX)) { // It's a scroll
@@ -3133,7 +3169,7 @@ function onTouchMove(evt) {
 }
  
 function onTouchEnd(evt) {
-    console.log('onTouchEnd: dx, dy, sort, swipe, scroll, action', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll, touchAction);
+    Slidoc.log('onTouchEnd: dx, dy, sort, swipe, scroll, action', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll, touchAction);
     if (touchAction) {
         touchAction = false;
  

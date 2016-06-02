@@ -51,7 +51,7 @@ function requestJSONP(url, queryStr, callback) {
     }
 
     url += '?'+queryStr+suffix;
-    console.log('requestJSONP:', url);
+    Slidoc.log('requestJSONP:', url);
 
     var head = document.head;
     var script = document.createElement("script");
@@ -62,11 +62,11 @@ function requestJSONP(url, queryStr, callback) {
 }
 
 GService.handleJSONP = function(callback_index, json_obj) {
-    console.log('GService.handleJSONP:', callback_index);
+    Slidoc.log('GService.handleJSONP:', callback_index);
     if (!callback_index)
 	return;
     if (!(callback_index in jsonpRequests)) {
-	console.log('GService.handleJSONP: Error - Invalid JSONP callback index: '+callback_index);
+	Slidoc.log('GService.handleJSONP: Error - Invalid JSONP callback index: '+callback_index);
 	return;
     }
     var callback = jsonpRequests[callback_index][0];
@@ -83,7 +83,7 @@ function handleCallback(responseText, callback){
     try {
         obj = JSON.parse(responseText)
     } catch (err) {
-        console.log('JSON parsing error:', err, responseText);
+        Slidoc.log('JSON parsing error:', err, responseText);
         msg = 'JSON parsing error';
     }
     callback(obj, msg);
@@ -101,10 +101,10 @@ GService.sendData = function (data, url, callback, useJSONP) {
       var OK = 200; // status 200 is a successful return.
       if (XHR.readyState === DONE) {
         if (XHR.status === OK) {
-          console.log('XHR: '+XHR.status, XHR.responseText);
+          Slidoc.log('XHR: '+XHR.status, XHR.responseText);
 	  handleCallback(XHR.responseText, callback);
         } else {
-          console.log('XHR Error: '+XHR.status, XHR.responseText);
+          Slidoc.log('XHR Error: '+XHR.status, XHR.responseText);
           if (callback)
               callback(null, 'Error in HTTP request')
         }
@@ -129,7 +129,7 @@ GService.sendData = function (data, url, callback, useJSONP) {
   // We add the required HTTP header to handle a form data POST request
   XHR.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
   XHR.setRequestHeader('Content-Length', urlEncodedData.length);
-  console.log('sendData:', urlEncodedData, url, useJSONP);
+  Slidoc.log('sendData:', urlEncodedData, url, useJSONP);
   // And finally, We send our data.
   XHR.send(urlEncodedData);
 }
@@ -146,21 +146,21 @@ function GoogleProfile(clientId, apiKey, loginButtonId, authCallback) {
 }
 
 GoogleProfile.prototype.onLoad = function () {
-    console.log('GoogleProfile.onLoad:');
+    Slidoc.log('GoogleProfile.onLoad:');
     gapi.client.setApiKey(this.apiKey);
     window.setTimeout(this.requestAuth.bind(this, true), 5);
 }
 
 
 GoogleProfile.prototype.requestAuth = function (immediate) {
-    console.log('GoogleProfile.requestAuth:');
+    Slidoc.log('GoogleProfile.requestAuth:');
     gapi.auth.authorize({client_id: this.clientId, scope: this.scopes, immediate: immediate},
                         this.onAuth.bind(this));
     return false;
 }
 
 GoogleProfile.prototype.onAuth = function (result) {
-    console.log('GoogleProfile.onAuth:', result);
+    Slidoc.log('GoogleProfile.onAuth:', result);
     var loginButton = document.getElementById(this.loginButtonId);
     if (!loginButton) {
         alert('No login button');
@@ -179,13 +179,13 @@ GoogleProfile.prototype.onAuth = function (result) {
 }
 
 GoogleProfile.prototype.requestUserInfo = function () {
-    console.log('GoogleProfile.requestUserInfo:');
+    Slidoc.log('GoogleProfile.requestUserInfo:');
     var req = gapi.client.plus.people.get({userId: 'me'});
     req.execute(this.onUserInfo.bind(this));
 }
 
 GoogleProfile.prototype.onUserInfo = function (resp) {
-    console.log('GoogleProfile.onUserInfo:', resp);
+    Slidoc.log('GoogleProfile.onUserInfo:', resp);
     if (!resp.emails) {
 	alert('GAuth: ERROR no emails specified');
         return;
@@ -313,11 +313,11 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
     // obj == null on error
     // obj == {} for non-existent row
     // obj == {id: ..., name: ..., } for returned row
-    console.log('GoogleSheet: callback', userId, callbackType, result, err_msg);
+    Slidoc.log('GoogleSheet: callback', userId, callbackType, result, err_msg);
     this.callbackCounter -= 1;
 
     if (!result)
-        console.log('GoogleSheet: '+callbackType+' callback: ERROR '+err_msg);
+        Slidoc.log('GoogleSheet: ERROR in '+callbackType+' callback: '+err_msg);
 
     if (outerCallback) {
         var retval = null;
@@ -351,8 +351,8 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		retStatus.messages = result.messages.split('\n');
 	    } catch(err) {
 		retval = null;
-		retStatus.error = 'ERROR in GoogleSheet.callback: '+err;
-		console.log(retStatus.error);
+		retStatus.error = 'GoogleSheet: ERROR in GoogleSheet.callback: '+err;
+		Slidoc.log(retStatus.error);
 	    }
 	}
 	
@@ -397,7 +397,7 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
     // Specify opts.get to retrieve the existing/overwritten row.
     // Specify opts.nooverwrite to not overwrite any existing row with same id
     // opts.get with opts.nooverwrite will return the existing row, or the newly inserted row.
-    console.log('GoogleSheet.putRow:', rowObj, opts);
+    Slidoc.log('GoogleSheet.putRow:', rowObj, opts);
 
     if (!rowObj.id || (opts.nooverwrite && !rowObj.name))
         throw('GoogleSheet.putRow: Must provide id and name to put row');
@@ -425,7 +425,7 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
 GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet, retval, retStatus) {
     // opts = {get:, id:, nooverwrite:, submit:}
     // Fills in id, name etc. from GService.gprofile.auth before calling putRow
-    console.log('GoogleSheet.authPutRow:', opts, !!callback, createSheet, retval, retStatus);
+    Slidoc.log('GoogleSheet.authPutRow:', opts, !!callback, createSheet, retval, retStatus);
     if (createSheet) {
         // Call authPutRow after creating sheet
         this.createSheet( this.authPutRow.bind(this, rowObj, opts, callback, null) ); // createSheet=null needed to prevent looping
@@ -456,7 +456,7 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     // Only works with existing rows
     // Specify get to return updated row
     // opts = {get:}
-    console.log('GoogleSheet.updateRow:', updateObj, opts);
+    Slidoc.log('GoogleSheet.updateRow:', updateObj, opts);
     if (!updateObj.id)
         throw('GoogleSheet.updateRow: Must provide id to update row');
 
@@ -496,7 +496,7 @@ GoogleSheet.prototype.getRow = function (id, callback) {
     // result == null on error
     // result == {} for non-existent row
     // result == {id: ..., name: ..., } for returned row
-    console.log('GoogleSheet.getRow:', id, !!callback);
+    Slidoc.log('GoogleSheet.getRow:', id, !!callback);
 
     if (!id) id = GService.gprofile.auth.id;
 
@@ -550,7 +550,7 @@ GoogleSheet.prototype.initCache = function(allRows) {
 	}
     }
     this.roster.sort(function(a,b){ if (a[0] != b[0]) {return (a[0] > b[0]) ? 1 : -1} else {return (a[1] > b[1]) ? 1 : -1}});
-    console.log('GoogleSheet.initCache:', this.roster);
+    Slidoc.log('GoogleSheet.initCache:', this.roster);
 }
 
 GService.GoogleSheet = GoogleSheet;
@@ -558,7 +558,7 @@ GService.GoogleSheet = GoogleSheet;
 GService.gprofile = new GoogleProfile(CLIENT_ID, API_KEY, LOGIN_BUTTON_ID, AUTH_CALLBACK);
 
 GService.onGoogleAPILoad = function () {
-    console.log('GService.onGoogleAPILoad:');
+    Slidoc.log('GService.onGoogleAPILoad:');
     GService.gprofile.onLoad();
 }
 
