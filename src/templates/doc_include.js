@@ -296,7 +296,7 @@ function setupPlugins() {
 	}
 
 	var slide_id = allBodies[j].dataset.slideId;
-	SlidocPluginManager.optCall(pluginInstance, 'initSlide', slide_id);
+	SlidocPluginManager.optCall(pluginInstance, 'initSetupSlide', slide_id);
     }
 }
 
@@ -694,7 +694,7 @@ SlidocPluginManager.action = function (pluginName, action, slide_id) //... extra
 
 SlidocPluginManager.invoke = function (pluginInstance, action) //... extra arguments
 {   // action == 'initSetup' initial setup after document is ready
-    // action == 'initSlide' inserts/modified DOM elements called per slide after document is ready
+    // action == 'initSetupSlide' inserts/modified DOM elements called per slide after document is ready
     // action == 'initGlobal' resets global plugin properties for all slides (called at start/switch of session)
     // action == 'init' resets plugin properties for each slide (called at start/switch of session)
     // action == 'display' displays recorded user response (called at start/switch of session for each question)
@@ -760,8 +760,8 @@ function createPluginInstance(pluginName, slide_id, nosession) {
 	    var comps = parseSlideId(slide_id);
 	    defCopy.randomSeed = defCopy.global.randomSeed + 256*((1+comps[1])*256 + comps[2]);
 	    defCopy.randomNumber = SlidocRandom.randomNumber.bind(null, defCopy.randomSeed);
-	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
+	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	}
 
     }

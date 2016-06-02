@@ -1,7 +1,7 @@
 code = {
 
     setup: { initSetup: function() {Slidoc.log('SlidocPlugins.code.setup.initSetup:');},
-	     initSlide: function(slideId) {Slidoc.log('SlidocPlugins.code.setup.initSlide:', slideId);}
+	     initSetupSlide: function(slideId) {Slidoc.log('SlidocPlugins.code.setup.initSetupSlide:', slideId);}
 	   },
 
     global: { initGlobal: function() {Slidoc.log('SlidocPlugins.code.global.initGlobal:');}
@@ -249,15 +249,16 @@ function execCodeErr(callback, err) {
 }
 
 
-/* PluginHead:
+/*
+PluginHead:
 <style>
 .%(plugin_label)s-textarea,
   .%(plugin_label)s-check-button {display: block;}
 .%(plugin_label)s-output { opacity: 0.7; }
 </style>
-*/
-/* PluginBody:
-<button id="%(plugin_id)s-check-button" class="slidoc-clickable %(plugin_label)s-check-button" onclick="SlidocPluginManager.action('%(plugin_name)s','checkCode','%(slide_id)s',this);">Check</button>
+
+PluginBody:
+<button id="%(plugin_id)s-check-button" class="slidoc-clickable %(plugin_label)s-check-button" onclick="SlidocPluginManager.action('%(plugin_name)s','checkCode','%(plugin_slide_id)s',this);">Check</button>
 <textarea id="%(plugin_id)s-textarea" class="%(plugin_label)s-textarea" cols="60" rows="5"></textarea>
 <pre><code id="%(plugin_id)s-output" class="%(plugin_label)s-output"></code></pre>
 */

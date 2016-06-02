@@ -60,7 +60,7 @@ body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
 
 body.slidoc-slide-view .slidoc-block-multi { display: none; }
-body:not(.slidoc-completed-view) .slidoc-block-multi { display: none; }
+body:not(.slidoc-graded-view) .slidoc-block-multi { display: none; } /* Show secondary checks only after grading (non-slide) */
 body.slidoc-paced-last-slide span.slidoc-forward-link { opacity: 0.3; }
 body.slidoc-paced-last-slide span.slidoc-forward-link.slidoc-forward-link-allowed { opacity: 1.0; }
 

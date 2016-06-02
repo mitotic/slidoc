@@ -265,6 +265,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*{(.*?)PluginEnd:\s*(\n|$)',
                                                 re.DOTALL)
+    slidoc_plugin =   re.compile(r'^ {0,3}PluginEmbed:\s*(\w+)\s*(\n|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
@@ -278,7 +279,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'slidoc_plugin', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -303,6 +304,13 @@ class MathBlockLexer(mistune.BlockLexer):
             'type': 'plugin_definition',
             'name': m.group(1),
             'text': m.group(2)
+        })
+
+    def parse_slidoc_plugin(self, m):
+         self.tokens.append({
+            'type': 'slidoc_plugin',
+            'name': m.group(1),
+            'text': ''
         })
 
     def parse_slidoc_header(self, m):
@@ -483,6 +491,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_plugin_definition(self):
         return self.renderer.plugin_definition(self.token['name'], self.token['text'])
 
+    def output_slidoc_plugin(self):
+        return self.renderer.slidoc_plugin(self.token['name'], self.token['text'])
+
     def output_slidoc_header(self):
         return self.renderer.slidoc_header(self.token['name'], self.token['text'])
 
@@ -569,6 +580,8 @@ class MathRenderer(mistune.Renderer):
     
 class SlidocRenderer(MathRenderer):
     header_attr_re = re.compile(r'^.*?(\s*\{\s*(#\S+)?([^#\}]*)?\s*\})\s*$')
+
+    plugin_body_template = '''<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-slide-id="%(plugin_slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">%(plugin_body)s</div><!--%(plugin_id)s-body-->'''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" data-qnumber="%(qno)d">Answer:</span>'''
@@ -668,6 +681,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_block_test = []
         self.slide_block_output = []
         self.slide_forward_links = []
+        self.slide_plugins = set()
 
     def list_incremental(self, activate):
         self.incremental_list = activate
@@ -1020,6 +1034,30 @@ class SlidocRenderer(MathRenderer):
         self.plugin_defs[name] = parse_plugin(name, name+' = {'+text)
         return ''
 
+    def get_plugin_body(self, plugin_name, slide_id):
+        if plugin_name in self.slide_plugins:
+            abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+self.slide_number)
+        self.slide_plugins.add(plugin_name)
+
+        plugin_def = self.plugin_defs.get(plugin_name)
+        if not plugin_def:
+            plugin_def = self.options['plugin_defs'].get(plugin_name)
+            if not plugin_def:
+                abort('ERROR Plugin '+plugin_name+' not defined!')
+                return ''
+
+        plugin_params = {'plugin_slide_id': slide_id,
+                        'plugin_name': plugin_name,
+                        'plugin_label': 'slidoc-plugin-'+plugin_name,
+                        'plugin_id': slide_id+'-plugin-'+plugin_name }
+        plugin_params['plugin_body'] = plugin_def.get('Body', '') % plugin_params
+
+        return self.plugin_body_template % plugin_params
+
+    def slidoc_plugin(self, name, text):
+        self.plugin_loads.add(name)
+        return self.get_plugin_body(name, self.get_slide_id())
+
     def slidoc_answer(self, name, text):
         if self.cur_answer:
             # Ignore multiple answers
@@ -1050,20 +1088,11 @@ class SlidocRenderer(MathRenderer):
             text = plugin_match.group(4) or ''
 
         if plugin_name:
-            plugin_def = self.plugin_defs.get(plugin_name)
-            if not plugin_def:
-                plugin_def = self.options['plugin_defs'].get(plugin_name)
-                if not plugin_def:
-                    abort('ERROR Plugin '+plugin_name+' not defined!')
             if 'inline_js' in self.options['config'].strip and plugin_action == 'expect':
                 plugin_name = ''
                 plugin_action = ''
             else:
-                plugin_params = {'slide_id': slide_id,
-                                'plugin_name': plugin_name,
-                                'plugin_label': 'slidoc-plugin-'+plugin_name,
-                                'plugin_id': slide_id+'-plugin-'+plugin_name }
-                html_prefix += ('<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-slide-id="%(slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">'+plugin_def.get('Body', '')+'</div><!--%(plugin_id)s-body-->') % plugin_params
+                html_prefix += self.get_plugin_body(plugin_name, slide_id)
             
         if plugin_name:
             self.plugin_loads.add(plugin_name)
@@ -1476,21 +1505,22 @@ def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
 def parse_plugin(name, text):
     if not re.match(r'^\s*'+name+r'\s*=\s*{', text):
         abort("Plugin definition must start with '"+name+" = {'")
-    comps = re.split(r'\n/\*\s*Plugin(Head|Body):', text)
     plugin_def = {}
-    part = 'JS'
-    for comp in comps:
-        if not part:
-            part = comp
-            continue
-        if part == 'JS':
-            comp = 'SlidocPlugins.'+comp.lstrip()
+    match = re.match(r'^(.*)\n\s*/\*[\n\s]*Plugin(Head|Body):(.*)\*/[\n\s]*$', text, flags=re.DOTALL)
+    if match:
+        text = match.group(1)+'\n'
+        comments = re.sub(r'%(?!\(plugin_)', '%%', match.group(3))  # Escape % signs in Head/Body template
+        if match.group(2) == 'Head':
+            comps = comments.split('\nPluginBody:')
+            if len(comps) > 1:
+                plugin_def['Head'] = comps[0]+'\n'
+                plugin_def['Body'] = comps[1]+'\n'
+            else:
+                plugin_def['Head'] = comments+'\n'
         else:
-            comp = comp.rstrip()
-            if comp.endswith('*/'):
-                comp = comp[:-2]
-        plugin_def[part] = comp
-        part = ''
+            plugin_def['Body'] = comments
+
+    plugin_def['JS'] = 'SlidocPlugins.'+text.lstrip()
     return plugin_def
 
 def plugin_heads(plugin_defs, plugin_loads):

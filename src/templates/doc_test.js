@@ -56,9 +56,19 @@ TestScript.prototype.showStatus = function (state) {
 	statusElem.style.display = 'none';
 	return;
     }
-    if (this.curstep == 0)
-	statusElem.style.display = null;
-    statusElem.textContent = 'Test '+this.curstep+(state ? ': '+state: '');
+    var msg = 'Test '+this.curstep+' ';
+    if (state) {
+	msg += ': ' + state
+    } else {
+	var curScript = this.scripts[this.activeScript];
+	if (this.curstep < curScript.length)
+	    msg += '> '+curScript[this.curstep][0];
+	else
+	    msg += '> END';
+    }
+    
+    statusElem.style.display = null;
+    statusElem.textContent = msg;
 }
 
 TestScript.prototype.reportEvent = function (eventName) {
@@ -102,8 +112,8 @@ TestScript.prototype.reportEvent = function (eventName) {
     var slideNum = commands[1];
     var delay = commands[2];
     var action = commands[3];
-    this.showStatus();
     this.curstep++;
+    this.showStatus();
 
     if (slideNum) {
 	if (!Slidoc.getCurrentSlideId())
