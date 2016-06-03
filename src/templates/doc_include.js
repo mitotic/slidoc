@@ -289,7 +289,7 @@ function setupPlugins() {
 	if (!(pluginName in Sliobj.activePlugins)) {
 	    Sliobj.pluginList.push(pluginName);
 	    Sliobj.activePlugins[pluginName] = Sliobj.pluginList.length;
-	    var pluginInstance = createPluginInstance(pluginName, '', true);
+	    var pluginInstance = createPluginInstance(pluginName, true);
 	    SlidocPluginManager.optCall(pluginInstance, 'initSetup');
 	} else {
 	    var pluginInstance = Sliobj.pluginSetup[pluginName];
@@ -428,7 +428,7 @@ Slidoc.resetPaced = function () {
 	    alert('Cannot reset session linked to Google Docs');
 	return false;
     }
-    if (!Sliobj.testScript && !window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
+    if (!Slidoc.testingActive() && !window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
 	return false;
     Sliobj.session = sessionCreate();
     Sliobj.feedback = null;
@@ -670,6 +670,26 @@ function getQuestionAttrs(slide_id) {
     return attr_vals ? attr_vals[question_number-1] : null;
 }
 
+function showDialog(action, testEvent, prompt, value) {
+    Slidoc.log('showDialog:', action, testEvent, prompt, value);
+    var testValue = Slidoc.reportEvent(testEvent);
+    if (testValue !== null) {
+	if (!Sliobj.testStep)
+	    return testValue;
+	value = testValue
+    }
+    switch (action) {
+    case 'alert':
+	return alert(prompt);
+    case 'confirm':
+	return window.confirm(prompt);
+    case 'confirm':
+	return window.prompt(prompt, value||'');
+    default:
+	return alert('INTERNAL ERROR: Unknown dialog action '+action+': '+prompt);
+    }
+}
+
 SlidocPluginManager.optCall = function (pluginInstance, action) //... extra arguments
 {
     if (action in pluginInstance)
@@ -716,8 +736,8 @@ SlidocPluginManager.invoke = function (pluginInstance, action) //... extra argum
     }
 }
 
-function createPluginInstance(pluginName, slide_id, nosession) {
-    Slidoc.log('createPluginInstance:', pluginName, slide_id, nosession);
+function createPluginInstance(pluginName, nosession, slide_id, args) {
+    Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id, args);
     var pluginDef = SlidocPlugins[pluginName];
     if (!pluginDef)
 	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
@@ -761,6 +781,7 @@ function createPluginInstance(pluginName, slide_id, nosession) {
 	    defCopy.randomSeed = defCopy.global.randomSeed + 256*((1+comps[1])*256 + comps[2]);
 	    defCopy.randomNumber = SlidocRandom.randomNumber.bind(null, defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
+	    defCopy.pluginArgs = decodeURIComponent(args || '');
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	}
 
@@ -1160,6 +1181,9 @@ function slidocSetupAux(session, feedback) {
 	    }
 	}
     }
+
+    ///if (Slidoc.testingActive())
+	///Slidoc.slideViewStart();
 }
 
 function prepGradeSession(session) {
@@ -1190,7 +1214,8 @@ function initSessionPlugins(session) {
 	var bodyElem = document.getElementById(allBodyIds[j]);
 	var pluginName = bodyElem.dataset.plugin;
 	var slide_id = bodyElem.dataset.slideId;
-	var pluginInstance = createPluginInstance(pluginName, slide_id);
+	var args = bodyElem.dataset.args;
+	var pluginInstance = createPluginInstance(pluginName, false, slide_id, args);
 	SlidocRandom.setSeed(pluginInstance.randomSeed);
 	SlidocPluginManager.optCall(pluginInstance, 'init');
     }
@@ -1483,8 +1508,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 		    prompt += "enter 'partial' to submit and view correct answers.";
 		else
 		    prompt += "enter 'none' to submit late without credit.";
-		var testToken = Slidoc.reportEvent('lateTokenPrompt');
-		var token = testToken || window.prompt(prompt);
+		var token = showDialog('prompt', 'lateTokenDialog', prompt);
 		if (token && token.trim()) {
 		    this.lateToken = token.trim();
 		    retryCall();
@@ -1818,7 +1842,7 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
 	}
     } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim()) {
-	alert('Please provide an explanation for the answer');
+	showDialog('alert', 'explainDialog', 'Please provide an explanation for the answer');
 	return false;
     }
     return true;
@@ -2106,14 +2130,13 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
     Slidoc.log('Slidoc.answerTally: ', qscore, slide_id, question_attrs);
 
-    Slidoc.reportEvent('answerTally');
-    
     var slide_num = parseSlideId(slide_id)[2];
     if (slide_num < Sliobj.session.skipToSlide) {
+	Slidoc.reportEvent('answerSkip');
 	saveSession();
 	return;
     }
-    
+
     var qSkipfac = 1;
     var qWeight = question_attrs.weight;
 
@@ -2156,7 +2179,8 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
         Sliobj.session.weightedCorrect += qscore*qWeight;
     }
     Slidoc.showScore();
-
+    Slidoc.reportEvent('answerTally');
+    
     if (Sliobj.session.paced && Sliobj.questionConcepts.length > 0) {
 	// Track missed concepts
 	var concept_elem = document.getElementById(slide_id+"-concepts");
@@ -2281,7 +2305,7 @@ Slidoc.submitSession = function () {
     Slidoc.log('Slidoc.submitSession: ');
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    if (!window.confirm('Do you really want to submit session without reaching the last slide?'))
+    if (!showDialog('confirm', 'submitDialog', 'Do you really want to submit session without reaching the last slide?'))
 	return;
     Slidoc.endPaced();
 }
@@ -2381,7 +2405,6 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
 
 function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
     Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
-    Slidoc.reportEvent('gradeUpdate');
     if (!Slidoc.testingActive()) {
     // Move on to next user if slideshow mode, else to next question
 	if (Sliobj.currentSlide) {
@@ -2401,6 +2424,7 @@ function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) 
     }
     delete Sliobj.userGrades[userId].grading[qnumber];
     updateGradingStatus(userId);
+    Slidoc.reportEvent('gradeUpdate');
 }
 
 Slidoc.startPaced = function () {
@@ -2629,7 +2653,7 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 
     if (Sliobj.session.paced && Sliobj.params.tryCount && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.session.skipToSlide) {
 	// Advance one slide at a time
-	alert('Must have answered the recent batch of questions correctly to jump ahead in paced mode');
+	showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	return false;
     }
 
@@ -2640,13 +2664,15 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
 	if (slide_num == slides.length && Sliobj.session.questionsCount < Sliobj.params.questionsMax) {
-	    if (!Slidoc.testingActive() && !window.confirm('You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?'))
+	    var prompt = 'You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
+	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
 		return false;
 	}
 	if (Sliobj.questionSlide && Sliobj.session.remainingTries) {
 	    // Current (not new) slide is question slide
 	    var tryCount =  (Sliobj.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
-	    alert('Please answer before proceeding. You have '+tryCount+' try(s)');
+	    var prompt = 'Please answer before proceeding. You have '+tryCount+' try(s)';
+	    showDialog('alert', 'requireAnswerDialog', prompt);
 	    return false;
 	} else if (!Sliobj.questionSlide && Sliobj.params.paceDelay) {
 	    // Current (not new) slide is not question slide
@@ -2842,7 +2868,7 @@ function goSlide(slideHash, chained, singleChapter) {
    } else if (Sliobj.session.paced) {
        var slide_num = parseSlideId(slideId)[2];
        if (!slide_num || slide_num > Sliobj.session.lastSlide) {
-	   Slidoc.log('goSlide: Error - paced slide not reached:', slide_num, slideId);
+	   Slidoc.log('goSlide: Paced slide not reached:', slide_num, Sliobj.session.lastSlide);
 	   return false;
        }
    }

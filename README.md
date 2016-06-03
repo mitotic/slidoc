@@ -884,7 +884,7 @@ PluginDef: sqrtTest = {
     }
 }
 var randVals = {}; // Optional persistent object
-PluginEnd:
+PluginEnd: sqrtTest
 
 
 Answer: sqrtTest.expect();2.5 +/- 0.1

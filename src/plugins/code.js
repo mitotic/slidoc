@@ -249,8 +249,7 @@ function execCodeErr(callback, err) {
 }
 
 
-/*
-PluginHead:
+/* PluginHead:
 <style>
 .%(plugin_label)s-textarea,
   .%(plugin_label)s-check-button {display: block;}
