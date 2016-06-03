@@ -270,7 +270,8 @@ if (resetParam) {
 
 document.onreadystatechange = function(event) {
     Slidoc.log('onreadystatechange:', document.readyState);
-    if (document.readyState != "interactive" || !document.body)
+    // !Sliobj.params.fileName => index file; load, but do not execute JS
+    if (document.readyState != "interactive" || !document.body || !Sliobj.params.fileName)
 	return;
     Slidoc.reportEvent('ready');
     return abortOnError(onreadystateaux);

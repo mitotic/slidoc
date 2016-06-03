@@ -1678,9 +1678,23 @@ def process_input(input_files, config_dict):
         custom_css = md2md.read_file(config.css) if config.css else templates['doc_custom.css']
         css_html = '<style>\n%s\n%s</style>\n' % (custom_css, inc_css)
 
+    test_params = []
     add_scripts = ''
     if config.test_script:
         add_scripts += '\n<script>\n%s</script>\n' % templates['doc_test.js']
+        if not config.test_script.isdigit():
+            for comp in config.test_script.split(','):
+                script, _, user_id = comp.partition('/')
+                if user_id and not gd_hmac_key:
+                    continue
+                query = '?testscript=' + script
+                if user_id:
+                    label = '%s/%s' % (script, user_id)
+                    query += '&testuser=%s&testkey=%s' % (user_id, gd_hmac_key)
+                else:
+                    label = script
+                test_params.append([label, query])
+
     if config.google_docs:
         add_scripts += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
         if js_params['gd_client_id']:
@@ -1695,7 +1709,11 @@ def process_input(input_files, config_dict):
         answer_elements[suffix] = 1;
     js_params['answer_elements'] = answer_elements
 
-    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + add_scripts
+    if combined_file:
+        js_params['fileName'] = out_name
+    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+    if combined_file:
+        head_html += add_scripts
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
@@ -1766,6 +1784,7 @@ def process_input(input_files, config_dict):
         fname = fnames[j]
         if config.separate:
             js_params['sessionName'] = fname
+            js_params['fileName'] = fname
 
         if config.separate:
             # Separate files (also paced)
@@ -1955,6 +1974,9 @@ def process_input(input_files, config_dict):
                     doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
                 doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
                 toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
+                if test_params:
+                    for label, query in test_params:
+                        doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
             toc_html.append('<li>%s%s<span class="slidoc-nosidebar"> (%s)%s%s</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
             if not config.pace:
@@ -1982,7 +2004,7 @@ def process_input(input_files, config_dict):
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if toc_insert:
                 toc_insert += '<br>'
-            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=hide_chapters)+header_insert+Toc_header+toc_insert+''.join(toc_html)+'</article>\n'
+            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=False)+header_insert+Toc_header+toc_insert+''.join(toc_html)+'</article>\n'
             if combined_file:
                 all_container_prefix  = '<div id="slidoc-all-container" class="slidoc-all-container">\n'
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
@@ -2004,7 +2026,7 @@ def process_input(input_files, config_dict):
             if config.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.site_url, config.crossref, 'CROSS-REFERENCING')) + index_html
 
-            index_output = chapter_prefix(len(input_files)+1, 'slidoc-index-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + index_html + '</article>\n'
+            index_output = chapter_prefix(len(input_files)+1, 'slidoc-index-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + index_html + '</article>\n'
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             else:
@@ -2039,7 +2061,7 @@ def process_input(input_files, config_dict):
         first_references, covered_first, qindex_html = make_index(Global.primary_qtags, Global.sec_qtags, config.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
         qout_list.append(qindex_html)
 
-        qindex_output = chapter_prefix(len(input_files)+2, 'slidoc-qindex-container slidoc-noslide', hide=hide_chapters) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
+        qindex_output = chapter_prefix(len(input_files)+2, 'slidoc-qindex-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
         if not config.dry_run:
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
@@ -2233,7 +2255,7 @@ parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
-parser.add_argument('--test_script', help='Enable test script', action="store_true", default=None)
+parser.add_argument('--test_script', metavar='1 OR SCRIPT1[/USER],SCRIPT2/USER2,...', help='Enable scripted testing', )
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
 if __name__ == '__main__':
