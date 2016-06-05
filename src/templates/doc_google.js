@@ -396,6 +396,7 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
     // Specify opts.id to override id
     // Specify opts.get to retrieve the existing/overwritten row.
     // Specify opts.nooverwrite to not overwrite any existing row with same id
+    // Specify opts.submit to update submitTimestamp
     // opts.get with opts.nooverwrite will return the existing row, or the newly inserted row.
     Slidoc.log('GoogleSheet.putRow:', rowObj, opts);
 

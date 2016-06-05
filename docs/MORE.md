@@ -48,15 +48,15 @@ formula plugins. These contain HTML with python-style format strings
 of the form `%(plugin_*)s` to customize element IDs. The following
 formats are subsituted:
 
->  `plugin_slide_id`: `slidoc01-01`
+> `plugin_slide_id`: `slidoc01-01`
 
->  `plugin_name`: `name`
+> `plugin_name`: `name`
 
->  `plugin_label`: `slidoc-plugin-name`
+> `plugin_label`: `slidoc-plugin-name`
 
->  `plugin_id`: `slidoc01-01-plugin-name`
+> `plugin_id`: `slidoc01-01-plugin-name`
 
->  `plugin_args`: argument string
+> `plugin_args`: argument string
 
 See `test/ex01-basic.md` and `test/ex06-d3js.md`
 for simple examples. For a more complex example, see
@@ -80,33 +80,37 @@ embedded, after the `global` object has been instantiated.
 The `this` object for each instance contains the following pre-defined
 attributes:
 
->  `this.name`: plugin name
+> `this.name`: plugin name
 
->  `this.adminState`: *true* if grading
+> `this.adminState`: *true* if grading
 
->  `this.sessionName`: session name
+> `this.sessionName`: session name
+
+> `this.pluginArgs`: object with slideId as keys and arguments from
+> embedded plugin in the slide as values, e.g.,
+> `{'slidoc01-03':[arg1, arg2, ...], ...}`
+> (These are the same arguments that are used
+> for calling `init` method of slide instances.)
 
 The following are defined only for global and slide instances:
 
->  `this.setup`:  setup instance
+> `this.setup`:  setup instance
 
->  `this.persist`: plugin-specific saved data for sessions
+> `this.persist`: plugin-specific saved data for sessions
 
->  `this.randomSeed`: slide-specific random seed (session-specific for global instances)
+> `this.randomSeed`: slide-specific random seed (session-specific for global instances)
 
->  `this.randomNumber`: random number generator using this seed
+> `this.randomNumber`: random number generator using this seed
  
 The following are defined only for slide instances:
 
->  `this.global`: global instance
+> `this.global`: global instance
 
->  `this.slideId`: `slidoc01-01`
+> `this.slideId`: `slidoc01-01`
 
->  `this.pluginId`: `slidoc-01-01-plugin-name`
+> `this.pluginId`: `slidoc-01-01-plugin-name`
 
->  `this.pluginArgs`: argument string from PluginBegin
-
->  `this.qattributes`: question attributes objects (for question slides)
+> `this.qattributes`: question attributes objects (for question slides)
 
 Use `this.randomNumber()` to generate uniform random number between 0
 and 1.  Use `this.randomNumber(min, max)` to pick equally probable
@@ -119,54 +123,42 @@ be reset explicitly.
 
 The following methods are automatically called for plugin instances;
 
->  `initSetup()`: when setup instance is inititiated (after document is ready)
+> `initSetup()`: when setup instance is inititiated (after document
+is ready). May insert/modify DOM and plugin content.
 
->  `initSetupSlide(slideId)`: for each slide containing the plugin,
-  after setup instance is initiated (to insert/modify DOM and plugin content)
+> `initGlobal()`: when the global instance is instantiated (at start of
+session or user switching)
 
->  `initGlobal()`: when the global instance is instantiated (at start of
-  session or user switching)
-
->  `init()`: when the slide instance is instantiated
+> `init(args)`: when the slide instance is instantiated
 
 The slide-specific `init` will be called in a deterministic order, to
 preserve the sequence in which global random generators may be called.
 
 The following methods should be defined for plugins, as required:
 
->  `expect`: returns expected correct answer (for formula plugins)
+> `expect`: returns expected correct answer (for formula plugins)
 
->  `display`: displays previously recorded user response (called at start/switch of session for each question)
+> `display`: displays previously recorded user response (called at start/switch of session for each question)
 
->  `disable`: disables plugin (after user response has been recorded)
+> `disable`: disables plugin (after user response has been recorded)
 
-> `response`: records user response and uses callback to return the
-    response (as a string) and an optional `pluginResp` object of the
-    form: `{name:pluginName, score:1/0/0.75/.../null, invalid:
-    invalid_msg, output:output, tests:0/1/2}`
-
-In the `pluginResp` object, `score` may be any value between `0.0` and `1.0`. A `null` value for
-`score` implies no grading for the question. (The `score` will be
-multiplied by the score weight for the question when computing the
-cumulative score.) `invalid` is used to record syntax/runtime error
-messages. `output` records valid (but possibly incorrect) output from
-code testing. `tests` indicates whether zero, primary (output visible
-to user), or secondary (output invisible to user) testing of code
-output was carried out.
-
-Simple formula-subsitution plugins usually define `init` and `expect`
-(returning the correct answer) and at least one other function
-returning a subsitution value (see `test/ex01-basic.md`).
+> `response`: records and returns user response
 
 ---
 
 ## Embedding plugins
 
-Once defined, plugins may be embedded in one or more slides as
-follows:
+Once defined, plugins may be embedded in one or more slides by
+invoking the `init` method, with optional arguments, as follows:
 
 ```
-PluginBegin: name [argument string]
+=name.init(arguments)
+```
+
+OR
+
+```
+PluginBegin: name.init(arguments)
 text content
 PluginEnd: name
 ```
@@ -175,12 +167,63 @@ This embeds the PluginBody HTML at this location, in a `div` with `id`
 set to `plugin_id-body`, using templating to change element IDs. Any
 text content between PluginBegin/PluginEnd is available in a `div`
 with `id` set to `plugin_id-content` (for the plugin to re-format
-during the `setup` instantiation.)
+during the `setup` instantiation.) The optional `arguments`, which
+must all be in the same line, are supplied to the `init` call for
+slide instances.
 
 Alternatively, using `name.expect()` or `name.response()` as the
-correct answer implcitly embeds the plugin before the Answer (if it
-has not been explicitly embedded before.)
+correct answer automatically embeds the plugin before the Answer (if
+it has not been explicitly embedded before.)
 
+---
+
+## Formula plugins
+
+Anywhere within Markdown text, any functions attached to plugins
+embedded in the slide may be invoked using Excel-like backtick-equals
+notations:
+
+    `=plugin_name.func()`
+
+This substitutes the return value from the function `func` attached to
+the slide instance of the plugin. (`func` would always be called after
+the `init` call.)
+
+The correct answer can also be provided by a formula:
+
+    Answer: plugin_name.expect();number
+
+with the answer type appended after a semicolon (`;`).
+
+Simple formula-subsitution plugins usually define `init` and `expect`
+(returning the correct answer) and at least one other function
+returning a subsitution value (see `test/ex01-basic.md`).
+
+
+---
+
+## Response plugins
+
+Response plugins interact with the users and capture the response to a
+question. They appears in the Answer portion of the slide.
+
+    Answer: plugin_name.response();text/x-python
+
+The `response` method uses callback to return the user response (as a
+string) and an optional `pluginResp` object of the form:
+`{name:pluginName, score:1/0/0.75/.../null, invalid: invalid_msg,
+output:output, tests:0/1/2}`
+
+`score` may be any value between `0.0` and `1.0`. A `null` value for
+`score` implies no grading for the question. (The `score` will be
+multiplied by the score weight for the question when computing the
+cumulative score.) `invalid` is used to record syntax/runtime error
+messages. `output` records valid (but possibly incorrect) output from
+code testing. `tests` indicates whether zero, primary (output visible
+to user), or secondary (output invisible to user) testing of code
+output was carried out.
+
+See `plugins/code.js` for an example of a response plugin.
 
 ---
 
@@ -223,9 +266,9 @@ The entry format is
 `['expectedEvent', slide_number or 0, delay_msec or 0, 'action', [arg1, arg2, ...]]`,
 with
 
->  Prefix `+` for expected events indicates optional event (may not be reported)
+> Prefix `+` for expected events indicates optional event (may not be reported)
 
->  Prefix `-` for expected events indicates skipped event (no action to be performed)
+> Prefix `-` for expected events indicates skipped event (no action to be performed)
 
 See `test/ex??-*.md` for examples. See
 `TestScript.prototype.eventAction` in `doc_test.js` for more testing

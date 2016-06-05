@@ -895,7 +895,7 @@ Notes: An optional error range may be provided after `+/-`.
 
 Embedded javascript functions may be used as formulas, using the notation
 
-    =plugin_name.func_name()
+    `=plugin_name.func_name()`
 
 To display a default reference value, append it, separated by a
 semicolon (`;`). View the raw Markdown text for this document to see

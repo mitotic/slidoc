@@ -156,6 +156,7 @@ function handleResponse(evt) {
 	    throw('Error:SHEETNAME::No sheet name specified');
 
 	var restrictedSheet = (sheetName == INDEX_SHEET);
+	var loggingSheet = (sheetName.slice(-4) == '_log');
 	var adminUser = '';
 	var authUser = '';
 	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
@@ -284,7 +285,8 @@ function handleResponse(evt) {
 	    if (!userId)
 		throw('Error::User id must be specified for updates/gets');
 	    var userRow = -1;
-	    if (sheet.getLastRow() > numStickyRows) {
+	    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
+		// Locate ID row (except for log files)
 		var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1);
 		for (var j=0; j<ids.length; j++) {
 		    // Unique ID
@@ -314,7 +316,7 @@ function handleResponse(evt) {
 		var dueDate = null;
 		var gradeDate = null;
 		var fieldsMin = columnHeaders.length;
-		if (!restrictedSheet && doc.getSheetByName(INDEX_SHEET)) {
+		if (!restrictedSheet && !loggingSheet && doc.getSheetByName(INDEX_SHEET)) {
 		    // Session parameters
 		    var sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'fieldsMin'], INDEX_SHEET);
 		    dueDate = sessionParams.dueDate;
@@ -374,12 +376,12 @@ function handleResponse(evt) {
 		}
 
 		if (newRow) {
-		    // New user; insert row in sorted order of name
+		    // New user; insert row in sorted order of name (except for log files)
 		    if (!displayName || !rowUpdates)
-			throw('Error::User name and row parameters required to create a new row for id '+userId);
+			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
 
 		    userRow = sheet.getLastRow()+1;
-		    if (sheet.getLastRow() > numStickyRows) {
+		    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
 			var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
 			for (var j=0; j<names.length; j++) {
 			    if (names[j][0] > displayName) {

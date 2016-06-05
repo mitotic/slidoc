@@ -21,8 +21,11 @@ var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
 var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
 
 var Sliobj = {}; // Internal object
+Sliobj.debugging = true;
+Sliobj.logSheet = null;
+
 Sliobj.params = JS_PARAMS_OBJ;
-Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.sessionName : '';
+Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.fileName : '';
 
 Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
@@ -35,8 +38,6 @@ Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
 Sliobj.pluginData = null;
-
-Sliobj.debugging = true;
 
 Sliobj.testScript = null;
 Sliobj.testStep = getParameter('teststep');
@@ -89,6 +90,8 @@ Slidoc.log = function() {
     var match = /^([\.\w]+)(:\s*|\s+|$)(ERROR|WARNING)?/i.exec(''+arguments[0]);
     if (match && match[3] && match[3].toUpperCase() == 'ERROR') {
 	Slidoc.logDump();
+	if (Sliobj.params.remoteLogLevel > 1)
+	    Slidoc.remoteLog(match[1], 'ERROR', JSON.stringify(args), '');
     } else {
 	Sliobj.logQueue.push(JSON.stringify(args));
 	if (Sliobj.logQueue.length > Sliobj.logMax)
@@ -123,7 +126,7 @@ function getSheet(name) {
 	return Sliobj.sheets[name];
 
     var fields = Sliobj.params.sessionFields;
-    if (name == Sliobj.params.sessionName)
+    if (name == Sliobj.params.fileName)
 	fields = fields.concat(Sliobj.params.gradeFields);
     try {
 	Sliobj.sheets[name] = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, name,
@@ -198,8 +201,16 @@ function setupCache(auth, callback) {
     }
 }
 
+Slidoc.remoteLog = function (funcName, msgType, msg, msgTrace) {
+    if (Sliobj.logSheet)
+	Sliobj.logSheet.putRow({id: GService.gprofile.auth.id, name: GService.gprofile.auth.id, file: Sliobj.params.fileName,
+				function: funcName||'', type: msgType||'', message: msg||'', trace: msgTrace||'' },
+			       {} );
+}
+
 var sessionAborted = false;
 function sessionAbort(err_msg, err_trace) {
+    Slidoc.remoteLog('sessionAbort', '', err_msg, err_trace);
     if (sessionAborted)
 	return;
     sessionAborted = true;
@@ -259,10 +270,10 @@ if (resetParam) {
 	localDel('sessions');
 	alert('All local sessions reset');
 	location = location.href.split('?')[0];
-    } else if (window.confirm('Reset session '+Sliobj.params.sessionName+'?')) {
+    } else if (window.confirm('Reset session '+Sliobj.params.fileName+'?')) {
 	localDel('auth');
 	var sessionObj = localGet('sessions');
-	delete sessionObj[Sliobj.params.sessionName];
+	delete sessionObj[Sliobj.params.fileName];
 	localPut('sessions', sessionObj);
 	location = location.href.split('?')[0];
     }
@@ -285,20 +296,30 @@ function setupPlugins() {
     var allBodies = document.getElementsByClassName('slidoc-plugin-body');
     for (var j=0; j<allBodies.length; j++) {
 	var pluginName = allBodies[j].dataset.plugin;
+	var slide_id = allBodies[j].dataset.slideId;
+	var args = decodeURIComponent(allBodies[j].dataset.args || '');
 	if (!(pluginName in SlidocPlugins))
 	    sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax errors');
 	if (!(pluginName in Sliobj.activePlugins)) {
 	    Sliobj.pluginList.push(pluginName);
-	    Sliobj.activePlugins[pluginName] = Sliobj.pluginList.length;
-	    var pluginInstance = createPluginInstance(pluginName, true);
-	    SlidocPluginManager.optCall(pluginInstance, 'initSetup');
-	} else {
-	    var pluginInstance = Sliobj.pluginSetup[pluginName];
+	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {} };
 	}
-
-	var slide_id = allBodies[j].dataset.slideId;
-	SlidocPluginManager.optCall(pluginInstance, 'initSetupSlide', slide_id);
+	var argList = [];
+	try {
+	    if (args)
+		argList = eval('['+args+']');
+	} catch (err) {
+	    var errMsg = 'createPluginInstance: ERROR in init('+args+') arguments for plugin '+pluginName+' in '+slide_id+': '+err;
+	    Slidoc.log(errMsg);
+	    alert(errMsg);
+	}
+	Sliobj.activePlugins[pluginName].args[slide_id] = argList;
     }
+    for (var j=0; j<Sliobj.pluginList.length; j++) {
+	var pluginInstance = createPluginInstance(Sliobj.pluginList[j], true);
+	SlidocPluginManager.optCall(pluginInstance, 'initSetup');
+    }
+
 }
 
 var PagedownConverter = null;
@@ -332,7 +353,7 @@ function onreadystateaux() {
     }
 }
 
-function isNumber(x) { return !isNaN(x); }
+function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
 function zeroPad(num, pad) {
     // Pad num with zeros to make pad digits
@@ -714,8 +735,7 @@ SlidocPluginManager.action = function (pluginName, action, slide_id) //... extra
 }
 
 SlidocPluginManager.invoke = function (pluginInstance, action) //... extra arguments
-{   // action == 'initSetup' initial setup after document is ready
-    // action == 'initSetupSlide' inserts/modified DOM elements called per slide after document is ready
+{   // action == 'initSetup' initial setup after document is ready; may insert/modify DOM elements
     // action == 'initGlobal' resets global plugin properties for all slides (called at start/switch of session)
     // action == 'init' resets plugin properties for each slide (called at start/switch of session)
     // action == 'display' displays recorded user response (called at start/switch of session for each question)
@@ -737,8 +757,8 @@ SlidocPluginManager.invoke = function (pluginInstance, action) //... extra argum
     }
 }
 
-function createPluginInstance(pluginName, nosession, slide_id, args) {
-    Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id, args);
+function createPluginInstance(pluginName, nosession, slide_id) {
+    Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id);
     var pluginDef = SlidocPlugins[pluginName];
     if (!pluginDef)
 	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEnd');
@@ -753,6 +773,7 @@ function createPluginInstance(pluginName, nosession, slide_id, args) {
     defCopy.name = pluginName;
     defCopy.adminState = Sliobj.adminState;
     defCopy.sessionName = Sliobj.sessionName;
+    defCopy.pluginArgs = Sliobj.activePlugins[pluginName].args;
     if (nosession) {
 	defCopy.setup = null;
 	defCopy.global = null;
@@ -772,7 +793,7 @@ function createPluginInstance(pluginName, nosession, slide_id, args) {
 	    // Global seed for all instances of the plugin
 	    defCopy.global = null;
 	    defCopy.slideId = '';
-	    defCopy.randomSeed = Sliobj.session.randomSeed + Sliobj.activePlugins[pluginName];
+	    defCopy.randomSeed = Sliobj.session.randomSeed + Sliobj.activePlugins[pluginName].number;
 	    defCopy.randomNumber = SlidocRandom.randomNumber.bind(null, defCopy.randomSeed);
 	} else {
 	    // Seed for each slide instance of the plugin
@@ -782,7 +803,6 @@ function createPluginInstance(pluginName, nosession, slide_id, args) {
 	    defCopy.randomSeed = defCopy.global.randomSeed + 256*((1+comps[1])*256 + comps[2]);
 	    defCopy.randomNumber = SlidocRandom.randomNumber.bind(null, defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
-	    defCopy.pluginArgs = decodeURIComponent(args || '');
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	}
 
@@ -913,6 +933,12 @@ Slidoc.slidocReady = function (auth) {
 	    if (result && result.gradeDate)
 		Sliobj.gradeDate = result.gradeDate;
 	});
+    }
+
+    if (Sliobj.params.remoteLogLevel && Sliobj.params.gd_sheet_url) {
+	Sliobj.logSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.log_sheet,
+						     Sliobj.params.logFields.slice(0,2),
+						     Sliobj.params.logFields.slice(2), useJSONP);
     }
 
     if (CACHE_GRADING && Sliobj.adminState && Sliobj.sessionName) {
@@ -1215,10 +1241,10 @@ function initSessionPlugins(session) {
 	var bodyElem = document.getElementById(allBodyIds[j]);
 	var pluginName = bodyElem.dataset.plugin;
 	var slide_id = bodyElem.dataset.slideId;
-	var args = bodyElem.dataset.args;
-	var pluginInstance = createPluginInstance(pluginName, false, slide_id, args);
+	var pluginInstance = createPluginInstance(pluginName, false, slide_id);
 	SlidocRandom.setSeed(pluginInstance.randomSeed);
-	SlidocPluginManager.optCall(pluginInstance, 'init');
+	var argList = Sliobj.activePlugins[pluginName].args[slide_id];
+	SlidocPluginManager.optCall.apply(null, [pluginInstance, 'init'].concat(argList));
     }
 
     var jsSpans = document.getElementsByClassName('slidoc-inline-js');
@@ -1972,7 +1998,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 		inpElem.value = response;
 	    } else {
 		response = inpElem.value.trim();
-		if (question_attrs.qtype == 'number' && isNaN(response)) {
+		if (question_attrs.qtype == 'number' && !isNumber(response)) {
 		    alert('Expecting a numeric value as answer');
 		    return false;
 		} else if (Sliobj.session.paced && !checkOnly) {
@@ -2011,7 +2037,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
 
-    var qscore = '';
+    var qscore = null;
     var question_attrs = getQuestionAttrs(slide_id);
 
     var corr_answer      = question_attrs.correct || '';
@@ -2020,7 +2046,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     Slidoc.log('Slidoc.answerUpdate:', slide_id);
 
     if (pluginResp) {
-	qscore = pluginResp.score;
+	qscore = isNumber(pluginResp.score) ? pluginResp.score : null;
 	corr_answer = '';
     } else {
 	var pluginMatch = /^(\w+)\.expect\(\)(;(.+))?$/.exec(corr_answer);
@@ -2081,7 +2107,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     setAnswerElement(slide_id, '-correct-mark', '', qscore === 1 ? ' '+SYMS['correctMark']+'&nbsp;' : '');
     setAnswerElement(slide_id, '-partcorrect-mark', '', (isNumber(qscore) && qscore > 0 && qscore < 1) ? ' '+SYMS['partcorrectMark']+'&nbsp;' : '');
     setAnswerElement(slide_id, '-wrong-mark', '', (qscore === 0) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
-    setAnswerElement(slide_id, '-any-mark', '', isNaN(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
+    setAnswerElement(slide_id, '-any-mark', '', !isNumber(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
     
     // Display correct answer
     setAnswerElement(slide_id, "-answer-correct", corr_answer||'', corr_answer_html);
@@ -2122,7 +2148,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 							      explain: explain,
 							      plugin: pluginResp||null,
 							      expect: corr_answer,
-							      score: isNaN(qscore) ? '': qscore};
+							      score: isNumber(qscore) ? qscore : null};
 	Slidoc.answerTally(qscore, slide_id, question_attrs);
     }
 }
@@ -2175,9 +2201,10 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
     // Keep score
     Sliobj.session.questionsCount += qSkipfac;
     Sliobj.session.weightedCount += qWeight;
-    if (qscore) {
+    var effectiveScore = isNumber(qscore) ? qscore : 1;   // Give full credit to unscored answers
+    if (effectiveScore) {
         Sliobj.session.questionsCorrect += qSkipfac;
-        Sliobj.session.weightedCorrect += qscore*qWeight;
+        Sliobj.session.weightedCorrect += effectiveScore*qWeight;
     }
     Slidoc.showScore();
     Slidoc.reportEvent('answerTally');
@@ -2186,7 +2213,7 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
 	// Track missed concepts
 	var concept_elem = document.getElementById(slide_id+"-concepts");
 	var concepts = concept_elem ? concept_elem.textContent.split('; ') : ['null'];
-	var miss_count = (isNaN(qscore) || qscore === 1) ? 0 : 1;
+	var miss_count = (!isNumber(qscore) || qscore === 1) ? 0 : 1;
 	
 	for (var j=0; j<concepts.length; j++) {
 	    var m = (j == 0) ? 0 : 1;   // Primary/secondary concept
@@ -2490,7 +2517,9 @@ Slidoc.startPaced = function () {
     startMsg += '</ul>';
     Slidoc.showPopup(startMsg);
 
-    goSlide('#'+firstSlideId, false, true);
+    var chapterId = parseSlideId(firstSlideId)[0];
+    if (!singleChapterView(chapterId))
+	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
     Slidoc.slideViewStart();
 }
 
@@ -2763,6 +2792,32 @@ Slidoc.breakChain = function () {
        ichain_elem.style.display = 'none';
 }
 
+function singleChapterView(newChapterId) {
+    if (newChapterId == Sliobj.curChapterId)
+	return true;
+    // Switch chapter
+    if (!Sliobj.curChapterId) {
+	// Switch to single chapter view
+	document.body.classList.remove('slidoc-all-view');
+    } else if (Sliobj.session.paced) {
+	alert('Slidoc: InternalError: cannot switch chapters in paced mode');
+	return false;
+    }
+    var newChapterElem = document.getElementById(newChapterId);
+    if (!newChapterElem) {
+        Slidoc.log('goSlide: Error - unable to find chapter:', newChapterId);
+        return false;
+    }
+    Sliobj.curChapterId = newChapterId;
+    var chapters = document.getElementsByClassName('slidoc-container');
+    Slidoc.log('singleChapterView:', newChapterId, chapters.length);
+    for (var i=0; i < chapters.length; i++) {
+	if (!Sliobj.sidebar || !chapters[i].classList.contains('slidoc-toc-container'))
+	    chapters[i].style.display = (chapters[i].id == newChapterId) ? null : 'none';
+    }
+    return true;
+}
+
 Slidoc.go = function (slideHash, chained) {
     return goSlide(slideHash, chained);
 }
@@ -2831,28 +2886,8 @@ function goSlide(slideHash, chained, singleChapter) {
             Slidoc.log('goSlide: Error - invalid hash, not slide or chapter', slideHash);
             return false;
 	}
-       if (newChapterId != Sliobj.curChapterId) {
-	   // Switch chapter
-	   if (!Sliobj.curChapterId) {
-	       // Switch to single chapter view
-	       document.body.classList.remove('slidoc-all-view');
-	   } else if (Sliobj.session.paced) {
-	      alert('Slidoc: InternalError: cannot switch chapters in paced mode');
-	      return false;
-	   }
-           var newChapterElem = document.getElementById(newChapterId);
-           if (!newChapterElem) {
-               Slidoc.log('goSlide: Error - unable to find chapter:', newChapterId);
-               return false;
-           }
-           Sliobj.curChapterId = newChapterId;
-           var chapters = document.getElementsByClassName('slidoc-container');
-           Slidoc.log('goSlide:E ', newChapterId, chapters.length);
-           for (var i=0; i < chapters.length; i++) {
-	       if (!Sliobj.sidebar || !chapters[i].classList.contains('slidoc-toc-container'))
-		   chapters[i].style.display = (chapters[i].id == newChapterId) ? null : 'none';
-           }
-       }
+	if (!singleChapterView(newChapterId))
+	    return false;
     }
 
    if (Sliobj.currentSlide) {
@@ -2869,7 +2904,7 @@ function goSlide(slideHash, chained, singleChapter) {
    } else if (Sliobj.session.paced) {
        var slide_num = parseSlideId(slideId)[2];
        if (!slide_num || slide_num > Sliobj.session.lastSlide) {
-	   Slidoc.log('goSlide: Paced slide not reached:', slide_num, Sliobj.session.lastSlide);
+	   Slidoc.log('goSlide: Warning - Paced slide not reached:', slide_num, Sliobj.session.lastSlide);
 	   return false;
        }
    }
@@ -3153,10 +3188,10 @@ var LCRandom = (function() {
 	// Equally probable integer values between min and max (inclusive)
 	// If min is omitted, equally probable integer values between 1 and max
 	// If both omitted, value uniformly distributed between 0.0 and 1.0 (<1.0)
-	if (isNaN(min))
+	if (!isNumber(min))
 	    return uniform(seedValue);
 	else {
-	    if (isNaN(max)) {
+	    if (!isNumber(max)) {
 		max = min;
 		min = 1;
 	    }

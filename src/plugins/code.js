@@ -1,7 +1,6 @@
 code = {
 
     setup: { initSetup: function() {Slidoc.log('SlidocPlugins.code.setup.initSetup:');},
-	     initSetupSlide: function(slideId) {Slidoc.log('SlidocPlugins.code.setup.initSetupSlide:', slideId);}
 	   },
 
     global: { initGlobal: function() {Slidoc.log('SlidocPlugins.code.global.initGlobal:');}

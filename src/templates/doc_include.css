@@ -49,7 +49,6 @@ span#slidoc-test-status {color: red; font-weight: bold; background: #888;}
 
 /* Navigation */
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }
-.slidoc-bottom-left  { z-index: 1000; position: fixed; left:  10px; bottom: 10px; font-size: 1.2em; opacity: 0.5; }
 .slidoc-bottom-right { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; opacity: 0.5; }
 .slidoc-top-right    { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; opacity: 0.8; }
 .slidoc-top-left     { z-index: 3300; position: fixed; left: 10px; top: 15px; font-size: 1.2em; opacity: 0.9; }

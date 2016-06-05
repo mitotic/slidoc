@@ -42,6 +42,7 @@ from pygments.util import ClassNotFound
 from xml.etree import ElementTree
 
 INDEX_SHEET = 'sessions_slidoc'
+LOG_SHEET = 'slidoc_log'
 MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
@@ -265,9 +266,11 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
+    plugin_begin  =   re.compile(r'^PluginBegin:\s*(\w+).init\s*\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+                                                re.DOTALL)
+    plugin_init   =   re.compile(r'^=(\w+).init\s*\(([^\n]*)\)\s*\n\s*(\n|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
-    slidoc_plugin =   re.compile(r'^ {0,3}(PluginBegin):\s*(\w+)(.*?)\nPluginEnd:\s*\2\s*(\n|$)', re.DOTALL)
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     slidoc_weight =   re.compile(r'^ {0,3}(Weight):(.*?)(\n|$)')
@@ -279,7 +282,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'slidoc_plugin', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_begin',  'plugin_init', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -306,6 +309,20 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2)
         })
 
+    def parse_plugin_begin(self, m):
+         self.tokens.append({
+            'type': 'slidoc_plugin',
+            'name': m.group(1),
+            'text': m.group(2)+'\n'+(m.group(3) or '')
+        })
+
+    def parse_plugin_init(self, m):
+         self.tokens.append({
+            'type': 'slidoc_plugin',
+            'name': m.group(1),
+            'text': m.group(2)
+        })
+
     def parse_slidoc_header(self, m):
          self.tokens.append({
             'type': 'slidoc_header',
@@ -318,13 +335,6 @@ class MathBlockLexer(mistune.BlockLexer):
             'type': 'slidoc_answer',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
-        })
-
-    def parse_slidoc_plugin(self, m):
-         self.tokens.append({
-            'type': 'slidoc_plugin',
-            'name': m.group(2),
-            'text': m.group(3)
         })
 
     def parse_slidoc_concepts(self, m):
@@ -1065,11 +1075,9 @@ class SlidocRenderer(MathRenderer):
         return html
 
     def slidoc_plugin(self, name, text):
-        first_line, sep, content = text.partition('\n')
-        if content:
-            content += '\n'
+        args, sep, content = text.partition('\n')
         self.plugin_loads.add(name)
-        return self.embed_plugin_body(name, self.get_slide_id(), args=first_line.strip(), content=content)
+        return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
     def slidoc_answer(self, name, text):
         if self.cur_answer:
@@ -1429,7 +1437,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
-        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
+        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
 
@@ -1472,6 +1480,7 @@ Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect'
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',
                 'scoreWeight', 'gradeWeight', 'fieldsMin', 'questions', 'answers',
                 'primary_qconcepts', 'secondary_qconcepts']
+Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'file', 'function', 'type', 'message', 'trace']
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
                          p_concepts, s_concepts):
@@ -1505,15 +1514,15 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     print('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name), file=sys.stderr)
 
                 
-def create_session_sheet(sheet_url, hmac_key, session_name, grade_fields):
+def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers):
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
-    post_params = {'admin': user, 'token': user_token, 'sheet': session_name,
-                   'headers': json.dumps(Manage_fields+Session_fields+grade_fields)}
+    post_params = {'admin': user, 'token': user_token, 'sheet': sheet_name,
+                   'headers': json.dumps(headers)}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
-        abort("Error in creating sheet for session '%s': %s" % (session_name, retval['error']))
-    print('slidoc: Created remote spreadsheet:', session_name, file=sys.stderr)
+        abort("Error in creating sheet '%s': %s" % (sheet_name, retval['error']))
+    print('slidoc: Created remote spreadsheet:', sheet_name, file=sys.stderr)
 
 def parse_plugin(name, text):
     if not re.match(r'^\s*'+name+r'\s*=\s*{', text):
@@ -1557,61 +1566,64 @@ def plugin_heads(plugin_defs, plugin_loads):
     return ''.join(plugin_code)
 
 
-def process_input(input_files, config_dict):
-    tem_dict = config_dict.copy()
-    tem_dict.update(separate=False, toc='toc.html', index='ind.html', qindex='qind.html')
+scriptdir = os.path.dirname(os.path.realpath(__file__))
 
+def process_input(input_files, config_dict):
+
+    if config_dict['index_files']:
+        comps = config_dict['index_files'].split(',')
+        ftoc = comps[0]+'.html' if comps[0] else ''
+        findex = comps[1]+'.html' if len(comps) > 1 and comps[1] else ''
+        fqindex = comps[2]+'.html' if len(comps) > 2 and comps[2] else ''
+    else:
+        ftoc, findex, fqindex = 'toc.html', 'ind.html', 'qind.html'
+
+    if config_dict['pace']:
+        if len(input_files) == 1 and not config_dict['index_files']:
+            # Single paced input file; no table of contents, by default
+            ftoc = ''
+        # Index not compatible with paced
+        findex = ''
+        fqindex = ''
+
+    separate_files = False
+    if config_dict['index_files'] or config_dict['pace']:
+        # Separate files
+        separate_files = True
+    elif len(input_files) > 1 and not config_dict['outfile']:
+        # Multiple separate output files
+        separate_files = True
+
+    tem_dict = config_dict.copy()
+    tem_dict.update(separate=separate_files, toc=ftoc, index=findex, qindex=fqindex)
+
+    # Create config object
     config = argparse.Namespace(**tem_dict)
 
-    scriptdir = os.path.dirname(os.path.realpath(__file__))
-    out_name = os.path.splitext(os.path.basename(config.outfile or input_files[0].name))[0]
-    combined_file = out_name+'.html'
-
-    base_plugin_list = ['code']
-    base_plugin_defs = {}
-    for plugin_name in base_plugin_list:
-        base_plugin_defs[plugin_name] = parse_plugin( plugin_name, md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js') )
-
-    js_params = {'sessionName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
+    js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0,
                  'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
-                 'index_sheet': INDEX_SHEET, 'indexFields':Index_fields,
-                 'sessionFields':Manage_fields+Session_fields, 'features': {} }
+                 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
+                 'log_sheet': LOG_SHEET, 'logFields': Log_fields,
+                 'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
+                 'features': {} }
 
-    js_params['gradeFields'] = []
-    js_params['conceptIndexFile'] = 'index.html'  # Need command line option for this
+    js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
+    js_params['remoteLogLevel'] = config.remote_logging
 
-    if config.index_files:
-        # Separate files
-        config.separate = True
-        combined_file = ''
-        comps = config.index_files.split(',')
-        config.toc = comps[0]+'.html' if comps[0] else ''
-        config.index = comps[1]+'.html' if len(comps) > 1 and comps[1] else ''
-        config.qindex = comps[2]+'.html' if len(comps) > 2 and comps[2] else ''
-    elif not config.pace:
-        # Combined file (cannot be paced)
-        if len(input_files) > 1 and not config.outfile:
-            config.separate = True
-            combined_file = ''        
-        else:
-            js_params['sessionName'] = out_name
+    out_name = os.path.splitext(os.path.basename(config.outfile or input_files[0].name))[0]
+    combined_file = '' if config.separate else out_name+'.html'
+
+    if not config.separate:
+        # Combined file (not paced)
+        js_params['fileName'] = out_name
 
     hide_chapters = False
     if config.pace:
         if config.printable:
             abort('slidoc: Error: --pace and --printable options do not work well together')
         hide_chapters = True
-        # Pace implies separate files
-        config.separate = True
-        combined_file = ''
-        if len(input_files) == 1 and not config.index_files:
-            # Single input file; no table of contents, by default
-            config.toc = ''
-        # Index not compatible with paced
-        config.index = ''
-        config.qindex = ''
         comps = config.pace.split(',')
         if comps[0]:
             js_params['paceLevel'] = int(comps[0])
@@ -1709,13 +1721,16 @@ def process_input(input_files, config_dict):
         answer_elements[suffix] = 1;
     js_params['answer_elements'] = answer_elements
 
-    if combined_file:
-        js_params['fileName'] = out_name
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
     if combined_file:
         head_html += add_scripts
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
+
+    base_plugin_list = ['code']
+    base_plugin_defs = {}
+    for plugin_name in base_plugin_list:
+        base_plugin_defs[plugin_name] = parse_plugin( plugin_name, md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js') )
 
     comb_plugin_defs = {}
     comb_plugin_loads = set()
@@ -1783,7 +1798,6 @@ def process_input(input_files, config_dict):
     for j, f in enumerate(input_files):
         fname = fnames[j]
         if config.separate:
-            js_params['sessionName'] = fname
             js_params['fileName'] = fname
 
         if config.separate:
@@ -1923,9 +1937,9 @@ def process_input(input_files, config_dict):
                                       renderer.qconcepts[0], renderer.qconcepts[1])
 
             if js_params['gd_sheet_url']:
-                create_session_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['sessionName'],
-                                     js_params['gradeFields'])
-                
+                create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['fileName'],
+                                  Manage_fields+Session_fields+js_params['gradeFields'])
+                create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, LOG_SHEET, Log_fields)
 
     if not config.dry_run:
         if not combined_file:
@@ -2251,6 +2265,7 @@ parser.add_argument('--outfile', metavar='NAME', help='Base name of combined HTM
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
