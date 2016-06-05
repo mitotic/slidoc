@@ -72,8 +72,12 @@
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
 var ADMIN_USER = 'admin';
 
-var ANSWER_DOC_ID = '';     // Set this for separate answers document
-var STAT_DOC_ID   = '';       // Set this for separate stats document
+// Define document IDs to create/access roster/answers/stats/log sheet in separate documents
+// e.g., {roster_slidoc: 'ID1', answers_slidoc: 'ID2', stats_slidoc: 'ID3', slidoc_log: 'ID4'}
+var ALT_DOC_IDS = { };
+
+var ANSWERS_DOC = 'answers_slidoc';
+var STATS_DOC = 'stats_slidoc';
 
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
@@ -186,7 +190,7 @@ function handleResponse(evt) {
 	}
 
 	var rosterValues = [];
-	var rosterSheet = doc.getSheetByName(ROSTER_SHEET);
+	var rosterSheet = getSheet(ROSTER_SHEET);
 	if (rosterSheet && !adminUser) {
 	    // Check user access
 	    if (!params.id)
@@ -202,13 +206,12 @@ function handleResponse(evt) {
 	// Check parameter consistency
 	var headers = params.headers ? JSON.parse(params.headers) : null;
 
-	var sheet = doc.getSheetByName(sheetName);
+	var sheet = getSheet(sheetName);
 	if (!sheet) {
 	    // Create new sheet
 	    if (!headers)
 		throw("Error::Headers must be specified for new sheet '"+sheetName+"'");
-	    doc.insertSheet(sheetName);
-	    sheet = doc.getSheetByName(sheetName);
+	    sheet = getSheet(sheetName, null, true);
 	    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 	    sheet.getRange('1:1').setFontWeight('bold');
 	    for (var j=0; j<headers.length; j++) {
@@ -320,7 +323,7 @@ function handleResponse(evt) {
 		var dueDate = null;
 		var gradeDate = null;
 		var fieldsMin = columnHeaders.length;
-		if (!restrictedSheet && !loggingSheet && doc.getSheetByName(INDEX_SHEET)) {
+		if (!restrictedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
 		    // Session parameters
 		    var sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'fieldsMin'], INDEX_SHEET);
 		    dueDate = sessionParams.dueDate;
@@ -636,6 +639,18 @@ function validateHMAC(token, key) {
     return genHmacToken(key, message) == signature;
 }
 
+function getSheet(sheetName, docName, create) {
+    // Return sheet in external document, or in current document. If create, create as needed.
+    var docId = ALT_DOC_IDS[docName||''] || ALT_DOC_IDS[sheetName] || null;
+    var doc = docId ? SpreadsheetApp.openById(docId) : null;
+    if (!doc)
+	doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+
+    var sheet = doc.getSheetByName(sheetName);
+    if (!sheet && create)
+	sheet = doc.insertSheet(sheetName);
+    return sheet;
+}
 
 function colIndexToChar(col) {
     return String.fromCharCode('A'.charCodeAt(0) + (col-1) );
@@ -659,8 +674,7 @@ function indexRows(sheet, indexCol, startRow) {
 
 function getColumns(header, sheetName, colCount, skipRows) {
     skipRows = skipRows || 1;
-    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var sheet = doc.getSheetByName(sheetName);
+    var sheet = getSheet(sheetName);
     var colIndex = indexColumns(sheet);
     if (!(header in colIndex))
 	throw('Column '+header+' not found in sheet '+sheetName);
@@ -679,8 +693,7 @@ function getColumns(header, sheetName, colCount, skipRows) {
 
 function lookupValues(idValue, colNames, sheetName, listReturn) {
     // Return parameters in list colNames for idValue from sessions_slidoc sheet
-    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var indexSheet = doc.getSheetByName(sheetName);
+    var indexSheet = getSheet(sheetName);
     if (!indexSheet)
 	throw('Index sheet '+sheetName+' not found');
     var indexColIndex = indexColumns(indexSheet);
@@ -739,8 +752,7 @@ function sessionAnswerSheet() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
-	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-	var sessionSheet = doc.getSheetByName(sessionName);
+	var sessionSheet = getSheet(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found: '+sessionName);
 	if (!sessionSheet.getLastColumn())
@@ -783,19 +795,12 @@ function sessionAnswerSheet() {
 	for (var j=0; j<answerHeaders.length; j++)
 	    ansHeaderCols[answerHeaders[j]] = j+1;
 
-	var outDoc = null;
-	if (ANSWER_DOC_ID)
-	    outDoc = SpreadsheetApp.openById(ANSWER_DOC_ID);
-	if (!outDoc)
-	    outDoc = doc;
 
 	// Session answers headers
 
 	// New answers sheet
 	var answerSheetName = sessionName+'-answers';
-	var answerSheet = outDoc.getSheetByName(answerSheetName);
-	if (!answerSheet)
-	    answerSheet = outDoc.insertSheet(answerSheetName);
+	var answerSheet = getSheet(answerSheetName, ANSWERS_DOC, true);
 	answerSheet.clear()
 	var answerHeaderRange = answerSheet.getRange(1, 1, 1, answerHeaders.length);
 	answerHeaderRange.setValues([answerHeaders]);
@@ -851,7 +856,7 @@ function sessionAnswerSheet() {
 	lock.releaseLock();
     }
 
-    notify('Created sheet '+outDoc.getName()+'!'+answerSheetName, 'Slidoc Answers');
+    notify('Created sheet '+answerSheet.getParent().getName()+':'+answerSheetName, 'Slidoc Answers');
 }
 
 
@@ -864,8 +869,7 @@ function sessionStatSheet() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
-	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-	var sessionSheet = doc.getSheetByName(sessionName);
+	var sessionSheet = getSheet(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found '+sessionName);
 	if (!sessionSheet.getLastColumn())
@@ -898,17 +902,9 @@ function sessionStatSheet() {
 	var nqstats = statExtraCols.length;
 	var statConceptsCol = statQuestionCol + nqstats;
 
-	var outDoc = null;
-	if (STAT_DOC_ID)
-	    outDoc = SpreadsheetApp.openById(STAT_DOC_ID);
-	if (!outDoc)
-	    outDoc = doc;
-
 	// New stat sheet
 	var statSheetName = sessionName+'-stats';
-	statSheet = outDoc.getSheetByName(statSheetName);
-	if (!statSheet)
-	    statSheet = outDoc.insertSheet(statSheetName);
+	var statSheet = getSheet(statSheetName, STATS_DOC, true);
 	statSheet.clear()
 	var statHeaderRange = statSheet.getRange(1, 1, 1, statHeaders.length);
 	statHeaderRange.setValues([statHeaders]);
@@ -954,13 +950,13 @@ function sessionStatSheet() {
 	lock.releaseLock();
     }
 
-    notify('Created sheet '+outDoc.getName()+'!'+statSheetName, 'Slidoc Stats');
+    notify('Created sheet '+statSheet.getParent().getName()+':'+statSheetName, 'Slidoc Stats');
 }
 
 function emailTokens() {
     // Send authentication tokens
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var rosterSheet = doc.getSheetByName(ROSTER_SHEET);
+    var rosterSheet = getSheet(ROSTER_SHEET);
     if (!rosterSheet)
 	throw('Roster sheet '+ROSTER_SHEET+' not found!');
     var userId = getPrompt('Email authentication tokens', "User id, or 'all'");
@@ -992,7 +988,7 @@ function emailTokens() {
 function emailLateToken() {
     // Send late token
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var rosterSheet = doc.getSheetByName(ROSTER_SHEET);
+    var rosterSheet = getSheet(ROSTER_SHEET);
     if (!rosterSheet)
 	throw('Roster sheet '+ROSTER_SHEET+' not found!');
 
@@ -1035,15 +1031,13 @@ function updateScoreSheet() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
-	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-
 	var sessionNames = getColumns('id', INDEX_SHEET);
 	var validNames = [];
 	var validSheet = null;
 	for (var m=0; m<sessionNames.length; m++) {
 	    // Ensure all sessions exist
 	    var sessionName = sessionNames[m];
-	    var sessionSheet = doc.getSheetByName(sessionName);
+	    var sessionSheet = getSheet(sessionName);
 	    if (!sessionSheet) {
 		SpreadsheetApp.getUi().alert('Sheet not found: '+sessionName);
 	    } else if (!sessionSheet.getLastColumn()) {
@@ -1064,12 +1058,12 @@ function updateScoreSheet() {
 
 	// New score sheet
 	var scoreSheetName = SCORES_SHEET;
-	scoreSheet = doc.getSheetByName(scoreSheetName);
+	scoreSheet = getSheet(scoreSheetName);
 	if (!scoreSheet) {
 	    // Create session score sheet
-	    scoreSheet = doc.insertSheet(scoreSheetName);
+	    scoreSheet = getSheet(scoreSheetName, null, true);
 	    // Copy user info from roster
-	    var userInfoSheet = doc.getSheetByName(ROSTER_SHEET);
+	    var userInfoSheet = getSheet(ROSTER_SHEET);
 	    if (!userInfoSheet)  // Copy user info from last valid session
 		userInfoSheet = validSheet;
 	    var nidsSession = userInfoSheet.getLastRow()-sessionStartRow+1;
@@ -1081,7 +1075,7 @@ function updateScoreSheet() {
 
 	for (var m=0; m<validNames.length; m++) {
 	    var sessionName = validNames[m];
-	    var sessionSheet = doc.getSheetByName(sessionName);
+	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
 
 	    var sessionParams = lookupValues(sessionName, ['scoreWeight', 'gradeWeight'], INDEX_SHEET);
@@ -1134,7 +1128,7 @@ function updateScoreSheet() {
 	    function vlookup(colName, scoreRowIndex) {
 		var nameCol = sessionColIndex[colName];
 		var nameColChar = colIndexToChar( nameCol );
-		var sessionRange = sessionName+'!$'+idColChar+'$'+sessionStartRow+':$'+nameColChar;
+		var sessionRange = "'"+sessionName+"'!$"+idColChar+"$"+sessionStartRow+":$"+nameColChar;
 		return 'VLOOKUP($'+idColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-idCol+1)+', false)';
 	    }
 
@@ -1155,5 +1149,5 @@ function updateScoreSheet() {
 	lock.releaseLock();
     }
 
-    notify("Update "+SCORES_SHEET+" for sessions "+validNames.join(', '), 'Slidoc Scores');
+    notify("Update "+scoreSheetName+" for sessions "+validNames.join(', '), 'Slidoc Scores');
 }
