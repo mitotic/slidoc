@@ -203,8 +203,9 @@ function setupCache(auth, callback) {
 
 Slidoc.remoteLog = function (funcName, msgType, msg, msgTrace) {
     if (Sliobj.logSheet)
-	Sliobj.logSheet.putRow({id: GService.gprofile.auth.id, name: GService.gprofile.auth.id, file: Sliobj.params.fileName,
-				function: funcName||'', type: msgType||'', message: msg||'', trace: msgTrace||'' },
+	Sliobj.logSheet.putRow({id: GService.gprofile.auth.id, name: GService.gprofile.auth.id,
+				browser: navigator.userAgent, file: Sliobj.params.fileName, function: funcName||'',
+				type: msgType||'', message: msg||'', trace: msgTrace||'' },
 			       {} );
 }
 

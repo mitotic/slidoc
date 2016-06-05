@@ -71,6 +71,10 @@
 
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
 var ADMIN_USER = 'admin';
+
+var ANSWER_DOC_ID = '';     // Set this for separate answers document
+var STAT_DOC_ID   = '';       // Set this for separate stats document
+
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
 var SCORES_SHEET = 'scores_slidoc';
@@ -778,14 +782,20 @@ function sessionAnswerSheet() {
 	var ansHeaderCols = {};
 	for (var j=0; j<answerHeaders.length; j++)
 	    ansHeaderCols[answerHeaders[j]] = j+1;
-	 
+
+	var outDoc = null;
+	if (ANSWER_DOC_ID)
+	    outDoc = SpreadsheetApp.openById(ANSWER_DOC_ID);
+	if (!outDoc)
+	    outDoc = doc;
+
 	// Session answers headers
 
 	// New answers sheet
 	var answerSheetName = sessionName+'-answers';
-	var answerSheet = doc.getSheetByName(answerSheetName);
+	var answerSheet = outDoc.getSheetByName(answerSheetName);
 	if (!answerSheet)
-	    answerSheet = doc.insertSheet(answerSheetName);
+	    answerSheet = outDoc.insertSheet(answerSheetName);
 	answerSheet.clear()
 	var answerHeaderRange = answerSheet.getRange(1, 1, 1, answerHeaders.length);
 	answerHeaderRange.setValues([answerHeaders]);
@@ -841,7 +851,7 @@ function sessionAnswerSheet() {
 	lock.releaseLock();
     }
 
-    notify('Created sheet '+answerSheetName, 'Slidoc Answers');
+    notify('Created sheet '+outDoc.getName()+'!'+answerSheetName, 'Slidoc Answers');
 }
 
 
@@ -888,11 +898,17 @@ function sessionStatSheet() {
 	var nqstats = statExtraCols.length;
 	var statConceptsCol = statQuestionCol + nqstats;
 
+	var outDoc = null;
+	if (STAT_DOC_ID)
+	    outDoc = SpreadsheetApp.openById(STAT_DOC_ID);
+	if (!outDoc)
+	    outDoc = doc;
+
 	// New stat sheet
 	var statSheetName = sessionName+'-stats';
-	statSheet = doc.getSheetByName(statSheetName);
+	statSheet = outDoc.getSheetByName(statSheetName);
 	if (!statSheet)
-	    statSheet = doc.insertSheet(statSheetName);
+	    statSheet = outDoc.insertSheet(statSheetName);
 	statSheet.clear()
 	var statHeaderRange = statSheet.getRange(1, 1, 1, statHeaders.length);
 	statHeaderRange.setValues([statHeaders]);
@@ -938,7 +954,7 @@ function sessionStatSheet() {
 	lock.releaseLock();
     }
 
-    notify('Created sheet '+statSheetName, 'Slidoc Stats');
+    notify('Created sheet '+outDoc.getName()+'!'+statSheetName, 'Slidoc Stats');
 }
 
 function emailTokens() {

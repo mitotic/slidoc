@@ -1480,7 +1480,7 @@ Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect'
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',
                 'scoreWeight', 'gradeWeight', 'fieldsMin', 'questions', 'answers',
                 'primary_qconcepts', 'secondary_qconcepts']
-Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'file', 'function', 'type', 'message', 'trace']
+Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
                          p_concepts, s_concepts):
