@@ -88,6 +88,11 @@ var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
 
+var ROSTER_START_ROW = 2;
+var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
+var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
+var MAXSCORE_ID = '_max_score';
+
 var TRUNCATE_DIGEST = 8;
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
 
@@ -237,7 +242,7 @@ function handleResponse(evt) {
 
 	if (headers) {
 	    if (headers.length > columnHeaders.length)
-		throw("Error::Number of headers exceeds that present in sheet '"+sheetName+"'");
+		throw("Error::Number of headers exceeds that present in sheet '"+sheetName+"'; delete it or edit headers.");
 	    for (var j=0; j<headers.length; j++) {
 		if (headers[j] != columnHeaders[j])
 		    throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.");
@@ -274,17 +279,19 @@ function handleResponse(evt) {
 		throw('Error::Cannot specify both rowUpdates and selectedUpdates');
 	    } else if (rowUpdates) {
 		if (rowUpdates.length > columnHeaders.length)
-		    throw("Error::row_headers length exceeds no. of columns in sheet '"+sheetName+"'");
+		    throw("Error::row_headers length exceeds no. of columns in sheet '"+sheetName+"'; delete it or edit headers.");
 
 
-		userId = rowUpdates[columnIndex['id']-1] || null;
-		displayName = rowUpdates[columnIndex['name']-1] || null;
+		userId = rowUpdates[columnIndex['id']-1] || '';
+		displayName = rowUpdates[columnIndex['name']-1] || '';
 
 		// Security check
 		if (params.id && params.id != userId)
 		    throw("Error::Mismatch between params.id '%s' and userId in row '%s'" % (params.id, userId))
 		if (params.name && params.name != displayName)
 		    throw("Error::Mismatch between params.name '%s' and displayName in row '%s'" % (params.name, displayName))
+		if (!adminUser && userId == MAXSCORE_ID)
+		    throw("Error::Only admin user may specify ID '%s'" % MAXSCORE_ID)
 	    } else {
 		userId = params.id || null;
 	    }
@@ -294,10 +301,11 @@ function handleResponse(evt) {
 	    var userRow = -1;
 	    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate ID row (except for log files)
-		var ids = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1);
-		for (var j=0; j<ids.length; j++) {
+		var userIds = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1);
+		var displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
+		for (var j=0; j<userIds.length; j++) {
 		    // Unique ID
-		    if (ids[j][0] == userId) {
+		    if (userIds[j][0] == userId) {
 			userRow = j+1+numStickyRows;
 			break;
 		    }
@@ -306,7 +314,7 @@ function handleResponse(evt) {
 	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues);
 	    var newRow = (userRow < 0);
 
-	    if (adminUser && !restrictedSheet && newRow)
+	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID)
 		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
 
 	    if (newRow && getRow && !rowUpdates) {
@@ -384,14 +392,13 @@ function handleResponse(evt) {
 
 		if (newRow) {
 		    // New user; insert row in sorted order of name (except for log files)
-		    if (!displayName || !rowUpdates)
+		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
 
 		    userRow = sheet.getLastRow()+1;
 		    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
-			var names = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
-			for (var j=0; j<names.length; j++) {
-			    if (names[j][0] > displayName) {
+			for (var j=0; j<displayNames.length; j++) {
+			    if (displayNames[j][0] > displayName || (displayNames[j][0] == displayName && userIds[j][0] > userId)) {
 				userRow = j+1+numStickyRows
 				break;
 			    }
@@ -408,7 +415,7 @@ function handleResponse(evt) {
 		}
 
 		var maxCol = rowUpdates ? rowUpdates.length : columnHeaders.length;
-		var totalCol = (columnHeaders.length > fieldsMin && columnHeaders[fieldsMin].slice(0,8) == 'q_grades') ? fieldsMin+1 : 0;
+		var totalCol = (columnHeaders.length > fieldsMin && columnHeaders[fieldsMin] == 'q_grades') ? fieldsMin+1 : 0;
 		var userRange = sheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 
@@ -419,10 +426,10 @@ function handleResponse(evt) {
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
-		    if (adminUser && !restrictedSheet)
+		    if (adminUser && !restrictedSheet && userId != MAXSCORE_ID)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
 
-		    if (rowUpdates.length > fieldsMin) {
+		    if (!adminUser && rowUpdates.length > fieldsMin) {
 			// Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values)
 			var nonNullExtraColumn = false;
 			var totalCells = [];
@@ -574,11 +581,13 @@ function setup() {
     SCRIPT_PROP.setProperty("key", doc.getId());
 }
 
+function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
+
 function parseNumber(x) {
     try {
 	var retval;
 	if (!isNaN(x))
-	    return x;
+	    return x || 0;
 	if (/^[\+\-]?\d+$/.exec()) {
 	    retval = parseInt(x);
 	} else {
@@ -796,6 +805,12 @@ function sessionAnswerSheet() {
 	    ansHeaderCols[answerHeaders[j]] = j+1;
 
 
+	// Session sheet columns
+	var sessionStartRow = SESSION_START_ROW;
+
+	// Answers sheet columns
+	var answerStartRow = 3;
+
 	// Session answers headers
 
 	// New answers sheet
@@ -807,20 +822,23 @@ function sessionAnswerSheet() {
 	answerHeaderRange.setWrap(true);
 	answerSheet.getRange('1:1').setFontWeight('bold');
 
-	// Session sheet columns
-	var startRow = 2;
-
-	// Answers sheet columns
-	var answerStartRow = 2;
+	for (var ansCol=copyCols+1; ansCol<=answerHeaders.length; ansCol++) {
+	    if (answerHeaders[ansCol-1].slice(-6) == '_score') {
+		var ansAvgRange = answerSheet.getRange(2, ansCol, 1, 1);
+		ansAvgRange.setNumberFormat('0.###');
+		ansAvgRange.setFontStyle('italic');
+		ansAvgRange.setValues([['=AVERAGE('+colIndexToChar(ansCol)+'$'+answerStartRow+':'+colIndexToChar(ansCol)+')']]);
+	    }
+	}
 
 	// Number of ids
-	var nids = sessionSheet.getLastRow()-1;
+	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
 
-	answerSheet.getRange(answerStartRow, 1, nids, copyCols).setValues(sessionSheet.getSheetValues(startRow, 1, nids, copyCols));
+	answerSheet.getRange(answerStartRow, 1, nids, copyCols).setValues(sessionSheet.getSheetValues(sessionStartRow, 1, nids, copyCols));
 
 	// Get hidden session values
 	var hiddenSessionCol = sessionColIndex['session_hidden'];
-	var hiddenVals = sessionSheet.getSheetValues(startRow, hiddenSessionCol, nids, 1);
+	var hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1);
 	var qRows = [];
 
 	for (var j=0; j<nids; j++) {
@@ -878,8 +896,8 @@ function sessionStatSheet() {
 	var sessionColIndex = indexColumns(sessionSheet);
 
 	// Session sheet columns
-	var sessionStartRow = 2;
-	var nids = sessionSheet.getLastRow()-1;
+	var sessionStartRow = SESSION_START_ROW;
+	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
 
 	var sessionParams = lookupValues(sessionName, ['primary_qconcepts', 'secondary_qconcepts'], INDEX_SHEET);
 	var p_concepts = sessionParams.primary_qconcepts ? sessionParams.primary_qconcepts.split('; ') : [];
@@ -887,7 +905,7 @@ function sessionStatSheet() {
 	 
 	// Session stats headers
 	var sessionCopyCols = ['name', 'id', 'Timestamp', 'lateToken', 'lastSlide'];
-	var statExtraCols = ['correct', 'count', 'skipped']
+	var statExtraCols = ['weightedCorrect', 'correct', 'count', 'skipped']
 
 	var statHeaders = sessionCopyCols.concat(statExtraCols) ;
 	for (var j=0; j<p_concepts.length; j++)
@@ -910,6 +928,13 @@ function sessionStatSheet() {
 	statHeaderRange.setValues([statHeaders]);
 	statHeaderRange.setWrap(true);
 	statSheet.getRange('1:1').setFontWeight('bold');
+	var statAvgList = [];
+	for (var avgCol=sessionCopyCols.length+1; avgCol<=statHeaders.length; avgCol++)
+	    statAvgList.push('=AVERAGE('+colIndexToChar(avgCol)+'$'+statStartRow+':'+colIndexToChar(avgCol)+')');
+	var statAvgRange = statSheet.getRange(2, sessionCopyCols.length+1, 1, statHeaders.length-sessionCopyCols.length);
+	statAvgRange.setValues([statAvgList]);
+	statAvgRange.setNumberFormat('0.###');
+	statAvgRange.setFontStyle('italic');
 
 	var statColIndex = indexColumns(statSheet);
 
@@ -930,7 +955,7 @@ function sessionStatSheet() {
 	for (var j=0; j<nids; j++) {
 	    var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
 	    var savedSession = JSON.parse(jsonSession);
-	    questionTallies.push([savedSession.questionsCorrect, savedSession.questionsCount, savedSession.questionsSkipped]);
+	    questionTallies.push([savedSession.weightedCorrect, savedSession.questionsCorrect, savedSession.questionsCount, savedSession.questionsSkipped]);
 
 	    var missedConcepts = savedSession.missedConcepts;
 	    if (missedConcepts.length) {
@@ -1053,10 +1078,14 @@ function updateScoreSheet() {
 	if (!validSheet)
 	    throw('No valid session sheet');
 
-	var sessionStartRow = 2;
-	var scoreStartRow = 2;
+	var rosterStartRow = ROSTER_START_ROW;
+	var sessionStartRow = SESSION_START_ROW;
+	var scoreStartRow = 3;
+	var nonmaxStartRow = SESSION_MAXSCORE_ROW ? scoreStartRow+1 : scoreStartRow;
 
 	// New score sheet
+	var extraHeaders = ['weightedTotal', 'rawTotal'];
+	var scoreHeaders = MIN_HEADERS.concat(extraHeaders);
 	var scoreSheetName = SCORES_SHEET;
 	scoreSheet = getSheet(scoreSheetName);
 	if (!scoreSheet) {
@@ -1064,21 +1093,31 @@ function updateScoreSheet() {
 	    scoreSheet = getSheet(scoreSheetName, null, true);
 	    // Copy user info from roster
 	    var userInfoSheet = getSheet(ROSTER_SHEET);
-	    if (!userInfoSheet)  // Copy user info from last valid session
+	    var startRow = rosterStartRow;
+	    if (!userInfoSheet)  {              // Copy user info from last valid session
 		userInfoSheet = validSheet;
-	    var nidsSession = userInfoSheet.getLastRow()-sessionStartRow+1;
+		startRow = sessionStartRow;
+	    }
+	    var nUserIds = userInfoSheet.getLastRow()-startRow+1;
 	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
-
-	    scoreSheet.getRange(scoreStartRow, 1, nidsSession, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(sessionStartRow, 1, nidsSession, MIN_HEADERS.length));
+	    scoreSheet.getRange(1, MIN_HEADERS.length+1, 1, extraHeaders.length).setValues([extraHeaders]);
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
+
+	    if (SESSION_MAXSCORE_ROW)
+		scoreSheet.getRange(scoreStartRow, MIN_HEADERS.indexOf('id')+1, 1, 1).setValues([[MAXSCORE_ID]]);
+
+	    scoreSheet.getRange(nonmaxStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
 	}
 
+	var rawTotal = [];
+	var weightedTotal = [];
 	for (var m=0; m<validNames.length; m++) {
 	    var sessionName = validNames[m];
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
 
-	    var sessionParams = lookupValues(sessionName, ['scoreWeight', 'gradeWeight'], INDEX_SHEET);
+	    var sessionParams = lookupValues(sessionName, ['sessionWeight', 'scoreWeight', 'gradeWeight'], INDEX_SHEET);
+	    var sessionWeight = parseNumber(sessionParams.sessionWeight) || 0;
 	    var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
 
@@ -1102,7 +1141,7 @@ function updateScoreSheet() {
 
 		for (var jcol=1; jcol<=scoreColHeaders.length; jcol++) {
 		    var colHeader = scoreColHeaders[jcol-1];
-		    if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(0,1) == '_') {
+		    if (scoreHeaders.indexOf(colHeader) == -1 && colHeader.slice(0,1) == '_') {
 			// Session header column
 			if (sessionName < colHeader) {
 			    // Insert new session column in sorted order
@@ -1118,32 +1157,53 @@ function updateScoreSheet() {
 		scoreSheet.getRange(1, scoreSessionCol, 1, 1).setValues([[sessionColName]]);
 
 		var c = colIndexToChar( scoreSessionCol );
-		scoreSheet.getRange(c+scoreStartRow+':'+c).setNumberFormat('0.00');
+		scoreSheet.getRange(c+'2:'+c).setNumberFormat('0.##');
 	    }
+
+	    var colChar = colIndexToChar( scoreSessionCol );
+	    rawTotal.push(colChar+'@');
+	    if (sessionWeight)
+		weightedTotal.push(sessionWeight+'*'+colChar+'@');
 
 	    var nids = scoreSheet.getLastRow()-scoreStartRow+1;
 
 	    var idCol = sessionColIndex['id'];
 	    var idColChar = colIndexToChar( idCol );
+	    var lookupStartRow = SESSION_MAXSCORE_ROW ? sessionStartRow-1 : sessionStartRow;
 	    function vlookup(colName, scoreRowIndex) {
 		var nameCol = sessionColIndex[colName];
 		var nameColChar = colIndexToChar( nameCol );
-		var sessionRange = "'"+sessionName+"'!$"+idColChar+"$"+sessionStartRow+":$"+nameColChar;
+		var sessionRange = "'"+sessionName+"'!$"+idColChar+"$"+lookupStartRow+":$"+nameColChar;
 		return 'VLOOKUP($'+idColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-idCol+1)+', false)';
 	    }
 
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		if (gradeWeight) {
-		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ('+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades_'+gradeWeight, j+scoreStartRow)+')/('+scoreWeight+'+'+gradeWeight + ') )']);
+		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ('+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades', j+scoreStartRow)+') )']);
 		} else if (scoreWeight) {
 		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('weightedCorrect', j+scoreStartRow) + ')']);
 		}
 	    }
-	    
+
+	    if (scoreStartRow > 2)
+		scoreSheet.getRange(scoreStartRow-1, scoreSessionCol, 1, 1).setValues([['=AVERAGE('+colChar+nonmaxStartRow+':'+colChar+')']]);
 	    if (scoreFormulas.length)
-		scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas)
+		scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas);
 	}
+
+	var scoreRawCol = scoreColIndex['rawTotal'];
+	var scoreWeightedCol = scoreColIndex['weightedTotal'];
+	var rawFormat = rawTotal.length ? '='+rawTotal.join('+') : '';
+	var weightedFormat = weightedTotal.length ? '='+weightedTotal.join('+') : '';
+	var rawFormulas = [];
+	var weightedFormulas = [];
+	for (var j=0; j<nids; j++) {
+	    rawFormulas.push([rawFormat.replace(/@/g,''+(j+scoreStartRow))]);
+	    weightedFormulas.push([weightedFormat.replace(/@/g,''+(j+scoreStartRow))]);
+	}
+	scoreSheet.getRange(scoreStartRow, scoreRawCol, nids, 1).setValues(rawFormulas);
+	scoreSheet.getRange(scoreStartRow, scoreWeightedCol, nids, 1).setValues(weightedFormulas);
 
     } finally { //release lock
 	lock.releaseLock();

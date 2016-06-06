@@ -37,7 +37,8 @@ body.slidoc-admin-view section:not(.slidoc-answered-view) .slidoc-render-button 
 body:not(.slidoc-admin-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
 section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-render-button { display: none; }
 
-section.slidoc-nogradediv .slidoc-grade-div { display: none; }
+section.slidoc-nogradeelement .slidoc-grade-element { display: none; }
+section.slidoc-nogradeelement .slidoc-comments-element { display: none; }
 
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-button { display: none; }
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-box { display: none; }

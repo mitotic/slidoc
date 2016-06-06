@@ -4,6 +4,7 @@
 // After this script, include script with src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"
 
 var TRUNCATE_DIGEST = 8;
+var MAXSCORE_ID = '_max_score';
 
 function gen_hmac_token(key, message) {
     // Generates token using HMAC key
@@ -542,7 +543,7 @@ GoogleSheet.prototype.initCache = function(allRows) {
     var ids = Object.keys(allRows);
     this.roster = [];
     for (var j=0; j<ids.length; j++) {
-	if (ids[j]) {
+	if (ids[j] && ids[j] != MAXSCORE_ID) {
 	    var rowObj = allRows[ids[j]];
 	    if (rowObj.name && rowObj.Timestamp) {
 		this.roster.push([rowObj.name, ids[j]]);

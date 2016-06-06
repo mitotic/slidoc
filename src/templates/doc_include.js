@@ -12,7 +12,7 @@ var MAX_INC_LEVEL = 9; // Max. incremental display level
 
 var CACHE_GRADING = true; // If true, cache all rows for grading
 
-var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
+var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
 var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
 
@@ -1105,7 +1105,7 @@ function slidocSetupAux(session, feedback) {
 	    var slideElem = document.getElementById(slide_id);
 
 	    // Hide grade entry for questions with zero grade weight (workaround for Weight: being parsed after Answer:)
-	    toggleClass(!question_attrs.gweight, 'slidoc-nogradediv', slideElem);
+	    toggleClass(!question_attrs.gweight, 'slidoc-nogradeelement', slideElem);
 	    var suffixElem = document.getElementById(slide_id+'-gradesuffix')
 	    if (suffixElem && question_attrs.gweight)
 		suffixElem.textContent = '/'+question_attrs.gweight;
@@ -1296,7 +1296,7 @@ function checkGradingStatus(userId, session, feedback) {
 	    // Unattempted
 	    need_updates += 1;
 	    if (question_attrs.gweight) {
-		var gradeField = 'q'+question_attrs.qnumber+'_grade_'+question_attrs.gweight;
+		var gradeField = 'q'+question_attrs.qnumber+'_grade';
 		updates[gradeField] = 0;
 	    }
 	    var commentsField = 'q'+question_attrs.qnumber+'_comments';
@@ -1423,7 +1423,7 @@ function unpackSession(row) {
 	    feedback[qnumber][hmatch[2]] = value;
 	    if (value != null && value != '')
 		count += 1;
-	} else if (/^q_grades/.exec(key) && isNumber(value)) {
+	} else if (key == 'q_grades' && isNumber(value)) {
 	    // Total grade
 	    feedback.q_grades = value;
 	    if (value)
@@ -2252,6 +2252,7 @@ Slidoc.showScore = function () {
 }
 
 function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
+    Slidoc.log("Slidoc.renderDisplay:", slide_id, inputSuffix, renderSuffix, renderMarkdown);
     if (!(inputSuffix in Sliobj.params.answer_elements)) {
 	Slidoc.log("renderDisplay: ERROR Invalid suffix '"+inputSuffix+"'");
 	return false;
@@ -2405,7 +2406,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
 	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true)
 
-	var gradeField = 'q'+question_attrs.qnumber+'_grade_'+question_attrs.gweight;
+	var gradeField = 'q'+question_attrs.qnumber+'_grade';
 	var commentsField = 'q'+question_attrs.qnumber+'_comments';
 	if (!(gradeField in Sliobj.gradeFieldsObj))
 	    Slidoc.log('Slidoc.gradeClick: ERROR grade field '+gradeField+' not found in sheet');
@@ -2443,9 +2444,16 @@ function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) 
 	    }
 	} else {
 	    var attr_vals = getChapterAttrs(slide_id);
-	    if (qnumber < attr_vals.length) {
-		// Go to next question slide
-		var new_slide = parseSlideId(slide_id)[0]+'-'+zeroPad(attr_vals[qnumber].slide,2);
+	    while (qnumber < attr_vals.length) {
+		// Go to next question slide that needs grading
+		qnumber += 1;
+		var question_attrs = attr_vals[qnumber-1];
+		if (!question_attrs.gweight)
+		    continue;
+		var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
+		if (qfeedback && (isNumber(qfeedback.grade) || qfeedback.comments))
+		    break;
+		var new_slide = parseSlideId(slide_id)[0]+'-'+zeroPad(question_attrs.slide,2);
 		goSlide('#'+new_slide);
 		setTimeout(function(){Slidoc.gradeClick(null, new_slide);}, 200);
 	    }

@@ -615,7 +615,7 @@ class SlidocRenderer(MathRenderer):
 '''                
 
     grading_template = '''
-  <div class="slidoc-grade-div slidoc-answeredonly">
+  <div class="slidoc-grade-element slidoc-answeredonly">
     <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
     <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
@@ -634,7 +634,7 @@ class SlidocRenderer(MathRenderer):
   <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
 '''
     comments_template_b = '''              
-<div id="%(sid)s-comments" class="slidoc-comments slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
+<div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
   <span id="%(sid)s-comments-content" class="slidoc-comments-content"></span>
 </div>
 '''
@@ -662,6 +662,7 @@ class SlidocRenderer(MathRenderer):
         self.cum_weights = []
         self.cum_gweights = []
         self.grade_fields = []
+        self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
         self.slide_number = 0
@@ -812,9 +813,12 @@ class SlidocRenderer(MathRenderer):
                     fields = [qno+'_response', qno+'_explain']
                 if fields:
                     self.grade_fields += fields
+                    self.max_fields += ['' for field in fields]
                     if self.questions[-1]['gweight']:
-                        self.grade_fields += [qno+'_grade_'+str(self.questions[-1]['gweight'])]
+                        self.grade_fields += [qno+'_grade']
+                        self.max_fields += [self.questions[-1]['gweight']]
                     self.grade_fields += [qno+'_comments']
+                    self.max_fields += ['']
 
             if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
@@ -1218,7 +1222,7 @@ class SlidocRenderer(MathRenderer):
             # No hiding of correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+': '+correct_html+'<p></p>\n'
 
-        self.render_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
+        slide_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
 
         ans_classes = ''
         if multiline_answer:
@@ -1240,7 +1244,8 @@ class SlidocRenderer(MathRenderer):
             html_template += self.grading_template     # Hidden later by doc_include.js, if zero gweight
             html_template += self.comments_template_a
 
-        if self.render_markdown:
+        if slide_markdown:
+            self.render_markdown = True
             html_template += self.render_template
 
         if multiline_answer or explain_answer:
@@ -1477,8 +1482,8 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
                   'session_hidden']
-Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'questionsMax',
-                'scoreWeight', 'gradeWeight', 'fieldsMin', 'questions', 'answers',
+Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'sessionWeight',
+                'scoreWeight', 'gradeWeight', 'questionsMax', 'fieldsMin', 'questions', 'answers',
                 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
@@ -1498,8 +1503,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
         if prev_row[revision_col] != revision:
             print('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision), file=sys.stderr)
 
-    row_values = [session_name, session_name, revision, None, due_date, None,
-                len(questions), score_weights, grade_weights, len(Manage_fields)+len(Session_fields),
+    row_values = [session_name, session_name, revision, None, due_date, None, None,
+                score_weights, grade_weights, len(questions), len(Manage_fields)+len(Session_fields),
                 ','.join([x['qtype'] for x in questions]),
                 '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
                 '; '.join(sort_caseless(list(p_concepts))),
@@ -1514,11 +1519,13 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     print('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name), file=sys.stderr)
 
                 
-def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers):
+def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
     post_params = {'admin': user, 'token': user_token, 'sheet': sheet_name,
                    'headers': json.dumps(headers)}
+    if row:
+        post_params['row'] = json.dumps(row)
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         abort("Error in creating sheet '%s': %s" % (sheet_name, retval['error']))
@@ -1862,16 +1869,28 @@ def process_input(input_files, config_dict):
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
+        max_params = {}
+        max_params['id'] = '_max_score'
+        max_params['initTimestamp'] = None
+        max_params['questionsCount'] = len(renderer.questions)
+        max_params['questionsCorrect'] = len(renderer.questions)
+        max_params['weightedCorrect'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
+        max_params['q_grades'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+        max_score_fields = [max_params.get(x,'') for x in Manage_fields+Session_fields]
+        if max_params['q_grades'] and renderer.max_fields:
+            # Include column for total grades
+            max_score_fields += [max_params['q_grades']]
+        max_score_fields += renderer.max_fields if renderer.max_fields else []
         if config.pace:
             # File-specific js_params
-            js_params['questionsMax'] = len(renderer.questions)
             js_params['pacedSlides'] = renderer.slide_number
-            js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
-            js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+            js_params['questionsMax'] = max_params['questionsCount']
+            js_params['scoreWeight'] = max_params['weightedCorrect']
+            js_params['gradeWeight'] = max_params['q_grades']
             js_params['gradeFields'] = renderer.grade_fields[:] if renderer.grade_fields else []
             if js_params['gradeWeight'] and js_params['gradeFields']:
                 # Include column for total grades
-                js_params['gradeFields'] = ['q_grades_'+str(js_params['gradeWeight'])] + js_params['gradeFields']
+                js_params['gradeFields'] = ['q_grades'] + js_params['gradeFields']
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
@@ -1938,7 +1957,7 @@ def process_input(input_files, config_dict):
 
             if js_params['gd_sheet_url']:
                 create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['fileName'],
-                                  Manage_fields+Session_fields+js_params['gradeFields'])
+                                  Manage_fields+Session_fields+js_params['gradeFields'], row=max_score_fields)
                 create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, LOG_SHEET, Log_fields)
 
     if not config.dry_run:
