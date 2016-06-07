@@ -92,6 +92,7 @@ var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
 var MAXSCORE_ID = '_max_score';
+var AVERAGE_ID = '_average';
 
 var TRUNCATE_DIGEST = 8;
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
@@ -821,12 +822,13 @@ function sessionAnswerSheet() {
 	answerHeaderRange.setValues([answerHeaders]);
 	answerHeaderRange.setWrap(true);
 	answerSheet.getRange('1:1').setFontWeight('bold');
+	answerSheet.getRange('2:2').setFontStyle('italic');
+	answerSheet.getRange(2, ansHeaderCols['id'], 1, 1).setValues([[AVERAGE_ID]]);
 
 	for (var ansCol=copyCols+1; ansCol<=answerHeaders.length; ansCol++) {
 	    if (answerHeaders[ansCol-1].slice(-6) == '_score') {
 		var ansAvgRange = answerSheet.getRange(2, ansCol, 1, 1);
 		ansAvgRange.setNumberFormat('0.###');
-		ansAvgRange.setFontStyle('italic');
 		ansAvgRange.setValues([['=AVERAGE('+colIndexToChar(ansCol)+'$'+answerStartRow+':'+colIndexToChar(ansCol)+')']]);
 	    }
 	}
@@ -934,9 +936,10 @@ function sessionStatSheet() {
 	var statAvgRange = statSheet.getRange(2, sessionCopyCols.length+1, 1, statHeaders.length-sessionCopyCols.length);
 	statAvgRange.setValues([statAvgList]);
 	statAvgRange.setNumberFormat('0.###');
-	statAvgRange.setFontStyle('italic');
 
 	var statColIndex = indexColumns(statSheet);
+	statSheet.getRange(2, statColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
+	statSheet.getRange('2:2').setFontStyle('italic');
 
 	for (var j=0; j<sessionCopyCols.length; j++) {
 	    var colHeader = sessionCopyCols[j];
@@ -1081,10 +1084,11 @@ function updateScoreSheet() {
 	var rosterStartRow = ROSTER_START_ROW;
 	var sessionStartRow = SESSION_START_ROW;
 	var scoreStartRow = 3;
+	var scoreAvgRow = (scoreStartRow > 2) ? scoreStartRow-1 : 0;
 	var nonmaxStartRow = SESSION_MAXSCORE_ROW ? scoreStartRow+1 : scoreStartRow;
 
 	// New score sheet
-	var extraHeaders = ['weightedTotal', 'rawTotal'];
+	var extraHeaders = ['weightedTotal', 'rawTotal', 'sessionCount'];
 	var scoreHeaders = MIN_HEADERS.concat(extraHeaders);
 	var scoreSheetName = SCORES_SHEET;
 	scoreSheet = getSheet(scoreSheetName);
@@ -1102,14 +1106,21 @@ function updateScoreSheet() {
 	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
 	    scoreSheet.getRange(1, MIN_HEADERS.length+1, 1, extraHeaders.length).setValues([extraHeaders]);
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
+	    if (scoreAvgRow) {
+		scoreSheet.getRange(scoreAvgRow, MIN_HEADERS.indexOf('id')+1, 1, 1).setValues([[AVERAGE_ID]]);
+		scoreSheet.getRange(scoreAvgRow+':'+scoreAvgRow).setFontStyle('italic');
+	    }
 
-	    if (SESSION_MAXSCORE_ROW)
+	    if (SESSION_MAXSCORE_ROW) {
 		scoreSheet.getRange(scoreStartRow, MIN_HEADERS.indexOf('id')+1, 1, 1).setValues([[MAXSCORE_ID]]);
+		scoreSheet.getRange(scoreStartRow+':'+scoreStartRow).setFontWeight('bold');
+	    }
 
 	    scoreSheet.getRange(nonmaxStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
 	}
 
 	var rawTotal = [];
+	var sessionCount = [];
 	var weightedTotal = [];
 	for (var m=0; m<validNames.length; m++) {
 	    var sessionName = validNames[m];
@@ -1162,6 +1173,7 @@ function updateScoreSheet() {
 
 	    var colChar = colIndexToChar( scoreSessionCol );
 	    rawTotal.push(colChar+'@');
+	    sessionCount.push('IF('+colChar+'@="",0,1)');
 	    if (sessionWeight)
 		weightedTotal.push(sessionWeight+'*'+colChar+'@');
 
@@ -1180,29 +1192,34 @@ function updateScoreSheet() {
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		if (gradeWeight) {
-		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ('+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades', j+scoreStartRow)+') )']);
+		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades', j+scoreStartRow)+' ))']);
 		} else if (scoreWeight) {
-		    scoreFormulas.push(['=IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('weightedCorrect', j+scoreStartRow) + ')']);
+		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('weightedCorrect', j+scoreStartRow) + ' ))']);
 		}
 	    }
 
-	    if (scoreStartRow > 2)
-		scoreSheet.getRange(scoreStartRow-1, scoreSessionCol, 1, 1).setValues([['=AVERAGE('+colChar+nonmaxStartRow+':'+colChar+')']]);
+	    if (scoreAvgRow)
+		scoreSheet.getRange(scoreAvgRow, scoreSessionCol, 1, 1).setValues([['=AVERAGE('+colChar+nonmaxStartRow+':'+colChar+')']]);
 	    if (scoreFormulas.length)
 		scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas);
 	}
 
 	var scoreRawCol = scoreColIndex['rawTotal'];
+	var scoreSessionCountCol = scoreColIndex['sessionCount'];
 	var scoreWeightedCol = scoreColIndex['weightedTotal'];
 	var rawFormat = rawTotal.length ? '='+rawTotal.join('+') : '';
+	var sessionCountFormat = sessionCount.length ? '='+sessionCount.join('+') : '';
 	var weightedFormat = weightedTotal.length ? '='+weightedTotal.join('+') : '';
 	var rawFormulas = [];
+	var sessionCountFormulas = [];
 	var weightedFormulas = [];
 	for (var j=0; j<nids; j++) {
 	    rawFormulas.push([rawFormat.replace(/@/g,''+(j+scoreStartRow))]);
+	    sessionCountFormulas.push([sessionCountFormat.replace(/@/g,''+(j+scoreStartRow))]);
 	    weightedFormulas.push([weightedFormat.replace(/@/g,''+(j+scoreStartRow))]);
 	}
 	scoreSheet.getRange(scoreStartRow, scoreRawCol, nids, 1).setValues(rawFormulas);
+	scoreSheet.getRange(scoreStartRow, scoreSessionCountCol, nids, 1).setValues(sessionCountFormulas);
 	scoreSheet.getRange(scoreStartRow, scoreWeightedCol, nids, 1).setValues(weightedFormulas);
 
     } finally { //release lock

@@ -1340,11 +1340,7 @@ function preAnswer() {
 	var qentry = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	var slide_id = chapter_id + '-' + zeroPad(qentry.slide, 2);
-	if (qentry.resp_type == 'choice') {
-	    Slidoc.choiceClick(null, slide_id, qentry.response, qentry.explain||null, qfeedback);
-	} else {
-	    Slidoc.answerClick(null, slide_id, qentry.response, qentry.explain||null, qentry.plugin, qfeedback);
-	}
+	Slidoc.answerClick(null, slide_id, qentry.response, qentry.explain||null, qentry.plugin, qfeedback);
     }
     if (Sliobj.session.submitted)
 	showCorrectAnswers();
@@ -1361,11 +1357,7 @@ function showCorrectAnswers() {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	if (question_attrs.qtype == 'choice') {
-		Slidoc.choiceClick(null, slide_id, '', question_attrs.explain, qfeedback);
-	    } else {
-		Slidoc.answerClick(null, slide_id, '', question_attrs.explain, null, qfeedback);
-	    }
+	Slidoc.answerClick(null, slide_id, '', question_attrs.explain, null, qfeedback);
     }
 }
 
@@ -1876,64 +1868,39 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
     return true;
 }
 
-Slidoc.choiceClick = function (elem, slide_id, choice_val, explain, qfeedback) {
-   Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val, explain, qfeedback);
+Slidoc.choiceClick = function (elem, slide_id, choice_val) {
+   Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val);
     var slide_num = parseSlideId(slide_id)[2];
     var question_attrs = getQuestionAttrs(slide_id);
     if (!question_attrs || question_attrs.slide != slide_num)  // Incomplete choice question; ignore
-	return false;
+        return false;
 
-   var setup = !elem;
-    if (!checkAnswerStatus(setup, slide_id, question_attrs, explain))
-	return false;
-    if (setup) {
-	if (choice_val) {
-	    var elemId = slide_id+'-choice-'+choice_val
-	    elem = document.getElementById(elemId);
-	    if (!elem) {
-		Slidoc.log('Slidoc.choiceClick: Error - Setup failed for '+elemId);
+    var setup = !elem;
+    if (setup || question_attrs.qtype == 'choice') {
+	// Clear choices
+	var choices = document.getElementsByClassName(slide_id+"-choice");
+	for (var i=0; i < choices.length; i++)
+	    choices[i].classList.remove("slidoc-choice-selected");
+    }
+
+
+    if (!setup) {
+	if (question_attrs.qtype == 'multichoice')
+	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
+	else
+	    elem.classList.add('slidoc-choice-selected');
+    } else if (choice_val) {
+	// Setup
+	for (var j=0; j<choice_val.length; j++) {
+            var elemId = slide_id+'-choice-'+choice_val[j];
+            var setupElem = document.getElementById(elemId);
+            if (!setupElem) {
+		Slidoc.log('Slidoc.choiceClick: Error - Setup failed for choice element '+elemId);
 		return false;
-	    }
+            }
+	    setupElem.classList.add('slidoc-choice-selected');
 	}
-       if (qfeedback) {
-	   if ('grade' in qfeedback && qfeedback.grade != null) {
-	       setAnswerElement(slide_id, "-grade-input", ''+qfeedback.grade);
-	       setAnswerElement(slide_id, "-grade-content", ''+qfeedback.grade);
-	   }
-
-	   if ('comments' in qfeedback && qfeedback.comments != null) {
-	       setAnswerElement(slide_id, "-comments-textarea", qfeedback.comments);
-	       setAnswerElement(slide_id, "-comments-content", qfeedback.comments);
-	       renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
-	   }
-       }
-    } else {
-	// Not setup
-	if (!Slidoc.answerPacedAllow())
-	    return false;
     }
-
-    if (elem)
-	elem.style['text-decoration'] = 'line-through';
-   var choices = document.getElementsByClassName(slide_id+"-choice");
-   for (var i=0; i < choices.length; i++) {
-      choices[i].removeAttribute("onclick");
-      choices[i].classList.remove("slidoc-clickable");
-   }
-
-    Slidoc.log("Slidoc.choiceClick:B", slide_num);
-    var corr_answer = question_attrs.correct;
-    if (corr_answer) {
-        var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer);
-        if (corr_choice) {
-	    corr_choice.style['text-decoration'] = '';
-	    corr_choice.style['font-weight'] = 'bold';
-        }
-    }
-
-    if (!setup && Sliobj.session.remainingTries > 0)
-	Sliobj.session.remainingTries = 0;   // Only one try for choice response
-    Slidoc.answerUpdate(setup, slide_id, false, choice_val);
     return false;
 }
 
@@ -1991,6 +1958,35 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
 	    SlidocPluginManager.action(pluginName, 'disable', slide_id);
 
+    }  else if (question_attrs.qtype.slice(-6) == 'choice') {
+	// Choice/Multichoice
+	var choices = document.getElementsByClassName(slide_id+"-choice");
+	if (setup) {
+	    Slidoc.choiceClick(null, slide_id, response);
+	} else {
+	    response = '';
+	    for (var i=0; i < choices.length; i++) {
+		if (choices[i].classList.contains("slidoc-choice-selected"))
+		    response += choices[i].dataset.choice;
+	    }
+
+	    if (Sliobj.session.remainingTries > 0)
+		Sliobj.session.remainingTries = 0;   // Only one try for choice response
+	}
+	for (var i=0; i < choices.length; i++) {
+	    choices[i].removeAttribute("onclick");
+	    choices[i].classList.remove("slidoc-clickable");
+	}
+	Slidoc.log("Slidoc.answerClick:choice", response);
+	var corr_answer = question_attrs.correct;
+	if (corr_answer) {
+	    for (var j=0; j<corr_answer.length; j++) {
+		var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer[j]);
+		if (corr_choice) {
+		    corr_choice.style['font-weight'] = 'bold';
+		}
+	    }
+	}
     }  else {
 	var multiline = question_attrs.qtype.slice(0,5) == 'text/';
 	var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
@@ -2019,6 +2015,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 
 	if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
 	    Sliobj.session.remainingTries -= 1;
+    }
 
     var callUpdate = Slidoc.answerUpdate.bind(null, setup, slide_id, checkOnly, response);
     if (setup && pluginResp) {
@@ -2027,7 +2024,6 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
     } else {
 	callUpdate();
-    }
     }
     return false;
 }

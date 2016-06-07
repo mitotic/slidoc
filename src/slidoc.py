@@ -369,7 +369,7 @@ class MathBlockLexer(mistune.BlockLexer):
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
-    slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
+    slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])(\*)?\.\. +")
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
@@ -393,7 +393,7 @@ class MathInlineLexer(mistune.InlineLexer):
         super(MathInlineLexer, self).__init__(renderer, rules, **kwargs)
 
     def output_slidoc_choice(self, m):
-        return self.renderer.slidoc_choice(m.group(1).upper())
+        return self.renderer.slidoc_choice(m.group(1).upper(), m.group(2) or '')
 
     def output_inline_math(self, m):
         return self.renderer.inline_math(m.group(1))
@@ -681,6 +681,7 @@ class SlidocRenderer(MathRenderer):
     def _new_slide(self):
         self.slide_number += 1
         self.qtypes.append('')
+        self.choices = None
         self.choice_end = None
         self.cur_choice = ''
         self.cur_qtype = ''
@@ -1029,25 +1030,30 @@ class SlidocRenderer(MathRenderer):
                 self.cur_qtype = type_code
         return ''
 
-    def slidoc_choice(self, name):
-        if not self.cur_qtype:
-            self.cur_qtype = 'choice'
-        elif self.cur_qtype != 'choice':
-            print("    ****CHOICE-ERROR: %s: Line '%s.. ' implies multiple choice question, not %s, in '%s'" % (self.options["filename"], name, self.cur_qtype, self.cur_header or ('slide%02d' % self.slide_number)), file=sys.stderr)
-            return name+'.. '
+    def slidoc_choice(self, name, star):
+        value = name if star else ''
+        if not self.choices:
+            if name != 'A':
+                return name+'..'
+            self.choices = [value]
+        else:
+            if ord(name) != ord('A')+len(self.choices):
+                # Out of sequence choice; ignore
+                return name+'..'
+            self.choices.append(value)
 
         prefix = ''
-        if not self.cur_choice:
+        if len(self.choices) == 1:
             prefix = '</p><blockquote><p>\n'
             self.choice_end = '</blockquote>\n'
 
         self.cur_choice = name
 
-        params = {'id': self.get_slide_id(), 'opt': name, 'qno': len(self.questions)+1}
+        params = {'id': self.get_slide_id(), 'opt': name}
         if self.options['config'].hide or self.options['config'].pace:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="slidoc-clickable %(id)s-choice" onclick="Slidoc.choiceClick(this, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice slidoc-choice" onclick="Slidoc.choiceClick(this, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
         else:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice">%(opt)s</span>. ''' % params
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
 
     
     def plugin_definition(self, name, text):
@@ -1148,15 +1154,28 @@ class SlidocRenderer(MathRenderer):
             qtype = text.lower()
             text = ''
 
-        if not self.cur_qtype:
-            if not qtype:
-                # Determine question type from answer
-                if len(text) == 1 and text.isalpha():
-                    qtype = 'choice'
+        if self.choices:
+            if not qtype or qtype in ('choice', 'multichoice'):
+                # Correct choice(s)
+                choices_str = ''.join(self.choices)
+                if choices_str:
+                    text = choices_str
                 else:
-                    qtype = 'text'    # Default answer type
+                    text = ''.join(x for x in text if ord(x) >= ord('A') and ord(x)-ord('A') < len(self.choices))
 
-            self.cur_qtype = qtype
+                if qtype == 'choice':
+                    if len(text) > 1:
+                        print("    ****ANSWER-ERROR: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+                    text = text[0] if text else ''
+                elif not qtype:
+                    qtype = 'multichoice' if len(text) > 1 else 'choice'
+            else:
+                # Ignore choice options
+                self.choices = None
+                
+        if not self.cur_qtype:
+            # Default answer type is 'text'
+            self.cur_qtype = qtype or 'text'
 
         elif qtype and qtype != self.cur_qtype:
             print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number), file=sys.stderr)
@@ -1165,7 +1184,7 @@ class SlidocRenderer(MathRenderer):
             self.load_python = True
 
         # Handle correct answer
-        if self.cur_qtype == 'choice' and len(text) == 1:
+        if self.cur_qtype in ('choice', 'multichoice'):
             correct_text = text.upper()
             correct_html = correct_text
         else:
@@ -1229,7 +1248,7 @@ class SlidocRenderer(MathRenderer):
             ans_classes += ' slidoc-multiline-answer'
         if explain_answer:
             ans_classes += ' slidoc-explain-answer'
-        if self.cur_qtype == 'choice':
+        if self.cur_qtype in ('choice', 'multichoice'):
             ans_classes += ' slidoc-choice-answer'
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'

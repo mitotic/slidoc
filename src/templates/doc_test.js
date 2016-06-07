@@ -185,10 +185,13 @@ TestScript.prototype.eventAction = function(commands) {
 	case 'choice':
 	    if (!slide_id)
 		throw('No current slide for choice action');
-	    if (Slidoc.getParameter('teststep') || !args)
-		this.showStatus('Click choice to advance');
-	    else
-		document.getElementById(slide_id+'-choice-'+args[0].toUpperCase()).onclick();
+	    if (Slidoc.getParameter('teststep') || !args) {
+		this.showStatus('Click choice(s) and Answer to advance');
+	    } else {
+		for (var j=0; j<args.length; j++)
+		    document.getElementById(slide_id+'-choice-'+args[j].toUpperCase()).onclick();
+		document.getElementById(slide_id+'-answer-click').onclick();
+	    }
 	    break;
 	case 'input':
 	    if (!slide_id)

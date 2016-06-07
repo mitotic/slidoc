@@ -40,7 +40,9 @@ section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-render-button { d
 section.slidoc-nogradeelement .slidoc-grade-element { display: none; }
 section.slidoc-nogradeelement .slidoc-comments-element { display: none; }
 
-div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-button { display: none; }
+section:not(.slidoc-answered-view) .slidoc-choice-selected {background: #aaa; }
+section.slidoc-answered-view .slidoc-choice-selected {text-decoration: line-through; }
+
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-box { display: none; }
 div.slidoc-answer-container:not(.slidoc-multiline-answer):not(.slidoc-explain-answer) .slidoc-answer-textarea { display: none; }
 div.slidoc-answer-container.slidoc-multiline-answer .slidoc-answer-input { display: none; }
