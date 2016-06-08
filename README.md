@@ -83,14 +83,14 @@ stored in a `Lectures` subddirectory with ordered names like
 To export some or all lectures to `html` format for web publishing,
 create a sub-directory, say `Publish`. In that directory, type:
 
-    slidoc.py --outfile=all.html ../Lectures/prefix-lecture??.md
+    slidoc.py --all=all.html ../Lectures/prefix-lecture??.md
 
 The above command will combine all the lectures, table of contents and
 index into a single file `all.html`, which can be published on the web
 or shared.
 
-Alternatively, the `--index_files=toc,ind,qind` option can be used
-instead of `--outfile` to generate separate HTML files.  This will
+Alternatively, the `--indexed=toc,ind,qind` option can be used
+instead of `--all` to generate separate HTML files.  This will
 create files named `prefix-lecture01.html` and so on in the `Publish`
 directory. Additionally, it will create three files, `toc.html` (table
 of contents) , `ind.html` (concept index), and `qind.html` (question
@@ -104,7 +104,7 @@ worth considering.
 
 Concepts: lecture management; index, concepts
 
-Notes: The `--index_files=,ind,` option can be used with null arguments
+Notes: The `--indexed=,ind,` option can be used with null arguments
 to control generation of index files.
 
 ---
@@ -312,7 +312,7 @@ difficulty.
 To analyze concept dependency for lectures and exercises delivered,
 create a temporary subdirectory and use a command like:
 
-    slidoc.py --index_files=toc,ind,qind --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
+    slidoc.py --indexed=toc,ind,qind --crossref=xref.html ../Lectures/prefix-lecture0[1-6].md ../Lectures/prefix-exercise0[123].md
 
 This will generate the concept dependency analysis for the first six
 lectures and the first three exercises in the files `ind.html`

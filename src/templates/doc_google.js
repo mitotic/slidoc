@@ -276,9 +276,9 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 function GoogleSheet(url, sheetName, preHeaders, fields, useJSONP) {
     this.url = url;
     this.sheetName = sheetName;
-    this.preHeaders = preHeaders;
-    this.fields = fields;
-    this.headers = preHeaders.concat(fields);
+    this.preHeaders = preHeaders || [];
+    this.fields = fields || [];
+    this.headers = this.preHeaders.concat(this.fields);
     this.useJSONP = !!useJSONP;
     this.callbackCounter = 0;
     this.columnIndex = {};
@@ -305,6 +305,9 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     if (userId && this.timestamps[userId])             // Send current timestamp for user
 	params.timestamp = this.timestamps[userId];
 
+    if (!this.headers.length)
+	params.getheaders = 1;
+
     GService.sendData(params, this.url, this.callback.bind(this, userId, callType, callback),
 		      this.useJSONP);
 }
@@ -327,7 +330,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 	    try {
 	    if (result.result == 'success' && result.value) {
 		if (callbackType != 'getAll') {
-		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value);
+		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value, result.headers);
 		} else {
 		    retval = {};
 		    for (var j=0; j<result.value.length; j++) {
@@ -361,13 +364,14 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
     }
 }
 
-GoogleSheet.prototype.row2obj = function(row) {
-    if (row.length != this.headers.length)
-	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet: expected '+this.headers.length+' but got '+row.length+' (Enable grade_response feature for extra grading columns?)');
+GoogleSheet.prototype.row2obj = function(row, headers) {
+    headers = headers || this.headers;
+    if (row.length != headers.length)
+	throw('GoogleSheet: row2obj - ERROR Incorrect number of row values received from Google Sheet: expected '+headers.length+' but got '+row.length+' (Enable grade_response feature for extra grading columns?)');
 
     var obj = {};
     for (var j=0; j<row.length; j++)
-        obj[this.headers[j]] = row[j];
+        obj[headers[j]] = row[j];
     return obj;
 }
 

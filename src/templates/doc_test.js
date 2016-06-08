@@ -188,8 +188,14 @@ TestScript.prototype.eventAction = function(commands) {
 	    if (Slidoc.getParameter('teststep') || !args) {
 		this.showStatus('Click choice(s) and Answer to advance');
 	    } else {
-		for (var j=0; j<args.length; j++)
-		    document.getElementById(slide_id+'-choice-'+args[j].toUpperCase()).onclick();
+		if (args) {
+		    for (var j=0; j<args.length; j++) {
+			if (args[j].length == 1)
+			    document.getElementById(slide_id+'-choice-'+args[j].toUpperCase()).onclick();
+			else
+			    document.getElementById(slide_id+'-answer-textarea').value = args[j]; // Explain
+		    }
+		}
 		document.getElementById(slide_id+'-answer-click').onclick();
 	    }
 	    break;
@@ -197,9 +203,9 @@ TestScript.prototype.eventAction = function(commands) {
 	    if (!slide_id)
 		throw('No current slide for input action');
 	    document.getElementById(slide_id+'-answer-input').value = args ? args[0] : '';
-	    if (args && args.length > 1) {
+	    if (args && args.length > 1)
 		document.getElementById(slide_id+'-answer-textarea').value = args[1]; // Explain
-	    }
+
 	    if (Slidoc.getParameter('teststep'))
 		this.showStatus('Answer to advance');
 	    else

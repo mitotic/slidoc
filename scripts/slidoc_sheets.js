@@ -48,6 +48,7 @@
 // ROSTER
 //  You may optionally create a 'roster_slidoc' sheet containing ['name', 'id', 'email', 'altid'] in the first four columns.
 //  The 'name', 'email' and 'altid' values will be copied from this column to sesssion sheets (using 'id' as the index).
+//  Names should be of the form 'last name(s), first_name middle_name ...'. Rows should be sorted by name.
 //  If roster_slidoc sheet is present and user id is not present in it, user will not be allowed to access sessions.
 //
 // USING THE SLIDOC MENU
@@ -124,13 +125,18 @@ function doPost(evt){
 }
 
 function handleResponse(evt) {
-    // Return value is null on error and a list on success.
-    // The list contains updated row values if get=true; otherwise it is just an empty list.
+    // Returns a JSON object
+    // object.result = 'success' or 'error'
+    // object.value contains updated row values list if get=1; otherwise it is [].
+    // object.headers contains column headers list, if getheaders=1
+    // object.info is an object contains timestamp and dueDate values
     // PARAMETERS
     // sheet: 'sheet name' (required)
+    // admin: admin user name (optional)
+    // token: authentication token
     // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
-    // id: unique id number or lowercase email (required if creating or updating a row, and row parameter is not specified)
+    // id: unique user ID or lowercase email (required if creating or updating a row, and row parameter is not specified)
     // email: optional
     // altid: alternate, perhaps numeric, id (optional, used for information only)
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
@@ -138,7 +144,13 @@ function handleResponse(evt) {
     // If the special name Timestamp occurs in the list, the timestamp is automatically updated on each write.
     // row: ['name_value', 'id_value', 'email_value', 'altid_value', null, null, null, 'field1_value', ...]
     //       null value implies no update (except for Timestamp)
-    // get: true to retrieve row (id must be specified) (otherwise only [] is returned on success)
+    // nooverwrite: 1 => do not overwrite row; return previous row, if present, else create new row
+    // submit: 1 if submitting row
+    // timestamp: previous timestamp value (for sequencing updates)
+    // update: 1 to modify part of row
+    // get: 1 to retrieve row (id must be specified)
+    // getheaders: 1 to return headers as well
+    // all: 1 to retrueve all rows
     // Can add row with fewer columns than already present.
     // This allows user to add additional columns without affecting script actions.
     // (User added columns are returned on gets and selective updates, but not row updates.)
@@ -151,6 +163,7 @@ function handleResponse(evt) {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     var returnValues = null;
+    var returnHeaders = null;
     var returnInfo = {};
     var returnMessages = [];
     var jsonPrefix = '';
@@ -169,7 +182,8 @@ function handleResponse(evt) {
 	if (!sheetName)
 	    throw('Error:SHEETNAME::No sheet name specified');
 
-	var restrictedSheet = (sheetName == INDEX_SHEET);
+	var protectedSheet = (sheetName == SCORES_SHEET);
+	var restrictedSheet = (sheetName.slice(-7) == '_slidoc') && !protectedSheet;
 	var loggingSheet = (sheetName.slice(-4) == '_log');
 	var adminUser = '';
 	var authUser = '';
@@ -228,7 +242,7 @@ function handleResponse(evt) {
 		    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
 		}
 	    }
-	    if (restrictedSheet) {
+	    if (sheetName == INDEX_SHEET) {
 		var protection = sheet.protect().setDescription('protected');
 		protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
 		protection.setDomainEdit(false);
@@ -263,8 +277,14 @@ function handleResponse(evt) {
 	if (!adminUser && selectedUpdates)
 	    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
+	if (protectedSheet && (rowUpdates || selectedUpdates) )
+	    throw("Error::Cannot modify protected sheet '"+sheetName+"'")
+
 	returnInfo.timestamp = null;
 	var numStickyRows = 1;  // Headers etc.
+
+	if (getRow && params.getheaders)
+	    returnHeaders = columnHeaders;
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
 	    // No row updates/gets
@@ -332,7 +352,7 @@ function handleResponse(evt) {
 		var dueDate = null;
 		var gradeDate = null;
 		var fieldsMin = columnHeaders.length;
-		if (!restrictedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
+		if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
 		    // Session parameters
 		    var sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'fieldsMin'], INDEX_SHEET);
 		    dueDate = sessionParams.dueDate;
@@ -352,7 +372,9 @@ function handleResponse(evt) {
 			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
-			    if (lateToken == 'partial' && !newRow && rowUpdates) {
+			    if (lateToken == 'partial') {
+				if (newRow || !rowUpdates)
+				    throw("Error::Partial submission only works for pre-existing rows");
 				partialSubmission = true;
 				rowUpdates = null;
 				selectedUpdates = [ ['Timestamp', null], ['submitTimestamp', null], ['lateToken', lateToken] ];
@@ -429,6 +451,10 @@ function handleResponse(evt) {
 		    // Timestamp is always updated, unless it is specified by admin
 		    if (adminUser && !restrictedSheet && userId != MAXSCORE_ID)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
+
+		    var submitTimestampCol = columnIndex['submitTimestamp'];
+		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1])
+			throw("Error::Already submitted session once in sheet '"+sheetName+"'");
 
 		    if (!adminUser && rowUpdates.length > fieldsMin) {
 			// Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values)
@@ -563,7 +589,8 @@ function handleResponse(evt) {
 
 	// return json success results
 	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "value": returnValues, "info": returnInfo,
+            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "value": returnValues, "headers": returnHeaders,
+							 "info": returnInfo,
 							 "messages": returnMessages.join('\n')})+jsonSuffix)
             .setMimeType(mimeType);
     } catch(err){
@@ -997,12 +1024,14 @@ function emailTokens() {
 	emailList = getColumns('id', ROSTER_SHEET, 2);
     }
     for (var j=0; j<emailList.length; j++)
-	if (emailList[j][1].indexOf('@') <= 0)
+	if (emailList[j][1].trim() && emailList[j][1].indexOf('@') <= 0)
 	    throw("Invalid email address '"+emailList[j][1]+"' for user ID '"+emailList[j][0]+"'");
 
     var subject = 'Slidoc authentication token';
     var emails = [];
     for (var j=0; j<emailList.length; j++) {
+	if (!emailList[j][1].trim())
+	    continue;
 	var token = genUserToken(HMAC_KEY, emailList[j][0]);
 	var message = 'Authentication token for user ID '+emailList[j][0]+' is '+token;
 	MailApp.sendEmail(emailList[j][1], subject, message);
@@ -1122,16 +1151,21 @@ function updateScoreSheet() {
 	var rawTotal = [];
 	var sessionCount = [];
 	var weightedTotal = [];
+	var updatedNames = [];
 	for (var m=0; m<validNames.length; m++) {
 	    var sessionName = validNames[m];
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
 
-	    var sessionParams = lookupValues(sessionName, ['sessionWeight', 'scoreWeight', 'gradeWeight'], INDEX_SHEET);
+	    var sessionParams = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight'], INDEX_SHEET);
+	    var gradeDate = parseNumber(sessionParams.gradeDate) || null;
 	    var sessionWeight = parseNumber(sessionParams.sessionWeight) || 0;
 	    var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
 
+	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
+		continue;
+	    updatedNames.push(sessionName);
 
 	    // Session sheet columns
 	    var idCol = sessionColIndex['id'];
@@ -1154,7 +1188,7 @@ function updateScoreSheet() {
 		    var colHeader = scoreColHeaders[jcol-1];
 		    if (scoreHeaders.indexOf(colHeader) == -1 && colHeader.slice(0,1) == '_') {
 			// Session header column
-			if (sessionName < colHeader) {
+			if (sessionName < colHeader.slice(1)) {
 			    // Insert new session column in sorted order
 			    scoreSheet.insertColumnBefore(jcol);
 			    scoreSessionCol = jcol;
@@ -1226,5 +1260,5 @@ function updateScoreSheet() {
 	lock.releaseLock();
     }
 
-    notify("Update "+scoreSheetName+" for sessions "+validNames.join(', '), 'Slidoc Scores');
+    notify("Updated "+scoreSheetName+" for sessions "+updatedNames.join(', '), 'Slidoc Scores');
 }

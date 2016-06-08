@@ -42,6 +42,7 @@ from pygments.util import ClassNotFound
 from xml.etree import ElementTree
 
 INDEX_SHEET = 'sessions_slidoc'
+SCORE_SHEET = 'scores_slidoc'
 LOG_SHEET = 'slidoc_log'
 MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
@@ -373,7 +374,7 @@ class MathInlineGrammar(mistune.InlineGrammar):
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
-    inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\)(;([^`\n]+))?`")
+    inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\s*(\d*)\s*\)(;([^`\n]+))?`")
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
         r'^\[('
@@ -402,7 +403,7 @@ class MathInlineLexer(mistune.InlineLexer):
         return self.renderer.inline_math(m.group(1)+m.group(2))
 
     def output_inline_js(self, m):
-        return self.renderer.inline_js(m.group(1), m.group(2), m.group(4))
+        return self.renderer.inline_js(m.group(1), m.group(2), m.group(3), m.group(5))
 
     def output_block_math(self, m):
         return self.renderer.block_math(m.group(1))
@@ -718,7 +719,7 @@ class SlidocRenderer(MathRenderer):
                 else:
                     print("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number), file=sys.stderr)
 
-    def inline_js(self, plugin_name, action, text):
+    def inline_js(self, plugin_name, action, arg, text):
         js_func = plugin_name + '.' + action
         if action in ('create', 'globalInit', 'init', 'disable', 'display', 'expect', 'response'):
             print("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s()` in slide %s" % (self.options["filename"], js_func, self.slide_number), file=sys.stderr)
@@ -733,7 +734,7 @@ class SlidocRenderer(MathRenderer):
         classes = 'slidoc-inline-js'
         if slide_id:
             classes += ' slidoc-inline-js-in-'+slide_id
-        return '<code class="%s" data-slidoc-js-function="%s">%s</code>' % (classes, js_func, mistune.escape('='+js_func+'()' if text is None else text))
+        return '<code class="%s" data-slidoc-js-function="%s" data-slidoc-js-argument="%s">%s</code>' % (classes, js_func, arg or '', mistune.escape('='+js_func+'()' if text is None else text))
 
     def get_chapter_id(self):
         return make_chapter_id(self.options['filenumber'])
@@ -1101,10 +1102,10 @@ class SlidocRenderer(MathRenderer):
             self.choice_end = ''
 
         explain_answer = ''
-        explain_match = re.match(r'^.*\s+(explain(=(\w+))?)\s*$', text)
+        explain_match = re.match(r'(^|.*\s)(explain(=(\w+))?)\s*$', text)
         if explain_match:
             text = text[:-len(explain_match.group(0))].strip()
-            explain_answer = explain_match.group(3) or 'text'
+            explain_answer = explain_match.group(4) or 'text'
 
         slide_id = self.get_slide_id()
         plugin_name = ''
@@ -1203,6 +1204,7 @@ class SlidocRenderer(MathRenderer):
                     print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp), file=sys.stderr)
 
         grade_response = 'grade_response' in self.options['config'].features
+
         multiline_answer = self.cur_qtype.startswith('text/')
         if multiline_answer:
             explain_answer = ''      # Explain not compatible with textarea input
@@ -1339,6 +1341,7 @@ class SlidocRenderer(MathRenderer):
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
                 for tag in nn_tags:
+                    # If assessment document, do not warn about lack of concept coverage
                     if tag not in Global.primary_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
                         self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         print("        "+self.concept_warnings[-1], file=sys.stderr)
@@ -1540,7 +1543,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                 
 def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
     user = 'admin'
-    user_token = sliauth.gen_admin_token(hmac_key, user)
+    user_token = sliauth.gen_admin_token(hmac_key, user) if hmac_key else ''
     post_params = {'admin': user, 'token': user_token, 'sheet': sheet_name,
                    'headers': json.dumps(headers)}
     if row:
@@ -1596,29 +1599,19 @@ scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 def process_input(input_files, config_dict):
 
-    if config_dict['index_files']:
-        comps = config_dict['index_files'].split(',')
+    if config_dict['indexed']:
+        comps = config_dict['indexed'].split(',')
         ftoc = comps[0]+'.html' if comps[0] else ''
         findex = comps[1]+'.html' if len(comps) > 1 and comps[1] else ''
         fqindex = comps[2]+'.html' if len(comps) > 2 and comps[2] else ''
-    else:
+    elif config_dict['all'] is not None:
+        # All indexes for combined file by default
         ftoc, findex, fqindex = 'toc.html', 'ind.html', 'qind.html'
+    else:
+        # No default indexes for separate file
+        ftoc, findex, fqindex = '', '', ''
 
-    if config_dict['pace']:
-        if len(input_files) == 1 and not config_dict['index_files']:
-            # Single paced input file; no table of contents, by default
-            ftoc = ''
-        # Index not compatible with paced
-        findex = ''
-        fqindex = ''
-
-    separate_files = False
-    if config_dict['index_files'] or config_dict['pace']:
-        # Separate files
-        separate_files = True
-    elif len(input_files) > 1 and not config_dict['outfile']:
-        # Multiple separate output files
-        separate_files = True
+    separate_files = config_dict['all'] is None  # Specify --all='' to use first file name
 
     tem_dict = config_dict.copy()
     tem_dict.update(separate=separate_files, toc=ftoc, index=findex, qindex=fqindex)
@@ -1626,11 +1619,14 @@ def process_input(input_files, config_dict):
     # Create config object
     config = argparse.Namespace(**tem_dict)
 
+    if config.pace and config.all is not None :
+        abort('slidoc: Error: --pace option incompatible with --all')
+
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0,
                  'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
-                 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
+                 'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
                  'features': {} }
@@ -1638,40 +1634,32 @@ def process_input(input_files, config_dict):
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
     js_params['remoteLogLevel'] = config.remote_logging
 
-    out_name = os.path.splitext(os.path.basename(config.outfile or input_files[0].name))[0]
+    out_name = os.path.splitext(os.path.basename(config.all or input_files[0].name))[0]
     combined_file = '' if config.separate else out_name+'.html'
 
+    # Reset config properties that will be overridden for separate files
+    cmd_features_set = None if config.features is None else md2md.make_arg_set(config.features, features_all)
+
+    cmd_pace_args = config.pace    # If None, will be initialized to file-specific values
+
     if not config.separate:
-        # Combined file (not paced)
+        # Combined file  (these will be set later for separate files)
+        config.features = cmd_features_set or set()
+        js_params['features'] = dict([(x, 1) for x in config.features])
+        js_params['gd_sheet_url'] = config.gsheet_url or ''
         js_params['fileName'] = out_name
+    else:
+        # Will be initialized to file-specific values (use '' to override)
+        config.pace = None
+        config.features = None
 
-    hide_chapters = False
-    if config.pace:
-        if config.printable:
-            abort('slidoc: Error: --pace and --printable options do not work well together')
-        hide_chapters = True
-        comps = config.pace.split(',')
-        if comps[0]:
-            js_params['paceLevel'] = int(comps[0])
-        if len(comps) > 1 and comps[1]:
-            js_params['paceDelay'] = int(comps[1])
-        if len(comps) > 2 and comps[2]:
-            js_params['tryCount'] = int(comps[2])
-        if len(comps) > 3 and comps[3]:
-            js_params['tryDelay'] = int(comps[3])
-        if not js_params['paceLevel']:
-            abort('slidoc: Error: --pace=0 argument should be omitted')
 
-    gd_hmac_key = ''
-    if config.google_docs:
-        if not config.pace:
-            abort('slidoc: Error: Must use --google_docs with --pace')
-        comps = config.google_docs.split(',')
-        js_params['gd_sheet_url'] = comps[0]
+    gd_hmac_key = None             # Specify --gsheet_login='' to use Google Sheets without authentication
+    if config.gsheet_login:
+        comps = config.gsheet_login.split(',')
+        gd_hmac_key = comps[0]
         if len(comps) > 1:
-            gd_hmac_key = comps[1]
-        if len(comps) > 2:
-            js_params['gd_client_id'], js_params['gd_api_key'] = comps[2:4]
+            js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
     
     nb_site_url = config.site_url
     if combined_file:
@@ -1682,19 +1670,6 @@ def process_input(input_files, config_dict):
         config.image_url += '/'
 
     config.images = set(config.images.split(',')) if config.images else set()
-
-    if config.features is None:
-        cmd_features_set = None
-    else:
-        cmd_features_set = md2md.make_arg_set(config.features, features_all)
-        js_params['features'] = dict([(x, 1) for x in cmd_features_set])
-
-    if config.separate:
-        config.features = None
-    elif config.features:
-        config.features = set(config.features.split(','))
-    else:
-        config.features = set()
 
     config.strip = md2md.make_arg_set(config.strip, strip_all)
     if len(input_files) == 1:
@@ -1733,13 +1708,12 @@ def process_input(input_files, config_dict):
                     label = script
                 test_params.append([label, query])
 
-    if config.google_docs:
+    if gd_hmac_key is not None:
         add_scripts += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
         if js_params['gd_client_id']:
             add_scripts += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
             add_scripts += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
-
     answer_elements = {}
     for suffix in SlidocRenderer.content_suffixes:
         answer_elements[suffix] = 0;
@@ -1810,7 +1784,6 @@ def process_input(input_files, config_dict):
     back_to_contents = nav_link('BACK TO CONTENTS', config.site_url, config.toc, hash='#'+make_chapter_id(0),
                                 separate=config.separate, classes=['slidoc-nosidebar'], printable=config.printable)+'<p></p>\n'
 
-    flist = []
     all_concept_warnings = []
     outfile_buffer = []
     combined_html = []
@@ -1821,24 +1794,55 @@ def process_input(input_files, config_dict):
     math_found = False
     pagedown_load = False
     skulpt_load = False
+    flist = []
+    paced_files = {}
     for j, f in enumerate(input_files):
         fname = fnames[j]
+        due_date = None
         if config.separate:
-            js_params['fileName'] = fname
-
-        if config.separate:
-            # Separate files (also paced)
+            # Separate files (may also be paced)
             file_config = parse_first_line(f, fname, parser, {}, include_args=Select_file_args,
                                            verbose=config.verbose)
-            due_date = sliauth.get_utc_date(config.due_date or file_config.due_date if config.pace else None)
-            js_params['sessionPrereqs'] = config.prereqs or file_config.prereqs or ''
-            js_params['sessionRevision'] = config.revision or file_config.revision or ''
+            config.pace = file_config.pace if cmd_pace_args is None else cmd_pace_args
+            if config.pace == '0':
+                config.pace = None
+                
+            if config.pace:
+                # Note: pace does not work with combined files
+                if config.printable:
+                    abort('slidoc: Error: --pace and --printable options do not work well together')
+                comps = config.pace.split(',')
+                if comps[0]:
+                    js_params['paceLevel'] = int(comps[0])
+                if len(comps) > 1 and comps[1]:
+                    js_params['paceDelay'] = int(comps[1])
+                if len(comps) > 2 and comps[2]:
+                    js_params['tryCount'] = int(comps[2])
+                if len(comps) > 3 and comps[3]:
+                    js_params['tryDelay'] = int(comps[3])
+                if not js_params['paceLevel']:
+                    abort('slidoc: Error: --pace=0 argument should be omitted')
+
+                if config.due_date is not None:
+                    if config.due_date:
+                        due_date = sliauth.get_utc_date(config.due_date)
+                elif file_config.due_date:
+                    due_date = sliauth.get_utc_date(file_config.due_date)
+
             config.features = cmd_features_set or set()
             if file_config.features and (cmd_features_set is None or 'override' not in cmd_features_set):
                 # Merge features from each file (unless 'override' feature is present, for command line to override)
-                config.features = config.features.union( set(file_config.features.split(',')) )
-                
+                file_features_set = set(file_config.features.split(','))
+                if 'grade_response' in file_features_set and not gd_hmac_key:
+                    file_features_set.remove('grade_response')
+                config.features = config.features.union(file_features_set)
+
             js_params['features'] = dict([(x, 1) for x in config.features])
+            js_params['sessionPrereqs'] =  (file_config.prereqs or '') if config.prereqs is None else config.prereqs
+            js_params['sessionRevision'] = (file_config.revision or '') if config.revision is None else config.revision
+                
+            js_params['gd_sheet_url'] = (file_config.gsheet_url  or '') if config.gsheet_url is None else config.gsheet_url
+            js_params['fileName'] = fname
 
         if not j or config.separate:
             # First file or separate files
@@ -1852,9 +1856,6 @@ def process_input(input_files, config_dict):
         if not config.features.issubset(set(features_all)):
             abort('Error: Unknown feature(s): '+','.join(list(config.features.difference(set(features_all)))) )
             
-        if not gd_hmac_key and 'grade_response' in config.features:
-            abort("slidoc: Error: hmac_key must be specified for feature 'grade_response'")
-
         filepath = f.name
         md_text = f.read()
         f.close()
@@ -1911,6 +1912,15 @@ def process_input(input_files, config_dict):
                 # Include column for total grades
                 js_params['gradeFields'] = ['q_grades'] + js_params['gradeFields']
 
+            paced_files[fname] = {'due_date': due_date} 
+            if js_params['gd_sheet_url']:
+                if js_params['gradeWeight']:
+                    paced_files[fname]['type'] = 'graded'
+                else:
+                    paced_files[fname]['type'] = 'scored'
+            else:
+                paced_files[fname]['type'] = 'paced'
+
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
@@ -1934,7 +1944,7 @@ def process_input(input_files, config_dict):
         if config.dry_run:
             print("Indexed ", outname+":", fheader, file=sys.stderr)
         else:
-            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=hide_chapters)
+            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -2010,18 +2020,15 @@ def process_input(input_files, config_dict):
             ifile += 1
             chapter_id = make_chapter_id(ifile)
             slide_link = ''
-            if not config.pace and config.slides:
+            if fname not in paced_files and config.slides:
                 slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.site_url, fname+"-slides.html", 'slides')
             nb_link = ''
-            if not config.pace and config.notebook and nb_site_url:
+            if fname not in paced_files and config.notebook and nb_site_url:
                 nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
 
-            if not config.pace:
-                doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
-                                    separate=config.separate, printable=config.printable)
-                toggle_link = '''<span id="slidoc-toc-chapters-toggle" class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
-            else:
-                doc_str = 'paced exercise'
+            if fname in paced_files:
+                doc_str = paced_files[fname]['type'] + ' exercise'
+                due_date = paced_files[fname]['due_date']
                 if due_date:
                     doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
                 doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
@@ -2029,9 +2036,14 @@ def process_input(input_files, config_dict):
                 if test_params:
                     for label, query in test_params:
                         doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
+            else:
+                doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
+                                    separate=config.separate, printable=config.printable)
+                toggle_link = '''<span id="slidoc-toc-chapters-toggle" class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
+
             toc_html.append('<li>%s%s<span class="slidoc-nosidebar"> (%s)%s%s</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
 
-            if not config.pace:
+            if fname not in paced_files:
                 f_toc_html = ('\n<div id="%s-toc-sections" class="slidoc-toc-sections" style="display: none;">' % chapter_id)+file_toc+'\n<p></p></div>'
                 toc_html.append(f_toc_html)
 
@@ -2044,7 +2056,7 @@ def process_input(input_files, config_dict):
 
         if not config.dry_run:
             toc_insert = ''
-            if not config.pace:
+            if fname not in paced_files:
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if combined_file:
@@ -2207,9 +2219,9 @@ Toc_header = '''
 
 # Need latest version of Markdown for hooks
 Pagedown_js = r'''
-<script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Converter.js'></script>
-<script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Sanitizer.js'></script>
-<script src='https://dl.dropboxusercontent.com/u/72208800/md/Markdown.Extra.js'></script>
+<script src='https://dl.dropboxusercontent.com/u/72208800/Pagedown/Markdown.Converter.js'></script>
+<script src='https://dl.dropboxusercontent.com/u/72208800/Pagedown/Markdown.Sanitizer.js'></script>
+<script src='https://dl.dropboxusercontent.com/u/72208800/Pagedown/Markdown.Extra.js'></script>
 '''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
@@ -2244,7 +2256,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'prereqs', 'revision'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'pace', 'prereqs', 'revision'])
     
 def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), verbose=False):
     # Read first line of first file and rewind it
@@ -2287,19 +2299,20 @@ strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 features_all = ['assessment', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
 parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
-parser.add_argument('--google_docs', help='spreadsheet_url,hmac_key[,client_id,api_key] (export sessions to Google Docs spreadsheet)')
+parser.add_argument('--gsheet_login', metavar='HMAC_KEY,CLIENT_ID,API_KEY', help='hmac_key[,client_id,api_key] (authenticate via Google Docs)')
+parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
 parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
-parser.add_argument('--index_files', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
+parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-parser.add_argument('--outfile', metavar='NAME', help='Base name of combined HTML output file')
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
@@ -2322,7 +2335,7 @@ if __name__ == '__main__':
     first_name = os.path.splitext(os.path.basename(cmd_args_orig.file[0].name))[0]
 
     # Do not exclude args if combined file
-    exclude_args = Select_file_args if cmd_args_orig.index_files or cmd_args_orig.pace else None
+    exclude_args = Select_file_args if cmd_args_orig.all is None else None
     cmd_args = parse_first_line(cmd_args_orig.file[0], first_name, parser, vars(cmd_args_orig),
                                 exclude_args=exclude_args, verbose=cmd_args_orig.verbose)
 
@@ -2335,8 +2348,6 @@ if __name__ == '__main__':
         if getattr(cmd_args, arg_name) == None:
             setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
 
-    if cmd_args.pace == '0':
-        cmd_args.pace = None
     config_dict = vars(cmd_args)
     input_files = config_dict.pop('file')
 
