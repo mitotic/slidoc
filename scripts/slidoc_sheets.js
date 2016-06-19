@@ -52,6 +52,8 @@
 //  If roster_slidoc sheet is present and user id is not present in it, user will not be allowed to access sessions.
 //
 // USING THE SLIDOC MENU
+//  - After installing this script, quit the spreadsheet and re-open to activate the Slidoc menu. You will see:
+//
 //  - "Display session answers" to create/overwrite the sheet
 //    'sessionName-answers' displaying all the answers
 //
@@ -73,9 +75,16 @@
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
 var ADMIN_USER = 'admin';
 
+var REQUIRE_LOGIN_TOKEN = true;
+var REQUIRE_LATE_TOKEN = true;
+var SHARE_AVERAGES = false;
+
 // Define document IDs to create/access roster/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', answers_slidoc: 'ID2', stats_slidoc: 'ID3', slidoc_log: 'ID4'}
 var ALT_DOC_IDS = { };
+
+var MAXSCORE_ID = '_max_score';
+var AVERAGE_ID = '_average';
 
 var ANSWERS_DOC = 'answers_slidoc';
 var STATS_DOC = 'stats_slidoc';
@@ -86,14 +95,9 @@ var SCORES_SHEET = 'scores_slidoc';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 
-var REQUIRE_LOGIN_TOKEN = true;
-var REQUIRE_LATE_TOKEN = true;
-
 var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
-var MAXSCORE_ID = '_max_score';
-var AVERAGE_ID = '_average';
 
 var TRUNCATE_DIGEST = 8;
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
@@ -283,8 +287,16 @@ function handleResponse(evt) {
 	returnInfo.timestamp = null;
 	var numStickyRows = 1;  // Headers etc.
 
-	if (getRow && params.getheaders)
+	if (getRow && params.getheaders) {
 	    returnHeaders = columnHeaders;
+	    try {
+		var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2)
+		if (temIndexRow[MAXSCORE_ID])
+		    returnInfo.maxScores = sheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
+		if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
+		    returnInfo.averages = sheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
+	    } catch (err) {}
+	}
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
 	    // No row updates/gets

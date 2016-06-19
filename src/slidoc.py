@@ -1464,7 +1464,8 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
-        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
+        sidebar_html = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc else ''
+        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
 
@@ -1570,6 +1571,9 @@ def parse_plugin(name, text):
                 plugin_def['Head'] = comps[0]+'\n'
             if comps[1]:
                 plugin_def['Body'] = comps[1]+'\n'
+        elif tail.startswith('PluginBody:'):
+            plugin_def['Head'] = ''
+            plugin_def['Body'] = tail[len('PluginBody:'):]
         elif tail:
             plugin_def['Head'] = tail+'\n'
 

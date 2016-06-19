@@ -134,7 +134,7 @@ session or user switching)
 The slide-specific `init` will be called in a deterministic order, to
 preserve the sequence in which global random generators may be called.
 
-The following methods should be defined for plugins, as required:
+The following methods may be defined for plugins, as needed:
 
 > `expect`: returns expected correct answer (for formula plugins)
 
@@ -143,6 +143,10 @@ The following methods should be defined for plugins, as required:
 > `disable`: disables plugin (after user response has been recorded)
 
 > `response`: records and returns user response
+
+> `enterSlide(paceStart)`: entering slide; returns paceDelay (in seconds) or null to use default (if paceStart only).
+
+> `leaveSlide()`: leaving slide
 
 ---
 
@@ -186,7 +190,8 @@ notations:
     `=plugin_name.func()`
 
 This substitutes the return value from the function `func` attached to
-the slide instance of the plugin. (`func` would always be called after
+the slide instance of the plugin. An optional non-negative integer
+argument may be present. (`func` would always be called after
 the `init` call.)
 
 The correct answer can also be provided by a formula:

@@ -343,6 +343,8 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		}
 
 		retStatus.info = result.info || {};
+		if (result.headers)
+		    retStatus.info.headers = result.headers;
 
 		if (userId && retStatus.info.timestamp)                 // Send update timestamp for user
 		    this.timestamps[userId] = retStatus.info.timestamp;

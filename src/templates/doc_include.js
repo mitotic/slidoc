@@ -38,6 +38,9 @@ Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
 Sliobj.pluginData = null;
+Sliobj.enterPlugins = null;
+Sliobj.leavePlugins = null;
+Sliobj.delaySec = null;
 
 Sliobj.testScript = null;
 Sliobj.testStep = getParameter('teststep');
@@ -462,7 +465,7 @@ Slidoc.resetPaced = function () {
 
 Slidoc.showConcepts = function (msg) {
     var html = msg || '';
-    if (Sliobj.params.gd_sheet_url)
+    if (!msg && Sliobj.params.gd_sheet_url)
 	html += 'Click <span class="slidoc-clickable" onclick="Slidoc.showGrades();">here</span> to view other scores/grades<p></p>'
     if (Sliobj.questionConcepts.length) {
 	html += '<b>Question Concepts</b><br>';
@@ -938,9 +941,24 @@ function showGradesCallback(userId, result, retStatus) {
 	    sessionKeys.push(keys[j]);
     }
     sessionKeys.sort();
-    var html = 'Grades for user '+userId+'<br>';
-    for (var j=0; j<sessionKeys.length; j++)
-	html += '&nbsp;' + sessionKeys[j].slice(1) + ': '+ result[sessionKeys[j]]+'<br>';
+    var html = 'Grades for user <b>'+userId+'</b><p></p>';
+    if (result.sessionCount)
+	html += 'Session count: <b>'+result.sessionCount+'</b><br>';
+    if (result.weightedTotal)
+	html += 'Weighted total: <b>'+result.weightedTotal+'</b><br>';
+    for (var j=0; j<sessionKeys.length; j++) {
+	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ result[sessionKeys[j]]+'</b>'
+	if (retStatus && retStatus.info && retStatus.info.headers) {
+	    if (retStatus.info.maxScores)
+		html += ' / '+retStatus.info.maxScores[retStatus.info.headers.indexOf(sessionKeys[j])];
+	    if (retStatus.info.averages) {
+		var temAvg = retStatus.info.averages[retStatus.info.headers.indexOf(sessionKeys[j])];
+		if (isNumber(temAvg))
+		    html += ' (average='+temAvg+')';
+	    }
+	}
+	html += '<br>';
+    }
     Slidoc.showPopup(html);
 }
 
@@ -954,8 +972,9 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.scoreSheet = null;
     Sliobj.gradeDate = '';
 
-    Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
-						 [], [], useJSONP);
+    if (Sliobj.params.gd_sheet_url)
+	Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
+						     [], [], useJSONP);
     if (Sliobj.adminState) {
 	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
 						     Sliobj.params.indexFields.slice(0,2),
@@ -1254,6 +1273,8 @@ function prepGradeSession(session) {
 function initSessionPlugins(session) {
     // Restore random seed for session
     Slidoc.log('initSessionPlugins:');
+    Sliobj.enterPlugins = {};
+    Sliobj.leavePlugins = {};
     Sliobj.pluginData = {};
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginName = Sliobj.pluginList[j];
@@ -1273,6 +1294,10 @@ function initSessionPlugins(session) {
 	var pluginName = bodyElem.dataset.plugin;
 	var slide_id = bodyElem.dataset.slideId;
 	var pluginInstance = createPluginInstance(pluginName, false, slide_id);
+	if ('enterSlide' in pluginInstance)
+	    Sliobj.enterPlugins[slide_id] = pluginInstance;
+	if ('leaveSlide' in pluginInstance)
+	    Sliobj.leavePlugins[slide_id] = pluginInstance;
 	SlidocRandom.setSeed(pluginInstance.randomSeed);
 	var argList = Sliobj.activePlugins[pluginName].args[slide_id];
 	SlidocPluginManager.optCall.apply(null, [pluginInstance, 'init'].concat(argList));
@@ -2497,6 +2522,7 @@ function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) 
 
 Slidoc.startPaced = function () {
     Slidoc.log('Slidoc.startPaced: ');
+    Sliobj.delaySec = null;
 
     var firstSlideId = getVisibleSlides()[0].id;
 
@@ -2566,6 +2592,7 @@ Slidoc.startPaced = function () {
 }
 
 Slidoc.endPaced = function () {
+    Sliobj.delaySec = null;
     Slidoc.log('Slidoc.endPaced: ');
     if (!Sliobj.params.gd_sheet_url)       // For remote sessions, successful submission will complete session
 	Sliobj.session.submitted = ''+(new Date());
@@ -2642,10 +2669,11 @@ Slidoc.slideViewStart = function () {
    var firstSlideId = slides[0].id;
    Slidoc.breakChain();
 
+   var startSlide;
    if (Sliobj.session.paced) {
-       Sliobj.currentSlide = Sliobj.session.lastSlide || 1; 
+       startSlide = Sliobj.session.lastSlide || 1; 
    } else {
-       Sliobj.currentSlide = getCurrentlyVisibleSlide(slides) || 1;
+       startSlide = getCurrentlyVisibleSlide(slides) || 1;
        // Hide notes (for paced view, this is handled earlier)
        Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
    }
@@ -2654,11 +2682,11 @@ Slidoc.slideViewStart = function () {
     for (var j=0; j<contentElems.length; j++)
 	Slidoc.hide(contentElems[j], null, '-');
 
-   document.body.classList.add('slidoc-slide-view');
+    document.body.classList.add('slidoc-slide-view');
 
-   Slidoc.slideViewGo(false, Sliobj.currentSlide);
-   Slidoc.reportEvent('initSlideView');
-   return false;
+    Slidoc.slideViewGo(false, startSlide, true);
+    Slidoc.reportEvent('initSlideView');
+    return false;
 }
 
 Slidoc.slideViewEnd = function() {
@@ -2667,7 +2695,15 @@ Slidoc.slideViewEnd = function() {
 	alert(msgStr);
 	return false;
     }
+
+    if (!Sliobj.currentSlide)
+	return false;
+
     var slides = getVisibleSlides();
+
+    var prev_slide_id = slides[Sliobj.currentSlide-1].id;
+    if (prev_slide_id in Sliobj.leavePlugins)
+	SlidocPluginManager.invoke(Sliobj.leavePlugins[prev_slide_id], 'leaveSlide');
 
     if (Sliobj.session.paced) {
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
@@ -2709,17 +2745,23 @@ Slidoc.slideViewGoLast = function () {
     return false;
 }
 
-Slidoc.slideViewGo = function (forward, slide_num) {
-   Slidoc.log('Slidoc.slideViewGo:', forward, slide_num);
-   if (!Sliobj.currentSlide)
-      return false;
-
+Slidoc.slideViewGo = function (forward, slide_num, start) {
+    Slidoc.log('Slidoc.slideViewGo:', forward, slide_num);
     var slides = getVisibleSlides();
-    if (slide_num) {
-	slide_num = Math.min(slide_num, slides.length);
-    } else {
-	slide_num = forward ? Sliobj.currentSlide+1 : Sliobj.currentSlide-1;
+    if (!start) {
+	if (!Sliobj.currentSlide) {
+	    Slidoc.log('Slidoc.slideViewGo: ERROR not in slide view to go to slide '+slide_num);
+	    return false;
+	}
+	if (!slide_num)
+	    slide_num = forward ? Sliobj.currentSlide+1 : Sliobj.currentSlide-1;
+	var prev_slide_id = slides[Sliobj.currentSlide-1].id;
+	if (prev_slide_id in Sliobj.leavePlugins)
+	    SlidocPluginManager.invoke(Sliobj.leavePlugins[prev_slide_id], 'leaveSlide');
+    } else if (!slide_num) {
+	return false;
     }
+
    if (!slides || slide_num < 1 || slide_num > slides.length)
       return false;
 
@@ -2729,7 +2771,8 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	return false;
     }
 
-    var question_attrs = getQuestionAttrs(slides[slide_num-1].id);  // New slide
+    var slide_id = slides[slide_num-1].id;
+    var question_attrs = getQuestionAttrs(slide_id);  // New slide
     Sliobj.lastInputValue = null;
 
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
@@ -2746,11 +2789,11 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	    var prompt = 'Please answer before proceeding. You have '+tryCount+' try(s)';
 	    showDialog('alert', 'requireAnswerDialog', prompt);
 	    return false;
-	} else if (!Sliobj.questionSlide && Sliobj.params.paceDelay) {
+	} else if (!Sliobj.questionSlide && Sliobj.delaySec) {
 	    // Current (not new) slide is not question slide
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
-	    if (delta < Sliobj.params.paceDelay) {
-		alert('Please wait '+ Math.ceil(Sliobj.params.paceDelay-delta) + ' second(s)');
+	    if (delta < Sliobj.delaySec) {
+		alert('Please wait '+ Math.ceil(Sliobj.delaySec-delta) + ' second(s)');
 		return false;
 	    }
 	}
@@ -2768,9 +2811,15 @@ Slidoc.slideViewGo = function (forward, slide_num) {
             // 1 => Last sequence of questions was answered correctly
 	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 1 : -1;
 	    Sliobj.session.remainingTries = 0;
-	    if (Sliobj.params.paceDelay)
-		Slidoc.delayIndicator(Sliobj.params.paceDelay, 'slidoc-slide-nav-next');
         }
+
+	Sliobj.delaySec = null;
+	if (slide_id in Sliobj.enterPlugins)
+	    Sliobj.delaySec = SlidocPluginManager.invoke(Sliobj.enterPlugins[slide_id], 'enterSlide', true);
+	if (Sliobj.delaySec == null && !Sliobj.questionSlide) // Default delay only for non-question slides
+	    Sliobj.delaySec = Sliobj.params.paceDelay;
+	if (Sliobj.delaySec)
+	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-next');
 
 	if (Sliobj.session.lastSlide == slides.length) {
 	    // Last slide
@@ -2782,6 +2831,8 @@ Slidoc.slideViewGo = function (forward, slide_num) {
 	}
     } else {
 	Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
+	if (slide_id in Sliobj.enterPlugins)
+	    SlidocPluginManager.invoke(Sliobj.enterPlugins[slide_id], 'enterSlide', false);
     }
 
     if (Sliobj.session.paced) {
