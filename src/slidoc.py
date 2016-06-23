@@ -594,7 +594,7 @@ class SlidocRenderer(MathRenderer):
 
     plugin_content_template = '''<div id="%(plugin_id)s-content" class="%(plugin_label)s-content slidoc-plugin-content slidoc-pluginonly">%(plugin_content)s</div><!--%(plugin_id)s-content-->'''
 
-    plugin_body_template = '''<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-args="%(plugin_args)s" data-slide-id="%(plugin_slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">%(plugin_body)s</div><!--%(plugin_id)s-body-->'''
+    plugin_body_template = '''<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-args="%(plugin_args)s" data-button="%(plugin_button)s" data-slide-id="%(plugin_slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">%(plugin_body)s</div><!--%(plugin_id)s-body-->'''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" data-qnumber="%(qno)d">Answer:</span>'''
@@ -1077,7 +1077,8 @@ class SlidocRenderer(MathRenderer):
                         'plugin_name': plugin_name,
                         'plugin_label': 'slidoc-plugin-'+plugin_name,
                         'plugin_id': slide_id+'-plugin-'+plugin_name,
-                        'plugin_args': urllib.quote(args) }
+                        'plugin_args': urllib.quote(args),
+                        'plugin_button': urllib.quote(plugin_def.get('Button', ''))}
         plugin_params['plugin_body'] = plugin_def.get('Body', '') % plugin_params
         html = self.plugin_body_template % plugin_params
         if content:
@@ -1565,17 +1566,15 @@ def parse_plugin(name, text):
         if match.group(2) and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
         tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in Head/Body template
-        comps = tail.split('\nPluginBody:')
-        if len(comps) > 1:
-            if comps[0]:
-                plugin_def['Head'] = comps[0]+'\n'
-            if comps[1]:
-                plugin_def['Body'] = comps[1]+'\n'
-        elif tail.startswith('PluginBody:'):
-            plugin_def['Head'] = ''
-            plugin_def['Body'] = tail[len('PluginBody:'):]
-        elif tail:
-            plugin_def['Head'] = tail+'\n'
+        comps = re.split(r'(^|\n\s*\n)Plugin(Button|Body):', tail)
+        plugin_def['Head'] = comps[0]+'\n' if comps[0] else ''
+        comps = comps[1:]
+        while comps:
+            if comps[1] == 'Button':
+                plugin_def['Button'] = comps[2]
+            elif comps[1] == 'Body':
+                plugin_def['Body'] = comps[2]+'\n'
+            comps = comps[3:]
 
     plugin_def['JS'] = 'SlidocPlugins.'+text.lstrip()
     return plugin_def

@@ -38,8 +38,9 @@ Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
 Sliobj.pluginData = null;
-Sliobj.enterPlugins = null;
-Sliobj.leavePlugins = null;
+Sliobj.slidePlugins = null;
+Sliobj.incrementPlugins = null;
+Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
 
 Sliobj.testScript = null;
@@ -302,11 +303,12 @@ function setupPlugins() {
 	var pluginName = allBodies[j].dataset.plugin;
 	var slide_id = allBodies[j].dataset.slideId;
 	var args = decodeURIComponent(allBodies[j].dataset.args || '');
+	var button = decodeURIComponent(allBodies[j].dataset.button || '');
 	if (!(pluginName in SlidocPlugins))
 	    sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax errors');
 	if (!(pluginName in Sliobj.activePlugins)) {
 	    Sliobj.pluginList.push(pluginName);
-	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {} };
+	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {}, button: {} };
 	}
 	var argList = [];
 	try {
@@ -318,6 +320,7 @@ function setupPlugins() {
 	    alert(errMsg);
 	}
 	Sliobj.activePlugins[pluginName].args[slide_id] = argList;
+	Sliobj.activePlugins[pluginName].button[slide_id] = button;
     }
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginInstance = createPluginInstance(Sliobj.pluginList[j], true);
@@ -487,7 +490,16 @@ Slidoc.slideViewIncrement = function () {
 	Slidoc.nextUser(true);
 	return;
     }
-    if (!Sliobj.currentSlide || !Sliobj.maxIncrement || !('incremental_slides' in Sliobj.params.features))
+    if (!Sliobj.currentSlide)
+        return;
+
+    var slide_id = Slidoc.getCurrentSlideId();
+    if (slide_id in Sliobj.incrementPlugins) {
+	SlidocPluginManager.invoke(Sliobj.incrementPlugins[slide_id], 'incrementSlide', true);
+	return;
+    }
+    
+    if (!Sliobj.maxIncrement || !('incremental_slides' in Sliobj.params.features))
         return;
 
     if (Sliobj.curIncrement < Sliobj.maxIncrement) {
@@ -1273,8 +1285,9 @@ function prepGradeSession(session) {
 function initSessionPlugins(session) {
     // Restore random seed for session
     Slidoc.log('initSessionPlugins:');
-    Sliobj.enterPlugins = {};
-    Sliobj.leavePlugins = {};
+    Sliobj.slidePlugins = {};
+    Sliobj.incrementPlugins = {};
+    Sliobj.buttonPlugins = {};
     Sliobj.pluginData = {};
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginName = Sliobj.pluginList[j];
@@ -1294,12 +1307,16 @@ function initSessionPlugins(session) {
 	var pluginName = bodyElem.dataset.plugin;
 	var slide_id = bodyElem.dataset.slideId;
 	var pluginInstance = createPluginInstance(pluginName, false, slide_id);
-	if ('enterSlide' in pluginInstance)
-	    Sliobj.enterPlugins[slide_id] = pluginInstance;
-	if ('leaveSlide' in pluginInstance)
-	    Sliobj.leavePlugins[slide_id] = pluginInstance;
+	if (!(slide_id in Sliobj.slidePlugins))
+	    Sliobj.slidePlugins[slide_id] = [];
+	Sliobj.slidePlugins[slide_id].push(pluginInstance);
+	if ('incrementSlide' in pluginInstance)
+	    Sliobj.incrementPlugins[slide_id] = pluginInstance;
 	SlidocRandom.setSeed(pluginInstance.randomSeed);
 	var argList = Sliobj.activePlugins[pluginName].args[slide_id];
+	var button = Sliobj.activePlugins[pluginName].button[slide_id];
+	if (button)
+	    Sliobj.buttonPlugins[slide_id] = pluginInstance;
 	SlidocPluginManager.optCall.apply(null, [pluginInstance, 'init'].concat(argList));
     }
 
@@ -1324,6 +1341,16 @@ function initSessionPlugins(session) {
     }
 }
 
+Slidoc.pluginButtonClick = function () {
+    var slide_id = Slidoc.getCurrentSlideId();
+    if (!slide_id)
+	return false;
+    Slidoc.log('pluginButtonClick:', slide_id);
+    if (slide_id in Sliobj.buttonPlugins)
+	SlidocPluginManager.optCall.apply(null, [Sliobj.buttonPlugins[slide_id], 'buttonClick']);
+    return false;
+}
+
 function checkGradingCallback(userId, result, retStatus) {
     Slidoc.log('checkGradingCallback:', userId, result, retStatus);
     if (!result) {
@@ -1332,6 +1359,7 @@ function checkGradingCallback(userId, result, retStatus) {
     var unpacked = unpackSession(result);
     checkGradingStatus(userId, unpacked.session, unpacked.feedback);
 }
+
 function checkGradingStatus(userId, session, feedback) {
     Slidoc.log('checkGradingStatus:', userId);
     if (Sliobj.userGrades[userId].grading)
@@ -1763,22 +1791,31 @@ function progressBar(delaySec) {
     setTimeout(endInterval, delaySec*1000);
 }
 
-function delayElement(delaySec, elementId) {
+function delayElement(delaySec) // ElemendIds to be hidden as extra args
+{
     // Displays element after a delay (with 1 second transition afterward)
     var interval = 0.05;
     var transition = 1;
     var jmax = (delaySec+transition)/interval;
     var jtrans = delaySec/interval
     var j = 0;
-    var hideElem = document.getElementById(elementId);
+    var hideElemIds = Array.prototype.slice.call(arguments).slice(1);
     function clocktick() {
 	j += 1;
-	hideElem.style.opacity = (j < jtrans) ? 0.1 : Math.min(1.0, 0.1+0.9*(j-jtrans)/(jmax-jtrans) );
+	for (var k=0; k<hideElemIds.length; k++) {
+	    var hideElem = document.getElementById(hideElemIds[k]);
+	    if (hideElem)
+		hideElem.style.opacity = (j < jtrans) ? 0.1 : Math.min(1.0, 0.1+0.9*(j-jtrans)/(jmax-jtrans) );
+	}
     }
     var intervalId = setInterval(clocktick, 1000*interval);
     function endInterval() {
 	clearInterval(intervalId);
-	hideElem.style.opacity = 1.0;
+	for (var k=0; k<hideElemIds.length; k++) {
+	    var hideElem = document.getElementById(hideElemIds[k]);
+	    if (hideElem)
+		hideElem.style.opacity = 1.0;
+	}
     }
     setTimeout(endInterval, (delaySec+transition)*1000);
 }
@@ -2702,8 +2739,10 @@ Slidoc.slideViewEnd = function() {
     var slides = getVisibleSlides();
 
     var prev_slide_id = slides[Sliobj.currentSlide-1].id;
-    if (prev_slide_id in Sliobj.leavePlugins)
-	SlidocPluginManager.invoke(Sliobj.leavePlugins[prev_slide_id], 'leaveSlide');
+    if (prev_slide_id in Sliobj.slidePlugins) {
+	for (var j=0; j<Sliobj.slidePlugins[prev_slide_id].length; j++)
+	    SlidocPluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
+    }
 
     if (Sliobj.session.paced) {
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
@@ -2727,7 +2766,12 @@ Slidoc.slideViewEnd = function() {
      location.href = '#'+slides[Sliobj.currentSlide-1].id;
    }
    Sliobj.currentSlide = 0;
-   Sliobj.questionSlide = '';
+    Sliobj.questionSlide = '';
+
+    var pluginButton = document.getElementById("slidoc-button-plugin");
+    pluginButton.innerHTML = '';
+    pluginButton.style.display = 'none';
+    
     if (Sliobj.prevSidebar) {
 	Sliobj.prevSidebar = false;
 	Slidoc.sidebarDisplay();
@@ -2756,14 +2800,17 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	if (!slide_num)
 	    slide_num = forward ? Sliobj.currentSlide+1 : Sliobj.currentSlide-1;
 	var prev_slide_id = slides[Sliobj.currentSlide-1].id;
-	if (prev_slide_id in Sliobj.leavePlugins)
-	    SlidocPluginManager.invoke(Sliobj.leavePlugins[prev_slide_id], 'leaveSlide');
+	if (prev_slide_id in Sliobj.slidePlugins) {
+	    for (var j=0; j<Sliobj.slidePlugins[prev_slide_id].length; j++)
+		SlidocPluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
+	}
     } else if (!slide_num) {
 	return false;
     }
+    var backward = (slide_num < Sliobj.currentSlide);
 
-   if (!slides || slide_num < 1 || slide_num > slides.length)
-      return false;
+    if (!slides || slide_num < 1 || slide_num > slides.length)
+	return false;
 
     if (Sliobj.session.paced && Sliobj.params.tryCount && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.session.skipToSlide) {
 	// Advance one slide at a time
@@ -2790,7 +2837,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    showDialog('alert', 'requireAnswerDialog', prompt);
 	    return false;
 	} else if (!Sliobj.questionSlide && Sliobj.delaySec) {
-	    // Current (not new) slide is not question slide
+	    // Current (not new) slide is not question slide; has delay
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
 	    if (delta < Sliobj.delaySec) {
 		alert('Please wait '+ Math.ceil(Sliobj.delaySec-delta) + ' second(s)');
@@ -2814,12 +2861,26 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
         }
 
 	Sliobj.delaySec = null;
-	if (slide_id in Sliobj.enterPlugins)
-	    Sliobj.delaySec = SlidocPluginManager.invoke(Sliobj.enterPlugins[slide_id], 'enterSlide', true);
+	var pluginButton = document.getElementById("slidoc-button-plugin");
+	if (slide_id in Sliobj.buttonPlugins) {
+	    pluginButton.innerHTML = Sliobj.activePlugins[Sliobj.buttonPlugins[slide_id].name].button[slide_id]
+	    pluginButton.style.display = null;
+	} else {
+	    pluginButton.innerHTML = '';
+	    pluginButton.style.display = 'none';
+	}
+	if (slide_id in Sliobj.slidePlugins) {
+	    for (var j=0; j<Sliobj.slidePlugins[slide_id].length; j++) {
+		var delaySec = SlidocPluginManager.optCall(Sliobj.slidePlugins[slide_id][j], 'enterSlide', true, backward);
+		if (delaySec != null)
+		    Sliobj.delaySec = delaySec;
+	    }
+	}
+
 	if (Sliobj.delaySec == null && !Sliobj.questionSlide) // Default delay only for non-question slides
 	    Sliobj.delaySec = Sliobj.params.paceDelay;
 	if (Sliobj.delaySec)
-	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-next');
+	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-prev', 'slidoc-slide-nav-next');
 
 	if (Sliobj.session.lastSlide == slides.length) {
 	    // Last slide
@@ -2830,9 +2891,19 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    sessionPut();
 	}
     } else {
+	if (Sliobj.session.paced && slide_num < Sliobj.session.lastSlide && !Sliobj.questionSlide && Sliobj.delaySec) {
+	    // Not last paced slide, not question slide, delay active
+	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
+	    if (delta < Sliobj.delaySec) {
+		alert('Please wait '+ Math.ceil(Sliobj.delaySec-delta) + ' second(s)');
+		return false;
+	    }
+	}
 	Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
-	if (slide_id in Sliobj.enterPlugins)
-	    SlidocPluginManager.invoke(Sliobj.enterPlugins[slide_id], 'enterSlide', false);
+	if (slide_id in Sliobj.slidePlugins) {
+	    for (var j=0; j<Sliobj.slidePlugins[slide_id].length; j++)
+		SlidocPluginManager.optCall(Sliobj.slidePlugins[slide_id][j], 'enterSlide', false, backward);
+	}
     }
 
     if (Sliobj.session.paced) {
@@ -2856,13 +2927,15 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	for (var j=1; j<=MAX_INC_LEVEL; j++) {
 	    if (slides[slide_num-1].querySelector('.slidoc-incremental'+j)) {
 		Sliobj.maxIncrement = j;
-		toggleClass(Sliobj.currentSlide > slide_num, 'slidoc-display-incremental'+j);
+		toggleClass(backward, 'slidoc-display-incremental'+j);
 		if (Sliobj.currentSlide > slide_num) {
 		    Sliobj.curIncrement = j;
 		}
 	    }
 	}
 	toggleClass(Sliobj.curIncrement < Sliobj.maxIncrement, 'slidoc-incremental-view');
+    } else {
+	toggleClass(slide_id in Sliobj.incrementPlugins, 'slidoc-incremental-view');
     }
 
     slides[slide_num-1].style.display = 'block';
