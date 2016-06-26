@@ -1809,7 +1809,11 @@ def process_input(input_files, config_dict):
             config.pace = file_config.pace if cmd_pace_args is None else cmd_pace_args
             if config.pace == '0':
                 config.pace = None
-                
+
+            js_params['paceLevel'] = 0
+            js_params['paceDelay'] = 0
+            js_params['tryCount'] = 0
+            js_params['tryDelay'] = 0
             if config.pace:
                 # Note: pace does not work with combined files
                 if config.printable:
@@ -1817,14 +1821,15 @@ def process_input(input_files, config_dict):
                 comps = config.pace.split(',')
                 if comps[0]:
                     js_params['paceLevel'] = int(comps[0])
+                if not js_params['paceLevel']:
+                    abort('slidoc: Error: --pace=0 argument should be omitted')
+
                 if len(comps) > 1 and comps[1]:
                     js_params['paceDelay'] = int(comps[1])
                 if len(comps) > 2 and comps[2]:
                     js_params['tryCount'] = int(comps[2])
                 if len(comps) > 3 and comps[3]:
                     js_params['tryDelay'] = int(comps[3])
-                if not js_params['paceLevel']:
-                    abort('slidoc: Error: --pace=0 argument should be omitted')
 
                 if config.due_date is not None:
                     if config.due_date:

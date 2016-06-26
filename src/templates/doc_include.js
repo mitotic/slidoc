@@ -531,11 +531,11 @@ Slidoc.viewHelp = function () {
 	if (Sliobj.params.gd_sheet_url && GService.gprofile && GService.gprofile.auth)
 	    html += 'User: <b>'+GService.gprofile.auth.id+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
-	if (Sliobj.session.revision)
+	if (Sliobj.session && Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
 	if (Sliobj.params.questionsMax)
 	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
-	if (Sliobj.params.gd_sheet_url)
+	if (Sliobj.params.gd_sheet_url && Sliobj.session)
 	    html += Sliobj.session.submitted ? ', Submitted '+Sliobj.session.submitted : ', NOT SUBMITTED';
 	html += '<br>';
 	if (Sliobj.dueDate)
@@ -997,7 +997,7 @@ Slidoc.slidocReady = function (auth) {
 	});
     }
 
-    if (Sliobj.params.remoteLogLevel && Sliobj.params.gd_sheet_url) {
+    if (Sliobj.params.remoteLogLevel && Sliobj.params.gd_sheet_url && !Sliobj.adminState) {
 	Sliobj.logSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.log_sheet,
 						     Sliobj.params.logFields.slice(0,2),
 						     Sliobj.params.logFields.slice(2), useJSONP);
@@ -1173,8 +1173,8 @@ function slidocSetupAux(session, feedback) {
 
 	    if (!Sliobj.firstTime) {
 		// Clean-up slide-specific view styles for question slides
-		slideElem.classList.remove('slidoc-answered-view');
-		slideElem.classList.remove('slidoc-grading-view');
+		slideElem.classList.remove('slidoc-answered-slideview');
+		slideElem.classList.remove('slidoc-grading-slideview');
 		slideElem.classList.remove('slidoc-forward-link-allowed');
 		var answer_elements = Sliobj.params.answer_elements;
 		var keys = Object.keys(answer_elements);
@@ -1225,9 +1225,8 @@ function slidocSetupAux(session, feedback) {
 	if (Sliobj.session.paced) {
 	    Slidoc.startPaced(); // This will call preAnswer later
 	    return false;
-	} else {
-	    preAnswer();
 	}
+	preAnswer();
 	if (Sliobj.adminState && Slidoc.testingActive())
 	    Slidoc.slideViewStart();
     } else {
@@ -1513,6 +1512,17 @@ function unpackSession(row) {
     return result;
 }
 
+function showPendingCalls() {
+    var hourglasses = '';
+    var gsheet = getSheet(Sliobj.sessionName);
+    if (gsheet) {
+	for (var j=0; j<gsheet.callbackCounter; j++)
+	    hourglasses += '&#x29D7;'
+    }
+    var pendingElem = document.getElementById("slidoc-pending-display");
+    pendingElem.innerHTML = hourglasses;
+}
+
 function sessionGetPutAux(callType, callback, retryCall, retryType, result, retStatus) {
     // For sessionPut, session should be bound to this function as 'this'
     Slidoc.log('Slidoc.sessionGetPutAux: ', callType, !!callback, !!retryCall, retryType, result, retStatus);
@@ -1520,6 +1530,8 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
     var feedback = null;
     var nullReturn = false;
     var err_msg = retStatus.error || '';
+    showPendingCalls();
+
     if (result) {
 	GService.gprofile.auth.validated = 'sessionGetPutAux';
 	if (!result.id) {
@@ -1535,6 +1547,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 		err_msg = 'Parsing error '+err_msg;
 	    }
 	}
+
     }
     var parse_msg_re = /^(\w+):(\w*):(.*)$/;
     var match = parse_msg_re.exec(err_msg || '');
@@ -1666,7 +1679,9 @@ function sessionGet(userId, sessionName, callback, retry) {
 	    gsheet.getRow(userId, sessionGetPutAux.bind(null, 'get', callback, retryCall, retry||''));
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
+	    return;
 	}
+	showPendingCalls();
     } else {
 	// Local storage
 	var sessionObj = localGet('sessions');
@@ -1747,7 +1762,9 @@ function sessionPut(userId, session, opts, callback) {
 			      false);
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
+	    return;
 	}
+	showPendingCalls();
 
     } else {
 	// Local storage
@@ -2217,7 +2234,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 
     // Question has been answered
     var slideElem = document.getElementById(slide_id);
-    slideElem.classList.add('slidoc-answered-view');
+    slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
 	SlidocPluginManager.action(pluginResp.name, 'disable', slide_id);
@@ -2486,7 +2503,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	return false;
 
     var startGrading = !elem || elem.classList.contains('slidoc-gstart-click');
-    toggleClass(startGrading, 'slidoc-grading-view', document.getElementById(slide_id));
+    toggleClass(startGrading, 'slidoc-grading-slideview', document.getElementById(slide_id));
     if (startGrading) {
 	if (!commentsArea.value && 'quote_response' in Sliobj.params.features)
 	    Slidoc.quoteText(null, slide_id);
@@ -2523,13 +2540,16 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
  		         gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, callback), retryCall, 'gradeUpdate') );
     } catch(err) {
 	sessionAbort(''+err, err.stack);
+	return;
     }
-}
 
-function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
-    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
+    showPendingCalls();
+    
+    if (gsheet.pendingUpdates > 1)
+	return;
+
     if (!Slidoc.testingActive()) {
-    // Move on to next user if slideshow mode, else to next question
+	// Move on to next user if slideshow mode, else to next question
 	if (Sliobj.currentSlide) {
 	    if (Sliobj.gradingUser < Sliobj.userList.length) {
 		Slidoc.nextUser(true);
@@ -2552,6 +2572,10 @@ function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) 
 	    }
 	}
     }
+}
+
+function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
+    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
     delete Sliobj.userGrades[userId].grading[qnumber];
     updateGradingStatus(userId);
     Slidoc.reportEvent('gradeUpdate');

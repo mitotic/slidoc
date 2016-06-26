@@ -27,21 +27,21 @@ body:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
 
 body:not(.slidoc-admin-view):not(.slidoc-graded-view) .slidoc-admin-graded { display: none; }
 
-section:not(.slidoc-answered-view) .slidoc-answeredonly { display: none; }
-section:not(.slidoc-grading-view) .slidoc-gradingonly { display: none; }
+section:not(.slidoc-answered-slideview) .slidoc-answeredonly { display: none; }
+section:not(.slidoc-grading-slideview) .slidoc-gradingonly { display: none; }
 
-section.slidoc-answered-view .slidoc-noanswered { display: none; }
-section.slidoc-grading-view .slidoc-nograding { display: none; }
+section.slidoc-answered-slideview .slidoc-noanswered { display: none; }
+section.slidoc-grading-slideview .slidoc-nograding { display: none; }
 
-body.slidoc-admin-view section:not(.slidoc-answered-view) .slidoc-render-button { display: none; }
+body.slidoc-admin-view section:not(.slidoc-answered-slideview) .slidoc-render-button { display: none; }
 body:not(.slidoc-admin-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
-section.slidoc-answered-view:not(.slidoc-grading-view) .slidoc-render-button { display: none; }
+section.slidoc-answered-slideview:not(.slidoc-grading-slideview) .slidoc-render-button { display: none; }
 
 section.slidoc-nogradeelement .slidoc-grade-element { display: none; }
 section.slidoc-nogradeelement .slidoc-comments-element { display: none; }
 
-section:not(.slidoc-answered-view) .slidoc-choice-selected {background: #aaa; }
-section.slidoc-answered-view .slidoc-choice-selected {text-decoration: line-through; }
+section:not(.slidoc-answered-slideview) .slidoc-choice-selected {background: #aaa; }
+section.slidoc-answered-slideview .slidoc-choice-selected {text-decoration: line-through; }
 
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-input { display: none; }
 div.slidoc-answer-container.slidoc-choice-answer:not(.slidoc-explain-answer) .slidoc-answer-textarea { display: none; }

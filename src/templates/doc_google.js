@@ -281,6 +281,8 @@ function GoogleSheet(url, sheetName, preHeaders, fields, useJSONP) {
     this.headers = this.preHeaders.concat(this.fields);
     this.useJSONP = !!useJSONP;
     this.callbackCounter = 0;
+    this.pendingUpdates = 0;
+    this.userUpdateCounter = {};
     this.columnIndex = {};
     this.timestamps = {};
     this.cacheAll = null;
@@ -302,8 +304,6 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     params.sheet = this.sheetName;
 
     var userId = params.id||null;
-    if (userId && this.timestamps[userId])             // Send current timestamp for user
-	params.timestamp = this.timestamps[userId];
 
     if (!this.headers.length)
 	params.getheaders = 1;
@@ -319,6 +319,12 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
     // obj == {id: ..., name: ..., } for returned row
     Slidoc.log('GoogleSheet: callback', userId, callbackType, result, err_msg);
     this.callbackCounter -= 1;
+
+    if (callbackType == 'putRow' || callbackType == 'updateRow') {
+	this.pendingUpdates -= 1;
+	if (userId && userId in this.userUpdateCounter)
+	    this.userUpdateCounter[userId] -= 1;
+    }
 
     if (!result)
         Slidoc.log('GoogleSheet: ERROR in '+callbackType+' callback: '+err_msg);
@@ -346,15 +352,21 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		if (result.headers)
 		    retStatus.info.headers = result.headers;
 
-		if (userId && retStatus.info.timestamp)                 // Send update timestamp for user
-		    this.timestamps[userId] = retStatus.info.timestamp;
+		if (userId) {
+		    if (retStatus.info.prevTimestamp && this.timestamps[userId] && retStatus.info.prevTimestamp != this.timestamps[userId]) {
+			retval = null;
+			retStatus.error = 'GoogleSheet: ERROR Timestamp mismatch; expected '+this.timestamps[userId]+' but received '+retStatus.info.prevTimestamp+'. Conflicting modifications from another active browser session?';
+		    }
+		    if (retStatus.info.timestamp)                 // Update timestamp for user
+			this.timestamps[userId] = retStatus.info.timestamp;
+		}
+
+	    } else if (result.result == 'error' && result.error) {
+		retStatus.error = err_msg ? err_msg + ';' + result.error : result.error;
 	    }
 
-	    else if (result.result == 'error' && result.error)
-		retStatus.error = err_msg ? err_msg + ';' + result.error : result.error;
-
-	    if (result.messages)
-		retStatus.messages = result.messages.split('\n');
+		if (result.messages)
+		    retStatus.messages = result.messages.split('\n');
 	    } catch(err) {
 		retval = null;
 		retStatus.error = 'GoogleSheet: ERROR in GoogleSheet.callback: '+err;
@@ -423,13 +435,24 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
         params.nooverwrite = '1';
     if (opts.submit)
         params.submit = '1';
-    if (this.timestamps[rowObj.id])
-	params.timestamp = this.timestamps[rowObj.id];
 
-    this.callbackCounter += 1;
-    this.send(params, 'putRow', callback);
+    this.putSend(rowObj.id, params, 'putRow', callback);
 }
 
+GoogleSheet.prototype.putSend = function (userId, params, callType, callback) {
+    if (!(userId in this.userUpdateCounter))
+	this.userUpdateCounter[userId] = 0;
+    
+    if (!this.userUpdateCounter[userId] && this.timestamps[userId])  // Send timestamp if no pending updates
+	params.timestamp = this.timestamps[userId];
+
+    this.userUpdateCounter[userId] += 1;
+
+    this.pendingUpdates += 1;
+    this.callbackCounter += 1;
+    this.send(params, callType, callback);
+}
+    
 GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet, retval, retStatus) {
     // opts = {get:, id:, nooverwrite:, submit:}
     // Fills in id, name etc. from GService.gprofile.auth before calling putRow
@@ -491,11 +514,7 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     if (opts.get)
         params.get = '1';
 
-    if (this.timestamps[updateObj.id])
-	params.timestamp = this.timestamps[updateObj.id];
-
-    this.callbackCounter += 1;
-    this.send(params, 'updateRow', callback);
+    this.putSend(updateObj.id, params, 'updateRow', callback);
 }
 
 GoogleSheet.prototype.getRow = function (id, callback) {

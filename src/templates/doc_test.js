@@ -61,10 +61,13 @@ TestScript.prototype.showStatus = function (state) {
 	msg += ': ' + state
     } else {
 	var curScript = this.scripts[this.activeScript];
-	if (this.curstep < curScript.length)
+	if (this.curstep < curScript.length) {
+	    if (curScript[this.curstep] === undefined)
+		alert('TestScript.showStatus: ERROR Step '+this.curstep+' in script '+this.activeScript+' is undefined!');
 	    msg += '> '+curScript[this.curstep][0];
-	else
+	} else {
 	    msg += '> END';
+	}
     }
     
     statusElem.style.display = null;
@@ -96,7 +99,7 @@ TestScript.prototype.reportEvent = function (eventName) {
 	    break;
 	this.curstep++;
     }
-    Slidoc.log('TestScript.reportEvent:B ', this.curstep, expectName);
+    Slidoc.log('TestScript.reportEvent:B ', this.curstep, expectName, this.activeScript);
     if (this.curstep >= curScript.length) {
 	this.activeScript = '';
 	alert("TestScript "+this.activeScript+" completed all steps");

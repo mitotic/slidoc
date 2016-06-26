@@ -284,6 +284,7 @@ function handleResponse(evt) {
 	if (protectedSheet && (rowUpdates || selectedUpdates) )
 	    throw("Error::Cannot modify protected sheet '"+sheetName+"'")
 
+	returnInfo.prevTimestamp = null;
 	returnInfo.timestamp = null;
 	var numStickyRows = 1;  // Headers etc.
 
@@ -454,9 +455,9 @@ function handleResponse(evt) {
 		var userRange = sheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 
-		returnInfo.timestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
-		if (returnInfo.timestamp && params.timestamp && parseNumber(params.timestamp) && returnInfo.timestamp > parseNumber(params.timestamp))
-		    throw('Error::Row timestamp too old by '+Math.ceil((returnInfo.timestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another active browser session?');
+		returnInfo.prevTimestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
+		if (returnInfo.prevTimestamp && params.timestamp && parseNumber(params.timestamp) && returnInfo.prevTimestamp > parseNumber(params.timestamp))
+		    throw('Error::Row timestamp too old by '+Math.ceil((returnInfo.prevTimestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another active browser session?');
 
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
@@ -567,7 +568,7 @@ function handleResponse(evt) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (!restrictedSheet && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade_[0-9.]+)$/.exec(colHeader)) )
+			    if (!restrictedSheet && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
 				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 
 			    if (colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {

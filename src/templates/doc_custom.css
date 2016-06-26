@@ -132,6 +132,9 @@ body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-le
 .slidoc-partcorrect-answer {color: #FA0;}
 .slidoc-wrong-answer {color: red;}
 
+/* Pending updates */
+#slidoc-pending-display {color: red;}
+
 /* Figures etc. */
 /* .slidoc-ref-figure { font-style: oblique; } */
 
