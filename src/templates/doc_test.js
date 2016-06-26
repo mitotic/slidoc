@@ -166,9 +166,9 @@ TestScript.prototype.eventAction = function(commands) {
 		return testlate;
 	    } else if (testkey) {
 		var date = testlate;
-		if (!date && !isNaN(value))
+		if (!date && value && !isNaN(value))
 		    date = value;
-		if (!isNaN(date)) {
+		if (date && !isNaN(date)) {
 		    // Advance current date by date days
 		    var newDate = new Date();
 		    newDate.setDate(newDate.getDate() + date);

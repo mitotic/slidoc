@@ -371,6 +371,13 @@ function zeroPad(num, pad) {
 	return ((''+maxInt).slice(1)+num).slice(-pad);
 }
 
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;");
+}
+
 function unescapeAngles(text) {
     return text.replace('&lt;', '<').replace('&gt;', '>')
 }
@@ -2072,7 +2079,10 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
 	    SlidocPluginManager.action(pluginName, 'disable', slide_id);
 
-    }  else if (question_attrs.qtype.slice(-6) == 'choice') {
+	return false;
+    }
+
+    if (question_attrs.qtype.slice(-6) == 'choice') {
 	// Choice/Multichoice
 	var choices = document.getElementsByClassName(slide_id+"-choice");
 	if (setup) {
@@ -2131,14 +2141,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	    Sliobj.session.remainingTries -= 1;
     }
 
-    var callUpdate = Slidoc.answerUpdate.bind(null, setup, slide_id, checkOnly, response);
-    if (setup && pluginResp) {
-	callUpdate(pluginResp);
-    } else if (question_attrs.qtype != 'text/x-code' && question_attrs.qtype.slice(0,7) == 'text/x-') {
-	checkCode(slide_id, question_attrs, response, checkOnly, callUpdate);
-    } else {
-	callUpdate();
-    }
+    Slidoc.answerUpdate(setup, slide_id, checkOnly, response);
     return false;
 }
 
@@ -3326,7 +3329,7 @@ function MDPreBlockGamut(text, runBlockGamut) {
 }
 
 function MDConverter(mdText, stripOuter) {
-    var html = PagedownConverter.makeHtml(mdText);
+    var html = PagedownConverter ? PagedownConverter.makeHtml(mdText) : '<pre>'+escapeHtml(mdText)+'</pre>';
     if (stripOuter && html.substr(0,3) == "<p>" && html.substr(html.length-4) == "</p>") {
 	    html = html.substr(3, html.length-7);
     }

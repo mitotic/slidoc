@@ -41,6 +41,7 @@ function GServiceJSONP(callback_index, json_text) {
 // http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/
 
 var jsonpCounter = 0;
+var jsonpReceived = 0;
 var jsonpRequests = {};
 
 function requestJSONP(url, queryStr, callback) {
@@ -70,13 +71,15 @@ GService.handleJSONP = function(callback_index, json_obj) {
 	Slidoc.log('GService.handleJSONP: Error - Invalid JSONP callback index: '+callback_index);
 	return;
     }
+    var outOfSequence = (callback_index != jsonpReceived+1);
+    jsonpReceived = Math.max(callback_index, jsonpReceived);
     var callback = jsonpRequests[callback_index][0];
     delete jsonpRequests[callback_index];
     if (callback)
-	callback(json_obj || null);
+	callback(json_obj || null, '', outOfSequence);
 }
     
-function handleCallback(responseText, callback){
+function handleCallback(responseText, callback, outOfSequence){
     if (!callback)
 	return;
     var obj = null;
@@ -87,8 +90,11 @@ function handleCallback(responseText, callback){
         Slidoc.log('JSON parsing error:', err, responseText);
         msg = 'JSON parsing error';
     }
-    callback(obj, msg);
+    callback(obj, msg, outOfSequence);
 }
+
+var sendDataCounter = 0;
+var receiveDataCounter = 0;
 
 GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
@@ -97,17 +103,21 @@ GService.sendData = function (data, url, callback, useJSONP) {
   var urlEncodedData = "";
   var urlEncodedDataPairs = [];
 
+  sendDataCounter += 1;
+  var currentDataCounter = sendDataCounter;
   XHR.onreadystatechange = function () {
       var DONE = 4; // readyState 4 means the request is done.
       var OK = 200; // status 200 is a successful return.
       if (XHR.readyState === DONE) {
+	var outOfSequence = (currentDataCounter != receiveDataCounter+1);
+        receiveDataCounter = Math.max(currentDataCounter, receiveDataCounter);
         if (XHR.status === OK) {
           Slidoc.log('XHR: '+XHR.status, XHR.responseText);
-	  handleCallback(XHR.responseText, callback);
+	  handleCallback(XHR.responseText, callback, outOfSequence);
         } else {
           Slidoc.log('XHR Error: '+XHR.status, XHR.responseText);
           if (callback)
-              callback(null, 'Error in HTTP request')
+              callback(null, 'Error in HTTP request', outOfSequence)
         }
       }
   };
@@ -312,12 +322,12 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
 		      this.useJSONP);
 }
     
-GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, result, err_msg) {
+GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, result, err_msg, outOfSequence) {
     // outerCallback(obj, {error: err_msg, messages: messages})
     // obj == null on error
     // obj == {} for non-existent row
     // obj == {id: ..., name: ..., } for returned row
-    Slidoc.log('GoogleSheet: callback', userId, callbackType, result, err_msg);
+    Slidoc.log('GoogleSheet: callback', this.callbackCounter, userId, callbackType, result, err_msg, outOfSequence);
     this.callbackCounter -= 1;
 
     if (callbackType == 'putRow' || callbackType == 'updateRow') {
@@ -353,12 +363,12 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		    retStatus.info.headers = result.headers;
 
 		if (userId) {
-		    if (retStatus.info.prevTimestamp && this.timestamps[userId] && retStatus.info.prevTimestamp != this.timestamps[userId]) {
+		    if (!outOfSequence && retStatus.info.prevTimestamp && this.timestamps[userId] && retStatus.info.prevTimestamp != this.timestamps[userId]) {
 			retval = null;
 			retStatus.error = 'GoogleSheet: ERROR Timestamp mismatch; expected '+this.timestamps[userId]+' but received '+retStatus.info.prevTimestamp+'. Conflicting modifications from another active browser session?';
 		    }
 		    if (retStatus.info.timestamp)                 // Update timestamp for user
-			this.timestamps[userId] = retStatus.info.timestamp;
+			this.timestamps[userId] = Math.max(retStatus.info.timestamp, this.timestamps[userId] || 0);
 		}
 
 	    } else if (result.result == 'error' && result.error) {
