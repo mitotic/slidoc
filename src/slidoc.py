@@ -426,7 +426,7 @@ class MathInlineLexer(mistune.InlineLexer):
                 if not header_ref:
                     header_ref = md2md.ref_key(text)
                 if not header_ref:
-                    print('LINK-ERROR: Null link', file=sys.stderr)
+                    message('LINK-ERROR: Null link')
                     return None
 
                 # Slidoc-specific hash reference handling
@@ -457,14 +457,14 @@ class MathInlineLexer(mistune.InlineLexer):
         if not header_ref:
             header_ref = text_key
         if not header_ref:
-            print('REF-ERROR: Null reference', file=sys.stderr)
+            message('REF-ERROR: Null reference')
             return None
 
         # Slidoc-specific hash reference handling
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         ref_class = ''
         if ref_id in Global.ref_tracker:
-            print('    ****REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, key), file=sys.stderr)
+            message('    ****REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, key))
             ref_id += '-duplicate-'+md2md.generate_random_label()
         else:
             num_label = '??'
@@ -717,12 +717,12 @@ class SlidocRenderer(MathRenderer):
                     # (slide_number, number of questions skipped, weight of questions skipped, class for forward link)
                     self.questions[qno-1]['skip'] = (self.slide_number, skipped, skip_weight, ref_id+'-forward-link')
                 else:
-                    print("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number), file=sys.stderr)
+                    message("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number))
 
     def inline_js(self, plugin_name, action, arg, text):
         js_func = plugin_name + '.' + action
         if action in ('create', 'globalInit', 'init', 'disable', 'display', 'expect', 'response'):
-            print("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s()` in slide %s" % (self.options["filename"], js_func, self.slide_number), file=sys.stderr)
+            message("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s()` in slide %s" % (self.options["filename"], js_func, self.slide_number))
             
         if 'inline_js' in self.options['config'].strip:
             return '<code>%s</code>' % (mistune.escape('='+js_func+'()' if text is None else text))
@@ -794,7 +794,7 @@ class SlidocRenderer(MathRenderer):
 
     def end_slide(self, suffix_html='', last_slide=False):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
-            print("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number), file=sys.stderr)
+            message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
         if self.qtypes[-1]:
             # Question slide
             if self.options['config'].pace and last_slide:
@@ -826,10 +826,10 @@ class SlidocRenderer(MathRenderer):
                 # Handle forward link in current question
                 self.qforward[self.slide_forward_links[0]].append(len(self.questions))
                 if len(self.slide_forward_links) > 1:
-                    print("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]), file=sys.stderr)
+                    message("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]))
 
         ###if self.cur_qtype and not self.qtypes[-1]:
-        ###    print("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number), file=sys.stderr)
+        ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
 
         return self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end'))
 
@@ -930,7 +930,7 @@ class SlidocRenderer(MathRenderer):
                 short_id = match.group(2)[1:]
                 if not re.match(r'^[-.\w]+$', short_id):
                     
-                    print('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text, file=sys.stderr)
+                    message('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text)
                 header_ref = md2md.ref_key(short_id)
             if match.group(3) and match.group(3).strip():
                 attrs = match.group(3).strip().split()
@@ -949,7 +949,7 @@ class SlidocRenderer(MathRenderer):
         if ref_id in Global.ref_tracker:
             if ref_id not in Global.dup_ref_tracker:
                 Global.dup_ref_tracker.add(ref_id)
-                print('    ****REF-ERROR: %s: Duplicate reference #%s in slide %s' % (self.options["filename"], header_ref, self.slide_number), file=sys.stderr)
+                message('    ****REF-ERROR: %s: Duplicate reference #%s in slide %s' % (self.options["filename"], header_ref, self.slide_number))
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
@@ -1149,7 +1149,7 @@ class SlidocRenderer(MathRenderer):
                 qtype = 'number'
                 text = ans + (' +/- '+error if error else '')
             else:
-                print("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+                message("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number))
 
         elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/x-code', 'text/x-python', 'text/x-javascript', 'text/x-test', 'text/markdown', 'text/multiline', 'point', 'line'):
             # Unspecified answer
@@ -1167,7 +1167,7 @@ class SlidocRenderer(MathRenderer):
 
                 if qtype == 'choice':
                     if len(text) > 1:
-                        print("    ****ANSWER-ERROR: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+                        message("    ****ANSWER-ERROR: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
                     text = text[0] if text else ''
                 elif not qtype:
                     qtype = 'multichoice' if len(text) > 1 else 'choice'
@@ -1180,7 +1180,7 @@ class SlidocRenderer(MathRenderer):
             self.cur_qtype = qtype or 'text'
 
         elif qtype and qtype != self.cur_qtype:
-            print("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number), file=sys.stderr)
+            message("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number))
 
         if self.cur_qtype == 'text/x-python':
             self.load_python = True
@@ -1202,7 +1202,7 @@ class SlidocRenderer(MathRenderer):
                 except Exception, excp:
                     import traceback
                     traceback.print_exc()
-                    print("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp), file=sys.stderr)
+                    message("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp))
 
         grade_response = 'grade_response' in self.options['config'].features
 
@@ -1238,7 +1238,7 @@ class SlidocRenderer(MathRenderer):
         hide_answer = self.options['config'].hide or self.options['config'].pace
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
-            print("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number), file=sys.stderr)
+            message("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
 
         if not hide_answer:
             # No hiding of correct answers
@@ -1293,7 +1293,7 @@ class SlidocRenderer(MathRenderer):
             return ''
 
         if not self.qtypes[-1]:
-            print("    ****WEIGHT-ERROR: %s: Unexpected 'Weight: %s' line in non-question slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+            message("    ****WEIGHT-ERROR: %s: Unexpected 'Weight: %s' line in non-question slide %s" % (self.options["filename"], text, self.slide_number))
             return ''
         weight, gweight = None, None
         match = re.match(r'^([0-9\.]+)(\s*,\s*([0-9\.]+))?$', text)
@@ -1302,13 +1302,13 @@ class SlidocRenderer(MathRenderer):
             gweight = parse_number(match.group(3)) if match.group(3) is not None else 0
 
         if weight is None or (match.group(3) is not None and gweight is None):
-            print("    ****WEIGHT-ERROR: %s: Error in parsing 'Weight: %s' line ignored; expected 'Weight: number[,number]' in slide %s" % (self.options["filename"], text, self.slide_number), file=sys.stderr)
+            message("    ****WEIGHT-ERROR: %s: Error in parsing 'Weight: %s' line ignored; expected 'Weight: number[,number]' in slide %s" % (self.options["filename"], text, self.slide_number))
             return ''
 
         gweight = gweight or 0
 
         if gweight and not self.qtypes[-1].startswith('text/') and not self.questions[-1].get('explain'):
-            print("    ****WEIGHT-ERROR: %s: Unexpected grade weight %d line in non-graded/explained slide %s" % (self.options["filename"], gweight, self.slide_number), file=sys.stderr)
+            message("    ****WEIGHT-ERROR: %s: Unexpected grade weight %d line in non-graded/explained slide %s" % (self.options["filename"], gweight, self.slide_number))
 
         self.questions[-1].update(weight=weight, gweight=gweight)
 
@@ -1319,11 +1319,11 @@ class SlidocRenderer(MathRenderer):
             return ''
 
         ###if self.notes_end is not None:
-        ###    print("    ****CONCEPT-ERROR: %s: 'Concepts: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header), file=sys.stderr)
+        ###    message("    ****CONCEPT-ERROR: %s: 'Concepts: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header))
         ###    return ''
 
         if self.slide_concepts:
-            print("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)), file=sys.stderr)
+            message("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)))
             return ''
 
         self.slide_concepts = text
@@ -1345,7 +1345,7 @@ class SlidocRenderer(MathRenderer):
                     # If assessment document, do not warn about lack of concept coverage
                     if tag not in Global.primary_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
                         self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
-                        print("        "+self.concept_warnings[-1], file=sys.stderr)
+                        message("        "+self.concept_warnings[-1])
 
                 add_to_index(Global.primary_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header, qconcepts=self.qconcepts)
             else:
@@ -1525,7 +1525,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     if prev_row:
         revision_col = Index_fields.index('revision')
         if prev_row[revision_col] != revision:
-            print('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision), file=sys.stderr)
+            message('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
     row_values = [session_name, session_name, revision, None, due_date, None, None,
                 score_weights, grade_weights, len(questions), len(Manage_fields)+len(Session_fields),
@@ -1540,7 +1540,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
-    print('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name), file=sys.stderr)
+    message('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name))
 
                 
 def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
@@ -1553,7 +1553,7 @@ def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         abort("Error in creating sheet '%s': %s" % (sheet_name, retval['error']))
-    print('slidoc: Created remote spreadsheet:', sheet_name, file=sys.stderr)
+    message('slidoc: Created remote spreadsheet:', sheet_name)
 
 def parse_plugin(name, text):
     if not re.match(r'^\s*'+name+r'\s*=\s*{', text):
@@ -1600,8 +1600,17 @@ def plugin_heads(plugin_defs, plugin_loads):
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
-def process_input(input_files, config_dict):
+def message(*args):
+    print(*args, file=sys.stderr)
 
+def process_input(input_files, input_paths, config_dict, return_html=False):
+    global message
+    messages = []
+    if return_html:
+        def append_message(*args):
+            messages.append(''.join(str(x) for x in args))
+
+        message = append_message
     if config_dict['indexed']:
         comps = config_dict['indexed'].split(',')
         ftoc = comps[0]+'.html' if comps[0] else ''
@@ -1637,7 +1646,7 @@ def process_input(input_files, config_dict):
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
     js_params['remoteLogLevel'] = config.remote_logging
 
-    out_name = os.path.splitext(os.path.basename(config.all or input_files[0].name))[0]
+    out_name = os.path.splitext(os.path.basename(config.all or input_paths[0]))[0]
     combined_file = '' if config.separate else out_name+'.html'
 
     # Reset config properties that will be overridden for separate files
@@ -1658,7 +1667,7 @@ def process_input(input_files, config_dict):
 
 
     gd_hmac_key = None             # Specify --gsheet_login='' to use Google Sheets without authentication
-    if config.gsheet_login:
+    if config.gsheet_login is not None:
         comps = config.gsheet_login.split(',')
         gd_hmac_key = comps[0]
         if len(comps) > 1:
@@ -1738,11 +1747,11 @@ def process_input(input_files, config_dict):
     comb_plugin_defs = {}
     comb_plugin_loads = set()
     fnames = []
-    for f in input_files:
-        fcomp = os.path.splitext(os.path.basename(f.name))
+    for j, f in enumerate(input_files):
+        fcomp = os.path.splitext(os.path.basename(input_paths[j]))
         fnames.append(fcomp[0])
         if fcomp[1] != '.md':
-            abort('Invalid file extension for '+f.name)
+            abort('Invalid file extension for '+input_paths[j])
 
         if config.notebook and os.path.exists(fcomp[0]+'.ipynb') and not config.overwrite and not config.dry_run:
             abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fcomp[0])
@@ -1841,7 +1850,7 @@ def process_input(input_files, config_dict):
             if file_config.features and (cmd_features_set is None or 'override' not in cmd_features_set):
                 # Merge features from each file (unless 'override' feature is present, for command line to override)
                 file_features_set = set(file_config.features.split(','))
-                if 'grade_response' in file_features_set and not gd_hmac_key:
+                if 'grade_response' in file_features_set and gd_hmac_key is None:
                     file_features_set.remove('grade_response')
                 config.features = config.features.union(file_features_set)
 
@@ -1864,7 +1873,7 @@ def process_input(input_files, config_dict):
         if not config.features.issubset(set(features_all)):
             abort('Error: Unknown feature(s): '+','.join(list(config.features.difference(set(features_all)))) )
             
-        filepath = f.name
+        filepath = input_paths[j]
         md_text = f.read()
         f.close()
 
@@ -1950,7 +1959,7 @@ def process_input(input_files, config_dict):
         mid_params.update(SYMS)
 
         if config.dry_run:
-            print("Indexed ", outname+":", fheader, file=sys.stderr)
+            message("Indexed ", outname+":", fheader)
         else:
             md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace)
             md_suffix = '</article> <!--chapter end-->\n'
@@ -1965,14 +1974,14 @@ def process_input(input_files, config_dict):
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 tail = md_prefix + md_html + md_suffix
-                if Missing_ref_num_re.search(md_html):
+                if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
                     outfile_buffer.append([outname, dest_dir+outname, head, tail])
                 else:
                     outfile_buffer.append([outname, dest_dir+outname, '', ''])
                     write_doc(dest_dir+outname, head, tail)
 
-            if config.slides:
+            if config.slides and not return_html:
                 reveal_pars['reveal_title'] = fname
                 # Wrap inline math in backticks to protect from backslashes being removed
                 md_text_reveal = re.sub(r'\\\((.+?)\\\)', r'`\(\1\)`', md_text_modified)
@@ -1983,7 +1992,7 @@ def process_input(input_files, config_dict):
                 reveal_pars['reveal_md'] = md_text_reveal
                 md2md.write_file(dest_dir+fname+"-slides.html", templates['reveal_template.html'] % reveal_pars)
 
-            if config.notebook:
+            if config.notebook and not return_html:
                 md_parser = md2nb.MDParser(nb_converter_args)
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
@@ -1992,23 +2001,26 @@ def process_input(input_files, config_dict):
                                       due_date, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
                                       renderer.qconcepts[0], renderer.qconcepts[1])
 
-            if js_params['gd_sheet_url']:
+            if js_params['gd_sheet_url'] and (gd_hmac_key or not return_html):
                 create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['fileName'],
                                   Manage_fields+Session_fields+js_params['gradeFields'], row=max_score_fields)
                 create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, LOG_SHEET, Log_fields)
 
     if not config.dry_run:
         if not combined_file:
+            message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
             for outname, outpath, head, tail in outfile_buffer:
                 if tail:
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
-                    write_doc(outpath, head, tail)
-            print('Created output files:', ', '.join(x[0] for x in outfile_buffer), file=sys.stderr)
+                    if return_html:
+                        return outpath, Html_header+head+tail+Html_footer, messages
+                    else:
+                        write_doc(outpath, head, tail)
         if config.slides:
-            print('Created *-slides.html files', file=sys.stderr)
+            message('Created *-slides.html files')
         if config.notebook:
-            print('Created *.ipynb files', file=sys.stderr)
+            message('Created *.ipynb files')
 
     if config.toc:
         if config.toc_header:
@@ -2082,10 +2094,10 @@ def process_input(input_files, config_dict):
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
                 left_container_suffix = '</div> <!--slidoc-left-container-->\n'
                 combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
-            else:
+            elif not return_html:
                 md2md.write_file(dest_dir+config.toc, Html_header, head_html,
                                   mid_template % mid_params, body_prefix, toc_output, Html_footer)
-                print("Created ToC in", config.toc, file=sys.stderr)
+                message("Created ToC in", config.toc)
 
     xref_list = []
     if config.index and (Global.primary_tags or Global.primary_qtags):
@@ -2101,9 +2113,9 @@ def process_input(input_files, config_dict):
             index_output = chapter_prefix(len(input_files)+1, 'slidoc-index-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + index_html + '</article>\n'
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
-            else:
+            elif not return_html:
                 md2md.write_file(dest_dir+config.index, index_output)
-                print("Created index in", config.index, file=sys.stderr)
+                message("Created index in", config.index)
 
         if config.crossref:
             if config.toc:
@@ -2137,9 +2149,9 @@ def process_input(input_files, config_dict):
         if not config.dry_run:
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
-            else:
+            elif not return_html:
                 md2md.write_file(dest_dir+config.qindex, qindex_output)
-                print("Created qindex in", config.qindex, file=sys.stderr)
+                message("Created qindex in", config.qindex)
 
         if config.crossref:
             xref_list.append('\n\n<p><b>CONCEPT SUB-QUESTIONS</b><br>Sub-questions are questions that address combinatorial (improper) concept subsets of the original question concept set. (*) indicates a variant question that explores all the same concepts as the original question. Numeric superscript indicates the number of concepts in the sub-question shared with the original question.</p>\n')
@@ -2169,9 +2181,9 @@ def process_input(input_files, config_dict):
                 xref_list.append('</li>\n')
             xref_list.append('</ul>\n')
 
-    if config.crossref:
+    if config.crossref and not return_html:
         md2md.write_file(dest_dir+config.crossref, ''.join(xref_list))
-        print("Created crossref in", config.crossref, file=sys.stderr)
+        message("Created crossref in", config.crossref)
 
     if combined_file:
         combined_html.append( '</div><!--slidoc-sidebar-right-wrapper-->\n' )
@@ -2186,10 +2198,13 @@ def process_input(input_files, config_dict):
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
-        md2md.write_file(dest_dir+combined_file, Html_header, head_html+plugin_heads(all_plugin_defs, comb_plugin_loads),
-                          mid_template % comb_params, body_prefix,
-                         '\n'.join(combined_html), Html_footer)
-        print('Created combined HTML file in '+combined_file, file=sys.stderr)
+        output_data = [Html_header, head_html+plugin_heads(all_plugin_defs, comb_plugin_loads),
+                       mid_template % comb_params, body_prefix,
+                       '\n'.join(combined_html), Html_footer]
+        message('Created combined HTML file in '+combined_file)
+        if return_html:
+            return dest_dir+combined_file, ''.join(output_data), messages
+        md2md.write_file(dest_dir+combined_file, *output_data)
 
 
 def sort_caseless(list):
@@ -2283,7 +2298,7 @@ def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), inc
             elif exclude_args and arg_name in exclude_args:
                 del line_args_dict[arg_name]
         if verbose:
-            print('Selected first line arguments from file', fname, argparse.Namespace(**line_args_dict), file=sys.stderr)
+            message('Selected first line arguments from file', fname, argparse.Namespace(**line_args_dict))
     except Exception, excp:
         abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (file.name, excp))
 
@@ -2332,21 +2347,15 @@ parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,b
 parser.add_argument('--test_script', metavar='1 OR SCRIPT1[/USER],SCRIPT2/USER2,...', help='Enable scripted testing', )
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
-if __name__ == '__main__':
-    cmd_parser = argparse.ArgumentParser(parents=[parser],description='Convert from Markdown to HTML')
-    cmd_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
-    cmd_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
-    cmd_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
-    cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
+alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
+alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
+alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
+alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
-    cmd_args_orig = cmd_parser.parse_args()
-    first_name = os.path.splitext(os.path.basename(cmd_args_orig.file[0].name))[0]
+cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
+cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
-    # Do not exclude args if combined file
-    exclude_args = Select_file_args if cmd_args_orig.all is None else None
-    cmd_args = parse_first_line(cmd_args_orig.file[0], first_name, parser, vars(cmd_args_orig),
-                                exclude_args=exclude_args, verbose=cmd_args_orig.verbose)
-
+def cmd_args2dict(cmd_args):
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
                      'site_url': ''}
@@ -2356,11 +2365,23 @@ if __name__ == '__main__':
         if getattr(cmd_args, arg_name) == None:
             setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
 
-    config_dict = vars(cmd_args)
+    return vars(cmd_args)
+
+if __name__ == '__main__':
+    cmd_args_orig = cmd_parser.parse_args()
+    first_name = os.path.splitext(os.path.basename(cmd_args_orig.file[0].name))[0]
+
+    # Do not exclude args if combined file
+    exclude_args = Select_file_args if cmd_args_orig.all is None else None
+    cmd_args = parse_first_line(cmd_args_orig.file[0], first_name, parser, vars(cmd_args_orig),
+                                exclude_args=exclude_args, verbose=cmd_args_orig.verbose)
+
+    config_dict = cmd_args2dict(cmd_args)
+
     input_files = config_dict.pop('file')
 
     if cmd_args.verbose:
         print('Effective argument list', file=sys.stderr)
         print('    ', argparse.Namespace(**config_dict), file=sys.stderr)
 
-    process_input(input_files, config_dict)
+    process_input(input_files, [f.name for f in input_files], config_dict)
