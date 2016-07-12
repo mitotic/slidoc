@@ -111,7 +111,7 @@ def process_files(files, filenames, cmd_args=[]):
     except Exception, excp:
         import traceback
         traceback.print_exc()
-        return str(excp), '', '', []
+        return str(excp) or 'Internal error', '', '', []
             
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -133,14 +133,16 @@ class Handler(BaseHTTPRequestHandler):
                     self.respond(html, filename=form['filename'].value)
             return
 
+        filename = form['file'].filename
         cmd_args = []
         for arg in ("printable", "verbose",):
             if arg in form and form[arg].value:
                 cmd_args.append("--"+arg)
+        if "indexed" in form and form["indexed"].value:
+            cmd_args.append("--all=%s --indexed=toc,ind,qind" % filename)
         for arg in ("pace", "gsheet_url", "gsheet_login"):
             if arg in form and form[arg].value:
                 cmd_args.append("--"+arg+"="+form[arg].value)
-        filename = form['file'].filename
         errmsg, outname, html, messages = process_files([form['file'].file], [filename], cmd_args)
         if errmsg:
             self.respond('<p><a href="/"><b>Home</b></a></p>ERROR: '+cgi.escape(errmsg))
@@ -198,8 +200,12 @@ class ForkingHTTPServer(ForkingMixIn, HTTPServer):
         return HTTPServer.verify_request(self, request, client_address)
         
 def run():
-    server_address = ('', 8181)
-    print >> sys.stderr, 'Listening on port 8181'
+    import argparse
+    parser = argparse.ArgumentParser(description='sdviewer: convert and display slidoc Markdown as HTML')
+    parser.add_argument('--port', type=int, default=8181, help='HTTP port number (default: 8181)')
+    cmd_args = parser.parse_args()
+    server_address = ('', cmd_args.port)
+    print >> sys.stderr, 'Listening on port', cmd_args.port
     server = ForkingHTTPServer(server_address, Handler)
     server.serve_forever()
 

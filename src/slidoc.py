@@ -2191,7 +2191,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
-        comb_params = {'session_name': first_name,
+        comb_params = {'session_name': out_name,
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else ''}
