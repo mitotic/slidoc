@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Slidoc as a web service
+sdviewer: Web service to convert slidoc documents to HTML
 Usage: ./sliweb.py
 """
 
@@ -28,32 +28,44 @@ html_form = '''<!DOCTYPE html>
 <script>
 $(document).on("dragover drop", function(e) {
     e.preventDefault();
+  $("#dropbox").css("border", "dashed 2px");
 }).on("drop", function(e) {
     $("input[type='file']")
         .prop("files", e.originalEvent.dataTransfer.files)
         .closest("form")
           .submit();
+$("#processing").show();
+$("#form").hide();
+});
+$(document).on("dragleave", function(e) {
+  e.preventDefault();
+  $("#dropbox").css("border", "solid 2px");
 });
 </script>
 </head>
 <body>
-<form enctype="multipart/form-data" method="POST">
-  <h3>Slidoc command options:</h3>
+<h3 id="processing" style="display: none;">Processing file ...</h3>
+<form id="form" enctype="multipart/form-data" method="POST">
+  <h2>Slidoc viewer</h2>
+  <h3>Command options:</h3>
   <blockquote>
+  <p>Indexed: <input type="checkbox" name="indexed" value="indexed"></p>
   <p>Printable: <input type="checkbox" name="printable" value="printable"></p>
   <p>Verbose: <input type="checkbox" name="verbose" value="verbose"></p>
   <p></p>
-  <p>Pace: <input name="pace" type="text" value=""></input></p>
+  <p>Pace: <input name="pace" type="text" value=""></input> (paceLevel,delaySec,tryCount,tryDelay)</p>
   <p>Google Sheet URL: <input name="gsheet_url" type="text" value=""></input></p>
   <p>Google Sheet HMAC key: <input name="gsheet_login" type="text" value=""></input></p>
   </blockquote>
   <hr>
-  Drag-and-drop file here or select file below and upload.
-  <p>File: <input type="file" name="file"></input></p>
-  <p><input type="submit" value="Upload"></input></p>
-  <p></p>
+  <div id="dropbox" style="padding: 3px; border: solid 2px;">
+    <b>Drag-and-drop file here (or select file below to upload)</b>
+    <p>File: <input type="file" name="file"></input></p>
+    <p><input type="submit" value="Upload"></input></p>
+    <p></p>
+  </div>
   <hr>
-  Tip: To directly generate and display a Slidoc file located at <code>http://example.com/file.md</code>, use URL of the form:<br>
+  Tip: To directly generate and view a Slidoc file located at <code>http://example.com/file.md</code>, use URL of the form:<br>
   <code>http://%(host)s/http://example.com/file.md</code>
 </form>
 
@@ -70,11 +82,11 @@ html_response = '''<!DOCTYPE html>
 <p></p>
 <p>Command: <code>slidoc.py %(args)s</code></p>
 <p>Generated file: <code><b>%(filename)s</b></code></p>
-<form method="POST" action="/display">
+<form method="POST" action="/generated">
   <input name="hmac" type="text" value="%(hmac)s" style="display: none;"></input>
   <input name="filename" type="text" value="%(filename)s" style="display: none;"></input>
   <textarea name="html" style="display: none;">%(html)s</textarea>
-  <p><input name="display" type="submit" value="Display file"></input></p>
+  <p><input name="view" type="submit" value="View file"></input></p>
   <p><input name="download" type="submit" value="Download file"></input></p>
 </form>
 Command output:
@@ -84,6 +96,7 @@ Command output:
 </body>
 </html>
 '''
+
 HMAC_KEY = 'testkey'
 TRUNCATE_DIGEST = 16
 def gen_hmac_token(message):
@@ -109,12 +122,12 @@ class Handler(BaseHTTPRequestHandler):
             environ={'REQUEST_METHOD':'POST',
                      'CONTENT_TYPE':self.headers['Content-Type'],
                      })
-        if parsed_url.path == '/display':
+        if parsed_url.path == '/generated':
             html = base64.b64decode(form['html'].value)
             if gen_hmac_token(html) != form['hmac'].value:
                 self.respond('ERROR: HMAC mismatch')
             else:
-                if 'display' in form and form['display'].value:
+                if 'view' in form and form['view'].value:
                     self.respond(html)
                 else:
                     self.respond(html, filename=form['filename'].value)
