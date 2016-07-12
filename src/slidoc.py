@@ -2344,7 +2344,7 @@ parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
-parser.add_argument('--test_script', metavar='1 OR SCRIPT1[/USER],SCRIPT2/USER2,...', help='Enable scripted testing', )
+parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
