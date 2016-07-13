@@ -1465,7 +1465,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
-        sidebar_html = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc else ''
+        sidebar_html = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
         pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
@@ -1609,8 +1609,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if return_html:
         def append_message(*args):
             messages.append(''.join(str(x) for x in args))
-
         message = append_message
+
     if config_dict['indexed']:
         comps = config_dict['indexed'].split(',')
         ftoc = comps[0]+'.html' if comps[0] else ''

@@ -224,6 +224,10 @@ function sessionAbort(err_msg, err_trace) {
     alert((Sliobj.debugging ? 'DEBUG: ':'')+err_msg);
     if (!Sliobj.debugging)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
+
+    if (getServerCookie())
+	location.href = Slidoc.logoutURL;
+
     throw(err_msg);
 }
 
@@ -253,6 +257,16 @@ function localGet(key) {
    }
 }
 
+function getCookieValue(a, stripQuote) {
+    var b = document.cookie.match('(^|;)\\s*' + a + '\\s*=\\s*([^;]+)');
+    var c = b ? b.pop() : '';
+    return stripQuote ? c.replace(/"/g,'') : c;
+}
+
+function getServerCookie() {
+    return getCookieValue("slidoc_server", true);
+}
+
 function getParameter(name, number, queryStr) {
    // Set number to true, if expecting an integer value. Returns null if valid parameter is not present.
    // If queryStr is specified, it is used instead of location.search
@@ -266,6 +280,8 @@ function getParameter(name, number, queryStr) {
    return value;
 }
 
+Slidoc.logoutURL = "/_auth/logout/";
+Slidoc.getServerCookie = getServerCookie;
 Slidoc.getParameter = getParameter;
 
 var resetParam = getParameter('reset');
@@ -347,7 +363,7 @@ function onreadystateaux() {
 	// Google client load will authenticate
     } else if (Sliobj.params.gd_sheet_url) {
 	var localAuth = localGet('auth');
-	if (localAuth) {
+	if (localAuth && !getServerCookie()) {
 	    Slidoc.showPopup('Accessing Google Docs ...', null, 1000);
 	    GService.gprofile.auth = localAuth;
 	    Slidoc.slidocReady(localAuth);
@@ -445,6 +461,8 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
     if (auth) {
 	if (auth.remember)
 	    localPut('auth', auth);
+	else
+	    localDel('auth');
 	if (retryCall) {
 	    GService.gprofile.auth.token = auth.token;
 	    retryCall();
@@ -535,7 +553,7 @@ Slidoc.viewHelp = function () {
     var html = '';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     if (Sliobj.sessionName) {
-	if (Sliobj.params.gd_sheet_url && GService.gprofile && GService.gprofile.auth)
+	if (GService.gprofile && GService.gprofile.auth)
 	    html += 'User: <b>'+GService.gprofile.auth.id+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session && Sliobj.session.revision)
@@ -549,6 +567,8 @@ Slidoc.viewHelp = function () {
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
 	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && Sliobj.feedback.q_grades != null)
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
+    } else if (getServerCookie()) {
+	html += 'User: <b>'+getServerCookie().split(":")[0]+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
     html += '<table class="slidoc-slide-help-table">';
     if (Sliobj.params.paceLevel && !Sliobj.params.gd_sheet_url && !Sliobj.chainActive)

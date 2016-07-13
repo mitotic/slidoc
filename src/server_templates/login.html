@@ -1,0 +1,26 @@
+<div id="main-container">
+  <h2>{{site_label}}</h2>
+  <div id="main">
+    <div id="login-form">
+      <form action="/_auth/login/" method="post" id="login_form">
+        <div>
+          <span class="error_msg"><em>{{error_msg}}</em></span>
+        </div>
+	<p></p>
+        <fieldset>
+          <label for="username">Username:</label>
+          <input autocapitalize="off" autocorrect="off" class="text-input" id="username" name="username" tabindex="1" type="text" value="">
+          <p></p>
+          <label for="token">Token:</label>
+          <input class="text-input" id="token" name="token" tabindex="2" type="password" value="">
+        </fieldset>
+        {% module xsrf_form_html() %}
+        <input id="next" name="next" type="hidden" value="{{next}}"></input>
+	<p></p>
+        <div id="form_btn">
+	  <input id="signin-btn" type="submit" value="Sign In" tabindex="3">
+	</div>
+      </form>
+    </div>
+  </div>
+</div>

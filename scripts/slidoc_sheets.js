@@ -75,6 +75,9 @@
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
 var ADMIN_USER = 'admin';
 
+var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
+var SITE_LABEL = '';        // Site label, e.g., 'calc101'
+
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
 var SHARE_AVERAGES = false;
@@ -140,7 +143,7 @@ function handleResponse(evt) {
     // token: authentication token
     // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
-    // id: unique user ID or lowercase email (required if creating or updating a row, and row parameter is not specified)
+    // id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
     // email: optional
     // altid: alternate, perhaps numeric, id (optional, used for information only)
     // update: [('field1', 'val1'), ...] (list of fields+values to be updated, excluding the unique field 'id')
@@ -1038,15 +1041,26 @@ function emailTokens() {
     }
     for (var j=0; j<emailList.length; j++)
 	if (emailList[j][1].trim() && emailList[j][1].indexOf('@') <= 0)
-	    throw("Invalid email address '"+emailList[j][1]+"' for user ID '"+emailList[j][0]+"'");
+	    throw("Invalid email address '"+emailList[j][1]+"' for userID '"+emailList[j][0]+"'");
 
-    var subject = 'Slidoc authentication token';
+    var subject;
+    if (SITE_LABEL)
+	subject = 'Authentication token for '+SITE_LABEL;
+    else
+	subject = 'Slidoc authentication token';
+
     var emails = [];
     for (var j=0; j<emailList.length; j++) {
 	if (!emailList[j][1].trim())
 	    continue;
+	var username = emailList[j][0];
 	var token = genUserToken(HMAC_KEY, emailList[j][0]);
-	var message = 'Authentication token for user ID '+emailList[j][0]+' is '+token;
+
+	var message = 'Authentication token for userID '+username+' is '+token;
+	if (SITE_URL)
+	    message += "\n\nAuthenticated link to website: "+SITE_URL+"/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
+	message += "\n\nRetain this email for future use, or save userID and token in a secure location. Do not share token with anyone else.";
+
 	MailApp.sendEmail(emailList[j][1], subject, message);
 	emails.push(emailList[j][1]);
     }
@@ -1077,7 +1091,7 @@ function emailLateToken() {
     }
     var email = lookupValues(userId,['email'], ROSTER_SHEET, true)[0];
     if (email.indexOf('@') <= 0)
-	throw("Invalid email address '"+email+"' for user ID '"+userId+"'");
+	throw("Invalid email address '"+email+"' for userID '"+userId+"'");
 
     var dateStr = getPrompt('New submission date/time', "'yyyy-mm-ddTmm:hh' (or 'yyyy-mm-dd', implying 'T23:59')");
     if (!dateStr)
@@ -1085,9 +1099,14 @@ function emailLateToken() {
     if (dateStr.indexOf('T') < 0)
 	dateStr += 'T23:59';
 
-    var subject = 'Slidoc late submission token';
+    var subject;
+    if (SITE_LABEL)
+	subject = 'Late submission token for '+SITE_LABEL;
+    else
+	subject = 'Slidoc late submission token';
+
     var token = genLateToken(HMAC_KEY, userId, sessionName, dateStr);
-    var message = 'Late submission token for user ID '+userId+' and session '+sessionName+' is '+token;
+    var message = 'Late submission token for userID '+userId+' and session '+sessionName+' is '+token;
     MailApp.sendEmail(email, subject, message);
 
     notify('Emailed late submission token to '+userId+' <'+email+'>');

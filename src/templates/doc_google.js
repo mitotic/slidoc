@@ -235,7 +235,43 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
+GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, loginRemember, callback) {
+    var adminKey = '';
+    if (/admin(\s|$)/.exec(loginUser)) {
+	// Login as admin user using HMAC key. To select specific user initially, use "admin username"
+	loginUser = loginUser.slice(5).trim();
+	adminKey = loginToken;
+	loginToken = gen_admin_token(adminKey, 'admin');
+    }
+
+    var email = (loginUser.indexOf('@')>0) ? loginUser : '';
+    if (callback)
+	this.authCallback = callback;
+    this.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginUser, token: loginToken,
+			 emails: [{type: 'account', value:email}], remember: !!loginRemember});
+}
+	
 GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
+    var slidocCookie = Slidoc.getServerCookie();
+    if (slidocCookie) {
+	var comps = slidocCookie.split(":");
+	var cookieUser = comps[0];
+	var cookieToken = comps.length > 1 ? comps[1] : '';
+	if (user || msg || callback || !cookieUser || !cookieToken) {
+	    // Re-do authentication to update cookie
+	    var urlPath = location.pathname;
+	    if (location.search)
+		urlPath += location.search;
+	    if (location.hash)
+		urlPath += location.hash;
+	    location.href = "/_auth/login/?next="+encodeURIComponent(urlPath);
+	    return;
+	} else {
+	    // Use user/token from cookie
+	    this.receiveUserInfo(cookieUser, cookieToken, false, callback);
+	    return;
+	}
+    }
     var loginElem = document.getElementById('gdoc-login-popup');
     var loginOverlay = document.getElementById('gdoc-login-overlay');
     var loginUserElem = document.getElementById('gdoc-login-user');
@@ -251,7 +287,6 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
         loginOverlay.style.display = 'none';
 	var loginUser = loginUserElem.value.trim().toLowerCase();
 	var loginToken = loginTokenElem.value.trim();
-	var loginRemember = loginRememberElem.checked;
 
 	if (!loginUser) {
 	    alert('Please provide user name for login');
@@ -262,22 +297,8 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    alert('Please provide token for login');
 	    return false;
 	}
-
-	var adminKey = '';
-	if (/admin(\s|$)/.exec(loginUser)) {
-	    // Login as admin user using HMAC key. To select specific user initially, use "admin username"
-	    loginUser = loginUser.slice(5).trim();
-	    adminKey = loginToken;
-	    loginToken = gen_admin_token(adminKey, 'admin');
-	}
-
-	var email = (loginUser.indexOf('@')>0) ? loginUser : '';
-	if (callback)
-	    gprofile.authCallback = callback;
-	gprofile.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginUser, token: loginToken,
-			     emails: [{type: 'account', value:email}], remember: !!loginRemember});
+	gprofile.receiveUserInfo(loginUser, loginToken, loginRememberElem.checked, callback);
     }
-	
     loginElem.style.display = 'block';
     loginOverlay.style.display = 'block';
     window.scrollTo(0,0);
