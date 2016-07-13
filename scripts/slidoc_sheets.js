@@ -1058,7 +1058,7 @@ function emailTokens() {
 
 	var message = 'Authentication token for userID '+username+' is '+token;
 	if (SITE_URL)
-	    message += "\n\nAuthenticated link to website: "+SITE_URL+"/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
+	    message += "\n\nAuthenticated link to website: "+SITE_URL+"/_auth/login/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
 	message += "\n\nRetain this email for future use, or save userID and token in a secure location. Do not share token with anyone else.";
 
 	MailApp.sendEmail(emailList[j][1], subject, message);

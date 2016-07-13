@@ -18,7 +18,7 @@ var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
-var useJSONP = (location.protocol == 'file:' || (isSafari && location.hostname.toLowerCase() == 'localhost') );
+var useJSONP = (location.protocol == 'file:' || isSafari);
 
 var Sliobj = {}; // Internal object
 Sliobj.debugging = true;

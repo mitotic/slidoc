@@ -43,9 +43,10 @@ class AuthStaticFileHandler(tornado.web.StaticFileHandler):
         user_id = self.get_secure_cookie(USER_COOKIE_SECURE)
         return user_id or None
 
-    @tornado.web.authenticated 
-    def get(self, path): 
-        tornado.web.StaticFileHandler.get(self, path)
+    # Override this method because overriding the get method of StaticFileHandler is problematic
+    @tornado.web.authenticated
+    def validate_absolute_path(self, *args, **kwargs):
+        return super(AuthStaticFileHandler, self).validate_absolute_path(*args, **kwargs)
 
 
 class AuthLoginHandler(BaseHandler):
