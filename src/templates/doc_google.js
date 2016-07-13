@@ -264,7 +264,10 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 		urlPath += location.search;
 	    if (location.hash)
 		urlPath += location.hash;
-	    location.href = "/_auth/login/?next="+encodeURIComponent(urlPath);
+	    var href = "/_auth/login/?next="+encodeURIComponent(urlPath);
+	    if (msg)
+		href += "&error="+encodeURIComponent(msg);
+	    location.href = href;
 	    return;
 	} else {
 	    // Use user/token from cookie

@@ -168,10 +168,10 @@ function setupCache(auth, callback) {
 
 		var userId = auth.id;
 		if (userId && !(userId in Sliobj.userGrades)) {
-		    alert('Error: user ID '+userId+' not found for this session');
+		    alert('Error: userID '+userId+' not found for this session');
 		    userId = '';
 		}
-		if (!userId)  // Pick the first user ID
+		if (!userId)  // Pick the first userID
 		    userId = Sliobj.userList[0];
 		Sliobj.gradingUser = Sliobj.userGrades[userId].index;
 		
@@ -1635,7 +1635,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
 	    if (err_type == 'NEED_ROSTER_ENTRY') {
 		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
-					      err_info+'. Please re-enter or request access.',
+					      err_info+'. Please enter a valid userID (or contact instuctor).',
 					      Slidoc.userLoginCallback.bind(null, retryCall));
 		return;
 	    } else if (err_type == 'INVALID_ADMIN_TOKEN') {

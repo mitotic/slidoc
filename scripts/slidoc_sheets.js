@@ -49,7 +49,7 @@
 //  You may optionally create a 'roster_slidoc' sheet containing ['name', 'id', 'email', 'altid'] in the first four columns.
 //  The 'name', 'email' and 'altid' values will be copied from this column to sesssion sheets (using 'id' as the index).
 //  Names should be of the form 'last name(s), first_name middle_name ...'. Rows should be sorted by name.
-//  If roster_slidoc sheet is present and user id is not present in it, user will not be allowed to access sessions.
+//  If roster_slidoc sheet is present and userID is not present in it, user will not be allowed to access sessions.
 //
 // USING THE SLIDOC MENU
 //  - After installing this script, quit the spreadsheet and re-open to activate the Slidoc menu. You will see:
@@ -221,12 +221,12 @@ function handleResponse(evt) {
 	if (rosterSheet && !adminUser) {
 	    // Check user access
 	    if (!params.id)
-		throw('Error:NEED_ID:Must specify user id to lookup roster')
+		throw('Error:NEED_ID:Must specify userID to lookup roster')
 	    try {
 		// Copy user info from roster
 		rosterValues = lookupValues(params.id, MIN_HEADERS, ROSTER_SHEET, true);
 	    } catch(err) {
-		throw("Error:NEED_ROSTER_ENTRY:User id '"+params.id+"' not found in roster");
+		throw("Error:NEED_ROSTER_ENTRY:userID '"+params.id+"' not found in roster");
 	    }
 	}
 
@@ -334,7 +334,7 @@ function handleResponse(evt) {
 	    }
 
 	    if (!userId)
-		throw('Error::User id must be specified for updates/gets');
+		throw('Error::userID must be specified for updates/gets');
 	    var userRow = -1;
 	    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate ID row (except for log files)
@@ -1030,7 +1030,7 @@ function emailTokens() {
     var rosterSheet = getSheet(ROSTER_SHEET);
     if (!rosterSheet)
 	throw('Roster sheet '+ROSTER_SHEET+' not found!');
-    var userId = getPrompt('Email authentication tokens', "User id, or 'all'");
+    var userId = getPrompt('Email authentication tokens', "userID, or 'all'");
     if (!userId)
 	return;
     var emailList;
@@ -1078,11 +1078,11 @@ function emailLateToken() {
 
     var sessionName = getSessionName();
     if (sessionName) {
-	var userId = getPrompt('Email late submission token for session '+sessionName, "UserID");
+	var userId = getPrompt('Email late submission token for session '+sessionName, "userID");
 	if (!userId)
 	    return;
     } else {
-	var text = getPrompt('Email late submission token', "UserID, session");
+	var text = getPrompt('Email late submission token', "userID, session");
 	if (!text)
 	    return;
 	var comps = text.trim().split(/\s*,\s*/);

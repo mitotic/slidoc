@@ -48,7 +48,10 @@ class AuthStaticFileHandler(tornado.web.StaticFileHandler):
     def validate_absolute_path(self, *args, **kwargs):
         return super(AuthStaticFileHandler, self).validate_absolute_path(*args, **kwargs)
 
-
+    def set_extra_headers(self, path):
+        # Disable cache
+        self.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    
 class AuthLoginHandler(BaseHandler):
     def get(self):
         error_msg = self.get_argument("error", "")
