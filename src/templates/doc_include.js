@@ -125,6 +125,7 @@ function object2Class(obj, excludeAttributes) {
 }
 
 Sliobj.sheets = {};
+
 function getSheet(name) {
     if (Sliobj.sheets[name])
 	return Sliobj.sheets[name];
@@ -225,8 +226,10 @@ function sessionAbort(err_msg, err_trace) {
     if (!Sliobj.debugging)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
 
-    if (getServerCookie())
-	location.href = Slidoc.logoutURL;
+    if (getServerCookie()) {
+	if (!Sliobj.debugging || window.confirm('Log out user?'))
+	    location.href = Slidoc.logoutURL;
+    }
 
     throw(err_msg);
 }
@@ -278,6 +281,15 @@ function getParameter(name, number, queryStr) {
        try { value = parseInt(value); } catch (err) { value = null };
    }
    return value;
+}
+
+Slidoc.websocketPath = '';
+if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
+    // Proxy URL
+    if (getServerCookie())
+	Slidoc.websocketPath = Sliobj.params.gd_sheet_url;
+    else
+	sessionAbort('Error: File must be served from proxy server for websocket authentication');
 }
 
 Slidoc.logoutURL = "/_auth/logout/";
@@ -368,7 +380,8 @@ function onreadystateaux() {
 	    GService.gprofile.auth = localAuth;
 	    Slidoc.slidocReady(localAuth);
 	} else {
-	    Slidoc.reportEvent('loginPrompt');
+	    if (!getServerCookie())
+		Slidoc.reportEvent('loginPrompt');
 	    GService.gprofile.promptUserInfo();
 	}
     } else {
@@ -1411,8 +1424,10 @@ function checkGradingStatus(userId, session, feedback) {
 		var gradeField = 'q'+question_attrs.qnumber+'_grade';
 		updates[gradeField] = 0;
 	    }
-	    var commentsField = 'q'+question_attrs.qnumber+'_comments';
-	    updates[commentsField] = 'Not attempted';
+	    if (question_attrs.qtype.slice(0,5) == 'text/' || question_attrs.explain) {
+		var commentsField = 'q'+question_attrs.qnumber+'_comments';
+		updates[commentsField] = 'Not attempted';
+	    }
 	}
     }
     Slidoc.log('checkGradingStatus:B', need_grading, updates);
@@ -1481,8 +1496,8 @@ function sessionCreate() {
 	    submitted: null,
 	    lateToken: '',
 	    paceLevel: Sliobj.params.paceLevel || 0,
-	    randomSeed: randomSeed,        // Save random seed
-            expiryTime: Date.now() + 180*86400,    // 180 day lifetime
+	    randomSeed: randomSeed,                   // Save random seed
+            expiryTime: Date.now() + 180*86400*1000,  // 180 day lifetime
             startTime: Date.now(),
             lastTime: 0,
 	    lastSlide: 0,

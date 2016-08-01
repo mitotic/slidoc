@@ -185,16 +185,9 @@ function handleResponse(evt) {
 	    mimeType = ContentService.MimeType.JAVASCRIPT;
 	}
 
-	var sheetName = params.sheet;
-	if (!sheetName)
-	    throw('Error:SHEETNAME::No sheet name specified');
-
-	var protectedSheet = (sheetName == SCORES_SHEET);
-	var restrictedSheet = (sheetName.slice(-7) == '_slidoc') && !protectedSheet;
-	var loggingSheet = (sheetName.slice(-4) == '_log');
 	var adminUser = '';
 	var authUser = '';
-	var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+
 	if (params.admin) {
 	    if (!params.token)
 		throw('Error:NEED_ADMIN_TOKEN:Need token for admin authentication');
@@ -211,9 +204,20 @@ function handleResponse(evt) {
 	    authUser = params.id;
 	}
 
-	if (restrictedSheet) {
-	    if (!adminUser)
-		throw("Error::Must be admin user to access sheet '"+sheetName+"'");
+	var proxy = params.proxy || '';
+	var sheetName = params.sheet || '';
+	if (!proxy && !sheetName)
+	    throw('Error:SHEETNAME:No sheet name specified');
+
+	var protectedSheet = (sheetName == SCORES_SHEET);
+	var restrictedSheet = (sheetName.slice(-7) == '_slidoc') && !protectedSheet;
+	var loggingSheet = (sheetName.slice(-4) == '_log');
+
+	if (!adminUser) {
+	    if (proxy)
+		throw("Error::Must be admin user for proxy access to sheet '"+sheetName+"'");
+	    if (restrictedSheet)
+		throw("Error::Must be admin user to access restricted sheet '"+sheetName+"'");
 	}
 
 	var rosterValues = [];
@@ -230,84 +234,170 @@ function handleResponse(evt) {
 	    }
 	}
 
-	// Check parameter consistency
-	var headers = params.headers ? JSON.parse(params.headers) : null;
-
-	var sheet = getSheet(sheetName);
-	if (!sheet) {
-	    // Create new sheet
-	    if (!headers)
-		throw("Error::Headers must be specified for new sheet '"+sheetName+"'");
-	    sheet = getSheet(sheetName, null, true);
-	    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-	    sheet.getRange('1:1').setFontWeight('bold');
-	    for (var j=0; j<headers.length; j++) {
-		if (headers[j].slice(-6).toLowerCase() == 'hidden')
-		    sheet.hideColumns(j+1);
-		if (headers[j].slice(-4).toLowerCase() == 'date' || headers[j].slice(-4).toLowerCase() == 'time') {
-		    ///var c = colIndexToChar(j+1);
-		    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
-		}
-	    }
-	    if (sheetName == INDEX_SHEET) {
-		var protection = sheet.protect().setDescription('protected');
-		protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
-		protection.setDomainEdit(false);
-	    }
-	}
-
-	if (!sheet.getLastColumn())
-	    throw("Error::No columns in sheet '"+sheetName+"'");
-
-	var columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0];
-	var columnIndex = indexColumns(sheet);
-
-	if (headers) {
-	    if (headers.length > columnHeaders.length)
-		throw("Error::Number of headers exceeds that present in sheet '"+sheetName+"'; delete it or edit headers.");
-	    for (var j=0; j<headers.length; j++) {
-		if (headers[j] != columnHeaders[j])
-		    throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.");
-	    }
-	}
-
-	var getRow = params.get || '';
-	var allRows = params.all || '';
-	var nooverwriteRow = params.nooverwrite || '';
-
-	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
-	var rowUpdates = params.row ? JSON.parse(params.row) : null;
-
-	var userId = null;
-	var displayName = null;
-
-	if (!adminUser && selectedUpdates)
-	    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
-
-	if (protectedSheet && (rowUpdates || selectedUpdates) )
-	    throw("Error::Cannot modify protected sheet '"+sheetName+"'")
-
 	returnInfo.prevTimestamp = null;
 	returnInfo.timestamp = null;
-	var numStickyRows = 1;  // Headers etc.
 
-	if (getRow && params.getheaders) {
-	    returnHeaders = columnHeaders;
-	    try {
-		var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2)
-		if (temIndexRow[MAXSCORE_ID])
-		    returnInfo.maxScores = sheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
-		if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
-		    returnInfo.averages = sheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
-	    } catch (err) {}
+	if (proxy && params.allupdates) {
+	    // Update multiple sheets
+	    var data = JSON.parse(params.data);
+	    for (var j=0; j<data.length; j++) {
+		var updateSheetName = data[j][0];
+		var updateHeaders = data[j][1];
+		var updateKeys = data[j][2];
+		var updateRows = data[j][3];
+		//returnMessages.push('Debug::updateSheet, keys, rows: '+updateSheetName+', '+updateKeys+', '+updateRows.length);
+
+		var updateSheet = getSheet(updateSheetName);
+		if (!updateSheet) {
+		    if (params.create)
+			updateSheet = createSheet(updateSheetName, updateHeaders);
+		    else
+			throw("Error::Sheet not found: '"+updateSheetName+"'");
+		}
+
+		var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
+		if (updateHeaders.length > temHeaders.length)
+		    throw("Error::Number of headers exceeds that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
+		for (var m=0; m<updateHeaders.length; m++) {
+		    if (updateHeaders[m] != temHeaders[m])
+			throw("Error::Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
+		}
+
+		if (updateKeys === null) {
+		    // Update non-keyed sheet
+		    for (var k=0; k<updateRows.length; k++) {
+			var rowNum = updateRows[k][0];
+			var rowVals = updateRows[k][1];
+			var lastRowNum = updateSheet.getLastRow();
+			for (var m=0; m<rowVals.length; m++)
+			    rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
+
+			if (rowNum > lastRowNum)
+			    updateSheet.insertRowBefore(lastRowNum+1)
+			updateSheet.getRange(rowNum, 1, 1, rowVals.length).setValues([rowVals]);
+		    }
+		} else {
+		    // Update keyed sheet
+		    var lastRowNum = updateSheet.getLastRow();
+		    if (lastRowNum < 1)
+			throw("Error::Sheet has no data rows '"+updateSheetName+"'");
+
+		    var updateColumnIndex = indexColumns(updateSheet);
+		    var idCol = updateColumnIndex['id'];
+		    var nameCol = updateColumnIndex['name'] || idCol;
+
+		    var updateStickyRows = lastRowNum;
+		    if (lastRowNum > 1) {
+			var keys = updateSheet.getSheetValues(2, idCol, lastRowNum-1, 1);
+
+			// Determine number of sticky rows
+			for (var k=0; k < keys.length; k++) {
+			    // Locate first non-null key
+			    if (keys[k][0]) {
+				updateStickyRows = k+1;
+				break
+			    }
+			}
+			for (var rowNum=lastRowNum; rowNum > updateStickyRows; rowNum--) {
+			    // Delete rows for which keys are not found (backwards)
+			    if (!(keys[rowNum-2][0] in updateKeys))
+				updateSheet.deleteRow(rowNum);
+			}
+			var idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, updateSheet.getLastRow()-updateStickyRows, 1);
+			var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, updateSheet.getLastRow()-updateStickyRows, 1);
+		    } else {
+			var idValues = [];
+			var nameValues = [];
+		    }
+		    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows);
+
+		    for (var k=0; k<updateRows.length; k++) {
+			// Update rows with pre-existing or new keys
+			var rowId = updateRows[k][0];
+			var rowVals = updateRows[k][1];
+			var modRow = temIndexRow[rowId];
+			if (!modRow) {
+			    modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues);
+			    updateSheet.insertRowBefore(modRow);
+			}
+			for (var m=0; m<rowVals.length; m++)
+			    rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
+
+			updateSheet.getRange(modRow, 1, 1, rowVals.length).setValues([rowVals]);
+			//returnMessages.push('Debug::updateRow: '+modRow+', '+rowVals);
+		    }
+		}
+	    }
+	} else {
+	    // Single sheet
+
+	    // Check parameter consistency
+	    var headers = params.headers ? JSON.parse(params.headers) : null;
+
+	    var sheet = getSheet(sheetName);
+	    if (!sheet) {
+		// Create new sheet
+		if (!headers)
+		    throw("Error:NEWHEADERS:Headers must be specified for new sheet '"+sheetName+"'");
+		sheet = createSheet(sheetName, headers);
+	    }
+
+	    if (!sheet.getLastColumn())
+		throw("Error::No columns in sheet '"+sheetName+"'");
+	    
+	    var columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0];
+	    var columnIndex = indexColumns(sheet);
+	    
+	    if (headers) {
+		if (headers.length > columnHeaders.length)
+		    throw("Error::Number of headers exceeds that present in sheet '"+sheetName+"'; delete it or edit headers.");
+		for (var j=0; j<headers.length; j++) {
+		    if (headers[j] != columnHeaders[j])
+			throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.");
+		}
+	    }
+	    
+	    var getRow = params.get || '';
+	    var allRows = params.all || '';
+	    var nooverwriteRow = params.nooverwrite || '';
+	    
+	    var selectedUpdates = params.update ? JSON.parse(params.update) : null;
+	    var rowUpdates = params.row ? JSON.parse(params.row) : null;
+
+	    var userId = null;
+	    var displayName = null;
+
+	    if (!adminUser && selectedUpdates)
+		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
+
+	    if (protectedSheet && (rowUpdates || selectedUpdates) )
+		throw("Error::Cannot modify protected sheet '"+sheetName+"'")
+
+	    var numStickyRows = 1;  // Headers etc.
+
+	    if (getRow && params.getheaders) {
+		returnHeaders = columnHeaders;
+		try {
+		    var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2)
+		    if (temIndexRow[MAXSCORE_ID])
+			returnInfo.maxScores = sheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
+		    if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
+			returnInfo.averages = sheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
+		} catch (err) {}
+	    }
 	}
 
 	if (!rowUpdates && !selectedUpdates && !getRow) {
 	    // No row updates/gets
 	    returnValues = [];
+	} else if (proxy && params.allupdates) {
+	    // Already handled
+	    returnValues = [];
 	} else if (getRow && allRows) {
 	    // Get all rows and columns
-	    if (sheet.getLastRow() > numStickyRows)
+	    if (proxy)
+		returnValues = sheet.getRange(1, 1, sheet.getLastRow(), columnHeaders.length).getValues();
+	    else if (sheet.getLastRow() > numStickyRows)
 		returnValues = sheet.getRange(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, columnHeaders.length).getValues();
 	    else
 		returnValues = [];
@@ -324,11 +414,11 @@ function handleResponse(evt) {
 
 		// Security check
 		if (params.id && params.id != userId)
-		    throw("Error::Mismatch between params.id '%s' and userId in row '%s'" % (params.id, userId))
+		    throw("Error::Mismatch between params.id '"+params.id+"' and userId in row '"+userId+"'")
 		if (params.name && params.name != displayName)
-		    throw("Error::Mismatch between params.name '%s' and displayName in row '%s'" % (params.name, displayName))
+		    throw("Error::Mismatch between params.name '"+params.name+"' and displayName in row '"+displayName+"'")
 		if (!adminUser && userId == MAXSCORE_ID)
-		    throw("Error::Only admin user may specify ID '%s'" % MAXSCORE_ID)
+		    throw("Error::Only admin user may specify ID "+MAXSCORE_ID)
 	    } else {
 		userId = params.id || null;
 	    }
@@ -436,12 +526,7 @@ function handleResponse(evt) {
 
 		    userRow = sheet.getLastRow()+1;
 		    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
-			for (var j=0; j<displayNames.length; j++) {
-			    if (displayNames[j][0] > displayName || (displayNames[j][0] == displayName && userIds[j][0] > userId)) {
-				userRow = j+1+numStickyRows
-				break;
-			    }
-			}
+			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds);
 		    }
 		    sheet.insertRowBefore(userRow);
 		} else if (rowUpdates && nooverwriteRow) {
@@ -498,7 +583,7 @@ function handleResponse(evt) {
 			    // Computed admin column to hold sum of all grades
 			    rowUpdates[totalCol-1] = ( '=' + totalCells.join('+') );
 			}
-			returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+'=' + totalCells.join('+'));
+			//returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+'=' + totalCells.join('+'));
 		    }
 
 		    for (var j=0; j<rowUpdates.length; j++) {
@@ -521,11 +606,7 @@ function handleResponse(evt) {
 			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') ) {
 			    // Id, name, email, altid, *Timestamp cannot be updated programmatically
 			    // (If necessary to change name manually, then re-sort manually)
-			    if (colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
-				try { rowValues[j] = createDate(colValue); } catch (err) { }
-			    } else {
-				rowValues[j] = colValue;
-			    }
+			    rowValues[j] = parseInput(colValue, colHeader);
 			} else {
 			    if (rowValues[j] !== colValue)
 				throw("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'");
@@ -573,10 +654,7 @@ function handleResponse(evt) {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
 			    if (!restrictedSheet && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
 				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
-
-			    if (colHeader.slice(-4).toLowerCase() == 'date' || colHeader.slice(-4).toLowerCase() == 'time') {
-				try { colValue = createDate(colValue); } catch (err) {}
-			    }
+			    colValue = parseInput(colValue, colHeader);
 			    modValue = colValue;
 			} else {
 			    if (rowValues[headerColumn-1] !== colValue)
@@ -657,9 +735,20 @@ function createDate(date) {
 	    date = date.slice(0,-1) + ':00.000Z';
 	else if (date.length == 20) // yyyy-mm-ddThh:mm:ssZ
 	    date = date.slice(0,-1) + '.000Z';
+	else if (date.length > 24) // yyyy-mm-ddThh:mm:ss.mmmZ
+	    date = date.slice(0,23) + 'Z';
     }
     return new Date(date);
 }
+
+function parseInput(value, headerName) {
+    // Parse input date strings
+    if (value && (headerName.slice(-4).toLowerCase() == 'date' || headerName.slice(-4).toLowerCase() == 'time' || headerName.slice(-9) == 'Timestamp')) {
+	try { return createDate(value); } catch (err) { }
+    }
+    return value;
+}
+
 
 function genHmacToken(key, message) {
     var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
@@ -705,6 +794,26 @@ function getSheet(sheetName, docName, create) {
     return sheet;
 }
 
+function createSheet(sheetName, headers) {
+    var sheet = getSheet(sheetName, null, true);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange('1:1').setFontWeight('bold');
+    for (var j=0; j<headers.length; j++) {
+	if (headers[j].slice(-6).toLowerCase() == 'hidden')
+	    sheet.hideColumns(j+1);
+	if (headers[j].slice(-4).toLowerCase() == 'date' || headers[j].slice(-4).toLowerCase() == 'time') {
+	    ///var c = colIndexToChar(j+1);
+	    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
+	}
+    }
+    if (sheetName == INDEX_SHEET) {
+	var protection = sheet.protect().setDescription('protected');
+	protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
+	protection.setDomainEdit(false);
+    }
+    return sheet;
+}
+	    
 function colIndexToChar(col) {
     return String.fromCharCode('A'.charCodeAt(0) + (col-1) );
 }
@@ -763,6 +872,17 @@ function lookupValues(idValue, colNames, sheetName, listReturn) {
 	listVals.push(retVals[colNames[j]]);
     }
     return listReturn ? listVals : retVals;
+}
+
+function locateNewRow(newName, newId, nameValues, idValues) {
+    // Return row number before which new name/id combination should be inserted
+    for (var j=0; j<nameValues.length; j++) {
+	if (nameValues[j][0] > newName || (nameValues[j][0] == newName && idValues[j][0] > newId)) {
+	    // Sort by name and then by id
+	    return j+1;
+	}
+    }
+    return nameValues.length+1;
 }
 
 function notify(message, title) {

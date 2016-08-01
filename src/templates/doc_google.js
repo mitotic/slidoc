@@ -78,8 +78,78 @@ GService.handleJSONP = function(callback_index, json_obj) {
     if (callback)
 	callback(json_obj || null, '', outOfSequence);
 }
-    
-function handleCallback(responseText, callback, outOfSequence){
+
+var wsCounter = 0;
+var wsReceived = 0;
+var wsRequests = {};
+
+var webSocket = null;
+var wsOpened = false;
+var wsBuffer = [];
+
+GService.openWebsocket = function (wsPath) {
+    var wsUrl = ((location.protocol === "https:") ? "wss://" : "ws://") + location.host + wsPath;
+    Slidoc.log('GService.openWebsocket:', wsUrl);
+    webSocket = new WebSocket(wsUrl);
+
+    webSocket.onopen = function() {
+	Slidoc.log('GService.ws.onopen:');
+	wsOpened = true;
+	while (wsBuffer.length > 0)
+	    webSocket.send(wsBuffer.shift());
+    }
+
+    webSocket.onerror = function (error) {
+	Slidoc.log('GService.ws.onerror: Error', error);
+	alert('Failed to open websocket: '+error);
+    };
+
+    webSocket.onmessage = function(evt) {
+	try {
+	    var msgObj = JSON.parse(evt.data);
+	} catch (err) {
+            Slidoc.log('GService.ws.onmessage: Websocket JSON parsing error:', err, evt.data);
+	    return;
+	}
+	var callback_index = msgObj[0];
+	var callback_obj = msgObj[1];
+	
+	Slidoc.log('GService.ws.onmessage:', callback_index);
+
+	if (!callback_index)
+	    return;
+
+	if (!(callback_index in wsRequests)) {
+	    Slidoc.log('GService.ws.onmessage: Error - Invalid WS callback index: '+callback_index);
+	    return;
+	}
+	var outOfSequence = (callback_index != wsReceived+1);
+	wsReceived = Math.max(callback_index, wsReceived);
+	var callback = wsRequests[callback_index][0];
+	delete wsRequests[callback_index];
+	if (callback)
+	    callback(callback_obj || null, '', outOfSequence);
+    }
+}
+
+function requestWS(data, callback) {
+    var callbackIndex = 0;
+    if (callback) {
+	wsCounter += 1;
+	callbackIndex = wsCounter;
+	wsRequests[wsCounter] = [callback];
+    }
+    var jsonStr = JSON.stringify([callbackIndex, data]);
+    if (wsOpened) {
+	webSocket.send(jsonStr);
+    } else {
+	if (!webSocket)
+	    GService.openWebsocket(Slidoc.websocketPath);
+	wsBuffer.push(jsonStr);
+    }
+}
+
+function handleCallback(responseText, callback, outOfSequence) {
     if (!callback)
 	return;
     var obj = null;
@@ -92,12 +162,17 @@ function handleCallback(responseText, callback, outOfSequence){
     }
     callback(obj, msg, outOfSequence);
 }
-
+    
 var sendDataCounter = 0;
 var receiveDataCounter = 0;
 
 GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
+
+  if (Slidoc.websocketPath) {
+      requestWS(data, callback);
+      return;
+  }
 
   var XHR = new XMLHttpRequest();
   var urlEncodedData = "";
@@ -363,11 +438,10 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
     if (!result)
         Slidoc.log('GoogleSheet: ERROR in '+callbackType+' callback: '+err_msg);
 
-    if (outerCallback) {
-        var retval = null;
-	var retStatus = {error: '', info: null, messages: null};
-        if (result) {
-	    try {
+    var retval = null;
+    var retStatus = {error: '', info: null, messages: null};
+    if (result) {
+	try {
 	    if (result.result == 'success' && result.value) {
 		if (callbackType != 'getAll') {
 		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value, result.headers);
@@ -387,7 +461,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		    retStatus.info.headers = result.headers;
 
 		if (userId) {
-		    if (!outOfSequence && retStatus.info.prevTimestamp && this.timestamps[userId] && retStatus.info.prevTimestamp != this.timestamps[userId]) {
+		    if (!outOfSequence && retStatus.info.prevTimestamp && this.timestamps[userId] && Math.floor(retStatus.info.prevTimestamp) != Math.floor(this.timestamps[userId])) {
 			retval = null;
 			retStatus.error = 'GoogleSheet: ERROR Timestamp mismatch; expected '+this.timestamps[userId]+' but received '+retStatus.info.prevTimestamp+'. Conflicting modifications from another active browser session?';
 		    }
@@ -399,15 +473,16 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		retStatus.error = err_msg ? err_msg + ';' + result.error : result.error;
 	    }
 
-		if (result.messages)
-		    retStatus.messages = result.messages.split('\n');
-	    } catch(err) {
-		retval = null;
-		retStatus.error = 'GoogleSheet: ERROR in GoogleSheet.callback: '+err;
-		Slidoc.log(retStatus.error);
-	    }
+	    if (result.messages)
+		retStatus.messages = result.messages.split('\n');
+	} catch(err) {
+	    retval = null;
+	    retStatus.error = 'GoogleSheet: ERROR in GoogleSheet.callback: '+err;
+	    Slidoc.log(retStatus.error);
 	}
+    }
 	
+    if (outerCallback) {
         outerCallback(retval, retStatus);
     }
 }
@@ -514,7 +589,7 @@ GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet
 	for (var j=2; j<this.preHeaders.length; j++)
 	    extObj[this.preHeaders[j]] = auth[this.preHeaders[j]] || '';
     }
-    return this.putRow(extObj, opts, callback, createSheet);
+    return this.putRow(extObj, opts, callback);
 }
 
 GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {

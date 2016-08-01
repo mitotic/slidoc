@@ -30,15 +30,58 @@ def gen_late_token(key, user_id, session_name, date_str):
     token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s' % (user_id, session_name, date_str) )
     return token
 
-def get_utc_date(date_time):
-    """Convert local date of the form yyyy-mm-ddThh:mm to UTC (unless it ends with 'Z')"""
-    if date_time and not date_time.endswith('Z'):
+def get_utc_date(date_time_str):
+    """Convert local date string of the form yyyy-mm-ddThh:mm to UTC (unless it already ends with 'Z')"""
+    if date_time_str and not date_time_str.endswith('Z'):
         try:
-            date_time = datetime.datetime.utcfromtimestamp(time.mktime(time.strptime(date_time, "%Y-%m-%dT%H:%M"))).strftime("%Y-%m-%dT%H:%M") + 'Z'
+            date_time_str = datetime.datetime.utcfromtimestamp(time.mktime(time.strptime(date_time_str, "%Y-%m-%dT%H:%M"))).strftime("%Y-%m-%dT%H:%M") + 'Z'
         except Exception, excp:
-            raise Exception("Error in parsing date '%s'; expect local time to be formatted like 2016-05-04T11:59 (%s)" % (date_time, excp))
+            raise Exception("Error in parsing date '%s'; expect local time to be formatted like 2016-05-04T11:59 (%s)" % (date_time_str, excp))
 
-    return date_time
+    return date_time_str
+
+def parse_date(date_time_str):
+    """Parse ISO format date, with or without Z suffix denoting UTC, to return datetime object (containing local time)"""
+    if date_time_str.endswith('Z'):
+        # UTC time step (add local time offset)
+        offset_sec = time.mktime(datetime.datetime.now().timetuple()) - time.mktime(datetime.datetime.utcnow().timetuple())
+        date_time_str = date_time_str[:-1]
+    else:
+        offset_sec = 0
+
+    if len(date_time_str) == 16:
+        # yyyy-mm-ddThh:mm
+        format = "%Y-%m-%dT%H:%M"
+    elif len(date_time_str) == 19:
+        # yyyy-mm-ddThh:mm:ss
+        format = "%Y-%m-%dT%H:%M:%S"
+    else:
+        format = "%Y-%m-%dT%H:%M:%S.%f"
+
+    return datetime.datetime.fromtimestamp(time.mktime(time.strptime(date_time_str, format)) + offset_sec)
+
+def create_date(epoch_ms=None):
+    """Create datetime object from epoch milliseconds (i.e., milliseconds since Jan. 1, 1970)"""
+    return datetime.datetime.now() if epoch_ms is None else datetime.datetime.fromtimestamp(epoch_ms/1000)
+
+def epoch_ms(date_time=None):
+    """Return epoch milliseconds (i.e., milliseconds since Jan. 1, 1970) for datetime object"""
+    if date_time:
+        return time.mktime(date_time.timetuple())*1000.0 + date_time.microsecond/1000.0
+    else:
+        return epoch_ms(datetime.datetime.now())
+
+def iso_date(date_time, utc=False):
+    """Return ISO date time string for local time (or UTC time)"""
+    if utc:
+        return datetime.datetime.utcfromtimestamp(epoch_ms(date_time)/1000.0).isoformat() + 'Z'
+    else:
+        return date_time.isoformat()
+
+def json_default(obj):
+    if isinstance(obj, datetime.datetime):
+        return iso_date(obj, utc=True)
+    raise TypeError("%s not serializable" % type(obj))
 
 if __name__ == '__main__':
     import argparse

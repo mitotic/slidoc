@@ -1516,12 +1516,13 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
 
-    get_params = {'sheet': INDEX_SHEET, 'id': session_name, 'get': '1', 'admin': user, 'token': user_token}
+    get_params = {'sheet': INDEX_SHEET, 'id': session_name, 'admin': user, 'token': user_token,
+                  'get': '1', 'headers': json.dumps(Index_fields)}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
-        if retval['error'].find('Headers must be specified for new sheet') == -1:
+        if not retval['error'].startswith('Error:NEWHEADERS:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
-    prev_row = retval.get('row')
+    prev_row = retval.get('value')
     if prev_row:
         revision_col = Index_fields.index('revision')
         if prev_row[revision_col] != revision:
@@ -1654,11 +1655,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     cmd_pace_args = config.pace    # If None, will be initialized to file-specific values
 
+    gd_sheet_url = ''
     if not config.separate:
         # Combined file  (these will be set later for separate files)
         config.features = cmd_features_set or set()
         js_params['features'] = dict([(x, 1) for x in config.features])
-        js_params['gd_sheet_url'] = config.gsheet_url or ''
+        gd_sheet_url = config.gsheet_url or ''
+        js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
         js_params['fileName'] = out_name
     else:
         # Will be initialized to file-specific values (use '' to override)
@@ -1713,12 +1716,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 if user_id and not gd_hmac_key:
                     continue
                 query = '?testscript=' + script
+                proxy_query = ''
                 if user_id:
                     label = '%s/%s' % (script, user_id)
                     query += '&testuser=%s&testkey=%s' % (user_id, gd_hmac_key)
+                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == 'admin' else sliauth.gen_user_token(gd_hmac_key, user_id))
                 else:
                     label = script
-                test_params.append([label, query])
+                test_params.append([label, query, proxy_query])
 
     if gd_hmac_key is not None:
         add_scripts += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
@@ -1858,7 +1863,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['sessionPrereqs'] =  (file_config.prereqs or '') if config.prereqs is None else config.prereqs
             js_params['sessionRevision'] = (file_config.revision or '') if config.revision is None else config.revision
                 
-            js_params['gd_sheet_url'] = (file_config.gsheet_url  or '') if config.gsheet_url is None else config.gsheet_url
+            gd_sheet_url = (file_config.gsheet_url or '') if config.gsheet_url is None else config.gsheet_url
+            js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['fileName'] = fname
 
         if not j or config.separate:
@@ -1930,7 +1936,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 js_params['gradeFields'] = ['q_grades'] + js_params['gradeFields']
 
             paced_files[fname] = {'due_date': due_date} 
-            if js_params['gd_sheet_url']:
+            if gd_sheet_url:
                 if js_params['gradeWeight']:
                     paced_files[fname]['type'] = 'graded'
                 else:
@@ -1997,14 +2003,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
             if gd_hmac_key:
-                update_session_index(js_params['gd_sheet_url'], gd_hmac_key, fname, js_params['sessionRevision'],
+                update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                       due_date, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
                                       renderer.qconcepts[0], renderer.qconcepts[1])
 
-            if js_params['gd_sheet_url'] and (gd_hmac_key or not return_html):
-                create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, js_params['fileName'],
+            if gd_sheet_url and (gd_hmac_key or not return_html):
+                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
                                   Manage_fields+Session_fields+js_params['gradeFields'], row=max_score_fields)
-                create_gdoc_sheet(js_params['gd_sheet_url'], gd_hmac_key, LOG_SHEET, Log_fields)
+                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
 
     if not config.dry_run:
         if not combined_file:
@@ -2054,8 +2060,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
                 toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
                 if test_params:
-                    for label, query in test_params:
-                        doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
+                    for label, query, proxy_query in test_params:
+                        if config.proxy_url:
+                            doc_link += ', <a href="/_auth/login/%s&next=%s" target="_blank">%s</a>' % (proxy_query, urllib.quote('/'+outname+query), label)
+                        else:
+                            doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
             else:
                 doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
                                     separate=config.separate, printable=config.printable)
@@ -2330,6 +2339,7 @@ parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy
 parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
 parser.add_argument('--gsheet_login', metavar='HMAC_KEY,CLIENT_ID,API_KEY', help='hmac_key[,client_id,api_key] (authenticate via Google Docs)')
 parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
+parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
 parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
