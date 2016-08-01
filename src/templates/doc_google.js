@@ -83,28 +83,33 @@ var wsCounter = 0;
 var wsReceived = 0;
 var wsRequests = {};
 
-var webSocket = null;
+var wsConnection = null;
 var wsOpened = false;
 var wsBuffer = [];
 
 GService.openWebsocket = function (wsPath) {
     var wsUrl = ((location.protocol === "https:") ? "wss://" : "ws://") + location.host + wsPath;
     Slidoc.log('GService.openWebsocket:', wsUrl);
-    webSocket = new WebSocket(wsUrl);
+    wsConnection = new WebSocket(wsUrl);
 
-    webSocket.onopen = function() {
+    wsConnection.onopen = function() {
 	Slidoc.log('GService.ws.onopen:');
 	wsOpened = true;
 	while (wsBuffer.length > 0)
-	    webSocket.send(wsBuffer.shift());
+	    wsConnection.send(wsBuffer.shift());
     }
 
-    webSocket.onerror = function (error) {
+    wsConnection.onerror = function (error) {
 	Slidoc.log('GService.ws.onerror: Error', error);
 	alert('Failed to open websocket: '+error);
-    };
+	document.body.textContent = 'Connection error. Reload page to restart';
+    }
 
-    webSocket.onmessage = function(evt) {
+    wsConnection.onclose = function (evt) {
+	document.body.textContent = 'Connection closed. Reload page to restart.';
+    }
+
+    wsConnection.onmessage = function(evt) {
 	try {
 	    var msgObj = JSON.parse(evt.data);
 	} catch (err) {
@@ -141,9 +146,9 @@ function requestWS(data, callback) {
     }
     var jsonStr = JSON.stringify([callbackIndex, data]);
     if (wsOpened) {
-	webSocket.send(jsonStr);
+	wsConnection.send(jsonStr);
     } else {
-	if (!webSocket)
+	if (!wsConnection)
 	    GService.openWebsocket(Slidoc.websocketPath);
 	wsBuffer.push(jsonStr);
     }

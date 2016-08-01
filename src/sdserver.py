@@ -23,22 +23,25 @@ Command arguments:
 
 import datetime
 import json
+import logging
 import os.path
 import sys
 
 import tornado.escape
 import tornado.httpserver
-import tornado.ioloop
 import tornado.options
 import tornado.web
 import tornado.websocket
 
 from tornado.options import define, options
+from tornado.ioloop import IOLoop
 
 import sliauth
 
 USER_COOKIE_SECURE = "slidoc_user_secure"
 SERVER_COOKIE = "slidoc_server"
+
+WS_TIMEOUT_SEC = 600
 
 class BaseHandler(tornado.web.RequestHandler):
     def get_current_user(self):
@@ -54,6 +57,29 @@ class HomeHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         self.redirect("/index.html")
+
+
+class ActionHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, subpath, inner=None):
+        if self.get_current_user() != '"admin"':
+            self.write('Action not permitted')
+            return
+        action, sep, sessionName = subpath.partition('/')
+        import sdproxy
+        if action == '_shutdown':
+            sdproxy.start_shutdown()
+            self.write('Starting shutdown')
+        elif action == '_unlock':
+            if sessionName in Lock_cache:
+                del sdproxy.Lock_cache[sessionName]
+            if sessionName in Sheet_cache:
+                del sdproxy.Sheet_cache[sessionName]
+            self.write('Unlocked '+sessionName)
+        elif action == '_lock':
+            if sessionName:
+                sdproxy.Lock_cache[sessionName] = True
+            self.write('Locked sessions: %s' % (', '.join(sdproxy.get_locked())) )
 
 
 class ProxyHandler(BaseHandler):
@@ -87,6 +113,7 @@ class ProxyHandler(BaseHandler):
 
 class WSHandler(tornado.websocket.WebSocketHandler):
     def open(self):
+        self.timeout = None
         if options.debug:
             print "DEBUG: WSopen", self.get_secure_cookie(USER_COOKIE_SECURE)
         if not self.get_secure_cookie(USER_COOKIE_SECURE):
@@ -95,16 +122,27 @@ class WSHandler(tornado.websocket.WebSocketHandler):
     def on_close(self):
         pass
 
+    def _close_on_timeout(self):
+        if self.ws_connection:
+            self.close()
+
     def on_message(self, message):
+        if self.timeout:
+            IOLoop.current().remove_timeout(self.timeout)
+            self.timeout = None
         import sdproxy
         try:
             obj = json.loads(message)
             callback_index = obj[0]
             args = obj[1]
             retObj = sdproxy.handleResponse(args)
-            self.write_message(json.dumps([callback_index, retObj], default=sliauth.json_default))
+            outMsg = json.dumps([callback_index, retObj], default=sliauth.json_default)
         except Exception, err:
-            pass
+            raise Exception('Error in response: '+err.message)
+
+        self.write_message(outMsg)
+        self.timeout = IOLoop.current().add_timeout(
+            datetime.timedelta(milliseconds=WS_TIMEOUT_SEC*1000), self._close_on_timeout)
 
 
 class AuthStaticFileHandler(tornado.web.StaticFileHandler): 
@@ -173,7 +211,12 @@ class Application(tornado.web.Application):
 
         if options.proxy:
             handlers += [ (r"/_proxy/", ProxyHandler),
-                           (r"/_websocket/", WSHandler)]
+                          (r"/_websocket/", WSHandler),
+                          (r"/(_lock)", ActionHandler),
+                          (r"/(_lock/[-\w.]+)", ActionHandler),
+                          (r"/(_unlock/[-\w.]+)", ActionHandler),
+                          (r"/(_shutdown)", ActionHandler),
+                           ]
 
         handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static}) ]
 
@@ -197,6 +240,8 @@ def main():
     define("proxy", default=False, help="Proxy mode")
     define("xsrf", default=False, help="XSRF cookies for security")
     tornado.options.parse_command_line()
+    if not options.debug:
+        logging.getLogger('tornado.access').disabled = True
 
     if options.proxy:
         import sdproxy
@@ -207,7 +252,7 @@ def main():
     http_server = tornado.httpserver.HTTPServer(Application())
     http_server.listen(options.port)
     print >> sys.stderr, "Listening on port", options.port
-    tornado.ioloop.IOLoop.current().start()
+    IOLoop.current().start()
 
 
 if __name__ == "__main__":

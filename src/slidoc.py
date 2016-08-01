@@ -1520,7 +1520,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                   'get': '1', 'headers': json.dumps(Index_fields)}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
-        if not retval['error'].startswith('Error:NEWHEADERS:'):
+        if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
     prev_row = retval.get('value')
     if prev_row:

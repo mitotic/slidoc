@@ -337,8 +337,10 @@ function handleResponse(evt) {
 	    var sheet = getSheet(sheetName);
 	    if (!sheet) {
 		// Create new sheet
+		if (!adminUser)
+		    throw("Error:NOSHEET:Sheet '"+sheetName+"' not found");
 		if (!headers)
-		    throw("Error:NEWHEADERS:Headers must be specified for new sheet '"+sheetName+"'");
+		    throw("Error:NOSHEET:Headers must be specified for new sheet '"+sheetName+"'");
 		sheet = createSheet(sheetName, headers);
 	    }
 
