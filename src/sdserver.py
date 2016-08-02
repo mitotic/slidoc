@@ -19,6 +19,19 @@ Command arguments:
     debug: Enable debug mode (can be used for testing local proxy data)
     xsrf: Enable XSRF cookies for security
 
+Twitter auth workflow:
+  - Register your application with Twitter at http://twitter.com/apps, using the Callback URL http://website/_oauth/twitter
+  - Then copy your Consumer Key and Consumer Secret to file twitter.json
+     {"consumer_key": ..., "consumer_secret": ...}
+     sudo python sdserver.py --hmac_key=... --gsheet_url=... --static=... --port=80 --proxy --site_label=... --twitter=twitter.json
+  - Create an initial Slidoc, say ex00-setup.md
+  - Ask all users to ex00-setup.html using their Twitter login
+  - In Google Docs, copy the first four columns of the ex00-setup sheet to a new roster_slidoc sheet
+  - Once the roster_slidoc sheet is created, only users listed in that sheet can login
+    Correct any name entries in the sheet, and add emails and/or ID values as needed
+  - For additional users, manually add rows to roster_slidoc later
+  - If some users need to change their Twitter IDs later, include a dict in twitter.json, {..., "rename": {"old_id": "new_id", ...}}
+    
 """
 
 import datetime
@@ -26,7 +39,9 @@ import json
 import logging
 import os.path
 import sys
+import urllib
 
+import tornado.auth
 import tornado.escape
 import tornado.httpserver
 import tornado.options
@@ -163,6 +178,7 @@ class AuthStaticFileHandler(tornado.web.StaticFileHandler):
         # Disable cache
         self.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
     
+
 class AuthLoginHandler(BaseHandler):
     def get(self):
         error_msg = self.get_argument("error", "")
@@ -172,7 +188,8 @@ class AuthLoginHandler(BaseHandler):
         if not error_msg and username and token:
             self.login(username, token, next=next)
         else:
-            self.render("login.html", error_msg=error_msg, next=next, site_label=options.site_label)
+            self.render("login.html", error_msg=error_msg, next=next, site_label=options.site_label,
+                        login_url=Login_url)
 
     def post(self):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
@@ -201,13 +218,47 @@ class AuthLogoutHandler(BaseHandler):
         self.write('Logged out.<p></p><a href="/">Home</a>')
 
 
+class TwitterLoginHandler(tornado.web.RequestHandler,
+                          tornado.auth.TwitterMixin):
+    @tornado.gen.coroutine
+    def get(self):
+        if self.get_argument("oauth_token", None):
+            user = yield self.get_authenticated_user()
+            # Save the user using e.g. set_secure_cookie()
+            username = user['username']
+            if 'rename' in Twitter_config and username in Twitter_config['rename']:
+                username = Twitter_config['rename'][username]
+            displayName = user['name']
+
+            token = sliauth.gen_user_token(options.hmac_key, username)
+            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username))
+            self.set_cookie(SERVER_COOKIE, username+":"+token+":"+urllib.quote(displayName, safe=''))
+            self.redirect(self.get_argument("next", "/"))
+        else:
+            yield self.authorize_redirect()
+
+
 class Application(tornado.web.Application):
     def __init__(self):
+        settings = dict(
+            template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
+            xsrf_cookies=options.xsrf,
+            cookie_secret=options.hmac_key,
+            login_url=Login_url,
+            debug=options.debug,
+        )
+
         handlers = [
             (r"/", HomeHandler),
-            (r"/_auth/login/", AuthLoginHandler),
             (r"/_auth/logout/", AuthLogoutHandler),
+            (r"/_auth/login/", AuthLoginHandler),
             ]
+
+        if options.twitter:
+            settings.update(twitter_consumer_key=Twitter_config['consumer_key'],
+                            twitter_consumer_secret=Twitter_config['consumer_secret'])
+
+            handlers += [ ("/_oauth/twitter", TwitterLoginHandler) ]
 
         if options.proxy:
             handlers += [ (r"/_proxy/", ProxyHandler),
@@ -220,22 +271,19 @@ class Application(tornado.web.Application):
 
         handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static}) ]
 
-        settings = dict(
-            template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
-            xsrf_cookies=options.xsrf,
-            cookie_secret=options.hmac_key,
-            login_url="/_auth/login/",
-            debug=options.debug,
-        )
         super(Application, self).__init__(handlers, **settings)
 
 
+Login_url = '/_auth/login/'
+Twitter_config = {}
 def main():
+    global Login_url
     define("port", default=8888, help="Web server port", type=int)
     define("site_label", default="Slidoc", help="Site label")
     define("static", default="static", help="Path to static files directory")
     define("hmac_key", default="", help="HMAC key for admin user")
     define("gsheet_url", default="", help="Google sheet URL")
+    define("twitter", default="", help="'consumer_key,consumer_secret' OR JSON config file for twitter authentication")
     define("debug", default=False, help="Debug mode")
     define("proxy", default=False, help="Proxy mode")
     define("xsrf", default=False, help="XSRF cookies for security")
@@ -248,6 +296,17 @@ def main():
         sdproxy.HMAC_KEY = options.hmac_key
         sdproxy.SHEET_URL = options.gsheet_url
         sdproxy.DEBUG = options.debug
+
+    if options.twitter:
+        Login_url = "/_oauth/twitter"
+        if ',' in options.twitter:
+            comps = options.twitter.split(',')
+            Twitter_config.update(consumer_key=comps[0], consumer_secret=comps[1])
+        else:
+            # Twitter config file (JSON): {"consumer_key": ..., "consumer_secret": ..., rename={"aaa":"bbb",...}}
+            tfile = open(options.twitter)
+            Twitter_config.update(json.loads(tfile.read()))
+            tfile.close()
 
     http_server = tornado.httpserver.HTTPServer(Application())
     http_server.listen(options.port)

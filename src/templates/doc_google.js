@@ -315,7 +315,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, loginRemember, callback) {
+GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, loginName, loginRemember, callback) {
     var adminKey = '';
     if (/admin(\s|$)/.exec(loginUser)) {
 	// Login as admin user using HMAC key. To select specific user initially, use "admin username"
@@ -327,7 +327,7 @@ GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, login
     var email = (loginUser.indexOf('@')>0) ? loginUser : '';
     if (callback)
 	this.authCallback = callback;
-    this.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginUser, token: loginToken,
+    this.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginName || loginUser, token: loginToken,
 			 emails: [{type: 'account', value:email}], remember: !!loginRemember});
 }
 	
@@ -337,6 +337,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	var comps = slidocCookie.split(":");
 	var cookieUser = comps[0];
 	var cookieToken = comps.length > 1 ? comps[1] : '';
+	var cookieName = comps.length > 2 ? decodeURIComponent(comps[2]) : '';
 	if (user || msg || callback || !cookieUser || !cookieToken) {
 	    // Re-do authentication to update cookie
 	    var urlPath = location.pathname;
@@ -351,7 +352,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    return;
 	} else {
 	    // Use user/token from cookie
-	    this.receiveUserInfo(cookieUser, cookieToken, false, callback);
+	    this.receiveUserInfo(cookieUser, cookieToken, cookieName, false, callback);
 	    return;
 	}
     }
@@ -380,7 +381,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    alert('Please provide token for login');
 	    return false;
 	}
-	gprofile.receiveUserInfo(loginUser, loginToken, loginRememberElem.checked, callback);
+	gprofile.receiveUserInfo(loginUser, loginToken, loginUser, loginRememberElem.checked, callback);
     }
     loginElem.style.display = 'block';
     loginOverlay.style.display = 'block';
