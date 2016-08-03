@@ -267,7 +267,13 @@ function getCookieValue(a, stripQuote) {
 }
 
 function getServerCookie() {
-    return getCookieValue("slidoc_server", true);
+    var slidocCookie = getCookieValue("slidoc_server", true);
+    if (!slidocCookie)
+	return null;
+    
+    var comps = slidocCookie.split(":");
+    return {user: comps[0], token: comps.length > 1 ? comps[1] : '',
+     	                     name: comps.length > 2 ? decodeURIComponent(comps[2]) : ''};
 }
 
 function getParameter(name, number, queryStr) {
@@ -287,7 +293,7 @@ Slidoc.websocketPath = '';
 if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
     // Proxy URL
     if (getServerCookie())
-	Slidoc.websocketPath = Sliobj.params.gd_sheet_url;
+	Slidoc.websocketPath = Sliobj.params.gd_sheet_url+location.pathname;
     else
 	sessionAbort('Error: File must be served from proxy server for websocket authentication');
 }
@@ -580,8 +586,10 @@ Slidoc.viewHelp = function () {
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
 	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && Sliobj.feedback.q_grades != null)
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
-    } else if (getServerCookie()) {
-	html += 'User: <b>'+getServerCookie().split(":")[0]+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
+    } else {
+	var cookieUserInfo = getServerCookie();
+	if (cookieUserInfo)
+	    html += 'User: <b>'+cookieUserInfo.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
     html += '<table class="slidoc-slide-help-table">';
     if (Sliobj.params.paceLevel && !Sliobj.params.gd_sheet_url && !Sliobj.chainActive)
@@ -590,7 +598,7 @@ Slidoc.viewHelp = function () {
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list.length; j++)
 	    html += formatHelp(Slide_help_list[j]);
-    } else {
+    } else if (Sliobj.params.fileName) {
 	html += formatHelp(['Escape', 'unesc', 'enter slide mode']);
     }
     html += '</table>';

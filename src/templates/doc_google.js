@@ -332,13 +332,9 @@ GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, login
 }
 	
 GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
-    var slidocCookie = Slidoc.getServerCookie();
-    if (slidocCookie) {
-	var comps = slidocCookie.split(":");
-	var cookieUser = comps[0];
-	var cookieToken = comps.length > 1 ? comps[1] : '';
-	var cookieName = comps.length > 2 ? decodeURIComponent(comps[2]) : '';
-	if (user || msg || callback || !cookieUser || !cookieToken) {
+    var cookieUserInfo = Slidoc.getServerCookie();
+    if (cookieUserInfo) {
+	if (user || msg || callback || !cookieUserInfo.user || !cookieUserInfo.token) {
 	    // Re-do authentication to update cookie
 	    var urlPath = location.pathname;
 	    if (location.search)
@@ -352,7 +348,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    return;
 	} else {
 	    // Use user/token from cookie
-	    this.receiveUserInfo(cookieUser, cookieToken, cookieName, false, callback);
+	    this.receiveUserInfo(cookieUserInfo.user, cookieUserInfo.token, cookieUserInfo.name, false, callback);
 	    return;
 	}
     }

@@ -31,14 +31,17 @@ Twitter auth workflow:
     Correct any name entries in the sheet, and add emails and/or ID values as needed
   - For additional users, manually add rows to roster_slidoc later
   - If some users need to change their Twitter IDs later, include a dict in twitter.json, {..., "rename": {"old_id": "new_id", ...}}
+  - For admin user, include "admin_id": "admin" in rename dict
     
 """
 
 import datetime
 import json
 import logging
+import math
 import os.path
 import sys
+import time
 import urllib
 
 import tornado.auth
@@ -55,6 +58,7 @@ import sliauth
 
 USER_COOKIE_SECURE = "slidoc_user_secure"
 SERVER_COOKIE = "slidoc_server"
+EXPIRES_DAYS = 30
 
 WS_TIMEOUT_SEC = 600
 
@@ -64,7 +68,7 @@ class BaseHandler(tornado.web.RequestHandler):
             self.clear_cookie(USER_COOKIE_SECURE)
             self.clear_cookie(SERVER_COOKIE)
             return "noauth"
-        user_id = self.get_secure_cookie(USER_COOKIE_SECURE)
+        user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         return user_id or None
 
 
@@ -95,6 +99,17 @@ class ActionHandler(BaseHandler):
             if sessionName:
                 sdproxy.Lock_cache[sessionName] = True
             self.write('Locked sessions: %s' % (', '.join(sdproxy.get_locked())) )
+        elif action == '_stats':
+            self.write('<pre>')
+            self.write('Cache:\n')
+            self.write('  No. of updates (retries): %d (%d)\n  Average update time = %ss\n' % (sdproxy.TotalCacheResponseCount, sdproxy.TotalCacheRetryCount, sdproxy.TotalCacheResponseInterval/(1000*max(1,sdproxy.TotalCacheRetryCount)) ) )
+            curTime = time.time()
+            wsInfo = [(ws.ws_path, ws.user_id, math.floor(curTime-ws.msgTime)) for ws in WSHandler._connections]
+            sorted(wsInfo)
+            self.write('\nConnections:\n')
+            for x in wsInfo:
+                self.write("  %s: %s (idle: %ds)\n" % x)
+            self.write('</pre>')
 
 
 class ProxyHandler(BaseHandler):
@@ -127,21 +142,27 @@ class ProxyHandler(BaseHandler):
         self.write(jsonPrefix+json.dumps(retObj, default=sliauth.json_default)+jsonSuffix)
 
 class WSHandler(tornado.websocket.WebSocketHandler):
-    def open(self):
+    _connections = []
+    def open(self, path=''):
+        self._connections.append(self)
+        self.msgTime = time.time()
         self.timeout = None
+        self.ws_path = path
+        self.user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         if options.debug:
-            print "DEBUG: WSopen", self.get_secure_cookie(USER_COOKIE_SECURE)
-        if not self.get_secure_cookie(USER_COOKIE_SECURE):
+            print "DEBUG: WSopen", self.user_id
+        if not self.user_id:
             self.close()
 
     def on_close(self):
-        pass
+        self._connections.remove(self)
 
     def _close_on_timeout(self):
         if self.ws_connection:
             self.close()
 
     def on_message(self, message):
+        self.msgTime = time.time()
         if self.timeout:
             IOLoop.current().remove_timeout(self.timeout)
             self.timeout = None
@@ -156,8 +177,7 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             raise Exception('Error in response: '+err.message)
 
         self.write_message(outMsg)
-        self.timeout = IOLoop.current().add_timeout(
-            datetime.timedelta(milliseconds=WS_TIMEOUT_SEC*1000), self._close_on_timeout)
+        self.timeout = IOLoop.current().call_later(WS_TIMEOUT_SEC, self._close_on_timeout)
 
 
 class AuthStaticFileHandler(tornado.web.StaticFileHandler): 
@@ -166,7 +186,7 @@ class AuthStaticFileHandler(tornado.web.StaticFileHandler):
             self.clear_cookie(USER_COOKIE_SECURE)
             self.clear_cookie(SERVER_COOKIE)
             return "noauth"
-        user_id = self.get_secure_cookie(USER_COOKIE_SECURE)
+        user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         return user_id or None
 
     # Override this method because overriding the get method of StaticFileHandler is problematic
@@ -203,8 +223,8 @@ class AuthLoginHandler(BaseHandler):
     def login(self, username, token, next="/"):
         auth = self.check_access(username, token)
         if auth:
-            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username))
-            self.set_cookie(SERVER_COOKIE, username+":"+token)
+            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username), expires_days=EXPIRES_DAYS)
+            self.set_cookie(SERVER_COOKIE, username+":"+token, expires_days=EXPIRES_DAYS)
             self.redirect(next)
         else:
             error_msg = "?error=" + tornado.escape.url_escape("Incorrect username or token")
@@ -230,9 +250,9 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
                 username = Twitter_config['rename'][username]
             displayName = user['name']
 
-            token = sliauth.gen_user_token(options.hmac_key, username)
-            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username))
-            self.set_cookie(SERVER_COOKIE, username+":"+token+":"+urllib.quote(displayName, safe=''))
+            token = options.hmac_key if username == 'admin' else sliauth.gen_user_token(options.hmac_key, username)
+            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username), expires_days=EXPIRES_DAYS)
+            self.set_cookie(SERVER_COOKIE, username+":"+token+":"+urllib.quote(displayName, safe=''), expires_days=EXPIRES_DAYS)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()
@@ -261,12 +281,13 @@ class Application(tornado.web.Application):
             handlers += [ ("/_oauth/twitter", TwitterLoginHandler) ]
 
         if options.proxy:
-            handlers += [ (r"/_proxy/", ProxyHandler),
-                          (r"/_websocket/", WSHandler),
+            handlers += [ (r"/_proxy", ProxyHandler),
+                          (r"/_websocket/(.*)", WSHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
                           (r"/(_shutdown)", ActionHandler),
+                          (r"/(_stats)", ActionHandler),
                            ]
 
         handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static}) ]

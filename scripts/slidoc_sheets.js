@@ -73,10 +73,11 @@
 
 
 var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var ADMIN_USER = 'admin';
 
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
+
+var ADMIN_USER = 'admin';
 
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
@@ -89,14 +90,14 @@ var ALT_DOC_IDS = { };
 var MAXSCORE_ID = '_max_score';
 var AVERAGE_ID = '_average';
 
-var ANSWERS_DOC = 'answers_slidoc';
-var STATS_DOC = 'stats_slidoc';
+var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
 var SCORES_SHEET = 'scores_slidoc';
 
-var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
+var ANSWERS_DOC = 'answers_slidoc';
+var STATS_DOC = 'stats_slidoc';
 
 var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
