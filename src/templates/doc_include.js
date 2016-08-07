@@ -1,5 +1,9 @@
 // JS include file for slidoc
 
+///////////////////////////////
+// Section 1: Configuration
+///////////////////////////////
+
 var Slidoc = {};  // External object
 
 Slidoc.PluginDefs = {};    // JS plugin definitions
@@ -20,6 +24,10 @@ var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
 var useJSONP = (location.protocol == 'file:' || isSafari);
+
+/////////////////////////////////////
+// Section 2: Global initialization
+/////////////////////////////////////
 
 var Sliobj = {}; // Internal object
 Sliobj.debugging = true;
@@ -43,6 +51,10 @@ Sliobj.incrementPlugins = null;
 Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
 
+////////////////////////////////
+// Section 3: Scripted testing
+////////////////////////////////
+
 Sliobj.testScript = null;
 Sliobj.testStep = getParameter('teststep');
 
@@ -64,24 +76,9 @@ Slidoc.advanceStep = function () {
     return false;
 }
 
-function evalPluginArgs(pluginName, argStr, slide_id) {
-    // Evaluates plugin init args in appropriate context
-    if (!argStr || !slide_id)
-	return [];
-    try {
-	var pluginList = Sliobj.slidePlugins[slide_id]; // Plugins instantiated in the slide so far
-	var plugins = {};
-	for (var j=0; j<pluginList.length; j++)
-	    plugins[pluginList[j].name] = pluginList[j];
-	var argVals = eval('['+argStr+']');
-	return argVals;
-    } catch (err) {
-	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+slide_id+': '+err;
-	Slidoc.log(errMsg);
-	alert(errMsg);
-	return [argStr];
-    }
-}
+///////////////////////////////
+// Section 4: Console logging
+///////////////////////////////
 
 Sliobj.logMax = 200;
 Sliobj.logQueue = [];
@@ -125,23 +122,9 @@ Slidoc.log = function() {
 	console.log.apply(console, arguments);
 }
 
-function copyAttributes(oldObj, newObj, excludeAttributes) {
-    newObj = newObj || {};
-    var keys = Object.keys(oldObj);
-    for (var j=0; j<keys.length; j++) {
-	var key = keys[j];
-	if (excludeAttributes && excludeAttributes.indexOf(key) >= 0)
-	    continue;
-	newObj[key] = oldObj[key];
-    }
-    return newObj;
-}
-
-function object2Class(obj, excludeAttributes) {
-    var anonFunc = function () {};
-    copyAttributes(obj, anonFunc.prototype, excludeAttributes);
-    return anonFunc;
-}
+/////////////////////////////////////////
+// Section 5: Remote spreadsheet access
+/////////////////////////////////////////
 
 Sliobj.sheets = {};
 
@@ -263,6 +246,11 @@ function abortOnError(boundFunc) {
     }
 }
 
+//////////////////////////////////
+// Section 6: Local data storage
+//////////////////////////////////
+
+
 function localPut(key, obj) {
    window.localStorage['slidoc_'+key] = JSON.stringify(obj);
 }
@@ -278,6 +266,10 @@ function localGet(key) {
      return null;
    }
 }
+
+//////////////////////////////////////////////////////
+// Section 7: Cookie and query parameter processing
+//////////////////////////////////////////////////////
 
 function getCookieValue(a, stripQuote) {
     var b = document.cookie.match('(^|;)\\s*' + a + '\\s*=\\s*([^;]+)');
@@ -337,6 +329,10 @@ if (resetParam) {
     }
 }
 
+///////////////////////////////
+/// Section 8: Document ready
+///////////////////////////////
+
 document.onreadystatechange = function(event) {
     Slidoc.log('onreadystatechange:', document.readyState);
     // !Sliobj.params.fileName => index file; load, but do not execute JS
@@ -344,33 +340,6 @@ document.onreadystatechange = function(event) {
 	return;
     Slidoc.reportEvent('ready');
     return abortOnError(onreadystateaux);
-}
-
-function setupPlugins() {
-    Slidoc.log('setupPlugins:');
-    Sliobj.pluginSetup = {};
-    Sliobj.activePlugins = {};
-    Sliobj.pluginList = [];
-    var allContent = document.getElementsByClassName('slidoc-plugin-content');
-    for (var j=0; j<allContent.length; j++) {
-	var pluginName = allContent[j].dataset.plugin;
-	var slide_id = allContent[j].dataset.slideId;
-	var args = decodeURIComponent(allContent[j].dataset.args || '');
-	var button = decodeURIComponent(allContent[j].dataset.button || '');
-	if (!(pluginName in Slidoc.PluginDefs))
-	    sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax error messages in Javascript console');
-	if (!(pluginName in Sliobj.activePlugins)) {
-	    Sliobj.pluginList.push(pluginName);
-	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {}, button: {} };
-	}
-	Sliobj.activePlugins[pluginName].args[slide_id] = args;
-	Sliobj.activePlugins[pluginName].button[slide_id] = button;
-    }
-    for (var j=0; j<Sliobj.pluginList.length; j++) {
-	var pluginInstance = createPluginInstance(Sliobj.pluginList[j], true);
-	Slidoc.PluginManager.optCall(pluginInstance, 'initSetup');
-    }
-
 }
 
 var PagedownConverter = null;
@@ -405,6 +374,10 @@ function onreadystateaux() {
     }
 }
 
+//////////////////////////////////
+// Section 9: Utility functions
+//////////////////////////////////
+
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
 function zeroPad(num, pad) {
@@ -425,6 +398,24 @@ function escapeHtml(unsafe) {
 
 function unescapeAngles(text) {
     return text.replace('&lt;', '<').replace('&gt;', '>')
+}
+
+function copyAttributes(oldObj, newObj, excludeAttributes) {
+    newObj = newObj || {};
+    var keys = Object.keys(oldObj);
+    for (var j=0; j<keys.length; j++) {
+	var key = keys[j];
+	if (excludeAttributes && excludeAttributes.indexOf(key) >= 0)
+	    continue;
+	newObj[key] = oldObj[key];
+    }
+    return newObj;
+}
+
+function object2Class(obj, excludeAttributes) {
+    var anonFunc = function () {};
+    copyAttributes(obj, anonFunc.prototype, excludeAttributes);
+    return anonFunc;
 }
 
 function toggleClass(add, className, element) {
@@ -565,6 +556,10 @@ Slidoc.slideViewIncrement = function () {
 
     return false;
 }
+
+///////////////////////////////
+// Section 10: Help display
+///////////////////////////////
 
 var Slide_help_list = [
     ['q, Escape',           'exit',  'exit slide mode'],
@@ -788,6 +783,37 @@ function showDialog(action, testEvent, prompt, value) {
     }
 }
 
+////////////////////////
+// Section 11: Plugins
+////////////////////////
+
+function setupPlugins() {
+    Slidoc.log('setupPlugins:');
+    Sliobj.pluginSetup = {};
+    Sliobj.activePlugins = {};
+    Sliobj.pluginList = [];
+    var allContent = document.getElementsByClassName('slidoc-plugin-content');
+    for (var j=0; j<allContent.length; j++) {
+	var pluginName = allContent[j].dataset.plugin;
+	var slide_id = allContent[j].dataset.slideId;
+	var args = decodeURIComponent(allContent[j].dataset.args || '');
+	var button = decodeURIComponent(allContent[j].dataset.button || '');
+	if (!(pluginName in Slidoc.PluginDefs))
+	    sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax error messages in Javascript console');
+	if (!(pluginName in Sliobj.activePlugins)) {
+	    Sliobj.pluginList.push(pluginName);
+	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {}, button: {} };
+	}
+	Sliobj.activePlugins[pluginName].args[slide_id] = args;
+	Sliobj.activePlugins[pluginName].button[slide_id] = button;
+    }
+    for (var j=0; j<Sliobj.pluginList.length; j++) {
+	var pluginInstance = createPluginInstance(Sliobj.pluginList[j], true);
+	Slidoc.PluginManager.optCall(pluginInstance, 'initSetup');
+    }
+
+}
+
 Slidoc.PluginManager.optCall = function (pluginInstance, action) //... extra arguments
 {
     if (action in pluginInstance)
@@ -830,6 +856,25 @@ Slidoc.PluginManager.invoke = function (pluginInstance, action) //... extra argu
 	return pluginInstance[action].apply(pluginInstance, extraArgs);
     } catch(err) {
 	sessionAbort('ERROR in invoking plugin '+pluginInstance.name+'.'+action+': '+err, err.stack);
+    }
+}
+
+function evalPluginArgs(pluginName, argStr, slide_id) {
+    // Evaluates plugin init args in appropriate context
+    if (!argStr || !slide_id)
+	return [];
+    try {
+	var pluginList = Sliobj.slidePlugins[slide_id]; // Plugins instantiated in the slide so far
+	var plugins = {};
+	for (var j=0; j<pluginList.length; j++)
+	    plugins[pluginList[j].name] = pluginList[j];
+	var argVals = eval('['+argStr+']');
+	return argVals;
+    } catch (err) {
+	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+slide_id+': '+err;
+	Slidoc.log(errMsg);
+	alert(errMsg);
+	return [argStr];
     }
 }
 
@@ -894,6 +939,10 @@ function createPluginInstance(pluginName, nosession, slide_id) {
 
     return pluginInstance;
 }
+
+//////////////////////////////////
+// Section 12: Helper functions
+//////////////////////////////////
 
 function clearAnswerElements() {
     Slidoc.log('clearAnswerElements:');
@@ -1032,6 +1081,10 @@ function showGradesCallback(userId, result, retStatus) {
     Slidoc.showPopup(html);
 }
 
+//////////////////////////////////////////////////////
+// Section 13: Retrieve data needed for session setup
+//////////////////////////////////////////////////////
+
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
     Sliobj.adminState = auth && !!auth.adminKey;
@@ -1150,6 +1203,11 @@ function slidocReadyPaced(newSession, prereqs, prevSession, prevFeedback) {
 	
     sessionPut(null, newSession, {nooverwrite: true, get: true, retry: 'ready'}, slidocSetup);
 }
+
+///////////////////////////////
+// Section 14: Session setup
+///////////////////////////////
+
 
 function slidocSetup(session, feedback) {
     return abortOnError(slidocSetupAux.bind(null, session, feedback));
@@ -1508,6 +1566,10 @@ function showCorrectAnswers() {
     }
 }
 
+/////////////////////////////////////////////
+// Section 15: Session data getting/putting
+/////////////////////////////////////////////
+
 function sessionCreate() {
     var randomSeed = Slidoc.Random.getRandomSeed();
     return {version: Sliobj.params.sessionVersion,
@@ -1843,6 +1905,10 @@ function sessionPut(userId, session, opts, callback) {
     }
 }
 
+//////////////////////////////////////
+// Section 16: More helper functions
+//////////////////////////////////////
+
 function make_id_from_text(text) {
     return text.toLowerCase().trim().replace(/[^-\w\.]+/, '-').replace(/^[-\.]+/, '').replace(/[-\.]+$/, '');
 }
@@ -1908,6 +1974,19 @@ function getVisibleSlides() {
       slideClass = Sliobj.curChapterId+'-slide';
    }
    return document.getElementsByClassName(slideClass);
+}
+
+function getCurrentlyVisibleSlide(slides) {
+    if (!slides)
+	return 0;
+    for (var j=0; j<slides.length; j++) {
+	// Start from currently visible slide
+	var topOffset = slides[j].getBoundingClientRect().top;
+	if (topOffset >= 0 && topOffset < window.innerHeight) {
+            return j+1;
+	}
+    }
+    return 0
 }
 
 Slidoc.getCurrentSlideId = function () {
@@ -2009,6 +2088,10 @@ Slidoc.toggleInline = function (elem) {
    }
    return false;
 }
+
+///////////////////////////////
+// Section 17: Answering
+///////////////////////////////
 
 Slidoc.PluginRetry = function (msg) {
     Slidoc.log('Slidoc.PluginRetry:', msg);
@@ -2465,6 +2548,10 @@ Slidoc.renderText = function(elem, slide_id) {
     }
 }
 
+//////////////////////////
+// Section 18: Grading
+//////////////////////////
+
 function showSubmitted() {
     var submitElem = document.getElementById('slidoc-submit-display');
     if (!submitElem || !Sliobj.params.gd_sheet_url)
@@ -2639,6 +2726,10 @@ function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) 
     Slidoc.reportEvent('gradeUpdate');
 }
 
+/////////////////////////////////////////
+// Section 19: Paced session management
+/////////////////////////////////////////
+
 Slidoc.startPaced = function () {
     Slidoc.log('Slidoc.startPaced: ');
     Sliobj.delaySec = null;
@@ -2762,18 +2853,10 @@ function showCompletionStatus() {
     Slidoc.showConcepts(msg);
 }
 
-function getCurrentlyVisibleSlide(slides) {
-    if (!slides)
-	return 0;
-    for (var j=0; j<slides.length; j++) {
-	// Start from currently visible slide
-	var topOffset = slides[j].getBoundingClientRect().top;
-	if (topOffset >= 0 && topOffset < window.innerHeight) {
-            return j+1;
-	}
-    }
-    return 0
-}
+//////////////////////////////////////
+// Section 20: Slide view management
+//////////////////////////////////////
+
 
 Slidoc.slideViewStart = function () {
    if (Sliobj.currentSlide) 
@@ -3167,6 +3250,11 @@ function goSlide(slideHash, chained, singleChapter) {
    return false;
 }
 
+////////////////////////////////////////////
+// Section 21: Concept link chain handlers
+////////////////////////////////////////////
+
+
 Slidoc.chainLink = function (newindex, queryStr, urlPath) {
    // Returns next/prev chain URL: /(prefix)(newtag0).html?index=1&taglist=...#newtag1
    // tag = fsuffix#id
@@ -3337,7 +3425,9 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
     window.scrollTo(0,0);
 }
 
-// Pagedown helpers
+//////////////////////////////////
+// Section 22: Pagedown helpers
+//////////////////////////////////
 
 function MDEscapeInlineLatex(whole, inner) {
     // Escape special characters in inline formulas (from Markdown processing)
@@ -3391,8 +3481,11 @@ function MDConverter(mdText, stripOuter) {
     return html.replace(/<a href=([^> ]+)>/g, '<a href=$1 target="_blank">');
 }
 
+////////////////////////////////////////////////////////////
+// Section 23: Linear Congruential Random Number Generator
+//  https://gist.github.com/Protonk/5367430
+////////////////////////////////////////////////////////////
 
-// Linear Congruential Random Number Generator  https://gist.github.com/Protonk/5367430
 var LCRandom = (function() {
   // Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
       // m is basically chosen to be large (as it is the max period)
@@ -3449,9 +3542,10 @@ var LCRandom = (function() {
   };
 }());
 
-
-// Detect swipe events
+/////////////////////////////////////////////////////////////////////////
+// Section 24: Detect swipe events
 // Modified from https://blog.mobiscroll.com/working-with-touch-events/
+/////////////////////////////////////////////////////////////////////////
 
 var touchStart,
     touchAction,
