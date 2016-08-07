@@ -856,7 +856,7 @@ What is the square root of `=sqrtTest.number();6.25`?
 
 PluginDef: sqrtTest = {
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
-// Plugin object sqrtTest is automatically attached to global object SlidocPlugins
+// Plugin object sqrtTest is automatically attached to global object Slidoc.PluginDefs
 // Special function init is called for each slide. 
 // Define formulas as functions in the plugin object.
 // Special function expect should return the expected answer. 
@@ -884,7 +884,7 @@ PluginDef: sqrtTest = {
     }
 }
 var randVals = {}; // Optional persistent object
-PluginEnd: sqrtTest
+PluginEndDef: sqrtTest
 
 
 Answer: sqrtTest.expect();2.5 +/- 0.1
@@ -895,7 +895,7 @@ Notes: An optional error range may be provided after `+/-`.
 
 Embedded javascript functions may be used as formulas, using the notation
 
-    `=plugin_name.func_name()`
+    `=pluginName.funcName()`
 
 To display a default reference value, append it, separated by a
 semicolon (`;`). View the raw Markdown text for this document to see

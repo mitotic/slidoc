@@ -22,19 +22,22 @@ init: function() {...},
 // Additional Javascript in anonymous namespace
 
 /* PluginHead:
+<script src="..."></script>
+
+PluginButton: &#x260A;
 
 PluginBody:
-
+<!--html-->
 */
-PluginEnd: name
+PluginEndDef: name
 ```
 
-The `name` object is attached to a global object `SlidocPlugins` as
+The `name` object is attached to a global object `Slidoc.PluginDefs` as
 follows:
 
 ```
 <script>(function() {
-SlidocPlugins.name = {
+Slidoc.PluginDefs.name = {
 // Javascript function definitions
 ...
 }
@@ -43,20 +46,27 @@ SlidocPlugins.name = {
 </script>
 ```
 
-`PluginHead` and `PluginBody` are optional, and are not needed for simple
-formula plugins. These contain HTML with python-style format strings
-of the form `%(plugin_*)s` to customize element IDs. The following
-formats are subsituted:
+The comment portion with `PluginHead`, `PluginButton`, `PluginBody` is
+optional, and may be omitted for simple formula plugins. HTML template
+text included in `PluginBody` and in the content following
+`PluginBegin` (see [Embedding plugins](#)) may contain MathJax as well
+as python-style format strings of the form `%(plugin*)s` to customize
+element IDs etc.
 
-> `plugin_slide_id`: `slidoc01-01`
+[The following formats can be substituted in the template:]{#formats}
 
-> `plugin_name`: `name`
+> `pluginSlideId`: `slidoc01-01`
 
-> `plugin_label`: `slidoc-plugin-name`
+> `pluginName`: `pluginName`
 
-> `plugin_id`: `slidoc01-01-plugin-name`
+> `pluginLabel`: `slidoc-plugin-pluginName`
 
-> `plugin_args`: argument string
+> `pluginId`: `slidoc01-01-plugin-pluginName`
+
+> `pluginInitArgs`: argument string (See [Embedding plugins](#))
+
+Note: Any percent (%) characters in the HTML templates may need to
+escaped by doubling them (%%).
 
 See `test/ex01-basic.md` and `test/ex06-d3js.md`
 for simple examples. For a more complex example, see
@@ -66,7 +76,7 @@ for simple examples. For a more complex example, see
 
 ## Plugin object instances
 
-Three types of objects are instantiated using `SlidocPlugins.name` as
+Three types of objects are instantiated using `Slidoc.PluginDefs.name` as
 the prototype:
 
 1. `setup` objects: Instantiated once after document is ready
@@ -86,11 +96,9 @@ attributes:
 
 > `this.sessionName`: session name
 
-> `this.pluginArgs`: object with slideId as keys and arguments from
+> `this.initArgs`: list of init arguments for
 > embedded plugin in the slide as values, e.g.,
-> `{'slidoc01-03':[arg1, arg2, ...], ...}`
-> (These are the same arguments that are used
-> for calling `init` method of slide instances.)
+> `[arg1, arg2, ...]`
 
 The following are defined only for global and slide instances:
 
@@ -146,7 +154,17 @@ The following methods may be defined for plugins, as needed:
 
 > `enterSlide(paceStart)`: entering slide; returns paceDelay (in seconds) or null to use default (if paceStart only).
 
-> `leaveSlide()`: leaving slide
+> `leaveSlide()`: leaving slide 
+
+> `incrementSlide()`: incremental display of slide 
+
+> `buttonClick()`: button corresponding to `PluginButton` unicode symbol has been clicked
+
+Any plugin instance method may be invoked to handle event for elements
+in the `PluginBody` by adding element attributes like
+
+    onclick="Slidoc.Plugins.pluginName['%(pluginSlideId)s'].method(this);"
+
 
 ---
 
@@ -163,21 +181,32 @@ OR
 
 ```
 PluginBegin: name.init(arguments)
-text content
+HTML template content
 PluginEnd: name
 ```
 
 This embeds the PluginBody HTML at this location, in a `div` with `id`
-set to `plugin_id-body`, using templating to change element IDs. Any
-text content between PluginBegin/PluginEnd is available in a `div`
-with `id` set to `plugin_id-content` (for the plugin to re-format
-during the `setup` instantiation.) The optional `arguments`, which
-must all be in the same line, are supplied to the `init` call for
-slide instances.
+set to `pluginId-body`, using templating to change element IDs. Any
+HTML content between PluginBegin/PluginEnd is rendered within a `div`
+with `id` set to `pluginId-content` (for the plugin to access/modify
+during the `setup` instantiation.) In addition to the template [formats](#)
+listed for `PluginBody`, an additional substitution `%(pluginBody)s`
+may be used to specify where to include the HTML for the plugin body
+itself. If omitted, plugin body is appended after the content.
+
+The optional `arguments`, which must all be in the same line, are
+supplied to the `init` call for slide instances. The `init` calls
+occur in the same sequence in which the plugins are embedded in the
+slide. A special object `plugins`, containing all previously
+initialized plugin instances in the same slide, may be used in the
+context of the arguments. For example, if the first embedded plugin is
+`alpha`, the the second plugin `beta` may use the following arguments:
+
+    =beta.init(plugins.alpha.method(), plugins.alpha.attribute).
 
 Alternatively, using `name.expect()` or `name.response()` as the
 correct answer automatically embeds the plugin before the Answer (if
-it has not been explicitly embedded before.)
+it has not been explicitly embedded before).
 
 ---
 
@@ -187,7 +216,7 @@ Anywhere within Markdown text, any functions attached to plugins
 embedded in the slide may be invoked using Excel-like backtick-equals
 notations:
 
-    `=plugin_name.func()`
+    `=pluginName.func()`
 
 This substitutes the return value from the function `func` attached to
 the slide instance of the plugin. An optional non-negative integer
@@ -196,13 +225,13 @@ the `init` call.)
 
 The correct answer can also be provided by a formula:
 
-    Answer: plugin_name.expect();number
+    Answer: pluginName.expect();number
 
 with the answer type appended after a semicolon (`;`).
 
-Simple formula-subsitution plugins usually define `init` and `expect`
+Simple formula-substitution plugins usually define `init` and `expect`
 (returning the correct answer) and at least one other function
-returning a subsitution value (see `test/ex01-basic.md`).
+returning a substitution value (see `test/ex01-basic.md`).
 
 
 ---
@@ -212,7 +241,7 @@ returning a subsitution value (see `test/ex01-basic.md`).
 Response plugins interact with the users and capture the response to a
 question. They appears in the Answer portion of the slide.
 
-    Answer: plugin_name.response();text/x-python
+    Answer: pluginName.response();text/x-python
 
 The `response` method uses callback to return the user response (as a
 string) and an optional `pluginResp` object of the form:

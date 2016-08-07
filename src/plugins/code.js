@@ -1,13 +1,13 @@
 code = {
 
-    setup: { initSetup: function() {Slidoc.log('SlidocPlugins.code.setup.initSetup:');},
+    setup: { initSetup: function() {Slidoc.log('Slidoc.Plugins.code.setup.initSetup:');},
 	   },
 
-    global: { initGlobal: function() {Slidoc.log('SlidocPlugins.code.global.initGlobal:');}
+    global: { initGlobal: function() {Slidoc.log('Slidoc.Plugins.code.global.initGlobal:');}
 	   },
 
     disable: function() {
-	Slidoc.log('SlidocPlugins.code.disable:');
+	Slidoc.log('Slidoc.Plugins.code.disable:');
 	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
 	var checkButton = document.getElementById(this.pluginId+'-check-button');
 	textAreaElem.disabled = 'disabled';
@@ -15,21 +15,21 @@ code = {
     },
 
     display: function (response, pluginResp) {
-	Slidoc.log('SlidocPlugins.code.display:', this, response, pluginResp);
+	Slidoc.log('Slidoc.Plugins.code.display:', this, response, pluginResp);
 	var textareaElem = document.getElementById(this.pluginId+'-textarea');
 	textareaElem.value = response || '';
 	codeResponseCallback.bind(this)(false, null, response, pluginResp);
     },
 
     response: function (retry, callback) {
-	Slidoc.log('SlidocPlugins.code.response:', this, retry, !!callback);
+	Slidoc.log('Slidoc.Plugins.code.response:', this, retry, !!callback);
 	var inputValue = this.getInput(this.pluginId);
 	checkCode(this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
     checkCode: function (elem) {
-	Slidoc.log('SlidocPlugins.code.checkCode:', elem);
+	Slidoc.log('Slidoc.Plugins.code.checkCode:', elem);
 	checkCode(this.slideId+'', this.qattributes, this.getInput(this.pluginId), true,
 		  checkCodeCallback.bind(this) );
     },
@@ -82,7 +82,7 @@ function codeResponseCallback(retry, callback, response, pluginResp) {
 		    msg = pluginResp.score ? 'Second check failed partially!' : ' Second check failed!';
 		else
 		    msg = (pluginResp.score ? 'Partially incorrect output!' : 'Incorrect output!')+pluginResp.output;
-		SlidocPluginManager.retryAnswer(msg);
+		Slidoc.PluginRetry(msg);
 		return;
 	    }
 
@@ -250,13 +250,13 @@ function execCodeErr(callback, err) {
 
 /* PluginHead:
 <style>
-.%(plugin_label)s-textarea,
-  .%(plugin_label)s-check-button {display: block;}
-.%(plugin_label)s-output { opacity: 0.7; }
+.%(pluginLabel)s-textarea,
+  .%(pluginLabel)s-check-button {display: block;}
+.%(pluginLabel)s-output { opacity: 0.7; }
 </style>
 
 PluginBody:
-<button id="%(plugin_id)s-check-button" class="slidoc-clickable %(plugin_label)s-check-button" onclick="SlidocPluginManager.action('%(plugin_name)s','checkCode','%(plugin_slide_id)s',this);">Check</button>
-<textarea id="%(plugin_id)s-textarea" class="%(plugin_label)s-textarea" cols="60" rows="5"></textarea>
-<pre><code id="%(plugin_id)s-output" class="%(plugin_label)s-output"></code></pre>
+<button id="%(pluginId)s-check-button" class="slidoc-clickable %(pluginLabel)s-check-button" onclick="Slidoc.PluginMethod('%(pluginName)s','checkCode','%(pluginSlideId)s',this);">Check</button>
+<textarea id="%(pluginId)s-textarea" class="%(pluginLabel)s-textarea" cols="60" rows="5"></textarea>
+<pre><code id="%(pluginId)s-output" class="%(pluginLabel)s-output"></code></pre>
 */

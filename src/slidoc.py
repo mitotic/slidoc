@@ -265,7 +265,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
-    plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEnd:\s*\1\s*(\n|$)',
+    plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
     plugin_begin  =   re.compile(r'^PluginBegin:\s*(\w+).init\s*\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
@@ -592,9 +592,9 @@ class MathRenderer(mistune.Renderer):
 class SlidocRenderer(MathRenderer):
     header_attr_re = re.compile(r'^.*?(\s*\{\s*(#\S+)?([^#\}]*)?\s*\})\s*$')
 
-    plugin_content_template = '''<div id="%(plugin_id)s-content" class="%(plugin_label)s-content slidoc-plugin-content slidoc-pluginonly">%(plugin_content)s</div><!--%(plugin_id)s-content-->'''
+    plugin_content_template = '''<div id="%(pluginId)s-content" class="%(pluginLabel)s-content slidoc-plugin-content slidoc-pluginonly" data-plugin="%(pluginName)s" data-number="%(pluginNumber)s" data-args="%(pluginInitArgs)s" data-button="%(pluginButton)s" data-slide-id="%(pluginSlideId)s">%(pluginContent)s</div><!--%(pluginId)s-content-->'''
 
-    plugin_body_template = '''<div id="%(plugin_id)s-body" data-plugin="%(plugin_name)s" data-args="%(plugin_args)s" data-button="%(plugin_button)s" data-slide-id="%(plugin_slide_id)s" class="%(plugin_label)s-body slidoc-plugin-body slidoc-pluginonly">%(plugin_body)s</div><!--%(plugin_id)s-body-->'''
+    plugin_body_template = '''<div id="%(pluginId)s-body" class="%(pluginLabel)s-body slidoc-plugin-body slidoc-pluginonly">%(pluginBodyDef)s</div><!--%(pluginId)s-body-->'''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" data-qnumber="%(qno)d">Answer:</span>'''
@@ -667,6 +667,7 @@ class SlidocRenderer(MathRenderer):
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
         self.slide_number = 0
+
         self._new_slide()
         self.first_id = self.get_slide_id()
         self.index_id = ''                     # Set by render()
@@ -675,6 +676,7 @@ class SlidocRenderer(MathRenderer):
         self.block_test_counter = 0
         self.block_output_counter = 0
         self.render_markdown = False
+        self.plugin_number = 0
         self.plugin_defs = {}
         self.plugin_loads = set()
         self.load_python = False
@@ -1065,6 +1067,7 @@ class SlidocRenderer(MathRenderer):
         if plugin_name in self.slide_plugin_embeds:
             abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+self.slide_number)
         self.slide_plugin_embeds.add(plugin_name)
+        self.plugin_number += 1
 
         plugin_def = self.plugin_defs.get(plugin_name)
         if not plugin_def:
@@ -1073,18 +1076,27 @@ class SlidocRenderer(MathRenderer):
                 abort('ERROR Plugin '+plugin_name+' not defined!')
                 return ''
 
-        plugin_params = {'plugin_slide_id': slide_id,
-                        'plugin_name': plugin_name,
-                        'plugin_label': 'slidoc-plugin-'+plugin_name,
-                        'plugin_id': slide_id+'-plugin-'+plugin_name,
-                        'plugin_args': urllib.quote(args),
-                        'plugin_button': urllib.quote(plugin_def.get('Button', ''))}
-        plugin_params['plugin_body'] = plugin_def.get('Body', '') % plugin_params
-        html = self.plugin_body_template % plugin_params
-        if content:
-            plugin_params['plugin_content'] = mistune.escape(content)
-            html = (self.plugin_content_template % plugin_params) + html
-        return html
+        plugin_params = {'pluginSlideId': slide_id,
+                         'pluginName': plugin_name,
+                         'pluginLabel': 'slidoc-plugin-'+plugin_name,
+                         'pluginId': slide_id+'-plugin-'+plugin_name,
+                         'pluginInitArgs': urllib.quote(args),
+                         'pluginNumber': self.plugin_number,
+                         'pluginButton': urllib.quote(plugin_def.get('Button', ''))}
+        tem_params = plugin_params.copy()
+        try:
+            tem_params['pluginBodyDef'] = plugin_def.get('Body', '') % plugin_params
+        except Exception, err:
+            abort('ERROR Template formatting error in Body for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+        body_div = self.plugin_body_template % tem_params
+        if '%(pluginBody)s' not in content:
+            # By default, insert plugin body after any content
+            content += '%(pluginBody)s'
+        try:
+            plugin_params['pluginContent'] = content.replace('%(pluginBody)s', body_div, 1) % plugin_params
+        except Exception, err:
+            abort('ERROR Template formatting error for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+        return self.plugin_content_template % plugin_params
 
     def slidoc_plugin(self, name, text):
         args, sep, content = text.partition('\n')
@@ -1567,7 +1579,7 @@ def parse_plugin(name, text):
         if match.group(2) and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
         tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in Head/Body template
-        comps = re.split(r'(^|\n\s*\n)Plugin(Button|Body):', tail)
+        comps = re.split(r'(^|\n)Plugin(Button|Body):', tail)
         plugin_def['Head'] = comps[0]+'\n' if comps[0] else ''
         comps = comps[1:]
         while comps:
@@ -1577,7 +1589,7 @@ def parse_plugin(name, text):
                 plugin_def['Body'] = comps[2]+'\n'
             comps = comps[3:]
 
-    plugin_def['JS'] = 'SlidocPlugins.'+text.lstrip()
+    plugin_def['JS'] = 'Slidoc.PluginDefs.'+text.lstrip()
     return plugin_def
 
 def plugin_heads(plugin_defs, plugin_loads):
@@ -1592,9 +1604,14 @@ def plugin_heads(plugin_defs, plugin_loads):
         plugin_code.append('\n')
         plugin_head = plugin_defs[plugin_name].get('Head', '') 
         if plugin_head:
-            plugin_params = {'plugin_name': plugin_name,
-                             'plugin_label': 'slidoc-plugin-'+plugin_name}
-            plugin_code.append((plugin_head % plugin_params)+'\n')
+            plugin_params = {'pluginName': plugin_name,
+                             'pluginLabel': 'slidoc-plugin-'+plugin_name}
+            try:
+                tem_head = plugin_head % plugin_params
+            except Exception, err:
+                tem_head = ''
+                abort('ERROR Template formatting error in Head for plugin %s: %s' % (plugin_name, err))
+            plugin_code.append(tem_head+'\n')
         plugin_code.append('<script>(function() {\n'+plugin_defs[plugin_name]['JS'].strip()+'\n})();</script>\n')
     return ''.join(plugin_code)
 
