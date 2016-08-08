@@ -798,8 +798,13 @@ function setupPlugins() {
 	var slide_id = allContent[j].dataset.slideId;
 	var args = decodeURIComponent(allContent[j].dataset.args || '');
 	var button = decodeURIComponent(allContent[j].dataset.button || '');
-	if (!(pluginName in Slidoc.PluginDefs))
-	    sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax error messages in Javascript console');
+	if (!(pluginName in Slidoc.PluginDefs)) {
+	    // Look for plugin definition with trailing digit stripped out from name
+	    if (isNumber(pluginName.slice(-1)) && (pluginName.slice(0,-1) in Slidoc.PluginDefs))
+		Slidoc.PluginDefs[pluginName] = Slidoc.PluginDefs[pluginName.slice(0,-1)];
+	    else
+		sessionAbort('ERROR Plugin '+pluginName+' not defined properly; check for syntax error messages in Javascript console');
+	}
 	if (!(pluginName in Sliobj.activePlugins)) {
 	    Sliobj.pluginList.push(pluginName);
 	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {}, button: {} };

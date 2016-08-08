@@ -213,6 +213,11 @@ Alternatively, using `name.expect()` or `name.response()` as the
 correct answer automatically embeds the plugin before the Answer (if
 it has not been explicitly embedded before).
 
+To embed multiple plugins using the same definition in a slide, append
+a digit to the plugin name when embedding, e.g., `pluginName2`,
+`pluginName3`, etc. This will automatically re-use the definition for
+`pluginName` for the new plugins, but with a different name.
+
 ---
 
 ## Formula plugins

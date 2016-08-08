@@ -1069,12 +1069,16 @@ class SlidocRenderer(MathRenderer):
         self.slide_plugin_embeds.add(plugin_name)
         self.plugin_number += 1
 
-        plugin_def = self.plugin_defs.get(plugin_name)
-        if not plugin_def:
-            plugin_def = self.options['plugin_defs'].get(plugin_name)
-            if not plugin_def:
+        plugin_def_name = plugin_name
+        if plugin_def_name not in self.plugin_defs and plugin_def_name not in self.options['plugin_defs']:
+            # Look for plugin definition with trailing digit stripped out from name
+            if plugin_name[-1].isdigit():
+                plugin_def_name = plugin_name[:-1]
+            if plugin_def_name not in self.plugin_defs and plugin_def_name not in self.options['plugin_defs']:
                 abort('ERROR Plugin '+plugin_name+' not defined!')
                 return ''
+
+        plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'][plugin_def_name]
 
         plugin_params = {'pluginSlideId': slide_id,
                          'pluginName': plugin_name,
@@ -1480,7 +1484,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
         sidebar_html = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
         pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
 
-        tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + '<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) + '</div>\n'
+        tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + ('<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) if renderer.slide_number > 1 else '') + '</div>\n'
 
     if 'contents' not in config.strip:
         chapter_id = make_chapter_id(filenumber)
