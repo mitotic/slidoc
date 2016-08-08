@@ -6,8 +6,8 @@ code = {
     global: { initGlobal: function() {Slidoc.log('Slidoc.Plugins.code.global.initGlobal:');}
 	   },
 
-    disable: function() {
-	Slidoc.log('Slidoc.Plugins.code.disable:');
+    disable: function(displayCorrect) {
+	Slidoc.log('Slidoc.Plugins.code.disable:', displayCorrect);
 	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
 	var checkButton = document.getElementById(this.pluginId+'-check-button');
 	textAreaElem.disabled = 'disabled';
@@ -256,7 +256,7 @@ function execCodeErr(callback, err) {
 </style>
 
 PluginBody:
-<button id="%(pluginId)s-check-button" class="slidoc-clickable %(pluginLabel)s-check-button" onclick="Slidoc.PluginMethod('%(pluginName)s','checkCode','%(pluginSlideId)s',this);">Check</button>
+<button id="%(pluginId)s-check-button" class="slidoc-clickable %(pluginLabel)s-check-button" onclick="Slidoc.PluginMethod('%(pluginName)s','%(pluginSlideId)s','checkCode',this);">Check</button>
 <textarea id="%(pluginId)s-textarea" class="%(pluginLabel)s-textarea" cols="60" rows="5"></textarea>
 <pre><code id="%(pluginId)s-output" class="%(pluginLabel)s-output"></code></pre>
 */

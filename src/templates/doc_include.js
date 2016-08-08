@@ -878,7 +878,7 @@ function evalPluginArgs(pluginName, argStr, slide_id) {
     }
 }
 
-function createPluginInstance(pluginName, nosession, slide_id) {
+function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id);
     var pluginDef = Slidoc.PluginDefs[pluginName];
     if (!pluginDef)
@@ -895,6 +895,7 @@ function createPluginInstance(pluginName, nosession, slide_id) {
     defCopy.adminState = Sliobj.adminState;
     defCopy.sessionName = Sliobj.sessionName;
     defCopy.initArgs = slide_id ? evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id) : [];
+    defCopy.slideData = slideData || null;
     if (nosession) {
 	defCopy.setup = null;
 	defCopy.global = null;
@@ -1420,13 +1421,16 @@ function initSessionPlugins(session) {
 
     contentElems.sort(function(a,b){if (a.dataset.number == b.dataset.number) return 0; else (a.dataset.number > b.dataset.number) ? 1 : -1;});    
 
+    var slideData = null;
     for (var j=0; j<contentElems.length; j++) {
 	var contentElem = contentElems[j];
 	var pluginName = contentElem.dataset.plugin;
 	var slide_id = contentElem.dataset.slideId;
-	if (!(slide_id in Sliobj.slidePlugins))
+	if (!(slide_id in Sliobj.slidePlugins)) {
 	    Sliobj.slidePlugins[slide_id] = [];
-	var pluginInstance = createPluginInstance(pluginName, false, slide_id);
+	    slideData = {};  // New object to share persistent data for slide
+	}
+	var pluginInstance = createPluginInstance(pluginName, false, slide_id, slideData);
 	Sliobj.slidePlugins[slide_id].push(pluginInstance);
 	if ('incrementSlide' in pluginInstance)
 	    Sliobj.incrementPlugins[slide_id] = pluginInstance;
@@ -2299,7 +2303,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 
     if (pluginResp) {
 	qscore = isNumber(pluginResp.score) ? pluginResp.score : null;
-	corr_answer = '';
+	corr_answer = (isNumber(pluginResp.answer) || pluginResp.answer) ? pluginResp.answer : '';
     } else {
 	var pluginMatch = /^(\w+)\.expect\(\)(;(.+))?$/.exec(corr_answer);
 	if (pluginMatch) {
@@ -2378,7 +2382,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
-	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable');
+	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', qscore !== 1);
 
     if (question_attrs.qtype.slice(0,5) == 'text/') {
 	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');

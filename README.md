@@ -708,7 +708,8 @@ which renders as (\(\ref{eq:a}\))
 
 Concepts: equations; mathjax 
 
-Notes: Equations are also allowed in notes: \(\alpha = \omega\) 
+Notes: Equations are also allowed in notes: \(\boldsymbol{\alpha} = 1+\omega\)
+(note the use of bold face for Greek symbol)
 
 (The ``--`` separator below can be used to create additional
 vertical slides containing notes in `reveal.js`.)

@@ -1254,7 +1254,7 @@ class SlidocRenderer(MathRenderer):
 
         if not hide_answer:
             # No hiding of correct answers
-            return html_prefix+(self.ansprefix_template % ans_params)+': '+correct_html+'<p></p>\n'
+            return html_prefix+(self.ansprefix_template % ans_params)+' '+correct_html+'<p></p>\n'
 
         slide_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
 

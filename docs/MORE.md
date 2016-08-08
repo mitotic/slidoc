@@ -120,6 +120,11 @@ The following are defined only for slide instances:
 
 > `this.qattributes`: question attributes objects (for question slides)
 
+> `this.slideData`: object shared amongst all plugins in this slide
+
+For question slides, the text following `Answer:` will be accessible as
+`this.qattributes.correct`.
+
 Use `this.randomNumber()` to generate uniform random number between 0
 and 1.  Use `this.randomNumber(min, max)` to pick equally probable
 integer values between min and max (inclusive). Using these random
@@ -148,7 +153,7 @@ The following methods may be defined for plugins, as needed:
 
 > `display`: displays previously recorded user response (called at start/switch of session for each question)
 
-> `disable`: disables plugin (after user response has been recorded)
+> `disable(displayCorrect)`: disables plugin (after user response has been recorded)
 
 > `response`: records and returns user response
 
@@ -241,11 +246,14 @@ returning a substitution value (see `test/ex01-basic.md`).
 Response plugins interact with the users and capture the response to a
 question. They appears in the Answer portion of the slide.
 
-    Answer: pluginName.response();text/x-python
+    Answer: pluginName.response();text/x-python 
+
+    Answer: pluginName.response();300+/-10 
 
 The `response` method uses callback to return the user response (as a
 string) and an optional `pluginResp` object of the form:
-`{name:pluginName, score:1/0/0.75/.../null, invalid: invalid_msg,
+`{name:pluginName, score:1/0/0.75/.../null,
+answer: ans_plus_err, invalid: invalid_msg,
 output:output, tests:0/1/2}`
 
 `score` may be any value between `0.0` and `1.0`. A `null` value for

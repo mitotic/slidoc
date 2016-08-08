@@ -30,6 +30,7 @@ import sliauth
 MIN_WAIT_TIME = 0       # Minimum time (sec) between successful Google Sheet requests
 RETRY_WAIT_TIME = 5     # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 5     # Maximum number of failed Google Sheet requests
+CACHE_HOLD_TIME = 3600  # Maximum time (sec) to hold sheet in cache
 
 DEBUG = None           # Set by sdserver after import
 SHEET_URL = None       # Set by sdserver after import
@@ -122,6 +123,7 @@ class Sheet(object):
         self.modTime = modTime
         self.keyHeader = keyHeader
 
+        self.accessTime = sliauth.epoch_ms()
         self.nCols = len(rows[0])
         for j, row in enumerate(rows[1:]):
             if len(row) != self.nCols:
@@ -158,18 +160,20 @@ class Sheet(object):
     def insertRowBefore(self, rowNum, keyValue=None):
         if rowNum < 2 or rowNum > len(self.xrows)+1:
             raise Exception('Invalid row number for insertion: %s' % rowNum)
+        self.modTime = sliauth.epoch_ms()
+        self.accessTime = self.modTime
         newRow = [None]*self.nCols
         if self.keyHeader:
             if keyValue is None:
                 raise Exception('Must specify key for row insertion in sheet '+self.name)
             if keyValue in self.keyMap:
                 raise Exception('Duplicate key %s for row insertion in sheet %s' % (self.name, keyValue))
-            self.keyMap[keyValue] = sliauth.epoch_ms()
+            self.keyMap[keyValue] = self.modTime
             newRow[self.keyCol-1] = keyValue
         else:
             if rowNum != len(self.xrows)+1:
                 raise Exception('Can only append row for non-keyed spreadsheet')
-            self.keyMap[rowNum] = sliauth.epoch_ms()
+            self.keyMap[rowNum] = self.modTime
 
         self.xrows.insert(rowNum-1, newRow)
 
@@ -189,6 +193,7 @@ class Sheet(object):
         return Range(self, rowMin, colMin, rowCount, colCount)
 
     def getSheetValues(self, rowMin, colMin, rowCount, colCount):
+        self.accessTime = sliauth.epoch_ms()
         self.checkRange(rowMin, colMin, rowCount, colCount)
         return [row[colMin-1:colMin+colCount-1] for row in self.xrows[rowMin-1:rowMin+rowCount-1]]
 
@@ -206,6 +211,7 @@ class Sheet(object):
                 raise Exception('Col count mismatch for setSheetValues %s in row %d: expected %d but found %d' % (self.name, j+rowMin, colCount, len(rowValues)) )
 
         self.modTime = sliauth.epoch_ms()
+        self.accessTime = self.modTime
         for j, rowValues in enumerate(values):
             if self.keyCol:
                 oldKeyValue = self.xrows[j+rowMin-1][self.keyCol-1]
@@ -312,10 +318,14 @@ def update_remote_sheets(force=False):
         return
 
     modRequests = []
+    curTime = sliauth.epoch_ms()
     for sheetName, sheet in Sheet_cache.items():
         # Check each cached sheet for updates
         updates = sheet.get_updates(CacheUpdateTime)
         if updates is None:
+            if curTime-sheet.accessTime > CACHE_HOLD_TIME:
+                # Cache entry has expired
+                del Sheet_cache[sheetName]
             continue
         # sheet_name, headers_list, keys_dictionary, modified_rows
         modRequests.append([sheetName, updates[0], updates[1], updates[2]])
