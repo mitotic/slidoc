@@ -68,9 +68,9 @@ element IDs etc.
 Note: Any percent (%) characters in the HTML templates may need to
 escaped by doubling them (%%).
 
-See `test/ex01-basic.md` and `test/ex06-d3js.md`
-for simple examples. For a more complex example, see
-`plugins/code.js`, which implements a pre-defined plugin.
+See `test/ex01-basic.md` and `test/ex06-plotly.md` for simple
+examples. For more complex examples of pre-defined pugins, see
+`plugins/code.js` and `plugins/slider.js`.
 
 ---
 

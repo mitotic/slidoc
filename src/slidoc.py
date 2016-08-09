@@ -269,7 +269,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_begin  =   re.compile(r'^PluginBegin:\s*(\w+).init\s*\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
-    plugin_init   =   re.compile(r'^=(\w+).init\s*\(([^\n]*)\)\s*\n\s*(\n|$)')
+    plugin_init   =   re.compile(r'^=(\w+).init\s*\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
@@ -1060,7 +1060,7 @@ class SlidocRenderer(MathRenderer):
 
     
     def plugin_definition(self, name, text):
-        self.plugin_defs[name] = parse_plugin(name, name+' = {'+text)
+        _, self.plugin_defs[name] = parse_plugin(name+' = {'+text)
         return ''
 
     def embed_plugin_body(self, plugin_name, slide_id, args='', content=''):
@@ -1572,18 +1572,23 @@ def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
         abort("Error in creating sheet '%s': %s" % (sheet_name, retval['error']))
     message('slidoc: Created remote spreadsheet:', sheet_name)
 
-def parse_plugin(name, text):
-    if not re.match(r'^\s*'+name+r'\s*=\s*{', text):
+def parse_plugin(text, name=None):
+    nmatch = re.match(r'^\s*([a-z]\w*)\s*=\s*{', text)
+    if not nmatch:
+        abort("Plugin definition must start with plugin_name={'")
+    plugin_name = nmatch.group(1)
+    if name and name != plugin_name:
         abort("Plugin definition must start with '"+name+" = {'")
     plugin_def = {}
     match = re.match(r'^(.*)\n(\s*/\*\s*)?PluginHead:(.*)$', text, flags=re.DOTALL)
     if match:
         text = match.group(1)+'\n'
+        comment = match.group(2)
         tail = match.group(3).strip()
-        if match.group(2) and tail.endswith('*/'):    # Strip comment delimiter
+        if comment and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
         tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in Head/Body template
-        comps = re.split(r'(^|\n)Plugin(Button|Body):', tail)
+        comps = re.split(r'(^|\n)\s*Plugin(Button|Body):' if comment else r'(^|\n)Plugin(Button|Body):', tail)
         plugin_def['Head'] = comps[0]+'\n' if comps[0] else ''
         comps = comps[1:]
         while comps:
@@ -1594,7 +1599,7 @@ def parse_plugin(name, text):
             comps = comps[3:]
 
     plugin_def['JS'] = 'Slidoc.PluginDefs.'+text.lstrip()
-    return plugin_def
+    return plugin_name, plugin_def
 
 def plugin_heads(plugin_defs, plugin_loads):
     if not plugin_defs:
@@ -1765,10 +1770,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
-    base_plugin_list = ['code']
+    base_plugin_list = ['code', 'slider']
     base_plugin_defs = {}
     for plugin_name in base_plugin_list:
-        base_plugin_defs[plugin_name] = parse_plugin( plugin_name, md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js') )
+        _, base_plugin_defs[plugin_name] = parse_plugin(md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js'), name= plugin_name)
+    if config.plugins:
+        for plugin_path in config.plugins.split(','):
+            plugin_name, base_plugin_defs[plugin_name] = parse_plugin( md2md.read_file(plugin_path.strip()) )
 
     comb_plugin_defs = {}
     comb_plugin_loads = set()
@@ -2368,6 +2376,7 @@ parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
@@ -2389,7 +2398,7 @@ cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType
 def cmd_args2dict(cmd_args):
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
     cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
-                     'site_url': ''}
+                    'site_url': ''}
     
     # Assign default (non-None) values to arguments not specified anywhere
     for arg_name in cmd_defaults:

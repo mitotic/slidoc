@@ -1,12 +1,16 @@
 code = {
-
+    // Code execution and testing plugin
     setup: { initSetup: function() {Slidoc.log('Slidoc.Plugins.code.setup.initSetup:');},
 	   },
 
     global: { initGlobal: function() {Slidoc.log('Slidoc.Plugins.code.global.initGlobal:');}
 	   },
 
-    disable: function(displayCorrect) {
+    init: function () {
+	Slidoc.log('Slidoc.Plugins.code.init:');
+    },
+
+    disable: function (displayCorrect) {
 	Slidoc.log('Slidoc.Plugins.code.disable:', displayCorrect);
 	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
 	var checkButton = document.getElementById(this.pluginId+'-check-button');
