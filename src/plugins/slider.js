@@ -2,7 +2,7 @@ slider = {
     // Simple slider plugin
 
     init: function(slider) {
-	// slider = { initval:, minval:, maxval:, stepval:, newValue: function(value){...} }
+	// slider = { initval:, minval:, maxval:, stepval:, answer:, newValue: function(value){...} }
 	Slidoc.log('Slidoc.Plugins.slider.init:', arguments, this.slideData);
 	this.slider = slider;
 	this.val = slider.initval || 1;
@@ -14,11 +14,10 @@ slider = {
 
 	this.correctAnswer = null;
 	this.errAnswer = 0.0;
-	if (slider.correct) {
+	if (slider.answer) {
 	    try {
-		// Correct answer: plugin.response();ans+/-err
-		var comps = slider.correct.split(';');
-		comps = ((comps.length == 1) ? comps[0] : comps[1]).split('+/-');
+		// Correct answer: ans+/-err
+		var comps = slider.answer.split('+/-');
 		this.correctAnswer = parseFloat(comps[0]);
 		if (comps.length > 1)
 		    this.errAnswer = parseFloat(comps[1]);

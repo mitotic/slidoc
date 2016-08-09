@@ -1047,14 +1047,14 @@ class SlidocRenderer(MathRenderer):
 
         prefix = ''
         if len(self.choices) == 1:
-            prefix = '</p><blockquote><p>\n'
+            prefix = '</p><blockquote id="%s-choice-block" data-shuffle=""><p>\n' % self.get_slide_id()
             self.choice_end = '</blockquote>\n'
 
         self.cur_choice = name
 
         params = {'id': self.get_slide_id(), 'opt': name}
         if self.options['config'].hide or self.options['config'].pace:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice slidoc-choice" onclick="Slidoc.choiceClick(this, '%(id)s', '%(opt)s');"+'">%(opt)s</span>. ''' % params
+            return prefix+'''<span id="%(id)s-choice-%(opt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice slidoc-choice" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
 
@@ -1093,13 +1093,17 @@ class SlidocRenderer(MathRenderer):
         except Exception, err:
             abort('ERROR Template formatting error in Body for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
         body_div = self.plugin_body_template % tem_params
-        if '%(pluginBody)s' not in content:
-            # By default, insert plugin body after any content
-            content += '%(pluginBody)s'
-        try:
-            plugin_params['pluginContent'] = content.replace('%(pluginBody)s', body_div, 1) % plugin_params
-        except Exception, err:
-            abort('ERROR Template formatting error for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+        if '%(pluginBody)s' in content:
+            # Insert plugin body at the right place within the HTML content
+            try:
+                plugin_params['pluginContent'] = content.replace('%(pluginBody)s', body_div, 1) % plugin_params
+            except Exception, err:
+                abort('ERROR Template formatting error for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+        else:
+            # Save content as raw (pre) text (for plugin processing); insert plugin body after raw content
+            if content:
+                content = ('<pre id="%(pluginId)s-raw-content">' % plugin_params) + mistune.escape(content) + '</pre>'
+            plugin_params['pluginContent'] = content + (body_div % plugin_params)
         return self.plugin_content_template % plugin_params
 
     def slidoc_plugin(self, name, text):
@@ -2357,7 +2361,7 @@ def abort(msg):
         raise Exception(msg)
 
 strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-features_all = ['assessment', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'tex_math', 'untitled_number']
+features_all = ['assessment', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

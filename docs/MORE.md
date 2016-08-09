@@ -120,6 +120,8 @@ The following are defined only for slide instances:
 
 > `this.qattributes`: question attributes objects (for question slides)
 
+> `this.answer`: answer string (or null)
+
 > `this.slideData`: object shared amongst all plugins in this slide
 
 For question slides, the text following `Answer:` will be accessible as
@@ -194,10 +196,13 @@ This embeds the PluginBody HTML at this location, in a `div` with `id`
 set to `pluginId-body`, using templating to change element IDs. Any
 HTML content between PluginBegin/PluginEnd is rendered within a `div`
 with `id` set to `pluginId-content` (for the plugin to access/modify
-during the `setup` instantiation.) In addition to the template [formats](#)
-listed for `PluginBody`, an additional substitution `%(pluginBody)s`
-may be used to specify where to include the HTML for the plugin body
-itself. If omitted, plugin body is appended after the content.
+during the `setup` instantiation.) In addition to the template
+[formats](#) listed for `PluginBody`, an additional format
+`%(pluginBody)s` may be used to specify where to include the plugin
+body in the content (assumed to be HTML). If this format is omitted,
+the content is assumed to be raw text and the plugin body is appended
+after the content. (This raw text may be dynamically converted to HTML
+by the plugin.)
 
 The optional `arguments`, which must all be in the same line, are
 supplied to the `init` call for slide instances. The `init` calls

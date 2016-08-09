@@ -389,6 +389,30 @@ function zeroPad(num, pad) {
 	return ((''+maxInt).slice(1)+num).slice(-pad);
 }
 
+function shuffleArray(array) {
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+    return array;
+}
+
+function letterFromIndex(n) {
+    return String.fromCharCode('A'.charCodeAt(0) + n)
+}
+
+function choiceShuffle(letters, shuffle) {
+    // Shuffle choice letter using string shuffle: choiceShuffle('B', 'DCBA') -> 'C'
+    if (!shuffle)
+	return letters;
+    var shuffled = '';
+    for (var j=0; j<letters.length; j++)
+	shuffled += (shuffle.indexOf(letters[j]) >= 0) ? letterFromIndex(shuffle.indexOf(letters[j])) : letters[j];
+    return shuffled;
+}
+
 function escapeHtml(unsafe) {
     return unsafe
          .replace(/&/g, "&amp;")
@@ -931,8 +955,13 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    defCopy.randomNumber = Slidoc.Random.randomNumber.bind(null, defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
+	    defCopy.answer = null;
+	    if (defCopy.qattributes.correct) {
+		// Correct answer: plugin.response();ans+/-err
+		var comps = defCopy.qattributes.correct.split(';');
+		defCopy.answer = (comps.length == 1) ? comps[0] : comps.slice(1).join(';');
+	    }
 	}
-
     }
     var pluginClass = object2Class(defCopy);
     var pluginInstance = new pluginClass();
@@ -1286,6 +1315,51 @@ function slidocSetupAux(session, feedback) {
 	    var question_attrs = attr_vals[k];
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var slideElem = document.getElementById(slide_id);
+
+	    slideElem.dataset.shuffle = '';
+	    var qAttempted = Sliobj.session.questionsAttempted[question_attrs.qnumber] || null;
+	    var shuffleLetters = qAttempted ? qAttempted.shuffle : '';
+	    if (!shuffleLetters && !qAttempted && !Sliobj.adminState && 'randomize_choice' in Sliobj.params.features && Sliobj.session.paced && (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice')) {
+		// Randomize choice
+		var choices = document.getElementsByClassName(slide_id+"-choice");
+		var letters = [];
+		for (var i=0; i < choices.length; i++)
+		    letters[i] = letterFromIndex(i);
+		shuffleArray(letters);
+		shuffleLetters = letters.join('');
+	    }
+	    if (shuffleLetters && !Sliobj.adminState) {
+		//Slidoc.log('slidocSetupAux: shuffleLetters', question_attrs.qnumber, shuffleLetters);
+		var choiceBlock = document.getElementById(slide_id+'-choice-block');
+		var childNodes = choiceBlock.childNodes;
+	        var choiceElems = {'': []};
+		var key = '';
+		for (var i=0; i < childNodes.length; i++) {
+		    if (childNodes[i].firstElementChild && childNodes[i].firstElementChild.classList.contains('slidoc-choice')) {
+			key = childNodes[i].firstElementChild.dataset.choice;
+			choiceElems[key] = [];
+		    }
+		    choiceElems[key].push(childNodes[i])
+		}
+		if (Object.keys(choiceElems).length-1 != shuffleLetters.length) {
+		    Slidoc.log("slidocSetupAux: ERROR Incorrect number of choice elements for shuffling: Expected "+shuffleLetters.length+" but found "+(Object.keys(choiceElems).length-1));
+		    shuffleLetters = '';
+		} else {
+		    choiceBlock.innerHTML = '';
+		    var key = '';
+		    for (var i=0; i < choiceElems[key].length; i++)
+			choiceBlock.appendChild(choiceElems[key][i]);
+		    for (var j=0; j < shuffleLetters.length; j++) {
+			key = shuffleLetters.charAt(j);
+			for (var i=0; i < choiceElems[key].length; i++) {
+			    if (i == 0)
+				choiceElems[key][i].firstElementChild.textContent = letterFromIndex(j);
+			    choiceBlock.appendChild(choiceElems[key][i]);
+			}
+		    }
+		    choiceBlock.dataset.shuffle = shuffleLetters;
+		}
+	    }
 
 	    // Hide grade entry for questions with zero grade weight (workaround for Weight: being parsed after Answer:)
 	    toggleClass(!question_attrs.gweight, 'slidoc-nogradeelement', slideElem);
@@ -2370,8 +2444,23 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     setAnswerElement(slide_id, '-wrong-mark', '', (qscore === 0) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
     setAnswerElement(slide_id, '-any-mark', '', !isNumber(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
     
+    // Handle randomized choices
+    var disp_response = response;
+    var disp_corr_answer = corr_answer;
+    var shuffleLetters = '';
+    if (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice') {
+	var choiceBlock = document.getElementById(slide_id+'-choice-block');
+	shuffleLetters = choiceBlock.dataset.shuffle;
+	if (shuffleLetters) {
+	    disp_response = choiceShuffle(response, shuffleLetters);
+	    disp_corr_answer = choiceShuffle(corr_answer, shuffleLetters);
+	}
+	if (disp_response && Sliobj.adminState && 'randomize_choice' in Sliobj.params.features)
+	    disp_response += '*';
+    }
+
     // Display correct answer
-    setAnswerElement(slide_id, "-answer-correct", corr_answer||'', corr_answer_html);
+    setAnswerElement(slide_id, "-answer-correct", disp_corr_answer||'', corr_answer_html);
 
     var notes_id = slide_id+"-notes";
     var notes_elem = document.getElementById(notes_id);
@@ -2394,7 +2483,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     } else {
 	if (question_attrs.explain)
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
-	setAnswerElement(slide_id, '-response-span', response);
+	setAnswerElement(slide_id, '-response-span', disp_response);
     }
 
     if (!setup) {
@@ -2407,6 +2496,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 							      resp_type: question_attrs.qtype,
 							      response: response,
 							      explain: explain,
+							      shuffle: shuffleLetters,
 							      plugin: pluginResp||null,
 							      expect: corr_answer,
 							      score: isNumber(qscore) ? qscore : null};
