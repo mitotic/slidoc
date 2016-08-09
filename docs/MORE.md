@@ -49,7 +49,7 @@ Slidoc.PluginDefs.name = {
 The comment portion with `PluginHead`, `PluginButton`, `PluginBody` is
 optional, and may be omitted for simple formula plugins. HTML template
 text included in `PluginBody` and in the content following
-`PluginBegin` (see [Embedding plugins](#)) may contain MathJax as well
+`PluginEmbed` (see [Embedding plugins](#)) may contain MathJax as well
 as python-style format strings of the form `%(plugin*)s` to customize
 element IDs etc.
 
@@ -187,14 +187,14 @@ invoking the `init` method, with optional arguments, as follows:
 OR
 
 ```
-PluginBegin: name.init(arguments)
+PluginEmbed: name.init(arguments)
 HTML template content
 PluginEnd: name
 ```
 
 This embeds the PluginBody HTML at this location, in a `div` with `id`
 set to `pluginId-body`, using templating to change element IDs. Any
-HTML content between PluginBegin/PluginEnd is rendered within a `div`
+HTML content between PluginEmbed/PluginEnd is rendered within a `div`
 with `id` set to `pluginId-content` (for the plugin to access/modify
 during the `setup` instantiation.) In addition to the template
 [formats](#) listed for `PluginBody`, an additional format

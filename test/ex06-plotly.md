@@ -56,7 +56,7 @@ PluginBody:
 PluginEndDef: interactivePlot
 
 
-PluginBegin: interactivePlot.init(0, 10, 2, 0, 10, 0.1)
+PluginEmbed: interactivePlot.init(0, 10, 2, 0, 10, 0.1)
 \(y = x (x - \alpha) (x-5)\)
 
 %(pluginBody)s

@@ -956,7 +956,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	    defCopy.answer = null;
-	    if (defCopy.qattributes.correct) {
+	    if (defCopy.qattributes && defCopy.qattributes.correct) {
 		// Correct answer: plugin.response();ans+/-err
 		var comps = defCopy.qattributes.correct.split(';');
 		defCopy.answer = (comps.length == 1) ? comps[0] : comps.slice(1).join(';');
@@ -1628,6 +1628,11 @@ function preAnswer() {
 	var qentry = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	var slide_id = chapter_id + '-' + zeroPad(qentry.slide, 2);
+	if (Sliobj.adminState && qentry.shuffle) {
+	    var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
+	    if (shuffleDiv)
+		shuffleDiv.innerHTML = '<code>(Shuffled: '+qentry.shuffle+')</code>';
+	}
 	Slidoc.answerClick(null, slide_id, qentry.response, qentry.explain||null, qentry.plugin, qfeedback);
     }
     if (Sliobj.session.submitted)
@@ -2455,8 +2460,6 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 	    disp_response = choiceShuffle(response, shuffleLetters);
 	    disp_corr_answer = choiceShuffle(corr_answer, shuffleLetters);
 	}
-	if (disp_response && Sliobj.adminState && 'randomize_choice' in Sliobj.params.features)
-	    disp_response += '*';
     }
 
     // Display correct answer

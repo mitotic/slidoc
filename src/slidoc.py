@@ -267,7 +267,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
-    plugin_begin  =   re.compile(r'^PluginBegin:\s*(\w+).init\s*\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+    plugin_begin  =   re.compile(r'^PluginEmbed:\s*(\w+).init\s*\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
     plugin_init   =   re.compile(r'^=(\w+).init\s*\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
@@ -647,7 +647,7 @@ class SlidocRenderer(MathRenderer):
 
     # Suffixes of span/div/pre elements that need to be cleaned up
     content_suffixes = ['-response-span', '-correct-mark', '-partcorrect-mark', '-wrong-mark', '-any-mark', '-answer-correct',
-                        '-grade-content','-comments-content', '-response-div'] 
+                        '-grade-content','-comments-content', '-response-div', '-choice-shuffle'] 
     
     def __init__(self, **kwargs):
         super(SlidocRenderer, self).__init__(**kwargs)
@@ -1048,7 +1048,7 @@ class SlidocRenderer(MathRenderer):
         prefix = ''
         if len(self.choices) == 1:
             prefix = '</p><blockquote id="%s-choice-block" data-shuffle=""><p>\n' % self.get_slide_id()
-            self.choice_end = '</blockquote>\n'
+            self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
         self.cur_choice = name
 
