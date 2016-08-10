@@ -680,6 +680,8 @@ function handleResponse(evt) {
 		    // If session not graded, nullify columns to be graded
 		    for (var j=fieldsMin; j < columnHeaders.length; j++)
 			returnValues[j] = null;
+		} else if (!adminUser && gradeDate) {
+		    returnInfo.gradeDate = gradeDate;
 		}
 	    }
 	}

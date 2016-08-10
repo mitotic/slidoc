@@ -389,6 +389,10 @@ function zeroPad(num, pad) {
 	return ((''+maxInt).slice(1)+num).slice(-pad);
 }
 
+function letterFromIndex(n) {
+    return String.fromCharCode('A'.charCodeAt(0) + n)
+}
+
 function shuffleArray(array) {
     for (var i = array.length - 1; i > 0; i--) {
         var j = Math.floor(Math.random() * (i + 1));
@@ -399,17 +403,21 @@ function shuffleArray(array) {
     return array;
 }
 
-function letterFromIndex(n) {
-    return String.fromCharCode('A'.charCodeAt(0) + n)
+function randomLetters(n) {
+    var letters = [];
+    for (var i=0; i < n; i++)
+	letters[i] = letterFromIndex(i);
+    shuffleArray(letters);
+    return letters.join('');
 }
 
 function choiceShuffle(letters, shuffle) {
-    // Shuffle choice letter using string shuffle: choiceShuffle('B', 'DCBA') -> 'C'
+    // Shuffle choice letter using string shuffle: choiceShuffle('B', '1DCBA') -> 'C'
     if (!shuffle)
 	return letters;
     var shuffled = '';
     for (var j=0; j<letters.length; j++)
-	shuffled += (shuffle.indexOf(letters[j]) >= 0) ? letterFromIndex(shuffle.indexOf(letters[j])) : letters[j];
+	shuffled += (shuffle.indexOf(letters[j]) > 0) ? letterFromIndex(shuffle.indexOf(letters[j])-1) : letters[j];
     return shuffled;
 }
 
@@ -487,6 +495,15 @@ Slidoc.docFullScreen = function (exit) {
 	requestFullscreen(document.documentElement);
 }
 
+Slidoc.switchNav = function () {
+    var elem = document.getElementById("slidoc-topnav");
+    if (elem.className === "slidoc-topnav") {
+        elem.className += " slidoc-responsive";
+    } else {
+        elem.className = "slidoc-topnav";
+    }
+}
+
 Slidoc.userLogout = function () {
     if (!window.confirm('Do want to logout user '+GService.gprofile.auth.id+'?'))
 	return false;
@@ -536,6 +553,8 @@ Slidoc.resetPaced = function () {
 }
 
 Slidoc.showConcepts = function (msg) {
+    if (!displayCorrect())
+	return;
     var html = msg || '';
     if (!msg && Sliobj.params.gd_sheet_url)
 	html += 'Click <span class="slidoc-clickable" onclick="Slidoc.showGrades();">here</span> to view other scores/grades<p></p>'
@@ -1128,7 +1147,8 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.gradingUser = 0;
     Sliobj.indexSheet = null;
     Sliobj.scoreSheet = null;
-    Sliobj.gradeDate = '';
+    Sliobj.dueDate = null;
+    Sliobj.gradeDateStr = '';
 
     if (Sliobj.params.gd_sheet_url)
 	Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
@@ -1139,7 +1159,7 @@ Slidoc.slidocReady = function (auth) {
 						     Sliobj.params.indexFields.slice(2), useJSONP);
 	Sliobj.indexSheet.getRow(Sliobj.sessionName, function (result, retStatus) {
 	    if (result && result.gradeDate)
-		Sliobj.gradeDate = result.gradeDate;
+		Sliobj.gradeDateStr = result.gradeDate;
 	});
     }
 
@@ -1185,7 +1205,6 @@ function slidocReadyAux2(auth) {
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
     Sliobj.questionConcepts = [];
-    Sliobj.dueDate = null;
     Sliobj.sidebar = false;
     Sliobj.prevSidebar = false;
 
@@ -1315,51 +1334,6 @@ function slidocSetupAux(session, feedback) {
 	    var question_attrs = attr_vals[k];
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var slideElem = document.getElementById(slide_id);
-
-	    slideElem.dataset.shuffle = '';
-	    var qAttempted = Sliobj.session.questionsAttempted[question_attrs.qnumber] || null;
-	    var shuffleLetters = qAttempted ? qAttempted.shuffle : '';
-	    if (!shuffleLetters && !qAttempted && !Sliobj.adminState && 'randomize_choice' in Sliobj.params.features && Sliobj.session.paced && (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice')) {
-		// Randomize choice
-		var choices = document.getElementsByClassName(slide_id+"-choice");
-		var letters = [];
-		for (var i=0; i < choices.length; i++)
-		    letters[i] = letterFromIndex(i);
-		shuffleArray(letters);
-		shuffleLetters = letters.join('');
-	    }
-	    if (shuffleLetters && !Sliobj.adminState) {
-		//Slidoc.log('slidocSetupAux: shuffleLetters', question_attrs.qnumber, shuffleLetters);
-		var choiceBlock = document.getElementById(slide_id+'-choice-block');
-		var childNodes = choiceBlock.childNodes;
-	        var choiceElems = {'': []};
-		var key = '';
-		for (var i=0; i < childNodes.length; i++) {
-		    if (childNodes[i].firstElementChild && childNodes[i].firstElementChild.classList.contains('slidoc-choice')) {
-			key = childNodes[i].firstElementChild.dataset.choice;
-			choiceElems[key] = [];
-		    }
-		    choiceElems[key].push(childNodes[i])
-		}
-		if (Object.keys(choiceElems).length-1 != shuffleLetters.length) {
-		    Slidoc.log("slidocSetupAux: ERROR Incorrect number of choice elements for shuffling: Expected "+shuffleLetters.length+" but found "+(Object.keys(choiceElems).length-1));
-		    shuffleLetters = '';
-		} else {
-		    choiceBlock.innerHTML = '';
-		    var key = '';
-		    for (var i=0; i < choiceElems[key].length; i++)
-			choiceBlock.appendChild(choiceElems[key][i]);
-		    for (var j=0; j < shuffleLetters.length; j++) {
-			key = shuffleLetters.charAt(j);
-			for (var i=0; i < choiceElems[key].length; i++) {
-			    if (i == 0)
-				choiceElems[key][i].firstElementChild.textContent = letterFromIndex(j);
-			    choiceBlock.appendChild(choiceElems[key][i]);
-			}
-		    }
-		    choiceBlock.dataset.shuffle = shuffleLetters;
-		}
-	    }
 
 	    // Hide grade entry for questions with zero grade weight (workaround for Weight: being parsed after Answer:)
 	    toggleClass(!question_attrs.gweight, 'slidoc-nogradeelement', slideElem);
@@ -1620,27 +1594,108 @@ function preAnswer() {
     // Pre-answer questions (and display notes for those)
     Slidoc.log('preAnswer:');
     var firstSlideId = getVisibleSlides()[0].id;
+    var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
     clearAnswerElements();
+
+    if ('randomize_choice' in Sliobj.params.features) {
+	// Handle choice randomization
+	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
+	    var question_attrs = attr_vals[qnumber-1];
+	    if (!(question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice'))
+		continue;
+	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	    var qAttempted = Sliobj.session.questionsAttempted[qnumber] || null;
+	    var shuffleStr = qAttempted ? qAttempted.shuffle : '';
+	    if (Sliobj.adminState) {
+		if (shuffleStr) {
+		    var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
+		    if (shuffleDiv)
+			shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
+		}
+
+	    } else if (!shuffleStr && !qAttempted && Sliobj.session.paced) {
+		// Randomize choice
+		var choices = document.getElementsByClassName(slide_id+"-choice-elem");
+		shuffleStr = Math.floor(2*Math.random()) + randomLetters(choices.length);
+	    }
+	    shuffleBlock(slide_id, shuffleStr)
+	}
+    }
+
     var keys = Object.keys(Sliobj.session.questionsAttempted);
     for (var j=0; j<keys.length; j++) {
 	var qnumber = keys[j];
-	var qentry = Sliobj.session.questionsAttempted[qnumber];
+	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	var slide_id = chapter_id + '-' + zeroPad(qentry.slide, 2);
-	if (Sliobj.adminState && qentry.shuffle) {
-	    var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
-	    if (shuffleDiv)
-		shuffleDiv.innerHTML = '<code>(Shuffled: '+qentry.shuffle+')</code>';
-	}
-	Slidoc.answerClick(null, slide_id, qentry.response, qentry.explain||null, qentry.plugin, qfeedback);
+	var slide_id = chapter_id + '-' + zeroPad(qAttempted.slide, 2);
+	Slidoc.answerClick(null, slide_id, qAttempted.response, qAttempted.explain||null, qAttempted.plugin, qfeedback);
     }
+
     if (Sliobj.session.submitted)
 	showCorrectAnswers();
 }
 
+function shuffleBlock(slide_id, shuffleStr) {
+    var choiceBlock = document.getElementById(slide_id+'-choice-block');
+    choiceBlock.dataset.shuffle = '';
+    if (!shuffleStr || Sliobj.adminState)
+	return;
+    //Slidoc.log('shuffleBlock: shuffleStr', slide_id, shuffleStr);
+    var childNodes = choiceBlock.childNodes;
+    var blankKey = ' ';
+    var key = blankKey;
+    var choiceElems = {}
+    choiceElems[blankKey] = [];
+    var altChoice = shuffleStr.charAt(0) != '0';
+    for (var i=0; i < childNodes.length; i++) {
+	var childElem = childNodes[i];
+	if (childElem.firstElementChild && childElem.firstElementChild.classList.contains('slidoc-choice')) {
+	    if (key == childElem.firstElementChild.dataset.choice && childElem.firstElementChild.classList.contains('slidoc-choice-elem-alt')) {
+		// Alternative choice
+		if (altChoice)
+		    choiceElems[key] = [];   // Skip first choice
+		else
+		    key = null;  // Skip alternative choice
+	    } else {
+		// First choice
+		key = childElem.firstElementChild.dataset.choice;
+		choiceElems[key] = [];
+	    }
+	}
+	if (key)
+	    choiceElems[key].push(childElem)
+    }
+
+    if (Object.keys(choiceElems).length != shuffleStr.length) {
+	Slidoc.log("slidocSetupAux: ERROR Incorrect number of choice elements for shuffling: Expected "+(shuffleStr.length-1)+" but found "+(Object.keys(choiceElems).length-1));
+	return;
+    }
+
+    choiceBlock.dataset.shuffle = shuffleStr;
+    choiceBlock.innerHTML = '';
+    var key = blankKey;
+    for (var i=0; i < choiceElems[key].length; i++)
+	choiceBlock.appendChild(choiceElems[key][i]);
+    for (var j=1; j < shuffleStr.length; j++) {
+	key = shuffleStr.charAt(j);
+	for (var i=0; i < choiceElems[key].length; i++) {
+	    if (i == 0)
+		choiceElems[key][i].firstElementChild.textContent = letterFromIndex(j-1);
+	    choiceBlock.appendChild(choiceElems[key][i]);
+	}
+    }
+}
+
+function displayCorrect() {
+    // Always display correct answers for submitted and graded sessions
+    return !('delay_answers' in Sliobj.params.features) || (Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr);
+}
+
 function showCorrectAnswers() {
     Slidoc.log('showCorrectAnswers:');
+    if (!displayCorrect())
+	return;
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
@@ -1768,6 +1823,8 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
     if (session || nullReturn) {
 
 	if (retStatus && retStatus.info) {
+	    if (retStatus.info.gradeDate)
+		Sliobj.gradeDateStr = retStatus.info.gradeDate;
 	    if (retStatus.info.dueDate)
 		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err); }
 	    if (retStatus.info.submitTimestamp) {
@@ -2238,8 +2295,12 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    elem.classList.add('slidoc-choice-selected');
     } else if (choice_val) {
 	// Setup
+	var choiceBlock = document.getElementById(slide_id+'-choice-block');
+	var shuffleStr = choiceBlock.dataset.shuffle;
 	for (var j=0; j<choice_val.length; j++) {
             var elemId = slide_id+'-choice-'+choice_val[j];
+	    if (shuffleStr && shuffleStr.charAt(0) == '1')
+		elemId += '-alt';
             var setupElem = document.getElementById(elemId);
             if (!setupElem) {
 		Slidoc.log('Slidoc.choiceClick: Error - Setup failed for choice element '+elemId);
@@ -2329,9 +2390,14 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	}
 	Slidoc.log("Slidoc.answerClick:choice", response);
 	var corr_answer = question_attrs.correct;
-	if (corr_answer) {
+	if (corr_answer && displayCorrect()) {
+	    var choiceBlock = document.getElementById(slide_id+'-choice-block');
+	    var shuffleStr = choiceBlock.dataset.shuffle;
 	    for (var j=0; j<corr_answer.length; j++) {
-		var corr_choice = document.getElementById(slide_id+"-choice-"+corr_answer[j]);
+		var elemId = slide_id+'-choice-'+corr_answer[j];
+		if (shuffleStr && shuffleStr.charAt(0) == '1')
+		    elemId += '-alt';
+		var corr_choice = document.getElementById(elemId);
 		if (corr_choice) {
 		    corr_choice.style['font-weight'] = 'bold';
 		}
@@ -2443,31 +2509,34 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 	    }
 	}
     }
-    // Display correctness of response
-    setAnswerElement(slide_id, '-correct-mark', '', qscore === 1 ? ' '+SYMS['correctMark']+'&nbsp;' : '');
-    setAnswerElement(slide_id, '-partcorrect-mark', '', (isNumber(qscore) && qscore > 0 && qscore < 1) ? ' '+SYMS['partcorrectMark']+'&nbsp;' : '');
-    setAnswerElement(slide_id, '-wrong-mark', '', (qscore === 0) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
-    setAnswerElement(slide_id, '-any-mark', '', !isNumber(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
-    
+
     // Handle randomized choices
     var disp_response = response;
     var disp_corr_answer = corr_answer;
-    var shuffleLetters = '';
+    var shuffleStr = '';
     if (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice') {
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
-	shuffleLetters = choiceBlock.dataset.shuffle;
-	if (shuffleLetters) {
-	    disp_response = choiceShuffle(response, shuffleLetters);
-	    disp_corr_answer = choiceShuffle(corr_answer, shuffleLetters);
+	shuffleStr = choiceBlock.dataset.shuffle;
+	if (shuffleStr) {
+	    disp_response = choiceShuffle(response, shuffleStr);
+	    disp_corr_answer = choiceShuffle(corr_answer, shuffleStr);
 	}
     }
 
-    // Display correct answer
-    setAnswerElement(slide_id, "-answer-correct", disp_corr_answer||'', corr_answer_html);
+    // Display correctness of response
+    if (displayCorrect()) {
+	setAnswerElement(slide_id, '-correct-mark', '', qscore === 1 ? ' '+SYMS['correctMark']+'&nbsp;' : '');
+	setAnswerElement(slide_id, '-partcorrect-mark', '', (isNumber(qscore) && qscore > 0 && qscore < 1) ? ' '+SYMS['partcorrectMark']+'&nbsp;' : '');
+	setAnswerElement(slide_id, '-wrong-mark', '', (qscore === 0) ? ' '+SYMS['wrongMark']+'&nbsp;' : '');
+	setAnswerElement(slide_id, '-any-mark', '', !isNumber(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
+    
+	// Display correct answer
+	setAnswerElement(slide_id, "-answer-correct", disp_corr_answer||'', corr_answer_html);
+    }
 
     var notes_id = slide_id+"-notes";
     var notes_elem = document.getElementById(notes_id);
-    if (notes_elem) {
+    if (notes_elem && displayCorrect()) {
 	// Display of any notes associated with this question
 	Slidoc.idDisplay(notes_id);
 	notes_elem.style.display = 'inline';
@@ -2479,7 +2548,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
     slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
-	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', qscore !== 1);
+	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', displayCorrect() && qscore !== 1);
 
     if (question_attrs.qtype.slice(0,5) == 'text/') {
 	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
@@ -2499,7 +2568,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 							      resp_type: question_attrs.qtype,
 							      response: response,
 							      explain: explain,
-							      shuffle: shuffleLetters,
+							      shuffle: shuffleStr,
 							      plugin: pluginResp||null,
 							      expect: corr_answer,
 							      score: isNumber(qscore) ? qscore : null};
@@ -2595,7 +2664,7 @@ Slidoc.showScore = function () {
     if (!scoreElem)
 	return;
     if (Sliobj.session.questionsCount) {
-	if (Sliobj.session.submitted && Sliobj.params.scoreWeight)
+	if (Sliobj.session.submitted && Sliobj.params.scoreWeight && displayCorrect())
 	    scoreElem.textContent = Sliobj.session.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
 	else
 	    scoreElem.textContent = Sliobj.session.questionsCount+'/'+Sliobj.params.questionsMax;
@@ -2680,8 +2749,8 @@ Slidoc.submitStatus = function () {
 	    html += ' Click <span class="slidoc-clickable" onclick="Slidoc.submitSession();">here</span> to submit session'+((Sliobj.session.lastSlide < getVisibleSlides().length) ? ' without reaching the last slide':'');
     }
     if (Sliobj.adminState) {
-	if (Sliobj.gradeDate)
-	    html += '<hr>Grades released to students at '+Sliobj.gradeDate;
+	if (Sliobj.gradeDateStr)
+	    html += '<hr>Grades released to students at '+Sliobj.gradeDateStr;
 	else
 	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span';
     }

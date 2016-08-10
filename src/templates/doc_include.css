@@ -57,6 +57,8 @@ span#slidoc-test-status {color: red; font-weight: bold; background: #888;}
 .slidoc-top-right    { z-index: 1000; position: fixed; right: 20px; top: 15px; font-size: 1.2em; opacity: 0.8; }
 .slidoc-top-left     { z-index: 3300; position: fixed; left: 10px; top: 15px; font-size: 1.2em; opacity: 0.9; }
 
+.slidoc-top-right.slidoc-topnav-hide { display: none; }
+
 body:not(.slidoc-admin-view):not(.slidoc-incremental-view) .slidoc-slide-nav-down { display: none; }
 
 body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }

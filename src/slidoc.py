@@ -1035,15 +1035,22 @@ class SlidocRenderer(MathRenderer):
 
     def slidoc_choice(self, name, star):
         value = name if star else ''
+        alt_choice = False
         if not self.choices:
             if name != 'A':
                 return name+'..'
-            self.choices = [value]
+            self.choices = [ [value, alt_choice] ]
         else:
-            if ord(name) != ord('A')+len(self.choices):
+            if ord(name) == ord('A')+len(self.choices):
+                self.choices.append([value, alt_choice])
+            elif ord(name) == ord('A')+len(self.choices)-1 and not self.choices[-1][1] and 'randomize_choice' in self.options['config'].features:
+                # Alternative choice
+                alt_choice = True
+                self.choices[-1][0] = self.choices[-1][0] or value
+                self.choices[-1][1] = alt_choice
+            else:
                 # Out of sequence choice; ignore
                 return name+'..'
-            self.choices.append(value)
 
         prefix = ''
         if len(self.choices) == 1:
@@ -1052,9 +1059,9 @@ class SlidocRenderer(MathRenderer):
 
         self.cur_choice = name
 
-        params = {'id': self.get_slide_id(), 'opt': name}
+        params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
         if self.options['config'].hide or self.options['config'].pace:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice slidoc-choice" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
+            return prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
 
@@ -1179,7 +1186,7 @@ class SlidocRenderer(MathRenderer):
         if self.choices:
             if not qtype or qtype in ('choice', 'multichoice'):
                 # Correct choice(s)
-                choices_str = ''.join(self.choices)
+                choices_str = ''.join(x[0] for x in self.choices)
                 if choices_str:
                     text = choices_str
                 else:
@@ -1628,6 +1635,35 @@ def plugin_heads(plugin_defs, plugin_loads):
         plugin_code.append('<script>(function() {\n'+plugin_defs[plugin_name]['JS'].strip()+'\n})();</script>\n')
     return ''.join(plugin_code)
 
+def gen_topnav(opts, dir=''):
+    if opts in ('dirs', 'files'):
+        # Generate top navigation menu from list of subdirectories, or list of HTML files
+        _, subdirs, subfiles = next(os.walk(dir or '.'))
+        if opts == 'dirs':
+            names = [(x, x+'/index.html') for x in subdirs if x[0] not in '._' and not x.startswith('image')]
+        else:
+            names = [(os.path.splitext(x)[0], x) for x in subfiles if x[0] != '_' and (x.endswith('.htm') or x.endswith('.html'))]
+        names.sort()
+        names = [ ('Home', '/') ] + names
+    else:
+        # Generate menu using basenames of provided paths
+        names = []
+        for opt in opts.split(','):
+            if opt == '/' or opt == '/index.html':
+                names.append( ('Home', '/') )
+            elif opt.endswith('/index.html'):
+                names.append( (os.path.basename(opt[:-len('/index.html')]), opt) )
+            else:
+                names.append( (os.path.splitext(os.path.basename(opt))[0], opt) )
+                            
+    elems = []
+    for basename, fullname in names:
+        elems.append('<li><a href="%s">%s</a></li>' % (fullname, basename))
+    topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
+    topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" style="font-size:15px;" onclick="Slidoc.switchNav()">&#9776;</a></li>'
+    topnav_html += '</ul>\n'
+    return topnav_html
+
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1840,6 +1876,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if combined_file:
         combined_html.append( '<div id="slidoc-sidebar-right-container" class="slidoc-sidebar-right-container">\n' )
         combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
+
     fprefix = None
     math_found = False
     pagedown_load = False
@@ -1896,6 +1933,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['sessionPrereqs'] =  (file_config.prereqs or '') if config.prereqs is None else config.prereqs
             js_params['sessionRevision'] = (file_config.revision or '') if config.revision is None else config.revision
                 
+            topnav_opts = (file_config.topnav or '') if config.topnav is None else config.topnav
             gd_sheet_url = (file_config.gsheet_url or '') if config.gsheet_url is None else config.gsheet_url
             js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['fileName'] = fname
@@ -1994,7 +2032,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
-                      'skulpt_js': Skulpt_js if renderer.load_python else ''}
+                      'skulpt_js': Skulpt_js if renderer.load_python else '',
+                      'top_nav': gen_topnav(topnav_opts, config.dest_dir) if topnav_opts else '',
+                      'top_nav_hide': ' slidoc-topnav-hide' if topnav_opts else ''}
         mid_params.update(SYMS)
 
         if config.dry_run:
@@ -2321,7 +2361,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'pace', 'prereqs', 'revision'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'pace', 'prereqs', 'revision', 'topnav'])
     
 def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), verbose=False):
     # Read first line of first file and rewind it
@@ -2361,7 +2401,7 @@ def abort(msg):
         raise Exception(msg)
 
 strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
-features_all = ['assessment', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
+features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
@@ -2390,6 +2430,7 @@ parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', h
 parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
 parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
+parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, or pathnames)')
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)

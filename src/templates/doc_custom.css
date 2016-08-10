@@ -189,3 +189,54 @@ body.slidoc-sidebar-view .slidoc-sidebar-right-wrapper {
     max-width: 800px;
     margin: auto;
 }
+
+
+/* Top nav bar (responsive) http://www.w3schools.com/howto/howto_js_topnav.asp */
+ul.slidoc-topnav {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #333;
+}
+
+ul.slidoc-topnav li {float: left;}
+
+ul.slidoc-topnav li a {
+  display: inline-block;
+  color: #f2f2f2;
+  text-align: center;
+  padding: 14px 16px;
+  text-decoration: none;
+  transition: 0.3s;
+  font-size: 17px;
+}
+
+ul.slidoc-topnav li a:hover {background-color: #555;}
+
+ul.slidoc-topnav li.slidoc-nav-icon {display: none;}
+
+@media screen and (max-width:680px) {
+  ul.slidoc-topnav li:not(:first-child) {display: none;}
+  ul.slidoc-topnav li.slidoc-nav-icon {
+    float: right;
+    display: inline-block;
+  }
+}
+
+@media screen and (max-width:680px) {
+  ul.slidoc-topnav.slidoc-responsive {position: relative;}
+  ul.slidoc-topnav.slidoc-responsive li.slidoc-nav-icon {
+    position: absolute;
+    right: 0;
+    top: 0;
+  }
+  ul.slidoc-topnav.slidoc-responsive li {
+    float: none;
+    display: inline;
+  }
+  ul.slidoc-topnav.slidoc-responsive li a {
+    display: block;
+    text-align: left;
+  }
+}

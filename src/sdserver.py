@@ -10,20 +10,22 @@ sdserver: Tornado-based web server to serve Slidoc html files (with authenticati
         Also specify --gsheet_url=http:/hostname/_proxy/ (for slidoc.py) to re-direct slidoc.py setup calls to proxy as well.
 
 Command arguments:
-    port: Web server port number to listen on (default=8888)
-    site_label: Site label, e.g., 'calc101'
-    static: path to static files directory containing Slidoc html files (default='static')
-    hmac_key: HMAC key for admin user
-    proxy: Enable proxy mode (
-    gsheet_url: Google sheet URL (required if proxy and not debugging)
     debug: Enable debug mode (can be used for testing local proxy data)
+    gsheet_url: Google sheet URL (required if proxy and not debugging)
+    hmac_key: HMAC key for admin user (enables login protection for website)
+    port: Web server port number to listen on (default=8888)
+    private: path component string identifying private files (if omitted, entire website is login protected if hmac_key is specified)
+    proxy: Enable proxy mode (cache copies of Google Sheets)
+    site_label: Site label, e.g., 'calc101'
+    static_dir: path to static files directory containing Slidoc html files (default='static')
+    twitter: path to Twitter JSON config file (to sign in via Twitter)
     xsrf: Enable XSRF cookies for security
 
 Twitter auth workflow:
   - Register your application with Twitter at http://twitter.com/apps, using the Callback URL http://website/_oauth/twitter
   - Then copy your Consumer Key and Consumer Secret to file twitter.json
      {"consumer_key": ..., "consumer_secret": ...}
-     sudo python sdserver.py --hmac_key=... --gsheet_url=... --static=... --port=80 --proxy --site_label=... --twitter=twitter.json
+     sudo python sdserver.py --hmac_key=... --gsheet_url=... --static_dir=... --port=80 --proxy --site_label=... --twitter=twitter.json
   - Create an initial Slidoc, say ex00-setup.md
   - Ask all users to ex00-setup.html using their Twitter login
   - In Google Docs, copy the first four columns of the ex00-setup sheet to a new roster_slidoc sheet
@@ -73,7 +75,6 @@ class BaseHandler(tornado.web.RequestHandler):
 
 
 class HomeHandler(BaseHandler):
-    @tornado.web.authenticated
     def get(self):
         self.redirect("/index.html")
 
@@ -186,6 +187,8 @@ class AuthStaticFileHandler(tornado.web.StaticFileHandler):
             self.clear_cookie(USER_COOKIE_SECURE)
             self.clear_cookie(SERVER_COOKIE)
             return "noauth"
+        if options.private and options.private not in self.request.path:
+            return "noauth"
         user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         return user_id or None
 
@@ -290,7 +293,7 @@ class Application(tornado.web.Application):
                           (r"/(_stats)", ActionHandler),
                            ]
 
-        handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static}) ]
+        handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static_dir}) ]
 
         super(Application, self).__init__(handlers, **settings)
 
@@ -301,7 +304,8 @@ def main():
     global Login_url
     define("port", default=8888, help="Web server port", type=int)
     define("site_label", default="Slidoc", help="Site label")
-    define("static", default="static", help="Path to static files directory")
+    define("private", default="", help="Private path component (to protect with login)")
+    define("static_dir", default="static", help="Path to static files directory")
     define("hmac_key", default="", help="HMAC key for admin user")
     define("gsheet_url", default="", help="Google sheet URL")
     define("twitter", default="", help="'consumer_key,consumer_secret' OR JSON config file for twitter authentication")
