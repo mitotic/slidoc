@@ -51,7 +51,7 @@ SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'leftpair': '&#8647;', 'rightpair': '&#8649;'}
+        'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -1492,8 +1492,11 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
-        sidebar_html = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
-        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])+'</div>\n'
+        ###sidebar_html = click_span(SYMS['threebars'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
+        ###slide_html = SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])
+        sidebar_html = ''
+        slide_html = ''
+        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+slide_html+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + ('<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) if renderer.slide_number > 1 else '') + '</div>\n'
 
@@ -1640,9 +1643,9 @@ def gen_topnav(opts, dir=''):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
         _, subdirs, subfiles = next(os.walk(dir or '.'))
         if opts == 'dirs':
-            names = [(x, x+'/index.html') for x in subdirs if x[0] not in '._' and not x.startswith('image')]
+            names = [(x, x+'/index.html') for x in subdirs if x[0] not in '._']
         else:
-            names = [(os.path.splitext(x)[0], x) for x in subfiles if x[0] != '_' and (x.endswith('.htm') or x.endswith('.html'))]
+            names = [(os.path.splitext(x)[0], x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
         names.sort()
         names = [ ('Home', '/') ] + names
     else:
@@ -1660,7 +1663,7 @@ def gen_topnav(opts, dir=''):
     for basename, fullname in names:
         elems.append('<li><a href="%s">%s</a></li>' % (fullname, basename))
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
-    topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" style="font-size:15px;" onclick="Slidoc.switchNav()">&#9776;</a></li>'
+    topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" style="font-size:15px;" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html
 
@@ -1721,6 +1724,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     cmd_pace_args = config.pace    # If None, will be initialized to file-specific values
 
+    topnav_opts = ''
     gd_sheet_url = ''
     if not config.separate:
         # Combined file  (these will be set later for separate files)
@@ -1757,7 +1761,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         config.strip.add('chapters')
 
     if config.dest_dir and not os.path.isdir(config.dest_dir):
-        abort("Destination directory %s does not exist" % config.dest_dir)
+        os.makedirs(config.dest_dir)
+
     dest_dir = config.dest_dir+"/" if config.dest_dir else ''
     templates = {}
     for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_google.js', 'doc_test.js',
@@ -2033,7 +2038,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
-                      'top_nav': gen_topnav(topnav_opts, config.dest_dir) if topnav_opts else '',
+                      'top_nav': gen_topnav(topnav_opts) if topnav_opts else '',
                       'top_nav_hide': ' slidoc-topnav-hide' if topnav_opts else ''}
         mid_params.update(SYMS)
 
@@ -2162,9 +2167,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if combined_file:
-                toc_insert = click_span(SYMS['rightpair'], "Slidoc.sidebarDisplay();",
+                toc_insert = click_span(SYMS['threebars'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
-                toc_insert = click_span(SYMS['leftpair'], "Slidoc.sidebarDisplay();",
+                toc_insert = click_span(SYMS['threebars'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
@@ -2276,7 +2281,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         comb_params = {'session_name': out_name,
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
-                       'skulpt_js': Skulpt_js if skulpt_load else ''}
+                       'skulpt_js': Skulpt_js if skulpt_load else '',
+                       'top_nav': '', 'top_nav_hide': ''}
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
@@ -2414,7 +2420,7 @@ parser.add_argument('--gsheet_login', metavar='HMAC_KEY,CLIENT_ID,API_KEY', help
 parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
-parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: images)')
+parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: _images)')
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
@@ -2442,7 +2448,7 @@ cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType
 
 def cmd_args2dict(cmd_args):
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
-    cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': 'images', 'image_url': '',
+    cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', 'image_url': '',
                     'site_url': ''}
     
     # Assign default (non-None) values to arguments not specified anywhere

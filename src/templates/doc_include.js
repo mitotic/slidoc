@@ -51,6 +51,8 @@ Sliobj.incrementPlugins = null;
 Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
 
+Sliobj.seedOffset = {randomChoice: 1, plugins: 1000};  // Used to offset the session randomSeed to generate new seeds
+
 ////////////////////////////////
 // Section 3: Scripted testing
 ////////////////////////////////
@@ -393,9 +395,10 @@ function letterFromIndex(n) {
     return String.fromCharCode('A'.charCodeAt(0) + n)
 }
 
-function shuffleArray(array) {
+function shuffleArray(array, randFunc) {
+    randFunc = randFunc || Math.random;
     for (var i = array.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i + 1));
+        var j = Math.floor(randFunc() * (i + 1));
         var temp = array[i];
         array[i] = array[j];
         array[j] = temp;
@@ -403,11 +406,11 @@ function shuffleArray(array) {
     return array;
 }
 
-function randomLetters(n) {
+function randomLetters(n, randFunc) {
     var letters = [];
     for (var i=0; i < n; i++)
 	letters[i] = letterFromIndex(i);
-    shuffleArray(letters);
+    shuffleArray(letters, randFunc);
     return letters.join('');
 }
 
@@ -959,19 +962,20 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 
 	defCopy.persist = Sliobj.session.plugins[pluginName];
 
+	var pluginNumber = Sliobj.activePlugins[pluginName].number;
 	if (!slide_id) {
 	    // Global seed for all instances of the plugin
 	    defCopy.global = null;
 	    defCopy.slideId = '';
-	    defCopy.randomSeed = Sliobj.session.randomSeed + Sliobj.activePlugins[pluginName].number;
-	    defCopy.randomNumber = Slidoc.Random.randomNumber.bind(null, defCopy.randomSeed);
+	    defCopy.randomSeed = getRandomSeed(Sliobj.seedOffset.plugins + pluginNumber);
+	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	} else {
 	    // Seed for each slide instance of the plugin
 	    defCopy.global = Slidoc.Plugins[pluginName][''];
 	    defCopy.slideId = slide_id;
 	    var comps = parseSlideId(slide_id);
-	    defCopy.randomSeed = defCopy.global.randomSeed + 256*((1+comps[1])*256 + comps[2]);
-	    defCopy.randomNumber = Slidoc.Random.randomNumber.bind(null, defCopy.randomSeed);
+	    defCopy.randomSeed = getRandomSeed(Sliobj.seedOffset.plugins + pluginNumber + 256*((1+comps[1])*256 + comps[2]));
+	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	    defCopy.answer = null;
@@ -1461,7 +1465,6 @@ function initSessionPlugins(session) {
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginName = Sliobj.pluginList[j];
 	var pluginInstance = createPluginInstance(pluginName);
-	Slidoc.Random.setSeed(pluginInstance.randomSeed);
 	Slidoc.PluginManager.optCall(pluginInstance, 'initGlobal');
     }
 
@@ -1487,7 +1490,7 @@ function initSessionPlugins(session) {
 	Sliobj.slidePlugins[slide_id].push(pluginInstance);
 	if ('incrementSlide' in pluginInstance)
 	    Sliobj.incrementPlugins[slide_id] = pluginInstance;
-	Slidoc.Random.setSeed(pluginInstance.randomSeed);
+
 	var button = Sliobj.activePlugins[pluginName].button[slide_id];
 	if (button)
 	    Sliobj.buttonPlugins[slide_id] = pluginInstance;
@@ -1600,6 +1603,7 @@ function preAnswer() {
 
     if ('randomize_choice' in Sliobj.params.features) {
 	// Handle choice randomization
+	var randFunc = makeRandomFunction(getRandomSeed(Sliobj.seedOffset.randomChoice));
 	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	    var question_attrs = attr_vals[qnumber-1];
 	    if (!(question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice'))
@@ -1617,7 +1621,8 @@ function preAnswer() {
 	    } else if (!shuffleStr && !qAttempted && Sliobj.session.paced) {
 		// Randomize choice
 		var choices = document.getElementsByClassName(slide_id+"-choice-elem");
-		shuffleStr = Math.floor(2*Math.random()) + randomLetters(choices.length);
+		shuffleStr = Math.floor(2*randFunc());
+		shuffleStr += randomLetters(choices.length, randFunc);
 	    }
 	    shuffleBlock(slide_id, shuffleStr)
 	}
@@ -1641,7 +1646,7 @@ function shuffleBlock(slide_id, shuffleStr) {
     choiceBlock.dataset.shuffle = '';
     if (!shuffleStr || Sliobj.adminState)
 	return;
-    //Slidoc.log('shuffleBlock: shuffleStr', slide_id, shuffleStr);
+    Slidoc.log('shuffleBlock: shuffleStr', slide_id, shuffleStr);
     var childNodes = choiceBlock.childNodes;
     var blankKey = ' ';
     var key = blankKey;
@@ -1712,6 +1717,15 @@ function showCorrectAnswers() {
 /////////////////////////////////////////////
 // Section 15: Session data getting/putting
 /////////////////////////////////////////////
+
+function getRandomSeed(offset) {
+    return (Sliobj.session.randomSeed+offset) % Math.pow(2,4*8);
+}
+
+function makeRandomFunction(seed) {
+    Slidoc.Random.setSeed(seed);
+    return Slidoc.Random.randomNumber.bind(null, seed);
+}
 
 function sessionCreate() {
     var randomSeed = Slidoc.Random.getRandomSeed();
