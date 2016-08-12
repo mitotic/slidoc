@@ -1026,7 +1026,7 @@ information may also be found in this
 After attaching the script, you can use the *Current web app URL* for
 `sheets101` in the command line to generate the HTML documents:
 
-    slidoc.py --google_docs=spreadsheet_url ... 
+    slidoc.py --gsheet_url=spreadsheet_url ... 
 
 By default, users will use a unique user name or other identifier
 (such as the email address) when they start a paced session. The
@@ -1039,13 +1039,13 @@ more).  The spreadsheet will display a `Slidoc` menu for managing
 users and analyzing sessions.
 
 When you set up `slidoc_sheets.js`, you have the option of specifying
-a secret HMAC key that you can use to generate login and/or late
+a secret Digest Authentication key that you can use to generate login and/or late
 submission tokens. The secret can be any printable character string
 (usually without spaces). If you use a secret key, include it in the
 `slidoc` command, and use the `sliauth.py` command to generate access
 tokens:
 
-    slidoc.py --google_docs=spreadsheet_url,key --due_date 2016-05-03T23:59 ...
+    slidoc.py --gsheet_url=spreadsheet_url --gsheet_login=digest_auth_key --due_date 2016-05-03T23:59 ...
     sliauth.py -k key user_name(s) # For login tokens 
     sliauth.py -k key -s session_name --due_date 2016-05-10T23:59 user_name(s) # For late submission tokens 
 
@@ -1055,7 +1055,7 @@ generate and email login tokens and late submission tokens to users
 submission token `none` to submit late without credit.
 
 Submitted sessions can be graded by logging in with user name `admin`
-and HMAC key as the token. Change the `gradeDate` entry in the
+and Digest Authentication Key as the token. Change the `gradeDate` entry in the
 `sessions_slidoc` sheet to a non-null date value to release the grades
 to users after completion of grading.
 
@@ -1064,7 +1064,7 @@ their Google account. You will need to create a Web Application attached to your
 Google account, obtain its `ClientID` and `API key` and use it as
 follows:
 
-    slidoc.py --google_docs=spreadsheet_url,hmac_key,client_id,apiKey ...
+    slidoc.py --gsheet_url=spreadsheet_url --gsheet_login=digest_auth_key,client_id,apiKey ...
 
 [Getting access keys for your application:](https://developers.google.com/api-client-library/javascript/features/authentication#overview)
 To get access keys, go to the

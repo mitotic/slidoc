@@ -369,7 +369,7 @@ function onreadystateaux() {
 	} else {
 	    if (!getServerCookie())
 		Slidoc.reportEvent('loginPrompt');
-	    GService.gprofile.promptUserInfo();
+	    GService.gprofile.promptUserInfo(Sliobj.params.authType);
 	}
     } else {
 	Slidoc.slidocReady(null);
@@ -516,7 +516,7 @@ Slidoc.userLogout = function () {
 
 Slidoc.userLogin = function () {
     Slidoc.log('Slidoc.userLogin:');
-    GService.gprofile.promptUserInfo(GService.gprofile.auth.id, '', Slidoc.userLoginCallback.bind(null, null));
+    GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id, '', Slidoc.userLoginCallback.bind(null, null));
 }
 
 Slidoc.userLoginCallback = function (retryCall, auth) {
@@ -1655,21 +1655,22 @@ function shuffleBlock(slide_id, shuffleStr) {
     var altChoice = shuffleStr.charAt(0) != '0';
     for (var i=0; i < childNodes.length; i++) {
 	var childElem = childNodes[i];
-	if (childElem.firstElementChild && childElem.firstElementChild.classList.contains('slidoc-choice')) {
-	    if (key == childElem.firstElementChild.dataset.choice && childElem.firstElementChild.classList.contains('slidoc-choice-elem-alt')) {
+	if (childElem.firstElementChild && childElem.firstElementChild.classList) {
+	    var classList = childElem.firstElementChild.classList;
+	    if (classList.contains('slidoc-choice-elem-alt') || classList.contains('slidoc-choice-question-alt')) {
 		// Alternative choice
 		if (altChoice)
 		    choiceElems[key] = [];   // Skip first choice
 		else
-		    key = null;  // Skip alternative choice
-	    } else {
+		    key = null;              // Skip alternative choice
+	    } else if (classList.contains('slidoc-choice-elem')) {
 		// First choice
 		key = childElem.firstElementChild.dataset.choice;
 		choiceElems[key] = [];
 	    }
 	}
 	if (key)
-	    choiceElems[key].push(childElem)
+	    choiceElems[key].push(childElem);
     }
 
     if (Object.keys(choiceElems).length != shuffleStr.length) {
@@ -1890,18 +1891,18 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 	if (err_msg) {
 	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
 	    if (err_type == 'NEED_ROSTER_ENTRY') {
-		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
+		GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id,
 					      err_info+'. Please enter a valid userID (or contact instuctor).',
 					      Slidoc.userLoginCallback.bind(null, retryCall));
 		return;
 	    } else if (err_type == 'INVALID_ADMIN_TOKEN') {
-		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
+		GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id,
 					      'Invalid admin token. Please re-enter',
 					      Slidoc.userLoginCallback.bind(null, retryCall));
 		return;
 
 	    } else if (err_type == 'NEED_TOKEN' || err_type == 'INVALID_TOKEN') {
-		GService.gprofile.promptUserInfo(GService.gprofile.auth.id,
+		GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id,
 					      'Invalid username/token. Please re-enter',
 					      Slidoc.userLoginCallback.bind(null, retryCall));
 		return;
@@ -2270,7 +2271,7 @@ Slidoc.PluginRetry = function (msg) {
 
 function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
     if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
-	alert('Please switch to slide view to answer questions in paced mode');
+	alert('To answer questions in paced mode, please switch to slide view (Escape key or square icon at bottom left)');
 	return false;
     }
     var textareaElem = document.getElementById(slide_id+'-answer-textarea');
@@ -2959,7 +2960,7 @@ Slidoc.startPaced = function () {
     // Allow forward link only if no try requirement
     toggleClassAll(!Sliobj.params.tryCount, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
 
-    var startMsg = 'Starting'+((Sliobj.session.paceLevel>1)?' strictly':'')+' paced slideshow '+Sliobj.sessionName+':<br>';
+    var startMsg = 'Starting'+((Sliobj.session.paceLevel>1)?' strictly':'')+' paced session '+Sliobj.sessionName+':<br>';
     if (Sliobj.params.questionsMax)
 	startMsg += '&nbsp;&nbsp;<em>There are '+Sliobj.params.questionsMax+' questions.</em><br>';
     if (Sliobj.params.gd_sheet_url) {
@@ -3024,7 +3025,7 @@ function showCompletionStatus() {
 		Sliobj.closePopup(true);
 		msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.session.submitted+'<br>';
 		if (!Sliobj.session.paced)
-		    msg += 'You may now exit the slideshow and access this document normally.<br>';
+		    msg += 'You may now exit slide view and access this document normally.<br>';
 	    } else {
 		alert('Completed session submitted successfully to Google Docs at '+Sliobj.session.submitted);
 		return;
@@ -3033,7 +3034,7 @@ function showCompletionStatus() {
 	    msg += 'Do not close this popup. Wait for confirmation that session has been submitted to Google Docs<br>';
 	}
     } else if (!Sliobj.session.paced) {
-	msg += 'You may now exit the slideshow and access this document normally.<br>';
+	msg += 'You may now exit slide view and access this document normally.<br>';
     }
     Slidoc.showConcepts(msg);
 }

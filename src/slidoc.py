@@ -370,7 +370,7 @@ class MathBlockLexer(mistune.BlockLexer):
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
-    slidoc_choice = re.compile(r"^ {0,3}([a-pA-P])(\*)?\.\. +")
+    slidoc_choice = re.compile(r"^ {0,3}([a-qA-Q])(\*)?\.\. +")
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
@@ -666,6 +666,7 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
+        self.sheet_attributes = {'columnAccess':[]}
         self.slide_number = 0
 
         self._new_slide()
@@ -686,7 +687,7 @@ class SlidocRenderer(MathRenderer):
         self.qtypes.append('')
         self.choices = None
         self.choice_end = None
-        self.cur_choice = ''
+        self.choice_questions = 0
         self.cur_qtype = ''
         self.cur_header = ''
         self.cur_answer = False
@@ -823,6 +824,9 @@ class SlidocRenderer(MathRenderer):
                         self.max_fields += [self.questions[-1]['gweight']]
                     self.grade_fields += [qno+'_comments']
                     self.max_fields += ['']
+                    if 'share' in self.slide_plugin_embeds:
+                        # Share plugin embedded; share response/explain columns
+                        self.sheet_attributes['columnAccess'] += fields
 
             if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
@@ -1036,7 +1040,15 @@ class SlidocRenderer(MathRenderer):
     def slidoc_choice(self, name, star):
         value = name if star else ''
         alt_choice = False
-        if not self.choices:
+        if name == 'Q':
+            if self.choice_questions == 0:
+                self.choice_questions = 1
+            elif self.choice_questions == 1:
+                self.choice_questions = 2
+                alt_choice = True
+            else:
+                return name+'..'
+        elif not self.choices:
             if name != 'A':
                 return name+'..'
             self.choices = [ [value, alt_choice] ]
@@ -1053,14 +1065,14 @@ class SlidocRenderer(MathRenderer):
                 return name+'..'
 
         prefix = ''
-        if len(self.choices) == 1:
+        if not self.choice_end:
             prefix = '</p><blockquote id="%s-choice-block" data-shuffle=""><p>\n' % self.get_slide_id()
             self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
-        self.cur_choice = name
-
         params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
-        if self.options['config'].hide or self.options['config'].pace:
+        if name == 'Q':
+            return prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''' % params
+        elif self.options['config'].hide or self.options['config'].pace:
             return prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
@@ -1538,11 +1550,11 @@ Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect'
                   'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'sessionWeight',
                 'scoreWeight', 'gradeWeight', 'questionsMax', 'fieldsMin', 'questions', 'answers',
-                'primary_qconcepts', 'secondary_qconcepts']
+                'primary_qconcepts', 'secondary_qconcepts', 'attributes']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
-                         p_concepts, s_concepts):
+                         p_concepts, s_concepts, sheet_attributes):
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
 
@@ -1563,8 +1575,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                 ','.join([x['qtype'] for x in questions]),
                 '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
                 '; '.join(sort_caseless(list(p_concepts))),
-                '; '.join(sort_caseless(list(s_concepts)))
-                                ]
+                '; '.join(sort_caseless(list(s_concepts))),
+                json.dumps(sheet_attributes) ]
     post_params = {'sheet': INDEX_SHEET, 'admin': user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
                   }
@@ -1711,7 +1723,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                  'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
-                 'features': {} }
+                 'authType': '', 'features': {} }
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
     js_params['remoteLogLevel'] = config.remote_logging
@@ -1738,7 +1750,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         config.pace = None
         config.features = None
 
-
     gd_hmac_key = None             # Specify --gsheet_login='' to use Google Sheets without authentication
     if config.gsheet_login is not None:
         comps = config.gsheet_login.split(',')
@@ -1746,6 +1757,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if len(comps) > 1:
             js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
     
+    if gd_hmac_key and not config.no_auth:
+        js_params['authType'] = 'digest'
+
     nb_site_url = config.site_url
     if combined_file:
         config.site_url = ''
@@ -2083,7 +2097,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if gd_hmac_key:
                 update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                       due_date, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
-                                      renderer.qconcepts[0], renderer.qconcepts[1])
+                                      renderer.qconcepts[0], renderer.qconcepts[1], renderer.sheet_attributes)
 
             if gd_sheet_url and (gd_hmac_key or not return_html):
                 create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
@@ -2406,7 +2420,18 @@ def abort(msg):
     else:
         raise Exception(msg)
 
+# Strip options
+# For pure web pages, strip=chapters,contents,navigate, sections
 strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
+
+# Features
+#   delay_answers: Correct answers and score are hidden from users until session is graded
+#   grade_response: Grade text responses
+#   override: Force command line feature set to override file-specific settings (by default, the features are merged)
+#   progress_bar: Display progress bar during pace delays
+#   quote_response: Display user response as quote (for grading)
+#   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
+#   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
@@ -2416,7 +2441,7 @@ parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or
 parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
-parser.add_argument('--gsheet_login', metavar='HMAC_KEY,CLIENT_ID,API_KEY', help='hmac_key[,client_id,api_key] (authenticate via Google Docs)')
+parser.add_argument('--gsheet_login', metavar='DIGEST_AUTH_KEY,CLIENT_ID,API_KEY', help='digest_auth_key[,client_id,api_key] (authenticate via Google Docs)')
 parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
@@ -2424,6 +2449,7 @@ parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (defa
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
+parser.add_argument('--no_auth', help='Disable authentication (allow anonymous access)', action="store_true", default=None)
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
 parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')

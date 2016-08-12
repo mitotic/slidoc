@@ -297,6 +297,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 
     this.auth = {};
     this.auth.email = email;
+    this.auth.type = resp.authType || '';
     this.auth.id = resp.id || email;
     this.auth.altid = '';
 
@@ -315,7 +316,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, loginName, loginRemember, callback) {
+GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginToken, loginName, loginRemember, callback) {
     var adminKey = '';
     if (/admin(\s|$)/.exec(loginUser)) {
 	// Login as admin user using HMAC key. To select specific user initially, use "admin username"
@@ -328,10 +329,15 @@ GoogleProfile.prototype.receiveUserInfo = function (loginUser, loginToken, login
     if (callback)
 	this.authCallback = callback;
     this.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginName || loginUser, token: loginToken,
-			 emails: [{type: 'account', value:email}], remember: !!loginRemember});
+		     authType: authType, emails: [{type: 'account', value:email}], remember: !!loginRemember});
 }
 	
-GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
+GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback) {
+    if (!authType) {
+	var randStr = Math.random().toString(16).slice(2);
+	this.receiveUserInfo(authType, 'anon'+randStr, '', 'Anon Y. Mous'+randStr, false, callback);
+	return;
+    }
     var cookieUserInfo = Slidoc.getServerCookie();
     if (cookieUserInfo) {
 	if (user || msg || callback || !cookieUserInfo.user || !cookieUserInfo.token) {
@@ -348,7 +354,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    return;
 	} else {
 	    // Use user/token from cookie
-	    this.receiveUserInfo(cookieUserInfo.user, cookieUserInfo.token, cookieUserInfo.name, false, callback);
+	    this.receiveUserInfo(authType, cookieUserInfo.user, cookieUserInfo.token, cookieUserInfo.name, false, callback);
 	    return;
 	}
     }
@@ -377,7 +383,7 @@ GoogleProfile.prototype.promptUserInfo = function (user, msg, callback) {
 	    alert('Please provide token for login');
 	    return false;
 	}
-	gprofile.receiveUserInfo(loginUser, loginToken, loginUser, loginRememberElem.checked, callback);
+	gprofile.receiveUserInfo(authType, loginUser, loginToken, loginUser, loginRememberElem.checked, callback);
     }
     loginElem.style.display = 'block';
     loginOverlay.style.display = 'block';
