@@ -826,6 +826,8 @@ def handleResponse(args):
                     # If session not graded, Nullify columns to be graded
                     for j in range(fieldsMin, len(columnHeaders)):
                         returnValues[j] = None
+                elif not adminUser and gradeDate:
+                    returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
 
         # return json success results
         retObj = {"result": "success", "value": returnValues, "headers": returnHeaders,
