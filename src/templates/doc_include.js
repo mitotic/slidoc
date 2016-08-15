@@ -13,10 +13,12 @@ Slidoc.Random = null;
 
 ///UNCOMMENT: (function(Slidoc) {
 
-var MAX_INC_LEVEL = 9; // Max. incremental display level
+var MAX_INC_LEVEL = 9;            // Max. incremental display level
+var MIN_ANSWER_NOTES_DELAY = 5;   // Minimum delay (sec) when displaying notes after answering question
 
 var CACHE_GRADING = true; // If true, cache all rows for grading
 
+var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
 var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
@@ -46,6 +48,7 @@ Sliobj.closePopup = null;
 Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
+Sliobj.answerPlugins = null;
 Sliobj.slidePlugins = null;
 Sliobj.incrementPlugins = null;
 Sliobj.buttonPlugins = null;
@@ -127,6 +130,13 @@ Slidoc.log = function() {
 /////////////////////////////////////////
 // Section 5: Remote spreadsheet access
 /////////////////////////////////////////
+
+Slidoc.sheetIsLocked = function () {
+    if (window.GService)
+	return GService.sheetIsLocked();
+    else
+	return '';
+}
 
 Sliobj.sheets = {};
 
@@ -285,8 +295,9 @@ function getServerCookie() {
 	return null;
     
     var comps = slidocCookie.split(":");
-    return {user: comps[0], token: comps.length > 1 ? comps[1] : '',
-     	                     name: comps.length > 2 ? decodeURIComponent(comps[2]) : ''};
+    return {user: comps[0], origid: comps.length > 1 ? comps[1] : '',
+	                    token:  comps.length > 2 ? decodeURIComponent(comps[2]) : '',
+     	                     name:  comps.length > 3 ? decodeURIComponent(comps[3]) : ''};
 }
 
 function getParameter(name, number, queryStr) {
@@ -363,7 +374,7 @@ function onreadystateaux() {
     } else if (Sliobj.params.gd_sheet_url) {
 	var localAuth = localGet('auth');
 	if (localAuth && !getServerCookie()) {
-	    Slidoc.showPopup('Accessing Google Docs ...', null, 1000);
+	    Slidoc.showPopup('Accessing Google Docs ...', null, null, 1000);
 	    GService.gprofile.auth = localAuth;
 	    Slidoc.slidocReady(localAuth);
 	} else {
@@ -947,6 +958,16 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     defCopy.sessionName = Sliobj.sessionName;
     defCopy.initArgs = slide_id ? evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id) : [];
     defCopy.slideData = slideData || null;
+
+    var prefix = 'plugin_'+pluginName+'_';
+    var paramKeys = Object.keys(Sliobj.params);
+    defCopy.params = {};
+    for (var j=0; j< paramKeys.length; j++) {
+	if (paramKeys[j].slice(0,prefix.length) == prefix) {
+	    defCopy.params[paramKeys[j].slice(prefix.length)] = Sliobj.params[paramKeys[j]];
+	}
+    }
+
     if (nosession) {
 	defCopy.setup = null;
 	defCopy.global = null;
@@ -980,9 +1001,9 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	    defCopy.answer = null;
 	    if (defCopy.qattributes && defCopy.qattributes.correct) {
-		// Correct answer: plugin.response();ans+/-err
-		var comps = defCopy.qattributes.correct.split(';');
-		defCopy.answer = (comps.length == 1) ? comps[0] : comps.slice(1).join(';');
+		// Correct answer: ans+/-err=plugin.response()
+		var comps = defCopy.qattributes.correct.split('=');
+		defCopy.answer = comps[0];
 	    }
 	}
     }
@@ -1459,6 +1480,7 @@ function initSessionPlugins(session) {
     // Restore random seed for session
     Slidoc.log('initSessionPlugins:');
     Sliobj.slidePlugins = {};
+    Sliobj.answerPlugins = {};
     Sliobj.incrementPlugins = {};
     Sliobj.buttonPlugins = {};
     Slidoc.Plugins = {};
@@ -1490,6 +1512,8 @@ function initSessionPlugins(session) {
 	Sliobj.slidePlugins[slide_id].push(pluginInstance);
 	if ('incrementSlide' in pluginInstance)
 	    Sliobj.incrementPlugins[slide_id] = pluginInstance;
+	if ('answerSave' in pluginInstance)
+	    Sliobj.answerPlugins[slide_id] = pluginInstance;
 
 	var button = Sliobj.activePlugins[pluginName].button[slide_id];
 	if (button)
@@ -1541,6 +1565,11 @@ function checkGradingStatus(userId, session, feedback) {
     Slidoc.log('checkGradingStatus:', userId);
     if (Sliobj.userGrades[userId].grading)
 	return;
+    if (!session.submitted) {
+	Sliobj.userGrades[userId].grading = null;
+	updateGradingStatus(userId);
+	return;
+    }
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
@@ -1586,11 +1615,15 @@ function checkGradingStatus(userId, session, feedback) {
 }
 
 function updateGradingStatus(userId) {
+    if (!Sliobj.userGrades[userId].grading) {
+	var disp = SYMS.wrongMark;
+    } else {
+	var count = Object.keys(Sliobj.userGrades[userId].grading).length;
+	var disp = count || SYMS.correctMark;
+    }
     var option = document.getElementById('slidoc-switch-user-'+Sliobj.userGrades[userId].index);
-    var count = Object.keys(Sliobj.userGrades[userId].grading).length;
-    var c = count || '\u2714';
     if (option)
-	option.text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' '+c;
+	option.text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' '+disp;
 }
 
 function preAnswer() {
@@ -1843,6 +1876,8 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 	    if (retStatus.info.dueDate)
 		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err); }
 	    if (retStatus.info.submitTimestamp) {
+		if (!Sliobj.session && window.confirm('Internal error in submit timestamp'))
+		    sessionAbort('Internal error in submit timestamp')
 		Sliobj.session.submitted = retStatus.info.submitTimestamp;
 		Sliobj.session.lastSlide = Sliobj.params.pacedSlides;
 		showCorrectAnswers();
@@ -2288,7 +2323,11 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
 }
 
 Slidoc.choiceClick = function (elem, slide_id, choice_val) {
-   Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val);
+    Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val);
+    if (Slidoc.sheetIsLocked()) {
+	alert(Slidoc.sheetIsLocked());
+	return;
+    }
     var slide_num = parseSlideId(slide_id)[2];
     var question_attrs = getQuestionAttrs(slide_id);
     if (!question_attrs || question_attrs.slide != slide_num)  // Incomplete choice question; ignore
@@ -2330,6 +2369,10 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qfeedback) {
    // Handle answer types: number, text
     Slidoc.log('Slidoc.answerClick:', elem, slide_id, response, explain, pluginResp, qfeedback);
+    if (Slidoc.sheetIsLocked()) {
+	alert(Slidoc.sheetIsLocked());
+	return;
+    }
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
@@ -2362,9 +2405,9 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
        response = '';
     }
 
-    var pluginMatch = /^(\w+)\.response\(\)(;(.+))?$/.exec(question_attrs.correct || '');
-    if (pluginMatch) {
-	var pluginName = pluginMatch[1];
+    var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
+    if (pluginMatch && pluginMatch[3] == 'response') {
+	var pluginName = pluginMatch[2];
 	if (setup) {
 	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
 	    Slidoc.answerUpdate(setup, slide_id, false, response, pluginResp);
@@ -2470,15 +2513,15 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 	qscore = isNumber(pluginResp.score) ? pluginResp.score : null;
 	corr_answer = (isNumber(pluginResp.answer) || pluginResp.answer) ? pluginResp.answer : '';
     } else {
-	var pluginMatch = /^(\w+)\.expect\(\)(;(.+))?$/.exec(corr_answer);
-	if (pluginMatch) {
-	    var pluginName = pluginMatch[1];
+	var pluginMatch = PLUGIN_RE.exec(corr_answer);
+	if (pluginMatch && pluginMatch[3] == 'expect') {
+	    var pluginName = pluginMatch[2];
 	    var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect');
 	    if (val) {
 		corr_answer = val;
 		corr_answer_html = '<code>'+corr_answer+'</code>';
 	    } else {
-		corr_answer = pluginMatch[3] ? pluginMatch[3] : '';
+		corr_answer = pluginMatch[1].trim();
 	    }
 	}
 	if (corr_answer) {
@@ -2586,6 +2629,7 @@ Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp
 							      shuffle: shuffleStr,
 							      plugin: pluginResp||null,
 							      expect: corr_answer,
+						              vote: null,
 							      score: isNumber(qscore) ? qscore : null};
 	Slidoc.answerTally(qscore, slide_id, question_attrs);
     }
@@ -2598,7 +2642,7 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
     var slide_num = parseSlideId(slide_id)[2];
     if (slide_num < Sliobj.session.skipToSlide) {
 	Slidoc.reportEvent('answerSkip');
-	saveSession();
+	saveSessionAnswered(slide_id, question_attrs);
 	return;
     }
 
@@ -2663,15 +2707,28 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
 	    }
 	}
     }
-    saveSession();
+    saveSessionAnswered(slide_id, question_attrs);
 }
 
-function saveSession() {
+function saveSessionAnswered(slide_id, qattrs) {
     if (!Sliobj.session.paced || Sliobj.session.submitted)
 	return;
     Sliobj.session.lastTime = Date.now();
+    if (!Sliobj.delaySec && Sliobj.params.paceDelay && MIN_ANSWER_NOTES_DELAY) {
+	var notes_elem = document.getElementById(slide_id+"-notes");
+	if (notes_elem && displayCorrect()) {
+	    Sliobj.delaySec = Math.min(MIN_ANSWER_NOTES_DELAY, Sliobj.params.paceDelay);
+	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-prev', 'slidoc-slide-nav-next');
+	}
+    }
     if (!Sliobj.params.gd_sheet_url || Sliobj.params.tryCount)
-	sessionPut();
+	sessionPut(null, null, {}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
+}
+
+function saveCallback(slide_id, qattrs, result, retStatus) {
+    Slidoc.log('saveCallback:', slide_id, qattrs, result, retStatus);
+    if (slide_id in Sliobj.answerPlugins)
+	Slidoc.PluginManager.invoke(Sliobj.answerPlugins[slide_id], 'answerSave');
 }
 
 Slidoc.showScore = function () {
@@ -2827,6 +2884,16 @@ Slidoc.quoteText = function(elem, slide_id) {
 
 Slidoc.gradeClick = function (elem, slide_id) {
     Slidoc.log("Slidoc.gradeClick:", elem, slide_id);
+    if (Slidoc.sheetIsLocked()) {
+	alert(Slidoc.sheetIsLocked());
+	return;
+    }
+
+    var userId = GService.gprofile.auth.id;
+    if (!Sliobj.userGrades[userId].grading) {
+	alert('Session not submitted for user '+userId);
+	return;
+    }
 
     var gradeInput = document.getElementById(slide_id+'-grade-input');
     var commentsArea = document.getElementById(slide_id+'-comments-textarea');
@@ -2851,7 +2918,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var commentsField = 'q'+question_attrs.qnumber+'_comments';
 	if (!(gradeField in Sliobj.gradeFieldsObj))
 	    Slidoc.log('Slidoc.gradeClick: ERROR grade field '+gradeField+' not found in sheet');
-	var updates = {id: GService.gprofile.auth.id};
+	var updates = {id: userId};
 	updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
 	gradeUpdate(slide_id, question_attrs.qnumber, updates);
@@ -2960,6 +3027,9 @@ Slidoc.startPaced = function () {
     // Allow forward link only if no try requirement
     toggleClassAll(!Sliobj.params.tryCount, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
 
+    if (Sliobj.session && Sliobj.session.submitted) {
+    var startMsg = 'Reviewing submitted paced session '+Sliobj.sessionName+'<br>';
+    } else {
     var startMsg = 'Starting'+((Sliobj.session.paceLevel>1)?' strictly':'')+' paced session '+Sliobj.sessionName+':<br>';
     if (Sliobj.params.questionsMax)
 	startMsg += '&nbsp;&nbsp;<em>There are '+Sliobj.params.questionsMax+' questions.</em><br>';
@@ -2979,6 +3049,8 @@ Slidoc.startPaced = function () {
     if (Sliobj.params.tryDelay)
 	startMsg += '<li>'+Sliobj.params.tryDelay+' sec delay between attempts</li>';
     startMsg += '</ul>';
+    }
+
     Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
@@ -3187,8 +3259,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    var prompt = 'Please answer before proceeding. You have '+tryCount+' try(s)';
 	    showDialog('alert', 'requireAnswerDialog', prompt);
 	    return false;
-	} else if (!Sliobj.questionSlide && Sliobj.delaySec) {
-	    // Current (not new) slide is not question slide; has delay
+	} else if (Sliobj.delaySec) {
+	    // Current (not new) slide has delay
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
 	    if (delta < Sliobj.delaySec) {
 		alert('Please wait '+ Math.ceil(Sliobj.delaySec-delta) + ' second(s)');
@@ -3552,7 +3624,7 @@ Slidoc.closeAllPopups = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup(true);
 }
-Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
+Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
     // Only one of innerHTML or divElemId needs to be non-null
     if (Slidoc.testingActive()) {
 	if (Sliobj.testScript.stepEvent) {
@@ -3570,6 +3642,8 @@ Slidoc.showPopup = function (innerHTML, divElemId, autoCloseMillisec) {
 
     if (!divElemId) divElemId = 'slidoc-generic-popup';
     var divElem = document.getElementById(divElemId);
+    toggleClass(!!wide, 'slidoc-wide-popup', divElem);
+
     var closeElem = document.getElementById(divElem.id+'-close');
     var overlayElem = document.getElementById('slidoc-generic-overlay');
     if (!overlayElem) {

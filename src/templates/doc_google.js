@@ -85,6 +85,8 @@ var wsRequests = {};
 
 var wsConnection = null;
 var wsOpened = false;
+var wsLocked = '';
+var wsClosed = '';
 var wsBuffer = [];
 
 GService.openWebsocket = function (wsPath) {
@@ -106,7 +108,8 @@ GService.openWebsocket = function (wsPath) {
     }
 
     wsConnection.onclose = function (evt) {
-	document.body.textContent = 'Connection closed. Reload page to restart.';
+	if (!wsClosed)
+	    wsClosed = 'Connection closed. Reload page to restart.';
     }
 
     wsConnection.onmessage = function(evt) {
@@ -117,12 +120,24 @@ GService.openWebsocket = function (wsPath) {
 	    return;
 	}
 	var callback_index = msgObj[0];
-	var callback_obj = msgObj[1];
+	var callback_method = msgObj[1];
+	var callback_args = msgObj[2];
 	
 	Slidoc.log('GService.ws.onmessage:', callback_index);
 
-	if (!callback_index)
+	if (!callback_index) {
+	    try {
+		if (callback_method == 'lock') {
+		    if (!wsLocked)
+			wsLocked = callback_args[0] || 'Locked for writing';
+		} else if (callback_method == 'close') {
+		    closeWs(callback_args[0]);
+		}
+	    } catch (err) {
+		Slidoc.log('GService.ws.onmessage: Error in invoking method '+callback_method);
+	    }
 	    return;
+	}
 
 	if (!(callback_index in wsRequests)) {
 	    Slidoc.log('GService.ws.onmessage: Error - Invalid WS callback index: '+callback_index);
@@ -133,18 +148,33 @@ GService.openWebsocket = function (wsPath) {
 	var callback = wsRequests[callback_index][0];
 	delete wsRequests[callback_index];
 	if (callback)
-	    callback(callback_obj || null, '', outOfSequence);
+	    callback(callback_args || null, '', outOfSequence);
     }
 }
 
+function closeWS(msg) {
+    if (wsClosed)
+	return;
+    wsClosed = msg || 'Connection closed. Reload page to restart.';
+    wsConnection.close();
+}
+    
 function requestWS(data, callback) {
+    if (data.write && wsLocked) {
+	alert(wsLocked);
+	return;
+    }
+    if (wsClosed) {
+	alert(wsClosed);
+	return;
+    }
     var callbackIndex = 0;
     if (callback) {
 	wsCounter += 1;
 	callbackIndex = wsCounter;
 	wsRequests[wsCounter] = [callback];
     }
-    var jsonStr = JSON.stringify([callbackIndex, data]);
+    var jsonStr = JSON.stringify([callbackIndex, 'proxy', data]);
     if (wsOpened) {
 	wsConnection.send(jsonStr);
     } else {
@@ -299,6 +329,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
     this.auth.email = email;
     this.auth.type = resp.authType || '';
     this.auth.id = resp.id || email;
+    this.auth.origid = resp.origid || '';
     this.auth.altid = '';
 
     var comps = resp.displayName.split(/\s+/);
@@ -316,7 +347,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginToken, loginName, loginRemember, callback) {
+    GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginOrig, loginToken, loginName, loginRemember, callback) {
     var adminKey = '';
     if (/admin(\s|$)/.exec(loginUser)) {
 	// Login as admin user using HMAC key. To select specific user initially, use "admin username"
@@ -328,14 +359,14 @@ GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginTo
     var email = (loginUser.indexOf('@')>0) ? loginUser : '';
     if (callback)
 	this.authCallback = callback;
-    this.onUserInfo({adminKey: adminKey, id: loginUser, displayName: loginName || loginUser, token: loginToken,
-		     authType: authType, emails: [{type: 'account', value:email}], remember: !!loginRemember});
+	this.onUserInfo({adminKey: adminKey, id: loginUser, origid: loginOrig, displayName: loginName || loginUser,
+		     token: loginToken, authType: authType, emails: [{type: 'account', value:email}], remember: !!loginRemember});
 }
 	
 GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback) {
     if (!authType) {
 	var randStr = Math.random().toString(16).slice(2);
-	this.receiveUserInfo(authType, 'anon'+randStr, '', 'Anon Y. Mous'+randStr, false, callback);
+	this.receiveUserInfo(authType, 'anon'+randStr, '', '', 'User Anon'+randStr, false, callback);
 	return;
     }
     var cookieUserInfo = Slidoc.getServerCookie();
@@ -354,7 +385,7 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    return;
 	} else {
 	    // Use user/token from cookie
-	    this.receiveUserInfo(authType, cookieUserInfo.user, cookieUserInfo.token, cookieUserInfo.name, false, callback);
+	    this.receiveUserInfo(authType, cookieUserInfo.user, cookieUserInfo.origid, cookieUserInfo.token, cookieUserInfo.name, false, callback);
 	    return;
 	}
     }
@@ -383,7 +414,7 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    alert('Please provide token for login');
 	    return false;
 	}
-	gprofile.receiveUserInfo(authType, loginUser, loginToken, loginUser, loginRememberElem.checked, callback);
+	gprofile.receiveUserInfo(authType, loginUser, '', loginToken, loginUser, loginRememberElem.checked, callback);
     }
     loginElem.style.display = 'block';
     loginOverlay.style.display = 'block';
@@ -425,10 +456,15 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     if (!this.headers.length)
 	params.getheaders = 1;
 
+    // Pretend voting is not 'writing'
+    if ( (callType == 'putRow' && !params.nooverwrite) ||
+	 (callType == 'updateRow' && !params.vote) )
+	params.write = 1;
+
     GService.sendData(params, this.url, this.callback.bind(this, userId, callType, callback),
 		      this.useJSONP);
 }
-    
+
 GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, result, err_msg, outOfSequence) {
     // outerCallback(obj, {error: err_msg, messages: messages})
     // obj == null on error
@@ -451,9 +487,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
     if (result) {
 	try {
 	    if (result.result == 'success' && result.value) {
-		if (callbackType != 'getAll') {
-		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value, result.headers);
-		} else {
+		if (callbackType == 'getAll') {
 		    retval = {};
 		    for (var j=0; j<result.value.length; j++) {
 			var row = result.value[j];
@@ -462,6 +496,19 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 			    retval[rowObj.id] = rowObj;
 			}
 		    }
+
+		} else if (callbackType == 'getCols') {
+		    retval = {};
+		    for (var i=0; i<result.headers.length; i++)
+			retval[result.headers[i]] = [];
+		    for (var j=0; j<result.value.length; j++) {
+			var row = result.value[j];
+			for (var i=0; i<row.length; i++)
+			    retval[result.headers[i]].push(row[i]);
+		    }
+
+		} else {
+		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value, result.headers);
 		}
 
 		retStatus.info = result.info || {};
@@ -617,19 +664,23 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     }
 
     var updates = [];
-    var keys = Object.keys(updateObj);
-    for (var j=0; j<keys.length; j++) {
-       var key = keys[j];
-       if (!(key in this.columnIndex))
-           throw('GoogleSheet.updateRow: Invalid column header: '+key);
-	updates.push( [key, updateObj[key]] );
-	if (cachedRow && key != 'id' && key != 'Timestamp' && key in cachedRow) // Update cached row
-	    cachedRow[key] = updateObj[key]
+    for (var j=0; j<this.headers.length; j++) {
+	var key = this.headers[j];
+	if (key in updateObj) {
+	    updates.push( [key, updateObj[key]] );
+	    if (cachedRow && key != 'id' && key != 'Timestamp' && key in cachedRow) // Update cached row
+		cachedRow[key] = updateObj[key]
+	}
     }
+    if (updates.length < Object.keys(updateObj).length)
+        throw('GoogleSheet.updateRow: Invalid column header(s) found in row updates: '+Object.keys(updateObj));
 
     var params = {id: updateObj.id, update: JSON.stringify(updates)};
     if (opts.get)
         params.get = '1';
+
+    if (updates.length == 2 && updates[0][0] == 'id' && updates[1][0].slice(-5) == 'vote')
+	params.vote = '1';
 
     this.putSend(updateObj.id, params, 'updateRow', callback);
 }
@@ -662,6 +713,27 @@ GoogleSheet.prototype.getRow = function (id, callback) {
     this.send(params, 'getRow', callback);
 }
 
+GoogleSheet.prototype.getCols = function (colPrefix, callback) {
+    // callback(result, retStatus)
+    // result == null on error
+    // result == {} for non-existent row
+    // result == {id: ..., name: ..., } for returned row
+    Slidoc.log('GoogleSheet.getCols:', colPrefix, !!callback);
+
+    var id = GService.gprofile.auth.id;
+
+    if (!callback)
+        throw('GoogleSheet.getCols: Must specify callback for getCols');
+
+    if (this.cacheAll) {
+	throw('GoogleSheet.getCols: from cache not yet implemented');
+	return;
+    }
+
+    var params = {id: id, getcols: colPrefix};
+    this.callbackCounter += 1;
+    this.send(params, 'getCols', callback);
+}
 
 GoogleSheet.prototype.getAll = function (callback) {
     // callback(result, retStatus)
@@ -697,6 +769,13 @@ GoogleSheet.prototype.initCache = function(allRows) {
     Slidoc.log('GoogleSheet.initCache:', this.roster);
 }
 
+GService.sheetIsLocked = function () {
+    if (Slidoc.websocketPath)
+	return wsLocked;
+    else
+	return '';
+}
+    
 GService.GoogleSheet = GoogleSheet;
 
 GService.gprofile = new GoogleProfile(CLIENT_ID, API_KEY, LOGIN_BUTTON_ID, AUTH_CALLBACK);

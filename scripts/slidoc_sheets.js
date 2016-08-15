@@ -104,6 +104,8 @@ var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
 
 var TRUNCATE_DIGEST = 8;
+
+var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
@@ -213,6 +215,12 @@ function handleResponse(evt) {
 	var protectedSheet = (sheetName == SCORES_SHEET);
 	var restrictedSheet = (sheetName.slice(-7) == '_slidoc') && !protectedSheet;
 	var loggingSheet = (sheetName.slice(-4) == '_log');
+	var sessionParams = null;
+	var sessionAttributes = null;
+	var dueDate = null;
+	var gradeDate = null;
+	var voteDate = null;
+	var curDate = new Date();
 
 	if (!adminUser) {
 	    if (proxy)
@@ -330,7 +338,17 @@ function handleResponse(evt) {
 		}
 	    }
 	} else {
-	    // Single sheet
+	    // Update/access single sheet
+
+	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
+		// Indexed session
+		sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
+		if (sessionParams.attributes)
+		    sessionAttributes = JSON.parse(sessionParams.attributes);
+		dueDate = sessionParams.dueDate;
+		gradeDate = sessionParams.gradeDate;
+		voteDate = sessionAttributes && sessionAttributes.voteDate ? createDate(sessionAttributes.voteDate) : null;
+	    }
 
 	    // Check parameter consistency
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
@@ -361,6 +379,7 @@ function handleResponse(evt) {
 	    }
 	    
 	    var getRow = params.get || '';
+	    var getCols = params.getcols || '';
 	    var allRows = params.all || '';
 	    var nooverwriteRow = params.nooverwrite || '';
 	    
@@ -370,7 +389,11 @@ function handleResponse(evt) {
 	    var userId = null;
 	    var displayName = null;
 
-	    if (!adminUser && selectedUpdates)
+	    var voteSubmission = false;
+	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].slice(-5) == '_vote' && sessionAttributes && sessionAttributes.shareAnswers)
+		voteSubmission = true;
+
+	    if (!adminUser && selectedUpdates && !voteSubmission)
 		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
 	    if (protectedSheet && (rowUpdates || selectedUpdates) )
@@ -381,7 +404,7 @@ function handleResponse(evt) {
 	    if (getRow && params.getheaders) {
 		returnHeaders = columnHeaders;
 		try {
-		    var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2)
+		    var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2);
 		    if (temIndexRow[MAXSCORE_ID])
 			returnInfo.maxScores = sheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
 		    if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
@@ -390,7 +413,7 @@ function handleResponse(evt) {
 	    }
 	}
 
-	if (!rowUpdates && !selectedUpdates && !getRow) {
+	if (!rowUpdates && !selectedUpdates && !getRow && !getCols) {
 	    // No row updates/gets
 	    returnValues = [];
 	} else if (proxy && params.allupdates) {
@@ -399,18 +422,138 @@ function handleResponse(evt) {
 	} else if (getRow && allRows) {
 	    // Get all rows and columns
 	    if (proxy)
-		returnValues = sheet.getRange(1, 1, sheet.getLastRow(), columnHeaders.length).getValues();
+		returnValues = sheet.getSheetValues(1, 1, sheet.getLastRow(), columnHeaders.length);
 	    else if (sheet.getLastRow() > numStickyRows)
-		returnValues = sheet.getRange(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, columnHeaders.length).getValues();
+		returnValues = sheet.getSheetValues(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, columnHeaders.length);
 	    else
 		returnValues = [];
+	} else if (getCols) {
+	    // Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
+	    if (!sessionAttributes || !sessionAttributes.shareAnswers)
+		throw('Error::Denied access to answers of session '+sheetName);
+	    var shareParams = sessionAttributes.shareAnswers[getCols];
+	    if (!shareParams || !shareParams.share)
+		throw('Error::Sharing not enabled for '+getCols+' of session '+sheetName);
+	    if (shareParams.share == 'after_grading' && !gradeDate) {
+		returnMessages.push("Warning:AFTER_GRADING:");
+		returnValues = [];
+	    } else if (shareParams.share == 'after_due_date' && (!dueDate || dueDate.getTime() > curDate.getTime())) {
+		returnMessages.push("Warning:AFTER_DUE_DATE:");
+		returnValues = [];
+	    } else {
+		var curUserId = params.id;
+		var nRows = sheet.getLastRow()-numStickyRows;
+		var respCol = getCols+'_response';
+		var respIndex = columnIndex[getCols+'_response'];
+		if (!respIndex)
+		    throw('Error::Column '+respCol+' not present in headers for session '+sheetName);
+
+		var explainOffset = 0;
+		var shareOffset = 1;
+		var nCols = 2;
+		if (columnIndex[getCols+'_explain'] == respIndex+1) {
+		    explainOffset = 1;
+		    shareOffset = 2;
+		    nCols += 1;
+		}
+		var voteOffset = 0;
+		if (shareParams.vote && columnIndex[getCols+'_vote'] == respIndex+nCols) {
+		    voteOffset = shareOffset+1;
+		    nCols += 1;
+		}
+		returnHeaders = [];
+		for (var j=respIndex; j<respIndex+nCols; j++)
+		    returnHeaders.push(columnHeaders[j-1]);
+
+		var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 1+numStickyRows);
+		if (!temIndexRow[curUserId])
+		    throw('Error::Sheet has no row for user '+curUserId+' to share in session '+sheetName);
+		var curUserOffset = temIndexRow[curUserId]-1-numStickyRows;
+
+		var shareSubrow = sheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols);
+		var timeValues = sheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols);
+		var submitValues = sheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols);
+		var lateValues = sheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols);
+
+		var curUserVals = shareSubrow[curUserOffset];
+		
+		var disableVoting = false;
+
+		// It current user has provided no response/no explanation, disallow voting
+		if (!curUserVals[0] || (explainOffset && !curUserVals[explainOffset]))
+		    disableVoting = true;
+
+		// If voting not enabled or voting completed, disallow  voting.
+		if (!shareParams.vote || (voteDate && voteDate.getTime() < curDate.getTime()))
+		    disableVoting = true;
+
+		if (voteOffset) {
+		    // Return user's vote code
+		    returnInfo.vote = curUserVals[voteOffset];
+		    if (shareParams.vote == 'live' || disableVoting) {
+			// Tally votes
+			var votes = {};
+			for (var j=0; j<nRows; j++) {
+			    var voteCode = shareSubrow[j][voteOffset];
+			    if (voteCode in votes)
+				votes[voteCode] += 1;
+			    else
+				votes[voteCode] = 1;
+			}
+			// Replace vote code with vote counts
+			for (var j=0; j<nRows; j++) {
+			    var shareCode = shareSubrow[j][shareOffset];
+			    shareSubrow[j][voteOffset] = votes[shareCode] || 0;
+			}
+		    } else {
+			// Voting results not yet released
+			for (var j=0; j<nRows; j++)
+			    shareSubrow[j][voteOffset] = null;
+		    }
+		}
+
+		if (shareOffset) {
+		    returnInfo.share = disableVoting ? '' : curUserVals[shareOffset];
+		    // Disable self voting
+		    curUserVals[shareOffset] = '';
+		    if (disableVoting) {
+			// This needs to be done after vote tallying, because vote codes are cleared
+			for (var j=0; j<nRows; j++)
+			    shareSubrow[j][shareOffset] = '';
+		    }
+		}
+
+		var sortVals = [];
+		for (var j=0; j<nRows; j++) {
+		    // Use earlier of submit time or timestamp to sort
+		    var timeVal = submitValues[j][0] || timeValues[j][0];
+		    timeVal = timeVal ? timeVal.getTime() : 0;
+		    // Skip late submissions (but allow partials)
+		    if (!timeVal || (lateValues[j][0] && lateValues[j][0] != 'partial'))
+			continue;
+		    if (explainOffset)  {
+			// Sort by response value and then time
+			if (shareSubrow[j][0] && shareSubrow[j][1])
+			    sortVals.push( [shareSubrow[j][0], timeVal, j] );
+	            } else {
+			// Sort by time and then response value
+			if (shareSubrow[j][0])
+			    sortVals.push( [timeVal, shareSubrow[j][0], j]);
+		    }
+		}
+		sortVals.sort(function(a,b) { if (a[0] === b[0]) {if (a[1] === b[1]) return 0; return (a[1] > b[1]) ? 1:-1;}; return (a[0] > b[0]) ? 1:-1;});
+
+		//returnMessages.push('Debug::getCols: '+nCols+', '+nRows+', ['+curUserVals+']');
+		returnValues = []
+		for (var j=0; j<sortVals.length; j++)
+		    returnValues.push( shareSubrow[sortVals[j][2]] );
+	    }
 	} else {
 	    if (rowUpdates && selectedUpdates) {
 		throw('Error::Cannot specify both rowUpdates and selectedUpdates');
 	    } else if (rowUpdates) {
 		if (rowUpdates.length > columnHeaders.length)
 		    throw("Error::row_headers length exceeds no. of columns in sheet '"+sheetName+"'; delete it or edit headers.");
-
 
 		userId = rowUpdates[columnIndex['id']-1] || '';
 		displayName = rowUpdates[columnIndex['name']-1] || '';
@@ -432,7 +575,6 @@ function handleResponse(evt) {
 	    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate ID row (except for log files)
 		var userIds = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1);
-		var displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
 		for (var j=0; j<userIds.length; j++) {
 		    // Unique ID
 		    if (userIds[j][0] == userId) {
@@ -454,21 +596,19 @@ function handleResponse(evt) {
 	    } else if (newRow && selectedUpdates) {
 		throw('Error::Selected updates cannot be applied to new row');
 	    } else {
-		var curDate = new Date();
 		var allowLateMods = !REQUIRE_LATE_TOKEN;
 		var pastSubmitDeadline = false;
 		var partialSubmission = false;
-		var dueDate = null;
-		var gradeDate = null;
 		var fieldsMin = columnHeaders.length;
-		if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
-		    // Session parameters
-		    var sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'fieldsMin'], INDEX_SHEET);
-		    dueDate = sessionParams.dueDate;
-		    gradeDate = sessionParams.gradeDate;
+		var prevSubmitted = null;
+		if (!newRow && columnIndex['submitTimestamp'])
+		    prevSubmitted = sheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] || null;
+
+		if (sessionParams) {
+		    // Indexed session
 		    fieldsMin = sessionParams.fieldsMin;
 
-		    if (dueDate && !adminUser) {
+		    if (dueDate && !prevSubmitted && !adminUser && !voteSubmission) {
 			// Check if past submission deadline
 			var lateTokenCol = columnIndex['lateToken'];
 			var lateToken = null;
@@ -529,6 +669,7 @@ function handleResponse(evt) {
 
 		    userRow = sheet.getLastRow()+1;
 		    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
+			var displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
 			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds);
 		    }
 		    sheet.insertRowBefore(userRow);
@@ -588,7 +729,7 @@ function handleResponse(evt) {
 			}
 			//returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+'=' + totalCells.join('+'));
 		    }
-
+		    //returnMessages.push("Debug:ROW_UPDATES:"+rowUpdates);
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
@@ -604,6 +745,15 @@ function handleResponse(evt) {
 			} else if (colHeader == 'submitTimestamp' && params.submit) {
 			    rowValues[j] = curDate;
 			    returnInfo.submitTimestamp = curDate;
+			} else if (colHeader.slice(-6) == '_share') {
+			    // Generate share value by computing MD5 digest of 'response [: explain]'
+			    if (j >= 1 && rowValues[j-1] && columnHeaders[j-1].slice(-9) == '_response') {
+				rowValues[j] = md5hex(rowValues[j-1]);
+			    } else if (j >= 2 && rowValues[j-1] && columnHeaders[j-1].slice(-8) == '_explain' && columnHeaders[j-2].slice(-9) == '_response') {
+				rowValues[j] = md5hex(rowValues[j-1]+': '+rowValues[j-2]);
+			    } else {
+				rowValues[j] = '';
+			    }
 			} else if (colValue == null) {
 			    // Do not modify field
 			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') ) {
@@ -620,14 +770,23 @@ function handleResponse(evt) {
 		    for (var j=0; j<rosterValues.length; j++)
 			rowValues[j] = rosterValues[j];
 
+		    //returnMessages.push("Debug:ROW_VALUES:"+rowValues);
 		    // Save updated row
 		    userRange.setValues([rowValues]);
 
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!adminUser && !partialSubmission)
+		    if (!adminUser && !voteSubmission && !partialSubmission)
 			throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
+
+		    if (voteSubmission) {
+			// Allow vote submissions only after due date and before voting deadline
+			if (!dueDate || dueDate.getTime() > curDate.getTime())
+			    throw("Error:TOO_EARLY_TO_VOTE:Voting only allowed after due date for sheet '"+sheetName+"'");
+			if (voteDate && voteDate.getTime() < curDate.getTime())
+			    throw("Error:TOO_LATE_TO_VOTE:Voting not allowed after vote date for sheet '"+sheetName+"'");
+		    }
 
 		    for (var j=0; j<selectedUpdates.length; j++) {
 			var colHeader = selectedUpdates[j][0];
@@ -640,8 +799,10 @@ function handleResponse(evt) {
 			var modValue = null;
 
 			if (colHeader == 'Timestamp') {
-			    // Timestamp is always updated, unless it is explicitly specified by admin
-			    if (adminUser && colValue) {
+			    // Timestamp is always updated, unless it is explicitly specified by admin or if voting
+			    if (voteSubmission) {
+				// Do not modify timestamp for voting (to avoid race conditions with grading etc.)
+			    } else if (adminUser && colValue) {
 				try { modValue = createDate(colValue); } catch (err) {}
 			    } else {
 				modValue = curDate;
@@ -651,12 +812,26 @@ function handleResponse(evt) {
 				modValue = curDate;
 				returnInfo.submitTimestamp = curDate;
 			    }
+			} else if (colHeader.slice(-5) == '_vote') {
+			    if (voteSubmission && colValue) {
+				// Cannot un-vote, vote can be transferred
+				var otherCol = columnIndex['q_other'];
+				if (!rowValues[headerColumn-1] && otherCol && sessionParams.otherWeight && sessionAttributes && sessionAttributes.shareAnswers) {
+				    // Tally newly added vote
+				    var qshare = sessionAttributes.shareAnswers[colHeader.split('_')[0]];
+				    if (qshare) {
+					rowValues[otherCol-1] = ''+(parseInt(rowValues[otherCol-1] || 0) + (qshare.voteWeight || 0));
+					sheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
+				    }
+				}
+				modValue = colValue;
+			    }
 			} else if (colValue == null) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (!restrictedSheet && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
-				throw("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
+			    if (!restrictedSheet && !partialSubmission && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
+				throw("Error::Cannot not selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 			    colValue = parseInput(colValue, colHeader);
 			    modValue = colValue;
 			} else {
@@ -709,6 +884,14 @@ function setup() {
 }
 
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
+
+function bin2hex(array) {
+    return array.map(function(b) {return ("0" + ((b < 0 && b + 256) || b).toString(16)).substr(-2)}).join("");
+}
+
+function md5hex(s, n) {
+    return bin2hex(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s)).slice(0, n||TRUNCATE_DIGEST);
+}
 
 function parseNumber(x) {
     try {
@@ -950,10 +1133,10 @@ function sessionAnswerSheet() {
 	var extraCols = ['expect', 'score', 'plugin'];
 	for (var j=0; j<questions.length; j++) {
 	    var qprefix = 'q'+(j+1);
-	    var pluginResponse = /^(\w+).response()\(\)/.exec(answers[j]);
-	    var inlineJS = /^(\w+).expect()\(\)/.exec(answers[j]);
+	    var pluginMatch = PLUGIN_RE.exec(answers[j] || '');
+	    var pluginAction = pluginMatch ? pluginMatch[3] : '';
 	    var respColName = qprefix;
-	    if (answers[j] && !inlineJS) {
+	    if (answers[j] && pluginAction != 'expect') {
 		if (questions[j] == 'choice')
 		    respColName += '_'+answers[j];
 		else if (questions[j] == 'number')
@@ -961,18 +1144,17 @@ function sessionAnswerSheet() {
 	    }
 	    answerHeaders.push(respColName);
 	    respCols.push(answerHeaders.length);
-	    if (inlineJS)
+	    if (pluginAction == 'expect')
 		answerHeaders.push(qprefix+'_expect');
-	    if (answers[j] || pluginResponse)
+	    if (answers[j] || pluginAction == 'response')
 		answerHeaders.push(qprefix+'_score');
-	    if (pluginResponse)
+	    if (pluginAction == 'response')
 		answerHeaders.push(qprefix+'_plugin');
 	}
 	Logger.log('ansHeaders: '+answerHeaders);
 	var ansHeaderCols = {};
 	for (var j=0; j<answerHeaders.length; j++)
 	    ansHeaderCols[answerHeaders[j]] = j+1;
-
 
 	// Session sheet columns
 	var sessionStartRow = SESSION_START_ROW;
@@ -1314,11 +1496,12 @@ function updateScoreSheet() {
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
 
-	    var sessionParams = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight'], INDEX_SHEET);
+	    var sessionParams = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight'], INDEX_SHEET);
 	    var gradeDate = parseNumber(sessionParams.gradeDate) || null;
 	    var sessionWeight = parseNumber(sessionParams.sessionWeight) || 0;
 	    var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
+	    var otherWeight = parseNumber(sessionParams.otherWeight) || 0;
 
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
 		continue;
@@ -1382,11 +1565,16 @@ function updateScoreSheet() {
 
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
-		if (gradeWeight) {
-		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+vlookup('weightedCorrect', j+scoreStartRow)+'+'+vlookup('q_grades', j+scoreStartRow)+' ))']);
-		} else if (scoreWeight) {
-		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", '+ vlookup('weightedCorrect', j+scoreStartRow) + ' ))']);
-		}
+		var lookups = [];
+		if (scoreWeight)
+		    lookups.push( vlookup('weightedCorrect', j+scoreStartRow) );
+		if (gradeWeight)
+		    lookups.push( vlookup('q_grades', j+scoreStartRow) );
+		if (otherWeight)
+		    lookups.push( vlookup('q_other', j+scoreStartRow) );
+		
+		if (lookups.length)
+		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ' + lookups.join('+') + ' ))']);
 	    }
 
 	    if (scoreAvgRow)

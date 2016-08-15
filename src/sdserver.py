@@ -37,6 +37,7 @@ Twitter auth workflow:
     
 """
 
+import collections
 import datetime
 import json
 import logging
@@ -64,14 +65,39 @@ EXPIRES_DAYS = 30
 
 WS_TIMEOUT_SEC = 600
 
-class BaseHandler(tornado.web.RequestHandler):
+class UserIdMixin(object):
+    def set_id(self, username, origId='', token='', displayName=''):
+        if ':' in username or ':' in origId:
+            raise Exception('Colon character not allowed in username/origId')
+        cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')
+        self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
+        self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
+
+    def clear_id(self):
+        self.clear_cookie(USER_COOKIE_SECURE)
+        self.clear_cookie(SERVER_COOKIE)
+
+    def check_access(self, username, token):
+        if username == "admin":
+            return token == options.hmac_key
+        else:
+            return token == sliauth.gen_user_token(options.hmac_key, username)
+
+    def get_id_from_cookie(self, orig=False):
+        # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
+        cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
+        if not cookieStr:
+            return None
+        userId, origId, token, displayName = cookieStr.split(':')
+        return origId if orig else userId
+
+
+class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     def get_current_user(self):
         if not options.hmac_key:
-            self.clear_cookie(USER_COOKIE_SECURE)
-            self.clear_cookie(SERVER_COOKIE)
+            self.clear_id()
             return "noauth"
-        user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
-        return user_id or None
+        return self.get_id_from_cookie() or None
 
 
 class HomeHandler(BaseHandler):
@@ -105,7 +131,11 @@ class ActionHandler(BaseHandler):
             self.write('Cache:\n')
             self.write('  No. of updates (retries): %d (%d)\n  Average update time = %ss\n' % (sdproxy.TotalCacheResponseCount, sdproxy.TotalCacheRetryCount, sdproxy.TotalCacheResponseInterval/(1000*max(1,sdproxy.TotalCacheRetryCount)) ) )
             curTime = time.time()
-            wsInfo = [(ws.ws_path, ws.user_id, math.floor(curTime-ws.msgTime)) for ws in WSHandler._connections]
+            wsKeys = WSHandler._connections.keys()
+            sorted(wsKeys)
+            wsInfo = []
+            for pathUser in wsKeys:
+                wsInfo += [(pathUser[0], pathUser[1]+('/'+ws.origId if ws.origId else ''), math.floor(curTime-ws.msgTime)) for ws in WSHandler._connections[pathUser]]
             sorted(wsInfo)
             self.write('\nConnections:\n')
             for x in wsInfo:
@@ -142,21 +172,30 @@ class ProxyHandler(BaseHandler):
         self.set_header('Content-Type', mimeType)
         self.write(jsonPrefix+json.dumps(retObj, default=sliauth.json_default)+jsonSuffix)
 
-class WSHandler(tornado.websocket.WebSocketHandler):
-    _connections = []
+class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
+    _connections = collections.defaultdict(list)
     def open(self, path=''):
-        self._connections.append(self)
         self.msgTime = time.time()
+        self.locked = ''
         self.timeout = None
-        self.ws_path = path
-        self.user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
+        self.userId = self.get_id_from_cookie()
+        self.origId = self.get_id_from_cookie(orig=True)
+        if self.origId == self.userId:
+            self.origId = ''
+        self.pathUser = (path, self.userId)
+        self._connections[self.pathUser].append(self)
         if options.debug:
-            print "DEBUG: WSopen", self.user_id
-        if not self.user_id:
+            print "DEBUG: WSopen", self.userId
+        if not self.userId:
             self.close()
 
     def on_close(self):
-        self._connections.remove(self)
+        try:
+            self._connections[self.pathUser].remove(self)
+            if not self._connections[self.pathUser]:
+                del self._connections[self.pathUser]
+        except Exception, err:
+            pass
 
     def _close_on_timeout(self):
         if self.ws_connection:
@@ -168,29 +207,50 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             IOLoop.current().remove_timeout(self.timeout)
             self.timeout = None
         import sdproxy
+        outMsg = None
+        callback_index = None
         try:
             obj = json.loads(message)
             callback_index = obj[0]
-            args = obj[1]
-            retObj = sdproxy.handleResponse(args)
-            outMsg = json.dumps([callback_index, retObj], default=sliauth.json_default)
-        except Exception, err:
-            raise Exception('Error in response: '+err.message)
+            method = obj[1]
+            args = obj[2]
+            if method == 'proxy':
+                if args.get('write'):
+                    if self.locked:
+                        raise Exception(self.locked)
+                    else:
+                        for connection in self._connections[self.pathUser]:
+                            if connection is self:
+                                continue
+                            if not connection.locked:
+                                connection.locked = 'Session locked due to modifications by another user. Reload page, if necessary.'
+                                connection.write_message(json.dumps([0, 'lock', connection.locked]))
 
-        self.write_message(outMsg)
+                retObj = sdproxy.handleResponse(args)
+            elif method == 'close':
+                self.close()
+            if callback_index:
+                outMsg = json.dumps([callback_index, '', retObj], default=sliauth.json_default)
+        except Exception, err:
+            if options.debug:
+                raise Exception('Error in response: '+err.message)
+            elif callback_index:
+                    retObj = {"result":"error", "error": err.message, "value": None, "messages": ""}
+                    outMsg = json.dumps([callback_index, '', retObj], default=sliauth.json_default)
+
+        if outMsg:
+            self.write_message(outMsg)
         self.timeout = IOLoop.current().call_later(WS_TIMEOUT_SEC, self._close_on_timeout)
 
 
-class AuthStaticFileHandler(tornado.web.StaticFileHandler): 
+class AuthStaticFileHandler(tornado.web.StaticFileHandler, UserIdMixin): 
     def get_current_user(self):
         if not options.hmac_key:
-            self.clear_cookie(USER_COOKIE_SECURE)
-            self.clear_cookie(SERVER_COOKIE)
+            self.clear_id()
             return "noauth"
         if options.private and options.private not in self.request.path:
             return "noauth"
-        user_id = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
-        return user_id or None
+        return self.get_id_from_cookie() or None
 
     # Override this method because overriding the get method of StaticFileHandler is problematic
     @tornado.web.authenticated
@@ -217,17 +277,10 @@ class AuthLoginHandler(BaseHandler):
     def post(self):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
 
-    def check_access(self, username, token):
-        if username == "admin":
-            return token == options.hmac_key
-        else:
-            return token == sliauth.gen_user_token(options.hmac_key, username)
-
     def login(self, username, token, next="/"):
         auth = self.check_access(username, token)
         if auth:
-            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username), expires_days=EXPIRES_DAYS)
-            self.set_cookie(SERVER_COOKIE, username+":"+token, expires_days=EXPIRES_DAYS)
+            self.set_id(username, '', token)
             self.redirect(next)
         else:
             error_msg = "?error=" + tornado.escape.url_escape("Incorrect username or token")
@@ -236,13 +289,12 @@ class AuthLoginHandler(BaseHandler):
             
 class AuthLogoutHandler(BaseHandler):
     def get(self):
-        self.clear_cookie(USER_COOKIE_SECURE)
-        self.clear_cookie(SERVER_COOKIE)
+        self.clear_id()
         self.write('Logged out.<p></p><a href="/">Home</a>')
 
 
 class TwitterLoginHandler(tornado.web.RequestHandler,
-                          tornado.auth.TwitterMixin):
+                          tornado.auth.TwitterMixin, UserIdMixin):
     @tornado.gen.coroutine
     def get(self):
         if self.get_argument("oauth_token", None):
@@ -252,10 +304,8 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             if 'rename' in Twitter_config and username in Twitter_config['rename']:
                 username = Twitter_config['rename'][username]
             displayName = user['name']
-
             token = options.hmac_key if username == 'admin' else sliauth.gen_user_token(options.hmac_key, username)
-            self.set_secure_cookie(USER_COOKIE_SECURE, tornado.escape.json_encode(username), expires_days=EXPIRES_DAYS)
-            self.set_cookie(SERVER_COOKIE, username+":"+token+":"+urllib.quote(displayName, safe=''), expires_days=EXPIRES_DAYS)
+            self.set_id(username, user['username'], token, displayName)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()

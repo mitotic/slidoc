@@ -888,7 +888,7 @@ var randVals = {}; // Optional persistent object
 PluginEndDef: sqrtTest
 
 
-Answer: sqrtTest.expect();2.5 +/- 0.1
+Answer: 2.5 +/- 0.1 = sqrtTest.expect()
 
 Concepts: questions, numeric response; questions, formulas; questions, randomized
 

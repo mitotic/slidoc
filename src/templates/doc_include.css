@@ -152,6 +152,13 @@ body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-increment
     border-radius: 10px;
 }
 
+@media screen and (min-width:800px) {
+    .slidoc-wide-popup {
+	width: 800px;
+	margin-left: -400px;
+    }
+}
+
 #slidoc-generic-popup { z-index: 2100; }
 #gdoc-login-popup { z-index: 3100; padding: 10px;}
 

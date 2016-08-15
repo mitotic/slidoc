@@ -94,7 +94,9 @@ attributes:
 
 > `this.adminState`: *true* if grading
 
-> `this.sessionName`: session name
+> `this.sessionName`: session name 
+
+> `this.params`: plugin-specific parameters
 
 > `this.initArgs`: list of init arguments for
 > embedded plugin in the slide as values, e.g.,
@@ -214,7 +216,7 @@ context of the arguments. For example, if the first embedded plugin is
 
     =beta.init(plugins.alpha.method(), plugins.alpha.attribute).
 
-Alternatively, using `name.expect()` or `name.response()` as the
+Alternatively, using `=name.expect()` or `=name.response()` as the
 correct answer automatically embeds the plugin before the Answer (if
 it has not been explicitly embedded before).
 
@@ -240,9 +242,9 @@ the `init` call.)
 
 The correct answer can also be provided by a formula:
 
-    Answer: pluginName.expect();number
+    Answer: number=pluginName.expect()
 
-with the answer type appended after a semicolon (`;`).
+with the answer type appearing before the equals sign.
 
 Simple formula-substitution plugins usually define `init` and `expect`
 (returning the correct answer) and at least one other function
@@ -256,9 +258,9 @@ returning a substitution value (see `test/ex01-basic.md`).
 Response plugins interact with the users and capture the response to a
 question. They appears in the Answer portion of the slide.
 
-    Answer: pluginName.response();text/x-python 
+    Answer: text/x-python=pluginName.response()
 
-    Answer: pluginName.response();300+/-10 
+    Answer: 300+/-10=pluginName.response()
 
 The `response` method uses callback to return the user response (as a
 string) and an optional `pluginResp` object of the form:
