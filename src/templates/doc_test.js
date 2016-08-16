@@ -226,11 +226,14 @@ TestScript.prototype.eventAction = function(commands) {
 	case 'code':
 	    if (!slide_id)
 		throw('No current slide for code action');
-	    document.getElementById(slide_id+'-plugin-code-textarea').value = args ? args[0] : '';
+	    document.getElementById(slide_id+'-plugin-Code-textarea').value = args ? args[0] : '';
 	    if (Slidoc.getParameter('teststep'))
 		this.showStatus('Answer to advance');
 	    else
 		document.getElementById(slide_id+'-answer-click').onclick();
+	    break;
+	case 'submitSession':
+	    document.getElementById(slide_id+'-plugin-Submit-submitbutton').onclick();
 	    break;
 	case 'switchUser':
 	    var switchElem = document.getElementById('slidoc-switch-user');

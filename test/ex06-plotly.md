@@ -1,9 +1,9 @@
 # Plotly plugin example
 
-PluginDef: interactivePlot = {
+PluginDef: InteractivePlot = {
     // Data generation plugin
 	init: function(xmin, xmax, initval, minval, maxval, stepval) {
-		Slidoc.log('Slidoc.Plugins.interactivePlot.init:', arguments, this.slideData);
+		Slidoc.log('Slidoc.Plugins.InteractivePlot.init:', arguments, this.slideData);
 		this.xmin = 0 || xmin;
 		this.xmax = 10 || xmax;
 		this.val = initval || 1;
@@ -25,7 +25,7 @@ PluginDef: interactivePlot = {
 
 	newValue: function (value) {
 		// Modify x, y data
-		Slidoc.log('Slidoc.Plugins.interactivePlot.newValue:', value);
+		Slidoc.log('Slidoc.Plugins.InteractivePlot.newValue:', value);
 		this.val = value;
 		var xy = equation(this.val, this.xmin, this.xmax);
 		Plotly.restyle(this.plotElem, {x: [xy[0]], y: [xy[1]]} );
@@ -53,15 +53,15 @@ PluginBody:
 <div id="%(pluginSlideId)s-plot" style="width:600px;height:250px;"></div>
 */
 
-PluginEndDef: interactivePlot
+PluginEndDef: InteractivePlot
 
 
-PluginEmbed: interactivePlot.init(0, 10, 2, 0, 10, 0.1)
+PluginEmbed: InteractivePlot(0, 10, 2, 0, 10, 0.1)
 \(y = x (x - \alpha) (x-5)\)
 
 %(pluginBody)s
 
-PluginEnd: interactivePlot
+PluginEnd: InteractivePlot
 
-=slider.init(plugins.interactivePlot.slider)
+=Slider(plugins.InteractivePlot.slider)
 

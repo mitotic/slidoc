@@ -39,9 +39,7 @@ test **bold** and  \(\alpha = \frac{1}{\beta}\)
 
 \[\alpha = \frac{1}{\beta}\]
 
-Answer: text/markdown
-
-Weight: 0, 5
+Answer: text/markdown; weight=0,5
 
 Concepts: questions, text response 
 
@@ -69,9 +67,7 @@ the two arguments.
 
 Provide a numeric answer.
 
-Answer: 1.5 +/- 0.5 explain=markdown
-
-Weight: 0, 5
+Answer: 1.5 +/- 0.5; explain=markdown; weight=0,5
 
 Concepts: questions, text response 
 

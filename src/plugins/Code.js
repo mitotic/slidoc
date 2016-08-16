@@ -1,17 +1,17 @@
-code = {
+Code = {
     // Code execution and testing plugin
-    setup: { initSetup: function() {Slidoc.log('Slidoc.Plugins.code.setup.initSetup:');},
+    setup: { initSetup: function() {Slidoc.log('Slidoc.Plugins.Code.setup.initSetup:');},
 	   },
 
-    global: { initGlobal: function() {Slidoc.log('Slidoc.Plugins.code.global.initGlobal:');}
+    global: { initGlobal: function() {Slidoc.log('Slidoc.Plugins.Code.global.initGlobal:');}
 	   },
 
     init: function () {
-	Slidoc.log('Slidoc.Plugins.code.init:');
+	Slidoc.log('Slidoc.Plugins.Code.init:');
     },
 
     disable: function (displayCorrect) {
-	Slidoc.log('Slidoc.Plugins.code.disable:', displayCorrect);
+	Slidoc.log('Slidoc.Plugins.Code.disable:', displayCorrect);
 	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
 	var checkButton = document.getElementById(this.pluginId+'-check-button');
 	textAreaElem.disabled = 'disabled';
@@ -19,21 +19,21 @@ code = {
     },
 
     display: function (response, pluginResp) {
-	Slidoc.log('Slidoc.Plugins.code.display:', this, response, pluginResp);
+	Slidoc.log('Slidoc.Plugins.Code.display:', this, response, pluginResp);
 	var textareaElem = document.getElementById(this.pluginId+'-textarea');
 	textareaElem.value = response || '';
 	codeResponseCallback.bind(this)(false, null, response, pluginResp);
     },
 
     response: function (retry, callback) {
-	Slidoc.log('Slidoc.Plugins.code.response:', this, retry, !!callback);
+	Slidoc.log('Slidoc.Plugins.Code.response:', this, retry, !!callback);
 	var inputValue = this.getInput(this.pluginId);
 	checkCode(this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
     checkCode: function (elem) {
-	Slidoc.log('Slidoc.Plugins.code.checkCode:', elem);
+	Slidoc.log('Slidoc.Plugins.Code.checkCode:', elem);
 	checkCode(this.slideId+'', this.qattributes, this.getInput(this.pluginId), true,
 		  checkCodeCallback.bind(this) );
     },

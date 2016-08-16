@@ -972,6 +972,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	defCopy.setup = null;
 	defCopy.global = null;
 	defCopy.persist = null;
+	defCopy.paced = null;
     } else {
 	defCopy.setup = Sliobj.pluginSetup[pluginName];
 
@@ -982,6 +983,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    Sliobj.session.plugins[pluginName] = {};
 
 	defCopy.persist = Sliobj.session.plugins[pluginName];
+	defCopy.paced = Sliobj.session.paced;
 
 	var pluginNumber = Sliobj.activePlugins[pluginName].number;
 	if (!slide_id) {
@@ -1360,12 +1362,6 @@ function slidocSetupAux(session, feedback) {
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var slideElem = document.getElementById(slide_id);
 
-	    // Hide grade entry for questions with zero grade weight (workaround for Weight: being parsed after Answer:)
-	    toggleClass(!question_attrs.gweight, 'slidoc-nogradeelement', slideElem);
-	    var suffixElem = document.getElementById(slide_id+'-gradesuffix')
-	    if (suffixElem && question_attrs.gweight)
-		suffixElem.textContent = '/'+question_attrs.gweight;
-
 	    if (!Sliobj.firstTime) {
 		// Clean-up slide-specific view styles for question slides
 		slideElem.classList.remove('slidoc-answered-slideview');
@@ -1640,22 +1636,26 @@ function preAnswer() {
 	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	    var question_attrs = attr_vals[qnumber-1];
 	    if (!(question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice'))
-		continue;
+		continue
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	    var qAttempted = Sliobj.session.questionsAttempted[qnumber] || null;
-	    var shuffleStr = qAttempted ? qAttempted.shuffle : '';
-	    if (Sliobj.adminState) {
-		if (shuffleStr) {
-		    var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
-		    if (shuffleDiv)
-			shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
+	    var shuffleStr = '';
+	    if (!question_attrs.share) {
+		// Non-shared choice question
+		var qAttempted = Sliobj.session.questionsAttempted[qnumber] || null;
+		shuffleStr = qAttempted ? qAttempted.shuffle : '';
+		if (Sliobj.adminState) {
+		    if (shuffleStr) {
+			var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
+			if (shuffleDiv)
+			    shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
+		    }
+		    
+		} else if (!shuffleStr && !qAttempted && Sliobj.session.paced) {
+		    // Randomize choice
+		    var choices = document.getElementsByClassName(slide_id+"-choice-elem");
+		    shuffleStr = Math.floor(2*randFunc());
+		    shuffleStr += randomLetters(choices.length, randFunc);
 		}
-
-	    } else if (!shuffleStr && !qAttempted && Sliobj.session.paced) {
-		// Randomize choice
-		var choices = document.getElementsByClassName(slide_id+"-choice-elem");
-		shuffleStr = Math.floor(2*randFunc());
-		shuffleStr += randomLetters(choices.length, randFunc);
 	    }
 	    shuffleBlock(slide_id, shuffleStr)
 	}
@@ -1667,7 +1667,7 @@ function preAnswer() {
 	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	var slide_id = chapter_id + '-' + zeroPad(qAttempted.slide, 2);
-	Slidoc.answerClick(null, slide_id, qAttempted.response, qAttempted.explain||null, qAttempted.plugin, qfeedback);
+	Slidoc.answerClick(null, slide_id, true, qAttempted.response, qAttempted.explain||null, qAttempted.plugin, qfeedback);
     }
 
     if (Sliobj.session.submitted)
@@ -1744,7 +1744,7 @@ function showCorrectAnswers() {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	Slidoc.answerClick(null, slide_id, '', question_attrs.explain, null, qfeedback);
+	Slidoc.answerClick(null, slide_id, true, '', question_attrs.explain, null, qfeedback);
     }
 }
 
@@ -2304,9 +2304,9 @@ Slidoc.PluginRetry = function (msg) {
     return false;
 }
 
-function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
-    if (!setup && Sliobj.session.paced && !Sliobj.currentSlide) {
-	alert('To answer questions in paced mode, please switch to slide view (Escape key or square icon at bottom left)');
+function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
+    if (!setup && !force && Sliobj.session.paced && !Sliobj.currentSlide) {
+	alert('To answer questions in paced mode, please switch to slide view (Escape key or Square icon at bottom left)');
 	return false;
     }
     var textareaElem = document.getElementById(slide_id+'-answer-textarea');
@@ -2316,7 +2316,8 @@ function checkAnswerStatus(setup, slide_id, question_attrs, explain) {
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
 	}
     } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim()) {
-	showDialog('alert', 'explainDialog', 'Please provide an explanation for the answer');
+	if (!force)
+	    showDialog('alert', 'explainDialog', 'Please provide an explanation for the answer');
 	return false;
     }
     return true;
@@ -2366,9 +2367,9 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
     return false;
 }
 
-Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qfeedback) {
+Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginResp, qfeedback) {
    // Handle answer types: number, text
-    Slidoc.log('Slidoc.answerClick:', elem, slide_id, response, explain, pluginResp, qfeedback);
+    Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
 	return;
@@ -2376,9 +2377,8 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
-    var checkOnly = elem && elem.classList.contains('slidoc-check-button');
 
-    if (!checkAnswerStatus(setup, slide_id, question_attrs, explain))
+    if (!checkAnswerStatus(setup, slide_id, force, question_attrs, explain))
 	return false;
     if (setup) {
         elem = document.getElementById(slide_id+"-answer-click");
@@ -2400,7 +2400,7 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
        }
    } else {
        // Not setup
-	if (!checkOnly && !Slidoc.answerPacedAllow())
+	if (!Slidoc.answerPacedAllow())
 	    return false;
        response = '';
     }
@@ -2410,18 +2410,18 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	var pluginName = pluginMatch[2];
 	if (setup) {
 	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
-	    Slidoc.answerUpdate(setup, slide_id, false, response, pluginResp);
+	    Slidoc.answerUpdate(setup, slide_id, response, pluginResp);
 	} else {
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries -= 1;
 
 	    var retryMsg = Slidoc.PluginMethod(pluginName, slide_id, 'response',
 				      (Sliobj.session.remainingTries > 0),
-				      Slidoc.answerUpdate.bind(null, setup, slide_id, false));
+				      Slidoc.answerUpdate.bind(null, setup, slide_id));
 	    if (retryMsg)
 		Slidoc.PluginRetry(retryMsg);
 	}
-	if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
+	if (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1)
 	    Slidoc.PluginMethod(pluginName, slide_id, 'disable');
 
 	return false;
@@ -2470,33 +2470,36 @@ Slidoc.answerClick = function (elem, slide_id, response, explain, pluginResp, qf
 	    } else {
 		response = inpElem.value.trim();
 		if (question_attrs.qtype == 'number' && !isNumber(response)) {
-		    alert('Expecting a numeric value as answer');
+		    if (!force)
+			alert('Expecting a numeric value as answer');
 		    return false;
-		} else if (Sliobj.session.paced && !checkOnly) {
+		} else if (Sliobj.session.paced) {
 		    if (!response) {
-			alert('Expecting a non-null answer');
+			if (!force)
+			    alert('Expecting a non-null answer');
 			return false;
 		    } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
-			alert('Please try a different answer this time!');
+			if (!force)
+			    alert('Please try a different answer this time!');
 			return false;
 		    }
 		    Sliobj.lastInputValue = response;
 		}
 	    }
-	    if (!checkOnly && (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1))
+	    if (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1)
 		inpElem.disabled = 'disabled';
 	}
 
-	if (!setup && !checkOnly && Sliobj.session.remainingTries > 0)
+	if (!setup && Sliobj.session.remainingTries > 0)
 	    Sliobj.session.remainingTries -= 1;
     }
 
-    Slidoc.answerUpdate(setup, slide_id, checkOnly, response);
+    Slidoc.answerUpdate(setup, slide_id, response);
     return false;
 }
 
-Slidoc.answerUpdate = function (setup, slide_id, checkOnly, response, pluginResp) {
-    Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, checkOnly, response, pluginResp);
+Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
+    Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, response, pluginResp);
 
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
@@ -2818,7 +2821,7 @@ Slidoc.submitStatus = function () {
     } else {
 	var html = 'Session not submitted.'
 	if (!Sliobj.adminState)
-	    html += ' Click <span class="slidoc-clickable" onclick="Slidoc.submitSession();">here</span> to submit session'+((Sliobj.session.lastSlide < getVisibleSlides().length) ? ' without reaching the last slide':'');
+	    html += ' Click <span class="slidoc-clickable" onclick="Slidoc.submitClick();">here</span> to submit session'+((Sliobj.session.lastSlide < getVisibleSlides().length) ? ' without reaching the last slide':'');
     }
     if (Sliobj.adminState) {
 	if (Sliobj.gradeDateStr)
@@ -2829,13 +2832,79 @@ Slidoc.submitStatus = function () {
     Slidoc.showPopup(html);
 }
 
-Slidoc.submitSession = function () {
-    Slidoc.log('Slidoc.submitSession: ');
+Slidoc.submitClick = function(elem, noFinalize) {
+    // Submit session after finalizing answers with checked choices and entered input values
+    Slidoc.log('Slidoc.submitClick:', elem, noFinalize);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    if (!showDialog('confirm', 'submitDialog', 'Do you really want to submit session without reaching the last slide?'))
+
+    if (!Sliobj.session || !Sliobj.session.paced || Sliobj.session.submitted) {
+	alert('Session appears to be already submitted');
 	return;
+    }
+
+    var prompt = '';
+    if (Sliobj.session.questionsCount < Sliobj.params.questionsMax)
+	prompt = 'You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to proceed with submission?'
+
+    var finalize_answers = [];
+    if (prompt && !noFinalize) {
+	// Check for selected, but not finalized, answers
+	var firstSlideId = getVisibleSlides()[0].id;
+	var chapter_id = parseSlideId(firstSlideId)[0];
+	var attr_vals = getChapterAttrs(firstSlideId);
+
+	var unanswered = 0;
+	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
+	    var question_attrs = attr_vals[qnumber-1];
+	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	    if (qnumber in Sliobj.session.questionsAttempted)
+		continue
+
+	    // Unattempted question
+	    var response = '';
+	    if (question_attrs.qtype.slice(-6) == 'choice') {
+		var choices = document.getElementsByClassName(slide_id+"-choice");
+	    	for (var i=0; i < choices.length; i++) {
+		    if (choices[i].classList.contains("slidoc-choice-selected"))
+			response += choices[i].dataset.choice;
+		}
+	    } else {
+		var multiline = question_attrs.qtype.slice(0,5) == 'text/';
+		var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
+		if (inpElem)
+		    response = inpElem.value.trim();
+	    }
+	    var textareaElem = document.getElementById(slide_id+'-answer-textarea');
+	    var ansElem = document.getElementById(slide_id+'-answer-click');
+	    if (question_attrs.explain && textareaElem && !textareaElem.value.trim())
+		// No explanation provided; ignore response
+		response = ''
+	    if (response && ansElem)
+		finalize_answers.push([ansElem, slide_id]);
+	    else
+		unanswered += 1;
+	}
+	if (unanswered)
+	    prompt = 'There are '+unanswered+' unanswered questions. Do you still wish to proceed with submission?';
+	else
+	    prompt = '';
+		
+    }
+
+    if (prompt) {
+	if (!showDialog('confirm', 'submitDialog', prompt))
+	    return;
+    }
+
+    for (var j=0; j<finalize_answers.length; j++)
+	Slidoc.answerClick(finalize_answers[j][0], finalize_answers[j][1], true);
+
     Slidoc.endPaced();
+
+    var submitElems = document.getElementsByClassName('slidoc-plugin-submit-button');
+    for (var j=0; j<submitElems.length; j++)
+	submitElems[j].disabled = 'disabled';
 }
 
 Slidoc.releaseGrades = function () {
@@ -3031,13 +3100,15 @@ Slidoc.startPaced = function () {
     var startMsg = 'Reviewing submitted paced session '+Sliobj.sessionName+'<br>';
     } else {
     var startMsg = 'Starting'+((Sliobj.session.paceLevel>1)?' strictly':'')+' paced session '+Sliobj.sessionName+':<br>';
+    if (Sliobj.params.paceLevel <= 1)
+	startMsg += '&nbsp;&nbsp;<em>You may switch between slide and document views using Escape key or Square icon at bottom left.</em><br>';
     if (Sliobj.params.questionsMax)
 	startMsg += '&nbsp;&nbsp;<em>There are '+Sliobj.params.questionsMax+' questions.</em><br>';
     if (Sliobj.params.gd_sheet_url) {
 	if (Sliobj.params.tryCount)
 	    startMsg += '&nbsp;&nbsp;<em>Answers will be submitted after each answered question.</em><br>';
 	else
-	    startMsg += '&nbsp;&nbsp;<em>Answers will only be submitted when you reach the last slide.&nbsp;&nbsp;<br>If you do not complete and move to a different computer, you will have to start over again.</em><br>';
+	    startMsg += '&nbsp;&nbsp;<em>Answers should be submitted when you reach the last slide.&nbsp;&nbsp;<br>If you do not complete and move to a different computer, you will have to start over again.</em><br>';
     }
     startMsg += '<ul>';
     if (Sliobj.params.paceDelay)
@@ -3072,6 +3143,9 @@ Slidoc.endPaced = function () {
     Slidoc.reportEvent('endPaced');
     sessionPut(null, null, {force: true, retry: 'end_paced', submit: true});
     showCompletionStatus();
+    var answerElems = document.getElementsByClassName('slidoc-answer-button');
+    for (var j=0; j<answerElems.length; j++)
+	answerElems[j].disabled = 'disabled';
 }
 
 Slidoc.answerPacedAllow = function () {
@@ -3248,7 +3322,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
-	if (slide_num == slides.length && Sliobj.session.questionsCount < Sliobj.params.questionsMax) {
+	if (slide_num == slides.length && Sliobj.params.tryCount && Sliobj.session.questionsCount < Sliobj.params.questionsMax) {
 	    var prompt = 'You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
 	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
 		return false;
@@ -3305,8 +3379,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	if (Sliobj.delaySec)
 	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-prev', 'slidoc-slide-nav-next');
 
-	if (Sliobj.session.lastSlide == slides.length) {
-	    // Last slide
+	if (Sliobj.session.lastSlide == slides.length && Sliobj.params.tryCount) {
+	    // Last slide (with try count)
 	    Slidoc.endPaced();
 
 	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {

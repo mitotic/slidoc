@@ -852,12 +852,12 @@ Notes:
 
 ## Interactive numerical response question
 
-What is the square root of `=sqrtTest.number();6.25`?
+What is the square root of `=SqrtTest.number();6.25`?
 
 
-PluginDef: sqrtTest = {
+PluginDef: SqrtTest = {
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
-// Plugin object sqrtTest is automatically attached to global object Slidoc.PluginDefs
+// Plugin object SqrtTest is automatically attached to global object Slidoc.PluginDefs
 // Special function init is called for each slide. 
 // Define formulas as functions in the plugin object.
 // Special function expect should return the expected answer. 
@@ -868,27 +868,27 @@ PluginDef: sqrtTest = {
 // Define any persistent objects after the plugin object (in an anonymous namespace). 
 //
     init: function() {
-	    console.log('sqrtTest.init:', this.pluginId);
+	    console.log('SqrtTest.init:', this.pluginId);
   	    // Pick a random integer between 2 and 19, and then divide by 2 
 	    var randInt = this.randomNumber(2,19);
 	    randVals[this.pluginId] = (0.5*randInt).toFixed(1);
     },
 
     number: function() {
-	    console.log('sqrtTest.number:', this.pluginId, randVals[this.pluginId]);
+	    console.log('SqrtTest.number:', this.pluginId, randVals[this.pluginId]);
 	    return (randVals[this.pluginId]*randVals[this.pluginId]).toFixed(2);
     },
 
     expect: function() {
-	    console.log('sqrtTest.expect:', this.pluginId, randVals[this.pluginId]);
+	    console.log('SqrtTest.expect:', this.pluginId, randVals[this.pluginId]);
 	    return randVals[this.pluginId]+' +/- '+'0.1';
     }
 }
 var randVals = {}; // Optional persistent object
-PluginEndDef: sqrtTest
+PluginEndDef: SqrtTest
 
 
-Answer: 2.5 +/- 0.1 = sqrtTest.expect()
+Answer: 2.5 +/- 0.1 = SqrtTest.expect()
 
 Concepts: questions, numeric response; questions, formulas; questions, randomized
 

@@ -1,9 +1,9 @@
-slider = {
+Slider = {
     // Simple slider plugin
 
     init: function(slider) {
 	// slider = { initval:, minval:, maxval:, stepval:, answer:, newValue: function(value){...} }
-	Slidoc.log('Slidoc.Plugins.slider.init:', arguments, this.slideData);
+	Slidoc.log('Slidoc.Plugins.Slider.init:', arguments, this.slideData);
 	this.slider = slider;
 	this.val = slider.initval || 1;
 	this.minval = ('minval' in slider) ? slider.minval : Math.min(this.val,0);
@@ -47,7 +47,7 @@ slider = {
 
     modValue: function (elem) {
 	// Modify x, y data
-	Slidoc.log('Slidoc.Plugins.slider.modValue', this.pluginId, elem);
+	Slidoc.log('Slidoc.Plugins.Slider.modValue', this.pluginId, elem);
 	if (elem.id.slice(-10) == '-boxbutton') {
 	    elem = this.boxElem;
 	    this.sliderElem.value = elem.value;
@@ -59,7 +59,7 @@ slider = {
     },
 
     display: function (response, pluginResp) {
-	Slidoc.log('Slidoc.Plugins.slider.display:', this, response, pluginResp);
+	Slidoc.log('Slidoc.Plugins.Slider.display:', this, response, pluginResp);
         try {
 	    this.val = parseFloat(response);
 	    this.sliderElem.value = this.val;
@@ -70,7 +70,7 @@ slider = {
     },
 
     disable: function (displayCorrect) {
-	Slidoc.log('Slidoc.Plugins.slider.disable:');
+	Slidoc.log('Slidoc.Plugins.Slider.disable:');
 	this.boxElem.disabled = 'disabled';
 	this.buttonElem.disabled = 'disabled';
 	this.sliderElem.disabled = 'disabled';
@@ -80,7 +80,7 @@ slider = {
     },
 
     response: function (retry, callback) {
-	Slidoc.log('Slidoc.Plugins.slider.response:', retry, !!callback);
+	Slidoc.log('Slidoc.Plugins.Slider.response:', retry, !!callback);
 	var pluginResp = {name: this.name};
 	if (this.correctAnswer === null) {
 	    pluginResp.score = null;

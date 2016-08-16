@@ -34,7 +34,7 @@ TestScripts.basic = [
   ['answerTally', 8, 500, 'choice', [randChoice()]],
   ['answerTally', 9, 500, 'input', [42, 'According to Douglas Adams']],
   ['answerTally', 10, 500, 'input', ['To be ...']],
-  ['answerTally', 12, 0, 'wait'],
+  ['answerTally', 12, 0, 'submitSession'],
   ['+lastSlideDialog', 0, 0, 'dialogReturn', [true]],
   ['endPaced', 0, 0, 'end']
   ];
@@ -55,7 +55,7 @@ C.. Letter C
 
 D.. Letter D
 
-Answer: explain
+Answer: ;explain
 
 Concepts: questions, interactive; questions, multiple-choice
 
@@ -91,11 +91,11 @@ Multiple selections can be specified in the Answer: line
 
 ## Interactive numerical response question
 
-What is the square root of `=sqrtTest.number(1);6.25`?
+What is the square root of `=SqrtTest.number(1);6.25`?
 
-PluginDef: sqrtTest = {
+PluginDef: SqrtTest = {
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
-// Plugin object sqrtTest is automatically attached to global object SlidocPlugins
+// Plugin object SqrtTest is automatically attached to global object SlidocPlugins
 // Special function init is called for each slide. 
 // Define formulas as functions in the plugin object.
 // Special function expect should return the expected answer. 
@@ -106,28 +106,28 @@ PluginDef: sqrtTest = {
 // Define any persistent objects after the plugin object (in an anonymous namespace). 
 //
     init: function(label, value) {
-	    console.log('sqrtTest.init:', this.pluginId, label, value);
+	    console.log('SqrtTest.init:', this.pluginId, label, value);
   	    // Pick a random integer between 2 and 19, and then divide by 2 
 	    var randInt = this.randomNumber(2,19);
 	    this.chosenNumber = (0.5*randInt).toFixed(1);
     },
 
     number: function(n) {
-	    console.log('sqrtTest.number:', n, this.pluginId, randVals[this.pluginId]);
+	    console.log('SqrtTest.number:', n, this.pluginId, randVals[this.pluginId]);
 	    return (this.chosenNumber*this.chosenNumber).toFixed(2);
     },
 
     expect: function() {
-	    console.log('sqrtTest.expect:', this.pluginId, this.chosenNumber);
+	    console.log('SqrtTest.expect:', this.pluginId, this.chosenNumber);
 	    return this.chosenNumber+' +/- '+'0.1';
     }
 }
 var randVals = {}; // Optional persistent object
-PluginEndDef: sqrtTest
+PluginEndDef: SqrtTest
 
-=sqrtTest.init('Slide label', 3.1416)
+=SqrtTest('Slide label', 3.1416)
 
-Answer: 2.5 +/- 0.1=sqrtTest.expect()
+Answer: 2.5 +/- 0.1=SqrtTest.expect()
 
 Concepts: questions, numeric response; questions, formulas; questions, randomized
 
@@ -167,9 +167,7 @@ considered correct.
 
 Write a python function to add two numbers.
 
-Answer: text/x-code
-
-Weight: 1, 4
+Answer: text/x-code; weight=1,4
 
 Concepts: questions, text response 
 
@@ -219,9 +217,7 @@ being correct.
 
 What number is the answer to the Ultimate Question of Life, the Universe and Everything?
 
-Answer: number explain=markdown
-
-Weight: 0, 2
+Answer: number; explain=markdown; weight=0,2
 
 Notes: All answers are assumed correct.
 

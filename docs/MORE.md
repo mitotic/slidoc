@@ -106,7 +106,9 @@ The following are defined only for global and slide instances:
 
 > `this.setup`:  setup instance
 
-> `this.persist`: plugin-specific saved data for sessions
+> `this.persist`: plugin-specific saved data for sessions 
+
+> `this.paced`: True if paced session 
 
 > `this.randomSeed`: slide-specific random seed (session-specific for global instances)
 
@@ -180,18 +182,18 @@ in the `PluginBody` by adding element attributes like
 ## Embedding plugins
 
 Once defined, plugins may be embedded in one or more slides by
-invoking the `init` method, with optional arguments, as follows:
+invoking its `init` method, with optional arguments, as follows:
 
 ```
-=name.init(arguments)
+=Name(arguments)
 ```
 
 OR
 
 ```
-PluginEmbed: name.init(arguments)
+PluginEmbed: Name(arguments)
 HTML template content
-PluginEnd: name
+PluginEnd: Name
 ```
 
 This embeds the PluginBody HTML at this location, in a `div` with `id`
@@ -212,18 +214,18 @@ occur in the same sequence in which the plugins are embedded in the
 slide. A special object `plugins`, containing all previously
 initialized plugin instances in the same slide, may be used in the
 context of the arguments. For example, if the first embedded plugin is
-`alpha`, the the second plugin `beta` may use the following arguments:
+`Alpha`, the the second plugin `Beta` may use the following arguments:
 
-    =beta.init(plugins.alpha.method(), plugins.alpha.attribute).
+    =Beta(plugins.Alpha.method(), plugins.Alpha.attribute).
 
-Alternatively, using `=name.expect()` or `=name.response()` as the
+Alternatively, using `=Name.expect()` or `=Name.response()` as the
 correct answer automatically embeds the plugin before the Answer (if
 it has not been explicitly embedded before).
 
 To embed multiple plugins using the same definition in a slide, append
-a digit to the plugin name when embedding, e.g., `pluginName2`,
-`pluginName3`, etc. This will automatically re-use the definition for
-`pluginName` for the new plugins, but with a different name.
+a digit to the plugin name when embedding, e.g., `PluginName2`,
+`PluginName3`, etc. This will automatically re-use the definition for
+`PluginName` for the new plugins, but with a different name.
 
 ---
 
@@ -233,7 +235,7 @@ Anywhere within Markdown text, any functions attached to plugins
 embedded in the slide may be invoked using Excel-like backtick-equals
 notations:
 
-    `=pluginName.func()`
+    `=PluginName.func()`
 
 This substitutes the return value from the function `func` attached to
 the slide instance of the plugin. An optional non-negative integer
@@ -242,7 +244,7 @@ the `init` call.)
 
 The correct answer can also be provided by a formula:
 
-    Answer: number=pluginName.expect()
+    Answer: number=PluginName.expect()
 
 with the answer type appearing before the equals sign.
 
@@ -258,9 +260,9 @@ returning a substitution value (see `test/ex01-basic.md`).
 Response plugins interact with the users and capture the response to a
 question. They appears in the Answer portion of the slide.
 
-    Answer: text/x-python=pluginName.response()
+    Answer: text/x-python=PluginName.response()
 
-    Answer: 300+/-10=pluginName.response()
+    Answer: 300+/-10=PluginName.response()
 
 The `response` method uses callback to return the user response (as a
 string) and an optional `pluginResp` object of the form:

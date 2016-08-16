@@ -1,9 +1,9 @@
-chartistPanel = {
+ChartistPanel = {
     // Data plotting plugin
 
     init: function(plotObj) {
 	// plotObj = {traces: [{x:[...], y:[...]}, layout: {xaxis: {...}, yaxis: {..}}, annotate: text} }
-	Slidoc.log('Slidoc.Plugins.chartistPanel.init:', arguments, this.slideData);
+	Slidoc.log('Slidoc.Plugins.ChartistPanel.init:', arguments, this.slideData);
 	this.chart = new Chartist.Line('#'+this.slideId+'-plot', {
             labels: plotObj.traces[0].x,
             series: [plotObj.traces[0].y] });

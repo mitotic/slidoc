@@ -1,9 +1,9 @@
 <!--slidoc-defaults --pace=1 -->
 # audio+delay plugin example
 
-PluginDef: audioPace = {
+PluginDef: AudioPace = {
 init: function(start,end){
-    console.log('audioPace.init:', this.pluginId, start, end);
+    console.log('AudioPace.init:', this.pluginId, start, end);
 	this.start = start;
     this.end = end;
     this.audioElement = document.getElementById(this.pluginId+'-audio');
@@ -12,7 +12,7 @@ init: function(start,end){
 },
 
 enterSlide: function(paceStart){
-    console.log('audioPace.enterSlide:', this.pluginId, paceStart, this.end - this.start);
+    console.log('AudioPace.enterSlide:', this.pluginId, paceStart, this.end - this.start);
 	if (!paceStart)
 	    return null;
 	var delaySec = this.end - this.start;
@@ -28,11 +28,11 @@ enterSlide: function(paceStart){
 },
 
 leaveSlide: function(){
-    console.log('audioPace.leaveSlide:', this.pluginId);
+    console.log('AudioPace.leaveSlide:', this.pluginId);
 },
 
 buttonClick: function(){
-    console.log('audioPace.buttonClick:', this.pluginId);
+    console.log('AudioPace.buttonClick:', this.pluginId);
 	var html = '<b>Audio Plugin</b>';
 	Slidoc.showPopup(html);
 }
@@ -50,15 +50,15 @@ PluginBody:
 
 */
 
-PluginEndDef: audioPace
+PluginEndDef: AudioPace
 
-=audioPace.init(0,4) 
+=AudioPace(0,4) 
 
 ---
 
 ## Next slide
 
-=audioPace.init(4,8) 
+=AudioPace(4,8) 
 
 ---
 

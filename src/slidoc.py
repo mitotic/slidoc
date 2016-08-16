@@ -49,6 +49,11 @@ SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
+PACE_LEVEL = 0
+PACE_DELAY = 1
+TRY_COUNT  = 2
+TRY_DELAY  = 3
+
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
@@ -267,14 +272,13 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
-    plugin_begin  =   re.compile(r'^PluginEmbed:\s*(\w+).init\s*\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+    plugin_begin  =   re.compile(r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
-    plugin_init   =   re.compile(r'^=(\w+).init\s*\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
+    plugin_init   =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
-    slidoc_weight =   re.compile(r'^ {0,3}(Weight):(.*?)(\n|$)')
     minirule =        re.compile(r'^(--) *(?:\n+|$)')
     pause =           re.compile(r'^(\.\.\.) *(?:\n+|$)')
 
@@ -283,7 +287,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_begin',  'plugin_init', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'slidoc_weight', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_begin',  'plugin_init', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -348,13 +352,6 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_notes(self, m):
          self.tokens.append({
             'type': 'slidoc_notes',
-            'name': m.group(1).lower(),
-            'text': m.group(2).strip()
-        })
-
-    def parse_slidoc_weight(self, m):
-         self.tokens.append({
-            'type': 'slidoc_weight',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -517,9 +514,6 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_notes(self):
         return self.renderer.slidoc_notes(self.token['name'], self.token['text'])
 
-    def output_slidoc_weight(self):
-        return self.renderer.slidoc_weight(self.token['name'], self.token['text'])
-
     def output_minirule(self):
         return self.renderer.minirule()
 
@@ -600,7 +594,7 @@ class SlidocRenderer(MathRenderer):
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
   <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly" data-qnumber="%(qno)d">Answer:</span>
-  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
+  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
   <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
@@ -617,22 +611,22 @@ class SlidocRenderer(MathRenderer):
 
     grading_template = '''
   <div class="slidoc-grade-element slidoc-answeredonly">
-    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
-    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
+    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
+    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
     <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-adminonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
-    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded"></span>
+    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded">%(gweight)s</span>
   </div>
 '''
     comments_template_a = '''
   <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="5" >  </textarea>
 '''
     render_template = '''
-  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-render-button" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
+  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-button slidoc-render-button" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
 '''
     quote_template = '''
-  <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
+  <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-button slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
 '''
     comments_template_b = '''              
 <div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
@@ -798,52 +792,32 @@ class SlidocRenderer(MathRenderer):
     def end_slide(self, suffix_html='', last_slide=False):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
             message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
+
         prefix_html = ''
         if self.qtypes[-1]:
             # Question slide
-            if self.options['config'].pace and last_slide:
-                abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
-            if len(self.questions) == 1:
-                self.cum_weights.append(self.questions[-1]['weight'])
-                self.cum_gweights.append(self.questions[-1]['gweight'])
-            else:
-                self.cum_weights.append(self.cum_weights[-1] + self.questions[-1]['weight'])
-                self.cum_gweights.append(self.cum_gweights[-1] + self.questions[-1]['gweight'])
+            if self.questions[-1]['share'] and 'Share' not in self.slide_plugin_embeds:
+                prefix_html += self.embed_plugin_body('Share', self.get_slide_id())
 
-            if self.questions[-1]['share'] and 'share' not in self.slide_plugin_embeds:
-                prefix_html += self.embed_plugin_body('share', self.get_slide_id())
-
-            if 'grade_response' in self.options['config'].features or self.questions[-1]['gweight'] or self.questions[-1]['share']:
-                qno = 'q%d' % len(self.questions)
-                fields = []
-                if self.qtypes[-1].startswith('text/'):
-                    fields = [qno+'_response']
-                elif self.questions[-1].get('explain'):
-                    fields = [qno+'_response', qno+'_explain']
-                if fields:
-                    if self.questions[-1]['share']:
-                        # Share response/explain columns
-                        fields += [qno+'_share']
-                    if self.questions[-1]['vote']:
-                        fields += [qno+'_vote']
-                    self.grade_fields += fields
-                    self.max_fields += ['' for field in fields]
-                    if self.questions[-1]['gweight']:
-                        self.grade_fields += [qno+'_grade']
-                        self.max_fields += [self.questions[-1]['gweight']]
-                    self.grade_fields += [qno+'_comments']
-                    self.max_fields += ['']
-
-            if self.options['config'].pace and self.slide_forward_links:
+            if self.options['config'].pace[PACE_LEVEL] and self.slide_forward_links:
                 # Handle forward link in current question
                 self.qforward[self.slide_forward_links[0]].append(len(self.questions))
                 if len(self.slide_forward_links) > 1:
                     message("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]))
 
+        if last_slide and self.options['config'].pace[PACE_LEVEL]:
+            # Last paced slide
+            if self.qtypes[-1]:
+                abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
+
+            if not self.options['config'].pace[TRY_COUNT] and 'Submit' not in self.plugin_loads:
+                # Submit button not previously included in this slide or earlier slides
+                prefix_html += self.embed_plugin_body('Submit', self.get_slide_id())
+
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
 
-        return self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end'))
+        return prefix_html+self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end'))
 
     def list_item(self, text):
         """Rendering list item snippet. Like ``<li>``."""
@@ -1078,7 +1052,7 @@ class SlidocRenderer(MathRenderer):
         params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
         if name == 'Q':
             return prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''' % params
-        elif self.options['config'].hide or self.options['config'].pace:
+        elif self.options['config'].hide or self.options['config'].pace[PACE_LEVEL]:
             return prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
@@ -1092,6 +1066,9 @@ class SlidocRenderer(MathRenderer):
         if plugin_name in self.slide_plugin_embeds:
             abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+self.slide_number)
         self.slide_plugin_embeds.add(plugin_name)
+
+        if plugin_name not in self.plugin_loads:
+            self.plugin_loads.add(plugin_name)
         self.plugin_number += 1
 
         plugin_def_name = plugin_name
@@ -1133,7 +1110,6 @@ class SlidocRenderer(MathRenderer):
 
     def slidoc_plugin(self, name, text):
         args, sep, content = text.partition('\n')
-        self.plugin_loads.add(name)
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
     def slidoc_answer(self, name, text):
@@ -1147,40 +1123,34 @@ class SlidocRenderer(MathRenderer):
             html_prefix = self.choice_end
             self.choice_end = ''
 
-        answer_opts = [x.strip() for x in text.split(';')]
-        text = answer_opts[0]
+        opt_comps = [x.strip() for x in text.split(';')]
+        text = opt_comps[0]
 
-        explain_answer = ''
-        share_answer = ''
-        vote_answer = ''
-        explain_opts = ('text', 'markdown')
-        share_opts = ('after_submission', 'after_due_date', 'after_grading')
-        vote_opts = ('show_live', 'show_completed')
-        for opt in answer_opts[1:]:
-            explain_match = re.match(r'^explain(=(\w+))?$', opt)
-            if explain_match:
-                explain_answer = explain_match.group(2) or explain_opts[0]
-                if explain_answer not in explain_opts:
-                    message("    ****ANSWER-ERROR: %s: 'Answer: ... explain=%s' is not a valid vote option; expecting %s for slide %s" % (self.options["filename"], explain_answer, '/'.join(explain_opts), self.slide_number))
-                    explain_answer = explain_opts[0]
-            share_match = re.match(r'^share(=(\w+))?$', opt)
-            if share_match:
-                share_answer = share_match.group(2) or share_opts[1]
-                if share_answer not in share_opts:
-                    message("    ****ANSWER-ERROR: %s: 'Answer: ... share=%s' is not a valid vote option; expecting %s for slide %s" % (self.options["filename"], share_answer, '/'.join(share_opts), self.slide_number))
-                    share_answer = ''
-            vote_match = re.match(r'^vote(=([.\w]+))?$', opt)
-            if vote_match:
-                vote_answer = vote_match.group(2) or vote_opts[0]
-                if vote_answer not in vote_opts:
-                    message("    ****ANSWER-ERROR: %s: 'Answer: ... vote=%s' is not a valid vote option; expecting %s for slide %s" % (self.options["filename"], vote_answer, '/'.join(vote_opts), self.slide_number))
-                    vote_answer = ''
+        weight_answer = ''
+        opt_values = { 'explain': ('text', 'markdown'),
+                       'share': ('after_due_date', 'after_submission', 'after_grading'),
+                       'vote': ('show_live', 'show_completed') }
+        answer_opts = { 'explain': '', 'share': '', 'vote': ''}
+        for opt in opt_comps[1:]:
+            weight_match = re.match(r'^weight=([\s\d,]+)$', opt)
+            if weight_match:
+                weight_answer = weight_match.group(1).strip()
+            else:
+                option_match = re.match(r'^(explain|share|vote)(=(\w+))?$', opt)
+                if option_match:
+                    opt_name = option_match.group(1)
+                    if option_match.group(3) and option_match.group(3) not in opt_values[opt_name]:
+                        abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting %s for slide %s" % (self.options["filename"], opt_name, option_match.group(3), '/'.join(opt_values[opt_name]), self.slide_number))
+                        return ''
+                    answer_opts[opt_name] = option_match.group(3) or opt_values[opt_name][0]
+                else:
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s' is not a valid answer option for slide %s" % (self.options["filename"], opt, self.slide_number))
 
-        if vote_answer and not share_answer:
-            share_answer = share_opts[1]
+        if answer_opts['vote'] and not answer_opts['share']:
+            answer_opts['share'] = opt_values['share'][0]
 
-        if share_answer and 'delay_answers' in self.options['config'].features:
-            share_answer = share_opts[2]
+        if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
+            answer_opts['share'] = opt_values['share'][2]
 
         slide_id = self.get_slide_id()
         plugin_name = ''
@@ -1191,7 +1161,7 @@ class SlidocRenderer(MathRenderer):
             plugin_name = plugin_match.group(2)
             plugin_action = plugin_match.group(3)
         elif text.lower() in ('text/x-python', 'text/x-javascript', 'text/x-test'):
-            plugin_name = 'code'
+            plugin_name = 'Code'
             plugin_action = 'response'
 
         if plugin_name:
@@ -1200,9 +1170,6 @@ class SlidocRenderer(MathRenderer):
                 plugin_action = ''
             elif plugin_name not in self.slide_plugin_embeds:
                 html_prefix += self.embed_plugin_body(plugin_name, slide_id)
-            
-        if plugin_name:
-            self.plugin_loads.add(plugin_name)
 
         qtype = ''
         num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
@@ -1278,11 +1245,9 @@ class SlidocRenderer(MathRenderer):
                     traceback.print_exc()
                     message("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp))
 
-        grade_response = 'grade_response' in self.options['config'].features
-
         multiline_answer = self.cur_qtype.startswith('text/')
         if multiline_answer:
-            explain_answer = ''      # Explain not compatible with textarea input
+            answer_opts['explain'] = ''      # Explain not compatible with textarea input
 
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
@@ -1295,7 +1260,8 @@ class SlidocRenderer(MathRenderer):
             correct_val = correct_text
 
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
-                                  explain=explain_answer, share=share_answer, vote=vote_answer, weight=1, gweight=0, vweight=0)
+                                  explain=answer_opts['explain'], share=answer_opts['share'], vote=answer_opts['vote'],
+                                  weight=1, gweight=0, vweight=0)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if self.block_input_counter:
@@ -1305,16 +1271,18 @@ class SlidocRenderer(MathRenderer):
         if self.slide_block_output:
             self.questions[-1].update(output=self.slide_block_output)
 
-        if share_answer:
-            self.sheet_attributes['shareAnswers']['q'+str(qnumber)] = {'share': share_answer, 'vote': vote_answer, 'voteWeight': 0}
+        if answer_opts['share']:
+            self.sheet_attributes['shareAnswers']['q'+str(qnumber)] = {'share': answer_opts['share'], 'vote': answer_opts['vote'], 'voteWeight': 0}
+
+        ans_grade_fields = self.process_weights(weight_answer)
 
         id_str = self.get_slide_id()
         ans_params = { 'sid': id_str, 'qno': len(self.questions)}
-        if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
+        if not self.options['config'].pace[PACE_LEVEL] and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
-        hide_answer = self.options['config'].hide or self.options['config'].pace
+        hide_answer = self.options['config'].hide or self.options['config'].pace[PACE_LEVEL]
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
             message("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
@@ -1323,36 +1291,39 @@ class SlidocRenderer(MathRenderer):
             # No hiding of correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+' '+correct_html+'<p></p>\n'
 
-        slide_markdown = (self.cur_qtype == 'text/markdown' or explain_answer == 'markdown')
+        slide_markdown = (self.cur_qtype == 'text/markdown' or answer_opts['explain'] == 'markdown')
 
         ans_classes = ''
         if multiline_answer:
             ans_classes += ' slidoc-multiline-answer'
-        if explain_answer:
+        if answer_opts['explain']:
             ans_classes += ' slidoc-explain-answer'
         if self.cur_qtype in ('choice', 'multichoice'):
             ans_classes += ' slidoc-choice-answer'
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'
 
+        grade_max_str = '/'+str(self.questions[-1]['gweight']) if self.questions[-1]['gweight'] else ''
+
         ans_params.update(ans_classes=ans_classes,
                         inp_type='number' if self.cur_qtype == 'number' else 'text',
-                        explain=('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if explain_answer else '')
+                        gweight=grade_max_str,
+                        explain=('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if answer_opts['explain'] else '')
 
         html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s">\n'''+self.answer_template
 
-        if grade_response:
-            html_template += self.grading_template     # Hidden later by doc_include.js, if zero gweight
+        if ans_grade_fields:
+            html_template += self.grading_template
             html_template += self.comments_template_a
 
         if slide_markdown:
             self.render_markdown = True
             html_template += self.render_template
 
-        if multiline_answer or explain_answer:
+        if multiline_answer or answer_opts['explain']:
             html_template += self.quote_template
 
-        if grade_response:
+        if ans_grade_fields:
             html_template += self.comments_template_b
 
         if self.cur_qtype == 'text/x-code':
@@ -1367,38 +1338,68 @@ class SlidocRenderer(MathRenderer):
         return html_prefix+ans_html+'\n'
 
 
-    def slidoc_weight(self, name, text):
-        if not text:
-            return ''
+    def process_weights(self, text):
+        sweight, gweight, vweight = 1, 0, 0
+        comps = [x.strip() for x in text.split(',') if x.strip()]
+        if len(comps) > 0:
+            sweight = parse_number(comps[0])
+        if len(comps) > 1:
+            gweight = parse_number(comps[1])
+        if len(comps) > 2:
+            vweight = parse_number(comps[2])
 
-        if not self.qtypes[-1]:
-            message("    ****WEIGHT-ERROR: %s: Unexpected 'Weight: %s' line in non-question slide %s" % (self.options["filename"], text, self.slide_number))
-            return ''
-        weight, gweight = None, None
-        match = re.match(r'^([0-9\.]+)(\s*,\s*([0-9\.]+))?(\s*,\s*([0-9\.]+))?$', text)
-        if match:
-            weight = parse_number(match.group(1))
-            gweight = parse_number(match.group(3)) if match.group(3) is not None else 0
-            vweight = parse_number(match.group(5)) if match.group(5) is not None else 0
-        if weight is None or (match.group(3) is not None and gweight is None) or (match.group(5) is not None and vweight is None):
-            message("    ****WEIGHT-ERROR: %s: Error in parsing 'Weight: %s' line ignored; expected 'Weight: number[,number[,number]]' in slide %s" % (self.options["filename"], text, self.slide_number))
-            return ''
+        if sweight is None or gweight is None or vweight is None:
+            abort("    ****WEIGHT-ERROR: %s: Error in parsing 'weight=%s' answer option; expected ';weight=number[,number[,number]]' in slide %s" % (self.options["filename"], text, self.slide_number))
+            return []
 
-        gweight = gweight or 0
-        vweight = vweight or 0
+        if 'grade_response' not in self.options['config'].features:
+            if gweight:
+                message("    ****WEIGHT-WARNING: %s: Not grading question with weight %d line in slide %s" % (self.options["filename"], gweight, self.slide_number))
+
+            gweight = 0
 
         if gweight and not self.qtypes[-1].startswith('text/') and not self.questions[-1].get('explain') and self.questions[-1].get('correct','').indexOf('()') < 0:
-            message("    ****WEIGHT-ERROR: %s: Unexpected grade weight %d line in non-graded/explained slide %s" % (self.options["filename"], gweight, self.slide_number))
+            message("    ****WEIGHT-WARNING: %s: Ignoring unexpected grade weight %d in non-text/non-explained slide %s" % (self.options["filename"], gweight, self.slide_number))
+            gweight = 0
 
         if vweight and not self.questions[-1].get('vote'):
-            message("    ****WEIGHT-ERROR: %s: Unexpected vote weight %d line without vote option in slide %s" % (self.options["filename"], vweight, self.slide_number))
+            message("    ****WEIGHT-WARNING: %s: Ignoring unexpected vote weight %d line without vote option in slide %s" % (self.options["filename"], vweight, self.slide_number))
+            vweight = 0
 
         if vweight:
             self.sheet_attributes['shareAnswers']['q'+str(self.questions[-1]['qnumber'])]['voteWeight'] = vweight
 
-        self.questions[-1].update(weight=weight, gweight=gweight, vweight=vweight)
+        self.questions[-1].update(weight=sweight, gweight=gweight, vweight=vweight)
 
-        return '<em>Weight: %s%s%s<em>' % (weight, ', '+str(gweight) if gweight else '', ', '+str(vweight) if vweight else '')
+        if len(self.questions) == 1:
+            self.cum_weights.append(sweight)
+            self.cum_gweights.append(gweight)
+        else:
+            self.cum_weights.append(self.cum_weights[-1] + sweight)
+            self.cum_gweights.append(self.cum_gweights[-1] + gweight)
+
+        ans_grade_fields = []
+        if 'grade_response' in self.options['config'].features or self.questions[-1]['share']:
+            qno = 'q%d' % len(self.questions)
+            if self.qtypes[-1].startswith('text/'):
+                ans_grade_fields += [qno+'_response']
+            elif self.questions[-1].get('explain'):
+                ans_grade_fields += [qno+'_response', qno+'_explain']
+            if ans_grade_fields:
+                if self.questions[-1]['share']:
+                    # Share response/explain columns
+                    ans_grade_fields += [qno+'_share']
+                if self.questions[-1]['vote']:
+                    ans_grade_fields += [qno+'_vote']
+                self.grade_fields += ans_grade_fields
+                self.max_fields += ['' for field in ans_grade_fields]
+                if gweight:
+                    self.grade_fields += [qno+'_grade']
+                    self.max_fields += [gweight]
+                self.grade_fields += [qno+'_comments']
+                self.max_fields += ['']
+
+        return ans_grade_fields
 
     def slidoc_concepts(self, name, text):
         if not text:
@@ -1417,7 +1418,7 @@ class SlidocRenderer(MathRenderer):
         tags = [x.strip() for x in text.split(";")]
         nn_tags = [x for x in tags if x]   # Non-null tags
 
-        if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
+        if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace[PACE_LEVEL]):
             # Track/check tags
             if self.qtypes[-1] in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
@@ -1647,7 +1648,7 @@ def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
     message('slidoc: Created remote spreadsheet:', sheet_name)
 
 def parse_plugin(text, name=None):
-    nmatch = re.match(r'^\s*([a-z]\w*)\s*=\s*{', text)
+    nmatch = re.match(r'^\s*([a-zA-Z]\w*)\s*=\s*{', text)
     if not nmatch:
         abort("Plugin definition must start with plugin_name={'")
     plugin_name = nmatch.group(1)
@@ -1733,6 +1734,23 @@ scriptdir = os.path.dirname(os.path.realpath(__file__))
 def message(*args):
     print(*args, file=sys.stderr)
 
+def split_pace(pace_arg, update={}):
+    comps = pace_arg.split(',') if pace_arg else []
+    pace_dict = {}
+    if len(comps) > 0 and comps[0]:
+        pace_dict['paceLevel'] = int(comps[0])
+    if len(comps) > 1 and comps[1]:
+        pace_dict['paceDelay'] = int(comps[1])
+    if len(comps) > 2 and comps[2]:
+        pace_dict['tryCount'] = int(comps[2])
+    if len(comps) > 3 and comps[3]:
+        pace_dict['tryDelay'] = int(comps[3])
+
+    pace_dict.update(update)
+
+    pace_tuple = (pace_dict.get('paceLevel',0), pace_dict.get('paceDelay',0), pace_dict.get('tryCount',0), pace_dict.get('tryDelay',0))
+    return pace_dict, pace_tuple
+
 def process_input(input_files, input_paths, config_dict, return_html=False):
     global message
     messages = []
@@ -1764,6 +1782,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
+    cmd_pace_dict, cmd_pace_tuple = split_pace(config.pace)
+    config.pace = cmd_pace_tuple  # May be overridden by file-specific values
+
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0,
                  'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
@@ -1773,6 +1794,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
                  'authType': '', 'features': {} }
 
+    js_params.update(cmd_pace_dict)   # May be overridden by file-specific values
+
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
     js_params['remoteLogLevel'] = config.remote_logging
 
@@ -1781,8 +1804,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     # Reset config properties that will be overridden for separate files
     cmd_features_set = None if config.features is None else md2md.make_arg_set(config.features, features_all)
-
-    cmd_pace_args = config.pace    # If None, will be initialized to file-specific values
 
     topnav_opts = ''
     gd_sheet_url = ''
@@ -1794,8 +1815,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
         js_params['fileName'] = out_name
     else:
-        # Will be initialized to file-specific values (use '' to override)
-        config.pace = None
+        # Will be initialized to file-specific values
         config.features = None
 
     gd_hmac_key = None             # Specify --gsheet_login='' to use Google Sheets without authentication
@@ -1877,7 +1897,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
-    base_plugin_list = ['code', 'share', 'slider']
+    base_plugin_list = ['Code', 'Share', 'Slider', 'Submit']
     base_plugin_defs = {}
     for plugin_name in base_plugin_list:
         _, base_plugin_defs[plugin_name] = parse_plugin(md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js'), name= plugin_name)
@@ -1958,30 +1978,15 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             # Separate files (may also be paced)
             file_config = parse_first_line(f, fname, parser, {}, include_args=Select_file_args,
                                            verbose=config.verbose)
-            config.pace = file_config.pace if cmd_pace_args is None else cmd_pace_args
-            if config.pace == '0':
-                config.pace = None
 
-            js_params['paceLevel'] = 0
-            js_params['paceDelay'] = 0
-            js_params['tryCount'] = 0
-            js_params['tryDelay'] = 0
-            if config.pace:
+            pace_dict, pace_tuple = split_pace(file_config.pace, update=cmd_pace_dict)
+            config.pace = pace_tuple
+            js_params.update(paceLevel=0, paceDelay=0, tryCount=0, tryDelay=0)
+            js_params.update(pace_dict)
+            if config.pace[PACE_LEVEL]:
                 # Note: pace does not work with combined files
                 if config.printable:
-                    abort('slidoc: Error: --pace and --printable options do not work well together')
-                comps = config.pace.split(',')
-                if comps[0]:
-                    js_params['paceLevel'] = int(comps[0])
-                if not js_params['paceLevel']:
-                    abort('slidoc: Error: --pace=0 argument should be omitted')
-
-                if len(comps) > 1 and comps[1]:
-                    js_params['paceDelay'] = int(comps[1])
-                if len(comps) > 2 and comps[2]:
-                    js_params['tryCount'] = int(comps[2])
-                if len(comps) > 3 and comps[3]:
-                    js_params['tryDelay'] = int(comps[3])
+                    abort('slidoc: Error: --pace=... and --printable options do not work well together')
 
                 if config.due_date is not None:
                     if config.due_date:
@@ -2071,7 +2076,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             # Include column for total grades
             max_score_fields += [max_params['q_grades']]
         max_score_fields += renderer.max_fields if renderer.max_fields else []
-        if config.pace:
+        if config.pace[PACE_LEVEL]:
             # File-specific js_params
             js_params['pacedSlides'] = renderer.slide_number
             js_params['questionsMax'] = max_params['questionsCount']
@@ -2120,7 +2125,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
         else:
-            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace)
+            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace[PACE_LEVEL])
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -2485,7 +2490,7 @@ def abort(msg):
         raise Exception(msg)
 
 # Strip options
-# For pure web pages, strip=chapters,contents,navigate, sections
+# For pure web pages, --strip=chapters,contents,navigate,sections
 strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
 
 # Features

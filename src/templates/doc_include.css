@@ -37,9 +37,6 @@ body.slidoc-admin-view section:not(.slidoc-answered-slideview) .slidoc-render-bu
 body:not(.slidoc-admin-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
 section.slidoc-answered-slideview:not(.slidoc-grading-slideview) .slidoc-render-button { display: none; }
 
-section.slidoc-nogradeelement .slidoc-grade-element { display: none; }
-section.slidoc-nogradeelement .slidoc-comments-element { display: none; }
-
 section:not(.slidoc-answered-slideview) .slidoc-choice-selected {background: #aaa; }
 section.slidoc-answered-slideview .slidoc-choice-selected {text-decoration: line-through; }
 
@@ -100,6 +97,11 @@ body.slidoc-sidebar-view .slidoc-all-container {
      display: block; }
 
 .slidoc-render-text { border: 1px solid maroon; padding: 5px;}
+
+button:disabled.slidoc-button,
+input[type="button"]:disabled.slidoc-button {
+    opacity: 0.4;
+}
 
 /* Incremental display */
 body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental1) .slidoc-incremental1 { visibility: hidden; }

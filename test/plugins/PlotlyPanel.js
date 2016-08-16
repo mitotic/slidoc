@@ -1,9 +1,9 @@
-plotlyPanel = {
+PlotlyPanel = {
     // Data plotting plugin
 
     init: function(plotObj) {
 	// plotObj = {traces: [{x:[...], y:[...]}, layout: {xaxis: {...}, yaxis: {..}}, annotate: text} }
-	Slidoc.log('Slidoc.Plugins.plotlyPanel.init:', arguments, this.slideData);
+	Slidoc.log('Slidoc.Plugins.PlotlyPanel.init:', arguments, this.slideData);
 	var data = plotObj.traces;
 	var layout = { margin: { t: 5, b: 35 },
 		       xaxis: {},
