@@ -3,8 +3,6 @@ Share = {
 
     init: function() {
 	Slidoc.log('Slidoc.Plugins.Share.init:', this);
-	this.votebutton = document.getElementById(this.pluginId+'-votebutton');
-	this.votebutton.style.display = null;
     },
 
     answerSave: function () {
@@ -12,6 +10,8 @@ Share = {
 	if (this.qattributes.share != 'after_submission' || !window.GService)
 	    return;
 	this.getResponses();
+	var shareElem = document.getElementById(this.slideId+'-plugin-Share-sharebutton');
+	toggleClass(false, 'slidoc-share-hide', shareElem);
     },
 
     getResponses: function () {
@@ -34,23 +34,29 @@ Share = {
 	    return;
 	var prefix = 'q'+this.qattributes.qnumber+'_';
 	var nRows = result[prefix+'response'].length;
-	var lines = ['Responses:<br><ul class="slidoc-plugin-share-list">'];
+	var lines = [result[prefix+'explain'] ? 'Explanations:<br>' : 'Responses:<br>'];
+	lines.push('<ul class="slidoc-plugin-share-list">');
 	var myVote = retStatus.info.vote || '';
+	var checkResp = result[prefix+'explain'] && this.qattributes.correct && this.qattributes.correct.length == 1;
 	for (var j=0; j<nRows; j++) {
+	    var resp = result[prefix+'response'][j];
+	    var correctResp = checkResp && this.qattributes.correct == resp;
 	    var line = '<li>';
 	    if (result[prefix+'share']) {
 		var voteCode = result[prefix+'share'][j];
-		if (voteCode)
+		if (voteCode && (!checkResp || correctResp))
 		    line += '<a href="javascript:void(0);" class="slidoc-plugin-share-votebutton slidoc-plugin-share-votebutton-'+voteCode+'" onclick="Slidoc.Plugins.'+this.name+"['"+this.slideId+"'].upVote('"+voteCode+"', this)"+';">&#x1f44d</a> &nbsp;'
 		else
 		    line += '<a href="javascript:void(0);" class="slidoc-plugin-share-votebutton-disabled">&#x1f44d</a> &nbsp;'
 	    }
 	    if (result[prefix+'vote'] && result[prefix+'vote'][j] !== null)
 		line += '[<code>'+(1000+parseInt(result[prefix+'vote'][j])).toString().slice(-3)+'</code>]&nbsp;';
-	    if (result[prefix+'explain'])
-		line += '<code>'+result[prefix+'response'][j]+'</code>: ' + result[prefix+'explain'][j];
-	    else
-		line += result[prefix+'response'][j];
+
+	    if (result[prefix+'explain']) {
+		line += '<code>'+(correctResp ? '<b>'+resp+'</b>' : resp)+'</code>: ' + result[prefix+'explain'][j];
+	    } else {
+		line += resp;
+	    }
 	    line += '</li>';
 	    lines.push(line);
 	}
@@ -120,9 +126,8 @@ Share = {
 }
    </style>
    PluginBody:
-   <input type="button" id="%(pluginId)s-sharebutton"  class="slidoc-plugin-share-button" value="Share"
+   <input type="button" id="%(pluginId)s-sharebutton" 
+   class="slidoc-clickable slidoc-button slidoc-plugin-share-button %(pluginSlideId)s-share-sharebutton slidoc-share-hide"
+   value="View all responses"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare(this);"></input>
-   <br>
-   <input type="button" id="%(pluginId)s-votebutton"  class="slidoc-plugin-share-button" value="Vote"
-   onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].upVote(this);" style="display: none;"></input>
 */

@@ -178,7 +178,7 @@ function setupCache(auth, callback) {
 		for (var j=0; j<roster.length; j++) {
 		    var id = roster[j][1];
 		    Sliobj.userList.push(id);
-		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], grading: null};
+		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], submitted:null, grading: null};
 		}
 
 		var userId = auth.id;
@@ -1108,17 +1108,28 @@ function selectUserCallback(userId, result, retStatus) {
 Slidoc.nextUser = function (forward) {
     if (!Sliobj.gradingUser)
 	return;
-    if (!forward && Sliobj.gradingUser > 1)
-	Sliobj.gradingUser -= 1;
-    else if (forward && Sliobj.gradingUser < Sliobj.userList.length)
-	Sliobj.gradingUser += 1;
-    else
-	return;
-    var option = document.getElementById('slidoc-switch-user-'+Sliobj.gradingUser);
-    if (option)
-	option.selected = true;
+    if (forward) {
+	for (var j=Sliobj.gradingUser+1; j <= Sliobj.userList.length; j++) {
+	    if (nextUserAux(j))
+		return;
+	}
+    } else {
+	for (var j=Sliobj.gradingUser-1; j >= 1; j--) {
+	    if (nextUserAux(j))
+		return;
+	}
+    }
+}
+
+function nextUserAux(gradingUser) {
+    var option = document.getElementById('slidoc-switch-user-'+gradingUser);
+    if (!option || option.disabled)
+	return false;
+    option.selected = true;
+    Sliobj.gradingUser = gradingUser;
     //selectUser(GService.gprofile.auth, slidocReadyAux1);
     selectUser(GService.gprofile.auth);
+    return true;
 }
 
 Slidoc.showGrades = function () {
@@ -1356,11 +1367,19 @@ function slidocSetupAux(session, feedback) {
 
 	var chapter_id = chapters[j].id;
 	var attr_vals = getChapterAttrs(chapter_id);
-	for (var k=0; k<attr_vals.length; k++) {
+	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	    // For each question slide
-	    var question_attrs = attr_vals[k];
+	    var question_attrs = attr_vals[qnumber-1];
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var slideElem = document.getElementById(slide_id);
+
+	    if (question_attrs.share) {
+		var shareAnswers = ( (question_attrs.share == 'after_due_date' && Sliobj.dueDate && (new Date()) > Sliobj.dueDate) ||
+				     (question_attrs.share == 'after_submission' && Sliobj.session.questionsAttempted[qnumber]) ||
+				     (question_attrs.share == 'after_grading' && Sliobj.gradeDateStr) );
+
+		toggleClassAll(!shareAnswers, 'slidoc-share-hide', slide_id+'-share-sharebutton');
+	    }
 
 	    if (!Sliobj.firstTime) {
 		// Clean-up slide-specific view styles for question slides
@@ -1468,7 +1487,7 @@ function slidocSetupAux(session, feedback) {
 function prepGradeSession(session) {
     // Modify session for grading
     session.paced = false; // Unpace session, but this update will not be saved to Google Docs
-    session.submitted = session.submitted || 'GRADING'; // Complete session, but these updates will not be saved to Google Docs
+    session.submitted = session.submitted || 'GRADING'; // 'Complete' session, but these updates will not be saved to Google Docs
     session.lastSlide = Sliobj.params.pacedSlides;
 }
 
@@ -1561,11 +1580,12 @@ function checkGradingStatus(userId, session, feedback) {
     Slidoc.log('checkGradingStatus:', userId);
     if (Sliobj.userGrades[userId].grading)
 	return;
-    if (!session.submitted) {
-	Sliobj.userGrades[userId].grading = null;
-	updateGradingStatus(userId);
-	return;
-    }
+
+    if (session.submitted && session.submitted != 'GRADING')
+	Sliobj.userGrades[userId].submitted = session.submitted;
+    else
+	Sliobj.userGrades[userId].submitted = null;
+
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
@@ -1595,7 +1615,10 @@ function checkGradingStatus(userId, session, feedback) {
     }
     Slidoc.log('checkGradingStatus:B', need_grading, updates);
 
-    Sliobj.userGrades[userId].grading = need_grading;
+    if (!Object.keys(need_grading).length && !Sliobj.userGrades[userId].submitted)
+	Sliobj.userGrades[userId].grading = null;
+    else
+	Sliobj.userGrades[userId].grading = need_grading;
     updateGradingStatus(userId);
 
     if (need_updates) {
@@ -1611,15 +1634,22 @@ function checkGradingStatus(userId, session, feedback) {
 }
 
 function updateGradingStatus(userId) {
+    var option = document.getElementById('slidoc-switch-user-'+Sliobj.userGrades[userId].index);
+    if (!option)
+	return;
+    var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
     if (!Sliobj.userGrades[userId].grading) {
-	var disp = SYMS.wrongMark;
+	text += SYMS.wrongMark;
+	option.disabled = 'disabled';
     } else {
 	var count = Object.keys(Sliobj.userGrades[userId].grading).length;
-	var disp = count || SYMS.correctMark;
+	if (Sliobj.userGrades[userId].submitted)
+	    text += count || SYMS.correctMark;
+	else
+	    text += count + ' ' + SYMS.wrongMark;
+	option.disabled = null;
     }
-    var option = document.getElementById('slidoc-switch-user-'+Sliobj.userGrades[userId].index);
-    if (option)
-	option.text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' '+disp;
+    option.text = text;
 }
 
 function preAnswer() {
@@ -2959,7 +2989,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
     }
 
     var userId = GService.gprofile.auth.id;
-    if (!Sliobj.userGrades[userId].grading) {
+    if (!Sliobj.userGrades[userId].submitted || !Sliobj.session.submitted || Sliobj.session.submitted == 'GRADING') {
 	alert('Session not submitted for user '+userId);
 	return;
     }

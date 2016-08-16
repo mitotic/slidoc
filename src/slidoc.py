@@ -1067,8 +1067,6 @@ class SlidocRenderer(MathRenderer):
             abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+self.slide_number)
         self.slide_plugin_embeds.add(plugin_name)
 
-        if plugin_name not in self.plugin_loads:
-            self.plugin_loads.add(plugin_name)
         self.plugin_number += 1
 
         plugin_def_name = plugin_name
@@ -1080,6 +1078,8 @@ class SlidocRenderer(MathRenderer):
                 abort('ERROR Plugin '+plugin_name+' not defined!')
                 return ''
 
+        if plugin_def_name not in self.plugin_loads:
+            self.plugin_loads.add(plugin_def_name)
         plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'][plugin_def_name]
 
         plugin_params = {'pluginSlideId': slide_id,

@@ -389,9 +389,11 @@ function handleResponse(evt) {
 	    var userId = null;
 	    var displayName = null;
 
-	    var voteSubmission = false;
-	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].slice(-5) == '_vote' && sessionAttributes && sessionAttributes.shareAnswers)
-		voteSubmission = true;
+	    var voteSubmission = '';
+	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].slice(-5) == '_vote' && sessionAttributes && sessionAttributes.shareAnswers) {
+		var qno = selectedUpdates[1][0].split('_')[0];
+		voteSubmission = sessionAttributes.shareAnswers[qno] ? (sessionAttributes.shareAnswers[qno].share||'') : '';
+	    }
 
 	    if (!adminUser && selectedUpdates && !voteSubmission)
 		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
@@ -777,16 +779,28 @@ function handleResponse(evt) {
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!adminUser && !voteSubmission && !partialSubmission)
-			throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
+		    if (!voteSubmission && !partialSubmission) {
+			if (!adminUser)
+			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
+
+			if (sessionParams) {
+			    // Indexed session: selected updates only after submission
+			    var submitTimestampCol = columnIndex['submitTimestamp'];
+			    if (!(submitTimestampCol && rowValues[submitTimestampCol-1]))
+				throw("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'");
+			}
+		    }
 
 		    if (voteSubmission) {
 			// Allow vote submissions only after due date and before voting deadline
-			if (!dueDate || dueDate.getTime() > curDate.getTime())
+			if (voteSubmission == 'after_due_date' && (!dueDate || dueDate.getTime() > curDate.getTime()))
 			    throw("Error:TOO_EARLY_TO_VOTE:Voting only allowed after due date for sheet '"+sheetName+"'");
+			if (voteSubmission == 'after_grading' && !gradeDate)
+			    throw("Error:TOO_EARLY_TO_VOTE:Voting only allowed after grading for sheet '"+sheetName+"'");
 			if (voteDate && voteDate.getTime() < curDate.getTime())
 			    throw("Error:TOO_LATE_TO_VOTE:Voting not allowed after vote date for sheet '"+sheetName+"'");
 		    }
+
 
 		    for (var j=0; j<selectedUpdates.length; j++) {
 			var colHeader = selectedUpdates[j][0];
