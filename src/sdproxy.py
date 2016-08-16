@@ -397,7 +397,7 @@ def handle_http_response(response):
         schedule_update(0 if Shutting_down else MIN_WAIT_TIME)
 
         
-def handleResponse(args):
+def handleResponse(params):
     # Returns a JSON object
     # object.result = 'success' or 'error'
     # object.value contains updated row values list if get=1; otherwise it is [].
@@ -434,7 +434,7 @@ def handleResponse(args):
     # we want a public lock, one that locks for all invocations
 
     if DEBUG:
-        print "DEBUG: handleResponse ARGS", args
+        print "DEBUG: handleResponse PARAMS", params
 
     returnValues = None
     returnHeaders = None
@@ -442,27 +442,27 @@ def handleResponse(args):
     returnMessages = []
 
     try:
-        sheetName = args.get('sheet','')
+        sheetName = params.get('sheet','')
         if not sheetName:
             raise Exception('Error:SHEETNAME::No sheet name specified')
 
         adminUser = ''
         authUser = ''
 
-        if args.get('admin',''):
-            if not args.get('token',''):
+        if params.get('admin',''):
+            if not params.get('token',''):
                 raise Exception('Error:NEED_ADMIN_TOKEN:Need token for admin authentication')
-            if not validateHMAC('admin:'+args.get('admin','')+':'+args.get('token',''), HMAC_KEY):
-                raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+args.get('admin','')+"'")
-            adminUser = args.get('admin','')
+            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), HMAC_KEY):
+                raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.get('admin','')+"'")
+            adminUser = params.get('admin','')
         elif REQUIRE_LOGIN_TOKEN:
-            if not args.get('id',''):
+            if not params.get('id',''):
                 raise Exception('Error:NEED_ID:Need id for authentication')
-            if not args.get('token',''):
+            if not params.get('token',''):
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
-            if not validateHMAC('id:'+args.get('id','')+':'+args.get('token',''), HMAC_KEY):
-                raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+args.get('id','')+"'")
-            authUser = args.get('id','')
+            if not validateHMAC('id:'+params.get('id','')+':'+params.get('token',''), HMAC_KEY):
+                raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+params.get('id','')+"'")
+            authUser = params.get('id','')
 
         protectedSheet = (sheetName == SCORES_SHEET)
         restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
@@ -483,13 +483,13 @@ def handleResponse(args):
         rosterSheet = getSheet(ROSTER_SHEET, optional=True)
         if rosterSheet and not adminUser:
             # Check user access
-            if not args.get('id',''):
+            if not params.get('id',''):
                 raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
             try:
                 # Copy user info from roster
-                rosterValues = lookupValues(args.get('id',''), MIN_HEADERS, ROSTER_SHEET, listReturn=True)
+                rosterValues = lookupValues(params.get('id',''), MIN_HEADERS, ROSTER_SHEET, listReturn=True)
             except Exception, err:
-                raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+args.get('id','')+"' not found in roster")
+                raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+params.get('id','')+"' not found in roster")
 
         returnInfo['prevTimestamp'] = None
         returnInfo['timestamp'] = None
@@ -507,20 +507,20 @@ def handleResponse(args):
 
 
         # Check parameter consistency
-        headers = json.loads(args.get('headers','')) if args.get('headers','') else None
+        headers = json.loads(params.get('headers','')) if params.get('headers','') else None
 
-        sheet = getSheet(sheetName, optional=True)
-        if not sheet:
+        modSheet = getSheet(sheetName, optional=True)
+        if not modSheet:
             if adminUser and headers is not None:
-                sheet = createSheet(sheetName, headers)
+                modSheet = createSheet(sheetName, headers)
             else:
                 raise Exception("Sheet %s not found!" % sheetName)
 
-        if not sheet.getLastColumn():
+        if not modSheet.getLastColumn():
             raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
-        columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0]
-        columnIndex = indexColumns(sheet)
+        columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
+        columnIndex = indexColumns(modSheet)
 
         if headers:
             if len(headers) > len(columnHeaders):
@@ -529,13 +529,13 @@ def handleResponse(args):
                 if headers[j] != columnHeaders[j]:
                     raise Exception("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.")
 
-        getRow = args.get('get','')
-        getCols = args.get('getcols', '');
-        allRows = args.get('all','')
-        nooverwriteRow = args.get('nooverwrite','')
+        getRow = params.get('get','')
+        getCols = params.get('getcols', '');
+        allRows = params.get('all','')
+        nooverwriteRow = params.get('nooverwrite','')
 
-        selectedUpdates = json.loads(args.get('update','')) if args.get('update','') else None
-        rowUpdates = json.loads(args.get('row','')) if args.get('row','') else None
+        selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
+        rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
 
         userId = None
         displayName = None
@@ -553,14 +553,14 @@ def handleResponse(args):
 
         numStickyRows = 1  # Headers etc.
 
-        if getRow and args.get('getheaders',''):
+        if getRow and params.get('getheaders',''):
             returnHeaders = columnHeaders
             try:
-                temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2)
+                temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
                 if temIndexRow.get(MAXSCORE_ID):
-                    returnInfo['maxScores'] = sheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
+                    returnInfo['maxScores'] = modSheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
                 if SHARE_AVERAGES and temIndexRow.get(AVERAGE_ID):
-                    returnInfo['averages'] = sheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
+                    returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
             except Exception, err:
                 pass
 
@@ -569,8 +569,8 @@ def handleResponse(args):
             returnValues = []
         elif getRow and allRows:
             # Get all rows and columns
-            if sheet.getLastRow() > numStickyRows:
-                returnValues = sheet.getSheetValues(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, len(columnHeaders))
+            if modSheet.getLastRow() > numStickyRows:
+                returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
             else:
                 returnValues = []
 
@@ -588,8 +588,8 @@ def handleResponse(args):
                 returnMessages.append("Warning:AFTER_DUE_DATE:")
                 returnValues = []
             else:
-                curUserId = args.get('id')
-                nRows = sheet.getLastRow()-numStickyRows
+                curUserId = params.get('id')
+                nRows = modSheet.getLastRow()-numStickyRows
                 respCol = getCols+'_response'
                 respIndex = columnIndex.get(getCols+'_response')
                 if not respIndex:
@@ -610,15 +610,15 @@ def handleResponse(args):
 
                 returnHeaders = columnHeaders[respIndex-1:respIndex-1+nCols]
 
-                temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 1+numStickyRows)
+                temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows)
                 if not temIndexRow.get(curUserId):
                     raise Exception('Error::Sheet has no row for user '+curUserId+' to share in session '+sheetName)
                 curUserOffset = temIndexRow[curUserId]-1-numStickyRows
 
-                shareSubrow = sheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
-                timeValues = sheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols)
-                submitValues = sheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols)
-                lateValues = sheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols)
+                shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
+                timeValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols)
+                submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols)
+                lateValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols)
 
                 curUserVals = shareSubrow[curUserOffset]
 
@@ -700,21 +700,21 @@ def handleResponse(args):
                 displayName = rowUpdates[columnIndex['name']-1] or ''
 
                 # Security check
-                if args.get('id','') and args.get('id','') != userId:
-                    raise Exception("Error::Mismatch between id '%s' and userId in row '%s'" % (args.get('id',''), userId))
-                if args.get('name','') and args.get('name','') != displayName:
-                    raise Exception("Error::Mismatch between args.get('name','') '%s' and displayName in row '%s'" % (args.get('name',''), displayName))
+                if params.get('id','') and params.get('id','') != userId:
+                    raise Exception("Error::Mismatch between id '%s' and userId in row '%s'" % (params.get('id',''), userId))
+                if params.get('name','') and params.get('name','') != displayName:
+                    raise Exception("Error::Mismatch between params.get('name','') '%s' and displayName in row '%s'" % (params.get('name',''), displayName))
                 if not adminUser and userId == MAXSCORE_ID:
                     raise Exception("Error::Only admin user may specify ID '%s'" % MAXSCORE_ID)
             else:
-                userId = args.get('id','') or None
+                userId = params.get('id','') or None
 
             if not userId:
                 raise Exception('Error::userID must be specified for updates/gets')
             userRow = -1
-            if sheet.getLastRow() > numStickyRows and not loggingSheet:
+            if modSheet.getLastRow() > numStickyRows and not loggingSheet:
                 # Locate ID row (except for log files)
-                userIds = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1)
+                userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1)
                 for j in range(len(userIds)):
                     # Unique ID
                     if userIds[j][0] == userId:
@@ -741,7 +741,7 @@ def handleResponse(args):
 
                 prevSubmitted = None
                 if not newRow and columnIndex.get('submitTimestamp'):
-                    prevSubmitted = sheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] or None
+                    prevSubmitted = modSheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] or None
 
                 if sessionParams:
                     # Indexed session
@@ -754,7 +754,7 @@ def handleResponse(args):
                         if lateTokenCol:
                             lateToken = (rowUpdates[lateTokenCol-1] or None)  if (rowUpdates and len(rowUpdates) >= lateTokenCol) else None
                             if not lateToken and not newRow:
-                                lateToken = sheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] or None
+                                lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] or None
 
                         curTime = sliauth.epoch_ms(curDate)
                         pastSubmitDeadline = (dueDate and curTime > sliauth.epoch_ms(dueDate))
@@ -798,15 +798,15 @@ def handleResponse(args):
                     if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
                         raise Exception('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName)
 
-                    userRow = sheet.getLastRow()+1
-                    if sheet.getLastRow() > numStickyRows and not loggingSheet:
-                        displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1)
+                    userRow = modSheet.getLastRow()+1
+                    if modSheet.getLastRow() > numStickyRows and not loggingSheet:
+                        displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1)
                         for j in range(len(displayNames)):
                             if displayNames[j][0] > displayName or (displayNames[j][0] == displayName and userIds[j][0] > userId):
                                 userRow = j+1+numStickyRows
                                 break
 
-                    sheet.insertRowBefore(userRow, keyValue=userId)
+                    modSheet.insertRowBefore(userRow, keyValue=userId)
                 elif rowUpdates and nooverwriteRow:
                     if getRow:
                         # Simply return existing row
@@ -816,13 +816,13 @@ def handleResponse(args):
 
                 maxCol = len(rowUpdates) if rowUpdates else len(columnHeaders)
                 totalCol = fieldsMin+1 if (len(columnHeaders) > fieldsMin and columnHeaders[fieldsMin] == 'q_grades') else 0
-                userRange = sheet.getRange(userRow, 1, 1, maxCol)
+                userRange = modSheet.getRange(userRow, 1, 1, maxCol)
                 rowValues = userRange.getValues()[0]
 
                 returnInfo['prevTimestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex and rowValues[columnIndex['Timestamp']-1]) else None
-                if returnInfo['prevTimestamp'] and args.get('timestamp','') and parseNumber(args.get('timestamp','')) and returnInfo['prevTimestamp'] > 1+parseNumber(args.get('timestamp','')):
-                    ##returnMessages.append('Debug::prevTimestamp, timestamp: %s %s' % (returnInfo['prevTimestamp'] , args.get('timestamp','')) )
-                    raise Exception('Error::Row timestamp too old by '+str(math.ceil(returnInfo['prevTimestamp']-parseNumber(args.get('timestamp','')))/1000)+' seconds. Conflicting modifications from another active browser session?')
+                if returnInfo['prevTimestamp'] and params.get('timestamp','') and parseNumber(params.get('timestamp','')) and returnInfo['prevTimestamp'] > 1+parseNumber(params.get('timestamp','')):
+                    ##returnMessages.append('Debug::prevTimestamp, timestamp: %s %s' % (returnInfo['prevTimestamp'] , params.get('timestamp','')) )
+                    raise Exception('Error::Row timestamp too old by '+str(math.ceil(returnInfo['prevTimestamp']-parseNumber(params.get('timestamp','')))/1000)+' seconds. Conflicting modifications from another active browser session?')
 
                 if rowUpdates:
                     # Update all non-null and non-id row values
@@ -879,7 +879,7 @@ def handleResponse(args):
 
                         elif colHeader == 'initTimestamp' and newRow:
                             rowValues[j] = curDate
-                        elif colHeader == 'submitTimestamp' and args.get('submit',''):
+                        elif colHeader == 'submitTimestamp' and params.get('submit',''):
                             rowValues[j] = curDate
                             returnInfo['submitTimestamp'] = curDate
 
@@ -974,7 +974,7 @@ def handleResponse(args):
                                     qshare = sessionAttributes['shareAnswers'].get(colHeader.split('_')[0]);
                                     if qshare:
                                         rowValues[otherCol-1] = str(int(rowValues[otherCol-1] or 0) + qshare.get('voteWeight',0))
-                                        sheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
+                                        modSheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
                             modValue = colValue
 
                         elif colValue is None:
@@ -999,7 +999,7 @@ def handleResponse(args):
 
                         if modValue is not None:
                             rowValues[headerColumn-1] = modValue
-                            sheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
+                            modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
 
                 # Return updated timestamp

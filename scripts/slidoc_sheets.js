@@ -353,21 +353,21 @@ function handleResponse(evt) {
 	    // Check parameter consistency
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
 
-	    var sheet = getSheet(sheetName);
-	    if (!sheet) {
+	    var modSheet = getSheet(sheetName);
+	    if (!modSheet) {
 		// Create new sheet
 		if (!adminUser)
 		    throw("Error:NOSHEET:Sheet '"+sheetName+"' not found");
 		if (!headers)
 		    throw("Error:NOSHEET:Headers must be specified for new sheet '"+sheetName+"'");
-		sheet = createSheet(sheetName, headers);
+		modSheet = createSheet(sheetName, headers);
 	    }
 
-	    if (!sheet.getLastColumn())
+	    if (!modSheet.getLastColumn())
 		throw("Error::No columns in sheet '"+sheetName+"'");
 	    
-	    var columnHeaders = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0];
-	    var columnIndex = indexColumns(sheet);
+	    var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
+	    var columnIndex = indexColumns(modSheet);
 	    
 	    if (headers) {
 		if (headers.length > columnHeaders.length)
@@ -406,11 +406,11 @@ function handleResponse(evt) {
 	    if (getRow && params.getheaders) {
 		returnHeaders = columnHeaders;
 		try {
-		    var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 2);
+		    var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2);
 		    if (temIndexRow[MAXSCORE_ID])
-			returnInfo.maxScores = sheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
+			returnInfo.maxScores = modSheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
 		    if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
-			returnInfo.averages = sheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
+			returnInfo.averages = modSheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
 		} catch (err) {}
 	    }
 	}
@@ -424,9 +424,9 @@ function handleResponse(evt) {
 	} else if (getRow && allRows) {
 	    // Get all rows and columns
 	    if (proxy)
-		returnValues = sheet.getSheetValues(1, 1, sheet.getLastRow(), columnHeaders.length);
-	    else if (sheet.getLastRow() > numStickyRows)
-		returnValues = sheet.getSheetValues(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, columnHeaders.length);
+		returnValues = modSheet.getSheetValues(1, 1, modSheet.getLastRow(), columnHeaders.length);
+	    else if (modSheet.getLastRow() > numStickyRows)
+		returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
 	    else
 		returnValues = [];
 	} else if (getCols) {
@@ -444,7 +444,7 @@ function handleResponse(evt) {
 		returnValues = [];
 	    } else {
 		var curUserId = params.id;
-		var nRows = sheet.getLastRow()-numStickyRows;
+		var nRows = modSheet.getLastRow()-numStickyRows;
 		var respCol = getCols+'_response';
 		var respIndex = columnIndex[getCols+'_response'];
 		if (!respIndex)
@@ -467,15 +467,15 @@ function handleResponse(evt) {
 		for (var j=respIndex; j<respIndex+nCols; j++)
 		    returnHeaders.push(columnHeaders[j-1]);
 
-		var temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 1+numStickyRows);
+		var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows);
 		if (!temIndexRow[curUserId])
 		    throw('Error::Sheet has no row for user '+curUserId+' to share in session '+sheetName);
 		var curUserOffset = temIndexRow[curUserId]-1-numStickyRows;
 
-		var shareSubrow = sheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols);
-		var timeValues = sheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols);
-		var submitValues = sheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols);
-		var lateValues = sheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols);
+		var shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols);
+		var timeValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols);
+		var submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols);
+		var lateValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols);
 
 		var curUserVals = shareSubrow[curUserOffset];
 		
@@ -574,9 +574,9 @@ function handleResponse(evt) {
 	    if (!userId)
 		throw('Error::userID must be specified for updates/gets');
 	    var userRow = -1;
-	    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
+	    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate ID row (except for log files)
-		var userIds = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1);
+		var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1);
 		for (var j=0; j<userIds.length; j++) {
 		    // Unique ID
 		    if (userIds[j][0] == userId) {
@@ -604,7 +604,7 @@ function handleResponse(evt) {
 		var fieldsMin = columnHeaders.length;
 		var prevSubmitted = null;
 		if (!newRow && columnIndex['submitTimestamp'])
-		    prevSubmitted = sheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] || null;
+		    prevSubmitted = modSheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] || null;
 
 		if (sessionParams) {
 		    // Indexed session
@@ -617,7 +617,7 @@ function handleResponse(evt) {
 			if (lateTokenCol) {
 			    lateToken = (rowUpdates && rowUpdates.length >= lateTokenCol) ? (rowUpdates[lateTokenCol-1] || null) : null;
 			    if (!lateToken && !newRow)
-				lateToken = sheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] || null;
+				lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] || null;
 			}
 
 			var curTime = curDate.getTime();
@@ -669,12 +669,12 @@ function handleResponse(evt) {
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
 
-		    userRow = sheet.getLastRow()+1;
-		    if (sheet.getLastRow() > numStickyRows && !loggingSheet) {
-			var displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1);
+		    userRow = modSheet.getLastRow()+1;
+		    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
+			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1);
 			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds);
 		    }
-		    sheet.insertRowBefore(userRow);
+		    modSheet.insertRowBefore(userRow);
 		} else if (rowUpdates && nooverwriteRow) {
 		    if (getRow) {
 			// Simply return existing row
@@ -686,7 +686,7 @@ function handleResponse(evt) {
 
 		var maxCol = rowUpdates ? rowUpdates.length : columnHeaders.length;
 		var totalCol = (columnHeaders.length > fieldsMin && columnHeaders[fieldsMin] == 'q_grades') ? fieldsMin+1 : 0;
-		var userRange = sheet.getRange(userRow, 1, 1, maxCol);
+		var userRange = modSheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 
 		returnInfo.prevTimestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
@@ -835,7 +835,7 @@ function handleResponse(evt) {
 				    var qshare = sessionAttributes.shareAnswers[colHeader.split('_')[0]];
 				    if (qshare) {
 					rowValues[otherCol-1] = ''+(parseInt(rowValues[otherCol-1] || 0) + (qshare.voteWeight || 0));
-					sheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
+					modSheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
 				    }
 				}
 				modValue = colValue;
@@ -845,7 +845,7 @@ function handleResponse(evt) {
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
 			    if (!restrictedSheet && !partialSubmission && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
-				throw("Error::Cannot not selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
+				throw("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 			    colValue = parseInput(colValue, colHeader);
 			    modValue = colValue;
 			} else {
@@ -854,7 +854,7 @@ function handleResponse(evt) {
 			}
 			if (modValue !== null) {
 			    rowValues[headerColumn-1] = modValue;
-			    sheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]]);
+			    modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]]);
 			}
 		    }
 
