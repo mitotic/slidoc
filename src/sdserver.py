@@ -6,11 +6,12 @@ sdserver: Tornado-based web server to serve Slidoc html files (with authenticati
           - Can be used as a simple static file server (with authentication), AND
           - As a proxy server that handles spreadsheet operations on cached data and copies them to Google sheets
 
-        Use 'sdserver.py --proxy --gsheet_url=...' and 'slidoc.py --gsheet_url=... --proxy_url=/_websocket/ ...' to proxy user calls to Google sheet (but not slidoc.py setup calls, which are still directed to gsheet_url)
-        Also specify --gsheet_url=http:/hostname/_proxy/ (for slidoc.py) to re-direct slidoc.py setup calls to proxy as well.
+        Use 'sdserver.py --proxy --gsheet_url=...' and
+            'slidoc.py --gsheet_url=... --proxy_url=/_websocket/ ...' to proxy user calls to Google sheet (but not slidoc.py setup calls, which are still directed to gsheet_url)
+        Can specify 'slidoc.py --gsheet_url=http:/hostname/_proxy/ ...' to re-direct session setup calls to proxy as well.
 
 Command arguments:
-    debug: Enable debug mode (can be used for testing local proxy data)
+    debug: Enable debug mode (can be used for testing local proxy data without gsheet_url)
     gsheet_url: Google sheet URL (required if proxy and not debugging)
     hmac_key: HMAC key for admin user (enables login protection for website)
     port: Web server port number to listen on (default=8888)
@@ -272,12 +273,15 @@ class AuthLoginHandler(BaseHandler):
             self.login(username, token, next=next)
         else:
             self.render("login.html", error_msg=error_msg, next=next, site_label=options.site_label,
-                        login_url=Login_url)
+                        login_url=Login_url, password='NO AUTHENTICATION' if options.no_auth else 'Token:')
 
     def post(self):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
 
     def login(self, username, token, next="/"):
+        if options.no_auth and options.debug and not options.gsheet_url and username != 'admin':
+            # No authentication option for testing local-only proxy
+            token = sliauth.gen_user_token(options.hmac_key, username)
         auth = self.check_access(username, token)
         if auth:
             self.set_id(username, '', token)
@@ -359,6 +363,7 @@ def main():
     define("hmac_key", default="", help="HMAC key for admin user")
     define("gsheet_url", default="", help="Google sheet URL")
     define("twitter", default="", help="'consumer_key,consumer_secret' OR JSON config file for twitter authentication")
+    define("no_auth", default=False, help="No authentication mode (for testing)")
     define("debug", default=False, help="Debug mode")
     define("proxy", default=False, help="Proxy mode")
     define("xsrf", default=False, help="XSRF cookies for security")

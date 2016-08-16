@@ -1638,18 +1638,21 @@ function updateGradingStatus(userId) {
     if (!option)
 	return;
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
+    var html = ''
     if (!Sliobj.userGrades[userId].grading) {
-	text += SYMS.wrongMark;
+	html += SYMS.wrongMark;
 	option.disabled = 'disabled';
     } else {
 	var count = Object.keys(Sliobj.userGrades[userId].grading).length;
 	if (Sliobj.userGrades[userId].submitted)
-	    text += count || SYMS.correctMark;
+	    html += count || SYMS.correctMark;
 	else
-	    text += count + ' ' + SYMS.wrongMark;
+	    html += count + ' ' + SYMS.wrongMark;
 	option.disabled = null;
     }
-    option.text = text;
+    option.innerHTML = '';
+    option.appendChild(document.createTextNode(text));
+    option.innerHTML += html;
 }
 
 function preAnswer() {

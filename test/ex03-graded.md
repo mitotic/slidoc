@@ -10,7 +10,9 @@ TestScripts.basic = [
   ['initSession', 0, 0, 'reset'],
   ['initSlideView', 2, 500, 'textarea', ['My **answer1**']],
   ['answerTally', 4, 500, 'input', [5.5, 'My *explanation1*']],
-  ['answerTally', 5, 500, 'end'] 
+  ['answerTally', 5, 500, 'submitSession'],
+  ['+lastSlideDialog', 0, 0, 'dialogReturn', [true]],
+  ['endPaced', 0, 0, 'end']
   ];
 TestScripts.grader = [
   ['-ready'],

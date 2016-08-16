@@ -16,6 +16,7 @@ admin commands:
 import datetime
 import json
 import math
+import md5
 import re
 import sys
 import time
@@ -51,6 +52,8 @@ MIN_HEADERS = ['name', 'id', 'email', 'altid']
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
+
+TRUNCATE_DIGEST = 8
 
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)(_[0-9\.]+)?$")
 
@@ -443,9 +446,6 @@ def handleResponse(args):
         if not sheetName:
             raise Exception('Error:SHEETNAME::No sheet name specified')
 
-        protectedSheet = (sheetName == SCORES_SHEET)
-        restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
-        loggingSheet = sheetName.endswith('_log')
         adminUser = ''
         authUser = ''
 
@@ -464,6 +464,17 @@ def handleResponse(args):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+args.get('id','')+"'")
             authUser = args.get('id','')
 
+        protectedSheet = (sheetName == SCORES_SHEET)
+        restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
+        loggingSheet = sheetName.endswith('_log')
+
+        sessionParams = None
+        sessionAttributes = None
+        dueDate = None
+        gradeDate = None
+        voteDate = None
+        curDate = createDate()
+
         if restrictedSheet:
             if not adminUser:
                 raise Exception("Error::Must be admin user to access sheet '"+sheetName+"'")
@@ -479,6 +490,21 @@ def handleResponse(args):
                 rosterValues = lookupValues(args.get('id',''), MIN_HEADERS, ROSTER_SHEET, listReturn=True)
             except Exception, err:
                 raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+args.get('id','')+"' not found in roster")
+
+        returnInfo['prevTimestamp'] = None
+        returnInfo['timestamp'] = None
+
+        # Update/access single sheet
+
+        if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
+            # Indexed session
+            sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
+            if sessionParams.get('attributes'):
+                sessionAttributes = json.loads(sessionParams['attributes'])
+            dueDate = sessionParams.get('dueDate')
+            gradeDate = sessionParams.get('gradeDate')
+            voteDate = createDate(sessionAttributes['voteDate']) if sessionAttributes and sessionAttributes.get('voteDate') else None
+
 
         # Check parameter consistency
         headers = json.loads(args.get('headers','')) if args.get('headers','') else None
@@ -504,6 +530,7 @@ def handleResponse(args):
                     raise Exception("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.")
 
         getRow = args.get('get','')
+        getCols = args.get('getcols', '');
         allRows = args.get('all','')
         nooverwriteRow = args.get('nooverwrite','')
 
@@ -513,14 +540,17 @@ def handleResponse(args):
         userId = None
         displayName = None
 
-        if not adminUser and selectedUpdates:
+        voteSubmission = ''
+        if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0][-5:] == '_vote' and sessionAttributes and sessionAttributes.get('shareAnswers'):
+            qno = selectedUpdates[1][0].split('_')[0]
+            voteSubmission = sessionAttributes['shareAnswers'][qno].get('share', '') if sessionAttributes['shareAnswers'].get(qno) else ''
+
+        if not adminUser and selectedUpdates and not voteSubmission:
             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
         if protectedSheet and (rowUpdates or selectedUpdates) :
             raise Exception("Error::Cannot modify protected sheet '"+sheetName+"'")
 
-        returnInfo['prevTimestamp'] = None
-        returnInfo['timestamp'] = None
         numStickyRows = 1  # Headers etc.
 
         if getRow and args.get('getheaders',''):
@@ -534,15 +564,130 @@ def handleResponse(args):
             except Exception, err:
                 pass
 
-        if not rowUpdates and not selectedUpdates and not getRow:
+        if not rowUpdates and not selectedUpdates and not getRow and not getCols:
             # No row updates/gets
             returnValues = []
         elif getRow and allRows:
             # Get all rows and columns
             if sheet.getLastRow() > numStickyRows:
-                returnValues = sheet.getRange(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, len(columnHeaders)).getValues()
+                returnValues = sheet.getSheetValues(1+numStickyRows, 1, sheet.getLastRow()-numStickyRows, len(columnHeaders))
             else:
                 returnValues = []
+
+        elif getCols:
+            # Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
+            if not sessionAttributes or not sessionAttributes.get('shareAnswers'):
+                raise Exception('Error::Denied access to answers of session '+sheetName)
+            shareParams = sessionAttributes['shareAnswers'].get(getCols)
+            if not shareParams or not shareParams.get('share'):
+                raise Exception('Error::Sharing not enabled for '+getCols+' of session '+sheetName)
+            if shareParams['share'] == 'after_grading' and not gradeDate:
+                returnMessages.append("Warning:AFTER_GRADING:")
+                returnValues = []
+            elif shareParams['share'] == 'after_due_date' and (not dueDate or sliauth.epoch_ms(dueDate) > sliauth.epoch_ms(curDate)):
+                returnMessages.append("Warning:AFTER_DUE_DATE:")
+                returnValues = []
+            else:
+                curUserId = args.get('id')
+                nRows = sheet.getLastRow()-numStickyRows
+                respCol = getCols+'_response'
+                respIndex = columnIndex.get(getCols+'_response')
+                if not respIndex:
+                    raise Exception('Error::Column '+respCol+' not present in headers for session '+sheetName)
+
+                explainOffset = 0
+                shareOffset = 1
+                nCols = 2
+                if columnIndex.get(getCols+'_explain') == respIndex+1:
+                    explainOffset = 1
+                    shareOffset = 2
+                    nCols += 1
+
+                voteOffset = 0
+                if shareParams.get('vote') and columnIndex.get(getCols+'_vote') == respIndex+nCols:
+                    voteOffset = shareOffset+1
+                    nCols += 1
+
+                returnHeaders = columnHeaders[respIndex-1:respIndex-1+nCols]
+
+                temIndexRow = indexRows(sheet, indexColumns(sheet)['id'], 1+numStickyRows)
+                if not temIndexRow.get(curUserId):
+                    raise Exception('Error::Sheet has no row for user '+curUserId+' to share in session '+sheetName)
+                curUserOffset = temIndexRow[curUserId]-1-numStickyRows
+
+                shareSubrow = sheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
+                timeValues = sheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols)
+                submitValues = sheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols)
+                lateValues = sheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols)
+
+                curUserVals = shareSubrow[curUserOffset]
+
+                disableVoting = False
+
+                # It current user has provided no response/no explanation, disallow voting
+                if not curUserVals[0] or (explainOffset and not curUserVals[explainOffset]):
+                    disableVoting = True
+
+                # If voting not enabled or voting completed, disallow  voting.
+                if not shareParams.get('vote') or (voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate)):
+                    disableVoting = True
+
+                if voteOffset:
+                    # Return user's vote code
+                    returnInfo['vote'] = curUserVals[voteOffset]
+                    if shareParams.get('vote') == 'live' or disableVoting:
+                        # Tally votes
+                        votes = {}
+                        for j in range(nRows):
+                            voteCode = shareSubrow[j][voteOffset]
+                            if voteCode in votes:
+                                votes[voteCode] += 1
+                            else:
+                                votes[voteCode] = 1
+
+                        # Replace vote code with vote counts
+                        for j in range(nRows):
+                            shareCode = shareSubrow[j][shareOffset]
+                            shareSubrow[j][voteOffset] = votes.get(shareCode,0)
+
+                    else:
+                        # Voting results not yet released
+                        for j in range(nRows):
+                            shareSubrow[j][voteOffset] = None
+
+                if shareOffset:
+                    returnInfo['share'] = '' if disableVoting else curUserVals[shareOffset]
+                    # Disable self voting
+                    curUserVals[shareOffset] = ''
+                    if disableVoting:
+                        # This needs to be done after vote tallying, because vote codes are cleared
+                        for j in range(nRows):
+                            shareSubrow[j][shareOffset] = ''
+
+                sortVals = []
+                for j in range(nRows):
+                    # Use earlier of submit time or timestamp to sort
+                    timeVal = submitValues[j][0] or timeValues[j][0]
+                    timeVal =  sliauth.epoch_ms(timeVal) if timeVal else 0
+                    # Skip late submissions (but allow partials)
+                    if not timeVal or (lateValues[j][0] and lateValues[j][0] != 'partial'):
+                        continue
+                    if explainOffset:
+                        # Sort by response value and then time
+                        if shareSubrow[j][0] and shareSubrow[j][1]:
+                            sortVals.append( [shareSubrow[j][0], timeVal, j] )
+                    else:
+                        # Sort by time and then response value
+                        if shareSubrow[j][0]:
+                            sortVals.append( [timeVal, shareSubrow[j][0], j])
+
+                sorted(sortVals)
+
+                ##returnMessages.append('Debug::getCols: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
+                returnValues = []
+                for x, y, offset in sortVals:
+                    returnValues.append( shareSubrow[offset] )
+
         else:
             if rowUpdates and selectedUpdates:
                 raise Exception('Error::Cannot specify both rowUpdates and selectedUpdates')
@@ -570,7 +715,6 @@ def handleResponse(args):
             if sheet.getLastRow() > numStickyRows and not loggingSheet:
                 # Locate ID row (except for log files)
                 userIds = sheet.getSheetValues(1+numStickyRows, columnIndex['id'], sheet.getLastRow()-numStickyRows, 1)
-                displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1)
                 for j in range(len(userIds)):
                     # Unique ID
                     if userIds[j][0] == userId:
@@ -590,21 +734,20 @@ def handleResponse(args):
             elif newRow and selectedUpdates:
                 raise Exception('Error::Selected updates cannot be applied to new row')
             else:
-                curDate = createDate()
                 allowLateMods = not REQUIRE_LATE_TOKEN
                 pastSubmitDeadline = False
                 partialSubmission = False
-                dueDate = None
-                gradeDate = None
                 fieldsMin = len(columnHeaders)
-                if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET, optional=True):
-                    # Session parameters
-                    sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'fieldsMin'], INDEX_SHEET)
-                    dueDate = sessionParams['dueDate']
-                    gradeDate = sessionParams['gradeDate']
-                    fieldsMin = sessionParams['fieldsMin']
 
-                    if dueDate and not adminUser:
+                prevSubmitted = None
+                if not newRow and columnIndex.get('submitTimestamp'):
+                    prevSubmitted = sheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] or None
+
+                if sessionParams:
+                    # Indexed session
+                    fieldsMin = sessionParams.get('fieldsMin')
+
+                    if dueDate and not prevSubmitted and not adminUser and not voteSubmission:
                         # Check if past submission deadline
                         lateTokenCol = columnIndex.get('lateToken')
                         lateToken = None
@@ -657,6 +800,7 @@ def handleResponse(args):
 
                     userRow = sheet.getLastRow()+1
                     if sheet.getLastRow() > numStickyRows and not loggingSheet:
+                        displayNames = sheet.getSheetValues(1+numStickyRows, columnIndex['name'], sheet.getLastRow()-numStickyRows, 1)
                         for j in range(len(displayNames)):
                             if displayNames[j][0] > displayName or (displayNames[j][0] == displayName and userIds[j][0] > userId):
                                 userRow = j+1+numStickyRows
@@ -719,6 +863,7 @@ def handleResponse(args):
 
                         returnMessages.append("Debug::"+str(nonNullExtraColumn)+str(adminColumns.keys())+'=' + '+'.join(totalCells))
 
+                    ##returnMessages.append("Debug:ROW_UPDATES:"+str(rowUpdates))
                     for j in range(len(rowUpdates)):
                         colHeader = columnHeaders[j]
                         colValue = rowUpdates[j]
@@ -737,6 +882,16 @@ def handleResponse(args):
                         elif colHeader == 'submitTimestamp' and args.get('submit',''):
                             rowValues[j] = curDate
                             returnInfo['submitTimestamp'] = curDate
+
+                        elif colHeader[-6:] == '_share':
+                            # Generate share value by computing MD5 digest of 'response [: explain]'
+                            if j >= 1 and rowValues[j-1] and columnHeaders[j-1][-9:] == '_response':
+                                rowValues[j] = md5hex(rowValues[j-1])
+                            elif j >= 2 and rowValues[j-1] and columnHeaders[j-1][-8:] == '_explain' and columnHeaders[j-2][-9:] == '_response':
+                                rowValues[j] = md5hex(rowValues[j-1]+': '+rowValues[j-2])
+                            else:
+                                rowValues[j] = ''
+
                         elif colValue is None:
                             # Do not modify field
                             pass
@@ -764,8 +919,23 @@ def handleResponse(args):
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
-                    if not adminUser and not partialSubmission:
-                        raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
+                    if not voteSubmission and not partialSubmission:
+                        if not adminUser:
+                            raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
+                        if sessionParams:
+                            # Indexed session: selected updates only after submission
+                            submitTimestampCol = columnIndex.get('submitTimestamp')
+                            if not (submitTimestampCol and rowValues[submitTimestampCol-1]):
+                                raise Exception("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'")
+
+                    if voteSubmission:
+                        # Allow vote submissions only after due date and before voting deadline
+                        if voteSubmission == 'after_due_date' and (not dueDate or sliauth.epoch_ms(dueDate) > sliauth.epoch_ms(curDate)):
+                            raise Exception("Error:TOO_EARLY_TO_VOTE:Voting only allowed after due date for sheet '"+sheetName+"'")
+                        if voteSubmission == 'after_grading' and not gradeDate:
+                            raise Exception("Error:TOO_EARLY_TO_VOTE:Voting only allowed after grading for sheet '"+sheetName+"'")
+                        if voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate):
+                            raise Exception("Error:TOO_LATE_TO_VOTE:Voting not allowed after vote date for sheet '"+sheetName+"'")
 
                     for j in range(len(selectedUpdates)):
                         colHeader = selectedUpdates[j][0]
@@ -779,7 +949,10 @@ def handleResponse(args):
 
                         if colHeader == 'Timestamp':
                             # Timestamp is always updated, unless it is explicitly specified by admin
-                            if adminUser and colValue:
+                            if voteSubmission:
+                                # Do not modify timestamp for voting (to avoid race conditions with grading etc.)
+                                pass
+                            elif adminUser and colValue:
                                 try:
                                     modValue = createDate(colValue)
                                 except Exception, err:
@@ -792,14 +965,26 @@ def handleResponse(args):
                                 modValue = curDate
                                 returnInfo['submitTimestamp'] = curDate
 
+                        elif colHeader[-5:] == '_vote':
+                            if voteSubmission and colValue:
+                                # Cannot un-vote, vote can be transferred
+                                otherCol = columnIndex.get('q_other')
+                                if not rowValues[headerColumn-1] and otherCol and sessionParams.get('otherWeight') and sessionAttributes and sessionAttributes.get('shareAnswers'):
+                                    # Tally newly added vote
+                                    qshare = sessionAttributes['shareAnswers'].get(colHeader.split('_')[0]);
+                                    if qshare:
+                                        rowValues[otherCol-1] = str(int(rowValues[otherCol-1] or 0) + qshare.get('voteWeight',0))
+                                        sheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
+                            modValue = colValue
+
                         elif colValue is None:
                             # Do not modify field
                             pass
 
                         elif colHeader not in MIN_HEADERS and not colHeader.endswith('Timestamp'):
                             # Update row values for header (except for id, name, email, altid, *Timestamp)
-                            if not restrictedSheet and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
-                                raise Exception("Error::admin user may not update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'")
+                            if not restrictedSheet and not partialSubmission and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
+                                raise Exception("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'")
 
                             if colHeader.lower().endswith('date') or colHeader.lower().endswith('time'):
                                 try:
@@ -844,10 +1029,12 @@ def handleResponse(args):
                   "messages": '\n'.join(returnMessages)}
 
     if DEBUG:
-        print "DEBUG: RETOBJ", retObj['result']
+        print "DEBUG: RETOBJ", retObj['result'], retObj['messages']
     
     return retObj
 
+def md5hex(s, n=TRUNCATE_DIGEST):
+    return md5.new(s).hexdigest()[:n];
 
 def parseNumber(x):
     try:

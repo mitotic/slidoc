@@ -4,15 +4,15 @@
     <div id="login-form">
       <form action="{{login_url}}" method="post" id="login_form">
         <div>
-          <span class="error_msg"><em>{{error_msg}}</em></span>
+          <span class="sdserver-message"><em>{{error_msg}}</em></span>
         </div>
 	<p></p>
         <fieldset>
           <label for="username">Username:</label>
-          <input autocapitalize="off" autocorrect="off" class="text-input" id="username" name="username" tabindex="1" type="text" value="">
+          <input autocapitalize="off" autocorrect="off" class="sdserver-input" id="username" name="username" tabindex="1" type="text" value="">
           <p></p>
-          <label for="token">Token:</label>
-          <input class="text-input" id="token" name="token" tabindex="2" type="password" value="">
+          <label for="token">{{password}}</label>
+          <input class="sdserver-input" id="token" name="token" tabindex="2" type="password" value="">
         </fieldset>
         {% module xsrf_form_html() %}
         <input id="next" name="next" type="hidden" value="{{next}}"></input>
