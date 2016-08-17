@@ -347,7 +347,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-    GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginOrig, loginToken, loginName, loginRemember, callback) {
+GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginOrig, loginToken, loginName, loginRemember, callback) {
     var adminKey = '';
     if (/admin(\s|$)/.exec(loginUser)) {
 	// Login as admin user using HMAC key. To select specific user initially, use "admin username"
@@ -497,7 +497,7 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 			}
 		    }
 
-		} else if (callbackType == 'getCols') {
+		} else if (callbackType == 'getShare') {
 		    retval = {};
 		    for (var i=0; i<result.headers.length; i++)
 			retval[result.headers[i]] = [];
@@ -713,26 +713,22 @@ GoogleSheet.prototype.getRow = function (id, callback) {
     this.send(params, 'getRow', callback);
 }
 
-GoogleSheet.prototype.getCols = function (colPrefix, callback) {
+GoogleSheet.prototype.getShare = function (colPrefix, adminState, callback) {
     // callback(result, retStatus)
     // result == null on error
     // result == {} for non-existent row
     // result == {id: ..., name: ..., } for returned row
-    Slidoc.log('GoogleSheet.getCols:', colPrefix, !!callback);
+    Slidoc.log('GoogleSheet.getShare:', colPrefix, !!callback);
 
-    var id = GService.gprofile.auth.id;
+    var id = adminState ? 'admin' :  GService.gprofile.auth.id;
 
     if (!callback)
-        throw('GoogleSheet.getCols: Must specify callback for getCols');
+        throw('GoogleSheet.getShare: Must specify callback for getShare');
 
-    if (this.cacheAll) {
-	throw('GoogleSheet.getCols: from cache not yet implemented');
-	return;
-    }
-
-    var params = {id: id, getcols: colPrefix};
+    // Need to check cache, if not sharing
+    var params = {id: id, getshare: colPrefix};
     this.callbackCounter += 1;
-    this.send(params, 'getCols', callback);
+    this.send(params, 'getShare', callback);
 }
 
 GoogleSheet.prototype.getAll = function (callback) {
@@ -774,6 +770,17 @@ GService.sheetIsLocked = function () {
 	return wsLocked;
     else
 	return '';
+}
+
+GService.switchUser = function (auth, userId, switchUserToken) {
+    if (!auth.adminKey)
+	throw('Only admin can switch user');
+    auth.displayName = userId;
+    auth.id = userId;
+    auth.email = (userId.indexOf('@')>0) ? userId : '';
+    auth.altid = '';
+    if (switchUserToken)
+	auth.token = gen_user_token(auth.adminKey, userId);
 }
     
 GService.GoogleSheet = GoogleSheet;

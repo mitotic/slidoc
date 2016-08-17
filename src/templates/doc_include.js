@@ -32,7 +32,6 @@ var useJSONP = (location.protocol == 'file:' || isSafari);
 /////////////////////////////////////
 
 var Sliobj = {}; // Internal object
-Sliobj.debugging = true;
 Sliobj.logSheet = null;
 
 Sliobj.params = JS_PARAMS_OBJ;
@@ -106,7 +105,7 @@ Slidoc.logDump = function (regexp) {
 }
 
 Slidoc.log = function() {
-    if (Sliobj.debugging) {
+    if (Sliobj.params.debug) {
 	console.log.apply(console, arguments);
 	return;
     }
@@ -236,12 +235,12 @@ function sessionAbort(err_msg, err_trace) {
     sessionAborted = true;
     localDel('auth');
     try { Slidoc.classDisplay('slidoc-slide', 'none'); } catch(err) {}
-    alert((Sliobj.debugging ? 'DEBUG: ':'')+err_msg);
-    if (!Sliobj.debugging)
+    alert((Sliobj.params.debug ? 'DEBUG: ':'')+err_msg);
+    if (!Sliobj.params.debug)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
 
     if (getServerCookie()) {
-	if (!Sliobj.debugging || window.confirm('Log out user?'))
+	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
 
@@ -1077,10 +1076,7 @@ function selectUser(auth, callback) {
     if (!auth.adminKey) {
 	sessionAbort('Only admin can pick user');
     }
-    auth.displayName = userId;
-    auth.id = userId;
-    auth.email = (userId.indexOf('@')>0) ? userId : '';
-    auth.altid = '';
+    GService.switchUser(auth, userId);
 
     if (callback) {
 	callback(auth);  // Usually callback slidocReadyAux1

@@ -3,6 +3,9 @@ Share = {
 
     init: function() {
 	Slidoc.log('Slidoc.Plugins.Share.init:', this);
+	this.shareElem = document.getElementById(this.slideId+'-plugin-Share-sharebutton');
+	if (this.adminState)
+	    toggleClass(false, 'slidoc-share-hide', this.shareElem);
     },
 
     answerSave: function () {
@@ -10,8 +13,7 @@ Share = {
 	if (this.qattributes.share != 'after_submission' || !window.GService)
 	    return;
 	this.getResponses();
-	var shareElem = document.getElementById(this.slideId+'-plugin-Share-sharebutton');
-	toggleClass(false, 'slidoc-share-hide', shareElem);
+	toggleClass(false, 'slidoc-share-hide', this.shareElem);
     },
 
     getResponses: function () {
@@ -25,7 +27,7 @@ Share = {
 	    this.nCols += 1;
 	var colPrefix = 'q'+this.qattributes.qnumber;
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.getCols(colPrefix, this.responseCallback.bind(this));
+	gsheet.getShare(colPrefix, this.adminState, this.responseCallback.bind(this));
     },
 
     responseCallback: function (result, retStatus) {

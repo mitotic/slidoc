@@ -1129,7 +1129,7 @@ class SlidocRenderer(MathRenderer):
         weight_answer = ''
         opt_values = { 'explain': ('text', 'markdown'),
                        'share': ('after_due_date', 'after_submission', 'after_grading'),
-                       'vote': ('show_live', 'show_completed') }
+                       'vote': ('show_completed', 'show_live') }
         answer_opts = { 'explain': '', 'share': '', 'vote': ''}
         for opt in opt_comps[1:]:
             weight_match = re.match(r'^weight=([\s\d,]+)$', opt)
@@ -1142,6 +1142,7 @@ class SlidocRenderer(MathRenderer):
                     if option_match.group(3) and option_match.group(3) not in opt_values[opt_name]:
                         abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting %s for slide %s" % (self.options["filename"], opt_name, option_match.group(3), '/'.join(opt_values[opt_name]), self.slide_number))
                         return ''
+
                     answer_opts[opt_name] = option_match.group(3) or opt_values[opt_name][0]
                 else:
                     abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s' is not a valid answer option for slide %s" % (self.options["filename"], opt, self.slide_number))
@@ -1797,6 +1798,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params.update(cmd_pace_dict)   # May be overridden by file-specific values
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
+    js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
 
     out_name = os.path.splitext(os.path.basename(config.all or input_paths[0]))[0]
@@ -2507,6 +2509,7 @@ parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
 parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
+parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
 parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))

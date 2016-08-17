@@ -385,7 +385,7 @@ function handleResponse(evt) {
 	    }
 	    
 	    var getRow = params.get || '';
-	    var getCols = params.getcols || '';
+	    var getShare = params.getshare || '';
 	    var allRows = params.all || '';
 	    var nooverwriteRow = params.nooverwrite || '';
 	    
@@ -421,7 +421,7 @@ function handleResponse(evt) {
 	    }
 	}
 
-	if (!rowUpdates && !selectedUpdates && !getRow && !getCols) {
+	if (!rowUpdates && !selectedUpdates && !getRow && !getShare) {
 	    // No row updates/gets
 	    returnValues = [];
 	} else if (proxy && params.allupdates) {
@@ -435,36 +435,39 @@ function handleResponse(evt) {
 		returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
 	    else
 		returnValues = [];
-	} else if (getCols) {
+	} else if (getShare) {
 	    // Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
 	    if (!sessionAttributes || !sessionAttributes.shareAnswers)
 		throw('Error::Denied access to answers of session '+sheetName);
-	    var shareParams = sessionAttributes.shareAnswers[getCols];
+	    var shareParams = sessionAttributes.shareAnswers[getShare];
 	    if (!shareParams || !shareParams.share)
-		throw('Error::Sharing not enabled for '+getCols+' of session '+sheetName);
-	    if (shareParams.share == 'after_grading' && !gradeDate) {
-		returnMessages.push("Warning:AFTER_GRADING:");
+		throw('Error::Sharing not enabled for '+getShare+' of session '+sheetName);
+	    if (!adminUser && shareParams.share == 'after_grading' && !gradeDate) {
+		returnMessages.push("Warning:SHARE_AFTER_GRADING:");
 		returnValues = [];
-	    } else if (shareParams.share == 'after_due_date' && (!dueDate || dueDate.getTime() > curDate.getTime())) {
-		returnMessages.push("Warning:AFTER_DUE_DATE:");
+	    } else if (!adminUser && shareParams.share == 'after_due_date' && (!dueDate || dueDate.getTime() > curDate.getTime())) {
+		returnMessages.push("Warning:SHARE_AFTER_DUE_DATE:");
+		returnValues = [];
+	    } else if (modSheet.getLastRow() <= numStickyRows) {
+		returnMessages.push("Warning:SHARE_NO_ROWS:");
 		returnValues = [];
 	    } else {
 		var nRows = modSheet.getLastRow()-numStickyRows;
-		var respCol = getCols+'_response';
-		var respIndex = columnIndex[getCols+'_response'];
+		var respCol = getShare+'_response';
+		var respIndex = columnIndex[getShare+'_response'];
 		if (!respIndex)
 		    throw('Error::Column '+respCol+' not present in headers for session '+sheetName);
 
 		var explainOffset = 0;
 		var shareOffset = 1;
 		var nCols = 2;
-		if (columnIndex[getCols+'_explain'] == respIndex+1) {
+		if (columnIndex[getShare+'_explain'] == respIndex+1) {
 		    explainOffset = 1;
 		    shareOffset = 2;
 		    nCols += 1;
 		}
 		var voteOffset = 0;
-		if (shareParams.vote && columnIndex[getCols+'_vote'] == respIndex+nCols) {
+		if (shareParams.vote && columnIndex[getShare+'_vote'] == respIndex+nCols) {
 		    voteOffset = shareOffset+1;
 		    nCols += 1;
 		}
@@ -472,33 +475,41 @@ function handleResponse(evt) {
 		for (var j=respIndex; j<respIndex+nCols; j++)
 		    returnHeaders.push(columnHeaders[j-1]);
 
-		var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows);
-		if (!temIndexRow[paramId])
-		    throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName);
-		var curUserOffset = temIndexRow[paramId]-1-numStickyRows;
-
 		var shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols);
-		var timeValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols);
-		var submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols);
-		var lateValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols);
 
-		var curUserVals = shareSubrow[curUserOffset];
-		
+		var idValues     = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1)
+		var timeValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, 1);
+		var submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, 1);
+		var lateValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, 1);
+
+                var curUserVals = null;
+                for (var j=0; j<nRows; j++) {
+                    if (idValues[j][0] == paramId) {
+                        curUserVals = shareSubrow[j];
+                        break;
+		    }
+		}
+                if (!curUserVals && !adminUser)
+                    throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
+
+		var votingCompleted = voteDate && voteDate.getTime() < curDate.getTime();
+		var tallyVotes = adminUser || shareParams.vote == 'show_live' || (shareParams.vote == 'show_completed' && votingCompleted);
+
 		var disableVoting = false;
 
-		// It current user has provided no response/no explanation, disallow voting
-		if (!curUserVals[0] || (explainOffset && !curUserVals[explainOffset]))
+		// If test/admin user, or current user has provided no response/no explanation, disallow voting
+		if (paramId == TESTUSER_ID || !curUserVals || !curUserVals[0] || (explainOffset && !curUserVals[explainOffset]))
 		    disableVoting = true;
 
 		// If voting not enabled or voting completed, disallow  voting.
-		if (!shareParams.vote || (voteDate && voteDate.getTime() < curDate.getTime()))
+		if (!shareParams.vote || votingCompleted)
 		    disableVoting = true;
 
 		if (voteOffset) {
 		    // Return user's vote code
-		    returnInfo.vote = curUserVals[voteOffset];
-		    if (shareParams.vote == 'live' || disableVoting) {
-			// Tally votes
+		    if (curUserVals)
+			returnInfo.vote = curUserVals[voteOffset];
+		    if (tallyVotes) {
 			var votes = {};
 			for (var j=0; j<nRows; j++) {
 			    var voteCode = shareSubrow[j][voteOffset];
@@ -520,9 +531,11 @@ function handleResponse(evt) {
 		}
 
 		if (shareOffset) {
-		    returnInfo.share = disableVoting ? '' : curUserVals[shareOffset];
-		    // Disable self voting
-		    curUserVals[shareOffset] = '';
+		    if (curUserVals) {
+			returnInfo.share = disableVoting ? '' : curUserVals[shareOffset];
+			// Disable self voting
+			curUserVals[shareOffset] = '';
+		    }
 		    if (disableVoting) {
 			// This needs to be done after vote tallying, because vote codes are cleared
 			for (var j=0; j<nRows; j++)
@@ -532,25 +545,34 @@ function handleResponse(evt) {
 
 		var sortVals = [];
 		for (var j=0; j<nRows; j++) {
+                    if (idValues[j][0] == TESTUSER_ID) {
+                        // Ignore test user response
+                        continue
+                    }
 		    // Use earlier of submit time or timestamp to sort
 		    var timeVal = submitValues[j][0] || timeValues[j][0];
 		    timeVal = timeVal ? timeVal.getTime() : 0;
-		    // Skip late submissions (but allow partials)
+
+		    // Skip incomplete/late submissions (but allow partials)
 		    if (!timeVal || (lateValues[j][0] && lateValues[j][0] != 'partial'))
 			continue;
-		    if (explainOffset)  {
+		    if (!shareSubrow[j][0] || (explainOffset && !shareSubrow[j][1]))
+			continue;
+
+		    if (tallyVotes && (votingCompleted || adminUser)) {
+			// Sort by (-) vote tally and then by response
+			sortVals.push( [-shareSubrow[j][voteOffset], shareSubrow[j][0], j]);
+		    } else if (explainOffset)  {
 			// Sort by response value and then time
-			if (shareSubrow[j][0] && shareSubrow[j][1])
-			    sortVals.push( [shareSubrow[j][0], timeVal, j] );
-	            } else {
+			sortVals.push( [shareSubrow[j][0], timeVal, j] );
+		    } else {
 			// Sort by time and then response value
-			if (shareSubrow[j][0])
-			    sortVals.push( [timeVal, shareSubrow[j][0], j]);
+			sortVals.push( [timeVal, shareSubrow[j][0], j]);
 		    }
 		}
-		sortVals.sort(function(a,b) { if (a[0] === b[0]) {if (a[1] === b[1]) return 0; return (a[1] > b[1]) ? 1:-1;}; return (a[0] > b[0]) ? 1:-1;});
+		sortVals.sort();
 
-		//returnMessages.push('Debug::getCols: '+nCols+', '+nRows+', ['+curUserVals+']');
+		//returnMessages.push('Debug::getShare: '+nCols+', '+nRows+', ['+curUserVals+']');
 		returnValues = []
 		for (var j=0; j<sortVals.length; j++)
 		    returnValues.push( shareSubrow[sortVals[j][2]] );

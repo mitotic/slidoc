@@ -304,7 +304,7 @@ def get_locked():
             locked.append(sheetName+'*')
         else:
             locked.append(sheetName)
-    sorted(locked)
+    locked.sort()
     return locked
 
 def update_remote_sheets(force=False):
@@ -536,7 +536,7 @@ def handleResponse(params):
                     raise Exception("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.")
 
         getRow = params.get('get','')
-        getCols = params.get('getcols', '');
+        getShare = params.get('getshare', '');
         allRows = params.get('all','')
         nooverwriteRow = params.get('nooverwrite','')
 
@@ -570,7 +570,7 @@ def handleResponse(params):
             except Exception, err:
                 pass
 
-        if not rowUpdates and not selectedUpdates and not getRow and not getCols:
+        if not rowUpdates and not selectedUpdates and not getRow and not getShare:
             # No row updates/gets
             returnValues = []
         elif getRow and allRows:
@@ -580,68 +580,80 @@ def handleResponse(params):
             else:
                 returnValues = []
 
-        elif getCols:
+        elif getShare:
             # Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
             if not sessionAttributes or not sessionAttributes.get('shareAnswers'):
                 raise Exception('Error::Denied access to answers of session '+sheetName)
-            shareParams = sessionAttributes['shareAnswers'].get(getCols)
+            shareParams = sessionAttributes['shareAnswers'].get(getShare)
             if not shareParams or not shareParams.get('share'):
-                raise Exception('Error::Sharing not enabled for '+getCols+' of session '+sheetName)
-            if shareParams['share'] == 'after_grading' and not gradeDate:
-                returnMessages.append("Warning:AFTER_GRADING:")
+                raise Exception('Error::Sharing not enabled for '+getShare+' of session '+sheetName)
+
+            if not adminUser and shareParams['share'] == 'after_grading' and not gradeDate:
+                returnMessages.append("Warning:SHARE_AFTER_GRADING:")
                 returnValues = []
-            elif shareParams['share'] == 'after_due_date' and (not dueDate or sliauth.epoch_ms(dueDate) > sliauth.epoch_ms(curDate)):
-                returnMessages.append("Warning:AFTER_DUE_DATE:")
+            elif not adminUser and shareParams['share'] == 'after_due_date' and (not dueDate or sliauth.epoch_ms(dueDate) > sliauth.epoch_ms(curDate)):
+                returnMessages.append("Warning:SHARE_AFTER_DUE_DATE:")
+                returnValues = []
+            elif modSheet.getLastRow() <= numStickyRows:
+                returnMessages.append("Warning:SHARE_NO_ROWS:")
                 returnValues = []
             else:
                 nRows = modSheet.getLastRow()-numStickyRows
-                respCol = getCols+'_response'
-                respIndex = columnIndex.get(getCols+'_response')
+                respCol = getShare+'_response'
+                respIndex = columnIndex.get(getShare+'_response')
                 if not respIndex:
                     raise Exception('Error::Column '+respCol+' not present in headers for session '+sheetName)
 
                 explainOffset = 0
                 shareOffset = 1
                 nCols = 2
-                if columnIndex.get(getCols+'_explain') == respIndex+1:
+                if columnIndex.get(getShare+'_explain') == respIndex+1:
                     explainOffset = 1
                     shareOffset = 2
                     nCols += 1
 
                 voteOffset = 0
-                if shareParams.get('vote') and columnIndex.get(getCols+'_vote') == respIndex+nCols:
+                if shareParams.get('vote') and columnIndex.get(getShare+'_vote') == respIndex+nCols:
                     voteOffset = shareOffset+1
                     nCols += 1
 
                 returnHeaders = columnHeaders[respIndex-1:respIndex-1+nCols]
 
-                temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows)
-                if not temIndexRow.get(paramId):
+                shareSubrow  = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
+
+                idValues     = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1)
+                timeValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, 1)
+                submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, 1)
+                lateValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, 1)
+
+                curUserVals = None
+                for j in range(nRows):
+                    if idValues[j][0] == paramId:
+                        curUserVals = shareSubrow[j]
+                        break
+
+                if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
-                curUserOffset = temIndexRow[paramId]-1-numStickyRows
 
-                shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
-                timeValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols)
-                submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, nCols)
-                lateValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, nCols)
+                votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate);
 
-                curUserVals = shareSubrow[curUserOffset]
+                tallyVotes = adminUser or shareParams.get('vote') == 'show_live' or (shareParams.get('vote') == 'show_completed' and votingCompleted)
 
                 disableVoting = False
 
-                # It current user has provided no response/no explanation, disallow voting
-                if not curUserVals[0] or (explainOffset and not curUserVals[explainOffset]):
+                # If test/admin user, or current user has provided no response/no explanation, disallow voting
+                if paramId == TESTUSER_ID or not curUserVals or not curUserVals[0] or (explainOffset and not curUserVals[explainOffset]):
                     disableVoting = True
 
                 # If voting not enabled or voting completed, disallow  voting.
-                if not shareParams.get('vote') or (voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate)):
+                if not shareParams.get('vote') or votingCompleted:
                     disableVoting = True
 
                 if voteOffset:
                     # Return user's vote code
-                    returnInfo['vote'] = curUserVals[voteOffset]
-                    if shareParams.get('vote') == 'live' or disableVoting:
-                        # Tally votes
+                    if curUserVals:
+                        returnInfo['vote'] = curUserVals[voteOffset]
+                    if tallyVotes:
                         votes = {}
                         for j in range(nRows):
                             voteCode = shareSubrow[j][voteOffset]
@@ -661,9 +673,10 @@ def handleResponse(params):
                             shareSubrow[j][voteOffset] = None
 
                 if shareOffset:
-                    returnInfo['share'] = '' if disableVoting else curUserVals[shareOffset]
-                    # Disable self voting
-                    curUserVals[shareOffset] = ''
+                    if curUserVals:
+                        returnInfo['share'] = '' if disableVoting else curUserVals[shareOffset]
+                        # Disable self voting
+                        curUserVals[shareOffset] = ''
                     if disableVoting:
                         # This needs to be done after vote tallying, because vote codes are cleared
                         for j in range(nRows):
@@ -671,24 +684,32 @@ def handleResponse(params):
 
                 sortVals = []
                 for j in range(nRows):
+                    if idValues[j][0] == TESTUSER_ID:
+                        # Ignore test user response
+                        continue
                     # Use earlier of submit time or timestamp to sort
                     timeVal = submitValues[j][0] or timeValues[j][0]
                     timeVal =  sliauth.epoch_ms(timeVal) if timeVal else 0
-                    # Skip late submissions (but allow partials)
+
+                    # Skip incomplete/late submissions (but allow partials)
                     if not timeVal or (lateValues[j][0] and lateValues[j][0] != 'partial'):
                         continue
-                    if explainOffset:
+                    if not shareSubrow[j][0] or (explainOffset and not shareSubrow[j][1]):
+                        continue
+
+                    if tallyVotes and (votingCompleted or adminUser):
+                        # Sort by (-) vote tally and then by response
+                        sortVals.append( [-shareSubrow[j][voteOffset], shareSubrow[j][0], j])
+                    elif explainOffset:
                         # Sort by response value and then time
-                        if shareSubrow[j][0] and shareSubrow[j][1]:
-                            sortVals.append( [shareSubrow[j][0], timeVal, j] )
+                        sortVals.append( [shareSubrow[j][0], timeVal, j] )
                     else:
                         # Sort by time and then response value
-                        if shareSubrow[j][0]:
-                            sortVals.append( [timeVal, shareSubrow[j][0], j])
+                        sortVals.append( [timeVal, shareSubrow[j][0], j])
 
-                sorted(sortVals)
+                sortVals.sort()
 
-                ##returnMessages.append('Debug::getCols: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
+                ##returnMessages.append('Debug::getShare: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
                 returnValues = []
                 for x, y, offset in sortVals:
                     returnValues.append( shareSubrow[offset] )
