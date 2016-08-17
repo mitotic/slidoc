@@ -83,14 +83,16 @@ var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
 var SHARE_AVERAGES = false;
 
-// Define document IDs to create/access roster/answers/stats/log sheet in separate documents
-// e.g., {roster_slidoc: 'ID1', answers_slidoc: 'ID2', stats_slidoc: 'ID3', slidoc_log: 'ID4'}
+// Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
+// e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
 
 var MAXSCORE_ID = '_max_score';
 var AVERAGE_ID = '_average';
+var TESTUSER_ID = '_test_user';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
+var TESTUSER_ROSTER = ['-user, -test', TESTUSER_ID, '', ''];
 
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
@@ -190,6 +192,7 @@ function handleResponse(evt) {
 
 	var adminUser = '';
 	var authUser = '';
+	var paramId = params.id || '';
 
 	if (params.admin) {
 	    if (!params.token)
@@ -198,13 +201,13 @@ function handleResponse(evt) {
 		throw("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.admin+"'");
 	    adminUser = params.admin;
 	} else if (REQUIRE_LOGIN_TOKEN) {
-	    if (!params.id)
+	    if (!paramId)
 		throw('Error:NEED_ID:Need id for authentication');
 	    if (!params.token)
 		throw('Error:NEED_TOKEN:Need token for id authentication');
-	    if (!validateHMAC('id:'+params.id+':'+params.token, HMAC_KEY))
-		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+params.id+"'");
-	    authUser = params.id;
+	    if (!validateHMAC('id:'+paramId+':'+params.token, HMAC_KEY))
+		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'");
+	    authUser = paramId;
 	}
 
 	var proxy = params.proxy || '';
@@ -233,13 +236,16 @@ function handleResponse(evt) {
 	var rosterSheet = getSheet(ROSTER_SHEET);
 	if (rosterSheet && !adminUser) {
 	    // Check user access
-	    if (!params.id)
+	    if (!paramId)
 		throw('Error:NEED_ID:Must specify userID to lookup roster')
 	    try {
 		// Copy user info from roster
-		rosterValues = lookupValues(params.id, MIN_HEADERS, ROSTER_SHEET, true);
+		if (paramId == TESTUSER_ID)
+                    rosterValues = TESTUSER_ROSTER;
+		else
+		    rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, true);
 	    } catch(err) {
-		throw("Error:NEED_ROSTER_ENTRY:userID '"+params.id+"' not found in roster");
+		throw("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster");
 	    }
 	}
 
@@ -443,7 +449,6 @@ function handleResponse(evt) {
 		returnMessages.push("Warning:AFTER_DUE_DATE:");
 		returnValues = [];
 	    } else {
-		var curUserId = params.id;
 		var nRows = modSheet.getLastRow()-numStickyRows;
 		var respCol = getCols+'_response';
 		var respIndex = columnIndex[getCols+'_response'];
@@ -468,9 +473,9 @@ function handleResponse(evt) {
 		    returnHeaders.push(columnHeaders[j-1]);
 
 		var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows);
-		if (!temIndexRow[curUserId])
-		    throw('Error::Sheet has no row for user '+curUserId+' to share in session '+sheetName);
-		var curUserOffset = temIndexRow[curUserId]-1-numStickyRows;
+		if (!temIndexRow[paramId])
+		    throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName);
+		var curUserOffset = temIndexRow[paramId]-1-numStickyRows;
 
 		var shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols);
 		var timeValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols);
@@ -561,14 +566,14 @@ function handleResponse(evt) {
 		displayName = rowUpdates[columnIndex['name']-1] || '';
 
 		// Security check
-		if (params.id && params.id != userId)
-		    throw("Error::Mismatch between params.id '"+params.id+"' and userId in row '"+userId+"'")
+		if (paramId && paramId != userId)
+		    throw("Error::Mismatch between paramId '"+paramId+"' and userId in row '"+userId+"'")
 		if (params.name && params.name != displayName)
 		    throw("Error::Mismatch between params.name '"+params.name+"' and displayName in row '"+displayName+"'")
 		if (!adminUser && userId == MAXSCORE_ID)
 		    throw("Error::Only admin user may specify ID "+MAXSCORE_ID)
 	    } else {
-		userId = params.id || null;
+		userId = paramId || null;
 	    }
 
 	    if (!userId)
@@ -668,11 +673,17 @@ function handleResponse(evt) {
 		    // New user; insert row in sorted order of name (except for log files)
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
-
-		    userRow = modSheet.getLastRow()+1;
-		    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
+		    var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows);
+                    if (userId == MAXSCORE_ID) {
+			userRow = numStickyRows+1;
+                    } else if (userId == TESTUSER_ID && !loggingSheet) {
+                        // Test user always appears after max score
+                        userRow = temIndexRow[MAXSCORE_ID] ? temIndexRow[MAXSCORE_ID]+1 : numStickyRows+1
+		    } else if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1);
-			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds);
+			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID);
+		    } else {
+			userRow = modSheet.getLastRow()+1;
 		    }
 		    modSheet.insertRowBefore(userRow);
 		} else if (rowUpdates && nooverwriteRow) {
@@ -1029,10 +1040,13 @@ function indexColumns(sheet) {
 }
 
 function indexRows(sheet, indexCol, startRow) {
-    var rowIds = sheet.getSheetValues(startRow, indexCol, sheet.getLastRow()-startRow+1, 1);
     var rowIndex = {};
-    for (var j=0; j<rowIds.length; j++)
-	rowIndex[rowIds[j][0]] = j+startRow;
+    var nRows = sheet.getLastRow()-startRow+1;
+    if (nRows > 0) {
+	var rowIds = sheet.getSheetValues(startRow, indexCol, nRows, 1);
+	for (var j=0; j<rowIds.length; j++)
+	    rowIndex[rowIds[j][0]] = j+startRow;
+    }
     return rowIndex;
 }
 
@@ -1076,9 +1090,11 @@ function lookupValues(idValue, colNames, sheetName, listReturn) {
     return listReturn ? listVals : retVals;
 }
 
-function locateNewRow(newName, newId, nameValues, idValues) {
+function locateNewRow(newName, newId, nameValues, idValues, skipId) {
     // Return row number before which new name/id combination should be inserted
     for (var j=0; j<nameValues.length; j++) {
+	if (skipId && skipId == idValues[j][0])
+	    continue;
 	if (nameValues[j][0] > newName || (nameValues[j][0] == newName && idValues[j][0] > newId)) {
 	    // Sort by name and then by id
 	    return j+1;
@@ -1485,6 +1501,14 @@ function updateScoreSheet() {
 		startRow = sessionStartRow;
 	    }
 	    var nUserIds = userInfoSheet.getLastRow()-startRow+1;
+	    if (nUserIds) {
+		var temId = userInfoSheet.getSheetValues(startRow, MIN_HEADERS.indexOf('id')+1, 1, 1);
+		if (temId[0][0] == TESTUSER_ID) {
+		    // Skip test user row
+		    startRow += 1;
+		    nUserIds -= 1;
+		}
+	    }
 	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
 	    scoreSheet.getRange(1, MIN_HEADERS.length+1, 1, extraHeaders.length).setValues([extraHeaders]);
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
@@ -1498,7 +1522,8 @@ function updateScoreSheet() {
 		scoreSheet.getRange(scoreStartRow+':'+scoreStartRow).setFontWeight('bold');
 	    }
 
-	    scoreSheet.getRange(nonmaxStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
+	    if (nUserIds)
+		scoreSheet.getRange(nonmaxStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
 	}
 
 	var rawTotal = [];

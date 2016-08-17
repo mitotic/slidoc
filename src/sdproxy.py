@@ -46,8 +46,10 @@ SHARE_AVERAGES = False
 
 MAXSCORE_ID = '_max_score'
 AVERAGE_ID = '_average'
+TESTUSER_ID = '_test_user'   #var
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
+TESTUSER_ROSTER = ['-user, -test', TESTUSER_ID, '', '']  #var
 
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
@@ -448,6 +450,7 @@ def handleResponse(params):
 
         adminUser = ''
         authUser = ''
+        paramId = params.get('id','') #var
 
         if params.get('admin',''):
             if not params.get('token',''):
@@ -456,13 +459,13 @@ def handleResponse(params):
                 raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.get('admin','')+"'")
             adminUser = params.get('admin','')
         elif REQUIRE_LOGIN_TOKEN:
-            if not params.get('id',''):
+            if not paramId:
                 raise Exception('Error:NEED_ID:Need id for authentication')
             if not params.get('token',''):
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
-            if not validateHMAC('id:'+params.get('id','')+':'+params.get('token',''), HMAC_KEY):
-                raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+params.get('id','')+"'")
-            authUser = params.get('id','')
+            if not validateHMAC('id:'+paramId+':'+params.get('token',''), HMAC_KEY):
+                raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
+            authUser = paramId
 
         protectedSheet = (sheetName == SCORES_SHEET)
         restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
@@ -483,13 +486,16 @@ def handleResponse(params):
         rosterSheet = getSheet(ROSTER_SHEET, optional=True)
         if rosterSheet and not adminUser:
             # Check user access
-            if not params.get('id',''):
+            if not paramId:
                 raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
             try:
                 # Copy user info from roster
-                rosterValues = lookupValues(params.get('id',''), MIN_HEADERS, ROSTER_SHEET, listReturn=True)
+                rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, listReturn=True)
             except Exception, err:
-                raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+params.get('id','')+"' not found in roster")
+                if paramId == TESTUSER_ID:
+                    rosterValues = TESTUSER_ROSTER
+                else:
+                    raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster")
 
         returnInfo['prevTimestamp'] = None
         returnInfo['timestamp'] = None
@@ -588,7 +594,6 @@ def handleResponse(params):
                 returnMessages.append("Warning:AFTER_DUE_DATE:")
                 returnValues = []
             else:
-                curUserId = params.get('id')
                 nRows = modSheet.getLastRow()-numStickyRows
                 respCol = getCols+'_response'
                 respIndex = columnIndex.get(getCols+'_response')
@@ -611,9 +616,9 @@ def handleResponse(params):
                 returnHeaders = columnHeaders[respIndex-1:respIndex-1+nCols]
 
                 temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows)
-                if not temIndexRow.get(curUserId):
-                    raise Exception('Error::Sheet has no row for user '+curUserId+' to share in session '+sheetName)
-                curUserOffset = temIndexRow[curUserId]-1-numStickyRows
+                if not temIndexRow.get(paramId):
+                    raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
+                curUserOffset = temIndexRow[paramId]-1-numStickyRows
 
                 shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
                 timeValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, nCols)
@@ -700,14 +705,14 @@ def handleResponse(params):
                 displayName = rowUpdates[columnIndex['name']-1] or ''
 
                 # Security check
-                if params.get('id','') and params.get('id','') != userId:
-                    raise Exception("Error::Mismatch between id '%s' and userId in row '%s'" % (params.get('id',''), userId))
+                if paramId and paramId != userId:
+                    raise Exception("Error::Mismatch between id '%s' and userId in row '%s'" % (paramId, userId))
                 if params.get('name','') and params.get('name','') != displayName:
                     raise Exception("Error::Mismatch between params.get('name','') '%s' and displayName in row '%s'" % (params.get('name',''), displayName))
                 if not adminUser and userId == MAXSCORE_ID:
                     raise Exception("Error::Only admin user may specify ID '%s'" % MAXSCORE_ID)
             else:
-                userId = params.get('id','') or None
+                userId = paramId or None
 
             if not userId:
                 raise Exception('Error::userID must be specified for updates/gets')
@@ -798,13 +803,17 @@ def handleResponse(params):
                     if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
                         raise Exception('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName)
 
-                    userRow = modSheet.getLastRow()+1
-                    if modSheet.getLastRow() > numStickyRows and not loggingSheet:
+                    temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows)
+                    if userId == MAXSCORE_ID:
+                        userRow = numStickyRows+1
+                    elif userId == TESTUSER_ID and not loggingSheet:
+                        # Test user always appears after max score
+                        userRow = temIndexRow[MAXSCORE_ID]+1 if temIndexRow[MAXSCORE_ID] else numStickyRows+1
+                    elif modSheet.getLastRow() > numStickyRows and not loggingSheet:
                         displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1)
-                        for j in range(len(displayNames)):
-                            if displayNames[j][0] > displayName or (displayNames[j][0] == displayName and userIds[j][0] > userId):
-                                userRow = j+1+numStickyRows
-                                break
+                        userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID)
+                    else:
+                        userRow = modSheet.getLastRow()+1
 
                     modSheet.insertRowBefore(userRow, keyValue=userId)
                 elif rowUpdates and nooverwriteRow:
@@ -1085,10 +1094,12 @@ def indexColumns(sheet):
 
 
 def indexRows(sheet, indexCol, startRow):
-    rowIds = sheet.getSheetValues(startRow, indexCol, sheet.getLastRow()-startRow+1, 1)
     rowIndex = {}
-    for j, rowId in enumerate(rowIds):
-        rowIndex[rowId[0]] = j+startRow
+    nRows = sheet.getLastRow()-startRow+1
+    if nRows > 0:
+        rowIds = sheet.getSheetValues(startRow, indexCol, sheet.getLastRow()-startRow+1, 1)
+        for j, rowId in enumerate(rowIds):
+            rowIndex[rowId[0]] = j+startRow
     return rowIndex
 
 
@@ -1128,3 +1139,13 @@ def lookupValues(idValue, colNames, sheetName, listReturn=False):
         listVals.append(retVals[colName])
 
     return listVals if listReturn else retVals
+
+def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
+    # Return row number before which new name/id combination should be inserted
+    for j in range(len(nameValues)):
+        if skipId and skipId == idValues[j][0]:
+            continue
+        if nameValues[j][0] > newName or (nameValues[j][0] == newName and idValues[j][0] > newId):
+            # Sort by name and then by id
+            return j+1
+    return len(nameValues)+1
