@@ -2574,7 +2574,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 		    resp_value = parseFloat(response);
 		} catch(err) {Slidoc.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
 		
-		if (corr_value !== null && resp_value != null)
+		if (resp_value !== null && corr_value !== null && !isNaN(resp_value) && !isNaN(corr_value) && !isNaN(corr_error))
 		    qscore = (Math.abs(resp_value - corr_value) <= 1.001*corr_error) ? 1 : 0;
 	    } else {
 		// Check if non-numeric answer is correct (all spaces are removed before comparison)

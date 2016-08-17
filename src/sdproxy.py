@@ -650,17 +650,19 @@ def handleResponse(params):
                     disableVoting = True
 
                 if voteOffset:
-                    # Return user's vote code
+                    # Return user's vote codes
                     if curUserVals:
                         returnInfo['vote'] = curUserVals[voteOffset]
                     if tallyVotes:
                         votes = {}
                         for j in range(nRows):
-                            voteCode = shareSubrow[j][voteOffset]
-                            if voteCode in votes:
-                                votes[voteCode] += 1
-                            else:
-                                votes[voteCode] = 1
+                            for voteCode in shareSubrow[j][voteOffset].split(','):
+                                if not voteCode:
+                                    continue
+                                if voteCode in votes:
+                                    votes[voteCode] += 1
+                                else:
+                                    votes[voteCode] = 1
 
                         # Replace vote code with vote counts
                         for j in range(nRows):
@@ -697,15 +699,19 @@ def handleResponse(params):
                     if not shareSubrow[j][0] or (explainOffset and not shareSubrow[j][1]):
                         continue
 
+                    respVal = shareSubrow[j][0]
+                    if parseNumber(respVal) is not None:
+                        respVal = parseNumber(respVal)
+
                     if tallyVotes and (votingCompleted or adminUser):
                         # Sort by (-) vote tally and then by response
-                        sortVals.append( [-shareSubrow[j][voteOffset], shareSubrow[j][0], j])
+                        sortVals.append( [-shareSubrow[j][voteOffset], respVal, j])
                     elif explainOffset:
                         # Sort by response value and then time
-                        sortVals.append( [shareSubrow[j][0], timeVal, j] )
+                        sortVals.append( [respVal, timeVal, j] )
                     else:
                         # Sort by time and then response value
-                        sortVals.append( [timeVal, shareSubrow[j][0], j])
+                        sortVals.append( [timeVal, respVal, j])
 
                 sortVals.sort()
 

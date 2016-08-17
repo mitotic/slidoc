@@ -506,17 +506,22 @@ function handleResponse(evt) {
 		    disableVoting = true;
 
 		if (voteOffset) {
-		    // Return user's vote code
+		    // Return user's vote codes
 		    if (curUserVals)
 			returnInfo.vote = curUserVals[voteOffset];
 		    if (tallyVotes) {
 			var votes = {};
 			for (var j=0; j<nRows; j++) {
-			    var voteCode = shareSubrow[j][voteOffset];
-			    if (voteCode in votes)
-				votes[voteCode] += 1;
-			    else
-				votes[voteCode] = 1;
+			    var voteCodes = shareSubrow[j][voteOffset].split(',');
+			    for (var k=0; k<voteCodes.length; k++) {
+				var voteCode = voteCodes[k];
+				if (!voteCode)
+				    continue;
+				if (voteCode in votes)
+				    votes[voteCode] += 1;
+				else
+				    votes[voteCode] = 1;
+			    }
 			}
 			// Replace vote code with vote counts
 			for (var j=0; j<nRows; j++) {
@@ -559,15 +564,19 @@ function handleResponse(evt) {
 		    if (!shareSubrow[j][0] || (explainOffset && !shareSubrow[j][1]))
 			continue;
 
+                    var respVal = shareSubrow[j][0];
+                    if (parseNumber(respVal) != null)
+                        respVal = parseNumber(respVal);
+
 		    if (tallyVotes && (votingCompleted || adminUser)) {
 			// Sort by (-) vote tally and then by response
-			sortVals.push( [-shareSubrow[j][voteOffset], shareSubrow[j][0], j]);
+			sortVals.push( [-shareSubrow[j][voteOffset], respVal, j]);
 		    } else if (explainOffset)  {
 			// Sort by response value and then time
-			sortVals.push( [shareSubrow[j][0], timeVal, j] );
+			sortVals.push( [respVal, timeVal, j] );
 		    } else {
 			// Sort by time and then response value
-			sortVals.push( [timeVal, shareSubrow[j][0], j]);
+			sortVals.push( [timeVal, respVal, j]);
 		    }
 		}
 		sortVals.sort();
