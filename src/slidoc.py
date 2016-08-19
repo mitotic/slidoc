@@ -1446,7 +1446,7 @@ class SlidocRenderer(MathRenderer):
 
         id_str = self.get_slide_id()+'-concepts'
         display_style = 'inline' if self.options['config'].printable else 'none'
-        tag_html = '''<div class="slidoc-concepts-container slidoc-noslide"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
+        tag_html = '''<div class="slidoc-concepts-container slidoc-noslide slidoc-nopaced"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
         if self.options['config'].index:
             first = True
@@ -1997,9 +1997,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                     due_date = sliauth.get_utc_date(file_config.due_date)
 
                 if config.vote_date is not None:
-                    vote_date_str = config.vote_date
+                    vote_date_str = sliauth.get_utc_date(config.vote_date)
                 elif file_config.vote_date:
-                    vote_date_str = file_config.vote_date
+                    vote_date_str = sliauth.get_utc_date(file_config.vote_date)
 
             config.features = cmd_features_set or set()
             if file_config.features and (cmd_features_set is None or 'override' not in cmd_features_set):
@@ -2024,7 +2024,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if 'equation_number' in config.features:
                 mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
             if 'tex_math' in config.features:
-                mathjax_config.append( r"tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
+                mathjax_config.append( r", tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
             math_inc = Mathjax_js % ','.join(mathjax_config)
 
         if not config.features.issubset(set(features_all)):
@@ -2422,6 +2422,7 @@ Pagedown_js = r'''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
+    skipStartupTypeset: true
     %s
   });
 </script>

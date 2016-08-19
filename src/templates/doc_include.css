@@ -130,6 +130,12 @@ body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-increment
     background-color: rgba(255,136,0,0.7);
     position: absolute;}
 
+/* Sharing */
+code.slidoc-plugin-share-resp-prefix {
+    font-weight: bold;
+    color: green;
+}
+
 /* Popup */
 .slidoc-popup-overlay {
     display: none;

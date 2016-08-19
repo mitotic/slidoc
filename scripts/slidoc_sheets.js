@@ -442,6 +442,10 @@ function handleResponse(evt) {
 	    var shareParams = sessionAttributes.shareAnswers[getShare];
 	    if (!shareParams || !shareParams.share)
 		throw('Error::Sharing not enabled for '+getShare+' of session '+sheetName);
+
+	    if (shareParams.vote && voteDate)
+		returnInfo.voteDate = voteDate;
+
 	    if (!adminUser && shareParams.share == 'after_grading' && !gradeDate) {
 		returnMessages.push("Warning:SHARE_AFTER_GRADING:");
 		returnValues = [];
@@ -490,15 +494,20 @@ function handleResponse(evt) {
 		    }
 		}
                 if (!curUserVals && !adminUser)
-                    throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
+                    throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName);
 
 		var votingCompleted = voteDate && voteDate.getTime() < curDate.getTime();
 		var tallyVotes = adminUser || shareParams.vote == 'show_live' || (shareParams.vote == 'show_completed' && votingCompleted);
 
+		var userResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
+
+                if (!adminUser && shareParams['share'] == 'after_submission' && !userResponded)
+		    throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
+
 		var disableVoting = false;
 
 		// If test/admin user, or current user has provided no response/no explanation, disallow voting
-		if (paramId == TESTUSER_ID || !curUserVals || !curUserVals[0] || (explainOffset && !curUserVals[explainOffset]))
+		if (paramId == TESTUSER_ID || !userResponded)
 		    disableVoting = true;
 
 		// If voting not enabled or voting completed, disallow  voting.
@@ -548,6 +557,8 @@ function handleResponse(evt) {
 		    }
 		}
 
+                var sortVotes = tallyVotes && (votingCompleted || adminUser);
+                var respCount = {};
 		var sortVals = [];
 		for (var j=0; j<nRows; j++) {
                     if (idValues[j][0] == TESTUSER_ID) {
@@ -565,26 +576,43 @@ function handleResponse(evt) {
 			continue;
 
                     var respVal = shareSubrow[j][0];
-                    if (parseNumber(respVal) != null)
-                        respVal = parseNumber(respVal);
+                    if (respVal in respCount) {
+                        respCount[respVal] += 1;
+                    } else {
+                        respCount[respVal] = 1;
+                    }
+                    if (parseNumber(respVal) != null) {
+                        var respSort = parseNumber(respVal);
+                    } else {
+                        var respSort = respVal;
+                    }
 
-		    if (tallyVotes && (votingCompleted || adminUser)) {
-			// Sort by (-) vote tally and then by response
-			sortVals.push( [-shareSubrow[j][voteOffset], respVal, j]);
-		    } else if (explainOffset)  {
-			// Sort by response value and then time
-			sortVals.push( [respVal, timeVal, j] );
-		    } else {
-			// Sort by time and then response value
-			sortVals.push( [timeVal, respVal, j]);
-		    }
+                    if (sortVotes) {
+                        // Sort by (-) vote tally && then by response
+                        sortVals.push( [-shareSubrow[j][voteOffset], respSort, j])
+                    } else if (explainOffset) {
+                        // Sort by response value && then time
+                        sortVals.push( [respSort, timeVal, j] )
+                    } else {
+                        // Sort by time && then response value
+                        sortVals.push( [timeVal, respSort, j])
+                    }
 		}
 		sortVals.sort();
 
 		//returnMessages.push('Debug::getShare: '+nCols+', '+nRows+', ['+curUserVals+']');
-		returnValues = []
-		for (var j=0; j<sortVals.length; j++)
-		    returnValues.push( shareSubrow[sortVals[j][2]] );
+		returnValues = [];
+		for (var j=0; j<sortVals.length; j++) {
+		    var subrow = shareSubrow[sortVals[j][2]];
+		    if (!(subrow[0] in respCount))
+                        continue;
+		    if (respCount[subrow[0]] > 1) {
+                        // Response occurs multiple times
+                        subrow = [subrow[0]+' ('+respCount[subrow[0]]+')'].concat(subrow.slice(1));
+                    }
+                    delete respCount[subrow[0]];
+                    returnValues.push( subrow );
+		}
 	    }
 	} else {
 	    if (rowUpdates && selectedUpdates) {
@@ -646,6 +674,9 @@ function handleResponse(evt) {
 		    // Indexed session
 		    fieldsMin = sessionParams.fieldsMin;
 
+		    if (voteDate)
+			returnInfo.voteDate = voteDate;
+
 		    if (dueDate && !prevSubmitted && !adminUser && !voteSubmission) {
 			// Check if past submission deadline
 			var lateTokenCol = columnIndex['lateToken'];
@@ -681,7 +712,7 @@ function handleResponse(evt) {
 				}
 			    }
 			}
-			returnInfo.dueDate = dueDate;
+			returnInfo.dueDate = dueDate; // May have been updated
 			if (!allowLateMods && !partialSubmission) {
 			    if (pastSubmitDeadline) {
 				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
@@ -792,9 +823,9 @@ function handleResponse(evt) {
 			} else if (colHeader.slice(-6) == '_share') {
 			    // Generate share value by computing MD5 digest of 'response [: explain]'
 			    if (j >= 1 && rowValues[j-1] && columnHeaders[j-1].slice(-9) == '_response') {
-				rowValues[j] = md5hex(rowValues[j-1]);
+				rowValues[j] = md5hex(normalizeText(rowValues[j-1]));
 			    } else if (j >= 2 && rowValues[j-1] && columnHeaders[j-1].slice(-8) == '_explain' && columnHeaders[j-2].slice(-9) == '_response') {
-				rowValues[j] = md5hex(rowValues[j-1]+': '+rowValues[j-2]);
+				rowValues[j] = md5hex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]));
 			    } else {
 				rowValues[j] = '';
 			    }
@@ -940,6 +971,12 @@ function setup() {
 }
 
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
+
+function normalizeText(s) {
+   // Lowercase, replace '" with null, all other non-alphanumerics with spaces,
+   // replace 'a', 'an', 'the' with space, and then normalize spaces
+    return s.toLowerCase().replace(/['"]/g,'').replace(/\b(a|an|the) /g, ' ').replace(/[_\W]/g,' ').replace(/\s+/g, ' ').trim();
+}
 
 function bin2hex(array) {
     return array.map(function(b) {return ("0" + ((b < 0 && b + 256) || b).toString(16)).substr(-2)}).join("");

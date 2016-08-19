@@ -36,8 +36,15 @@ Share = {
 	    return;
 	var prefix = 'q'+this.qattributes.qnumber+'_';
 	var nRows = result[prefix+'response'].length;
-	var lines = [result[prefix+'explain'] ? 'Explanations:<br>' : 'Responses:<br>'];
-	lines.push('<ul class="slidoc-plugin-share-list">');
+	var lines = [];
+
+	if (retStatus.info && retStatus.info.voteDate) {
+	    var voteDate = retStatus.info.voteDate;
+	    try { voteDate = new Date(voteDate); } catch(err) {  }
+	    lines.push('Submit Likes by: '+voteDate+'<p></p>')
+	}
+	
+	lines.push(result[prefix+'explain'] ? 'Explanations:<br>' : 'Responses:<br>');
 	this.voteCodes = retStatus.info.vote ? retStatus.info.vote.split(',') : ['', ''];
 
 	var checkResp = [];
@@ -59,6 +66,8 @@ Share = {
 	}
 
 	Slidoc.log('Slidoc.Plugins.Share.responseCallback2:', checkResp);
+	var ulistCorr = [];
+	var ulistOther = [];
 	for (var j=0; j<nRows; j++) {
 	    var respVal = result[prefix+'response'][j];
 	    var isCorrect = false;
@@ -70,29 +79,59 @@ Share = {
 		} catch(err) {Slidoc.log('Share.responseCallback: Error - invalid numeric response:'+respVal);}
 	    }
 	    var correctResp = isCorrect ? '1' : '0';
-	    var line = '<li>';
+	    var line = '<li class="slidoc-plugin-share-li">';
 	    if (result[prefix+'share']) {
 		var voteCode = result[prefix+'share'][j];
 		if (voteCode)
 		    line += '<a href="javascript:void(0);" data-correct-resp="'+correctResp+'" class="slidoc-plugin-share-votebutton slidoc-plugin-share-votebutton-'+voteCode+'" onclick="Slidoc.Plugins.'+this.name+"['"+this.slideId+"'].upVote('"+voteCode+"', this)"+';">&#x1f44d</a> &nbsp;'
 		else
 		    line += '<a href="javascript:void(0);" class="slidoc-plugin-share-votebutton-disabled">&#x1f44d</a> &nbsp;'
+	    } else {
+		line += '<span></span>';
 	    }
 	    if (result[prefix+'vote'] && result[prefix+'vote'][j] !== null)
-		line += '[<code>'+(1000+parseInt(result[prefix+'vote'][j])).toString().slice(-3)+'</code>]&nbsp;';
+		line += '[<code class="slidoc-plugin-share-vote">'+(1000+parseInt(result[prefix+'vote'][j])).toString().slice(-3)+'</code>]&nbsp;';
+	    else
+		line += '<code></code>';
 
+	    line += '<code class="slidoc-plugin-share-prefix'+(isCorrect ? '-correct' : '')+'"></code>';
+	    var prefixVal = '';
+	    var suffixVal = respVal;
 	    if (result[prefix+'explain']) {
-		line += '<code>'+(isCorrect ? '<b>'+respVal+'</b>' : respVal)+'</code>: ' + result[prefix+'explain'][j];
-	    } else {
-		line += respVal;
+		line += ': ';
+		prefixVal = respVal;
+		suffixVal = result[prefix+'explain'][j];
 	    }
-
+	    line += '<span class="slidoc-plugin-share-resp"></span>'
 	    line += '</li>';
-	    lines.push(line);
+	    if (isCorrect)
+		ulistCorr.push([line, prefixVal, suffixVal]);
+	    else
+		ulistOther.push([line, prefixVal, suffixVal]);
 	}
+
+	var ulistAll = ulistCorr.concat(ulistOther);
+	lines.push('<ul class="slidoc-plugin-share-list">');
+	for (var j=0; j<ulistAll.length; j++)
+	    lines.push(ulistAll[j][0]);
 	lines.push('</ul>');
 
-	Slidoc.showPopup(lines.join('\n'), null, true);
+	var popupContent = Slidoc.showPopup(lines.join('\n'), null, true);
+	var listNodes = popupContent.lastElementChild.children;
+	for (var j=0; j<ulistAll.length; j++) {
+	    var childNodes = listNodes[j].children;
+	     // answer in code element
+	    childNodes[2].textContent = ulistAll[j][1];
+
+	    // response/explanation in span element
+	    if (this.qattributes.explain == 'markdown' && window.MDConverter) 
+		childNodes[3].innerHTML = MDConverter(ulistAll[j][2], true); 
+	    else
+		childNodes[3].textContent = ulistAll[j][2];
+	}
+	if (this.qattributes.explain == 'markdown' && window.MathJax)
+	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, popupContent.id]);
+
 	for (var k=0; k<this.voteCodes.length; k++) {
 	    if (!this.voteCodes[k])
 		continue;

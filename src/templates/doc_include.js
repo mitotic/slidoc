@@ -368,6 +368,10 @@ function onreadystateaux() {
 	PagedownConverter.hooks.chain("preBlockGamut", MDPreBlockGamut);
     }
 
+    // Typeset MathJax after plugin setup
+    if (window.MathJax)
+	MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+
     if (Sliobj.params.gd_client_id) {
 	// Google client load will authenticate
     } else if (Sliobj.params.gd_sheet_url) {
@@ -645,6 +649,8 @@ Slidoc.viewHelp = function () {
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
+	if (Sliobj.voteDate)
+	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
 	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && Sliobj.feedback.q_grades != null)
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
     } else {
@@ -1183,6 +1189,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.scoreSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
+    Sliobj.voteDate = null;
 
     if (Sliobj.params.gd_sheet_url)
 	Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
@@ -1902,6 +1909,8 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.gradeDate)
 		Sliobj.gradeDateStr = retStatus.info.gradeDate;
+	    if (retStatus.info.voteDate)
+		try { Sliobj.voteDate = new Date(retStatus.info.voteDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error VOTE_DATE: '+retStatus.info.voteDate, err); }
 	    if (retStatus.info.dueDate)
 		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err); }
 	    if (retStatus.info.submitTimestamp) {
@@ -2944,15 +2953,17 @@ Slidoc.releaseGrades = function () {
 	return;
     
     var updates = {id: Sliobj.sessionName, gradeDate: new Date()};
-    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback);
+    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback.bind(null, updates.gradeDate.toISOString()));
 }
 
-function releaseGradesCallback(result, retStatus){
+function releaseGradesCallback(gradeDateStr, result, retStatus){
     Slidoc.log('releaseGradesCallback:', result, retStatus);
-    if (result)
+    if (result) {
+	Sliobj.gradeDateStr = gradeDateStr;
 	alert('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students');
-    else
+    } else {
 	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');
+    }
 }
 
 function conceptStats(tags, tallies) {
@@ -3008,6 +3019,11 @@ Slidoc.gradeClick = function (elem, slide_id) {
     } else {
 	var question_attrs = getQuestionAttrs(slide_id);
 	var gradeValue = gradeInput.value.trim();
+
+	if (gradeValue && gradeValue > question_attrs.gweight) {
+	    if (!window.confirm('Entering grade '+gradeValue+' that exceeds the maximum '+question_attrs.gweight+'. Proceed anyway?'))
+		return;
+	}
 	var commentsValue = commentsArea.value.trim();
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
 	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true)
@@ -3740,7 +3756,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
 	Slidoc.log('Slidoc.showPopup: Popup already open');
 	if (!autoCloseMillisec)
 	    Sliobj.popupQueue.push([innerHTML||null, divElemId||null]);
-	return;
+	return null;
     }
 
     if (!divElemId) divElemId = 'slidoc-generic-popup';
@@ -3749,6 +3765,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
 
     var closeElem = document.getElementById(divElem.id+'-close');
     var overlayElem = document.getElementById('slidoc-generic-overlay');
+    var contentElem = null;
     if (!overlayElem) {
 	alert('slidoc: INTERNAL ERROR - no overlay for popup ');
     } else if (!divElem) {
@@ -3757,7 +3774,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
 	alert('slidoc: INTERNAL ERROR - no close for popup'+divElemId);
     } else {
 	if (innerHTML) {
-	    var contentElem = document.getElementById(divElem.id+'-content')
+	    contentElem = document.getElementById(divElem.id+'-content')
 	    if (contentElem)
 		contentElem.innerHTML = innerHTML;
 	    else
@@ -3786,6 +3803,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
 	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }
     window.scrollTo(0,0);
+    return contentElem;
 }
 
 //////////////////////////////////

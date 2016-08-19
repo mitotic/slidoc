@@ -588,6 +588,9 @@ def handleResponse(params):
             if not shareParams or not shareParams.get('share'):
                 raise Exception('Error::Sharing not enabled for '+getShare+' of session '+sheetName)
 
+            if shareParams.get('vote') and voteDate:
+                returnInfo['voteDate'] = voteDate
+
             if not adminUser and shareParams['share'] == 'after_grading' and not gradeDate:
                 returnMessages.append("Warning:SHARE_AFTER_GRADING:")
                 returnValues = []
@@ -638,11 +641,15 @@ def handleResponse(params):
                 votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate);
 
                 tallyVotes = adminUser or shareParams.get('vote') == 'show_live' or (shareParams.get('vote') == 'show_completed' and votingCompleted)
+                userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
+
+                if not adminUser and shareParams['share'] == 'after_submission' and not userResponded:
+                    raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
 
                 disableVoting = False
 
                 # If test/admin user, or current user has provided no response/no explanation, disallow voting
-                if paramId == TESTUSER_ID or not curUserVals or not curUserVals[0] or (explainOffset and not curUserVals[explainOffset]):
+                if paramId == TESTUSER_ID or not userResponded:
                     disableVoting = True
 
                 # If voting not enabled or voting completed, disallow  voting.
@@ -684,6 +691,8 @@ def handleResponse(params):
                         for j in range(nRows):
                             shareSubrow[j][shareOffset] = ''
 
+                sortVotes = tallyVotes and (votingCompleted or adminUser)
+                respCount = {}
                 sortVals = []
                 for j in range(nRows):
                     if idValues[j][0] == TESTUSER_ID:
@@ -700,25 +709,38 @@ def handleResponse(params):
                         continue
 
                     respVal = shareSubrow[j][0]
+                    if respVal in respCount:
+                        respCount[respVal] += 1
+                    else:
+                        respCount[respVal] = 1
                     if parseNumber(respVal) is not None:
-                        respVal = parseNumber(respVal)
+                        respSort = parseNumber(respVal)
+                    else:
+                        respSort = respVal
 
-                    if tallyVotes and (votingCompleted or adminUser):
+                    if sortVotes:
                         # Sort by (-) vote tally and then by response
-                        sortVals.append( [-shareSubrow[j][voteOffset], respVal, j])
+                        sortVals.append( [-shareSubrow[j][voteOffset], respSort, j])
                     elif explainOffset:
                         # Sort by response value and then time
-                        sortVals.append( [respVal, timeVal, j] )
+                        sortVals.append( [respSort, timeVal, j] )
                     else:
                         # Sort by time and then response value
-                        sortVals.append( [timeVal, respVal, j])
+                        sortVals.append( [timeVal, respSort, j])
 
                 sortVals.sort()
 
                 ##returnMessages.append('Debug::getShare: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
                 returnValues = []
-                for x, y, offset in sortVals:
-                    returnValues.append( shareSubrow[offset] )
+                for x, y, j in sortVals:
+                    subrow = shareSubrow[j]
+                    if not (subrow[0] in respCount):
+                        continue
+                    if respCount[subrow[0]] > 1:
+                        # Response occurs multiple times
+                        subrow = [subrow[0]+' ('+str(respCount[subrow[0]])+')'] + subrow[1:]
+                    del respCount[subrow[0]]
+                    returnValues.append( subrow )
 
         else:
             if rowUpdates and selectedUpdates:
@@ -779,6 +801,9 @@ def handleResponse(params):
                     # Indexed session
                     fieldsMin = sessionParams.get('fieldsMin')
 
+                    if voteDate:
+                        returnInfo['voteDate'] = voteDate
+
                     if dueDate and not prevSubmitted and not adminUser and not voteSubmission:
                         # Check if past submission deadline
                         lateTokenCol = columnIndex.get('lateToken')
@@ -811,7 +836,7 @@ def handleResponse(params):
                                 else:
                                     returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
 
-                        returnInfo['dueDate'] = dueDate
+                        returnInfo['dueDate'] = dueDate # May have been updated
                         if not allowLateMods and not partialSubmission:
                             if pastSubmitDeadline:
                                 if newRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
@@ -922,9 +947,9 @@ def handleResponse(params):
                         elif colHeader[-6:] == '_share':
                             # Generate share value by computing MD5 digest of 'response [: explain]'
                             if j >= 1 and rowValues[j-1] and columnHeaders[j-1][-9:] == '_response':
-                                rowValues[j] = md5hex(rowValues[j-1])
+                                rowValues[j] = md5hex(normalizeText(rowValues[j-1]))
                             elif j >= 2 and rowValues[j-1] and columnHeaders[j-1][-8:] == '_explain' and columnHeaders[j-2][-9:] == '_response':
-                                rowValues[j] = md5hex(rowValues[j-1]+': '+rowValues[j-2])
+                                rowValues[j] = md5hex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]))
                             else:
                                 rowValues[j] = ''
 
@@ -1068,6 +1093,17 @@ def handleResponse(params):
         print "DEBUG: RETOBJ", retObj['result'], retObj['messages']
     
     return retObj
+
+
+WUSCORE_RE = re.compile(r'[_\W]')
+ARTICLE_RE = re.compile(r'\b(a|an|the) ')
+MSPACE_RE  = re.compile(r'\s+')
+
+def normalizeText(s):
+    # Lowercase, replace '" with null, all other non-alphanumerics with spaces,
+    # replace 'a', 'an', 'the' with space, and then normalize spaces
+    return MSPACE_RE.sub(' ', WUSCORE_RE.sub(' ', ARTICLE_RE.sub(' ', s.lower().replace("'",'').replace('"','') ))).strip()
+
 
 def md5hex(s, n=TRUNCATE_DIGEST):
     return md5.new(s).hexdigest()[:n];
