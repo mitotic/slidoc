@@ -685,6 +685,28 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     this.putSend(updateObj.id, params, 'updateRow', callback);
 }
 
+GoogleSheet.prototype.delRow = function (id, callback) {
+    // If !id, GService.gprofile.auth.id is used
+    // callback(result, retStatus)
+    // result == null on error
+    // result == {} on success
+    Slidoc.log('GoogleSheet.delRow:', id, !!callback);
+
+    if (!id) id = GService.gprofile.auth.id;
+
+    if (!id)
+        throw('GoogleSheet.delRow: Null id for delRow');
+    if (!callback)
+        throw('GoogleSheet.delRow: Must specify callback for delRow');
+
+    if (this.cacheAll)
+	throw('GoogleSheet.delRow: Cannot delete from cache');
+
+    var params = {id: id, delrow: '1'};
+    this.callbackCounter += 1;
+    this.send(params, 'delRow', callback);
+}
+
 GoogleSheet.prototype.getRow = function (id, callback) {
     // If !id, GService.gprofile.auth.id is used
     // callback(result, retStatus)

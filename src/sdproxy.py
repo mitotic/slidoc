@@ -162,9 +162,25 @@ class Sheet(object):
     def getLastRow(self):
         return len(self.xrows)
 
+    def deleteRow(self, rowNum):
+        if not self.keyHeader:
+            raise Exception('Cannot delete row for non-keyed spreadsheet')
+        if rowNum < 1 or rowNum > len(self.xrows):
+            raise Exception('Invalid row number for deletion: %s' % rowNum)
+        self.modTime = sliauth.epoch_ms()
+        self.accessTime = self.modTime
+        keyValue = self.xrows[rowNum-1][self.keyCol-1]
+        del self.xrows[rowNum-1]
+        del self.keyMap[keyValue]
+
     def insertRowBefore(self, rowNum, keyValue=None):
-        if rowNum < 2 or rowNum > len(self.xrows)+1:
-            raise Exception('Invalid row number for insertion: %s' % rowNum)
+        if self.keyHeader:
+            if rowNum < 2 or rowNum > len(self.xrows)+1:
+                raise Exception('Invalid row number for insertion: %s' % rowNum)
+        else:
+            if rowNum != len(self.xrows)+1:
+                raise Exception('Can only append row for non-keyed spreadsheet')
+
         self.modTime = sliauth.epoch_ms()
         self.accessTime = self.modTime
         newRow = [None]*self.nCols
@@ -176,8 +192,6 @@ class Sheet(object):
             self.keyMap[keyValue] = self.modTime
             newRow[self.keyCol-1] = keyValue
         else:
-            if rowNum != len(self.xrows)+1:
-                raise Exception('Can only append row for non-keyed spreadsheet')
             self.keyMap[rowNum] = self.modTime
 
         self.xrows.insert(rowNum-1, newRow)
@@ -539,6 +553,7 @@ def handleResponse(params):
         getShare = params.get('getshare', '');
         allRows = params.get('all','')
         nooverwriteRow = params.get('nooverwrite','')
+        delRow = params.get('delrow','')
 
         selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
         rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
@@ -570,7 +585,16 @@ def handleResponse(params):
             except Exception, err:
                 pass
 
-        if not rowUpdates and not selectedUpdates and not getRow and not getShare:
+        if delRow:
+            # Delete row only allowed for session sheet and test user
+            if not sessionParams or paramId != TESTUSER_ID:
+                raise Exception("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
+            temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
+            testRow = temIndexRow.get(TESTUSER_ID)
+            if testRow:
+                modSheet.deleteRow(testRow)
+            returnValues = []
+        elif not rowUpdates and not selectedUpdates and not getRow and not getShare:
             # No row updates/gets
             returnValues = []
         elif getRow and allRows:
@@ -792,14 +816,18 @@ def handleResponse(params):
                 pastSubmitDeadline = False
                 partialSubmission = False
                 fieldsMin = len(columnHeaders)
+                submitTimestampCol = columnIndex.get('submitTimestamp')
 
                 prevSubmitted = None
-                if not newRow and columnIndex.get('submitTimestamp'):
-                    prevSubmitted = modSheet.getSheetValues(userRow, columnIndex['submitTimestamp'], 1, 1)[0][0] or None
+                if not newRow and submitTimestampCol:
+                    prevSubmitted = modSheet.getSheetValues(userRow, submitTimestampCol, 1, 1)[0][0] or None
 
                 if sessionParams:
                     # Indexed session
                     fieldsMin = sessionParams.get('fieldsMin')
+
+                    if rowUpdates and prevSubmitted:
+                        raise Exception("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'");
 
                     if voteDate:
                         returnInfo['voteDate'] = voteDate
@@ -860,7 +888,7 @@ def handleResponse(params):
                         userRow = numStickyRows+1
                     elif userId == TESTUSER_ID and not loggingSheet:
                         # Test user always appears after max score
-                        userRow = temIndexRow[MAXSCORE_ID]+1 if temIndexRow[MAXSCORE_ID] else numStickyRows+1
+                        userRow = temIndexRow[MAXSCORE_ID]+1 if temIndexRow.get(MAXSCORE_ID) else numStickyRows+1
                     elif modSheet.getLastRow() > numStickyRows and not loggingSheet:
                         displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1)
                         userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID)
@@ -888,12 +916,11 @@ def handleResponse(params):
                 if rowUpdates:
                     # Update all non-null and non-id row values
                     # Timestamp is always updated, unless it is specified by admin
-                    if adminUser and not restrictedSheet and userId != MAXSCORE_ID:
+                    if adminUser and sessionParams and userId != MAXSCORE_ID:
                         raise Exception("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'")
 
-                    submitTimestampCol = columnIndex.get('submitTimestamp')
                     if submitTimestampCol and rowUpdates[submitTimestampCol-1]:
-                        raise Exception("Error::Already submitted session once in sheet '"+sheetName+"'")
+                        raise Exception("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'")
 
                     if not adminUser and len(rowUpdates) > fieldsMin:
                         # Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values:
@@ -983,11 +1010,9 @@ def handleResponse(params):
                     if not voteSubmission and not partialSubmission:
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
-                        if sessionParams:
-                            # Indexed session: selected updates only after submission
-                            submitTimestampCol = columnIndex.get('submitTimestamp')
-                            if not (submitTimestampCol and rowValues[submitTimestampCol-1]):
-                                raise Exception("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'")
+
+                        if sessionParams and not prevSubmitted:
+                            raise Exception("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteSubmission:
                         # Allow vote submissions only after due date and before voting deadline

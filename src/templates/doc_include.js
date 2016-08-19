@@ -21,6 +21,8 @@ var CACHE_GRADING = true; // If true, cache all rows for grading
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
+var TESTUSER_ID = '_test_user';
+
 var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
 
 var uagent = navigator.userAgent.toLowerCase();
@@ -556,17 +558,27 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
 Slidoc.resetPaced = function () {
     Slidoc.log('Slidoc.resetPaced:');
     if (Sliobj.params.gd_sheet_url) {
-	if (!Slidoc.testingActive())
+	var userId = window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
+	if (userId == TESTUSER_ID && window.confirm('Reset test user session?')) {
+	    var gsheet = getSheet(Sliobj.sessionName);
+	    gsheet.delRow(userId, resetSessionCallback);
+	} else if (!Slidoc.testingActive()) {
 	    alert('Cannot reset session linked to Google Docs');
+	}
 	return false;
     }
-    if (!Slidoc.testingActive() && !window.confirm('Do want to completely delete all answers/scores for this session and start over?'))
+    if (!Slidoc.testingActive() && !window.confirm('Do you want to completely delete all answers/scores for this session and start over?'))
 	return false;
     Sliobj.session = sessionCreate();
     Sliobj.feedback = null;
     sessionPut();
     if (!Slidoc.testingActive())
 	location.reload(true);
+}
+
+function resetSessionCallback() {
+    Slidoc.log('resetSessionCallback:');
+    location.reload(true);
 }
 
 Slidoc.showConcepts = function (msg) {
@@ -636,9 +648,10 @@ var Slide_help_list = [
 Slidoc.viewHelp = function () {
     var html = '';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
+    var userId = window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
     if (Sliobj.sessionName) {
-	if (window.GService && GService.gprofile && GService.gprofile.auth)
-	    html += 'User: <b>'+GService.gprofile.auth.id+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	if (userId)
+	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session && Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
@@ -659,7 +672,7 @@ Slidoc.viewHelp = function () {
 	    html += 'User: <b>'+cookieUserInfo.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
     html += '<table class="slidoc-slide-help-table">';
-    if (Sliobj.params.paceLevel && !Sliobj.params.gd_sheet_url && !Sliobj.chainActive)
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == TESTUSER_ID))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
     if (Sliobj.currentSlide) {
