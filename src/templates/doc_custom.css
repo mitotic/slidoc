@@ -41,6 +41,11 @@ a, a:visited,
       color: #2980B9;
 }
 
+.slidoc-clickable.slidoc-clickable-noclick {
+    color: #111;
+    pointer-event: none;
+}
+
 .slidoc-clickable-sym {
     font-size: 120%; font-weight: bold; font-family: Helvetica, Arial, freesans, sans-serif;}
 

@@ -244,7 +244,13 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.timeout = IOLoop.current().call_later(WS_TIMEOUT_SEC, self._close_on_timeout)
 
 
-class AuthStaticFileHandler(tornado.web.StaticFileHandler, UserIdMixin): 
+class BaseStaticFileHandler(tornado.web.StaticFileHandler):
+    def set_extra_headers(self, path):
+        # Disable cache
+        self.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    
+
+class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
         if not options.hmac_key:
             self.clear_id()
@@ -257,10 +263,6 @@ class AuthStaticFileHandler(tornado.web.StaticFileHandler, UserIdMixin):
     @tornado.web.authenticated
     def validate_absolute_path(self, *args, **kwargs):
         return super(AuthStaticFileHandler, self).validate_absolute_path(*args, **kwargs)
-
-    def set_extra_headers(self, path):
-        # Disable cache
-        self.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
     
 
 class AuthLoginHandler(BaseHandler):
@@ -347,7 +349,10 @@ class Application(tornado.web.Application):
                           (r"/(_stats)", ActionHandler),
                            ]
 
-        handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static_dir}) ]
+        if options.no_auth:
+            handlers += [ (r"/(.+)", BaseStaticFileHandler, {"path": options.static_dir}) ]
+        else:
+            handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": options.static_dir}) ]
 
         super(Application, self).__init__(handlers, **settings)
 

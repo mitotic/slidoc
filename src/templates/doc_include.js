@@ -15,6 +15,7 @@ Slidoc.Random = null;
 
 var MAX_INC_LEVEL = 9;            // Max. incremental display level
 var MIN_ANSWER_NOTES_DELAY = 5;   // Minimum delay (sec) when displaying notes after answering question
+var MAX_SYS_ERROR_RETRIES = 5;    // Maximum number of system error retries
 
 var CACHE_GRADING = true; // If true, cache all rows for grading
 
@@ -27,7 +28,34 @@ var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
-var useJSONP = (location.protocol == 'file:' || isSafari);
+var isQt = /Qt/.test(navigator.userAgent) ; // Detects wkhtmltopdf browser
+var useJSONP = (location.protocol == 'file:' || isSafari) && !isQt;
+
+if (!Function.prototype.bind) {
+  // bind implementation for old WebKit used by wkhtmltopdf
+  Function.prototype.bind = function(oThis) {
+    if (typeof this !== 'function') {
+      // closest thing possible to the ECMAScript 5
+      // internal IsCallable function
+      throw new TypeError('Function.prototype.bind - what is trying to be bound is not callable');
+    }
+
+    var aArgs   = Array.prototype.slice.call(arguments, 1),
+        fToBind = this,
+        fNOP    = function() {},
+        fBound  = function() {
+          return fToBind.apply(this instanceof fNOP && oThis
+                 ? this
+                 : oThis,
+                 aArgs.concat(Array.prototype.slice.call(arguments)));
+        };
+
+    fNOP.prototype = this.prototype;
+    fBound.prototype = new fNOP();
+
+    return fBound;
+  };
+}
 
 /////////////////////////////////////
 // Section 2: Global initialization
@@ -54,6 +82,8 @@ Sliobj.slidePlugins = null;
 Sliobj.incrementPlugins = null;
 Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
+
+Sliobj.errorRetries = 0;
 
 Sliobj.seedOffset = {randomChoice: 1, plugins: 1000};  // Used to offset the session randomSeed to generate new seeds
 
@@ -1060,6 +1090,9 @@ function clearAnswerElements() {
 	    }
 	}
     }
+    var hintElems = document.getElementsByClassName('slidoc-question-hint');
+    for (var j=0; j<hintElems.length; j++)
+	hintElems[j].classList.remove('slidoc-clickable-noclick');
 }
 
 function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
@@ -1719,6 +1752,14 @@ function preAnswer() {
 	Slidoc.answerClick(null, slide_id, true, qAttempted.response, qAttempted.explain||null, qAttempted.plugin, qfeedback);
     }
 
+    for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
+	if (Sliobj.session.hintsUsed[qnumber]) {
+	    var question_attrs = attr_vals[qnumber-1];
+	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	    hintDisplayAux(slide_id, qnumber, Sliobj.session.hintsUsed[qnumber]);
+	}
+    }
+
     if (Sliobj.session.submitted)
 	showCorrectAnswers();
 }
@@ -1833,6 +1874,7 @@ function sessionCreate() {
             weightedCount: 0,
             weightedCorrect: 0,
             questionsAttempted: {},
+	    hintsUsed: {},
 	    plugins: {},
             missedConcepts: []
 	   };
@@ -1918,7 +1960,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
     var err_type = match ? match[2] : '';
     var err_info = match ? match[3] : ''
     if (session || nullReturn) {
-
+	Sliobj.errorRetries = 0;
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.gradeDate)
 		Sliobj.gradeDateStr = retStatus.info.gradeDate;
@@ -1975,6 +2017,11 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 
     } else if (retryCall) {
 	if (err_msg) {
+	    if (Sliobj.errorRetries > MAX_SYS_ERROR_RETRIES) {
+		sessionAbort('Too many retries: '+err_msg);
+		return;
+	    }
+	    Sliobj.errorRetries += 1;
 	    var prefix = (err_msg.indexOf('Invalid token') > -1) ? 'Invalid token. ' : '';
 	    if (err_type == 'NEED_ROSTER_ENTRY') {
 		GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id,
@@ -2308,6 +2355,35 @@ Slidoc.classDisplay = function (className, displayValue) {
         elements[i].style.display = (elements[i].style.display=='none') ? 'block' : 'none'
    }
    return false;
+}
+
+Slidoc.hintDisplay = function (thisElem, slide_id, qnumber, hintNumber) {
+    Slidoc.log('Slidoc.hintDisplay:', thisElem, slide_id, qnumber, hintNumber);
+    if (!Sliobj.session || !Sliobj.session.paced) {
+	hintDisplayAux(slide_id, qnumber, hintNumber);
+	return;
+    }
+    if (!Sliobj.params.tryCount)
+	alert('Hints only work with question-paced sessions');
+    else
+	sessionPut(null, null, {}, hintCallback.bind(null, slide_id, qnumber, hintNumber));
+}
+
+function hintCallback(slide_id, qnumber, hintNumber, session, feedback) {
+    Slidoc.log('hintCallback:', slide_id, qnumber, hintNumber, session, feedback);
+    hintDisplayAux(slide_id, qnumber, hintNumber);
+}
+
+function hintDisplayAux(slide_id, qnumber, hintNumber) {
+    var jStart = Sliobj.session.hintsUsed[qnumber] || 1;
+    for (var j=jStart; j<=hintNumber; j++) {
+	var idStr = slide_id + '-hint-' + j;
+	Slidoc.classDisplay(idStr, 'block');
+	var elem = document.getElementById(idStr);
+	if (elem)
+	    elem.classList.add('slidoc-clickable-noclick');
+    }
+    Sliobj.session.hintsUsed[qnumber] = hintNumber;
 }
 
 Slidoc.idDisplay = function (idValue, displayValue) {
@@ -2700,15 +2776,18 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
 	return;
     }
 
-    var qSkipfac = 1;
-    var qWeight = question_attrs.weight;
+    var qHintsUsed = Sliobj.session.hintsUsed[question_attrs.qnumber] || 0;
+    
+    var qSkipCount = 0;
+    var qSkipWeight = 0;
 
     var skip = question_attrs.skip || null;
     if (Sliobj.session.paced) {
 	Sliobj.session.remainingTries = 0;
 	document.body.classList.remove('slidoc-expect-answer-state');
 	if (Sliobj.params.tryCount) {
-	    if (qscore === 1 && Sliobj.session.lastAnswersCorrect >= 0) {
+	    // If hints were used, treat answer as "incorrect"
+	    if (qscore === 1 && !qHintsUsed && Sliobj.session.lastAnswersCorrect >= 0) {
 		// 2 => Current sequence of "correct" answers
 		if (skip && skip[0] > slide_num) {
 		    // Skip ahead
@@ -2716,8 +2795,8 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
 		    Sliobj.session.skipToSlide = skip[0];
 
 		    // Give credit for all skipped questions
-		    qSkipfac += skip[1];
-		    qWeight += skip[2]
+		    qSkipCount += skip[1];
+		    qSkipWeight += skip[2]
 		    Sliobj.session.questionsSkipped += skip[1];
 
 		    if (skip[3]) // Re-enable forward links for this slide
@@ -2727,7 +2806,7 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
 		    Sliobj.session.lastAnswersCorrect = 2;
 		}
 	    } else {
-		// -2 => Current sequence with at least one incorrect answer
+		// -2 => Current sequence with at least one incorrect answer (or hints used)
 		Sliobj.session.lastAnswersCorrect = -2;
 		document.body.classList.add('slidoc-incorrect-answer-state');
 	    }
@@ -2735,12 +2814,18 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
     }
 
     // Keep score
-    Sliobj.session.questionsCount += qSkipfac;
-    Sliobj.session.weightedCount += qWeight;
+    var qWeight = question_attrs.weight || 0;
+    Sliobj.session.questionsCount += 1 + qSkipCount;
+    Sliobj.session.weightedCount += qWeight + qSkipWeight;
     var effectiveScore = isNumber(qscore) ? qscore : 1;   // Give full credit to unscored answers
-    if (effectiveScore) {
-        Sliobj.session.questionsCorrect += qSkipfac;
-        Sliobj.session.weightedCorrect += effectiveScore*qWeight;
+
+    if (qHintsUsed > question_attrs.hints.length)
+	alert('Internal Error: Inconsistent hint count');
+    for (var j=0; j<qHintsUsed; j++)
+	effectiveScore -= Math.abs(question_attrs.hints[j]);
+    if (effectiveScore > 0) {
+        Sliobj.session.questionsCorrect += 1 + qSkipCount;
+        Sliobj.session.weightedCorrect += effectiveScore*qWeight + qSkipWeight;
     }
     Slidoc.showScore();
     Slidoc.reportEvent('answerTally');

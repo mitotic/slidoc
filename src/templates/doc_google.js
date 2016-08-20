@@ -364,12 +364,12 @@ GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginOr
 }
 	
 GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback) {
-    if (!authType) {
+    var cookieUserInfo = Slidoc.getServerCookie();
+    if (!authType && !cookieUserInfo) {
 	var randStr = Math.random().toString(16).slice(2);
 	this.receiveUserInfo(authType, 'anon'+randStr, '', '', 'User Anon'+randStr, false, callback);
 	return;
     }
-    var cookieUserInfo = Slidoc.getServerCookie();
     if (cookieUserInfo) {
 	if (user || msg || callback || !cookieUserInfo.user || !cookieUserInfo.token) {
 	    // Re-do authentication to update cookie

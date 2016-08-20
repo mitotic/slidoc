@@ -278,7 +278,8 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
-    slidoc_notes =    re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
+    slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
+    slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     minirule =        re.compile(r'^(--) *(?:\n+|$)')
     pause =           re.compile(r'^(\.\.\.) *(?:\n+|$)')
 
@@ -287,7 +288,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_begin',  'plugin_init', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_notes', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_begin',  'plugin_init', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_hint', 'slidoc_notes', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -345,6 +346,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_concepts(self, m):
          self.tokens.append({
             'type': 'slidoc_concepts',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_hint(self, m):
+         self.tokens.append({
+            'type': 'slidoc_hint',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -511,6 +519,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_concepts(self):
         return self.renderer.slidoc_concepts(self.token['name'], self.token['text'])
 
+    def output_slidoc_hint(self):
+        return self.renderer.slidoc_hint(self.token['name'], self.token['text'])
+
     def output_slidoc_notes(self):
         return self.renderer.slidoc_notes(self.token['name'], self.token['text'])
 
@@ -649,6 +660,7 @@ class SlidocRenderer(MathRenderer):
         self.header_list = []
         self.concept_warnings = []
         self.hide_end = None
+        self.hint_end = None
         self.notes_end = None
         self.section_number = 0
         self.untitled_number = 0
@@ -660,7 +672,7 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'shareAnswers': {}}
+        self.sheet_attributes = {'shareAnswers': {}, 'hints': defaultdict(list)}
         self.slide_number = 0
 
         self._new_slide()
@@ -684,7 +696,6 @@ class SlidocRenderer(MathRenderer):
         self.choice_questions = 0
         self.cur_qtype = ''
         self.cur_header = ''
-        self.cur_answer = False
         self.slide_concepts = ''
         self.first_para = True
         self.incremental_level = 0
@@ -750,6 +761,11 @@ class SlidocRenderer(MathRenderer):
         self.hide_end = None
         return s
 
+    def end_hint(self):
+        s = self.hint_end or ''
+        self.hint_end = None
+        return s
+
     def end_notes(self):
         s = self.notes_end or ''
         self.notes_end = None
@@ -793,7 +809,7 @@ class SlidocRenderer(MathRenderer):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
             message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
 
-        prefix_html = ''
+        prefix_html = self.end_hint()
         if self.qtypes[-1]:
             # Question slide
             if self.questions[-1]['share'] and 'Share' not in self.slide_plugin_embeds:
@@ -1035,7 +1051,7 @@ class SlidocRenderer(MathRenderer):
         else:
             if ord(name) == ord('A')+len(self.choices):
                 self.choices.append([value, alt_choice])
-            elif ord(name) == ord('A')+len(self.choices)-1 and not self.choices[-1][1] and 'randomize_choice' in self.options['config'].features:
+            elif ord(name) == ord('A')+len(self.choices)-1 and not self.choices[-1][1]:
                 # Alternative choice
                 alt_choice = True
                 self.choices[-1][0] = self.choices[-1][0] or value
@@ -1043,6 +1059,9 @@ class SlidocRenderer(MathRenderer):
             else:
                 # Out of sequence choice; ignore
                 return name+'..'
+
+        if alt_choice and 'randomize_choice' not in self.options['config'].features:
+            message("    ****CHOICE-WARNING: %s: Specify --features=randomize_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
 
         prefix = ''
         if not self.choice_end:
@@ -1113,10 +1132,9 @@ class SlidocRenderer(MathRenderer):
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
     def slidoc_answer(self, name, text):
-        if self.cur_answer:
+        if self.qtypes[-1]:
             # Ignore multiple answers
             return ''
-        self.cur_answer = True
 
         html_prefix = ''
         if self.choice_end:
@@ -1262,7 +1280,7 @@ class SlidocRenderer(MathRenderer):
 
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
                                   explain=answer_opts['explain'], share=answer_opts['share'], vote=answer_opts['vote'],
-                                  weight=1, gweight=0, vweight=0)
+                                  weight=1, gweight=0, vweight=0, hints=[])
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if self.block_input_counter:
@@ -1466,13 +1484,47 @@ class SlidocRenderer(MathRenderer):
         return tag_html+'\n'
 
     
+    def slidoc_hint(self, name, text):
+        if not self.options['config'].pace[TRY_COUNT]:
+            message("    ****HINT-WARNING: %s: Hint displayed for non-question-paced session in slide %s" % (self.options["filename"], self.slide_number))
+        if not self.qtypes[-1]:
+            abort("    ****HINT-ERROR: %s: Hint must appear after Answer:... in slide %s" % (self.options["filename"], self.slide_number))
+
+        if self.notes_end is not None:
+            abort("    ****HINT-ERROR: %s: Hint may not appear within Notes section of slide %s" % (self.options["filename"], self.slide_number))
+        if not isfloat(text) or abs(float(text)) >= 100.0:
+            abort("    ****HINT-ERROR: %s: Invalid penalty %s following Hint. Expecting a negative percentage in slide %s" % (self.options["filename"], text, self.slide_number))
+
+        hint_penalty = abs(float(text)) / 100.0
+            
+        qno = 'q'+str(self.questions[-1]['qnumber'])
+
+        qhints = self.sheet_attributes['hints'][qno]
+        qhints.append(hint_penalty)
+        hint_number = len(qhints)
+
+        self.questions[-1]['hints'] = qhints[:]
+
+        prefix = self.end_hint()
+
+        id_str = self.get_slide_id() + '-hint-' + str(hint_number)
+        start_str, suffix, end_str = self.start_block('hint', id_str, display='none')
+        prefix += start_str
+        self.hint_end = end_str
+        classes = 'slidoc-clickable slidoc-question-hint'
+        return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.hintDisplay(this, '%s', %s, %s)" style="display: inline;">Hint %s:</span>\n''' % (id_str, classes, self.get_slide_id() , self.questions[-1]['qnumber'], hint_number, hint_number)) + ' ' + text + ' ' + suffix
+
+
     def slidoc_notes(self, name, text):
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
+        prefix = self.end_hint()
+
         id_str = self.get_slide_id() + '-notes'
-        disp_block = 'none' if self.cur_answer else 'block'
-        prefix, suffix, end_str = self.start_block('notes', id_str, display=disp_block)
+        disp_block = 'none' if self.qtypes[-1] else 'block'
+        start_str, suffix, end_str = self.start_block('notes', id_str, display=disp_block)
+        prefix += start_str
         self.notes_end = end_str
         classes = 'slidoc-clickable'
         if self.qtypes[-1]:
@@ -1787,7 +1839,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     config.pace = cmd_pace_tuple  # May be overridden by file-specific values
 
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
-                 'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0,
+                 'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0, 'otherWeight': 0,
                  'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
@@ -1827,7 +1879,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if len(comps) > 1:
             js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
     
-    if gd_hmac_key and not config.no_auth:
+    if gd_hmac_key and not config.anonymous:
         js_params['authType'] = 'digest'
 
     nb_site_url = config.site_url
@@ -2522,7 +2574,7 @@ parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (defa
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
-parser.add_argument('--no_auth', help='Disable authentication (allow anonymous access)', action="store_true", default=None)
+parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
 parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')

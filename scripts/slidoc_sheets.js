@@ -1307,7 +1307,7 @@ function sessionAnswerSheet() {
 	    var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
 	    var savedSession = JSON.parse(jsonSession);
 	    var qAttempted = savedSession.questionsAttempted;
-	    var qHints = savedSession.hints;
+	    var qHints = savedSession.hintsUsed;
 
 	    var rowVals = [];
 	    for (var k=0; k<answerHeaders.length; k++)
@@ -1327,7 +1327,7 @@ function sessionAnswerSheet() {
 			var qcolName = qprefix+'_'+attr;
 			if (qcolName in ansHeaderCols) {
 			    if (attr == 'hints') {
-				rowVals[ansHeaderCols[qcolName]-1] = (!(qno in qHints) || qHints[qno]===null) ? '': qHints[qno];
+				rowVals[ansHeaderCols[qcolName]-1] = qHints[qno] || '';
 			    } else if (attr in qAttempted[qno]) {
 				rowVals[ansHeaderCols[qcolName]-1] = (qAttempted[qno][attr]===null) ? '': qAttempted[qno][attr]
 			    }
