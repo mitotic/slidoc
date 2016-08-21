@@ -1,9 +1,79 @@
-<!-- Customizable CSS for slidoc--->
+/* Customizable CSS for slidoc */
 
-body { 
-    max-width: 960px;
-    line-height: 1.3;
-    color: #222;
+@media not print {
+  body { 
+      max-width: 960px;
+      line-height: 1.3;
+      color: #222;
+      /*SUBSTITUTE_FONTSIZE*/
+  }
+
+  h1 {font-size: 2em }
+  h2 {font-size: 1.57em}
+  h3 {font-size: 1.43em}
+  h4 {font-size: 1.29em}
+  h5 {font-size: 1.14em}
+  h6 {font-size: 1em}
+
+  h1, h2, h3, h4, h5, h6 {
+      font-weight: normal;
+      color: #111;
+  }
+
+  code,
+   td.slidoc-slide-nav-counter {
+       font-size: 0.85em;
+       color: #555;
+       /* color: #381; */
+ }
+
+  a, a:visited,
+   a.slidoc-clickable,
+   a.slidoc-clickable:visited,
+   a.slidoc-clickable-sym,
+   .slidoc-clickable,
+   .slidoc-clickable-sym {
+        color: #2980B9;
+  }
+
+}
+
+@media print {
+  body { 
+      max-width: 960px;
+      line-height: 1.1;
+      color: #000;
+      /*SUBSTITUTE_FONTSIZE*/
+    }
+
+  h1 {font-size: 1.70em }
+  h2 {font-size: 1.55em}
+  h3 {font-size: 1.30em}
+  h4 {font-size: 1.20em}
+  h5 {font-size: 1.10em}
+  h6 {font-size: 1em}
+
+  h1, h2, h3, h4, h5, h6 {
+      color: #000;
+  }
+
+  code,
+   td.slidoc-slide-nav-counter {
+      font-size: 0.8em;
+      color: #113322;}
+
+  a, a:visited,
+  a.slidoc-clickable,
+  a.slidoc-clickable:visited {
+     color: rgb(85, 26, 139); }
+
+  a.slidoc-clickable-sym,
+  .slidoc-clickable,
+  .slidoc-clickable-sym {
+      color: #222;
+  }
+
+  .slidoc-noprint { display: none; }
 }
 
 img { max-width: 960px; max-height: 720px; }
@@ -11,34 +81,6 @@ img { max-width: 960px; max-height: 720px; }
 .slidoc-toc-container {
     line-height: 1.6;
     font-family: "Helvetica Neue", Helvetica, "Segoe UI", Arial, freesans, sans-serif;
-}
-
-h1 {font-size: 2em }
-h2 {font-size: 1.57em}
-h3 {font-size: 1.43em}
-h4 {font-size: 1.29em}
-h5 {font-size: 1.14em}
-h6 {font-size: 1em}
-
-h1, h2, h3, h4, h5, h6 {
-    font-weight: normal;
-    color: #111;
-}
-
-code,
-td.slidoc-slide-nav-counter {
-    font-size: 0.85em;
-    color: #555;
-    /* color: #381; */
-}
-
-a, a:visited,
- a.slidoc-clickable,
- a.slidoc-clickable:visited,
- a.slidoc-clickable-sym,
- .slidoc-clickable,
- .slidoc-clickable-sym {
-      color: #2980B9;
 }
 
 .slidoc-clickable.slidoc-clickable-noclick {
@@ -54,36 +96,6 @@ span.slidoc-clickable-sym { padding: 0.3em 0 0 0;}
 td.slidoc-clickable-sym { padding-left: 0.25em; padding-right: 0.25em; padding-top: 0px; padding-bottom: 0px; margin: 0px;}
 
 .slidoc-slide-nav-counter { opacity: 0.8; }
-
-
-
-@media print {
-  body { 
-      max-width: 960px;
-      line-height: 1.1;
-      color: #000;
-    }
-
-  h1, h2, h3, h4, h5, h6 {
-      color: #000;
-  }
-
-  code {
-      font-size: 0.8em;
-      color: #113322;}
-
-  a, a:visited,
-  a.slidoc-clickable,
-  a.slidoc-clickable:visited { color: rgb(85, 26, 139); }
-
-  a.slidoc-clickable-sym,
-  .slidoc-clickable,
-  .slidoc-clickable-sym {
-      color: #222;
-  }
-
-  .slidoc-noprint { display: none; }
-}
 
 body { font-family: "Gentium Basic", serif; }
 

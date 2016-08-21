@@ -11,7 +11,7 @@
 //     Overwrite the template code with this code and Save, using new project name Slidoc
 //
 //  3. Edit the following parameters in this script (see below):
-//       HMAC_KEY  set to your secret key string (also used in the --google_docs=url,hmackey option)
+//       AUTH_KEY  set to your secret key string (also used in the --auth_key=... option)
 //       REQUIRE_LOGIN_TOKEN to true, if users need a login token.
 //       REQUIRE_LATE_TOKEN to true, if users need a late submission token.
 //       (These tokens can be generated using the command sliauth.py)
@@ -39,7 +39,7 @@
 //     This project is now deployed as a web app.
 //     Copy the 'Current web app URL' from the dialog,
 //     and use at as the argument to slidoc command:
-//       slidoc.py --google_docs=https://script.google.com/macros/s/..,HMAC_KEY ...
+//       slidoc.py --gsheet_url=https://script.google.com/macros/s/... --auth_key=AUTH_KEY ...
 //
 //  8. If you make any further changes to this script, Save it and then click on Publish > Deploy as web app…
 //       Change Project Version to New and click Update (the web app URL remains the same)
@@ -72,7 +72,7 @@
 //   - If you add new user rows, then you can simply copy the lookup formula from existing rows.
 
 
-var HMAC_KEY = 'testkey';   // Set this value for secure administrative access to session index
+var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
 
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
@@ -106,6 +106,8 @@ var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
 
 var TRUNCATE_DIGEST = 8;
+var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
+var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
 
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
@@ -197,7 +199,7 @@ function handleResponse(evt) {
 	if (params.admin) {
 	    if (!params.token)
 		throw('Error:NEED_ADMIN_TOKEN:Need token for admin authentication');
-	    if (!validateHMAC('admin:'+params.admin+':'+params.token, HMAC_KEY))
+	    if (!validateHMAC('admin:'+params.admin+':'+params.token, AUTH_KEY))
 		throw("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.admin+"'");
 	    adminUser = params.admin;
 	} else if (REQUIRE_LOGIN_TOKEN) {
@@ -205,7 +207,7 @@ function handleResponse(evt) {
 		throw('Error:NEED_ID:Need id for authentication');
 	    if (!params.token)
 		throw('Error:NEED_TOKEN:Need token for id authentication');
-	    if (!validateHMAC('id:'+paramId+':'+params.token, HMAC_KEY))
+	    if (!validateHMAC('id:'+paramId+':'+params.token, AUTH_KEY))
 		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'");
 	    authUser = paramId;
 	}
@@ -685,7 +687,7 @@ function handleResponse(evt) {
 		    // Indexed session
 		    fieldsMin = sessionParams.fieldsMin;
 
-		    if (rowUpdates && prevSubmitted)
+		    if (rowUpdates && !nooverwriteRow && prevSubmitted)
 			throw("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'");
 
 		    if (voteDate)
@@ -718,7 +720,7 @@ function handleResponse(evt) {
 				var comps = splitToken(lateToken);
 				var dateStr = comps[0];
 				var tokenStr = comps[1];
-				if (genLateToken(HMAC_KEY, userId, sheetName, dateStr) == lateToken) {
+				if (genLateToken(AUTH_KEY, userId, sheetName, dateStr) == lateToken) {
 				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
 				    pastSubmitDeadline = (curTime > dueDate.getTime());
 				} else {
@@ -834,11 +836,11 @@ function handleResponse(evt) {
 			    rowValues[j] = curDate;
 			    returnInfo.submitTimestamp = curDate;
 			} else if (colHeader.slice(-6) == '_share') {
-			    // Generate share value by computing MD5 digest of 'response [: explain]'
+			    // Generate share value by computing message digest of 'response [: explain]'
 			    if (j >= 1 && rowValues[j-1] && columnHeaders[j-1].slice(-9) == '_response') {
-				rowValues[j] = md5hex(normalizeText(rowValues[j-1]));
+				rowValues[j] = digestHex(normalizeText(rowValues[j-1]));
 			    } else if (j >= 2 && rowValues[j-1] && columnHeaders[j-1].slice(-8) == '_explain' && columnHeaders[j-2].slice(-9) == '_response') {
-				rowValues[j] = md5hex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]));
+				rowValues[j] = digestHex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]));
 			    } else {
 				rowValues[j] = '';
 			    }
@@ -991,8 +993,8 @@ function bin2hex(array) {
     return array.map(function(b) {return ("0" + ((b < 0 && b + 256) || b).toString(16)).substr(-2)}).join("");
 }
 
-function md5hex(s, n) {
-    return bin2hex(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, s)).slice(0, n||TRUNCATE_DIGEST);
+function digestHex(s, n) {
+    return bin2hex(Utilities.computeDigest(DIGEST_ALGORITHM, s)).slice(0, n||TRUNCATE_DIGEST);
 }
 
 function parseNumber(x) {
@@ -1041,7 +1043,7 @@ function parseInput(value, headerName) {
 
 
 function genHmacToken(key, message) {
-    var rawHMAC = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_MD5,
+    var rawHMAC = Utilities.computeHmacSignature(HMAC_ALGORITHM,
 						 message, key,
 						 Utilities.Charset.US_ASCII);
     return Utilities.base64Encode(rawHMAC).slice(0,TRUNCATE_DIGEST);
@@ -1486,7 +1488,7 @@ function emailTokens() {
 	if (!emailList[j][1].trim())
 	    continue;
 	var username = emailList[j][0];
-	var token = genUserToken(HMAC_KEY, emailList[j][0]);
+	var token = genUserToken(AUTH_KEY, emailList[j][0]);
 
 	var message = 'Authentication token for userID '+username+' is '+token;
 	if (SITE_URL)
@@ -1537,7 +1539,7 @@ function emailLateToken() {
     else
 	subject = 'Slidoc late submission token';
 
-    var token = genLateToken(HMAC_KEY, userId, sessionName, dateStr);
+    var token = genLateToken(AUTH_KEY, userId, sessionName, dateStr);
     var message = 'Late submission token for userID '+userId+' and session '+sessionName+' is '+token;
     MailApp.sendEmail(email, subject, message);
 

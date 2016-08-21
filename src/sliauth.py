@@ -15,8 +15,13 @@ import time
 
 TRUNCATE_DIGEST = 8
 
+DIGEST_ALGORITHM = hashlib.md5
+
+def digest_hex(s, n=TRUNCATE_DIGEST):
+    return DIGEST_ALGORITHM(s).hexdigest()[:n]
+
 def gen_hmac_token(key, message):
-    token = base64.b64encode(hmac.new(key, message, hashlib.md5).digest())
+    token = base64.b64encode(hmac.new(key, message, DIGEST_ALGORITHM).digest())
     return token[:TRUNCATE_DIGEST]
 
 def gen_user_token(key, user_id):
@@ -87,18 +92,18 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Generate slidoc HMAC authentication tokens')
-    parser.add_argument('-k', '--key', help='HMAC key (required)')
+    parser.add_argument('-a', '--auth_key', help='Digest authentication key (required)')
     parser.add_argument('-s', '--session', help='Session name')
     parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
     parser.add_argument('user', help='user name(s)', nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
-    if not cmd_args.key:
-        sys.exit('Must specify HMAC key')
+    if not cmd_args.auth_key:
+        sys.exit('Must specify digest authentication key')
 
     for user in cmd_args.user:
         if cmd_args.due_date:
-            token = gen_late_token(cmd_args.key, user, cmd_args.session, get_utc_date(cmd_args.due_date))
+            token = gen_late_token(cmd_args.auth_key, user, cmd_args.session, get_utc_date(cmd_args.due_date))
         else:
-            token = gen_user_token(cmd_args.key, user)
+            token = gen_user_token(cmd_args.auth_key, user)
         print(user+':',  token)

@@ -1045,9 +1045,9 @@ submission tokens. The secret can be any printable character string
 `slidoc` command, and use the `sliauth.py` command to generate access
 tokens:
 
-    slidoc.py --gsheet_url=spreadsheet_url --gsheet_login=digest_auth_key --due_date 2016-05-03T23:59 ...
-    sliauth.py -k key user_name(s) # For login tokens 
-    sliauth.py -k key -s session_name --due_date 2016-05-10T23:59 user_name(s) # For late submission tokens 
+    slidoc.py --gsheet_url=spreadsheet_url --auth_key=digest_auth_key --due_date 2016-05-03T23:59 ...
+    sliauth.py -a auth_key user_name(s) # For login tokens 
+    sliauth.py -a auth_key -s session_name --due_date 2016-05-10T23:59 user_name(s) # For late submission tokens 
 
 The `Slidoc` menu in the spreadsheet can also be used to automatically
 generate and email login tokens and late submission tokens to users
@@ -1064,7 +1064,7 @@ their Google account. You will need to create a Web Application attached to your
 Google account, obtain its `ClientID` and `API key` and use it as
 follows:
 
-    slidoc.py --gsheet_url=spreadsheet_url --gsheet_login=digest_auth_key,client_id,apiKey ...
+    slidoc.py --gsheet_url=spreadsheet_url --auth_key=digest_auth_key --google_login=client_id,apiKey ...
 
 [Getting access keys for your application:](https://developers.google.com/api-client-library/javascript/features/authentication#overview)
 To get access keys, go to the

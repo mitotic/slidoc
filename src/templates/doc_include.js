@@ -28,8 +28,8 @@ var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
-var isQt = /Qt/.test(navigator.userAgent) ; // Detects wkhtmltopdf browser
-var useJSONP = (location.protocol == 'file:' || isSafari) && !isQt;
+var isHeadless = /Qt/.test(navigator.userAgent) ; // Detects "headless" wkhtmltopdf browser
+var useJSONP = (location.protocol == 'file:' || isSafari) && !isHeadless;
 
 if (!Function.prototype.bind) {
   // bind implementation for old WebKit used by wkhtmltopdf
@@ -138,7 +138,14 @@ Slidoc.logDump = function (regexp) {
 
 Slidoc.log = function() {
     if (Sliobj.params.debug) {
-	console.log.apply(console, arguments);
+	if (!isHeadless) {
+	    console.log.apply(console, arguments);
+	} else {
+	    var msg = '';
+	    for (var j=0; j<arguments.length; j++)
+		msg += arguments[j];
+	    console.log(msg);
+	}
 	return;
     }
     
@@ -295,11 +302,13 @@ function abortOnError(boundFunc) {
 
 
 function localPut(key, obj) {
-   window.localStorage['slidoc_'+key] = JSON.stringify(obj);
+    if (!isHeadless)
+	window.localStorage['slidoc_'+key] = JSON.stringify(obj);
 }
 
 function localDel(key) {
-   delete window.localStorage['slidoc_'+key];
+    if (!isHeadless)
+	delete window.localStorage['slidoc_'+key];
 }
 
 function localGet(key) {
@@ -936,12 +945,18 @@ Slidoc.PluginMethod = function (pluginName, slide_id, action) //... extra argume
 {
     var extraArgs = Array.prototype.slice.call(arguments).slice(3);
     Slidoc.log('Slidoc.PluginMethod:', pluginName, slide_id, action, extraArgs);
-    if (!(pluginName in Slidoc.Plugins))
-	throw('INTERNAL ERROR Plugin '+pluginName+' not activated');
+    if (!(pluginName in Slidoc.Plugins)) {
+	var msg = "Slidoc.PluginMethod: ERROR Plugin "+pluginName+" not activated";
+	Slidoc.log(msg)
+	throw(msg);
+    }
 
     var pluginInstance = Slidoc.Plugins[pluginName][slide_id || ''];
-    if (!pluginInstance)
-	throw('INTERNAL ERROR Plugin '+pluginName+" instance not found for slide '"+slide_id+"'");
+    if (!pluginInstance) {
+	var msg = "Slidoc.PluginMethod: ERROR Plugin "+pluginName+" instance not found for slide '"+slide_id+"'";
+	Slidoc.log(msg)
+	throw(msg);
+    }
 
     return Slidoc.PluginManager.invoke.apply(null, [pluginInstance, action].concat(extraArgs));
 }
@@ -1481,11 +1496,17 @@ function slidocSetupAux(session, feedback) {
 	    var firstSlideId = getVisibleSlides()[0].id;
 	    Sliobj.questionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
 	}
-	if (Sliobj.session.paced) {
+	if (!isHeadless && Sliobj.session.paced) {
 	    Slidoc.startPaced(); // This will call preAnswer later
 	    return false;
 	}
 	preAnswer();
+	if (isHeadless) {
+	    // WORKAROUND: seems to fix wkhtmltopdf 'infinite' looping
+	    var slideElems = document.getElementsByClassName('slidoc-slide');
+	    for (var j=0; j<slideElems.length; j++)
+		slideElems[j].classList.add('slidoc-answered-slideview');
+	}
 	if (Sliobj.adminState && Slidoc.testingActive())
 	    Slidoc.slideViewStart();
     } else {
@@ -2359,31 +2380,32 @@ Slidoc.classDisplay = function (className, displayValue) {
 
 Slidoc.hintDisplay = function (thisElem, slide_id, qnumber, hintNumber) {
     Slidoc.log('Slidoc.hintDisplay:', thisElem, slide_id, qnumber, hintNumber);
+    var prevHints = Sliobj.session.hintsUsed[qnumber] || 0;
     if (!Sliobj.session || !Sliobj.session.paced) {
-	hintDisplayAux(slide_id, qnumber, hintNumber);
+	hintDisplayAux(slide_id, qnumber, hintNumber, prevHints);
 	return;
     }
-    if (!Sliobj.params.tryCount)
-	alert('Hints only work with question-paced sessions');
-    else
-	sessionPut(null, null, {}, hintCallback.bind(null, slide_id, qnumber, hintNumber));
+    var qAttempted = Sliobj.session.questionsAttempted[qnumber] || null;
+    if (!qAttempted) // Update hints used only before answering question
+	Sliobj.session.hintsUsed[qnumber] = hintNumber;
+
+    if (!qAttempted || !Sliobj.params.tryCount)  // Ensure qAttempted has been saved before displaying hint
+	sessionPut(null, null, {}, hintCallback.bind(null, slide_id, qnumber, hintNumber, prevHints));
 }
 
-function hintCallback(slide_id, qnumber, hintNumber, session, feedback) {
-    Slidoc.log('hintCallback:', slide_id, qnumber, hintNumber, session, feedback);
-    hintDisplayAux(slide_id, qnumber, hintNumber);
+function hintCallback(slide_id, qnumber, hintNumber, prevHints, session, feedback) {
+    Slidoc.log('hintCallback:', slide_id, qnumber, hintNumber, prevHints, session, feedback);
+    hintDisplayAux(slide_id, qnumber, hintNumber, prevHints);
 }
 
-function hintDisplayAux(slide_id, qnumber, hintNumber) {
-    var jStart = Sliobj.session.hintsUsed[qnumber] || 1;
-    for (var j=jStart; j<=hintNumber; j++) {
+function hintDisplayAux(slide_id, qnumber, hintNumber, prevHints) {
+    for (var j=(prevHints||0)+1; j<=hintNumber; j++) {
 	var idStr = slide_id + '-hint-' + j;
 	Slidoc.classDisplay(idStr, 'block');
 	var elem = document.getElementById(idStr);
 	if (elem)
 	    elem.classList.add('slidoc-clickable-noclick');
     }
-    Sliobj.session.hintsUsed[qnumber] = hintNumber;
 }
 
 Slidoc.idDisplay = function (idValue, displayValue) {

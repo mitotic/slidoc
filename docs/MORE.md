@@ -294,7 +294,7 @@ Use query options of the form:
 
 to trigger testing. `testscript` is the name of the script to run,
 `testuser` is login id (which would be `admin` for grading). `testkey`
-is the HMAC key (a `testtoken` may also be provided instead.)
+is the digest authentication key (a `testtoken` may also be provided instead.)
 `teststep=1` enables stepwise testing, requiring user interaction.
 
 At the beginning of the document to tested, include a script element of

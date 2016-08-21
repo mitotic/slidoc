@@ -16,7 +16,6 @@ admin commands:
 import datetime
 import json
 import math
-import md5
 import re
 import sys
 import time
@@ -35,7 +34,7 @@ CACHE_HOLD_TIME = 3600  # Maximum time (sec) to hold sheet in cache
 
 DEBUG = None           # Set by sdserver after import
 SHEET_URL = None       # Set by sdserver after import
-HMAC_KEY = None        # Set by sdserver after import
+AUTH_KEY = None        # Set by sdserver after import
 
 # Should be consistent with slidoc_sheets.js
 ADMIN_USER = 'admin'
@@ -85,7 +84,7 @@ def getSheet(sheetName, optional=False):
         return Sheet_cache[sheetName]
 
     user = 'admin'
-    userToken = sliauth.gen_admin_token(HMAC_KEY, user)
+    userToken = sliauth.gen_admin_token(AUTH_KEY, user)
 
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
     if DEBUG:
@@ -358,7 +357,7 @@ def update_remote_sheets(force=False):
         print "update_remote_sheets:", [(x[0], [y[0] for y in x[3]]) for x in modRequests]
 
     user = 'admin'
-    userToken = sliauth.gen_admin_token(HMAC_KEY, user)
+    userToken = sliauth.gen_admin_token(AUTH_KEY, user)
 
     http_client = tornado.httpclient.AsyncHTTPClient()
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
@@ -469,7 +468,7 @@ def handleResponse(params):
         if params.get('admin',''):
             if not params.get('token',''):
                 raise Exception('Error:NEED_ADMIN_TOKEN:Need token for admin authentication')
-            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), HMAC_KEY):
+            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), AUTH_KEY):
                 raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.get('admin','')+"'")
             adminUser = params.get('admin','')
         elif REQUIRE_LOGIN_TOKEN:
@@ -477,7 +476,7 @@ def handleResponse(params):
                 raise Exception('Error:NEED_ID:Need id for authentication')
             if not params.get('token',''):
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
-            if not validateHMAC('id:'+paramId+':'+params.get('token',''), HMAC_KEY):
+            if not validateHMAC('id:'+paramId+':'+params.get('token',''), AUTH_KEY):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
             authUser = paramId
 
@@ -826,7 +825,7 @@ def handleResponse(params):
                     # Indexed session
                     fieldsMin = sessionParams.get('fieldsMin')
 
-                    if rowUpdates and prevSubmitted:
+                    if rowUpdates and not nooverwriteRow and prevSubmitted:
                         raise Exception("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'");
 
                     if voteDate:
@@ -858,7 +857,7 @@ def handleResponse(params):
                                 comps = splitToken(lateToken)
                                 dateStr = comps[0]
                                 tokenStr = comps[1]
-                                if sliauth.gen_late_token(HMAC_KEY, userId, sheetName, dateStr) == lateToken:
+                                if sliauth.gen_late_token(AUTH_KEY, userId, sheetName, dateStr) == lateToken:
                                     dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
                                     pastSubmitDeadline = (curTime > sliauth.epoch_ms(dueDate))
                                 else:
@@ -949,7 +948,7 @@ def handleResponse(params):
                             # Computed admin column to hold sum of all grades
                             rowUpdates[totalCol-1] = ( '=' + '+'.join(totalCells) )
 
-                        returnMessages.append("Debug::"+str(nonNullExtraColumn)+str(adminColumns.keys())+'=' + '+'.join(totalCells))
+                        ##returnMessages.append("Debug::"+str(nonNullExtraColumn)+str(adminColumns.keys())+'=' + '+'.join(totalCells))
 
                     ##returnMessages.append("Debug:ROW_UPDATES:"+str(rowUpdates))
                     for j in range(len(rowUpdates)):
@@ -972,11 +971,11 @@ def handleResponse(params):
                             returnInfo['submitTimestamp'] = curDate
 
                         elif colHeader[-6:] == '_share':
-                            # Generate share value by computing MD5 digest of 'response [: explain]'
+                            # Generate share value by computing message digest of 'response [: explain]'
                             if j >= 1 and rowValues[j-1] and columnHeaders[j-1][-9:] == '_response':
-                                rowValues[j] = md5hex(normalizeText(rowValues[j-1]))
+                                rowValues[j] = sliauth.digest_hex(normalizeText(rowValues[j-1]))
                             elif j >= 2 and rowValues[j-1] and columnHeaders[j-1][-8:] == '_explain' and columnHeaders[j-2][-9:] == '_response':
-                                rowValues[j] = md5hex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]))
+                                rowValues[j] = sliauth.digest_hex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]))
                             else:
                                 rowValues[j] = ''
 
@@ -1129,9 +1128,6 @@ def normalizeText(s):
     # replace 'a', 'an', 'the' with space, and then normalize spaces
     return MSPACE_RE.sub(' ', WUSCORE_RE.sub(' ', ARTICLE_RE.sub(' ', s.lower().replace("'",'').replace('"','') ))).strip()
 
-
-def md5hex(s, n=TRUNCATE_DIGEST):
-    return md5.new(s).hexdigest()[:n];
 
 def parseNumber(x):
     try:

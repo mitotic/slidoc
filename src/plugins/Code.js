@@ -28,13 +28,13 @@ Code = {
     response: function (retry, callback) {
 	Slidoc.log('Slidoc.Plugins.Code.response:', this, retry, !!callback);
 	var inputValue = this.getInput(this.pluginId);
-	checkCode(this.slideId+'', this.qattributes, inputValue, false,
+	checkCode(this.name, this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
     checkCode: function (elem) {
 	Slidoc.log('Slidoc.Plugins.Code.checkCode:', elem);
-	checkCode(this.slideId+'', this.qattributes, this.getInput(this.pluginId), true,
+	checkCode(this.name, this.slideId+'', this.qattributes, this.getInput(this.pluginId), true,
 		  checkCodeCallback.bind(this) );
     },
 
@@ -100,15 +100,15 @@ function codeResponseCallback(retry, callback, response, pluginResp) {
 	callback(response, pluginResp);
 }
 
-function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
+function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, callback) {
     // Execute code and compare output to expected output
-    // callback( {name:'code', score:1/0/null, invalid: invalid_msg, output:output, tests:0/1/2} )
+    // callback( {name:'Code', score:1/0/null, invalid: invalid_msg, output:output, tests:0/1/2} )
     // invalid_msg => syntax error when executing user code
     Slidoc.log('checkCode:', slide_id, question_attrs, user_code, checkOnly);
 
     if (!question_attrs.test || !question_attrs.output) {
 	Slidoc.log('checkCode: Error - Test/output code checks not found in '+slide_id);
-	return callback( {name:'code', score:null, invalid:'', output:'Not checked', tests:0} );
+	return callback( {name:pluginName, score:null, invalid:'', output:'Not checked', tests:0} );
     }
 
     var codeType = question_attrs.qtype;
@@ -120,7 +120,7 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	    var inputCell = document.getElementById('slidoc-block-input-'+j);
 	    if (!inputCell) {
 		Slidoc.log('checkCode: Error - Input cell '+j+' not found in '+slide_id);
-		return callback({name:'code', score:null, invalid:'', output:'Missing input cell'+j, tests:0});
+		return callback({name:pluginName, score:null, invalid:'', output:'Missing input cell'+j, tests:0});
 	    }
 	    codeCells.push( inputCell.textContent.trim() );
 	}
@@ -134,13 +134,13 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	Slidoc.log('checkCodeAux:', index, msg, score, stdout, stderr);
 	if (stderr) {
 	    Slidoc.log('checkCodeAux: Error', msg, stderr);
-	    return callback({name:'code', score:0, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
+	    return callback({name:pluginName, score:0, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
 	}
 	if (index > 0 && !score) {
 	    Slidoc.log('checkCodeAux: Error in test cell in '+slide_id, msg);
 	    // Do not display actual second check output (to avoid leaking test details)
 	    var outmsg = (index == 1) ? stdout : 'Second check failed!'
-	    return callback({name:'code', score:score, invalid:'', output:outmsg, tests:index-1});
+	    return callback({name:pluginName, score:score, invalid:'', output:outmsg, tests:index-1});
 	}
 
 	// Execute test code
@@ -148,20 +148,20 @@ function checkCode(slide_id, question_attrs, user_code, checkOnly, callback) {
 	    var testCell = document.getElementById('slidoc-block-test-'+question_attrs.test[index]);
 	    if (!testCell) {
 		Slidoc.log('checkCodeAux: Error - Test cell '+question_attrs.test[index]+' not found in '+slide_id);
-		return callback({name:'code', score:null, invalid:'', output:'Missing test cell'+(index+1), tests:index});
+		return callback({name:pluginName, score:null, invalid:'', output:'Missing test cell'+(index+1), tests:index});
 	    }
 	    var testCode = testCell.textContent.trim();
 	    
 	    var outputCell = document.getElementById('slidoc-block-output-'+question_attrs.output[index]);
 	    if (!outputCell) {
 		Slidoc.log('checkCodeAux: Error - Test output cell '+question_attrs.output[index]+' not found in '+slide_id);
-		return callback({name:'code', score:null, invalid:'', output:'Missing test output'+(index+1), tests:index});
+		return callback({name:pluginName, score:null, invalid:'', output:'Missing test output'+(index+1), tests:index});
 	    }
 	    var expectOutput = outputCell.textContent.trim();
 	    
 	    return execCode(codeType, codeCells.concat(testCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, index+1, 'test code'+index));
 	}
-	return callback({name:'code', score:(ntest?1:null), invalid:'', output:'', tests:ntest});
+	return callback({name:pluginName, score:(ntest?1:null), invalid:'', output:'', tests:ntest});
     }
 
     checkCodeAux(0, '', null, '', '');

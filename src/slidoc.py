@@ -1850,6 +1850,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params.update(cmd_pace_dict)   # May be overridden by file-specific values
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
+    js_params['printable'] = config.printable
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
 
@@ -1872,12 +1873,10 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         # Will be initialized to file-specific values
         config.features = None
 
-    gd_hmac_key = None             # Specify --gsheet_login='' to use Google Sheets without authentication
-    if config.gsheet_login is not None:
-        comps = config.gsheet_login.split(',')
-        gd_hmac_key = comps[0]
-        if len(comps) > 1:
-            js_params['gd_client_id'], js_params['gd_api_key'] = comps[1:3]
+    gd_hmac_key = config.auth_key     # Specify --auth_key='' to use Google Sheets without authentication
+                
+    if config.google_login is not None:
+        js_params['gd_client_id'], js_params['gd_api_key'] = config.google_login.split(',')
     
     if gd_hmac_key and not config.anonymous:
         js_params['authType'] = 'digest'
@@ -1901,17 +1900,28 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     dest_dir = config.dest_dir+"/" if config.dest_dir else ''
     templates = {}
-    for tname in ('doc_custom.css', 'doc_include.css', 'doc_include.js', 'doc_google.js', 'doc_test.js',
+    for tname in ('doc_custom.css', 'doc_include.css',
+                  'doc_include.js', 'doc_google.js', 'doc_test.js',
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
-    inc_css = templates['doc_include.css'] + HtmlFormatter().get_style_defs('.highlight')
     if config.css.startswith('http:') or config.css.startswith('https:'):
-        link_css = '<link rel="stylesheet" type="text/css" href="%s">\n' % config.css
-        css_html = '%s<style>%s</style>\n' % (link_css, inc_css)
+        css_html = '<link rel="stylesheet" type="text/css" href="%s">\n' % config.css
+    elif config.css:
+        css_html = '<style>\n' + md2md.read_file(config.css) + '</style>\n'
     else:
-        custom_css = md2md.read_file(config.css) if config.css else templates['doc_custom.css']
-        css_html = '<style>\n%s\n%s</style>\n' % (custom_css, inc_css)
+        tem_css = templates['doc_custom.css']
+        if config.fontsize:
+            comps = config.fontsize.split(',')
+            if len(comps) == 1:
+                tem_css = tem_css.replace('/*SUBSTITUTE_FONTSIZE*/', 'font-size: %s;' % config.fontsize)
+            else:
+                for fsize in comps:
+                    tem_css = tem_css.replace('/*SUBSTITUTE_FONTSIZE*/', 'font-size: %s;' % fsize, 1)
+        css_html = '<style>\n'+tem_css+'</style>\n'
+
+    # External CSS replaces doc_custom.css, but not doc_include.css
+    css_html += '<style>\n' + (templates['doc_include.css']+HtmlFormatter().get_style_defs('.highlight')) + '</style>\n'
 
     test_params = []
     add_scripts = ''
@@ -1934,7 +1944,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     if gd_hmac_key is not None:
         add_scripts += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
-        if js_params['gd_client_id']:
+        if config.google_login:
             add_scripts += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
             add_scripts += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
@@ -2039,9 +2049,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params.update(pace_dict)
             if config.pace[PACE_LEVEL]:
                 # Note: pace does not work with combined files
-                if config.printable:
-                    abort('slidoc: Error: --pace=... and --printable options do not work well together')
-
                 if config.due_date is not None:
                     if config.due_date:
                         due_date = sliauth.get_utc_date(config.due_date)
@@ -2179,7 +2186,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
         else:
-            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace[PACE_LEVEL])
+            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace[PACE_LEVEL] and not config.printable)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -2549,6 +2556,7 @@ def abort(msg):
 strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
 
 # Features
+#   assessment: Do not warn about concept coverage for assessment documents
 #   delay_answers: Correct answers and score are hidden from users until session is graded
 #   grade_response: Grade text responses
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
@@ -2560,13 +2568,15 @@ features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_respons
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
+parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
 parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
 parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
-parser.add_argument('--gsheet_login', metavar='DIGEST_AUTH_KEY,CLIENT_ID,API_KEY', help='digest_auth_key[,client_id,api_key] (authenticate via Google Docs)')
+parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
+parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
 parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
@@ -2628,3 +2638,10 @@ if __name__ == '__main__':
         print('    ', argparse.Namespace(**config_dict), file=sys.stderr)
 
     process_input(input_files, [f.name for f in input_files], config_dict)
+
+    if cmd_args.printable:
+        if cmd_args.gsheet_url:
+            print("To convert .html to .pdf, use proxy to allow XMLHTTPRequest:\n  wkhtmltopdf -s Letter --print-media-type --cookie slidoc_server 'username::token:' --javascript-delay 5000 http://localhost/file.html file.pdf", file=sys.stderr)
+        else:
+            print("To convert .html to .pdf, use:\n  wkhtmltopdf -s Letter --print-media-type --javascript-delay 5000 file.html file.pdf", file=sys.stderr)
+        print("Additional options that may be useful are:\n  --debug-javascript --load-error-handling ignore --enable-local-file-access --header-right 'Page [page] of [toPage]'", file=sys.stderr)
