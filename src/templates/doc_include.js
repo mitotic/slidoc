@@ -946,16 +946,14 @@ Slidoc.PluginMethod = function (pluginName, slide_id, action) //... extra argume
     var extraArgs = Array.prototype.slice.call(arguments).slice(3);
     Slidoc.log('Slidoc.PluginMethod:', pluginName, slide_id, action, extraArgs);
     if (!(pluginName in Slidoc.Plugins)) {
-	var msg = "Slidoc.PluginMethod: ERROR Plugin "+pluginName+" not activated";
-	Slidoc.log(msg)
-	throw(msg);
+	Slidoc.log("Slidoc.PluginMethod: ERROR Plugin "+pluginName+" not activated");
+	return;
     }
 
     var pluginInstance = Slidoc.Plugins[pluginName][slide_id || ''];
     if (!pluginInstance) {
-	var msg = "Slidoc.PluginMethod: ERROR Plugin "+pluginName+" instance not found for slide '"+slide_id+"'";
-	Slidoc.log(msg)
-	throw(msg);
+	Slidoc.log("Slidoc.PluginMethod: ERROR Plugin "+pluginName+" instance not found for slide '"+slide_id+"'");
+	return;
     }
 
     return Slidoc.PluginManager.invoke.apply(null, [pluginInstance, action].concat(extraArgs));
@@ -974,14 +972,28 @@ Slidoc.PluginManager.invoke = function (pluginInstance, action) //... extra argu
     var extraArgs = Array.prototype.slice.call(arguments).slice(2);
     Slidoc.log('Slidoc.PluginManager.invoke:', pluginInstance, action, extraArgs);
 
-    if (!(action in pluginInstance))
-	throw('ERROR Plugin action '+pluginInstance.name+'.'+action+' not defined');
+    if (!(action in pluginInstance)) {
+	Slidoc.log('ERROR Plugin action '+pluginInstance.name+'.'+action+' not defined');
+	return;
+    }
 
     try {
 	return pluginInstance[action].apply(pluginInstance, extraArgs);
     } catch(err) {
 	sessionAbort('ERROR in invoking plugin '+pluginInstance.name+'.'+action+': '+err, err.stack);
     }
+}
+
+Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) {
+    Slidoc.log('Slidoc.PluginManager.remoteCall:',pluginName, pluginMethod);
+    if (!Slidoc.websocketPath) {
+	alert('Remote calling '+pluginName+'.'+pluginMethod+' only works with websocket connections');
+	return;
+    }
+    var data = [pluginName, pluginMethod];
+    for (var j=3; j<arguments.length; j++)
+	data.push(arguments[j]);
+    GService.requestWS('plugin', data, callback);
 }
 
 function evalPluginArgs(pluginName, argStr, slide_id) {
@@ -1006,8 +1018,10 @@ function evalPluginArgs(pluginName, argStr, slide_id) {
 function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id);
     var pluginDef = Slidoc.PluginDefs[pluginName];
-    if (!pluginDef)
-	throw('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEndDef');
+    if (!pluginDef) {
+	Slidoc.log('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEndDef');
+	return;
+    }
 
     var defCopy;
     if (nosession)
@@ -1017,10 +1031,16 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     else
 	defCopy = copyAttributes(pluginDef, ['setup', 'global']);
     defCopy.name = pluginName;
-    defCopy.adminState = Sliobj.adminState;
-    defCopy.sessionName = Sliobj.sessionName;
     defCopy.initArgs = slide_id ? evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id) : [];
     defCopy.slideData = slideData || null;
+
+    var auth = window.GService && GService.gprofile && GService.gprofile.auth;
+    defCopy.userId = auth ? auth.id : null;
+    defCopy.displayName = auth ? auth.displayName : null;
+    defCopy.adminState = Sliobj.adminState;
+    defCopy.sessionName = Sliobj.sessionName;
+
+    defCopy.remoteCall = Slidoc.PluginManager.remoteCall.bind(null, pluginName);
 
     var prefix = 'plugin_'+pluginName+'_';
     var paramKeys = Object.keys(Sliobj.params);
@@ -1064,11 +1084,11 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
-	    defCopy.answer = null;
+	    defCopy.correctAnswer = null;
 	    if (defCopy.qattributes && defCopy.qattributes.correct) {
 		// Correct answer: ans+/-err=plugin.response()
 		var comps = defCopy.qattributes.correct.split('=');
-		defCopy.answer = comps[0];
+		defCopy.correctAnswer = comps[0];
 	    }
 	}
     }
@@ -2564,11 +2584,9 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries -= 1;
 
-	    var retryMsg = Slidoc.PluginMethod(pluginName, slide_id, 'response',
-				      (Sliobj.session.remainingTries > 0),
-				      Slidoc.answerUpdate.bind(null, setup, slide_id));
-	    if (retryMsg)
-		Slidoc.PluginRetry(retryMsg);
+	    Slidoc.PluginMethod(pluginName, slide_id, 'response',
+				(Sliobj.session.remainingTries > 0),
+				Slidoc.answerUpdate.bind(null, setup, slide_id));
 	}
 	if (setup || !Sliobj.session.paced || Sliobj.session.remainingTries == 1)
 	    Slidoc.PluginMethod(pluginName, slide_id, 'disable');
@@ -2648,6 +2666,8 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 }
 
 Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
+    // PluginResp: name:'...', score:1/0/null, correctAnswer: 'correct_ans',
+    //  invalid: 'invalid_msg', output:'output', tests:0/1/2} The last three are for code execution
     Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, response, pluginResp);
 
     if (!setup && Sliobj.session.paced)
@@ -2663,7 +2683,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 
     if (pluginResp) {
 	qscore = isNumber(pluginResp.score) ? pluginResp.score : null;
-	corr_answer = (isNumber(pluginResp.answer) || pluginResp.answer) ? pluginResp.answer : '';
+	corr_answer = (isNumber(pluginResp.correctAnswer) || pluginResp.correctAnswer) ? pluginResp.correctAnswer : '';
     } else {
 	var pluginMatch = PLUGIN_RE.exec(corr_answer);
 	if (pluginMatch && pluginMatch[3] == 'expect') {

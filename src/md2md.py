@@ -67,10 +67,13 @@ class Parser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
     indent_strip_re =  re.compile( r'^ {4}', re.MULTILINE)
     annotation_re =    re.compile( r'^Annotation:')
-    answer_re =        re.compile( r'^(Answer|Ans):')
+    answer_re =        re.compile( r'^Answer:')
     concepts_re =      re.compile( r'^Concepts:')
     inline_math_re =   re.compile( r'^\\\((.+?)\\\)')
     notes_re =         re.compile( r'^Notes:')
+    inline_js1 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\);([^`\n]*)`")
+    inline_js2 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\)`")
+    plugin_re =        re.compile( r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     ref_re =           re.compile(r'''^ {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *$''')
     ref_def_re =  re.compile(r'''(^|\n) {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *(\n+|$)''')
 
@@ -84,6 +87,10 @@ class Parser(object):
                  ('tex_block_math',    re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
+                 ('plugin_definition', re.compile( r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
+                                                   re.DOTALL)),
+                 ('plugin_embed',      re.compile( r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+                                                   re.DOTALL)),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ),
                  ('minirule',   re.compile( r'^(--) *(?:\n+|$)') )
                   ]
@@ -497,6 +504,9 @@ class Parser(object):
                 elif rule_name == 'latex_environment':
                     self.math_block(matched.group(0), matched.group(2), latex=True)
 
+                elif rule_name in ('plugin_definition', 'plugin_embed'):
+                    self.plugin_block(matched.group(0))
+
                 elif rule_name == 'hrule':
                     self.hrule(matched.group(1))
 
@@ -546,6 +556,11 @@ class Parser(object):
                             # Strip slidoc extension for internal references
                             line = self.internal_ref_re.sub(r'\1', line)
 
+                        if 'extensions' in self.cmd_args.strip or 'plugin' in self.cmd_args.strip:
+                            # Strip slidoc extension for inline JS
+                            line = self.inline_js1.sub(r'\4', line)
+                            line = self.inline_js2.sub(r'', line)
+
                         if self.cmd_args.backtick_off:
                             line = re.sub(r"(^|[^`])`\\\((.+?)\\\)`", r"\1\(\2\)", line)
                         elif self.cmd_args.backtick_on:
@@ -556,7 +571,10 @@ class Parser(object):
                         elif self.cmd_args.latex_math:
                             line = re.sub(r"(^|[^\\\$])\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)", r"\1\(\2\3\)", line)
 
-                        self.buffered_markdown.append(line+'\n')
+                        if self.plugin_re.match(line) and ('extensions' in self.cmd_args.strip or 'plugin' in self.cmd_args.strip):
+                            pass
+                        else:
+                            self.buffered_markdown.append(line+'\n')
 
             else:
                 # Last line (without newline)
@@ -682,6 +700,12 @@ class Parser(object):
         if 'rule' not in self.cmd_args.strip and 'markup' not in self.cmd_args.strip:
             self.buffered_markdown.append(text+'\n\n')
 
+    def plugin_block(self, content):
+        if 'extensions' in self.cmd_args.strip or 'plugin' in self.cmd_args.strip:
+            pass
+        else:
+            self.output.append(content)
+
     def math_block(self, content, inner, latex=False, tex=False):
         if 'markup' not in self.cmd_args.strip:
             if self.cmd_args.tex_math or self.cmd_args.pandoc:
@@ -748,7 +772,7 @@ def make_arg_set(arg_value, arg_all_list):
 if __name__ == '__main__':
     import argparse
 
-    strip_all = ['answers', 'code', 'concepts', 'extensions', 'markup', 'notes', 'rule']
+    strip_all = ['answers', 'code', 'concepts', 'extensions', 'markup', 'notes', 'plugin', 'rule']
     
     parser = argparse.ArgumentParser(description='Convert from Markdown to Markdown')
     parser.add_argument('--backtick_off', help='Remove backticks bracketing inline math', action="store_true")

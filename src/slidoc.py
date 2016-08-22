@@ -272,11 +272,11 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
-    plugin_begin  =   re.compile(r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+    plugin_embed  =   re.compile(r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
-    plugin_init   =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
+    plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
-    slidoc_answer =   re.compile(r'^ {0,3}(Answer|Ans):(.*?)(\n|$)')
+    slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
     slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
@@ -288,7 +288,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_begin',  'plugin_init', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_hint', 'slidoc_notes', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_hint', 'slidoc_notes', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -315,14 +315,14 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2)
         })
 
-    def parse_plugin_begin(self, m):
+    def parse_plugin_embed(self, m):
          self.tokens.append({
             'type': 'slidoc_plugin',
             'name': m.group(1),
             'text': m.group(2)+'\n'+(m.group(3) or '')
         })
 
-    def parse_plugin_init(self, m):
+    def parse_plugin_insert(self, m):
          self.tokens.append({
             'type': 'slidoc_plugin',
             'name': m.group(1),
@@ -379,7 +379,7 @@ class MathInlineGrammar(mistune.InlineGrammar):
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
-    inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\s*(\d*)\s*\)(;([^`\n]+))?`")
+    inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\s*(\d*)\s*\)(;([^`\n]*))?`")
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
         r'^\[('
@@ -1961,13 +1961,15 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
-    base_plugin_list = ['Code', 'Share', 'Slider', 'Submit']
-    base_plugin_defs = {}
-    for plugin_name in base_plugin_list:
-        _, base_plugin_defs[plugin_name] = parse_plugin(md2md.read_file(scriptdir+'/plugins/'+plugin_name+'.js'), name= plugin_name)
+    plugins_dir = scriptdir + '/plugins'
+    plugin_paths = [plugins_dir+'/'+fname for fname in os.listdir(plugins_dir) if not fname.startswith('.') and fname.endswith('.js')]
     if config.plugins:
-        for plugin_path in config.plugins.split(','):
-            plugin_name, base_plugin_defs[plugin_name] = parse_plugin( md2md.read_file(plugin_path.strip()) )
+        # Plugins with same name will override earlier plugins
+        plugin_paths += config.plugins.split(',')
+
+    base_plugin_defs = {}
+    for plugin_path in plugin_paths:
+        plugin_name, base_plugin_defs[plugin_name] = parse_plugin( md2md.read_file(plugin_path.strip()) )
 
     comb_plugin_defs = {}
     comb_plugin_loads = set()

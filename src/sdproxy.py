@@ -27,14 +27,17 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-MIN_WAIT_TIME = 0       # Minimum time (sec) between successful Google Sheet requests
-RETRY_WAIT_TIME = 5     # Minimum time (sec) before retrying failed Google Sheet requests
-RETRY_MAX_COUNT = 5     # Maximum number of failed Google Sheet requests
-CACHE_HOLD_TIME = 3600  # Maximum time (sec) to hold sheet in cache
+# Usually modified by importing module
+Options = {
+    'DEBUG': None,      
+    'SHEET_URL': None,   # Google Sheet URL
+    'AUTH_KEY': None,    # Digest authentication key
+    'MIN_WAIT_TIME': 0   # Minimum time (sec) between successful Google Sheet requests
+    }
 
-DEBUG = None           # Set by sdserver after import
-SHEET_URL = None       # Set by sdserver after import
-AUTH_KEY = None        # Set by sdserver after import
+RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
+RETRY_MAX_COUNT = 5      # Maximum number of failed Google Sheet requests
+CACHE_HOLD_TIME = 3600   # Maximum time (sec) to hold sheet in cache
 
 # Should be consistent with slidoc_sheets.js
 ADMIN_USER = 'admin'
@@ -84,17 +87,17 @@ def getSheet(sheetName, optional=False):
         return Sheet_cache[sheetName]
 
     user = 'admin'
-    userToken = sliauth.gen_admin_token(AUTH_KEY, user)
+    userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
 
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
-    if DEBUG:
+    if Options['DEBUG']:
         print "DEBUG:getSheet", sheetName, getParams
 
-    if DEBUG and not SHEET_URL:
+    if Options['DEBUG'] and not Options['SHEET_URL']:
         return None
 
-    retval = http_post(SHEET_URL, getParams) if SHEET_URL else {'result': 'error', 'error': 'No Sheet URL'}
-    if DEBUG:
+    retval = http_post(Options['SHEET_URL'], getParams) if Options['SHEET_URL'] else {'result': 'error', 'error': 'No Sheet URL'}
+    if Options['DEBUG']:
         print "DEBUG:getSheet", sheetName, retval['result']
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
@@ -323,7 +326,7 @@ def get_locked():
 def update_remote_sheets(force=False):
     global CacheRequestTime
 
-    if not SHEET_URL:
+    if not Options['SHEET_URL']:
         check_shutdown()
         return
 
@@ -331,7 +334,7 @@ def update_remote_sheets(force=False):
         return
 
     cur_time = sliauth.epoch_ms()
-    if not force and (cur_time - CacheResponseTime) < MIN_WAIT_TIME:
+    if not force and (cur_time - CacheResponseTime) < Options['MIN_WAIT_TIME']:
         schedule_update(cur_time-CacheResponseTime)
         return
 
@@ -353,18 +356,18 @@ def update_remote_sheets(force=False):
         check_shutdown()
         return
 
-    if DEBUG:
+    if Options['DEBUG']:
         print "update_remote_sheets:", [(x[0], [y[0] for y in x[3]]) for x in modRequests]
 
     user = 'admin'
-    userToken = sliauth.gen_admin_token(AUTH_KEY, user)
+    userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
 
     http_client = tornado.httpclient.AsyncHTTPClient()
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
                   'data': json.dumps(modRequests, default=sliauth.json_default) }
     post_data['create'] = 1
     body = urllib.urlencode(post_data)
-    http_client.fetch(SHEET_URL, handle_http_response, method='POST', headers=None, body=body)
+    http_client.fetch(Options['SHEET_URL'], handle_http_response, method='POST', headers=None, body=body)
     CacheRequestTime = cur_time
 
 
@@ -387,7 +390,7 @@ def handle_http_response(response):
         CacheWaitTime += RETRY_WAIT_TIME
         schedule_update(CacheWaitTime)
     else:
-        if DEBUG:
+        if Options['DEBUG']:
             print "handle_http_response:", response.body
         try:
             respObj = json.loads(response.body)
@@ -402,14 +405,14 @@ def handle_http_response(response):
 
     if not errMsg:
         # Update succeeded
-        if DEBUG:
+        if Options['DEBUG']:
             print "handle_http_response:", CacheUpdateTime, respObj
 
         CacheUpdateTime = CacheRequestTime
         CacheRequestTime = 0
         CacheRetryCount = 0
         CacheWaitTime = 0
-        schedule_update(0 if Shutting_down else MIN_WAIT_TIME)
+        schedule_update(0 if Shutting_down else Options['MIN_WAIT_TIME'])
 
         
 def handleResponse(params):
@@ -448,7 +451,7 @@ def handleResponse(params):
     # [1] http://googleappsdeveloper.blogspot.co.uk/2011/10/concurrency-and-google-apps-script.html
     # we want a public lock, one that locks for all invocations
 
-    if DEBUG:
+    if Options['DEBUG']:
         print "DEBUG: handleResponse PARAMS", params
 
     returnValues = None
@@ -468,7 +471,7 @@ def handleResponse(params):
         if params.get('admin',''):
             if not params.get('token',''):
                 raise Exception('Error:NEED_ADMIN_TOKEN:Need token for admin authentication')
-            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), AUTH_KEY):
+            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), Options['AUTH_KEY']):
                 raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.get('admin','')+"'")
             adminUser = params.get('admin','')
         elif REQUIRE_LOGIN_TOKEN:
@@ -476,7 +479,7 @@ def handleResponse(params):
                 raise Exception('Error:NEED_ID:Need id for authentication')
             if not params.get('token',''):
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
-            if not validateHMAC('id:'+paramId+':'+params.get('token',''), AUTH_KEY):
+            if not validateHMAC('id:'+paramId+':'+params.get('token',''), Options['AUTH_KEY']):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
             authUser = paramId
 
@@ -857,7 +860,7 @@ def handleResponse(params):
                                 comps = splitToken(lateToken)
                                 dateStr = comps[0]
                                 tokenStr = comps[1]
-                                if sliauth.gen_late_token(AUTH_KEY, userId, sheetName, dateStr) == lateToken:
+                                if sliauth.gen_late_token(Options['AUTH_KEY'], userId, sheetName, dateStr) == lateToken:
                                     dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
                                     pastSubmitDeadline = (curTime > sliauth.epoch_ms(dueDate))
                                 else:
@@ -1106,14 +1109,14 @@ def handleResponse(params):
 
     except Exception, err:
         # if error, return this
-        if DEBUG:
+        if Options['DEBUG']:
             import traceback
             traceback.print_exc()
 
         retObj = {"result": "error", "error": err.message, "value": None,
                   "messages": '\n'.join(returnMessages)}
 
-    if DEBUG:
+    if Options['DEBUG']:
         print "DEBUG: RETOBJ", retObj['result'], retObj['messages']
     
     return retObj

@@ -49,11 +49,14 @@ class NBParser(object):
             cell_type = cell['cell_type']
             source = self.normalize(cell.get('source', ''))
 
-            if cell_type == 'markdown':
+            if cell_type == 'raw':
+                self.outbuffer.append( source )
+                    
+            elif cell_type == 'markdown':
                 self.outbuffer.append( Fenced_re.sub(unfence, source) )
                     
             elif cell_type == 'code':
-                self.outbuffer.append( '\n```\n' + source + '```\n\n')
+                self.outbuffer.append( '\n```\n' + source + '```\n\n' )
 
                 outputs = cell.get('outputs', [])
                 for output in outputs:

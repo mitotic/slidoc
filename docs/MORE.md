@@ -92,11 +92,18 @@ attributes:
 
 > `this.name`: plugin name
 
+> `this.userId`: user ID
+
+> `this.displayName`: "LastName, FirstName ..."
+
 > `this.adminState`: *true* if grading
 
-> `this.sessionName`: session name 
+> `this.sessionName`: session name
 
-> `this.params`: plugin-specific parameters
+> `this.remoteCall`: Invoke Python plugin of same name on server
+> as `this.remoteCall(callback, arg1, ...)`
+
+> `this.params`: plugin-specific command line parameters
 
 > `this.initArgs`: list of init arguments for
 > embedded plugin in the slide as values, e.g.,
@@ -124,7 +131,7 @@ The following are defined only for slide instances:
 
 > `this.qattributes`: question attributes objects (for question slides)
 
-> `this.answer`: answer string (or null)
+> `this.correctAnswer`: answer string (or null)
 
 > `this.slideData`: object shared amongst all plugins in this slide
 

@@ -59,8 +59,18 @@ Cell_formats['code'] = '''
 class MDParser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
     indent_strip_re =  re.compile( r'^ {4}', re.MULTILINE)
+    answer_re =        re.compile( r'^Answer:')
     concepts_re =      re.compile( r'^Concepts:')
     notes_re =         re.compile( r'^Notes:')
+    inline_js1 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\);([^`\n]*)`")
+    inline_js2 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\)`")
+    plugin_re =        re.compile( r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
+    internal_ref =     re.compile(
+        r'^\[('
+        r'(?:\[[^^\]]*\]|[^\[\]]|\](?=[^\[]*\]))*'
+        r')\]\s*\{\s*#([^^\}]*)\}'
+    )
+
     rules_re = [ ('fenced',            re.compile( r'^ *(`{3,}|~{3,}) *(\S+)? *\n'
                                                    r'([\s\S]+?)\s*'
                                                    r'\1 *(?:\n+|$)' ) ),
@@ -68,6 +78,10 @@ class MDParser(object):
                  ('block_math',        re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
+                 ('plugin_definition', re.compile( r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
+                                                   re.DOTALL)),
+                 ('plugin_embed',      re.compile( r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+                                                   re.DOTALL)),
                  ('external_link',     re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?([\s\S]*?)(?(3)>)(?:\s+['"]([\s\S]*?)['"])?\s*\) *(\n|$)''') ),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ) ]
 
@@ -120,6 +134,9 @@ class MDParser(object):
                 elif rule_name == 'latex_environment':
                     self.math_block(matched.group(0))
 
+                elif rule_name in ('plugin_definition', 'plugin_embed'):
+                    self.plugin_block(matched.group(0))
+
                 elif rule_name == 'external_link':
                     self.external_link(matched.group(0), matched.group(2), matched.group(4), matched.group(5) or '')
 
@@ -130,12 +147,21 @@ class MDParser(object):
 
             elif '\n' in content:
                 line, _, content = content.partition('\n')
+                if 'extensions' in self.cmd_args.strip or 'plugin' in self.cmd_args.strip:
+                    line = self.inline_js1.sub(r'\4', line)
+                    line = self.inline_js2.sub(r'', line)
+                if 'extensions' in self.cmd_args.strip:
+                    line = self.internal_ref.sub(r'\1', line)
                 if self.skipping_notes:
+                    pass
+                elif self.answer_re.match(line) and 'answer' in self.cmd_args.strip:
                     pass
                 elif self.concepts_re.match(line) and 'concepts' in self.cmd_args.strip:
                     pass
                 elif self.notes_re.match(line) and 'notes' in self.cmd_args.strip:
                     self.skipping_notes = True
+                elif self.plugin_re.match(line) and 'plugin' in self.cmd_args.strip:
+                    pass
                 elif not line.strip() and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
                     # Skip blank lines immediately following a code block
                     pass
@@ -174,6 +200,12 @@ class MDParser(object):
                 self.buffered_lines.append(line)
         else:
             self.buffered_lines.append(line)
+
+    def plugin_block(self, text):
+        if 'extensions' in self.cmd_args.strip or 'plugin' in self.cmd_args.strip:
+            pass
+        else:
+            self.cells_buffer.append({'cell_type': 'raw', 'source': [text]})
 
     def code_block(self, code, lang=''):
         if lang == 'nb_output' and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
@@ -217,7 +249,6 @@ class MDParser(object):
         "output_type": "display_data"
         }
 
-
     def dump_cell(self, cell):
         if cell['cell_type'] == 'code':
             return Cell_formats['code'] % {'source': json.dumps(cell['source']),
@@ -235,7 +266,7 @@ Args_obj = md2md.ArgsObj( str_args= ['site_url', 'strip'],
 if __name__ == '__main__':
     import argparse
 
-    strip_all = ['concepts', 'markup', 'notes', 'rule']
+    strip_all = ['answer', 'concepts', 'extensions', 'internal_ref', 'markup', 'notes', 'plugin', 'rule']
     
     parser = argparse.ArgumentParser(description='Convert from Markdown to Jupyter Notebook format')
     parser.add_argument('--indented', help='Convert indented code blocks to notebook cells', action="store_true")

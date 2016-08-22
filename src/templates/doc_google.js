@@ -159,13 +159,23 @@ function closeWS(msg) {
     wsConnection.close();
 }
     
-function requestWS(data, callback) {
-    if (data.write && wsLocked) {
-	alert(wsLocked);
-	return;
-    }
+GService.rawWS = function (message) {
     if (wsClosed) {
 	alert(wsClosed);
+	return;
+    }
+    if (wsOpened) {
+	wsConnection.send(message);
+    } else {
+	if (!wsConnection)
+	    GService.openWebsocket(Slidoc.websocketPath);
+	wsBuffer.push(message);
+    }
+}
+
+GService.requestWS = function (callType, data, callback) {
+    if (data.write && wsLocked) {
+	alert(wsLocked);
 	return;
     }
     var callbackIndex = 0;
@@ -174,14 +184,8 @@ function requestWS(data, callback) {
 	callbackIndex = wsCounter;
 	wsRequests[wsCounter] = [callback];
     }
-    var jsonStr = JSON.stringify([callbackIndex, 'proxy', data]);
-    if (wsOpened) {
-	wsConnection.send(jsonStr);
-    } else {
-	if (!wsConnection)
-	    GService.openWebsocket(Slidoc.websocketPath);
-	wsBuffer.push(jsonStr);
-    }
+    var jsonStr = JSON.stringify([callbackIndex, callType, data]);
+    GService.rawWS(jsonStr);
 }
 
 function handleCallback(responseText, callback, outOfSequence) {
@@ -205,7 +209,7 @@ GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
 
   if (Slidoc.websocketPath) {
-      requestWS(data, callback);
+      GService.requestWS('proxy', data, callback);
       return;
   }
 
