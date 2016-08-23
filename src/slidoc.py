@@ -1566,7 +1566,6 @@ def nav_link(text, site_url, href, hash='', separate=False, keep_hash=False, pri
             extras += ' style="visibility: hidden;"'
     else:
         class_list.append("slidoc-clickable")
-        extras += ' class="slidoc-clickable slidoc-noall"'
     class_str = ' '.join(class_list)
     if printable:
         return '''<a class="%s" href="%s%s" onclick="Slidoc.go('%s');" %s>%s</a>'''  % (class_str, site_url, hash or href, hash or href, extras, text)
@@ -1601,7 +1600,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
     if 'navigate' not in config.strip:
         nav_html = ''
         if config.toc:
-            nav_html += nav_link(SYMS['return'], config.site_url, config.toc, hash='#'+make_chapter_id(0), separate=config.separate, classes=['slidoc-nosidebar', 'slidoc-noprint'], printable=config.printable) + SPACER6
+            nav_html += nav_link(SYMS['return'], config.site_url, config.toc, hash='#'+make_chapter_id(0), separate=config.separate, classes=['slidoc-noprint'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
@@ -1752,30 +1751,45 @@ def plugin_heads(plugin_defs, plugin_loads):
         plugin_code.append('<script>(function() {\n'+plugin_defs[plugin_name]['JS'].strip()+'\n})();</script>\n')
     return ''.join(plugin_code)
 
-def gen_topnav(opts, dir=''):
-    if opts in ('dirs', 'files'):
+def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
+    if opts == 'args':
+        # Generate top navigationmenu from argument filenames
+        label_list = [ (x.split('-')[-1] if '-' in x else x, x+'.html') for x in fnames ]
+
+    elif opts in ('dirs', 'files'):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
-        _, subdirs, subfiles = next(os.walk(dir or '.'))
+        _, subdirs, subfiles = next(os.walk(cur_dir or '.'))
         if opts == 'dirs':
-            names = [(x, x+'/index.html') for x in subdirs if x[0] not in '._']
+            label_list = [(x, x+'/index.html') for x in subdirs if x[0] not in '._']
         else:
-            names = [(os.path.splitext(x)[0], x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
-        names.sort()
-        names = [ ('Home', '/') ] + names
+            label_list = [(os.path.splitext(x)[0], x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
+        label_list.sort()
+        label_list = [ ('Home', '/') ] + label_list
+
     else:
         # Generate menu using basenames of provided paths
-        names = []
+        label_list = []
         for opt in opts.split(','):
             if opt == '/' or opt == '/index.html':
-                names.append( ('Home', '/') )
+                label_list.append( ('Home', '/') )
             elif opt.endswith('/index.html'):
-                names.append( (os.path.basename(opt[:-len('/index.html')]), opt) )
+                label_list.append( (os.path.basename(opt[:-len('/index.html')]), opt) )
             else:
-                names.append( (os.path.splitext(os.path.basename(opt))[0], opt) )
+                label_list.append( (os.path.splitext(os.path.basename(opt))[0], opt) )
                             
     elems = []
-    for basename, fullname in names:
-        elems.append('<li><a href="%s">%s</a></li>' % (fullname, basename))
+    for j, names in enumerate(label_list):
+        basename, fullname = names
+        if opts == 'index':
+            if separate:
+                elem = '''<a class="slidoc-topnav-li-a" href="%s%s">%s</a>'''  % (site_url, fullname, basename)
+            else:
+                elem = '''<span class="slidoc-topnav-li-span" onclick="Slidoc.go('%s');">%s</span>'''  % ('#'+make_chapter_id(j+1), basename)
+        else:
+            elem = '<a href="%s">%s</a>' % (fullname, basename)
+
+        elems.append('<li>'+elem+'</li>')
+
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" style="font-size:15px;" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
@@ -2177,11 +2191,12 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if renderer.load_python:
             skulpt_load = True
         
+        topnav_html = gen_topnav(topnav_opts, fnames=fnames, site_url=config.site_url, separate=config.separate) if topnav_opts else ''
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
-                      'top_nav': gen_topnav(topnav_opts) if topnav_opts else '',
+                      'top_nav': topnav_html,
                       'top_nav_hide': ' slidoc-topnav-hide' if topnav_opts else ''}
         mid_params.update(SYMS)
 
@@ -2424,11 +2439,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
+        topnav_html = gen_topnav(config.topnav, fnames=fnames, site_url=config.site_url, separate=config.separate) if config.topnav else ''
         comb_params = {'session_name': out_name,
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
-                       'top_nav': '', 'top_nav_hide': ''}
+                        'top_nav': topnav_html,
+                        'top_nav_hide': ' slidoc-topnav-hide' if config.topnav else ''}
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
@@ -2599,7 +2616,7 @@ parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', h
 parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
 parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
-parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, or pathnames)')
+parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
 parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)

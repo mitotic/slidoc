@@ -18,7 +18,7 @@ Command arguments:
     gsheet_url: Google sheet URL (required if proxy and not debugging)
     auth_key: Digest authentication key for admin user (enables login protection for website)
     port: Web server port number to listen on (default=8888)
-    private: path component string identifying private files (if omitted, entire website is login protected if auth_key is specified)
+    public: Public web site (no login required, except for paths containing _private/_restricted)
     proxy: Enable proxy mode (cache copies of Google Sheets)
     site_label: Site label, e.g., 'calc101'
     static_dir: path to static files directory containing Slidoc html files (default='static')
@@ -65,25 +65,33 @@ from tornado.ioloop import IOLoop
 import sliauth
 import plugins
 
-USER_COOKIE_SECURE = "slidoc_user_secure"
-SERVER_COOKIE = "slidoc_server"
-EXPIRES_DAYS = 30
-
-WS_TIMEOUT_SEC = 600
-
 Options = {
     '_index_html': '',  # Non-command line option
     'auth_key': '',
     'debug': False,
     'gsheet_url': '',
     'no_auth': False,
-    'private': '',
     'proxy_wait': None,
+    'public': False,
     'site_label': 'Slidoc',
-    'static_dir': '',
+    'static_dir': 'static',
+    'plugindata_dir': '',
     'twitter': '',
     'xsrf': False,
     }
+
+PLUGINDATA_PATH = '_plugindata'
+PRIVATE_PATH    = '_private'
+RESTRICTED_PATH = '_restricted'
+
+ADMIN_USER = 'admin'
+    
+USER_COOKIE_SECURE = "slidoc_user_secure"
+SERVER_COOKIE = "slidoc_server"
+EXPIRES_DAYS = 30
+
+WS_TIMEOUT_SEC = 600
+
 
 class UserIdMixin(object):
     def set_id(self, username, origId='', token='', displayName=''):
@@ -98,7 +106,7 @@ class UserIdMixin(object):
         self.clear_cookie(SERVER_COOKIE)
 
     def check_access(self, username, token):
-        if username == "admin":
+        if username == ADMIN_USER:
             return token == Options['auth_key']
         else:
             return token == sliauth.gen_user_token(Options['auth_key'], username)
@@ -138,7 +146,7 @@ class HomeHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath, inner=None):
-        if self.get_current_user() != '"admin"':
+        if self.get_current_user() != ADMIN_USER:
             self.write('Action not permitted')
             return
         action, sep, sessionName = subpath.partition('/')
@@ -235,17 +243,25 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             self.close()
 
     def on_message(self, message):
+        outMsg = self.on_message_aux(message)
+        if outMsg:
+            self.write_message(outMsg)
+        self.timeout = IOLoop.current().call_later(WS_TIMEOUT_SEC, self._close_on_timeout)
+
+    def on_message_aux(self, message):
         binaryContent = None
         if isinstance(message, bytes):
             # Binary message (treat as additional argument for last text message)
             if not self.awaitBinary:
-                return
+                # Not waiting for binary message ignore
+                return None
             binaryContent = message
             message = self.awaitBinary   # Restore buffered text message
             self.awaitBinary = None
 
         elif self.awaitBinary:
             # New text message; discard previous text message awaiting binary data
+            print >> sys.stderr, 'sdserver: Discarded upload message due to lack of data: '+self.awaitBinary[:40]+'...'
             self.awaitBinary = None
 
         self.msgTime = time.time()
@@ -253,7 +269,6 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             IOLoop.current().remove_timeout(self.timeout)
             self.timeout = None
         import sdproxy
-        outMsg = None
         callback_index = None
         try:
             obj = json.loads(message)
@@ -290,7 +305,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     if not pluginClass:
                         raise Exception('Plugin class '+pluginName+'.'+pluginName+' not defined!')
                     try:
-                        self.pluginInstances[pluginName] = pluginClass(self.pathUser[0], self.pathUser[1])
+                        self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), self.pathUser[0], self.pathUser[1])
                     except Exception, err:
                         raise Exception('Error in creating instance of plugin '+pluginName+': '+err.message)
 
@@ -298,13 +313,13 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 if not pluginMethod:
                     raise Exception('Plugin '+pluginName+' has no method '+pluginMethodName)
 
-                if pluginMethodName == 'uploadData':
-                    # plugin.uploadData(arg1, ..., binaryData)
-                    print >> sys.stderr, 'sdserver: %s.uploadData' % pluginName, args, not binaryContent
+                if pluginMethodName.startswith('_upload'):
+                    # plugin._upload*(arg1, ..., content=None)
+                    print >> sys.stderr, 'sdserver: %s._upload...' % pluginName, args, not binaryContent
                     if not binaryContent:
                         # Buffer text message and wait for final binary argument
                         self.awaitBinary = message
-                        return
+                        return None
                     # Append binary data as final argument
                     args.append(binaryContent)
                     binaryContent = None
@@ -314,18 +329,65 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
             if callback_index:
-                outMsg = json.dumps([callback_index, '', retObj], default=sliauth.json_default)
+                return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
         except Exception, err:
             if Options['debug']:
                 raise Exception('Error in response: '+err.message)
             elif callback_index:
                     retObj = {"result":"error", "error": err.message, "value": None, "messages": ""}
-                    outMsg = json.dumps([callback_index, '', retObj], default=sliauth.json_default)
+                    return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
 
-        if outMsg:
-            self.write_message(outMsg)
-        self.timeout = IOLoop.current().call_later(WS_TIMEOUT_SEC, self._close_on_timeout)
 
+class PluginManager(object):
+    _managers = {}
+
+    @classmethod
+    def getManager(cls, pluginName):
+        if pluginName not in cls._managers:
+            cls._managers[pluginName] = PluginManager(pluginName)
+        return cls._managers[pluginName]
+
+    def __init__(self, pluginName):
+        self.pluginName = pluginName
+
+    def makePath(self, filepath, restricted=True, private=True):
+        if not Options['plugindata_dir']:
+            raise Exception('sdserver.PluginManager.makePath: ERROR No plugin data directory!')
+        if '..' in filepath:
+            raise Exception('sdserver.PluginManager.makePath: ERROR Invalid .. in file path: '+filepath)
+            
+        fullpath = filepath
+        if restricted:
+            fullpath = RESTRICTED_PATH + '/' + fullpath
+        elif private:
+            fullpath = PRIVATE_PATH + '/' + fullpath
+
+        return '/'.join([ Options['plugindata_dir'], PLUGINDATA_PATH, self.pluginName, fullpath ])
+
+    def readFile(self, filepath, restricted=True, private=True):
+        # Returns file content from relative path
+        fullpath = self.makePath(filepath, restricted=restricted, private=private)
+        try:
+            f = open(fullpath)
+            content = f.read()
+            f.close()
+            return content
+        except Exception, err:
+            raise Exception('sdserver.PluginManager.readFile: ERROR in reading file %s: %s' % (fullpath, err))
+
+    def writeFile(self, filepath, content, restricted=True, private=True):
+        # Returns relative file URL
+        fullpath = self.makePath(filepath, restricted=restricted, private=private)
+        try:
+            filedir = os.path.dirname(fullpath)
+            if not os.path.exists(filedir):
+                os.makedirs(filedir)
+            f = open(fullpath, 'w')
+            f.write(content)
+            f.close()
+            return fullpath[len(Options['plugindata_dir']):]
+        except Exception, err:
+            raise Exception('sdserver.PluginManager.writeFile: ERROR in writing file %s: %s' % (fullpath, err))
 
 class BaseStaticFileHandler(tornado.web.StaticFileHandler):
     def set_extra_headers(self, path):
@@ -335,12 +397,30 @@ class BaseStaticFileHandler(tornado.web.StaticFileHandler):
 
 class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
+        userId = self.get_id_from_cookie() or None
+
+        if ('/'+RESTRICTED_PATH) in self.request.path:
+            # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
+            if not userId:
+                return None
+            basename = self.request.path.split('/')[-1]
+            if '.' in basename:
+                basename, sep, suffix = basename.rpartition('.')
+            if basename.endswith('-'+userId) or userID == ADMIN_USER:
+                return userId
+            raise tornado.web.HTTPError(404)
+
+        elif ('/'+PRIVATE_PATH) in self.request.path:
+            # Paths containing '/_private' are always protected
+            return userId
+
         if not Options['auth_key']:
-            self.clear_id()
+            self.clear_id()   # Clear any cookies
             return "noauth"
-        if Options['private'] and Options['private'] not in self.request.path:
+        elif Options['public']:
             return "noauth"
-        return self.get_id_from_cookie() or None
+
+        return userId
 
     # Override this method because overriding the get method of StaticFileHandler is problematic
     @tornado.web.authenticated
@@ -364,7 +444,7 @@ class AuthLoginHandler(BaseHandler):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
 
     def login(self, username, token, next="/"):
-        if Options['no_auth'] and Options['debug'] and not Options['gsheet_url'] and username != 'admin':
+        if Options['no_auth'] and Options['debug'] and not Options['gsheet_url'] and username != ADMIN_USER:
             # No authentication option for testing local-only proxy
             token = sliauth.gen_user_token(Options['auth_key'], username)
         auth = self.check_access(username, token)
@@ -390,10 +470,12 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             user = yield self.get_authenticated_user()
             # Save the user using e.g. set_secure_cookie()
             username = user['username']
+            if username == ADMIN_USER:
+                raise Exception('TwitterLoginHandler: Disallowed twitter username: '+username)
             if 'rename' in Twitter_config and username in Twitter_config['rename']:
                 username = Twitter_config['rename'][username]
             displayName = user['name']
-            token = Options['auth_key'] if username == 'admin' else sliauth.gen_user_token(Options['auth_key'], username)
+            token = Options['auth_key'] if username == ADMIN_USER else sliauth.gen_user_token(Options['auth_key'], username)
             self.set_id(username, user['username'], token, displayName)
             self.redirect(self.get_argument("next", "/"))
         else:
@@ -432,10 +514,16 @@ class Application(tornado.web.Application):
                           (r"/(_stats)", ActionHandler),
                            ]
 
-        if Options['no_auth']:
-            handlers += [ (r"/(.+)", BaseStaticFileHandler, {"path": Options['static_dir']}) ]
-        else:
-            handlers += [ (r"/(.+)", AuthStaticFileHandler, {"path": Options['static_dir']}) ]
+        fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
+
+        if Options['static_dir']:
+            handlers += [ (r'/([^_].*)', fileHandler, {"path": Options['static_dir']}) ]
+
+        for path in [PLUGINDATA_PATH, PRIVATE_PATH, RESTRICTED_PATH]:
+            dir = Options['plugindata_dir'] if path == PLUGINDATA_PATH else Options['static_dir']
+            if dir:
+                handlers += [ (r'/(%s/.*)' % path, fileHandler, {"path": dir}) ]
+            
 
         super(Application, self).__init__(handlers, **settings)
 
@@ -450,15 +538,20 @@ def main():
     define("ssl", default="", help="SSL certs options file (JSON)")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
-    define("private", default=Options["private"], help="Private path component (to protect with login)")
+    define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
     define("site_label", default=Options["site_label"], help="Site label")
-    define("static_dir", default="static", help="Path to static files directory")
+    define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
+    define("static_dir", default=Options["static_dir"], help="Path to static files directory")
     define("twitter", default="", help="'consumer_key,consumer_secret' OR JSON config file for twitter authentication")
     define("xsrf", default=False, help="XSRF cookies for security")
 
     define("port", default=8888, help="Web server port", type=int)
     tornado.options.parse_command_line()
+
+    if not options.auth_key and not options.public:
+        sys.exit('Must specify one of --public or --auth_key=...')
+
     for key in Options:
         if not key.startswith('_'):
             Options[key] = getattr(options, key)

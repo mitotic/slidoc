@@ -3,9 +3,9 @@ Share = {
 
     init: function() {
 	Slidoc.log('Slidoc.Plugins.Share.init:', this);
-	this.shareElem = document.getElementById(this.slideId+'-plugin-Share-sharebutton');
+	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
 	if (this.adminState)
-	    toggleClass(false, 'slidoc-share-hide', this.shareElem);
+	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
     },
 
     answerSave: function () {
@@ -13,7 +13,7 @@ Share = {
 	if (this.qattributes.share != 'after_submission' || !window.GService)
 	    return;
 	this.getResponses();
-	toggleClass(false, 'slidoc-share-hide', this.shareElem);
+	toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
     },
 
     getResponses: function () {
@@ -79,22 +79,22 @@ Share = {
 		} catch(err) {Slidoc.log('Share.responseCallback: Error - invalid numeric response:'+respVal);}
 	    }
 	    var correctResp = isCorrect ? '1' : '0';
-	    var line = '<li class="slidoc-plugin-share-li">';
+	    var line = '<li class="slidoc-plugin-Share-li">';
 	    if (result[prefix+'share']) {
 		var voteCode = result[prefix+'share'][j];
 		if (voteCode)
-		    line += '<a href="javascript:void(0);" data-correct-resp="'+correctResp+'" class="slidoc-plugin-share-votebutton slidoc-plugin-share-votebutton-'+voteCode+'" onclick="Slidoc.Plugins.'+this.name+"['"+this.slideId+"'].upVote('"+voteCode+"', this)"+';">&#x1f44d</a> &nbsp;'
+		    line += '<a href="javascript:void(0);" data-correct-resp="'+correctResp+'" class="slidoc-plugin-Share-votebutton slidoc-plugin-Share-votebutton-'+voteCode+'" onclick="Slidoc.Plugins.'+this.name+"['"+this.slideId+"'].upVote('"+voteCode+"', this)"+';">&#x1f44d</a> &nbsp;'
 		else
-		    line += '<a href="javascript:void(0);" class="slidoc-plugin-share-votebutton-disabled">&#x1f44d</a> &nbsp;'
+		    line += '<a href="javascript:void(0);" class="slidoc-plugin-Share-votebutton-disabled">&#x1f44d</a> &nbsp;'
 	    } else {
 		line += '<span></span>';
 	    }
 	    if (result[prefix+'vote'] && result[prefix+'vote'][j] !== null)
-		line += '[<code class="slidoc-plugin-share-vote">'+(1000+parseInt(result[prefix+'vote'][j])).toString().slice(-3)+'</code>]&nbsp;';
+		line += '[<code class="slidoc-plugin-Share-vote">'+(1000+parseInt(result[prefix+'vote'][j])).toString().slice(-3)+'</code>]&nbsp;';
 	    else
 		line += '<code></code>';
 
-	    line += '<code class="slidoc-plugin-share-prefix'+(isCorrect ? '-correct' : '')+'"></code>';
+	    line += '<code class="slidoc-plugin-Share-prefix'+(isCorrect ? '-correct' : '')+'"></code>';
 	    var prefixVal = '';
 	    var suffixVal = respVal;
 	    if (result[prefix+'explain']) {
@@ -102,7 +102,7 @@ Share = {
 		prefixVal = respVal;
 		suffixVal = result[prefix+'explain'][j];
 	    }
-	    line += '<span class="slidoc-plugin-share-resp"></span>'
+	    line += '<span class="slidoc-plugin-Share-resp"></span>'
 	    line += '</li>';
 	    if (isCorrect)
 		ulistCorr.push([line, prefixVal, suffixVal]);
@@ -111,7 +111,7 @@ Share = {
 	}
 
 	var ulistAll = ulistCorr.concat(ulistOther);
-	lines.push('<ul class="slidoc-plugin-share-list">');
+	lines.push('<ul class="slidoc-plugin-Share-list">');
 	for (var j=0; j<ulistAll.length; j++)
 	    lines.push(ulistAll[j][0]);
 	lines.push('</ul>');
@@ -135,9 +135,9 @@ Share = {
 	for (var k=0; k<this.voteCodes.length; k++) {
 	    if (!this.voteCodes[k])
 		continue;
-	    var elems = document.getElementsByClassName('slidoc-plugin-share-votebutton-'+this.voteCodes[k]);
+	    var elems = document.getElementsByClassName('slidoc-plugin-Share-votebutton-'+this.voteCodes[k]);
 	    for (var j=0; j<elems.length; j++)
-		elems[j].classList.add('slidoc-plugin-share-votebutton-activated');
+		elems[j].classList.add('slidoc-plugin-Share-votebutton-activated');
 	}
     },
 
@@ -158,13 +158,13 @@ Share = {
 	else
 	    this.voteCodes = [voteCode, this.voteCodes[1]];
 
-	var elems = document.getElementsByClassName('slidoc-plugin-share-votebutton');
+	var elems = document.getElementsByClassName('slidoc-plugin-Share-votebutton');
 	for (var j=0; j<elems.length; j++) {
 	    if (elems[j].dataset.correctResp == elem.dataset.correctResp)
-		elems[j].classList.remove('slidoc-plugin-share-votebutton-activated');
+		elems[j].classList.remove('slidoc-plugin-Share-votebutton-activated');
 	}
 
-	elem.classList.add('slidoc-plugin-share-votebutton-clicked');
+	elem.classList.add('slidoc-plugin-Share-votebutton-clicked');
 	var updates = {id: GService.gprofile.auth.id};
 	updates[prefix+'vote'] = this.voteCodes.join(',');
 	var gsheet = getSheet(Sliobj.sessionName);
@@ -175,37 +175,37 @@ Share = {
 	Slidoc.log('Slidoc.Plugins.Share.upVoteCallback:', voteCode, result, retStatus);
 	if (!result)
 	    return;
-	var elems = document.getElementsByClassName('slidoc-plugin-share-votebutton-'+voteCode);
+	var elems = document.getElementsByClassName('slidoc-plugin-Share-votebutton-'+voteCode);
 	for (var j=0; j<elems.length; j++) {
-	    elems[j].classList.remove('slidoc-plugin-share-votebutton-clicked');
-	    elems[j].classList.add('slidoc-plugin-share-votebutton-activated');
+	    elems[j].classList.remove('slidoc-plugin-Share-votebutton-clicked');
+	    elems[j].classList.add('slidoc-plugin-Share-votebutton-activated');
 	}
     }
 };
 
 /* PluginHead:
    <style>
-.slidoc-plugin-share-list {
+.slidoc-plugin-Share-list {
   list-style-type: none;
 }
-.slidoc-plugin-share-votebutton,
-  .slidoc-plugin-share-votebutton-disabled {
+.slidoc-plugin-Share-votebutton,
+  .slidoc-plugin-Share-votebutton-disabled {
   color: #2980B9;
   opacity: 0.4;
 }
-.slidoc-plugin-share-votebutton.slidoc-plugin-share-votebutton-activated {
+.slidoc-plugin-Share-votebutton.slidoc-plugin-Share-votebutton-activated {
   opacity: 1.0;
 }
-.slidoc-plugin-share-votebutton-clicked {
+.slidoc-plugin-Share-votebutton-clicked {
   background-color: red;
 }
-.slidoc-plugin-share-votebutton-disabled {
+.slidoc-plugin-Share-votebutton-disabled {
   visibility: hidden;
 }
    </style>
    PluginBody:
    <input type="button" id="%(pluginId)s-sharebutton" 
-   class="slidoc-clickable slidoc-button slidoc-plugin-share-button %(pluginSlideId)s-share-sharebutton slidoc-share-hide"
+   class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide"
    value="View all responses"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare(this);"></input>
 */

@@ -218,12 +218,12 @@ by the plugin.)
 The optional `arguments`, which must all be in the same line, are
 supplied to the `init` call for slide instances. The `init` calls
 occur in the same sequence in which the plugins are embedded in the
-slide. A special object `plugins`, containing all previously
+slide. A special object `SlidePlugins`, containing all previously
 initialized plugin instances in the same slide, may be used in the
 context of the arguments. For example, if the first embedded plugin is
 `Alpha`, the the second plugin `Beta` may use the following arguments:
 
-    =Beta(plugins.Alpha.method(), plugins.Alpha.attribute).
+    =Beta(SlidePlugins.Alpha.method(), SlidePlugins.Alpha.attribute).
 
 Alternatively, using `=Name.expect()` or `=Name.response()` as the
 correct answer automatically embeds the plugin before the Answer (if

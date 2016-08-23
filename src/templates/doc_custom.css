@@ -38,6 +38,7 @@
 
 }
 
+
 @media print {
   body { 
       max-width: 960px;
@@ -207,6 +208,19 @@ body.slidoc-sidebar-view .slidoc-sidebar-right-wrapper {
     margin: auto;
 }
 
+/* iframe */
+
+iframe {
+    width: 960px;
+    height: 480px;
+}
+
+@media screen and (max-width:680px) {
+    iframe {
+	width: 680px;
+	height: 320px;
+    }
+}
 
 /* Top nav bar (responsive) http://www.w3schools.com/howto/howto_js_topnav.asp */
 ul.slidoc-topnav {
@@ -219,7 +233,9 @@ ul.slidoc-topnav {
 
 ul.slidoc-topnav li {float: left;}
 
-ul.slidoc-topnav li a {
+ul.slidoc-topnav li a,
+  ul.slidoc-topnav li span
+{
   display: inline-block;
   color: #f2f2f2;
   text-align: center;
@@ -252,7 +268,9 @@ ul.slidoc-topnav li.slidoc-nav-icon {display: none;}
     float: none;
     display: inline;
   }
-  ul.slidoc-topnav.slidoc-responsive li a {
+  ul.slidoc-topnav.slidoc-responsive li a,
+  ul.slidoc-topnav.slidoc-responsive li span
+  {
     display: block;
     text-align: left;
   }

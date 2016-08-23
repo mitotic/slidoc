@@ -1002,9 +1002,9 @@ function evalPluginArgs(pluginName, argStr, slide_id) {
 	return [];
     try {
 	var pluginList = Sliobj.slidePlugins[slide_id]; // Plugins instantiated in the slide so far
-	var plugins = {};
+	var SlidePlugins = {};
 	for (var j=0; j<pluginList.length; j++)
-	    plugins[pluginList[j].name] = pluginList[j];
+	    SlidePlugins[pluginList[j].name] = pluginList[j];
 	var argVals = eval('['+argStr+']');
 	return argVals;
     } catch (err) {
@@ -1462,7 +1462,7 @@ function slidocSetupAux(session, feedback) {
 				     (question_attrs.share == 'after_submission' && Sliobj.session.questionsAttempted[qnumber]) ||
 				     (question_attrs.share == 'after_grading' && Sliobj.gradeDateStr) );
 
-		toggleClassAll(!shareAnswers, 'slidoc-share-hide', slide_id+'-share-sharebutton');
+		toggleClassAll(!shareAnswers, 'slidoc-shareable-hide', slide_id+'-plugin-Share-sharebutton');
 	    }
 
 	    if (!Sliobj.firstTime) {
@@ -1505,6 +1505,11 @@ function slidocSetupAux(session, feedback) {
     
     if (Sliobj.feedback) // If any non-null feedback, activate graded view
 	toggleClass(true, 'slidoc-graded-view');
+
+    if (document.getElementById("slidoc-topnav")) {
+	//if (document.getElementById("slidoc-slideview-button"))
+	//    document.getElementById("slidoc-slideview-button").style.display = 'none';
+    }
 
     showSubmitted();
 
@@ -1556,17 +1561,16 @@ function slidocSetupAux(session, feedback) {
 		setTimeout(function(){location.hash = slideHash;}, 200);
 	    }
 	}
-	if (document.getElementById("slidoc-sidebar-button"))
+
+	if (document.getElementById("slidoc-sidebar-button") && !document.getElementById("slidoc-topnav"))
 	    document.getElementById("slidoc-sidebar-button").style.display = null;
 
-	if (document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches) {
+	if (chapters && chapters.length == 1 && document.getElementById("slidoc01") && window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches) {
+	    // Display contents for single chapter with sidebar
 	    Slidoc.sidebarDisplay();
-	    if (chapters && chapters.length == 1) {
-		// Display contents for single chapter
-		var toggleElem = document.getElementById("slidoc-toc-chapters-toggle");
-		if (toggleElem && toggleElem.onclick)
-		    toggleElem.onclick();
-	    }
+	    var toggleElem = document.getElementById("slidoc-toc-chapters-toggle");
+	    if (toggleElem && toggleElem.onclick)
+		toggleElem.onclick();
 	}
     }
 
@@ -2344,20 +2348,14 @@ Slidoc.hide = function (elem, className, action) {
 }
 
 Slidoc.sidebarDisplay = function (elem) {
-    if (Sliobj.session.paced)
+    if (Sliobj.session.paced || !document.getElementById("slidoc00"))
 	return false;
-    var toc_elem = document.getElementById("slidoc00");
-    if (!toc_elem)
-	return;
+    if (document.getElementById("slidoc-topnav"))
+	return false;
+
+    sidebarDisplayAux(!Sliobj.sidebar)
     var slides = getVisibleSlides();
     var curSlide = getCurrentlyVisibleSlide(slides);
-
-    Sliobj.sidebar = !Sliobj.sidebar;
-    toggleClass(Sliobj.sidebar, 'slidoc-sidebar-view');
-    if (Sliobj.sidebar)
-	toc_elem.style.display =  null;
-    else if (Sliobj.curChapterId)
-	toc_elem.style.display =  'none';
 
     if (curSlide)
 	goSlide('#'+slides[curSlide-1].id);
@@ -2365,6 +2363,21 @@ Slidoc.sidebarDisplay = function (elem) {
 	goSlide('#'+Sliobj.curChapterId);
     else
 	goSlide('#slidoc01');
+}
+
+function sidebarDisplayAux(show) {
+    if (Sliobj.session.paced)
+	return false;
+    var toc_elem = document.getElementById("slidoc00");
+    if (!toc_elem)
+	return;
+
+    Sliobj.sidebar = show;
+    toggleClass(Sliobj.sidebar, 'slidoc-sidebar-view');
+    if (Sliobj.sidebar)
+	toc_elem.style.display =  null;
+    else if (Sliobj.curChapterId)
+	toc_elem.style.display =  'none';
 }
 
 Slidoc.allDisplay = function (elem) {
@@ -3080,7 +3093,7 @@ Slidoc.submitClick = function(elem, noFinalize) {
 
     Slidoc.endPaced();
 
-    var submitElems = document.getElementsByClassName('slidoc-plugin-submit-button');
+    var submitElems = document.getElementsByClassName('slidoc-plugin-Submit-button');
     for (var j=0; j<submitElems.length; j++)
 	submitElems[j].disabled = 'disabled';
 }
@@ -3689,8 +3702,9 @@ function goSlide(slideHash, chained, singleChapter) {
     }
 
     var slideId = slideHash.substr(1);
-    if (Sliobj.sidebar && slideId.slice(0,8) == 'slidoc00')
-	slideId = 'slidoc01-01';
+    var tocSlide = slideId.match(/^slidoc00/);
+    if (Sliobj.sidebar && tocSlide)
+	sidebarDisplayAux(false); // Hide sidebar to show TOC
 
    var goElement = document.getElementById(slideId);
    Slidoc.log('goSlide:B ', slideId, chained, goElement);
@@ -3764,6 +3778,14 @@ function goSlide(slideHash, chained, singleChapter) {
        Slidoc.chainUpdate(Sliobj.ChainQuery);
 
    goElement.scrollIntoView(true); // Redundant?
+
+    if (!tocSlide && !Sliobj.currentSlide && !Sliobj.session.paced && !Sliobj.sidebar && !Sliobj.showedFirstSideBar &&
+	window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches) {
+	// Non-slide/nonpaced scroll view; show sidebar once to make user aware of sidebar
+	Sliobj.showedFirstSideBar = true;
+	Slidoc.sidebarDisplay();
+    }
+
    return false;
 }
 

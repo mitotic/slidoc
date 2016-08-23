@@ -29,9 +29,10 @@ Slider = {
 	this.unitsElem = document.getElementById(this.pluginId+'-units');
 	this.boxElem = document.getElementById(this.pluginId+'-box');
 	this.buttonElem = document.getElementById(this.pluginId+'-boxbutton');
-	this.sliderElem = document.getElementById(this.pluginId+'-slider');
-	this.minElem = document.getElementById(this.pluginId+'-slider-min');
-	this.maxElem = document.getElementById(this.pluginId+'-slider-max');
+
+	this.sliderElem = document.getElementById(this.pluginId+'-sliderrange');
+	this.minElem = document.getElementById(this.pluginId+'-slidermin');
+	this.maxElem = document.getElementById(this.pluginId+'-slidermax');
 
 	this.labelElem.innerHTML = this.label;
 	this.unitsElem.innerHTML = this.units;
@@ -102,32 +103,32 @@ Slider = {
 
 /* PluginHead:
    <style>
-   .slidoc-plugin-slider-text {
+   .slidoc-plugin-Slider-text {
    margin-left: 2px;
    margin-right: 6px;
    font-size: 0.6em;
    }
-   .slidoc-plugin-slider-numbers {
+   .slidoc-plugin-Slider-numbers {
    font-size: 0.6em;
    }
-   input[type="number"].slidoc-plugin-slider-input {
+   input[type="number"].slidoc-plugin-Slider-input {
    width: 60px;
    }
    </style>
 
    PluginBody:
    <!-- Data range slider -->
-   <div id="%(pluginId)s-input" class="slidoc-plugin-slider-div">
-   <span id="%(pluginId)s-label" class="slidoc-plugin-slider-text"></span>
-   <input type="number" id="%(pluginId)s-box"  class="slidoc-plugin-slider-input" value="5"></input>
-   <span id="%(pluginId)s-units" class="slidoc-plugin-slider-text"></span>
-   <input type="button" id="%(pluginId)s-boxbutton"  class="slidoc-plugin-slider-input" value="plot"
+   <div id="%(pluginId)s-input" class="slidoc-plugin-Slider-div">
+   <span id="%(pluginId)s-label" class="slidoc-plugin-Slider-text"></span>
+   <input type="number" id="%(pluginId)s-box"  class="slidoc-plugin-Slider-input" value="5"></input>
+   <span id="%(pluginId)s-units" class="slidoc-plugin-Slider-text"></span>
+   <input type="button" id="%(pluginId)s-boxbutton"  class="slidoc-plugin-Slider-input" value="plot"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].modValue(this);"></input>
    <br>
-   <span id="%(pluginId)s-slider-min" class="slidoc-plugin-slider-numbers"></span>
-   <input type="range" id="%(pluginId)s-slider"  class="slidoc-plugin-slider-input" value="5" min="0" max="10"
+   <span id="%(pluginId)s-slidermin" class="slidoc-plugin-Slider-numbers"></span>
+   <input type="range" id="%(pluginId)s-sliderrange"  class="slidoc-plugin-Slider-input" value="5" min="0" max="10"
    oninput="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].modValue(this);"></input>
-   <span id="%(pluginId)s-slider-max" class="slidoc-plugin-slider-numbers"></span>
+   <span id="%(pluginId)s-slidermax" class="slidoc-plugin-Slider-numbers"></span>
    </div>
 
 */

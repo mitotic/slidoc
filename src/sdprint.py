@@ -167,11 +167,11 @@ def main():
                 cmd_args = ['wkhtmltopdf', '-s', 'Letter', '--print-media-type',
                             '--javascript-delay', '5000',
                             '--header-spacing', '2', '--header-font-size', '10',
-                            '--header-left', name+' ('+userId+')',
-                            '--header-center', options.title or session_name,
                             '--header-right', '[page] of [toPage]'
+                            '--header-center', options.title or session_name,
                             ]
                 if userId:
+                    cmd_args += ['--header-left', name+' ('+userId+')']
                     cmd_args += ['--cookie', 'slidoc_server', '%s::%s:' % (userId, token)]
                 if options.debug:
                     cmd_args += ['--debug-javascript']

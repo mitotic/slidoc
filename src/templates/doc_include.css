@@ -98,7 +98,7 @@ body.slidoc-sidebar-view .slidoc-all-container {
 
 .slidoc-render-text { border: 1px solid maroon; padding: 5px;}
 
-.slidoc-share-hide { opacity: 0.3; }
+.slidoc-shareable-hide { opacity: 0.3; }
 
 button:disabled.slidoc-button,
 input[type="button"]:disabled.slidoc-button {
