@@ -1754,7 +1754,7 @@ def plugin_heads(plugin_defs, plugin_loads):
 def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
     if opts == 'args':
         # Generate top navigationmenu from argument filenames
-        label_list = [ (x.split('-')[-1] if '-' in x else x, x+'.html') for x in fnames ]
+        label_list = [ ('Home', '/') ] + [ (x.split('-')[-1] if '-' in x else x, site_url+x+'.html') for x in fnames ]
 
     elif opts in ('dirs', 'files'):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
@@ -1779,14 +1779,11 @@ def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
                             
     elems = []
     for j, names in enumerate(label_list):
-        basename, fullname = names
-        if opts == 'index':
-            if separate:
-                elem = '''<a class="slidoc-topnav-li-a" href="%s%s">%s</a>'''  % (site_url, fullname, basename)
-            else:
-                elem = '''<span class="slidoc-topnav-li-span" onclick="Slidoc.go('%s');">%s</span>'''  % ('#'+make_chapter_id(j+1), basename)
+        basename, href = names
+        if j and opts == 'args' and not separate:
+            elem = '''<span onclick="Slidoc.go('%s');">%s</span>'''  % ('#'+make_chapter_id(j+1), basename)
         else:
-            elem = '<a href="%s">%s</a>' % (fullname, basename)
+            elem = '<a href="%s">%s</a>' % (href, basename)
 
         elems.append('<li>'+elem+'</li>')
 
@@ -2056,8 +2053,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         vote_date_str = ''
         if config.separate:
             # Separate files (may also be paced)
-            file_config = parse_first_line(f, fname, parser, {}, include_args=Select_file_args,
-                                           verbose=config.verbose)
+            file_config = parse_merge_args(read_first_line(f), fname, parser, {}, include_args=Select_file_args,
+                                           first_line=True, verbose=config.verbose)
 
             pace_dict, pace_tuple = split_pace(file_config.pace, update=cmd_pace_dict)
             config.pace = pace_tuple
@@ -2533,14 +2530,25 @@ def write_doc(path, head, tail):
 
 Select_file_args = set(['due_date', 'features', 'gsheet_url', 'pace', 'prereqs', 'revision', 'topnav', 'vote_date'])
     
-def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), verbose=False):
-    # Read first line of first file and rewind it
+def read_first_line(file):
+    # Read first line of file and rewind it
     first_line = file.readline()
     file.seek(0)
-    match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', first_line)
-    try:
+    return first_line
+
+def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
+    if first_line:
+        match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', args_text)
         if match:
-            line_args_list = shlex.split(match.group(1).strip())
+            args_text = match.group(1).strip()
+        else:
+            args_text = ''
+    else:
+        args_text = args_text.strip().replace('\n', ' ')
+
+    try:
+        if args_text:
+            line_args_list = shlex.split(args_text)
             line_args_dict = vars(parser.parse_args(line_args_list))
         else:
             line_args_dict = dict([(arg_name, None) for arg_name in include_args]) if include_args else {}
@@ -2550,9 +2558,9 @@ def parse_first_line(file, fname, parser, cmd_args_dict, exclude_args=set(), inc
             elif exclude_args and arg_name in exclude_args:
                 del line_args_dict[arg_name]
         if verbose:
-            message('Selected first line arguments from file', fname, argparse.Namespace(**line_args_dict))
+            message('Read command line arguments from file', fname, argparse.Namespace(**line_args_dict))
     except Exception, excp:
-        abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (file.name, excp))
+        abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (fname, excp))
 
     for arg_name in cmd_args_dict:
         if arg_name not in line_args_dict:
@@ -2586,6 +2594,7 @@ strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
 parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
 parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
@@ -2605,6 +2614,7 @@ parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
+parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
 parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
@@ -2621,7 +2631,6 @@ parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due lo
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
-alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
@@ -2641,12 +2650,15 @@ def cmd_args2dict(cmd_args):
 
 if __name__ == '__main__':
     cmd_args_orig = cmd_parser.parse_args()
-    first_name = os.path.splitext(os.path.basename(cmd_args_orig.file[0].name))[0]
-
-    # Do not exclude args if combined file
-    exclude_args = Select_file_args if cmd_args_orig.all is None else None
-    cmd_args = parse_first_line(cmd_args_orig.file[0], first_name, parser, vars(cmd_args_orig),
-                                exclude_args=exclude_args, verbose=cmd_args_orig.verbose)
+    if cmd_args_orig.config:
+        cmd_args = parse_merge_args(md2md.read_file(cmd_args_orig.config), cmd_args_orig.config, parser, vars(cmd_args_orig),
+                                    verbose=cmd_args_orig.verbose)
+    else:
+        # Read default args from first line of first file
+        # Do not exclude args if combined file
+        exclude_args = Select_file_args if cmd_args_orig.all is None else None
+        cmd_args = parse_merge_args(read_first_line(cmd_args_orig.file[0]), cmd_args_orig.file[0].name, parser, vars(cmd_args_orig),
+                                    exclude_args=exclude_args, first_line=True, verbose=cmd_args_orig.verbose)
 
     config_dict = cmd_args2dict(cmd_args)
 

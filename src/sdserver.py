@@ -14,6 +14,7 @@ sdserver: Tornado-based web server to serve Slidoc html files (with authenticati
             'slidoc.py --gsheet_url=... --proxy_url=http://localhost/_proxy'
         
 Command arguments:
+    config: config file containing command line options as python assignment statements
     debug: Enable debug mode (can be used for testing local proxy data without gsheet_url)
     gsheet_url: Google sheet URL (required if proxy and not debugging)
     auth_key: Digest authentication key for admin user (enables login protection for website)
@@ -59,7 +60,7 @@ import tornado.options
 import tornado.web
 import tornado.websocket
 
-from tornado.options import define, options
+from tornado.options import define, options, parse_config_file, parse_command_line
 from tornado.ioloop import IOLoop
 
 import sliauth
@@ -368,9 +369,8 @@ class PluginManager(object):
         # Returns file content from relative path
         fullpath = self.makePath(filepath, restricted=restricted, private=private)
         try:
-            f = open(fullpath)
-            content = f.read()
-            f.close()
+            with open(fullpath) as f:
+                content = f.read()
             return content
         except Exception, err:
             raise Exception('sdserver.PluginManager.readFile: ERROR in reading file %s: %s' % (fullpath, err))
@@ -382,9 +382,8 @@ class PluginManager(object):
             filedir = os.path.dirname(fullpath)
             if not os.path.exists(filedir):
                 os.makedirs(filedir)
-            f = open(fullpath, 'w')
-            f.write(content)
-            f.close()
+            with open(fullpath, 'w') as f:
+                f.write(content)
             return fullpath[len(Options['plugindata_dir']):]
         except Exception, err:
             raise Exception('sdserver.PluginManager.writeFile: ERROR in writing file %s: %s' % (fullpath, err))
@@ -532,6 +531,9 @@ Login_url = '/_auth/login/'
 Twitter_config = {}
 def main():
     global Login_url
+    define("config", type=str, help="Path to config file",
+        callback=lambda path: parse_config_file(path, final=False))
+
     define("auth_key", default="", help="Digest authentication key for admin user")
     define("debug", default=False, help="Debug mode")
     define("gsheet_url", default="", help="Google sheet URL")
@@ -543,11 +545,11 @@ def main():
     define("site_label", default=Options["site_label"], help="Site label")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
-    define("twitter", default="", help="'consumer_key,consumer_secret' OR JSON config file for twitter authentication")
+    define("twitter", default="", help="'consumer_key,consumer_secret,tuser1=suser1,...' OR JSON config file for twitter authentication")
     define("xsrf", default=False, help="XSRF cookies for security")
 
     define("port", default=8888, help="Web server port", type=int)
-    tornado.options.parse_command_line()
+    parse_command_line()
 
     if not options.auth_key and not options.public:
         sys.exit('Must specify one of --public or --auth_key=...')
@@ -568,12 +570,19 @@ def main():
         Login_url = "/_oauth/twitter"
         if ',' in options.twitter:
             comps = options.twitter.split(',')
-            Twitter_config.update(consumer_key=comps[0], consumer_secret=comps[1])
+            rename = {}
+            for name_map in comps[2:]:
+                twitter_name, slidoc_name = name_map.split('=')
+                rename[twitter_name] = slidoc_name
+            Twitter_config.update(consumer_key=comps[0], consumer_secret=comps[1], rename=rename)
+                
         else:
             # Twitter config file (JSON): {"consumer_key": ..., "consumer_secret": ..., rename={"aaa":"bbb",...}}
-            tfile = open(options.twitter)
-            Twitter_config.update(json.loads(tfile.read()))
-            tfile.close()
+            with open(options.twitter) as f:
+                Twitter_config.update(json.loads(f.read()))
+
+        for twitter_name, slidoc_name in Twitter_config['rename'].items():
+            print >> sys.stderr, 'RENAME Twitter user %s -> %s' % (twitter_name, slidoc_name)
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     pluginsDir = scriptdir + '/plugins'
@@ -592,9 +601,8 @@ def main():
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
 
     if options.ssl:
-        jfile = open(options.ssl)
-        ssl_options = json.loads(jfile.read())
-        jfile.close()
+        with open(options.ssl) as f:
+            ssl_options = json.loads(f.read())
         http_server = tornado.httpserver.HTTPServer(Application(), ssl_options=ssl_options)
     else:
         http_server = tornado.httpserver.HTTPServer(Application())
