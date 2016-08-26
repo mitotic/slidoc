@@ -4,17 +4,25 @@ Share = {
     init: function() {
 	Slidoc.log('Slidoc.Plugins.Share.init:', this);
 	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
-	if (this.adminState)
+	this.countElem = document.getElementById(this.pluginId+'-sharecount');
+	if (this.adminState || this.userId == '_test_user')
 	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
+	this.persist.answered = {};
     },
 
     answerSave: function () {
 	Slidoc.log('Slidoc.Plugins.Share.answerSave:');
+	this.persist.answered[this.qattributes.qnumber] = 1;
 	if (this.qattributes.share != 'after_submission' || !window.GService)
 	    return;
 	this.getResponses();
 	toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
     },
+
+    updateResponses: function () {
+	Slidoc.log('Slidoc.Plugins.Share.updateResponses:');
+	self.getResponses();
+    }
 
     getResponses: function () {
 	Slidoc.log('Slidoc.Plugins.Share.getResponses:');
@@ -36,6 +44,12 @@ Share = {
 	    return;
 	var prefix = 'q'+this.qattributes.qnumber+'_';
 	var nRows = result[prefix+'response'].length;
+	this.countElem.textContent = '('+nRows+')';
+
+	if (!this.persist.answered[this.qattributes.qnumber] && !this.adminState)
+	    // Question not yet answered and not admin state (i.e., test user); display count only
+	    return;
+
 	var lines = [];
 
 	if (retStatus.info && retStatus.info.voteDate) {
@@ -208,4 +222,5 @@ Share = {
    class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide"
    value="View all responses"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare(this);"></input>
+   <span id="%(pluginId)s-sharecount" class="slidoc-plugin-Share-count %(pluginId)s-sharecount slidoc-shareable-hide"></span>
 */

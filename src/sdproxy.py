@@ -57,6 +57,9 @@ INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
 
+NOCREDIT_SUBMIT = 'nocredit'
+PARTIAL_SUBMIT = 'partial'
+
 TRUNCATE_DIGEST = 8
 
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)(_[0-9\.]+)?$")
@@ -75,12 +78,18 @@ def http_post(url, params_dict):
         pass
     return result
 
-Shutting_down = False
+class Dummy():
+    pass
+    
+Global = Dummy()
+
+Global.suspending = ""
+
 Sheet_cache = {}
 Lock_cache = {}
 
 def getSheet(sheetName, optional=False):
-    if Shutting_down or sheetName in Lock_cache:
+    if Global.suspending or sheetName in Lock_cache:
         raise Exception('Sheet %s is locked!' % sheetName)
 
     if sheetName in Sheet_cache:
@@ -112,7 +121,7 @@ def getSheet(sheetName, optional=False):
     return Sheet_cache[sheetName]
 
 def createSheet(sheetName, headers):
-    if Shutting_down or sheetName in Lock_cache:
+    if Global.suspending or sheetName in Lock_cache:
         raise Exception('Sheet %s is locked!' % sheetName)
 
     if not headers:
@@ -219,7 +228,7 @@ class Sheet(object):
         return [row[colMin-1:colMin+colCount-1] for row in self.xrows[rowMin-1:rowMin+rowCount-1]]
 
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
-        if Shutting_down or self.name in Lock_cache:
+        if Global.suspending or self.name in Lock_cache:
             raise Exception('Sheet %s is locked!' % self.name)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
@@ -276,47 +285,50 @@ class Range(object):
     def setValues(self, values):
         self.sheet.setSheetValues(*(self.rng+[values]))
 
+Global.cacheRequestTime = 0
+Global.cacheResponseTime = 0
+Global.cacheUpdateTime = sliauth.epoch_ms()
 
-CacheRequestTime = 0
-CacheResponseTime = 0
-CacheUpdateTime = sliauth.epoch_ms()
+Global.cacheRetryCount = 0
+Global.cacheWaitTime = 0
 
-CacheRetryCount = 0
-CacheWaitTime = 0
+Global.totalCacheResponseInterval = 0
+Global.totalCacheResponseCount = 0
+Global.totalCacheRetryCount = 0
 
-TotalCacheResponseInterval = 0
-TotalCacheResponseCount = 0
-TotalCacheRetryCount = 0
+Global.cachePendingUpdate = None
 
-CachePendingUpdate = None
 def schedule_update(waitSec=0, force=False):
-    global CachePendingUpdate
-    if CachePendingUpdate:
-        IOLoop.current().remove_timeout(CachePendingUpdate)
-        CachePendingUpdate = None
+    if Global.cachePendingUpdate:
+        IOLoop.current().remove_timeout(Global.cachePendingUpdate)
+        Global.cachePendingUpdate = None
 
     if waitSec:
-        CachePendingUpdate = IOLoop.current().call_later(waitSec, update_remote_sheets)
+        Global.cachePendingUpdate = IOLoop.current().call_later(waitSec, update_remote_sheets)
     else:
         update_remote_sheets(force=force)
 
-def start_shutdown():
-    global Shutting_down
-    Shutting_down = True
-    print >> sys.stderr, "Initiated shutdown"
+def start_shutdown(action="shutdown"):
+    Global.suspending = action
+    print >> sys.stderr, "Suspending for", action
     schedule_update(force=True)
 
 def check_shutdown():
-    if not Shutting_down:
+    if not Global.suspending:
         return
-    print >> sys.stderr, "Completing shutdown"
-    IOLoop.current().stop()
+    if Global.suspending == "clear":
+        Sheet_cache.clear()
+        Global.suspending = ""
+        print >> sys.stderr, "Cleared cache"
+    else:
+        print >> sys.stderr, "Completing shutdown"
+        IOLoop.current().stop()
 
 def get_locked():
     # Return list of locked sheet name (* if updates not yet send to Google sheets)
     locked = []
     for sheetName in Lock_cache:
-        if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(CacheUpdateTime) is not None:
+        if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
             locked.append(sheetName+'*')
         else:
             locked.append(sheetName)
@@ -324,25 +336,24 @@ def get_locked():
     return locked
 
 def update_remote_sheets(force=False):
-    global CacheRequestTime
 
     if not Options['SHEET_URL']:
         check_shutdown()
         return
 
-    if CacheRequestTime:
+    if Global.cacheRequestTime:
         return
 
     cur_time = sliauth.epoch_ms()
-    if not force and (cur_time - CacheResponseTime) < Options['MIN_WAIT_TIME']:
-        schedule_update(cur_time-CacheResponseTime)
+    if not force and (cur_time - Global.cacheResponseTime) < Options['MIN_WAIT_TIME']:
+        schedule_update(cur_time-Global.cacheResponseTime)
         return
 
     modRequests = []
     curTime = sliauth.epoch_ms()
     for sheetName, sheet in Sheet_cache.items():
         # Check each cached sheet for updates
-        updates = sheet.get_updates(CacheUpdateTime)
+        updates = sheet.get_updates(Global.cacheUpdateTime)
         if updates is None:
             if curTime-sheet.accessTime > CACHE_HOLD_TIME:
                 # Cache entry has expired
@@ -368,27 +379,25 @@ def update_remote_sheets(force=False):
     post_data['create'] = 1
     body = urllib.urlencode(post_data)
     http_client.fetch(Options['SHEET_URL'], handle_http_response, method='POST', headers=None, body=body)
-    CacheRequestTime = cur_time
+    Global.cacheRequestTime = cur_time
 
 
 def handle_http_response(response):
-    global CacheRequestTime, CacheResponseTime, CacheUpdateTime, CacheRetryCount, CacheWaitTime, TotalCacheResponseInterval, TotalCacheResponseCount, TotalCacheRetryCount
-
-    CacheResponseTime = sliauth.epoch_ms()
-    TotalCacheResponseInterval += (CacheResponseTime - CacheRequestTime)
-    TotalCacheResponseCount += 1
+    Global.cacheResponseTime = sliauth.epoch_ms()
+    Global.totalCacheResponseInterval += (Global.cacheResponseTime - Global.cacheRequestTime)
+    Global.totalCacheResponseCount += 1
 
     errMsg = ""
     if response.error:
         print >> sys.stderr, "handle_http_response: Update error:", response.error
         errMsg = response.error
-        if Shutting_down or CacheRetryCount > RETRY_MAX_COUNT:
+        if Global.suspending or Global.cacheRetryCount > RETRY_MAX_COUNT:
             sys.exit('Failed to update cache after %d tries' % RETRY_MAX_COUNT)
-        CacheRequestTime = 0
-        CacheRetryCount += 1
-        TotalCacheRetryCount += 1
-        CacheWaitTime += RETRY_WAIT_TIME
-        schedule_update(CacheWaitTime)
+        Global.cacheRequestTime = 0
+        Global.cacheRetryCount += 1
+        Global.totalCacheRetryCount += 1
+        Global.cacheWaitTime += RETRY_WAIT_TIME
+        schedule_update(Global.cacheWaitTime)
     else:
         if Options['DEBUG']:
             print "handle_http_response:", response.body
@@ -406,13 +415,13 @@ def handle_http_response(response):
     if not errMsg:
         # Update succeeded
         if Options['DEBUG']:
-            print "handle_http_response:", CacheUpdateTime, respObj
+            print "handle_http_response:", Global.cacheUpdateTime, respObj
 
-        CacheUpdateTime = CacheRequestTime
-        CacheRequestTime = 0
-        CacheRetryCount = 0
-        CacheWaitTime = 0
-        schedule_update(0 if Shutting_down else Options['MIN_WAIT_TIME'])
+        Global.cacheUpdateTime = Global.cacheRequestTime
+        Global.cacheRequestTime = 0
+        Global.cacheRetryCount = 0
+        Global.cacheWaitTime = 0
+        schedule_update(0 if Global.suspending else Options['MIN_WAIT_TIME'])
 
         
 def handleResponse(params):
@@ -489,6 +498,7 @@ def handleResponse(params):
 
         sessionParams = None
         sessionAttributes = None
+        adminPaced = None
         dueDate = None
         gradeDate = None
         voteDate = None
@@ -520,9 +530,10 @@ def handleResponse(params):
 
         if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
             # Indexed session
-            sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
+            sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
             if sessionParams.get('attributes'):
                 sessionAttributes = json.loads(sessionParams['attributes'])
+            adminPaced = sessionParams.get('adminPaced')
             dueDate = sessionParams.get('dueDate')
             gradeDate = sessionParams.get('gradeDate')
             voteDate = createDate(sessionAttributes['voteDate']) if sessionAttributes and sessionAttributes.get('voteDate') else None
@@ -669,7 +680,7 @@ def handleResponse(params):
                 tallyVotes = adminUser or shareParams.get('vote') == 'show_live' or (shareParams.get('vote') == 'show_completed' and votingCompleted)
                 userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
 
-                if not adminUser and shareParams['share'] == 'after_submission' and not userResponded:
+                if not adminUser and paramId != TESTUSER_ID and shareParams['share'] == 'after_submission' and not userResponded:
                     raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
 
                 disableVoting = False
@@ -729,7 +740,7 @@ def handleResponse(params):
                     timeVal =  sliauth.epoch_ms(timeVal) if timeVal else 0
 
                     # Skip incomplete/late submissions (but allow partials)
-                    if not timeVal or (lateValues[j][0] and lateValues[j][0] != 'partial'):
+                    if not timeVal or (lateValues[j][0] and lateValues[j][0] != PARTIAL_SUBMIT):
                         continue
                     if not shareSubrow[j][0] or (explainOffset and not shareSubrow[j][1]):
                         continue
@@ -846,14 +857,16 @@ def handleResponse(params):
                         curTime = sliauth.epoch_ms(curDate)
                         pastSubmitDeadline = (dueDate and curTime > sliauth.epoch_ms(dueDate))
                         if not allowLateMods and pastSubmitDeadline and lateToken:
-                            if lateToken == 'partial':
+                            if lateToken == PARTIAL_SUBMIT:
                                 if newRow or not rowUpdates:
                                     raise Exception("Error::Partial submission only works for pre-existing rows")
+                                if sessionAttributes and sessionAttributes.participationCredit:
+                                    raise Exception("Error::Partial submission not allowed for participation credit")
                                 partialSubmission = True
                                 rowUpdates = None
                                 selectedUpdates = [ ['Timestamp', None], ['submitTimestamp', None], ['lateToken', lateToken] ]
                                 returnMessages.append("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
-                            elif lateToken == 'none':
+                            elif lateToken == NOCREDIT_SUBMIT:
                                 # Late submission without token
                                 allowLateMods = True
                             else:
@@ -1006,6 +1019,21 @@ def handleResponse(params):
                     # Save updated row
                     userRange.setValues([rowValues])
 
+                    if paramId == TESTUSER_ID and sessionParams and adminPaced:
+                        lastSlideCol = columnIndex.get('lastSlide')
+                        if lastSlideCol and rowValues[lastSlideCol-1]:
+                            # Copy test user last slide number as new adminPaced value
+                            setValue(sheetName, 'adminPaced', rowValues[lastSlideCol-1], INDEX_SHEET)
+                        if params.get('submit'):
+                            # Use test user submission time as due date for admin-paced sessions
+                            setValue(sheetName, 'dueDate', curDate, INDEX_SHEET)
+                            idColValues = getColumns('id', modSheet, 1, numStickyRows)
+                            initColValues = getColumns('initTimestamp', modSheet, 1, numStickyRows)
+                            for j in range(len(idColValues)):
+                                # Submit all other users who have started a session
+                                if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
+                                    setValue(idColValues[j], 'submitTimestamp', curDate, sheetName)
+
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
@@ -1089,6 +1117,9 @@ def handleResponse(params):
                             rowValues[headerColumn-1] = modValue
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
+
+                if paramId != TESTUSER_ID and sessionParams and adminPaced:
+                    returnInfo['adminPaced'] = adminPaced
 
                 # Return updated timestamp
                 returnInfo['timestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex) else None
@@ -1210,8 +1241,10 @@ def getColumns(header, sheetName, colCount, skipRows):
 
 
 def lookupValues(idValue, colNames, sheetName, listReturn=False):
-    # Return parameters in list colNames for idValue from sessions_slidoc sheet
+    # Return parameters in list colNames for idValue from sheet
     indexSheet = getSheet(sheetName)
+    if not indexSheet:
+        raise Exception('Index sheet '+sheetName+' not found')
     indexColIndex = indexColumns(indexSheet)
     indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2)
     sessionRow = indexRowIndex.get(idValue)
@@ -1226,6 +1259,20 @@ def lookupValues(idValue, colNames, sheetName, listReturn=False):
         listVals.append(retVals[colName])
 
     return listVals if listReturn else retVals
+
+def setValue(idValue, colName, colValue, sheetName):
+    # Set parameter in colName for idValue in sheet
+    indexSheet = getSheet(sheetName)
+    if not indexSheet:
+        raise Exception('Index sheet '+sheetName+' not found')
+    indexColIndex = indexColumns(indexSheet)
+    indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2)
+    sessionRow = indexRowIndex.get(idValue)
+    if not sessionRow:
+        raise Exception('ID value '+idValue+' not found in index sheet '+sheetName)
+    if colName not in indexColIndex:
+        raise Exception('Column '+colName+' not found in index sheet '+sheetName)
+    indexSheet.setSheetValues(sessionRow, indexColIndex[colName], 1, 1, [[colValue]])
 
 def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
     # Return row number before which new name/id combination should be inserted

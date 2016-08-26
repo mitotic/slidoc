@@ -44,6 +44,7 @@ Twitter auth workflow:
 
 import collections
 import datetime
+import functools
 import importlib
 import json
 import logging
@@ -61,7 +62,7 @@ import tornado.web
 import tornado.websocket
 
 from tornado.options import define, options, parse_config_file, parse_command_line
-from tornado.ioloop import IOLoop
+from tornado.ioloop import IOLoop, PeriodicCallback
 
 import sliauth
 import plugins
@@ -69,35 +70,49 @@ import plugins
 Options = {
     '_index_html': '',  # Non-command line option
     'auth_key': '',
+    'auth_type': '',
     'debug': False,
     'gsheet_url': '',
     'no_auth': False,
     'proxy_wait': None,
+    'port': 8888,
     'public': False,
     'site_label': 'Slidoc',
+    'site_url': '',
     'static_dir': 'static',
     'plugindata_dir': '',
-    'twitter': '',
     'xsrf': False,
     }
+
+class Dummy():
+    pass
+    
+Global = Dummy()
+Global.rename = {}
 
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
 
 ADMIN_USER = 'admin'
+TESTUSER_ID = '_test_user'
     
 USER_COOKIE_SECURE = "slidoc_user_secure"
 SERVER_COOKIE = "slidoc_server"
 EXPIRES_DAYS = 30
 
-WS_TIMEOUT_SEC = 600
+WS_TIMEOUT_SEC = 3600
+EVENT_BUFFER_SEC = 3
 
 
 class UserIdMixin(object):
     def set_id(self, username, origId='', token='', displayName=''):
-        if ':' in username or ':' in origId:
-            raise Exception('Colon character not allowed in username/origId')
+        if Options['debug']:
+            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName
+        if ':' in username or ':' in origId or ':' in token or ':' in displayName:
+            raise Exception('Colon character not allowed in username/origId/token/name')
+        if username == ADMIN_USER:
+            token = token + ',' + sliauth.gen_user_token(token, TESTUSER_ID)
         cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
@@ -125,6 +140,13 @@ class UserIdMixin(object):
             self.clear_id()
             return None
 
+    def custom_error(self, errCode, html_msg, clear_cookies=False):
+        if clear_cookies:
+            self.clear_all_cookies() 
+        self.clear()
+        self.set_status(errCode)
+        self.finish(html_msg)
+
 
 class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     def get_current_user(self):
@@ -147,13 +169,18 @@ class HomeHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath, inner=None):
-        if self.get_current_user() != ADMIN_USER:
-            self.write('Action not permitted')
+        if self.get_current_user() not in (ADMIN_USER, TESTUSER_ID):
+            self.write('Action not permitted: '+self.get_current_user())
             return
-        action, sep, sessionName = subpath.partition('/')
         import sdproxy
-        if action == '_shutdown':
-            sdproxy.start_shutdown()
+        action, sep, sessionName = subpath.partition('/')
+        if action == '_dash':
+            self.render('dashboard.html')
+        elif action == '_clear':
+            sdproxy.start_shutdown('clear')
+            self.write('Clearing cache')
+        elif action == '_shutdown':
+            sdproxy.start_shutdown('shutdown')
             self.write('Starting shutdown')
         elif action == '_unlock':
             if sessionName in Lock_cache:
@@ -168,13 +195,14 @@ class ActionHandler(BaseHandler):
         elif action == '_stats':
             self.write('<pre>')
             self.write('Cache:\n')
-            self.write('  No. of updates (retries): %d (%d)\n  Average update time = %ss\n' % (sdproxy.TotalCacheResponseCount, sdproxy.TotalCacheRetryCount, sdproxy.TotalCacheResponseInterval/(1000*max(1,sdproxy.TotalCacheRetryCount)) ) )
+            self.write('  No. of updates (retries): %d (%d)\n  Average update time = %ss\n' % (sdproxy.Global.totalCacheResponseCount, sdproxy.Global.totalCacheRetryCount, sdproxy.Global.totalCacheResponseInterval/(1000*max(1,sdproxy.Global.totalCacheRetryCount)) ) )
             curTime = time.time()
             wsKeys = WSHandler._connections.keys()
-            sorted(wsKeys)
+            wsConnections = WSHandler.get_connections()
+            sorted(wsConnections)
             wsInfo = []
-            for pathUser in wsKeys:
-                wsInfo += [(pathUser[0], pathUser[1]+('/'+ws.origId if ws.origId else ''), math.floor(curTime-ws.msgTime)) for ws in WSHandler._connections[pathUser]]
+            for path, user, connections in wsConnections:
+                wsInfo += [(path, user+('/'+ws.origId if ws.origId else ''), math.floor(curTime-ws.msgTime)) for ws in connections]
             sorted(wsInfo)
             self.write('\nConnections:\n')
             for x in wsInfo:
@@ -212,7 +240,16 @@ class ProxyHandler(BaseHandler):
         self.write(jsonPrefix+json.dumps(retObj, default=sliauth.json_default)+jsonSuffix)
 
 class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
-    _connections = collections.defaultdict(list)
+    _connections = collections.defaultdict(functools.partial(collections.defaultdict,list))
+    @classmethod
+    def get_connections(cls):
+        # Return list of tuples [ (path, user, connections) ]
+        lst = []
+        for path, path_dict in cls._connections.items():
+            for user, connections in path_dict.items():
+                lst.append( (path, user, connections) )
+        return lst
+
     def open(self, path=''):
         self.msgTime = time.time()
         self.locked = ''
@@ -222,7 +259,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         if self.origId == self.userId:
             self.origId = ''
         self.pathUser = (path, self.userId)
-        self._connections[self.pathUser].append(self)
+        self._connections[self.pathUser[0]][self.pathUser[1]].append(self)
         self.pluginInstances = {}
         self.awaitBinary = None
 
@@ -231,13 +268,30 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         if not self.userId:
             self.close()
 
+        self.eventBuffer = collections.OrderedDict()
+        self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
+        self.eventFlusher.start()
+
     def on_close(self):
         try:
-            self._connections[self.pathUser].remove(self)
-            if not self._connections[self.pathUser]:
-                del self._connections[self.pathUser]
+            if self.eventFlusher:
+                self.eventFlusher.stop()
+                self.eventFlusher = None
+            self._connections[self.pathUser[0]][self.pathUser[1]].remove(self)
+            if not self._connections[self.pathUser[0]][self.pathUser[1]]:
+                del self._connections[self.pathUser[0]][self.pathUser[1]]
+            if not self._connections[self.pathUser[0]]:
+                del self._connections[self.pathUser[0]]
         except Exception, err:
             pass
+
+
+    def flushEventBuffer(self):
+        while self.eventBuffer:
+            evType, fromArgs = self.eventBuffer.popitem(last=False)
+            # Message: source, evType, eventArgs
+            msg = [0, 'event', [fromArgs[0], evType, fromArgs[1]]]
+            self.write_message(json.dumps(msg, default=sliauth.json_default))
 
     def _close_on_timeout(self):
         if self.ws_connection:
@@ -285,7 +339,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     if self.locked:
                         raise Exception(self.locked)
                     else:
-                        for connection in self._connections[self.pathUser]:
+                        for connection in self._connections[self.pathUser[0]][self.pathUser[1]]:
                             if connection is self:
                                 continue
                             if not connection.locked:
@@ -329,6 +383,32 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 except Exception, err:
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
+
+            elif method == 'event':
+                eventTarget, eventType, eventArgs = args
+                if Options['debug']:
+                    print >> sys.stderr, 'sdserver.on_message_aux: event', self.userId, eventType
+
+                immediate = eventType in ('AdminPacedAdvance',)
+                pathConnections = self._connections[self.pathUser[0]]
+                for toUser, connections in pathConnections.items():
+                    if toUser == self.userId:
+                        continue
+                    if self.userId in (ADMIN_USER, TESTUSER_ID):
+                        # From special user: broadcast to all but the sender
+                        pass
+                    elif toUser in (ADMIN_USER, TESTUSER_ID):
+                        # From non-special user: send only to special users
+                        pass
+                    else:
+                        continue
+
+                    for conn in connections:
+                        # If not immediate, only the last occurrence of an event type is buffered
+                        conn.eventBuffer[eventType] = [self.userId, eventArgs]
+                        if immediate:
+                            conn.flushEventBuffer()
+
             if callback_index:
                 return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
         except Exception, err:
@@ -337,7 +417,6 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             elif callback_index:
                     retObj = {"result":"error", "error": err.message, "value": None, "messages": ""}
                     return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
-
 
 class PluginManager(object):
     _managers = {}
@@ -437,7 +516,7 @@ class AuthLoginHandler(BaseHandler):
             self.login(username, token, next=next)
         else:
             self.render("login.html", error_msg=error_msg, next=next, site_label=Options['site_label'],
-                        login_url=Login_url, password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
+                        login_url=Global.login_url, password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
 
     def post(self):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
@@ -460,6 +539,63 @@ class AuthLogoutHandler(BaseHandler):
         self.clear_id()
         self.write('Logged out.<p></p><a href="/">Home</a>')
 
+class GoogleLoginHandler(tornado.web.RequestHandler,
+                         tornado.auth.GoogleOAuth2Mixin, UserIdMixin):
+    @tornado.gen.coroutine
+    def get(self):
+        if self.get_argument('code', False):
+            user = yield self.get_authenticated_user(
+                redirect_uri=self.settings['google_oauth']['redirect_uri'],
+                code=self.get_argument('code'))
+            if Options['debug']:
+                print >>sys.stderr, "GoogleAuth: step 1", user
+
+            if not user:
+                self.custom_error(500, '<h2>Google authentication failed</h2><a href="/">Home</a>', clear_cookies=True)
+
+            access_token = str(user['access_token'])
+            http_client = self.get_auth_http_client()
+            response =  yield http_client.fetch('https://www.googleapis.com/oauth2/v1/userinfo?access_token='+access_token)
+            if not response:
+                self.custom_error(500, '<h2>Google profile access failed</h2><a href="/">Home</a>', clear_cookies=True)
+
+            user = json.loads(response.body)
+            if Options['debug']:
+                print >>sys.stderr, "GoogleAuth: step 2", user
+
+            username = user['email'].lower()
+            if Global.login_domain:
+                if not username.endswith(Global.login_domain):
+                    self.custom_error(500, '<h2>Authentication requires account '+Global.login_domain+'</h2><a href="https://mail.google.com/mail/u/0/?logout&hl=en">Logout of google (to sign in with a different account)</a><br><a href="/">Home</a>', clear_cookies=True)
+                    return
+                username = username[:-len(Global.login_domain)]
+
+            if username == ADMIN_USER:
+                self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
+
+            displayName = user.get('family_name','').replace(',', ' ')
+            if displayName and user.get('given_name',''):
+                displayName += ', '
+            displayName += user.get('given_name','')
+            if not displayName:
+                displayName = username
+
+            if username in Global.rename:
+                username = Global.rename[username]
+
+            token = Options['auth_key'] if username == ADMIN_USER else sliauth.gen_user_token(Options['auth_key'], username)
+            self.set_id(username, user['email'], token, displayName)
+            self.redirect(self.get_argument("next", "/"))
+            return
+
+            # Save the user with e.g. set_secure_cookie
+        else:
+            yield self.authorize_redirect(
+                redirect_uri=self.settings['google_oauth']['redirect_uri'],
+                client_id=self.settings['google_oauth']['key'],
+                scope=['profile', 'email'],
+                response_type='code',
+                extra_params={'approval_prompt': 'auto'})
 
 class TwitterLoginHandler(tornado.web.RequestHandler,
                           tornado.auth.TwitterMixin, UserIdMixin):
@@ -470,9 +606,9 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             # Save the user using e.g. set_secure_cookie()
             username = user['username']
             if username == ADMIN_USER:
-                raise Exception('TwitterLoginHandler: Disallowed twitter username: '+username)
-            if 'rename' in Twitter_config and username in Twitter_config['rename']:
-                username = Twitter_config['rename'][username]
+                self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
+            if username in Global.rename:
+                username = Global.rename[username]
             displayName = user['name']
             token = Options['auth_key'] if username == ADMIN_USER else sliauth.gen_user_token(Options['auth_key'], username)
             self.set_id(username, user['username'], token, displayName)
@@ -483,25 +619,54 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
 
 class Application(tornado.web.Application):
     def __init__(self):
-        settings = dict(
-            template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
-            xsrf_cookies=Options['xsrf'],
-            cookie_secret=Options['auth_key'],
-            login_url=Login_url,
-            debug=Options['debug'],
-        )
-
         handlers = [
             (r"/", HomeHandler),
             (r"/_auth/logout/", AuthLogoutHandler),
             (r"/_auth/login/", AuthLoginHandler),
             ]
 
-        if Options['twitter']:
-            settings.update(twitter_consumer_key=Twitter_config['consumer_key'],
-                            twitter_consumer_secret=Twitter_config['consumer_secret'])
+        settings = {}
+        Global.login_domain = ''
+        Global.login_url = '/_auth/login'
+        if Options['auth_type']:
+            Global.login_url = '/_oauth/login'
+            comps = Options['auth_type'].split(',')
 
-            handlers += [ ("/_oauth/twitter", TwitterLoginHandler) ]
+            if Options['site_url']:
+                redirect_uri = Options['site_url'] + Global.login_url
+            else:
+                redirect_uri = 'http://localhost'+ ('' if Options['port'] == 80 else ':'+str(Options['port'])) + Global.login_url
+
+            Global.login_domain = comps[0] if comps[0][0] == '@' else ''
+
+            if comps[0] == 'google' or Global.login_domain:
+                settings.update(google_oauth={'key': comps[1],
+                                            'secret': comps[2],
+                                            'redirect_uri': redirect_uri})
+                handlers += [ (Global.login_url, GoogleLoginHandler) ]
+
+            elif comps[0] == 'twitter':
+                settings.update(twitter_consumer_key=comps[1],
+                                twitter_consumer_secret=comps[2])
+                handlers += [ (Global.login_url, TwitterLoginHandler) ]
+
+            else:
+                raise Exception('sdserver: Invalid auth_type: '+comps[0])
+
+            Global.rename = {}
+            for name_map in comps[3:]:
+                auth_name, slidoc_name = name_map.split('=')
+                Global.rename[auth_name] = slidoc_name
+                print >> sys.stderr, 'RENAME %s user %s -> %s' % (comps[0], auth_name, slidoc_name)
+
+
+        settings.update(
+            template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
+            xsrf_cookies=Options['xsrf'],
+            cookie_secret=Options['auth_key'],
+            login_url=Global.login_url,
+            debug=Options['debug'],
+        )
 
         if Options['proxy_wait'] is not None:
             handlers += [ (r"/_proxy", ProxyHandler),
@@ -509,8 +674,7 @@ class Application(tornado.web.Application):
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
-                          (r"/(_shutdown)", ActionHandler),
-                          (r"/(_stats)", ActionHandler),
+                          (r"/(_(dash|clear|shutdown|stats))", ActionHandler),
                            ]
 
         fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
@@ -527,14 +691,12 @@ class Application(tornado.web.Application):
         super(Application, self).__init__(handlers, **settings)
 
 
-Login_url = '/_auth/login/'
-Twitter_config = {}
 def main():
-    global Login_url
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
 
-    define("auth_key", default="", help="Digest authentication key for admin user")
+    define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
+    define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
     define("debug", default=False, help="Debug mode")
     define("gsheet_url", default="", help="Google sheet URL")
     define("ssl", default="", help="SSL certs options file (JSON)")
@@ -542,13 +704,13 @@ def main():
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
-    define("site_label", default=Options["site_label"], help="Site label")
+    define("site_label", default=Options["site_label"], help="Site label for Login page")
+    define("site_url", default=Options["site_url"], help="Site URL, e.g., http://example.com")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
-    define("twitter", default="", help="'consumer_key,consumer_secret,tuser1=suser1,...' OR JSON config file for twitter authentication")
     define("xsrf", default=False, help="XSRF cookies for security")
 
-    define("port", default=8888, help="Web server port", type=int)
+    define("port", default=Options['port'], help="Web server port", type=int)
     parse_command_line()
 
     if not options.auth_key and not options.public:
@@ -565,24 +727,6 @@ def main():
         import sdproxy
         sdproxy.Options.update(AUTH_KEY=options.auth_key, SHEET_URL=options.gsheet_url, DEBUG=options.debug,
                                MIN_WAIT_TIME=options.proxy_wait)
-
-    if options.twitter:
-        Login_url = "/_oauth/twitter"
-        if ',' in options.twitter:
-            comps = options.twitter.split(',')
-            rename = {}
-            for name_map in comps[2:]:
-                twitter_name, slidoc_name = name_map.split('=')
-                rename[twitter_name] = slidoc_name
-            Twitter_config.update(consumer_key=comps[0], consumer_secret=comps[1], rename=rename)
-                
-        else:
-            # Twitter config file (JSON): {"consumer_key": ..., "consumer_secret": ..., rename={"aaa":"bbb",...}}
-            with open(options.twitter) as f:
-                Twitter_config.update(json.loads(f.read()))
-
-        for twitter_name, slidoc_name in Twitter_config['rename'].items():
-            print >> sys.stderr, 'RENAME Twitter user %s -> %s' % (twitter_name, slidoc_name)
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     pluginsDir = scriptdir + '/plugins'

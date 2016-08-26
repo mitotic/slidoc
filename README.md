@@ -601,10 +601,10 @@ Concepts: reveal.js, presentation mode
 
 ---
 
-## Printing slidoc documents
+## Exporting or printing slidoc documents
 
-Although `slidoc` are best viewed as HTM documents, sometime you may
-need to print them or save them as PDF files.
+Although `slidoc` documents are best viewed as HTML documents,
+sometime you may need to print them or save them as PDF files.
 
 You can create a single document from a set of Markdown files, open it
 in the browser, and select the *Show all chapters* option. You can
@@ -616,9 +616,15 @@ To customize what appears in the document, you can use the `--strip`
 option. It accepts a list of comma-separated values from the list
 `answers,chapters,concepts,contents,hidden,navigate,notes,rule,sections`
 
-You can also specity `--strip=all` or `--strip=all,but,...`
+You can also specify `--strip=all` or `--strip=all,but,...`
 
-Concepts: printing; PDF
+An alternative way to export Slidoc documents is to install the free
+open source program [wkhtmltopdf](http://wkhtmltopdf.org) that
+converts HTML documents produced by `slidoc.py` to PDF. The included
+program `sdprintpy` is a wrapper around `wkhtmltopdf` that can be used
+to create user-specific PDFs for paced sessions.
+
+Concepts: exporting; printing; PDF; wkhtmltopdf
 
 
 ---

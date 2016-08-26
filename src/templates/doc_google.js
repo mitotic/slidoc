@@ -79,40 +79,42 @@ GService.handleJSONP = function(callback_index, json_obj) {
 	callback(json_obj || null, '', outOfSequence);
 }
 
-var wsCounter = 0;
-var wsReceived = 0;
-var wsRequests = {};
+var wsock = {};
+wsock.counter = 0;
+wsock.received = 0;
+wsock.requests = {};
 
-var wsConnection = null;
-var wsOpened = false;
-var wsLocked = '';
-var wsClosed = '';
-var wsBuffer = [];
+wsock.connection = null;
+wsock.opened = false;
+wsock.locked = '';
+wsock.closed = '';
+wsock.buffer = [];
+wsock.eventReceiver = null;
 
 GService.openWebsocket = function (wsPath) {
     var wsUrl = ((location.protocol === "https:") ? "wss://" : "ws://") + location.host + wsPath;
     Slidoc.log('GService.openWebsocket:', wsUrl);
-    wsConnection = new WebSocket(wsUrl);
+    wsock.connection = new WebSocket(wsUrl);
 
-    wsConnection.onopen = function() {
+    wsock.connection.onopen = function() {
 	Slidoc.log('GService.ws.onopen:');
-	wsOpened = true;
-	while (wsBuffer.length > 0)
-	    wsConnection.send(wsBuffer.shift());
+	wsock.opened = true;
+	while (wsock.buffer.length > 0)
+	    wsock.connection.send(wsock.buffer.shift());
     }
 
-    wsConnection.onerror = function (error) {
+    wsock.connection.onerror = function (error) {
 	Slidoc.log('GService.ws.onerror: Error', error);
 	alert('Failed to open websocket: '+error);
 	document.body.textContent = 'Connection error. Reload page to restart';
     }
 
-    wsConnection.onclose = function (evt) {
-	if (!wsClosed)
-	    wsClosed = 'Connection closed. Reload page to restart.';
+    wsock.connection.onclose = function (evt) {
+	if (!wsock.closed)
+	    wsock.closed = 'Connection closed. Reload page to restart.';
     }
 
-    wsConnection.onmessage = function(evt) {
+    wsock.connection.onmessage = function(evt) {
 	try {
 	    var msgObj = JSON.parse(evt.data);
 	} catch (err) {
@@ -128,10 +130,15 @@ GService.openWebsocket = function (wsPath) {
 	if (!callback_index) {
 	    try {
 		if (callback_method == 'lock') {
-		    if (!wsLocked)
-			wsLocked = callback_args[0] || 'Locked for writing';
+		    if (!wsock.locked)
+			wsock.locked = callback_args[0] || 'Locked for writing';
 		} else if (callback_method == 'close') {
 		    closeWs(callback_args[0]);
+		} else if (callback_method == 'event') {
+		    if (wsock.eventReceiver)
+			wsock.eventReceiver(callback_args);
+		    else
+			Slidoc.log('GService.ws.onmessage: ERROR Ignored event; no receiver '+callback_args[0]);
 		}
 	    } catch (err) {
 		Slidoc.log('GService.ws.onmessage: Error in invoking method '+callback_method);
@@ -139,53 +146,61 @@ GService.openWebsocket = function (wsPath) {
 	    return;
 	}
 
-	if (!(callback_index in wsRequests)) {
+	if (!(callback_index in wsock.requests)) {
 	    Slidoc.log('GService.ws.onmessage: Error - Invalid WS callback index: '+callback_index);
 	    return;
 	}
-	var outOfSequence = (callback_index != wsReceived+1);
-	wsReceived = Math.max(callback_index, wsReceived);
-	var callback = wsRequests[callback_index][0];
-	delete wsRequests[callback_index];
+	var outOfSequence = (callback_index != wsock.received+1);
+	wsock.received = Math.max(callback_index, wsock.received);
+	var callback = wsock.requests[callback_index][0];
+	delete wsock.requests[callback_index];
 	if (callback)
 	    callback(callback_args || null, '', outOfSequence);
     }
 }
 
 function closeWS(msg) {
-    if (wsClosed)
+    if (wsock.closed)
 	return;
-    wsClosed = msg || 'Connection closed. Reload page to restart.';
-    wsConnection.close();
+    wsock.closed = msg || 'Connection closed. Reload page to restart.';
+    wsock.connection.close();
 }
     
 GService.rawWS = function (message) {
-    if (wsClosed) {
-	alert(wsClosed);
+    if (wsock.closed) {
+	alert(wsock.closed);
 	return;
     }
-    if (wsOpened) {
-	wsConnection.send(message);
+    if (wsock.opened) {
+	wsock.connection.send(message);
     } else {
-	if (!wsConnection)
+	if (!wsock.connection)
 	    GService.openWebsocket(Slidoc.websocketPath);
-	wsBuffer.push(message);
+	wsock.buffer.push(message);
     }
 }
 
 GService.requestWS = function (callType, data, callback) {
-    if (data.write && wsLocked) {
-	alert(wsLocked);
+    if (data.write && wsock.locked) {
+	alert(wsock.locked);
 	return;
     }
     var callbackIndex = 0;
     if (callback) {
-	wsCounter += 1;
-	callbackIndex = wsCounter;
-	wsRequests[wsCounter] = [callback];
+	wsock.counter += 1;
+	callbackIndex = wsock.counter;
+	wsock.requests[wsock.counter] = [callback];
     }
     var jsonStr = JSON.stringify([callbackIndex, callType, data]);
     GService.rawWS(jsonStr);
+}
+
+GService.setEventReceiverWS = function (eventReceiver) {
+    wsock.eventReceiver = eventReceiver;
+}
+    
+GService.sendEventWS = function (target, eventType, args) {
+    GService.requestWS('event', [target, eventType, args]);
 }
 
 function handleCallback(responseText, callback, outOfSequence) {
@@ -389,7 +404,18 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    return;
 	} else {
 	    // Use user/token from cookie
-	    this.receiveUserInfo(authType, cookieUserInfo.user, cookieUserInfo.origid, cookieUserInfo.token, cookieUserInfo.name, false, callback);
+	    var cookieUserName = cookieUserInfo.user;
+	    var cookieUserToken = cookieUserInfo.token;
+	    if (cookieUserName == 'admin') {
+		if (window.confirm('Login as _test_user?')) {
+		    cookieUserName = '_test_user';
+		    cookieUserToken = cookieUserToken.split(',')[1];
+		} else {
+		    cookieUserToken = cookieUserToken.split(',')[0];
+		}
+	    }
+
+	    this.receiveUserInfo(authType, cookieUserName, cookieUserInfo.origid, cookieUserToken, cookieUserInfo.name, false, callback);
 	    return;
 	}
     }
@@ -520,12 +546,16 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		    retStatus.info.headers = result.headers;
 
 		if (userId) {
-		    if (!outOfSequence && retStatus.info.prevTimestamp && this.timestamps[userId] && Math.floor(retStatus.info.prevTimestamp) != Math.floor(this.timestamps[userId])) {
-			retval = null;
-			retStatus.error = 'GoogleSheet: ERROR Timestamp mismatch; expected '+this.timestamps[userId]+' but received '+retStatus.info.prevTimestamp+'. Conflicting modifications from another active browser session?';
+		    if (!outOfSequence && retStatus.info.prevTimestamp && this.timestamps[userId] && this.timestamps[userId].time && Math.floor(retStatus.info.prevTimestamp) != Math.floor(this.timestamps[userId].time)) {
+			var errMsg = 'GoogleSheet: ERROR Timestamp mismatch; expected '+this.timestamps[userId].time+'/'+this.timestamps[userId].type+' but received '+retStatus.info.prevTimestamp+'/'+callbackType+'. Conflicting modifications from another active browser session?';
+			console.log(errMsg);
+			if (!Slidoc.websocketPath) {
+			    retval = null;
+			    retStatus.error = errMsg;
+			}
 		    }
 		    if (retStatus.info.timestamp)                 // Update timestamp for user
-			this.timestamps[userId] = Math.max(retStatus.info.timestamp, this.timestamps[userId] || 0);
+			this.timestamps[userId] = {time: Math.max(retStatus.info.timestamp, (this.timestamps[userId] && this.timestamps[userId].time) || 0), type:callbackType};
 		}
 
 	    } else if (result.result == 'error' && result.error) {
@@ -611,8 +641,8 @@ GoogleSheet.prototype.putSend = function (userId, params, callType, callback) {
     if (!(userId in this.userUpdateCounter))
 	this.userUpdateCounter[userId] = 0;
     
-    if (!this.userUpdateCounter[userId] && this.timestamps[userId])  // Send timestamp if no pending updates
-	params.timestamp = this.timestamps[userId];
+    if (!this.userUpdateCounter[userId] && this.timestamps[userId] && this.timestamps[userId].time)  // Send timestamp if no pending updates
+	params.timestamp = this.timestamps[userId].time;
 
     this.userUpdateCounter[userId] += 1;
 
@@ -783,7 +813,7 @@ GoogleSheet.prototype.initCache = function(allRows) {
 	    var rowObj = allRows[ids[j]];
 	    if (rowObj.name && rowObj.Timestamp) {
 		this.roster.push([rowObj.name, ids[j]]);
-		this.timestamps[ids[j]] = (new Date(rowObj.Timestamp)).getTime();
+		this.timestamps[ids[j]] = {time:(new Date(rowObj.Timestamp)).getTime(), type:'initCache'};
 	    }
 	}
     }
@@ -793,7 +823,7 @@ GoogleSheet.prototype.initCache = function(allRows) {
 
 GService.sheetIsLocked = function () {
     if (Slidoc.websocketPath)
-	return wsLocked;
+	return wsock.locked;
     else
 	return '';
 }

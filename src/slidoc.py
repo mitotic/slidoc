@@ -41,6 +41,8 @@ from pygments.util import ClassNotFound
 
 from xml.etree import ElementTree
 
+TESTUSER_ID = '_test_user'
+
 INDEX_SHEET = 'sessions_slidoc'
 SCORE_SHEET = 'scores_slidoc'
 LOG_SHEET = 'slidoc_log'
@@ -53,6 +55,11 @@ PACE_LEVEL = 0
 PACE_DELAY = 1
 TRY_COUNT  = 2
 TRY_DELAY  = 3
+
+BASIC_PACE           = 1
+SLIDEONLY_PACE       = 2
+ADMIN_PACE           = 3
+SLIDEONLY_ADMIN_PACE = 4
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
@@ -786,7 +793,8 @@ class SlidocRenderer(MathRenderer):
 
     def slide_prefix(self, slide_id, classes=''):
         chapter_id, sep, _ = slide_id.partition('-')
-        return '\n<section id="%s" class="slidoc-slide %s-slide %s"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+        # Slides need to be unhidden in Javascript
+        return '\n<section id="%s" class="slidoc-slide %s-slide %s" style="display: none;"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
 
     def hrule(self, implicit=False):
         """Rendering method for ``<hr>`` tag."""
@@ -931,7 +939,6 @@ class SlidocRenderer(MathRenderer):
             if match.group(2) and len(match.group(2)) > 1:
                 short_id = match.group(2)[1:]
                 if not re.match(r'^[-.\w]+$', short_id):
-                    
                     message('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text)
                 header_ref = md2md.ref_key(short_id)
             if match.group(3) and match.group(3).strip():
@@ -1404,6 +1411,8 @@ class SlidocRenderer(MathRenderer):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
+            elif self.questions[-1]['share']:
+                ans_grade_fields += [qno+'_response']
             if ans_grade_fields:
                 if self.questions[-1]['share']:
                     # Share response/explain columns
@@ -1648,12 +1657,12 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
                   'session_hidden']
-Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'sessionWeight',
+Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'adminPaced', 'sessionWeight',
                 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'questions', 'answers',
                 'primary_qconcepts', 'secondary_qconcepts', 'attributes']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, questions, score_weights, grade_weights,
+def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, admin_paced, questions, score_weights, grade_weights,
                          other_weights, p_concepts, s_concepts, sheet_attributes):
     user = 'admin'
     user_token = sliauth.gen_admin_token(hmac_key, user)
@@ -1667,10 +1676,15 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     prev_row = retval.get('value')
     if prev_row:
         revision_col = Index_fields.index('revision')
+        admin_paced_col = Index_fields.index('adminPaced')
         if prev_row[revision_col] != revision:
             message('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
-    row_values = [session_name, session_name, revision, None, due_date, None, None,
+        if prev_row[admin_paced_col]:
+            # Do not overwrite previous value of adminPaced
+            admin_paced = prev_row[admin_paced_col]
+
+    row_values = [session_name, session_name, revision, None, due_date, None, admin_paced, None,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
                 ','.join([x['qtype'] for x in questions]),
                 '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
@@ -1754,7 +1768,7 @@ def plugin_heads(plugin_defs, plugin_loads):
 def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
     if opts == 'args':
         # Generate top navigationmenu from argument filenames
-        label_list = [ ('Home', '/') ] + [ (x.split('-')[-1] if '-' in x else x, site_url+x+'.html') for x in fnames ]
+        label_list = [ ('Home', '/') ] + [ (x.split('-')[-1] if '-' in x else x, site_url+x+'.html') for x in fnames if x != 'index' ]
 
     elif opts in ('dirs', 'files'):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
@@ -1788,7 +1802,7 @@ def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
-    topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" style="font-size:15px;" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
+    topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html
 
@@ -1856,7 +1870,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                  'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
-                 'authType': '', 'features': {} }
+                 'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
     js_params.update(cmd_pace_dict)   # May be overridden by file-specific values
 
@@ -2057,6 +2071,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                                            first_line=True, verbose=config.verbose)
 
             pace_dict, pace_tuple = split_pace(file_config.pace, update=cmd_pace_dict)
+            if pace_tuple[PACE_LEVEL] >= ADMIN_PACE:
+                if pace_tuple[TRY_COUNT] != 1:
+                    pace_tuple = (pace_tuple[PACE_LEVEL], pace_tuple[PACE_DELAY], 1, 0)
+                    pace_dict['tryCount'] = 1
+                    message('PACE-WARNING: Try count set to 1 for instructor-paced session')
             config.pace = pace_tuple
             js_params.update(paceLevel=0, paceDelay=0, tryCount=0, tryDelay=0)
             js_params.update(pace_dict)
@@ -2089,6 +2108,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['plugin_share_voteDate'] = vote_date_str
             js_params['fileName'] = fname
+
+            if config.pace[PACE_LEVEL] >= ADMIN_PACE and not gd_sheet_url:
+                abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(config.pace[PACE_LEVEL]))
 
         if not j or config.separate:
             # First file or separate files
@@ -2238,9 +2260,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if gd_hmac_key:
                 tem_attributes = renderer.sheet_attributes.copy()
                 tem_attributes.update(voteDate=vote_date_str)
-                
-                update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
-                                      due_date, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
+                if 'participation_credit' in config.features:
+                    tem_attributes.update(participationCredit=1)
+                admin_paced = 1 if config.pace[PACE_LEVEL] >= ADMIN_PACE else None
+                update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'], due_date,
+                                      admin_paced, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
                                       js_params['otherWeight'], renderer.qconcepts[0], renderer.qconcepts[1], tem_attributes)
 
             if gd_sheet_url and (gd_hmac_key or not return_html):
@@ -2591,7 +2615,7 @@ strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   quote_response: Display user response as quote (for grading)
 #   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
-features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
+features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'participation_credit', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')

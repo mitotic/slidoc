@@ -105,6 +105,9 @@ var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
 
+var NOCREDIT_SUBMIT = 'nocredit';
+var PARTIAL_SUBMIT = 'partial';
+
 var TRUNCATE_DIGEST = 8;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
 var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
@@ -222,6 +225,7 @@ function handleResponse(evt) {
 	var loggingSheet = (sheetName.slice(-4) == '_log');
 	var sessionParams = null;
 	var sessionAttributes = null;
+	var adminPaced = null;
 	var dueDate = null;
 	var gradeDate = null;
 	var voteDate = null;
@@ -350,9 +354,10 @@ function handleResponse(evt) {
 
 	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
 		// Indexed session
-		sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
+		sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
 		if (sessionParams.attributes)
 		    sessionAttributes = JSON.parse(sessionParams.attributes);
+		adminPaced = sessionParams.adminPaced;
 		dueDate = sessionParams.dueDate;
 		gradeDate = sessionParams.gradeDate;
 		voteDate = sessionAttributes && sessionAttributes.voteDate ? createDate(sessionAttributes.voteDate) : null;
@@ -513,7 +518,7 @@ function handleResponse(evt) {
 
 		var userResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
 
-                if (!adminUser && shareParams['share'] == 'after_submission' && !userResponded)
+                if (!adminUser && paramId != TESTUSER_ID && shareParams['share'] == 'after_submission' && !userResponded)
 		    throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
 
 		var disableVoting = false;
@@ -582,7 +587,7 @@ function handleResponse(evt) {
 		    timeVal = timeVal ? timeVal.getTime() : 0;
 
 		    // Skip incomplete/late submissions (but allow partials)
-		    if (!timeVal || (lateValues[j][0] && lateValues[j][0] != 'partial'))
+		    if (!timeVal || (lateValues[j][0] && lateValues[j][0] != PARTIAL_SUBMIT))
 			continue;
 		    if (!shareSubrow[j][0] || (explainOffset && !shareSubrow[j][1]))
 			continue;
@@ -706,14 +711,17 @@ function handleResponse(evt) {
 			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
-			    if (lateToken == 'partial') {
+			    if (lateToken == PARTIAL_SUBMIT) {
 				if (newRow || !rowUpdates)
 				    throw("Error::Partial submission only works for pre-existing rows");
+                                if (sessionAttributes && sessionAttributes.participationCredit)
+                                    throw("Error::Partial submission not allowed for participation credit")
+
 				partialSubmission = true;
 				rowUpdates = null;
 				selectedUpdates = [ ['Timestamp', null], ['submitTimestamp', null], ['lateToken', lateToken] ];
 				returnMessages.push("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-			    } else if (lateToken == 'none') {
+			    } else if (lateToken == NOCREDIT_SUBMIT) {
 				// Late submission without token
 				allowLateMods = true;
 			    } else {
@@ -864,6 +872,26 @@ function handleResponse(evt) {
 		    // Save updated row
 		    userRange.setValues([rowValues]);
 
+                    if (paramId == TESTUSER_ID && sessionParams && adminPaced) {
+                        var lastSlideCol = columnIndex['lastSlide'];
+                        if (lastSlideCol && rowValues[lastSlideCol-1]) {
+                            // Copy test user last slide number as new adminPaced value
+                            setValue(sheetName, 'adminPaced', rowValues[lastSlideCol-1], INDEX_SHEET);
+                        }
+                        if (params.submit) {
+                            // Use test user submission time as due date for admin-paced sessions
+                            setValue(sheetName, 'dueDate', curDate, INDEX_SHEET);
+                            var idColValues = getColumns('id', modSheet, 1, numStickyRows);
+                            var initColValues = getColumns('initTimestamp', modSheet, 1, numStickyRows);
+                            for (var j=0; j < idColValues.length; j++) {
+                                // Submit all other users who have started a session
+                                if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
+                                    setValue(idColValues[j], 'submitTimestamp', curDate, sheetName);
+                                }
+                            }
+                        }
+                    }
+
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
@@ -944,6 +972,9 @@ function handleResponse(evt) {
 
 		}
 		
+                if (paramId != TESTUSER_ID && sessionParams && adminPaced)
+                    returnInfo['adminPaced'] = adminPaced;
+
 		// Return updated timestamp
 		returnInfo.timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
 		
@@ -1149,7 +1180,7 @@ function getColumns(header, sheetName, colCount, skipRows) {
 }
 
 function lookupValues(idValue, colNames, sheetName, listReturn) {
-    // Return parameters in list colNames for idValue from sessions_slidoc sheet
+    // Return parameters in list colNames for idValue from sheet
     var indexSheet = getSheet(sheetName);
     if (!indexSheet)
 	throw('Index sheet '+sheetName+' not found');
@@ -1167,6 +1198,22 @@ function lookupValues(idValue, colNames, sheetName, listReturn) {
 	listVals.push(retVals[colNames[j]]);
     }
     return listReturn ? listVals : retVals;
+}
+
+function setValue(idValue, colName, colValue, sheetName) {
+    // Set parameter in colName for idValue in sheet
+    var indexSheet = getSheet(sheetName);
+    if (!indexSheet)
+	throw('Index sheet '+sheetName+' not found');
+    var indexColIndex = indexColumns(indexSheet);
+    var indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2);
+    var sessionRow = indexRowIndex[idValue];
+    if (!sessionRow)
+	throw('ID value '+idValue+' not found in index sheet '+sheetName)
+    if (!(colName in indexColIndex))
+        throw('Column '+colName+' not found in index sheet '+sheetName);
+
+    indexSheet.setSheetValues(sessionRow, indexColIndex[colName], 1, 1, [[colValue]]);
 }
 
 function locateNewRow(newName, newId, nameValues, idValues, skipId) {
@@ -1709,7 +1756,7 @@ function updateScoreSheet() {
 		    lookups.push( vlookup('q_other', j+scoreStartRow) );
 		
 		if (lookups.length)
-		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="none", "", ' + lookups.join('+') + ' ))']);
+		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="'+NOCREDIT_SUBMIT+'", "", ' + lookups.join('+') + ' ))']);
 	    }
 
 	    if (scoreAvgRow)
