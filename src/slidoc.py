@@ -41,6 +41,7 @@ from pygments.util import ClassNotFound
 
 from xml.etree import ElementTree
 
+ADMINUSER_ID = 'admin'
 TESTUSER_ID = '_test_user'
 
 INDEX_SHEET = 'sessions_slidoc'
@@ -1664,10 +1665,10 @@ Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'f
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, admin_paced, questions, score_weights, grade_weights,
                          other_weights, p_concepts, s_concepts, sheet_attributes):
-    user = 'admin'
+    user = ADMINUSER_ID
     user_token = sliauth.gen_admin_token(hmac_key, user)
 
-    get_params = {'sheet': INDEX_SHEET, 'id': session_name, 'admin': user, 'token': user_token,
+    get_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
                   'get': '1', 'headers': json.dumps(Index_fields)}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
@@ -1692,7 +1693,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
                 '; '.join(sort_caseless(list(s_concepts))),
                 json.dumps(sheet_attributes) ]
 
-    post_params = {'sheet': INDEX_SHEET, 'admin': user, 'token': user_token,
+    post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
                   }
     retval = http_post(sheet_url, post_params)
@@ -1702,9 +1703,9 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
 
                 
 def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
-    user = 'admin'
+    user = ADMINUSER_ID
     user_token = sliauth.gen_admin_token(hmac_key, user) if hmac_key else ''
-    post_params = {'admin': user, 'token': user_token, 'sheet': sheet_name,
+    post_params = {ADMINUSER_ID: user, 'token': user_token, 'sheet': sheet_name,
                    'headers': json.dumps(headers)}
     if row:
         post_params['row'] = json.dumps(row)
@@ -1962,7 +1963,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 if user_id:
                     label = '%s/%s' % (script, user_id)
                     query += '&testuser=%s&testkey=%s' % (user_id, gd_hmac_key)
-                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == 'admin' else sliauth.gen_user_token(gd_hmac_key, user_id))
+                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == ADMINUSER_ID else sliauth.gen_user_token(gd_hmac_key, user_id))
                 else:
                     label = script
                 test_params.append([label, query, proxy_query])

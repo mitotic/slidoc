@@ -94,7 +94,7 @@ PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
 
-ADMIN_USER = 'admin'
+ADMINUSER_ID = 'admin'
 TESTUSER_ID = '_test_user'
     
 USER_COOKIE_SECURE = "slidoc_user_secure"
@@ -111,7 +111,7 @@ class UserIdMixin(object):
             print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
-        if username == ADMIN_USER:
+        if username == ADMINUSER_ID:
             token = token + ',' + sliauth.gen_user_token(token, TESTUSER_ID)
         cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
@@ -121,8 +121,23 @@ class UserIdMixin(object):
         self.clear_cookie(USER_COOKIE_SECURE)
         self.clear_cookie(SERVER_COOKIE)
 
+    def get_path_base(self, path):
+        # Extract basename, without file extension, from URL path
+        basename = path.split('/')[-1]
+        if '.' in basename:
+            basename, sep, suffix = basename.rpartition('.')
+        return basename
+
+    def get_alt_name(self, username):
+        if username in Global.rename:
+            alt_name, _, session_prefix = Global.rename[username].partition(':')
+            # Alt name may be followed by an option session name prefix for which the altname is valid, e.g., admin:ex
+            if not session_prefix or self.get_path_base(self.get_argument("next", "/")).startswith(session_prefix):
+                return alt_name
+        return username
+
     def check_access(self, username, token):
-        if username == ADMIN_USER:
+        if username == ADMINUSER_ID:
             return token == Options['auth_key']
         else:
             return token == sliauth.gen_user_token(Options['auth_key'], username)
@@ -169,7 +184,7 @@ class HomeHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath, inner=None):
-        if self.get_current_user() not in (ADMIN_USER, TESTUSER_ID):
+        if self.get_current_user() not in (ADMINUSER_ID, TESTUSER_ID):
             self.write('Action not permitted: '+self.get_current_user())
             return
         import sdproxy
@@ -268,7 +283,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         if not self.userId:
             self.close()
 
-        self.eventBuffer = collections.OrderedDict()
+        self.eventBuffer = []
         self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
         self.eventFlusher.start()
 
@@ -288,14 +303,33 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     def flushEventBuffer(self):
         while self.eventBuffer:
-            evType, fromArgs = self.eventBuffer.popitem(last=False)
-            # Message: source, evType, eventArgs
-            msg = [0, 'event', [fromArgs[0], evType, fromArgs[1]]]
+            # sendEvent: source, evName, evArg1, ...
+            sendEvent = self.eventBuffer.pop(0)
+            # Message: source, evName, [args]
+            msg = [0, 'event', [sendEvent[0], sendEvent[1], sendEvent[2:]] ]
             self.write_message(json.dumps(msg, default=sliauth.json_default))
 
     def _close_on_timeout(self):
         if self.ws_connection:
             self.close()
+
+    def getPluginMethod(self, pluginName, pluginMethodName):
+        if pluginName not in self.pluginInstances:
+            pluginModule = getattr(plugins, pluginName, None)
+            if not pluginModule:
+                raise Exception('Plugin '+pluginName+' not loaded!')
+            pluginClass = getattr(pluginModule, pluginName)
+            if not pluginClass:
+                raise Exception('Plugin class '+pluginName+'.'+pluginName+' not defined!')
+            try:
+                self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), self.pathUser[0], self.pathUser[1])
+            except Exception, err:
+                raise Exception('Error in creating instance of plugin '+pluginName+': '+err.message)
+
+        pluginMethod = getattr(self.pluginInstances[pluginName], pluginMethodName, None)
+        if not pluginMethod:
+            raise Exception('Plugin '+pluginName+' has no method '+pluginMethodName)
+        return pluginMethod
 
     def on_message(self, message):
         outMsg = self.on_message_aux(message)
@@ -352,21 +386,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 if len(args) < 2:
                     raise Exception('Too few arguments to invoke plugin method: '+' '.join(args))
                 pluginName, pluginMethodName = args[:2]
-                if pluginName not in self.pluginInstances:
-                    pluginModule = getattr(plugins, pluginName, None)
-                    if not pluginModule:
-                        raise Exception('Plugin '+pluginName+' not loaded!')
-                    pluginClass = getattr(pluginModule, pluginName)
-                    if not pluginClass:
-                        raise Exception('Plugin class '+pluginName+'.'+pluginName+' not defined!')
-                    try:
-                        self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), self.pathUser[0], self.pathUser[1])
-                    except Exception, err:
-                        raise Exception('Error in creating instance of plugin '+pluginName+': '+err.message)
-
-                pluginMethod = getattr(self.pluginInstances[pluginName], pluginMethodName, None)
-                if not pluginMethod:
-                    raise Exception('Plugin '+pluginName+' has no method '+pluginMethodName)
+                pluginMethod = self.getPluginMethod(pluginName, pluginMethodName)
 
                 if pluginMethodName.startswith('_upload'):
                     # plugin._upload*(arg1, ..., content=None)
@@ -383,31 +403,45 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 except Exception, err:
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
-
             elif method == 'event':
-                eventTarget, eventType, eventArgs = args
+                # event_target: '*' OR 'admin' or '' (for server) (IGNORED FOR NOW)
+                # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
+                # event_name = [plugin.]event_name
+                evTarget, evType, evName, evArgs = args
                 if Options['debug']:
-                    print >> sys.stderr, 'sdserver.on_message_aux: event', self.userId, eventType
+                    print >> sys.stderr, 'sdserver.on_message_aux: event', self.userId, evType, evName
 
-                immediate = eventType in ('AdminPacedAdvance',)
                 pathConnections = self._connections[self.pathUser[0]]
                 for toUser, connections in pathConnections.items():
                     if toUser == self.userId:
                         continue
-                    if self.userId in (ADMIN_USER, TESTUSER_ID):
+                    if self.userId in (ADMINUSER_ID, TESTUSER_ID):
                         # From special user: broadcast to all but the sender
                         pass
-                    elif toUser in (ADMIN_USER, TESTUSER_ID):
+                    elif toUser in (ADMINUSER_ID, TESTUSER_ID):
                         # From non-special user: send only to special users
                         pass
                     else:
                         continue
 
+                    # Event [source, name, arg1, arg2, ...]
+                    sendEvent = [self.userId, evName] + evArgs
                     for conn in connections:
-                        # If not immediate, only the last occurrence of an event type is buffered
-                        conn.eventBuffer[eventType] = [self.userId, eventArgs]
-                        if immediate:
-                            conn.flushEventBuffer()
+                        if evType > 0:
+                            # If evType > 0, only the latest occurrence of an event type with same evType name+arguments is buffered
+                            for j in range(len(conn.eventBuffer)):
+                                if conn.eventBuffer[j][1:evType+1] == sendEvent[1,evType+1]:
+                                    conn.eventBuffer[j] = sendEvent
+                                    sendEvent = None
+                                    break
+                            if sendEvent:
+                                conn.eventBuffer.append(sendEvent)
+                        else:
+                            # evType <= 0
+                            conn.eventBuffer.append(sendEvent)
+                            if evType == -1:
+                                conn.flushEventBuffer()
+
 
             if callback_index:
                 return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
@@ -481,10 +515,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
             if not userId:
                 return None
-            basename = self.request.path.split('/')[-1]
-            if '.' in basename:
-                basename, sep, suffix = basename.rpartition('.')
-            if basename.endswith('-'+userId) or userID == ADMIN_USER:
+            if self.get_path_base(self.request.path).endswith('-'+userId) or userID == ADMINUSER_ID:
                 return userId
             raise tornado.web.HTTPError(404)
 
@@ -522,7 +553,7 @@ class AuthLoginHandler(BaseHandler):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
 
     def login(self, username, token, next="/"):
-        if Options['no_auth'] and Options['debug'] and not Options['gsheet_url'] and username != ADMIN_USER:
+        if Options['no_auth'] and Options['debug'] and not Options['gsheet_url'] and username != ADMINUSER_ID:
             # No authentication option for testing local-only proxy
             token = sliauth.gen_user_token(Options['auth_key'], username)
         auth = self.check_access(username, token)
@@ -570,7 +601,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                     return
                 username = username[:-len(Global.login_domain)]
 
-            if username == ADMIN_USER:
+            if username in (ADMINUSER_ID, TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
 
             displayName = user.get('family_name','').replace(',', ' ')
@@ -580,10 +611,8 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             if not displayName:
                 displayName = username
 
-            if username in Global.rename:
-                username = Global.rename[username]
-
-            token = Options['auth_key'] if username == ADMIN_USER else sliauth.gen_user_token(Options['auth_key'], username)
+            username = self.get_alt_name(username)
+            token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
             self.set_id(username, user['email'], token, displayName)
             self.redirect(self.get_argument("next", "/"))
             return
@@ -605,12 +634,11 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             user = yield self.get_authenticated_user()
             # Save the user using e.g. set_secure_cookie()
             username = user['username']
-            if username == ADMIN_USER:
+            if username in (ADMINUSER_ID, TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
-            if username in Global.rename:
-                username = Global.rename[username]
+            username = self.get_alt_name(username)
             displayName = user['name']
-            token = Options['auth_key'] if username == ADMIN_USER else sliauth.gen_user_token(Options['auth_key'], username)
+            token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
             self.set_id(username, user['username'], token, displayName)
             self.redirect(self.get_argument("next", "/"))
         else:

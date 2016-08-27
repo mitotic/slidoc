@@ -74,13 +74,13 @@ TestScript.prototype.showStatus = function (state) {
     statusElem.textContent = msg;
 }
 
-TestScript.prototype.reportEvent = function (eventName) {
+TestScript.prototype.reportTestAction = function (eventName) {
     if (!this.activeScript)
 	return null;
     if (this.stepEvent)
 	this.advanceStep();
 
-    Slidoc.log('TestScript.reportEvent: ', this.curstep, eventName);
+    Slidoc.log('TestScript.reportTestAction: ', this.curstep, eventName);
     var curScript = this.scripts[this.activeScript];
     while (this.curstep < curScript.length) {
 	var expectEvent = curScript[this.curstep][0];
@@ -99,7 +99,7 @@ TestScript.prototype.reportEvent = function (eventName) {
 	    break;
 	this.curstep++;
     }
-    Slidoc.log('TestScript.reportEvent:B ', this.curstep, expectName, this.activeScript);
+    Slidoc.log('TestScript.reportTestAction:B ', this.curstep, expectName, this.activeScript);
     if (this.curstep >= curScript.length) {
 	this.activeScript = '';
 	alert("TestScript "+this.activeScript+" completed all steps");
@@ -252,7 +252,7 @@ TestScript.prototype.eventAction = function(commands) {
 		document.getElementById(slide_id+'-grade-click').onclick();
 	    break;
 	case 'next':
-	    setTimeout(Slidoc.reportEvent.bind(null, 'nextEvent'), 500);
+	    setTimeout(Slidoc.reportTestAction.bind(null, 'nextEvent'), 500);
 	    break;
 	case 'wait':
 	    break;

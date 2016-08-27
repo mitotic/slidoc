@@ -98,6 +98,8 @@ attributes:
 
 > `this.adminState`: *true* if grading
 
+> `this.testUser`: *true* if test user
+
 > `this.sessionName`: session name
 
 > `this.remoteCall`: Invoke Python plugin of same name on server

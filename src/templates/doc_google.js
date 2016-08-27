@@ -199,8 +199,8 @@ GService.setEventReceiverWS = function (eventReceiver) {
     wsock.eventReceiver = eventReceiver;
 }
     
-GService.sendEventWS = function (target, eventType, args) {
-    GService.requestWS('event', [target, eventType, args]);
+GService.sendEventWS = function (target, eventType, eventName, args) {
+    GService.requestWS('event', [target, eventType, eventName, args]);
 }
 
 function handleCallback(responseText, callback, outOfSequence) {

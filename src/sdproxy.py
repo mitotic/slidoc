@@ -40,12 +40,11 @@ RETRY_MAX_COUNT = 5      # Maximum number of failed Google Sheet requests
 CACHE_HOLD_TIME = 3600   # Maximum time (sec) to hold sheet in cache
 
 # Should be consistent with slidoc_sheets.js
-ADMIN_USER = 'admin'
-
 REQUIRE_LOGIN_TOKEN = True
 REQUIRE_LATE_TOKEN = True
 SHARE_AVERAGES = False
 
+ADMINUSER_ID = 'admin'
 MAXSCORE_ID = '_max_score'
 AVERAGE_ID = '_average'
 TESTUSER_ID = '_test_user'   #var
@@ -112,7 +111,7 @@ def getSheet(sheetName, optional=False):
         if optional and retval['error'].startswith('Error:NOSHEET:'):
             return None
         else:
-            raise Exception("Error in accessing sheet '%s': %s" % (sheetName, retval['error']))
+            raise Exception("%s (Error in accessing sheet '%s')" % (retval['error'], sheetName))
     rows = retval.get('value')
     if not rows:
         raise Exception("Empty sheet '%s'" % sheetName)

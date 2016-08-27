@@ -77,8 +77,6 @@ var AUTH_KEY = 'testkey';   // Set this value for secure administrative access t
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 
-var ADMIN_USER = 'admin';
-
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
 var SHARE_AVERAGES = false;
@@ -87,6 +85,7 @@ var SHARE_AVERAGES = false;
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
 
+var ADMINUSER_ID = 'admin';
 var MAXSCORE_ID = '_max_score';
 var AVERAGE_ID = '_average';
 var TESTUSER_ID = '_test_user';

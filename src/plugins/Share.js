@@ -5,7 +5,7 @@ Share = {
 	Slidoc.log('Slidoc.Plugins.Share.init:', this);
 	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
 	this.countElem = document.getElementById(this.pluginId+'-sharecount');
-	if (this.adminState || this.userId == '_test_user')
+	if (this.adminState || this.testUser)
 	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
 	this.persist.answered = {};
     },
@@ -17,12 +17,15 @@ Share = {
 	    return;
 	this.getResponses();
 	toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
+	if (!this.testUser)
+	    Slidoc.sendEvent(2, 'Share.answerNotify', this.qattributes.qnumber);
     },
 
-    updateResponses: function () {
-	Slidoc.log('Slidoc.Plugins.Share.updateResponses:');
-	self.getResponses();
-    }
+    answerNotify: function (qnumber) {
+	Slidoc.log('Slidoc.Plugins.Share.answerNotify:');
+	if (this.testUser && qnumber == this.qattributes.qnumber)
+	    self.getResponses();
+    },
 
     getResponses: function () {
 	Slidoc.log('Slidoc.Plugins.Share.getResponses:');
