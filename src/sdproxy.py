@@ -56,7 +56,7 @@ INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
 
-NOCREDIT_SUBMIT = 'nocredit'
+LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
 TRUNCATE_DIGEST = 8
@@ -727,7 +727,7 @@ def handleResponse(params):
                         for j in range(nRows):
                             shareSubrow[j][shareOffset] = ''
 
-                sortVotes = tallyVotes and (votingCompleted or adminUser)
+                sortVotes = tallyVotes and (votingCompleted or adminUser or (shareParams.get('vote') == 'show_live' and paramId == TESTUSER_ID))
                 respCount = {}
                 sortVals = []
                 for j in range(nRows):
@@ -774,9 +774,11 @@ def handleResponse(params):
                         continue
                     if respCount[subrow[0]] > 1:
                         # Response occurs multiple times
-                        subrow = [subrow[0]+' ('+str(respCount[subrow[0]])+')'] + subrow[1:]
+                        newSubrow = [subrow[0]+' ('+str(respCount[subrow[0]])+')'] + subrow[1:]
+                    else:
+                        newSubrow = subrow
                     del respCount[subrow[0]]
-                    returnValues.append( subrow )
+                    returnValues.append( newSubrow )
 
         else:
             if rowUpdates and selectedUpdates:
@@ -865,9 +867,12 @@ def handleResponse(params):
                                 rowUpdates = None
                                 selectedUpdates = [ ['Timestamp', None], ['submitTimestamp', None], ['lateToken', lateToken] ]
                                 returnMessages.append("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
-                            elif lateToken == NOCREDIT_SUBMIT:
-                                # Late submission without token
+                            elif lateToken == LATE_SUBMIT:
+                                # Late submission for reduced/no credit
                                 allowLateMods = True
+                            elif ':' not in lateToken:
+                                # Invalid token
+                                returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
                             else:
                                 comps = splitToken(lateToken)
                                 dateStr = comps[0]
@@ -876,7 +881,7 @@ def handleResponse(params):
                                     dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
                                     pastSubmitDeadline = (curTime > sliauth.epoch_ms(dueDate))
                                 else:
-                                    returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
+                                    returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
 
                         returnInfo['dueDate'] = dueDate # May have been updated
                         if not allowLateMods and not partialSubmission:

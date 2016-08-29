@@ -52,15 +52,9 @@ SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
-PACE_LEVEL = 0
-PACE_DELAY = 1
-TRY_COUNT  = 2
-TRY_DELAY  = 3
-
-BASIC_PACE           = 1
-SLIDEONLY_PACE       = 2
-ADMIN_PACE           = 3
-SLIDEONLY_ADMIN_PACE = 4
+BASIC_PACE    = 1
+QUESTION_PACE = 2
+ADMIN_PACE    = 3
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
         'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
@@ -824,18 +818,18 @@ class SlidocRenderer(MathRenderer):
             if self.questions[-1]['share'] and 'Share' not in self.slide_plugin_embeds:
                 prefix_html += self.embed_plugin_body('Share', self.get_slide_id())
 
-            if self.options['config'].pace[PACE_LEVEL] and self.slide_forward_links:
+            if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
                 self.qforward[self.slide_forward_links[0]].append(len(self.questions))
                 if len(self.slide_forward_links) > 1:
                     message("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]))
 
-        if last_slide and self.options['config'].pace[PACE_LEVEL]:
+        if last_slide and self.options['config'].pace:
             # Last paced slide
             if self.qtypes[-1]:
                 abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
 
-            if not self.options['config'].pace[TRY_COUNT] and 'Submit' not in self.plugin_loads:
+            if self.options['config'].pace == BASIC_PACE and 'Submit' not in self.plugin_loads:
                 # Submit button not previously included in this slide or earlier slides
                 prefix_html += self.embed_plugin_body('Submit', self.get_slide_id())
 
@@ -928,7 +922,7 @@ class SlidocRenderer(MathRenderer):
             # Implicit horizontal rule before Level 1/2 header
             prev_slide_end = self.hrule(implicit=True)
         
-        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id())
+        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id()) + (' slidoc-header %s-header' % self.get_slide_id())
         if 'headers' in self.options['config'].strip:
             hdr_class += ' slidoc-hidden'
 
@@ -1079,7 +1073,7 @@ class SlidocRenderer(MathRenderer):
         params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
         if name == 'Q':
             return prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''' % params
-        elif self.options['config'].hide or self.options['config'].pace[PACE_LEVEL]:
+        elif self.options['config'].hide or self.options['config'].pace:
             return prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
         else:
             return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
@@ -1153,14 +1147,23 @@ class SlidocRenderer(MathRenderer):
         text = opt_comps[0]
 
         weight_answer = ''
+        retry_counts = [0, 0]  # Retry count, retry delay
         opt_values = { 'explain': ('text', 'markdown'),
                        'share': ('after_due_date', 'after_submission', 'after_grading'),
                        'vote': ('show_completed', 'show_live') }
         answer_opts = { 'explain': '', 'share': '', 'vote': ''}
         for opt in opt_comps[1:]:
-            weight_match = re.match(r'^weight=([\s\d,]+)$', opt)
-            if weight_match:
-                weight_answer = weight_match.group(1).strip()
+            num_match = re.match(r'^(weight|retry)=([\s\d,]+)$', opt)
+            if num_match:
+                if num_match.group(1) == 'weight':
+                    weight_answer = num_match.group(2).strip()
+                else:
+                    num_comps = [int(x.strip() or '0') for x in num_match.group(2).strip().split(',')]
+                    retry_counts = [num_comps[0], 0]
+                    if len(num_comps) > 1 and num_comps[0]:
+                        retry_counts[1] = num_comps[1]
+            elif opt == 'retry':
+                retry_counts = [1, 0]
             else:
                 option_match = re.match(r'^(explain|share|vote)(=(\w+))?$', opt)
                 if option_match:
@@ -1289,6 +1292,8 @@ class SlidocRenderer(MathRenderer):
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
                                   explain=answer_opts['explain'], share=answer_opts['share'], vote=answer_opts['vote'],
                                   weight=1, gweight=0, vweight=0, hints=[])
+        if retry_counts[0]:
+            self.questions[-1].update(retry=retry_counts)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(html=correct_html)
         if self.block_input_counter:
@@ -1305,11 +1310,11 @@ class SlidocRenderer(MathRenderer):
 
         id_str = self.get_slide_id()
         ans_params = { 'sid': id_str, 'qno': len(self.questions)}
-        if not self.options['config'].pace[PACE_LEVEL] and ('answers' in self.options['config'].strip or not correct_val):
+        if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
-        hide_answer = self.options['config'].hide or self.options['config'].pace[PACE_LEVEL]
+        hide_answer = self.options['config'].hide or self.options['config'].pace
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
             message("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
@@ -1447,7 +1452,7 @@ class SlidocRenderer(MathRenderer):
         tags = [x.strip() for x in text.split(";")]
         nn_tags = [x for x in tags if x]   # Non-null tags
 
-        if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace[PACE_LEVEL]):
+        if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
             # Track/check tags
             if self.qtypes[-1] in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
@@ -1495,15 +1500,19 @@ class SlidocRenderer(MathRenderer):
 
     
     def slidoc_hint(self, name, text):
-        if not self.options['config'].pace[TRY_COUNT]:
-            message("    ****HINT-WARNING: %s: Hint displayed for non-question-paced session in slide %s" % (self.options["filename"], self.slide_number))
         if not self.qtypes[-1]:
             abort("    ****HINT-ERROR: %s: Hint must appear after Answer:... in slide %s" % (self.options["filename"], self.slide_number))
+
+        if self.options['config'].pace > QUESTION_PACE:
+            abort("    ****HINT-ERROR: %s: Hint displayed for non-question-paced session in slide %s" % (self.options["filename"], self.slide_number))
 
         if self.notes_end is not None:
             abort("    ****HINT-ERROR: %s: Hint may not appear within Notes section of slide %s" % (self.options["filename"], self.slide_number))
         if not isfloat(text) or abs(float(text)) >= 100.0:
             abort("    ****HINT-ERROR: %s: Invalid penalty %s following Hint. Expecting a negative percentage in slide %s" % (self.options["filename"], text, self.slide_number))
+
+        if self.options['config'].pace == BASIC_PACE:
+            message("    ****HINT-WARNING: %s: Hint displayed for basic-paced session in slide %s" % (self.options["filename"], self.slide_number))
 
         hint_penalty = abs(float(text)) / 100.0
             
@@ -1813,23 +1822,6 @@ scriptdir = os.path.dirname(os.path.realpath(__file__))
 def message(*args):
     print(*args, file=sys.stderr)
 
-def split_pace(pace_arg, update={}):
-    comps = pace_arg.split(',') if pace_arg else []
-    pace_dict = {}
-    if len(comps) > 0 and comps[0]:
-        pace_dict['paceLevel'] = int(comps[0])
-    if len(comps) > 1 and comps[1]:
-        pace_dict['paceDelay'] = int(comps[1])
-    if len(comps) > 2 and comps[2]:
-        pace_dict['tryCount'] = int(comps[2])
-    if len(comps) > 3 and comps[3]:
-        pace_dict['tryDelay'] = int(comps[3])
-
-    pace_dict.update(update)
-
-    pace_tuple = (pace_dict.get('paceLevel',0), pace_dict.get('paceDelay',0), pace_dict.get('tryCount',0), pace_dict.get('tryDelay',0))
-    return pace_dict, pace_tuple
-
 def process_input(input_files, input_paths, config_dict, return_html=False):
     global message
     messages = []
@@ -1861,19 +1853,16 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
-    cmd_pace_dict, cmd_pace_tuple = split_pace(config.pace)
-    config.pace = cmd_pace_tuple  # May be overridden by file-specific values
-
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0, 'otherWeight': 0,
-                 'paceLevel': 0, 'paceDelay': 0, 'tryCount': 0, 'tryDelay': 0,
+                 'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
                  'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
                  'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
-    js_params.update(cmd_pace_dict)   # May be overridden by file-specific values
+    js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
     js_params['printable'] = config.printable
@@ -2071,16 +2060,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             file_config = parse_merge_args(read_first_line(f), fname, parser, {}, include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
 
-            pace_dict, pace_tuple = split_pace(file_config.pace, update=cmd_pace_dict)
-            if pace_tuple[PACE_LEVEL] >= ADMIN_PACE:
-                if pace_tuple[TRY_COUNT] != 1:
-                    pace_tuple = (pace_tuple[PACE_LEVEL], pace_tuple[PACE_DELAY], 1, 0)
-                    pace_dict['tryCount'] = 1
-                    message('PACE-WARNING: Try count set to 1 for instructor-paced session')
-            config.pace = pace_tuple
-            js_params.update(paceLevel=0, paceDelay=0, tryCount=0, tryDelay=0)
-            js_params.update(pace_dict)
-            if config.pace[PACE_LEVEL]:
+            js_params['paceLevel'] = (file_config.pace or 0) if config.pace is None else config.pace or 0
+            if js_params['paceLevel']:
                 # Note: pace does not work with combined files
                 if config.due_date is not None:
                     if config.due_date:
@@ -2103,6 +2084,10 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
             js_params['sessionPrereqs'] =  (file_config.prereqs or '') if config.prereqs is None else config.prereqs
             js_params['sessionRevision'] = (file_config.revision or '') if config.revision is None else config.revision
+            js_params['slideDelay'] = (file_config.slide_delay or 0) if config.slide_delay is None else config.slide_delay or 0
+
+            js_params['lateCredit'] = (file_config.late_credit or 0) if config.late_credit is None else config.late_credit or 0
+            js_params['participationCredit'] = (file_config.participation or None) if config.participation is None else config.participation
                 
             topnav_opts = (file_config.topnav or '') if config.topnav is None else config.topnav
             gd_sheet_url = (file_config.gsheet_url or '') if config.gsheet_url is None else config.gsheet_url
@@ -2110,8 +2095,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['plugin_share_voteDate'] = vote_date_str
             js_params['fileName'] = fname
 
-            if config.pace[PACE_LEVEL] >= ADMIN_PACE and not gd_sheet_url:
-                abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(config.pace[PACE_LEVEL]))
+            if js_params['paceLevel'] >= ADMIN_PACE and not gd_sheet_url:
+                abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(js_params['paceLevel']))
+
+            if js_params['paceLevel'] >= ADMIN_PACE and 'randomize_choice' in config.features:
+                abort('PACE-ERROR: randomize_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
         if not j or config.separate:
             # First file or separate files
@@ -2173,7 +2161,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             # Include column for total grades
             max_score_fields += [max_params['q_grades']]
         max_score_fields += renderer.max_fields if renderer.max_fields else []
-        if config.pace[PACE_LEVEL]:
+        if js_params['paceLevel']:
             # File-specific js_params
             js_params['pacedSlides'] = renderer.slide_number
             js_params['questionsMax'] = max_params['questionsCount']
@@ -2223,7 +2211,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
         else:
-            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=config.pace[PACE_LEVEL] and not config.printable)
+            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=js_params['paceLevel'] and not config.printable)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -2261,9 +2249,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if gd_hmac_key:
                 tem_attributes = renderer.sheet_attributes.copy()
                 tem_attributes.update(voteDate=vote_date_str)
-                if 'participation_credit' in config.features:
-                    tem_attributes.update(participationCredit=1)
-                admin_paced = 1 if config.pace[PACE_LEVEL] >= ADMIN_PACE else None
+                tem_attributes.update(lateCredit=js_params['lateCredit'])
+                tem_attributes.update(participationCredit=js_params['participationCredit'])
+                admin_paced = 1 if js_params['paceLevel'] >= ADMIN_PACE else None
                 update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'], due_date,
                                       admin_paced, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
                                       js_params['otherWeight'], renderer.qconcepts[0], renderer.qconcepts[1], tem_attributes)
@@ -2553,7 +2541,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'pace', 'prereqs', 'revision', 'topnav', 'vote_date'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'pace', 'participation', 'prereqs', 'revision', 'slide_delay', 'topnav', 'vote_date'])
     
 def read_first_line(file):
     # Read first line of file and rewind it
@@ -2610,15 +2598,22 @@ strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 # Features
 #   assessment: Do not warn about concept coverage for assessment documents
 #   delay_answers: Correct answers and score are hidden from users until session is graded
-#   grade_response: Grade text responses
+#   equation_number: Number equations sequentially
+#   grade_response: Grade text responses and explanations; provide comments
+#   incremental_slides: Display portions of slides incrementally (only for the current last slide)
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
 #   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
+#   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
+#   slides_only: Only slide view is permitted; no scrolling document display
+#   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
-features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'participation_credit', 'progress_bar', 'quote_response', 'randomize_choice', 'tex_math', 'untitled_number']
+
+features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
 parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
 parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
@@ -2637,16 +2632,18 @@ parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (defa
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
-parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
+parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
-parser.add_argument('--pace', metavar='PACE_LEVEL,DELAY_SEC,TRY_COUNT,TRY_DELAY', help='Options for paced session using combined file, e.g., 1,0,1 to force answering questions')
+parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')
+parser.add_argument('--participation', help='Participation credit', action="store_true", default=None)
 parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
+parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
 parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
 parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')

@@ -104,7 +104,7 @@ var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
 
-var NOCREDIT_SUBMIT = 'nocredit';
+var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
 var TRUNCATE_DIGEST = 8;
@@ -573,7 +573,7 @@ function handleResponse(evt) {
 		    }
 		}
 
-                var sortVotes = tallyVotes && (votingCompleted || adminUser);
+                var sortVotes = tallyVotes && (votingCompleted || adminUser || (shareParams.vote == 'show_live' && paramId == TESTUSER_ID));
                 var respCount = {};
 		var sortVals = [];
 		for (var j=0; j<nRows; j++) {
@@ -624,10 +624,12 @@ function handleResponse(evt) {
                         continue;
 		    if (respCount[subrow[0]] > 1) {
                         // Response occurs multiple times
-                        subrow = [subrow[0]+' ('+respCount[subrow[0]]+')'].concat(subrow.slice(1));
-                    }
+                        var newSubrow = [subrow[0]+' ('+respCount[subrow[0]]+')'].concat(subrow.slice(1));
+                    } else {
+			var newSubrow = subrow;
+		    }
                     delete respCount[subrow[0]];
-                    returnValues.push( subrow );
+                    returnValues.push( newSubrow );
 		}
 	    }
 	} else {
@@ -720,9 +722,12 @@ function handleResponse(evt) {
 				rowUpdates = null;
 				selectedUpdates = [ ['Timestamp', null], ['submitTimestamp', null], ['lateToken', lateToken] ];
 				returnMessages.push("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-			    } else if (lateToken == NOCREDIT_SUBMIT) {
-				// Late submission without token
+			    } else if (lateToken == LATE_SUBMIT) {
+				// Late submission for reduced/no credit
 				allowLateMods = true;
+			    } else if (lateToken.indexOf(':') < 0) {
+                                // Invalid token
+                                returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
 			    } else {
 				var comps = splitToken(lateToken);
 				var dateStr = comps[0];
@@ -731,7 +736,7 @@ function handleResponse(evt) {
 				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
 				    pastSubmitDeadline = (curTime > dueDate.getTime());
 				} else {
-				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
+				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
 				}
 			    }
 			}
@@ -1677,7 +1682,10 @@ function updateScoreSheet() {
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
 
-	    var sessionParams = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight'], INDEX_SHEET);
+	    var sessionAttributes = null;
+	    var sessionParams = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes'], INDEX_SHEET);
+	    if (sessionParams.attributes)
+		    sessionAttributes = JSON.parse(sessionParams.attributes);
 	    var gradeDate = parseNumber(sessionParams.gradeDate) || null;
 	    var sessionWeight = parseNumber(sessionParams.sessionWeight) || 0;
 	    var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
@@ -1754,8 +1762,17 @@ function updateScoreSheet() {
 		if (otherWeight)
 		    lookups.push( vlookup('q_other', j+scoreStartRow) );
 		
-		if (lookups.length)
-		    scoreFormulas.push(['=IFERROR(IF('+vlookup('lateToken', j+scoreStartRow)+'="'+NOCREDIT_SUBMIT+'", "", ' + lookups.join('+') + ' ))']);
+		if (lookups.length) {
+		    var lateToken = vlookup('lateToken', j+scoreStartRow);
+		    var cumScore = lookups.join('+');
+		    var combinedScore = '';
+		    if (sessionAttributes && sessionAttributes.lateCredit) {
+			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", '+sessionAttributes.lateCredit+', 1)*( '+cumScore+' )';
+		    } else {
+			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", "", '+cumScore+ ' )';
+		    }
+		    scoreFormulas.push(['=IFERROR('+combinedScore+')']);
+		}
 	    }
 
 	    if (scoreAvgRow)

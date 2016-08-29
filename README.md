@@ -247,22 +247,19 @@ Slidoc supports a restrictive type of slideshow mode known as the
 paced mode, where the user is forced to view the document as a
 sequence of slides. Information about the state of a paced slideshow
 is saved in the persistent local storage of the browser, using the
-filename as the key. It is enabled by the option:
+filename as the key. It is enabled by the options:
 
-    --pace=pace_level,delay_sec,try_count,try_delay
+    --pace=pace_level --slide_delay=delay_sec
 
 * `pace_level` if non-zero, implies that document is to be viewed in
   in an incremental fashion, as a slideshow, until the last slide is
-  reached. (If less than two, switching to scrolling view is
-  permitted.)
+  reached. (Switching to scrolling view is permitted, unless the
+  feature `slides_only` is enabled.) `pace_level=1` allows viewing
+  slides and answering questions in any order prior to
+  submission. `pace_level=2` requires sequential viewing and each
+  question to be attempted before proceeding further.
 
 * `delay_sec` if non-zero, forces a minimum delay between slides
-
-* `try_count` if non-zero, forces each question to be attempted at
-  least this many times (except for multiple-choice, where only one
-  attempt is required).
-
-* `try_delay` if non-zero, forces a wait after an incorrect attempt.
 
 The Notes portion of a question slide is hidden until a correct
 response is received or all tries are exhausted.

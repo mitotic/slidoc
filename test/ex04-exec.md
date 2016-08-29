@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=1,0,1 --features=assessment,grade_response -->
+<!--slidoc-defaults --pace=2 --features=assessment,grade_response -->
 # Test code execution
 
 Test file

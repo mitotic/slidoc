@@ -21,8 +21,8 @@
 <select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
 <span id="slidoc-submit-display" class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.submitStatus();"></span>
 <span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
-<span class="slidoc-clickable-sym slidoc-noslide" onclick="Slidoc.go();">%(house)s</span>&nbsp;
-<span class="slidoc-clickable" onclick="Slidoc.viewHelp();">?</span>
+<span id="slidoc-contents-button" class="slidoc-clickable-sym" onclick="Slidoc.contentsDisplay();">%(threebars)s</span>&nbsp;
+<span class="slidoc-clickable" onclick="Slidoc.viewHelp();"><b>?</b></span>
 </div>
 
 <table class="slidoc-slide-nav slidoc-slideonly slidoc-nav-overlay">
@@ -43,8 +43,6 @@
 <div id="slidoc-progressbar-container" class="slidoc-slideonly slidoc-nav-overlay"><span id="slidoc-progressbar" ></span></div>
 
 <div id="slidoc-bottom-right" class="slidoc-bottom-right slidoc-noslide slidoc-noprint">
-<span id="slidoc-sidebar-button" class="slidoc-clickable-sym slidoc-nosidebar" onclick="Slidoc.sidebarDisplay();" style="display: none;">%(threebars)s</span>
-<span class="slidoc-clickable-sym slidoc-sidebaronly" onclick="Slidoc.sidebarDisplay();">%(threebars)s</span>
 <span id="slidoc-slideview-button" class="slidoc-clickable-sym"  onclick="Slidoc.slideViewStart();">%(square)s</span>
 </div>
 

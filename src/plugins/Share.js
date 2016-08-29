@@ -7,18 +7,19 @@ Share = {
 	this.countElem = document.getElementById(this.pluginId+'-sharecount');
 	if (this.adminState || this.testUser)
 	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
-	this.persist.answered = {};
     },
 
     answerSave: function () {
-	Slidoc.log('Slidoc.Plugins.Share.answerSave:');
-	this.persist.answered[this.qattributes.qnumber] = 1;
-	if (this.qattributes.share != 'after_submission' || !window.GService)
-	    return;
-	this.getResponses();
-	toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
-	if (!this.testUser)
-	    Slidoc.sendEvent(2, 'Share.answerNotify', this.qattributes.qnumber);
+	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
+	if (this.paced == 3) {
+	    if (!this.testUser)
+		Slidoc.sendEvent(2, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber);
+	} else {
+	    if (this.qattributes.share != 'after_submission' || !window.GService)
+		return;
+	    this.getResponses();
+	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
+	}
     },
 
     answerNotify: function (qnumber) {
@@ -49,7 +50,7 @@ Share = {
 	var nRows = result[prefix+'response'].length;
 	this.countElem.textContent = '('+nRows+')';
 
-	if (!this.persist.answered[this.qattributes.qnumber] && !this.adminState)
+	if (!Slidoc.PluginManager.answered(this.qattributes.qnumber) && !this.adminState)
 	    // Question not yet answered and not admin state (i.e., test user); display count only
 	    return;
 
@@ -65,20 +66,20 @@ Share = {
 	this.voteCodes = retStatus.info.vote ? retStatus.info.vote.split(',') : ['', ''];
 
 	var checkResp = [];
-	if (result[prefix+'explain'] && this.qattributes.correct) {
+	if (result[prefix+'explain'] && this.qattributes.correctAnswer) {
 	    if (this.qattributes.qtype == 'number') {
 		var corrValue = null;
 		var corrError = 0.0;
 		try {
-		    var comps = this.qattributes.correct.split('+/-');
+		    var comps = this.qattributes.correctAnswer.split('+/-');
 		    corrValue = parseFloat(comps[0]);
 		    if (comps.length > 1)
 			corrError = parseFloat(comps[1]);
 		    if (!isNaN(corrValue) && !isNaN(corrError))
 			checkResp = [corrValue, corrError];
-		} catch(err) {Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.qattributes.correct);}
-	    } else if (this.qattributes.correct.length == 1) {
-		checkResp = [this.qattributes.correct];
+		} catch(err) {Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.qattributes.correctAnswer);}
+	    } else if (this.qattributes.correctAnswer.length == 1) {
+		checkResp = [this.qattributes.correctAnswer];
 	    }
 	}
 
@@ -160,6 +161,11 @@ Share = {
 
     displayShare: function () {
 	Slidoc.log('Slidoc.Plugins.Share.displayShare:');
+	if (this.paced == 3) {
+	    if (this.testUser && this.correctAnswer && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
+		// "View all responses" button forces answers from clients if there is a correct answer
+		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
+	}
 	this.getResponses();
     },
 

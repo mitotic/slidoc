@@ -172,7 +172,7 @@ The following methods may be defined for plugins, as needed:
 
 > `response`: records and returns user response
 
-> `enterSlide(paceStart)`: entering slide; returns paceDelay (in seconds) or null to use default (if paceStart only).
+> `enterSlide(paceStart)`: entering slide; returns slideDelay (in seconds) or null to use default (if paceStart only).
 
 > `leaveSlide()`: leaving slide 
 
@@ -295,7 +295,7 @@ See `plugins/code.js` for an example of a response plugin.
 ## Scripted testing
 
 Use options `--test_script --pace=1` for scripted testing. (For
-adaptive documents, use `--pace=1,0,1`).
+adaptive documents, use `--pace=2`).
 
 Use query options of the form:
 

@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=1,0,1 --features=assessment --due_date=2016-05-29T01:01 -->
+<!--slidoc-defaults --pace=2 --features=assessment --due_date=2016-05-29T01:01 -->
 # Testing adaptive assignments
 
 - Datasets are multi-dimensional
@@ -20,7 +20,7 @@ TestScripts.basic = [
   ['initSession', 0, 0, 'reset'],
   ['initSlideView', 2, 500, 'choice', ['B']],
   ['answerTally', 3, 500, 'input', ['y[-1]']],
-  ['+answerSkip', 5, 500, 'choice', ['E']],         // For pace=1,0,1
+  ['+answerSkip', 5, 500, 'choice', ['E']],         // For pace=2
   ['+answerTally', 5, 500, 'choice', ['E']],        // For pace=1 
   ['+answerSkip', 6, 500, 'input', ['fibonacci[0]']],
   ['+answerTally', 6, 500, 'input', ['fibonacci[0]']],

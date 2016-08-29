@@ -406,7 +406,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             elif method == 'event':
                 # event_target: '*' OR 'admin' or '' (for server) (IGNORED FOR NOW)
                 # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
-                # event_name = [plugin.]event_name
+                # event_name = [plugin.]event_name[.slide_id]
                 evTarget, evType, evName, evArgs = args
                 if Options['debug']:
                     print >> sys.stderr, 'sdserver.on_message_aux: event', self.userId, evType, evName
