@@ -2464,7 +2464,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
-                        'top_nav': topnav_html,
+                        'plugin_tops': '', 'top_nav': topnav_html,
                         'top_nav_hide': ' slidoc-topnav-hide' if config.topnav else ''}
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()

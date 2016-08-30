@@ -734,7 +734,7 @@ def main():
     define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
     define("debug", default=False, help="Debug mode")
     define("gsheet_url", default="", help="Google sheet URL")
-    define("ssl", default="", help="SSL certs options file (JSON)")
+    define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
@@ -791,12 +791,14 @@ def main():
         twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTweet)
         twitterStream.fetch()
 
-    if options.ssl:
-        with open(options.ssl) as f:
-            ssl_options = json.loads(f.read())
+    if options.port != 443:
+        http_server = tornado.httpserver.HTTPServer(Application())
+    elif options.ssl:
+        certfile, keyfile = options.ssl.split(',')
+        ssl_options = {"certfile": certfile, "keyfile": keyfile}
         http_server = tornado.httpserver.HTTPServer(Application(), ssl_options=ssl_options)
     else:
-        http_server = tornado.httpserver.HTTPServer(Application())
+        sys.exit('SSL options must be specified for port 443')
     http_server.listen(options.port)
     print >> sys.stderr, "Listening on port", options.port
     IOLoop.current().start()
