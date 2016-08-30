@@ -687,6 +687,7 @@ class SlidocRenderer(MathRenderer):
         self.render_markdown = False
         self.plugin_number = 0
         self.plugin_defs = {}
+        self.plugin_tops = []
         self.plugin_loads = set()
         self.load_python = False
 
@@ -1099,17 +1100,23 @@ class SlidocRenderer(MathRenderer):
                 abort('ERROR Plugin '+plugin_name+' not defined!')
                 return ''
 
-        if plugin_def_name not in self.plugin_loads:
-            self.plugin_loads.add(plugin_def_name)
         plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'][plugin_def_name]
 
-        plugin_params = {'pluginSlideId': slide_id,
-                         'pluginName': plugin_name,
+        plugin_params = {'pluginName': plugin_name,
                          'pluginLabel': 'slidoc-plugin-'+plugin_name,
                          'pluginId': slide_id+'-plugin-'+plugin_name,
                          'pluginInitArgs': urllib.quote(args),
                          'pluginNumber': self.plugin_number,
                          'pluginButton': urllib.quote(plugin_def.get('Button', ''))}
+
+        if plugin_def_name not in self.plugin_loads:
+            self.plugin_loads.add(plugin_def_name)
+            plugin_top = plugin_def.get('Top', '').strip()
+            if plugin_top:
+                self.plugin_tops.append( (plugin_top % {}) % plugin_params ) # Unescape the %% before substituting
+
+        # Add slide-specific plugin params
+        plugin_params['pluginSlideId'] = slide_id
         tem_params = plugin_params.copy()
         try:
             tem_params['pluginBodyDef'] = plugin_def.get('Body', '') % plugin_params
@@ -1145,6 +1152,9 @@ class SlidocRenderer(MathRenderer):
 
         opt_comps = [x.strip() for x in text.split(';')]
         text = opt_comps[0]
+        if text and (text.split('=')[0].strip() in ('explain', 'retry', 'share', 'vote', 'weight')):
+             abort("    ****ANSWER-ERROR: %s: 'Answer: %s ...' is not a valid answer type in slide %s" % (self.options["filename"], text, self.slide_number))
+             return
 
         weight_answer = ''
         retry_counts = [0, 0]  # Retry count, retry delay
@@ -1503,16 +1513,13 @@ class SlidocRenderer(MathRenderer):
         if not self.qtypes[-1]:
             abort("    ****HINT-ERROR: %s: Hint must appear after Answer:... in slide %s" % (self.options["filename"], self.slide_number))
 
-        if self.options['config'].pace > QUESTION_PACE:
-            abort("    ****HINT-ERROR: %s: Hint displayed for non-question-paced session in slide %s" % (self.options["filename"], self.slide_number))
-
         if self.notes_end is not None:
             abort("    ****HINT-ERROR: %s: Hint may not appear within Notes section of slide %s" % (self.options["filename"], self.slide_number))
         if not isfloat(text) or abs(float(text)) >= 100.0:
             abort("    ****HINT-ERROR: %s: Invalid penalty %s following Hint. Expecting a negative percentage in slide %s" % (self.options["filename"], text, self.slide_number))
 
-        if self.options['config'].pace == BASIC_PACE:
-            message("    ****HINT-WARNING: %s: Hint displayed for basic-paced session in slide %s" % (self.options["filename"], self.slide_number))
+        if self.options['config'].pace > QUESTION_PACE:
+            message("    ****HINT-WARNING: %s: Hint displayed for non-question-paced session in slide %s" % (self.options["filename"], self.slide_number))
 
         hint_penalty = abs(float(text)) / 100.0
             
@@ -1739,12 +1746,14 @@ def parse_plugin(text, name=None):
         if comment and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
         tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in Head/Body template
-        comps = re.split(r'(^|\n)\s*Plugin(Button|Body):' if comment else r'(^|\n)Plugin(Button|Body):', tail)
+        comps = re.split(r'(^|\n)\s*Plugin(Button|Top|Body):' if comment else r'(^|\n)Plugin(Button|Body):', tail)
         plugin_def['Head'] = comps[0]+'\n' if comps[0] else ''
         comps = comps[1:]
         while comps:
             if comps[1] == 'Button':
                 plugin_def['Button'] = comps[2]
+            elif comps[1] == 'Top':
+                plugin_def['Top'] = comps[2]
             elif comps[1] == 'Body':
                 plugin_def['Body'] = comps[2]+'\n'
             comps = comps[3:]
@@ -2207,6 +2216,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                       'top_nav': topnav_html,
                       'top_nav_hide': ' slidoc-topnav-hide' if topnav_opts else ''}
         mid_params.update(SYMS)
+        mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
         if config.dry_run:
             message("Indexed ", outname+":", fheader)

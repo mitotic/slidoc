@@ -141,7 +141,7 @@ GService.openWebsocket = function (wsPath) {
 			Slidoc.log('GService.ws.onmessage: ERROR Ignored event; no receiver '+callback_args[0]);
 		}
 	    } catch (err) {
-		Slidoc.log('GService.ws.onmessage: Error in invoking method '+callback_method);
+		Slidoc.log('GService.ws.onmessage: Error in invoking method '+callback_method+': '+err);
 	    }
 	    return;
 	}
@@ -528,13 +528,15 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 		    }
 
 		} else if (callbackType == 'getShare') {
-		    retval = {};
-		    for (var i=0; i<result.headers.length; i++)
-			retval[result.headers[i]] = [];
-		    for (var j=0; j<result.value.length; j++) {
-			var row = result.value[j];
-			for (var i=0; i<row.length; i++)
-			    retval[result.headers[i]].push(row[i]);
+		    if (result.headers) {
+			retval = {};
+			for (var i=0; i<result.headers.length; i++)
+			    retval[result.headers[i]] = [];
+			for (var j=0; j<result.value.length; j++) {
+			    var row = result.value[j];
+			    for (var i=0; i<row.length; i++)
+				retval[result.headers[i]].push(row[i]);
+			}
 		    }
 
 		} else {

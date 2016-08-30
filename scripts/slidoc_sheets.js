@@ -512,6 +512,15 @@ function handleResponse(evt) {
                 if (!curUserVals && !adminUser)
                     throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName);
 
+                if (adminUser || paramId == TESTUSER_ID) {
+                    returnInfo.responders = [];
+                    for (var j=0; j<nRows; j++) {
+                        if (shareSubrow[j][0] && idValues[j][0] != TESTUSER_ID)
+                            returnInfo.responders.push(idValues[j][0]);
+		    }
+                    returnInfo.responders.sort();
+		}
+
 		var votingCompleted = voteDate && voteDate.getTime() < curDate.getTime();
 		var tallyVotes = adminUser || shareParams.vote == 'show_live' || (shareParams.vote == 'show_completed' && votingCompleted);
 
@@ -537,7 +546,7 @@ function handleResponse(evt) {
 		    if (tallyVotes) {
 			var votes = {};
 			for (var j=0; j<nRows; j++) {
-			    var voteCodes = shareSubrow[j][voteOffset].split(',');
+			    var voteCodes = (shareSubrow[j][voteOffset]||'').split(',');
 			    for (var k=0; k<voteCodes.length; k++) {
 				var voteCode = voteCodes[k];
 				if (!voteCode)

@@ -5,8 +5,16 @@ Share = {
 	Slidoc.log('Slidoc.Plugins.Share.init:', this);
 	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
 	this.countElem = document.getElementById(this.pluginId+'-sharecount');
-	if (this.adminState || this.testUser)
-	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
+	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
+	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
+	var manage = (this.paced == 3 && (this.adminState || this.testUser));
+	toggleClass(!manage, 'slidoc-shareable-hide', this.shareElem);
+	toggleClass(!manage, 'slidoc-shareable-hide', this.countElem);
+	toggleClass(!manage, 'slidoc-shareable-hide', this.detailsElem);
+	this.countElem.textContent = manage ? '(?)' : '';
+	this.respondersElem.textContent = '';
+	if (manage)
+	    this.detailsElem.style.display = 'none';
     },
 
     answerSave: function () {
@@ -17,19 +25,43 @@ Share = {
 	} else {
 	    if (this.qattributes.share != 'after_submission' || !window.GService)
 		return;
-	    this.getResponses();
+	    this.getResponses(true);
 	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
 	}
     },
 
     answerNotify: function (qnumber) {
 	Slidoc.log('Slidoc.Plugins.Share.answerNotify:');
-	if (this.testUser && qnumber == this.qattributes.qnumber)
-	    self.getResponses();
+	if (this.testUser && qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
+	    this.getResponses(false);
     },
 
-    getResponses: function () {
-	Slidoc.log('Slidoc.Plugins.Share.getResponses:');
+    showDetails: function () {
+	Slidoc.log('Slidoc.Plugins.Share.showDetails:');
+	if (this.detailsElem.style.display) {
+	    this.detailsElem.style.display = null;
+	    this.getResponses(false);
+	} else {
+	    this.detailsElem.style.display = 'none';
+	}
+    },
+
+    finalizeShare: function () {
+	Slidoc.log('Slidoc.Plugins.Share.finalizeShare:');
+	if (this.paced == 3) {
+	    if (this.testUser && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
+		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
+	}
+	this.getResponses(true);
+    },
+
+    displayShare: function () {
+	Slidoc.log('Slidoc.Plugins.Share.displayShare:');
+	this.getResponses(true);
+    },
+
+    getResponses: function (display) {
+	Slidoc.log('Slidoc.Plugins.Share.getResponses:', display);
 	if (!this.qattributes.share)
 	    return;
 	this.nCols = 1;
@@ -39,19 +71,21 @@ Share = {
 	    this.nCols += 1;
 	var colPrefix = 'q'+this.qattributes.qnumber;
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.getShare(colPrefix, this.adminState, this.responseCallback.bind(this));
+	gsheet.getShare(colPrefix, this.adminState, this.responseCallback.bind(this, display));
     },
 
-    responseCallback: function (result, retStatus) {
-	Slidoc.log('Slidoc.Plugins.Share.responseCallback:', result, retStatus);
+    responseCallback: function (display, result, retStatus) {
+	Slidoc.log('Slidoc.Plugins.Share.responseCallback:', display, result, retStatus);
 	if (!result || !retStatus)
 	    return;
 	var prefix = 'q'+this.qattributes.qnumber+'_';
-	var nRows = result[prefix+'response'].length;
-	this.countElem.textContent = '('+nRows+')';
 
-	if (!Slidoc.PluginManager.answered(this.qattributes.qnumber) && !this.adminState)
-	    // Question not yet answered and not admin state (i.e., test user); display count only
+	if (retStatus.info && retStatus.info.responders) {
+	    this.countElem.textContent = '('+retStatus.info.responders.length+')';
+	    this.respondersElem.textContent = retStatus.info.responders.join('\t');
+	}
+	    
+	if (!display)
 	    return;
 
 	var lines = [];
@@ -66,27 +100,27 @@ Share = {
 	this.voteCodes = retStatus.info.vote ? retStatus.info.vote.split(',') : ['', ''];
 
 	var checkResp = [];
-	if (result[prefix+'explain'] && this.qattributes.correctAnswer) {
+	if (this.correctAnswer) {
 	    if (this.qattributes.qtype == 'number') {
 		var corrValue = null;
 		var corrError = 0.0;
 		try {
-		    var comps = this.qattributes.correctAnswer.split('+/-');
+		    var comps = this.correctAnswer.split('+/-');
 		    corrValue = parseFloat(comps[0]);
 		    if (comps.length > 1)
 			corrError = parseFloat(comps[1]);
 		    if (!isNaN(corrValue) && !isNaN(corrError))
 			checkResp = [corrValue, corrError];
-		} catch(err) {Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.qattributes.correctAnswer);}
-	    } else if (this.qattributes.correctAnswer.length == 1) {
-		checkResp = [this.qattributes.correctAnswer];
+		} catch(err) {Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.correctAnswer);}
+	    } else if (this.correctAnswer.length == 1) {
+		checkResp = [this.correctAnswer];
 	    }
 	}
 
-	Slidoc.log('Slidoc.Plugins.Share.responseCallback2:', checkResp);
+	Slidoc.log('Slidoc.Plugins.Share.responseCallback2:', this.correctAnswer, checkResp);
 	var ulistCorr = [];
 	var ulistOther = [];
-	for (var j=0; j<nRows; j++) {
+	for (var j=0; j<result[prefix+'response'].length; j++) {
 	    var respVal = result[prefix+'response'][j];
 	    var isCorrect = false;
 	    if (checkResp.length == 1) {
@@ -115,10 +149,10 @@ Share = {
 	    line += '<code class="slidoc-plugin-Share-prefix'+(isCorrect ? '-correct' : '')+'"></code>';
 	    var prefixVal = '';
 	    var suffixVal = respVal;
-	    if (result[prefix+'explain']) {
+	    if (result[prefix+'explain'] || checkResp.length) {
 		line += ': ';
 		prefixVal = respVal;
-		suffixVal = result[prefix+'explain'][j];
+		suffixVal = result[prefix+'explain'] ? result[prefix+'explain'][j] : '';
 	    }
 	    line += '<span class="slidoc-plugin-Share-resp"></span>'
 	    line += '</li>';
@@ -157,16 +191,6 @@ Share = {
 	    for (var j=0; j<elems.length; j++)
 		elems[j].classList.add('slidoc-plugin-Share-votebutton-activated');
 	}
-    },
-
-    displayShare: function () {
-	Slidoc.log('Slidoc.Plugins.Share.displayShare:');
-	if (this.paced == 3) {
-	    if (this.testUser && this.correctAnswer && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
-		// "View all responses" button forces answers from clients if there is a correct answer
-		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
-	}
-	this.getResponses();
     },
 
     upVote: function (voteCode, elem) {
@@ -211,6 +235,9 @@ Share = {
 .slidoc-plugin-Share-list {
   list-style-type: none;
 }
+.slidoc-plugin-Share-prefix-correct {
+  font-weight: bold;
+}
 .slidoc-plugin-Share-votebutton,
   .slidoc-plugin-Share-votebutton-disabled {
   color: #2980B9;
@@ -225,11 +252,24 @@ Share = {
 .slidoc-plugin-Share-votebutton-disabled {
   visibility: hidden;
 }
+pre.slidoc-plugin-Share-responders {
+    -moz-tab-size:    4;
+    -o-tab-size:      4;
+    tab-size:         4;
+    -moz-white-space: pre-wrap;
+    -o-white-space:   pre-wrap;
+    white-space:      pre-wrap;
+}
    </style>
    PluginBody:
    <input type="button" id="%(pluginId)s-sharebutton" 
    class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide"
    value="View all responses"
-   onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare(this);"></input>
-   <span id="%(pluginId)s-sharecount" class="slidoc-plugin-Share-count %(pluginId)s-sharecount slidoc-shareable-hide"></span>
+   onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare();"></input>
+   <span id="%(pluginId)s-sharecount" class="slidoc-clickable slidoc-plugin-Share-count %(pluginId)s-sharecount slidoc-shareable-hide" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].showDetails();"></span>
+   <div id="%(pluginId)s-sharedetails" class="slidoc-plugin-Share-details %(pluginId)s-sharedetails slidoc-shareable-hide">
+     <input type="button" id="%(pluginId)s-sharefinalize" class="slidoc-clickable slidoc-button" value="Finalize"
+     onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].finalizeShare();"></input>
+     <pre id="%(pluginId)s-shareresponders" class="slidoc-plugin-Share-responders %(pluginId)s-shareresponders"><pre>
+   </div>
 */

@@ -965,7 +965,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 		    Slidoc.slideViewGo(true, Sliobj.session.lastSlide+1);  // visible slides list has been updated
 	    }
 	}
-	self.reportTestAction('AdminPacedAdvance');
+	Slidoc.reportTestAction('AdminPacedAdvance');
     }
 }
 
@@ -1107,6 +1107,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     else
 	defCopy = copyAttributes(pluginDef, ['setup', 'global']);
     defCopy.name = pluginName;
+    defCopy.pluginLabel = 'slidoc-plugin-'+pluginName;
     defCopy.initArgs = slide_id ? evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id) : [];
     defCopy.slideData = slideData || null;
 
@@ -3096,7 +3097,7 @@ function saveSessionAnswered(slide_id, qattrs) {
 	return;
     Sliobj.session.lastTime = Date.now();
     if (isController()) {
-	Sliobj.sendEvent(-1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
+	Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
 
     } else if (!Sliobj.delaySec && Sliobj.params.slideDelay && MIN_ANSWER_NOTES_DELAY && allowDelay()) {
 	// Minimum delay to view notes after answering
@@ -3825,7 +3826,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	} else if (isController()) {
 	    // Not last slide for test user in admin-paced; save lastSlide value
 	    sessionPut();
-	    Sliobj.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
+	    Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
 	}
     } else {
 	if (Sliobj.session.paced && slide_num < Sliobj.session.lastSlide && !Sliobj.questionSlide && Sliobj.delaySec) {

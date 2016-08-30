@@ -28,9 +28,11 @@ Command arguments:
 
 Twitter auth workflow:
   - Register your application with Twitter at http://twitter.com/apps, using the Callback URL http://website/_oauth/twitter
-  - Then copy your Consumer Key and Consumer Secret to file twitter.json
-     {"consumer_key": ..., "consumer_secret": ...}
-     sudo python sdserver.py --auth_key=... --gsheet_url=... --static_dir=... --port=80 --proxy_wait=0 --site_label=... --twitter=twitter.json
+  - Then copy your Consumer Key and Consumer Secret to command config file:
+       auth_type = 'twitter,key,secret'
+     or in command line
+       sudo python sdserver.py --auth_key=... --auth_type=... --gsheet_url=... --static_dir=... --port=80 --proxy_wait=0 --site_label=...
+  - For live tweeting, also create an AccessToken for yourself and use in --twitter_stream
   - Create an initial Slidoc, say ex00-setup.md
   - Ask all users to ex00-setup.html using their Twitter login
   - In Google Docs, copy the first four columns of the ex00-setup sheet to a new roster_slidoc sheet
@@ -195,8 +197,9 @@ class ActionHandler(BaseHandler):
             sdproxy.start_shutdown('clear')
             self.write('Clearing cache')
         elif action == '_shutdown':
+            self.clear_id()
             sdproxy.start_shutdown('shutdown')
-            self.write('Starting shutdown')
+            self.write('Starting shutdown (also cleared cookies)')
         elif action == '_unlock':
             if sessionName in Lock_cache:
                 del sdproxy.Lock_cache[sessionName]
@@ -408,7 +411,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
                 # event_name = [plugin.]event_name[.slide_id]
                 evTarget, evType, evName, evArgs = args
-                if Options['debug']:
+                if Options['debug'] and not evName.startswith('Timer.clockTick'):
                     print >> sys.stderr, 'sdserver.on_message_aux: event', self.userId, evType, evName
 
                 pathConnections = self._connections[self.pathUser[0]]
@@ -540,10 +543,10 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
 class AuthLoginHandler(BaseHandler):
     def get(self):
         error_msg = self.get_argument("error", "")
-        username = self.get_argument("username", "")
-        token = self.get_argument("token", "")
+        username = str(self.get_argument("username", ""))
+        token = str(self.get_argument("token", ""))
         next = self.get_argument("next", "/")
-        if not error_msg and username and token:
+        if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
             self.render("login.html", error_msg=error_msg, next=next, site_label=Options['site_label'],
@@ -553,9 +556,10 @@ class AuthLoginHandler(BaseHandler):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
 
     def login(self, username, token, next="/"):
-        if Options['no_auth'] and Options['debug'] and not Options['gsheet_url'] and username != ADMINUSER_ID:
-            # No authentication option for testing local-only proxy
-            token = sliauth.gen_user_token(Options['auth_key'], username)
+        if username != ADMINUSER_ID:
+            if token == Options['auth_key'] or (Options['no_auth'] and Options['debug'] and not Options['gsheet_url']):
+                # Auth_key token option or No authentication option for testing local-only proxy; generate token
+                token = sliauth.gen_user_token(Options['auth_key'], username)
         auth = self.check_access(username, token)
         if auth:
             self.set_id(username, '', token)
@@ -718,6 +722,8 @@ class Application(tornado.web.Application):
 
         super(Application, self).__init__(handlers, **settings)
 
+def processTweet(fromName, message):
+    print >> sys.stderr, 'sdserver.processTweet:', fromName, message
 
 def main():
     define("config", type=str, help="Path to config file",
@@ -725,6 +731,7 @@ def main():
 
     define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
+    define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
     define("debug", default=False, help="Debug mode")
     define("gsheet_url", default="", help="Google sheet URL")
     define("ssl", default="", help="SSL certs options file (JSON)")
@@ -771,6 +778,18 @@ def main():
 
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
+
+    if options.twitter_stream:
+        comps = options.twitter_stream.split(',')
+        Global.twitter_config = {
+            'screen_name': comps[0],
+            'consumer_token': {'consumer_key': comps[1], 'consumer_secret': comps[2]},
+            'access_token': {'key': comps[3], 'secret': comps[4]}
+            }
+
+        import sdstream
+        twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTweet)
+        twitterStream.fetch()
 
     if options.ssl:
         with open(options.ssl) as f:

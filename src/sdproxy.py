@@ -674,6 +674,13 @@ def handleResponse(params):
                 if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
 
+                if adminUser or paramId == TESTUSER_ID:
+                    returnInfo['responders'] = []
+                    for j in range(nRows):
+                        if shareSubrow[j][0] and idValues[j][0] != TESTUSER_ID:
+                            returnInfo['responders'].append(idValues[j][0])
+                    returnInfo['responders'].sort()
+
                 votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate);
 
                 tallyVotes = adminUser or shareParams.get('vote') == 'show_live' or (shareParams.get('vote') == 'show_completed' and votingCompleted)
@@ -699,7 +706,7 @@ def handleResponse(params):
                     if tallyVotes:
                         votes = {}
                         for j in range(nRows):
-                            for voteCode in shareSubrow[j][voteOffset].split(','):
+                            for voteCode in (shareSubrow[j][voteOffset] or '').split(','):
                                 if not voteCode:
                                     continue
                                 if voteCode in votes:
