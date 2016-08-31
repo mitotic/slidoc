@@ -2205,7 +2205,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 
 	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
 		var prompt = prefix+"Enter late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise ";
-		if (Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.session && Object.keys(Sliobj.session.questionsAttempted).length)
+		if (Sliobj.params.paceLevel && Sliobj.session && Object.keys(Sliobj.session.questionsAttempted).length)
 		    prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
 		else
 		    prompt += "enter '"+LATE_SUBMIT+"' to submit late (with reduced or no credit).";

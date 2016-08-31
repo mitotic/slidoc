@@ -30,6 +30,7 @@ import sliauth
 # Usually modified by importing module
 Options = {
     'DEBUG': None,      
+    'DRY_RUN': None,     # Dry run (read from, but do not update, Google Sheets)
     'SHEET_URL': None,   # Google Sheet URL
     'AUTH_KEY': None,    # Digest authentication key
     'MIN_WAIT_TIME': 0   # Minimum time (sec) between successful Google Sheet requests
@@ -84,8 +85,9 @@ Global = Dummy()
 
 Global.suspending = ""
 
-Sheet_cache = {}
-Lock_cache = {}
+Sheet_cache = {}    # Cache of sheets
+Miss_cache = {}     # For optional sheets that are missing
+Lock_cache = {}     # Locked sheets
 
 def getSheet(sheetName, optional=False):
     if Global.suspending or sheetName in Lock_cache:
@@ -93,6 +95,9 @@ def getSheet(sheetName, optional=False):
 
     if sheetName in Sheet_cache:
         return Sheet_cache[sheetName]
+    elif optional and sheetName in Miss_cache:
+        # If optional sheets are later created, will need to clear cache
+        return None
 
     user = 'admin'
     userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
@@ -109,6 +114,7 @@ def getSheet(sheetName, optional=False):
         print "DEBUG:getSheet", sheetName, retval['result']
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
+            Miss_cache[sheetName] = sliauth.epoch_ms()
             return None
         else:
             raise Exception("%s (Error in accessing sheet '%s')" % (retval['error'], sheetName))
@@ -317,6 +323,7 @@ def check_shutdown():
         return
     if Global.suspending == "clear":
         Sheet_cache.clear()
+        Miss_cache.clear()
         Global.suspending = ""
         print >> sys.stderr, "Cleared cache"
     else:
@@ -336,7 +343,8 @@ def get_locked():
 
 def update_remote_sheets(force=False):
 
-    if not Options['SHEET_URL']:
+    if not Options['SHEET_URL'] or Options['DRY_RUN']:
+        # No updates if no sheet URL or dry run
         check_shutdown()
         return
 
@@ -1038,8 +1046,8 @@ def handleResponse(params):
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
                             setValue(sheetName, 'dueDate', curDate, INDEX_SHEET)
-                            idColValues = getColumns('id', modSheet, 1, numStickyRows)
-                            initColValues = getColumns('initTimestamp', modSheet, 1, numStickyRows)
+                            idColValues = getColumns('id', sheetName, 1, numStickyRows)
+                            initColValues = getColumns('initTimestamp', sheetName, 1, numStickyRows)
                             for j in range(len(idColValues)):
                                 # Submit all other users who have started a session
                                 if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:

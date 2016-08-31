@@ -894,8 +894,8 @@ function handleResponse(evt) {
                         if (params.submit) {
                             // Use test user submission time as due date for admin-paced sessions
                             setValue(sheetName, 'dueDate', curDate, INDEX_SHEET);
-                            var idColValues = getColumns('id', modSheet, 1, numStickyRows);
-                            var initColValues = getColumns('initTimestamp', modSheet, 1, numStickyRows);
+                            var idColValues = getColumns('id', sheetName, 1, numStickyRows);
+                            var initColValues = getColumns('initTimestamp', sheetName, 1, numStickyRows);
                             for (var j=0; j < idColValues.length; j++) {
                                 // Submit all other users who have started a session
                                 if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {

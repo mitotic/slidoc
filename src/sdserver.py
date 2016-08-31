@@ -74,6 +74,7 @@ Options = {
     'auth_key': '',
     'auth_type': '',
     'debug': False,
+    'dry_run': False,
     'gsheet_url': '',
     'no_auth': False,
     'proxy_wait': None,
@@ -618,7 +619,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             username = self.get_alt_name(username)
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
             self.set_id(username, user['email'], token, displayName)
-            self.redirect(self.get_argument("next", "/"))
+            self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
 
             # Save the user with e.g. set_secure_cookie
@@ -628,7 +629,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 client_id=self.settings['google_oauth']['key'],
                 scope=['profile', 'email'],
                 response_type='code',
-                extra_params={'approval_prompt': 'auto'})
+                extra_params={'approval_prompt': 'auto', 'state': self.get_argument("next", "/")})
 
 class TwitterLoginHandler(tornado.web.RequestHandler,
                           tornado.auth.TwitterMixin, UserIdMixin):
@@ -648,6 +649,13 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
         else:
             yield self.authorize_redirect()
 
+class PlainHTTPHandler(tornado.web.RequestHandler):
+    def prepare(self):
+        if self.request.protocol == 'http':
+            self.redirect('https://' + self.request.host, permanent=False)
+
+    def get(self):
+        self.write("Hello, world")
 
 class Application(tornado.web.Application):
     def __init__(self):
@@ -733,6 +741,7 @@ def main():
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
     define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
     define("debug", default=False, help="Debug mode")
+    define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("gsheet_url", default="", help="Google sheet URL")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("plugins", default="", help="List of plugin paths (comma separated)")
@@ -761,7 +770,7 @@ def main():
     if options.proxy_wait is not None:
         import sdproxy
         sdproxy.Options.update(AUTH_KEY=options.auth_key, SHEET_URL=options.gsheet_url, DEBUG=options.debug,
-                               MIN_WAIT_TIME=options.proxy_wait)
+                               DRY_RUN=options.dry_run, MIN_WAIT_TIME=options.proxy_wait)
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     pluginsDir = scriptdir + '/plugins'
@@ -797,6 +806,10 @@ def main():
         certfile, keyfile = options.ssl.split(',')
         ssl_options = {"certfile": certfile, "keyfile": keyfile}
         http_server = tornado.httpserver.HTTPServer(Application(), ssl_options=ssl_options)
+
+        # Redirect plain HTTP to HTTPS
+        plain_http_app = tornado.web.Application([ (r'/', PlainHTTPHandler) ])
+        plain_http_app.listen(80)
     else:
         sys.exit('SSL options must be specified for port 443')
     http_server.listen(options.port)

@@ -1784,18 +1784,23 @@ def plugin_heads(plugin_defs, plugin_loads):
         plugin_code.append('<script>(function() {\n'+plugin_defs[plugin_name]['JS'].strip()+'\n})();</script>\n')
     return ''.join(plugin_code)
 
+def strip_name(filepath):
+    # Strips dir/extension from filepath, and returns last subname assuming '-' is used to split subnames
+    name = os.path.splitext(os.path.basename(filepath))[0]
+    return name.split('-')[-1]
+    
 def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
     if opts == 'args':
-        # Generate top navigationmenu from argument filenames
-        label_list = [ ('Home', '/') ] + [ (x.split('-')[-1] if '-' in x else x, site_url+x+'.html') for x in fnames if x != 'index' ]
+        # Generate top navigation menu from argument filenames
+        label_list = [ ('Home', '/') ] + [ (strip_name(x), site_url+x+'.html') for x in fnames if x != 'index' ]
 
     elif opts in ('dirs', 'files'):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
         _, subdirs, subfiles = next(os.walk(cur_dir or '.'))
         if opts == 'dirs':
-            label_list = [(x, x+'/index.html') for x in subdirs if x[0] not in '._']
+            label_list = [(strip_name(x), x+'/index.html') for x in subdirs if x[0] not in '._']
         else:
-            label_list = [(os.path.splitext(x)[0], x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
+            label_list = [(strip_name(x), x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
         label_list.sort()
         label_list = [ ('Home', '/') ] + label_list
 
@@ -1806,9 +1811,9 @@ def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
             if opt == '/' or opt == '/index.html':
                 label_list.append( ('Home', '/') )
             elif opt.endswith('/index.html'):
-                label_list.append( (os.path.basename(opt[:-len('/index.html')]), opt) )
+                label_list.append( (strip_name(opt[:-len('/index.html')]), opt) )
             else:
-                label_list.append( (os.path.splitext(os.path.basename(opt))[0], opt) )
+                label_list.append( (strip_name(opt), opt) )
                             
     elems = []
     for j, names in enumerate(label_list):
@@ -1878,8 +1883,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
 
-    out_name = os.path.splitext(os.path.basename(config.all or input_paths[0]))[0]
-    combined_file = '' if config.separate else out_name+'.html'
+    combined_name = strip_name(config.all or input_paths[0])
+    combined_file = '' if config.separate else combined_name+'.html'
 
     # Reset config properties that will be overridden for separate files
     cmd_features_set = None if config.features is None else md2md.make_arg_set(config.features, features_all)
@@ -1892,7 +1897,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         js_params['features'] = dict([(x, 1) for x in config.features])
         gd_sheet_url = config.gsheet_url or ''
         js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
-        js_params['fileName'] = out_name
+        js_params['fileName'] = combined_name
     else:
         # Will be initialized to file-specific values
         config.features = None
@@ -1999,13 +2004,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     comb_plugin_loads = set()
     fnames = []
     for j, f in enumerate(input_files):
-        fcomp = os.path.splitext(os.path.basename(input_paths[j]))
-        fnames.append(fcomp[0])
-        if fcomp[1] != '.md':
+        fname = strip_name(input_paths[j])
+        fnames.append(fname)
+        fext = os.path.splitext(os.path.basename(input_paths[j]))[1]
+        if fext != '.md':
             abort('Invalid file extension for '+input_paths[j])
 
-        if config.notebook and os.path.exists(fcomp[0]+'.ipynb') and not config.overwrite and not config.dry_run:
-            abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fcomp[0])
+        if config.notebook and os.path.exists(fname+'.ipynb') and not config.overwrite and not config.dry_run:
+            abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fname)
 
     if config.slides:
         reveal_themes = config.slides.split(',')
@@ -2460,7 +2466,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
         topnav_html = gen_topnav(config.topnav, fnames=fnames, site_url=config.site_url, separate=config.separate) if config.topnav else ''
-        comb_params = {'session_name': out_name,
+        comb_params = {'session_name': combined_name,
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
