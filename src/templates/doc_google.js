@@ -351,8 +351,13 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
     this.auth.origid = resp.origid || '';
     this.auth.altid = '';
 
-    var comps = resp.displayName.split(/\s+/);
-    var name = (comps.length > 1) ? comps.slice(-1)+', '+comps.slice(0,-1).join(' ') : resp.displayName;
+    var name = resp.displayName;
+    if (name.indexOf(',') < 0) {
+	// No commas in name; re-order as Lastname, Firstname(s)
+	var comps = name.split(/\s+/);
+	if (comps.length > 1)
+	    name = comps.slice(-1)+', '+comps.slice(0,-1).join(' ');
+    }
 
     this.auth.displayName = name || this.auth.id || this.auth.email;
     this.auth.token = resp.token || '';

@@ -3078,13 +3078,21 @@ Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
 	var concept_elem = document.getElementById(slide_id+"-concepts");
 	var concepts = concept_elem ? concept_elem.textContent.split('; ') : ['null'];
 	var miss_count = (!isNumber(qscore) || qscore === 1) ? 0 : 1;
-	
+	var primary_offset = 1;
 	for (var j=0; j<concepts.length; j++) {
-	    var m = (j == 0) ? 0 : 1;   // Primary/secondary concept
+	    if (!concepts[j].trim()) {
+		primary_offset = j;
+		break;
+	    }
+	}
+	for (var j=0; j<concepts.length; j++) {
+	    if (!concepts[j].trim())
+		continue;
+	    var m = (j < primary_offset) ? 0 : 1;   // Primary/secondary concept
 	    for (var k=0; k<Sliobj.questionConcepts[m].length; k++) {
 		if (concepts[j] == Sliobj.questionConcepts[m][k]) {
-		    Sliobj.session.missedConcepts[m][k][0] += miss_count; //Missed count
-		    Sliobj.session.missedConcepts[m][k][1] += 1;   //Attempted count
+		    Sliobj.session.missedConcepts[m][k][0] += miss_count;  // Missed count
+		    Sliobj.session.missedConcepts[m][k][1] += 1;           // Attempted count
 		}
 	    }
 	}

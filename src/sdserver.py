@@ -213,8 +213,7 @@ class ActionHandler(BaseHandler):
             self.write('Locked sessions: %s' % (', '.join(sdproxy.get_locked())) )
         elif action == '_stats':
             self.write('<pre>')
-            self.write('Cache:\n')
-            self.write('  No. of updates (retries): %d (%d)\n  Average update time = %ss\n' % (sdproxy.Global.totalCacheResponseCount, sdproxy.Global.totalCacheRetryCount, sdproxy.Global.totalCacheResponseInterval/(1000*max(1,sdproxy.Global.totalCacheRetryCount)) ) )
+            self.write(sdproxy.getCacheStats())
             curTime = time.time()
             wsKeys = WSHandler._connections.keys()
             wsConnections = WSHandler.get_connections()
@@ -600,14 +599,18 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 print >>sys.stderr, "GoogleAuth: step 2", user
 
             username = user['email'].lower()
-            if Global.login_domain:
-                if not username.endswith(Global.login_domain):
-                    self.custom_error(500, '<h2>Authentication requires account '+Global.login_domain+'</h2><a href="https://mail.google.com/mail/u/0/?logout&hl=en">Logout of google (to sign in with a different account)</a><br><a href="/">Home</a>', clear_cookies=True)
-                    return
-                username = username[:-len(Global.login_domain)]
+            if username in Global.rename:
+                # Special out-of-domain case; retain full email addr (to be translated to a name)
+                pass
+            else:
+                if Global.login_domain:
+                    if not username.endswith(Global.login_domain):
+                        self.custom_error(500, '<h2>Authentication requires account '+Global.login_domain+'</h2><a href="https://mail.google.com/mail/u/0/?logout&hl=en">Logout of google (to sign in with a different account)</a><br><a href="/">Home</a>', clear_cookies=True)
+                        return
+                    username = username[:-len(Global.login_domain)]
 
-            if username in (ADMINUSER_ID, TESTUSER_ID):
-                self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
+                if username in (ADMINUSER_ID, TESTUSER_ID):
+                    self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
 
             displayName = user.get('family_name','').replace(',', ' ')
             if displayName and user.get('given_name',''):

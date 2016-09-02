@@ -668,6 +668,7 @@ class SlidocRenderer(MathRenderer):
         self.untitled_number = 0
         self.qtypes = []
         self.questions = []
+        self.question_concepts = []
         self.cum_weights = []
         self.cum_gweights = []
         self.grade_fields = []
@@ -699,7 +700,7 @@ class SlidocRenderer(MathRenderer):
         self.choice_questions = 0
         self.cur_qtype = ''
         self.cur_header = ''
-        self.slide_concepts = ''
+        self.slide_concepts = []
         self.first_para = True
         self.incremental_level = 0
         self.incremental_list = False
@@ -816,6 +817,8 @@ class SlidocRenderer(MathRenderer):
         prefix_html = self.end_hint()
         if self.qtypes[-1]:
             # Question slide
+            self.question_concepts.append(self.slide_concepts)
+
             if self.questions[-1]['share'] and 'Share' not in self.slide_plugin_embeds:
                 prefix_html += self.embed_plugin_body('Share', self.get_slide_id())
 
@@ -1457,10 +1460,10 @@ class SlidocRenderer(MathRenderer):
             message("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)))
             return ''
 
-        self.slide_concepts = text
-
         tags = [x.strip() for x in text.split(";")]
         nn_tags = [x for x in tags if x]   # Non-null tags
+
+        self.slide_concepts = tags
 
         if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
             # Track/check tags
@@ -1497,6 +1500,8 @@ class SlidocRenderer(MathRenderer):
                 if not first:
                     tag_html += '; '
                 first = False
+                if not tag:
+                    continue
                 tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
                 tag_html += nav_link(tag, self.options['config'].site_url, self.options['config'].index,
                                      hash=tag_hash, separate=self.options['config'].separate, target='_blank',
@@ -1674,15 +1679,17 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
                   'session_hidden']
-Index_fields = ['name', 'id', 'revision', 'Timestamp', 'dueDate', 'gradeDate', 'adminPaced', 'sessionWeight',
-                'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'questions', 'answers',
-                'primary_qconcepts', 'secondary_qconcepts', 'attributes']
+Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate', 'gradeDate', 'mediaURL', 'paceLevel',
+                'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'attributes', 'questions',
+                'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, admin_paced, questions, score_weights, grade_weights,
-                         other_weights, p_concepts, s_concepts, sheet_attributes):
+def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, due_date, media_url, pace_level,
+                         score_weights, grade_weights, other_weights, sheet_attributes,
+                         questions, question_concepts, p_concepts, s_concepts):
     user = ADMINUSER_ID
     user_token = sliauth.gen_admin_token(hmac_key, user)
+    admin_paced = 1 if pace_level >= ADMIN_PACE else None
 
     get_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
                   'get': '1', 'headers': json.dumps(Index_fields)}
@@ -1690,6 +1697,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
     if retval['result'] != 'success':
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
+
     prev_row = retval.get('value')
     if prev_row:
         revision_col = Index_fields.index('revision')
@@ -1701,13 +1709,16 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, due_date, 
             # Do not overwrite previous value of adminPaced
             admin_paced = prev_row[admin_paced_col]
 
-    row_values = [session_name, session_name, revision, None, due_date, None, admin_paced, None,
+    qprops = []
+    for j, q in enumerate(questions):
+        qprops.append( [j+1, q['slide'], q['qtype'], q['correct'], q['weight'], q['explain'], question_concepts[j]] )
+
+    row_values = [session_name, session_name, revision, None, session_weight, due_date, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
-                ','.join([x['qtype'] for x in questions]),
-                '|'.join([(x['correct'] or '').replace('|','/') for x in questions]),
+                json.dumps(sheet_attributes), json.dumps(qprops),
                 '; '.join(sort_caseless(list(p_concepts))),
-                '; '.join(sort_caseless(list(s_concepts))),
-                json.dumps(sheet_attributes) ]
+                '; '.join(sort_caseless(list(s_concepts)))
+                 ]
 
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
@@ -1870,7 +1881,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0, 'otherWeight': 0,
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
-                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': None,
+                 'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
                  'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
@@ -1887,20 +1898,18 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     combined_file = '' if config.separate else combined_name+'.html'
 
     # Reset config properties that will be overridden for separate files
-    cmd_features_set = None if config.features is None else md2md.make_arg_set(config.features, features_all)
+    if config.features is not None:
+        config.features = md2md.make_arg_set(config.features, Features_all)
 
     topnav_opts = ''
     gd_sheet_url = ''
     if not config.separate:
         # Combined file  (these will be set later for separate files)
-        config.features = cmd_features_set or set()
+        if config.gsheet_url:
+            sys.exit('Combined files do not use --gsheet_url');
+        config.features = config.features or set()
         js_params['features'] = dict([(x, 1) for x in config.features])
-        gd_sheet_url = config.gsheet_url or ''
-        js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
         js_params['fileName'] = combined_name
-    else:
-        # Will be initialized to file-specific values
-        config.features = None
 
     gd_hmac_key = config.auth_key     # Specify --auth_key='' to use Google Sheets without authentication
                 
@@ -2070,42 +2079,38 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         fname = fnames[j]
         due_date = None
         vote_date_str = ''
-        if config.separate:
+        if not config.separate:
+            file_config = config
+        else:
             # Separate files (may also be paced)
-            file_config = parse_merge_args(read_first_line(f), fname, parser, {}, include_args=Select_file_args,
+
+            # Merge file config with command line
+            file_config = parse_merge_args(read_first_line(f), fname, parser, vars(config), include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
 
-            js_params['paceLevel'] = (file_config.pace or 0) if config.pace is None else config.pace or 0
+            file_config.features = file_config.features or set()
+            if 'grade_response' in file_config.features and gd_hmac_key is None:
+                # No grading without google sheet
+                file_config.features.remove('grade_response')
+
+            js_params['paceLevel'] = file_config.pace or 0
             if js_params['paceLevel']:
                 # Note: pace does not work with combined files
-                if config.due_date is not None:
-                    if config.due_date:
-                        due_date = sliauth.get_utc_date(config.due_date)
-                elif file_config.due_date:
+                if file_config.due_date:
                     due_date = sliauth.get_utc_date(file_config.due_date)
 
-                if config.vote_date is not None:
-                    vote_date_str = sliauth.get_utc_date(config.vote_date)
-                elif file_config.vote_date:
+                if file_config.vote_date:
                     vote_date_str = sliauth.get_utc_date(file_config.vote_date)
 
-            config.features = cmd_features_set or set()
-            if file_config.features and (cmd_features_set is None or 'override' not in cmd_features_set):
-                # Merge features from each file (unless 'override' feature is present, for command line to override)
-                file_features_set = set(file_config.features.split(','))
-                if 'grade_response' in file_features_set and gd_hmac_key is None:
-                    file_features_set.remove('grade_response')
-                config.features = config.features.union(file_features_set)
+            js_params['sessionPrereqs'] =  file_config.prereqs or ''
+            js_params['sessionRevision'] = file_config.revision or ''
+            js_params['slideDelay'] = file_config.slide_delay or 0
 
-            js_params['sessionPrereqs'] =  (file_config.prereqs or '') if config.prereqs is None else config.prereqs
-            js_params['sessionRevision'] = (file_config.revision or '') if config.revision is None else config.revision
-            js_params['slideDelay'] = (file_config.slide_delay or 0) if config.slide_delay is None else config.slide_delay or 0
-
-            js_params['lateCredit'] = (file_config.late_credit or 0) if config.late_credit is None else config.late_credit or 0
-            js_params['participationCredit'] = (file_config.participation or None) if config.participation is None else config.participation
+            js_params['lateCredit'] = file_config.late_credit or 0
+            js_params['participationCredit'] = file_config.participation or None
                 
-            topnav_opts = (file_config.topnav or '') if config.topnav is None else config.topnav
-            gd_sheet_url = (file_config.gsheet_url or '') if config.gsheet_url is None else config.gsheet_url
+            topnav_opts = file_config.topnav or ''
+            gd_sheet_url = file_config.gsheet_url or ''
             js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['plugin_share_voteDate'] = vote_date_str
             js_params['fileName'] = fname
@@ -2113,20 +2118,20 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if js_params['paceLevel'] >= ADMIN_PACE and not gd_sheet_url:
                 abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(js_params['paceLevel']))
 
-            if js_params['paceLevel'] >= ADMIN_PACE and 'randomize_choice' in config.features:
+            if js_params['paceLevel'] >= ADMIN_PACE and 'randomize_choice' in file_config.features:
                 abort('PACE-ERROR: randomize_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
         if not j or config.separate:
             # First file or separate files
             mathjax_config = []
-            if 'equation_number' in config.features:
+            if 'equation_number' in file_config.features:
                 mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
-            if 'tex_math' in config.features:
+            if 'tex_math' in file_config.features:
                 mathjax_config.append( r", tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
             math_inc = Mathjax_js % ','.join(mathjax_config)
 
-        if not config.features.issubset(set(features_all)):
-            abort('Error: Unknown feature(s): '+','.join(list(config.features.difference(set(features_all)))) )
+        if not file_config.features.issubset(set(Features_all)):
+            abort('Error: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
             
         filepath = input_paths[j]
         md_text = f.read()
@@ -2137,8 +2142,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         md_text_modified = slide_parser.parse(md_text, filepath)
         md_text = base_parser.parse(md_text, filepath)
 
-        if config.hide and 'hidden' in config.strip:
-            md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+config.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
+        if file_config.hide and 'hidden' in file_config.strip:
+            md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+file_config.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
         prev_file = '' if j == 0                    else ('#'+make_chapter_id(j) if combined_file else fnames[j-1]+".html")
         next_file = '' if j >= len(input_files)-1 else ('#'+make_chapter_id(j+2) if combined_file else fnames[j+1]+".html")
@@ -2157,7 +2162,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=config, filenumber=filenumber,
+        fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=filenumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
         max_params = {}
@@ -2191,7 +2196,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 # Include column for total votes etc.
                 js_params['gradeFields'] = ['q_other'] + js_params['gradeFields']
 
-            paced_files[fname] = {'due_date': due_date} 
+            paced_files[fname] = {'due_date': sliauth.parse_date(due_date).ctime() if due_date else ''} 
             if gd_sheet_url:
                 if js_params['gradeWeight']:
                     paced_files[fname]['type'] = 'graded'
@@ -2214,7 +2219,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if renderer.load_python:
             skulpt_load = True
         
-        topnav_html = gen_topnav(topnav_opts, fnames=fnames, site_url=config.site_url, separate=config.separate) if topnav_opts else ''
+        topnav_html = gen_topnav(topnav_opts, fnames=fnames, site_url=file_config.site_url, separate=config.separate) if topnav_opts else ''
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
@@ -2252,7 +2257,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 # Wrap inline math in backticks to protect from backslashes being removed
                 md_text_reveal = re.sub(r'\\\((.+?)\\\)', r'`\(\1\)`', md_text_modified)
                 md_text_reveal = re.sub(r'(^|\n)\\\[(.+?)\\\]', r'\1`\[\2\]`', md_text_reveal, flags=re.DOTALL)
-                if 'tex_math' in config.features:
+                if 'tex_math' in file_config.features:
                     md_text_reveal = re.sub(r'(^|[^\\\$])\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)', r'\1`$\2\3$`', md_text_reveal)
                     md_text_reveal = re.sub(r'(^|\n)\$\$(.*?)\$\$', r'\1`$$\2\3$$`', md_text_reveal, flags=re.DOTALL)
                 reveal_pars['reveal_md'] = md_text_reveal
@@ -2267,10 +2272,10 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 tem_attributes.update(voteDate=vote_date_str)
                 tem_attributes.update(lateCredit=js_params['lateCredit'])
                 tem_attributes.update(participationCredit=js_params['participationCredit'])
-                admin_paced = 1 if js_params['paceLevel'] >= ADMIN_PACE else None
-                update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'], due_date,
-                                      admin_paced, renderer.questions, js_params['scoreWeight'], js_params['gradeWeight'],
-                                      js_params['otherWeight'], renderer.qconcepts[0], renderer.qconcepts[1], tem_attributes)
+                update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+                                     file_config.session_weight, due_date, file_config.media_url, js_params['paceLevel'],
+                                     js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
+                                    renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1])
 
             if gd_sheet_url and (gd_hmac_key or not return_html):
                 create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
@@ -2557,7 +2562,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'pace', 'participation', 'prereqs', 'revision', 'slide_delay', 'topnav', 'vote_date'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation', 'prereqs', 'revision', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
     
 def read_first_line(file):
     # Read first line of file and rewind it
@@ -2581,11 +2586,15 @@ def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set()
             line_args_dict = vars(parser.parse_args(line_args_list))
         else:
             line_args_dict = dict([(arg_name, None) for arg_name in include_args]) if include_args else {}
+
         for arg_name in line_args_dict.keys():
             if include_args and arg_name not in include_args:
                 del line_args_dict[arg_name]
             elif exclude_args and arg_name in exclude_args:
                 del line_args_dict[arg_name]
+            elif arg_name == 'features':
+                # Convert feature string to set
+                line_args_dict[arg_name] = md2md.make_arg_set(line_args_dict[arg_name], Features_all)
         if verbose:
             message('Read command line arguments from file', fname, argparse.Namespace(**line_args_dict))
     except Exception, excp:
@@ -2595,9 +2604,15 @@ def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set()
         if arg_name not in line_args_dict:
             # Argument not specified in file line (copy from command line)
             line_args_dict[arg_name] = cmd_args_dict[arg_name]
-        elif cmd_args_dict[arg_name] != None:
-            # Argument also specified in command line (override)
-            line_args_dict[arg_name] = cmd_args_dict[arg_name]
+
+        elif cmd_args_dict[arg_name] is not None:
+            # Argument also specified in command line
+            if arg_name == 'features' and line_args_dict[arg_name] and 'override' not in cmd_args_dict[arg_name]:
+                # Merge features from file with command line (unless 'override' feature is present in command line)
+                line_args_dict[arg_name] = cmd_args_dict[arg_name].union(line_args_dict[arg_name])
+            else:
+                # Command line overrides file line
+                line_args_dict[arg_name] = cmd_args_dict[arg_name]
 
     return argparse.Namespace(**line_args_dict)
 
@@ -2609,7 +2624,7 @@ def abort(msg):
 
 # Strip options
 # For pure web pages, --strip=chapters,contents,navigate,sections
-strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
+Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
 
 # Features
 #   assessment: Do not warn about concept coverage for assessment documents
@@ -2626,7 +2641,7 @@ strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
+Features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
@@ -2638,7 +2653,7 @@ parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or
 parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
 parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
-parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(features_all))
+parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
 parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
 parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
@@ -2649,6 +2664,7 @@ parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, i
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
+parser.add_argument('--media_url', metavar='URL', help='URL for media')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')
@@ -2658,10 +2674,11 @@ parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', 
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
+parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
 parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
-parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(strip_all))
+parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
 parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')

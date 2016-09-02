@@ -12,6 +12,7 @@ admin commands:
     /_lock             List locked sessions (* => still trasmitting cache updates)
     /_stats            Display update statistics
 """
+from __future__ import print_function
 
 import datetime
 import json
@@ -33,12 +34,12 @@ Options = {
     'DRY_RUN': None,     # Dry run (read from, but do not update, Google Sheets)
     'SHEET_URL': None,   # Google Sheet URL
     'AUTH_KEY': None,    # Digest authentication key
-    'MIN_WAIT_TIME': 0   # Minimum time (sec) between successful Google Sheet requests
+    'MIN_WAIT_SEC': 0   # Minimum time (sec) between successful Google Sheet requests
     }
 
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 5      # Maximum number of failed Google Sheet requests
-CACHE_HOLD_TIME = 3600   # Maximum time (sec) to hold sheet in cache
+CACHE_HOLD_SEC = 3600   # Maximum time (sec) to hold sheet in cache
 
 # Should be consistent with slidoc_sheets.js
 REQUIRE_LOGIN_TOKEN = True
@@ -62,7 +63,7 @@ PARTIAL_SUBMIT = 'partial'
 
 TRUNCATE_DIGEST = 8
 
-QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)(_[0-9\.]+)?$")
+QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
 
 def http_post(url, params_dict):
     data = urllib.urlencode(params_dict)
@@ -97,21 +98,24 @@ def getSheet(sheetName, optional=False):
         return Sheet_cache[sheetName]
     elif optional and sheetName in Miss_cache:
         # If optional sheets are later created, will need to clear cache
-        return None
+        if (sliauth.epoch_ms() - Miss_cache[sheetName]) < 0.5*1000*CACHE_HOLD_SEC:
+            return None
+        # Retry retrieving optional sheet
+        del Miss_cache[sheetName]
 
     user = 'admin'
     userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
 
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
     if Options['DEBUG']:
-        print "DEBUG:getSheet", sheetName, getParams
+        print("DEBUG:getSheet", sheetName, getParams, file=sys.stderr)
 
     if Options['DEBUG'] and not Options['SHEET_URL']:
         return None
 
     retval = http_post(Options['SHEET_URL'], getParams) if Options['SHEET_URL'] else {'result': 'error', 'error': 'No Sheet URL'}
     if Options['DEBUG']:
-        print "DEBUG:getSheet", sheetName, retval['result']
+        print("DEBUG:getSheet", sheetName, retval['result'], file=sys.stderr)
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
             Miss_cache[sheetName] = sliauth.epoch_ms()
@@ -303,6 +307,19 @@ Global.totalCacheRetryCount = 0
 
 Global.cachePendingUpdate = None
 
+def getCacheStats():
+    out = 'Cache:\n'
+    out += '  No. of updates (retries): %d (%d)\n  Average update time = %ss\n\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount, Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheRetryCount)) )
+    curTime = sliauth.epoch_ms()
+    for sheetName, sheet in Sheet_cache.items():
+        out += 'Sheet_cache %s: %s\n' % (sheetName, (curTime-sheet.accessTime)/1000.)
+    out += '\n'
+    for sheetName in Miss_cache:
+        out += 'Miss_cache %s: %s\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
+    out += '\n'
+    return out
+
+
 def schedule_update(waitSec=0, force=False):
     if Global.cachePendingUpdate:
         IOLoop.current().remove_timeout(Global.cachePendingUpdate)
@@ -315,7 +332,7 @@ def schedule_update(waitSec=0, force=False):
 
 def start_shutdown(action="shutdown"):
     Global.suspending = action
-    print >> sys.stderr, "Suspending for", action
+    print("Suspending for", action, file=sys.stderr)
     schedule_update(force=True)
 
 def check_shutdown():
@@ -325,9 +342,9 @@ def check_shutdown():
         Sheet_cache.clear()
         Miss_cache.clear()
         Global.suspending = ""
-        print >> sys.stderr, "Cleared cache"
+        print("Cleared cache", file=sys.stderr)
     else:
-        print >> sys.stderr, "Completing shutdown"
+        print("Completing shutdown", file=sys.stderr)
         IOLoop.current().stop()
 
 def get_locked():
@@ -342,17 +359,18 @@ def get_locked():
     return locked
 
 def update_remote_sheets(force=False):
-
     if not Options['SHEET_URL'] or Options['DRY_RUN']:
         # No updates if no sheet URL or dry run
         check_shutdown()
         return
 
+    if Options['DEBUG']:
+            print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
     if Global.cacheRequestTime:
         return
 
     cur_time = sliauth.epoch_ms()
-    if not force and (cur_time - Global.cacheResponseTime) < Options['MIN_WAIT_TIME']:
+    if not force and (cur_time - Global.cacheResponseTime) < 1000*Options['MIN_WAIT_SEC']:
         schedule_update(cur_time-Global.cacheResponseTime)
         return
 
@@ -362,20 +380,22 @@ def update_remote_sheets(force=False):
         # Check each cached sheet for updates
         updates = sheet.get_updates(Global.cacheUpdateTime)
         if updates is None:
-            if curTime-sheet.accessTime > CACHE_HOLD_TIME:
+            if curTime-sheet.accessTime > 1000*CACHE_HOLD_SEC:
                 # Cache entry has expired
                 del Sheet_cache[sheetName]
             continue
         # sheet_name, headers_list, keys_dictionary, modified_rows
         modRequests.append([sheetName, updates[0], updates[1], updates[2]])
 
+    if Options['DEBUG']:
+            print("update_remote_sheets:B", modRequests is not None, file=sys.stderr)
     if not modRequests:
         # Nothing to update
         check_shutdown()
         return
 
     if Options['DEBUG']:
-        print "update_remote_sheets:", [(x[0], [y[0] for y in x[3]]) for x in modRequests]
+        print("update_remote_sheets:C", [(x[0], [y[0] for y in x[3]]) for x in modRequests], file=sys.stderr)
 
     user = 'admin'
     userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
@@ -396,7 +416,7 @@ def handle_http_response(response):
 
     errMsg = ""
     if response.error:
-        print >> sys.stderr, "handle_http_response: Update error:", response.error
+        print("handle_http_response: Update error:", response.error, file=sys.stderr)
         errMsg = response.error
         if Global.suspending or Global.cacheRetryCount > RETRY_MAX_COUNT:
             sys.exit('Failed to update cache after %d tries' % RETRY_MAX_COUNT)
@@ -407,7 +427,7 @@ def handle_http_response(response):
         schedule_update(Global.cacheWaitTime)
     else:
         if Options['DEBUG']:
-            print "handle_http_response:", response.body
+            print("handle_http_response:", response.body, file=sys.stderr)
         try:
             respObj = json.loads(response.body)
             if respObj['result'] == 'error':
@@ -416,13 +436,13 @@ def handle_http_response(response):
             errMsg = 'JSON parsing error: '+str(err)
 
         if errMsg:
-            print >> sys.stderr, "handle_http_response: Update error:", errMsg
+            print("handle_http_response: Update error:", errMsg, file=sys.stderr)
             sys.exit(errMsg)
 
     if not errMsg:
         # Update succeeded
         if Options['DEBUG']:
-            print "handle_http_response:", Global.cacheUpdateTime, respObj
+            print("handle_http_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
 
         Global.cacheUpdateTime = Global.cacheRequestTime
         Global.cacheRequestTime = 0
@@ -468,7 +488,7 @@ def handleResponse(params):
     # we want a public lock, one that locks for all invocations
 
     if Options['DEBUG']:
-        print "DEBUG: handleResponse PARAMS", params
+        print("DEBUG: handleResponse PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
 
     returnValues = None
     returnHeaders = None
@@ -1167,7 +1187,7 @@ def handleResponse(params):
                   "messages": '\n'.join(returnMessages)}
 
     if Options['DEBUG']:
-        print "DEBUG: RETOBJ", retObj['result'], retObj['messages']
+        print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
     
     return retObj
 

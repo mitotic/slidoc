@@ -112,7 +112,7 @@ var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
 var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
 
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
-var QFIELD_RE = /^q(\d+)_([a-z]+)(_[0-9\.]+)?$/;
+var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -329,7 +329,7 @@ function handleResponse(evt) {
 			var idValues = [];
 			var nameValues = [];
 		    }
-		    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows);
+		    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 
 		    for (var k=0; k<updateRows.length; k++) {
 			// Update rows with pre-existing or new keys
@@ -337,7 +337,14 @@ function handleResponse(evt) {
 			var rowVals = updateRows[k][1];
 			var modRow = temIndexRow[rowId];
 			if (!modRow) {
-			    modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues);
+			    if (rowId == MAXSCORE_ID) {
+				modRow = updateStickyRows+1;
+			    } else if (rowId == TESTUSER_ID) {
+				// Test user always appears after max score
+				modRow = temIndexRow[MAXSCORE_ID] ? temIndexRow[MAXSCORE_ID]+1 : updateStickyRows+1;
+			    } else {
+				modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues, TESTUSER_ID);
+			    }
 			    updateSheet.insertRowBefore(modRow);
 			}
 			for (var m=0; m<rowVals.length; m++)
@@ -772,7 +779,7 @@ function handleResponse(evt) {
 		    // New user; insert row in sorted order of name (except for log files)
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
-		    var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows);
+		    var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], numStickyRows+1);
                     if (userId == MAXSCORE_ID) {
 			userRow = numStickyRows+1;
                     } else if (userId == TESTUSER_ID && !loggingSheet) {
@@ -1291,9 +1298,14 @@ function sessionAnswerSheet() {
 	var sessionColIndex = indexColumns(sessionSheet);
 
 	var sessionParams = lookupValues(sessionName, ['questions', 'answers', 'attributes'], INDEX_SHEET);
-	var questions = sessionParams.questions.split(',');
-	var answers = sessionParams.answers.split('|');
 	var attributes = sessionParams.attributes ? JSON.parse(sessionParams.attributes) : {};
+	var questions = JSON.parse(sessionParams.questions);
+	var qtypes = [];
+	var answers = [];
+	for (var j=0; j<questions.length; j++) {
+	    qtypes[j] = questions[j][2];
+	    answers[j] = questions[j][3];
+	}
 
 	// Copy first two columns from session sheet
 	var copyCols = 2;
@@ -1301,15 +1313,15 @@ function sessionAnswerSheet() {
 
 	var respCols = [];
 	var extraCols = ['expect', 'score', 'plugin', 'hints'];
-	for (var j=0; j<questions.length; j++) {
+	for (var j=0; j<qtypes.length; j++) {
 	    var qprefix = 'q'+(j+1);
 	    var pluginMatch = PLUGIN_RE.exec(answers[j] || '');
 	    var pluginAction = pluginMatch ? pluginMatch[3] : '';
 	    var respColName = qprefix;
 	    if (answers[j] && pluginAction != 'expect') {
-		if (questions[j] == 'choice')
+		if (qtypes[j] == 'choice')
 		    respColName += '_'+answers[j];
-		else if (questions[j] == 'number')
+		else if (qtypes[j] == 'number')
 		    respColName += '_'+answers[j].replace(' +/- ','_pm_').replace('+/-','_pm_').replace(' ','_');
 	    }
 	    answerHeaders.push(respColName);
