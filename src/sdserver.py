@@ -232,7 +232,7 @@ class ActionHandler(BaseHandler):
         elif action == '_unlock':
             if sessionName in sdproxy.Lock_cache:
                 del sdproxy.Lock_cache[sessionName]
-            if sessionName in Sheet_cache:
+            if sessionName in sdproxy.Sheet_cache:
                 del sdproxy.Sheet_cache[sessionName]
             self.write('Unlocked '+sessionName)
         elif action == '_lock':
