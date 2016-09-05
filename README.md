@@ -69,8 +69,12 @@ Open the `README.html` file created by the above command in a browser.
 
 Slidoc uses [mistune](https://github.com/lepture/mistune) for HTML
 exports, which is included in the `src` directory for
-convenience. HTML documents produced by Slidoc automatically load the
+convenience. Optionally, you may install the `pygments`
+[module](http://pygments.org/) for code highlighting.
+
+HTML documents produced by Slidoc automatically load the
 [Mathjax](https://www.mathjax.org) library to display equations.
+
 
 ---
 

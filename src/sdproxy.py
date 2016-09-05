@@ -10,7 +10,7 @@ admin commands:
     /_lock/session     Lock session (before direct editing of Google Sheet)
     /_unlock/session   Unlock session (after direct edits are completed)
     /_lock             List locked sessions (* => still trasmitting cache updates)
-    /_stats            Display update statistics
+    /_status           Display update status
 """
 from __future__ import print_function
 
@@ -307,7 +307,7 @@ Global.totalCacheRetryCount = 0
 
 Global.cachePendingUpdate = None
 
-def getCacheStats():
+def getCacheStatus():
     out = 'Cache:\n'
     out += '  No. of updates (retries): %d (%d)\n  Average update time = %ss\n\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount, Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheRetryCount)) )
     curTime = sliauth.epoch_ms()
@@ -416,7 +416,7 @@ def handle_http_response(response):
 
     errMsg = ""
     if response.error:
-        print("handle_http_response: Update error:", response.error, file=sys.stderr)
+        print("handle_http_response: Update ERROR:", response.error, file=sys.stderr)
         errMsg = response.error
         if Global.suspending or Global.cacheRetryCount > RETRY_MAX_COUNT:
             sys.exit('Failed to update cache after %d tries' % RETRY_MAX_COUNT)
@@ -427,7 +427,7 @@ def handle_http_response(response):
         schedule_update(Global.cacheWaitTime)
     else:
         if Options['DEBUG']:
-            print("handle_http_response:", response.body, file=sys.stderr)
+            print("handle_http_response: Update SUCCESS", response.body[:256], file=sys.stderr)
         try:
             respObj = json.loads(response.body)
             if respObj['result'] == 'error':
@@ -436,7 +436,7 @@ def handle_http_response(response):
             errMsg = 'JSON parsing error: '+str(err)
 
         if errMsg:
-            print("handle_http_response: Update error:", errMsg, file=sys.stderr)
+            print("handle_http_response: Update ERROR:", errMsg, file=sys.stderr)
             sys.exit(errMsg)
 
     if not errMsg:
@@ -523,7 +523,7 @@ def handleResponse(params):
         restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
         loggingSheet = sheetName.endswith('_log')
 
-        sessionParams = None
+        sessionEntries = None
         sessionAttributes = None
         adminPaced = None
         dueDate = None
@@ -557,13 +557,12 @@ def handleResponse(params):
 
         if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
             # Indexed session
-            sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
-            if sessionParams.get('attributes'):
-                sessionAttributes = json.loads(sessionParams['attributes'])
-            adminPaced = sessionParams.get('adminPaced')
-            dueDate = sessionParams.get('dueDate')
-            gradeDate = sessionParams.get('gradeDate')
-            voteDate = createDate(sessionAttributes['voteDate']) if sessionAttributes and sessionAttributes.get('voteDate') else None
+            sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
+            sessionAttributes = json.loads(sessionEntries['attributes'])
+            adminPaced = sessionEntries.get('adminPaced')
+            dueDate = sessionEntries.get('dueDate')
+            gradeDate = sessionEntries.get('gradeDate')
+            voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
 
 
         # Check parameter consistency
@@ -602,7 +601,7 @@ def handleResponse(params):
         displayName = None
 
         voteSubmission = ''
-        if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0][-5:] == '_vote' and sessionAttributes and sessionAttributes.get('shareAnswers'):
+        if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0][-5:] == '_vote' and sessionAttributes.get('shareAnswers'):
             qno = selectedUpdates[1][0].split('_')[0]
             voteSubmission = sessionAttributes['shareAnswers'][qno].get('share', '') if sessionAttributes['shareAnswers'].get(qno) else ''
 
@@ -627,7 +626,7 @@ def handleResponse(params):
 
         if delRow:
             # Delete row only allowed for session sheet and test user
-            if not sessionParams or paramId != TESTUSER_ID:
+            if not sessionEntries or paramId != TESTUSER_ID:
                 raise Exception("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
             temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
             testRow = temIndexRow.get(TESTUSER_ID)
@@ -655,10 +654,10 @@ def handleResponse(params):
             if shareParams.get('vote') and voteDate:
                 returnInfo['voteDate'] = voteDate
 
-            if not adminUser and shareParams['share'] == 'after_grading' and not gradeDate:
+            if not adminUser and shareParams.get('share') == 'after_grading' and not gradeDate:
                 returnMessages.append("Warning:SHARE_AFTER_GRADING:")
                 returnValues = []
-            elif not adminUser and shareParams['share'] == 'after_due_date' and (not dueDate or sliauth.epoch_ms(dueDate) > sliauth.epoch_ms(curDate)):
+            elif not adminUser and shareParams.get('share') == 'after_due_date' and (not dueDate or sliauth.epoch_ms(dueDate) > sliauth.epoch_ms(curDate)):
                 returnMessages.append("Warning:SHARE_AFTER_DUE_DATE:")
                 returnValues = []
             elif modSheet.getLastRow() <= numStickyRows:
@@ -714,7 +713,7 @@ def handleResponse(params):
                 tallyVotes = adminUser or shareParams.get('vote') == 'show_live' or (shareParams.get('vote') == 'show_completed' and votingCompleted)
                 userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
 
-                if not adminUser and paramId != TESTUSER_ID and shareParams['share'] == 'after_submission' and not userResponded:
+                if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_submission' and not userResponded:
                     raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
 
                 disableVoting = False
@@ -871,9 +870,9 @@ def handleResponse(params):
                 if not newRow and submitTimestampCol:
                     prevSubmitted = modSheet.getSheetValues(userRow, submitTimestampCol, 1, 1)[0][0] or None
 
-                if sessionParams:
+                if sessionEntries:
                     # Indexed session
-                    fieldsMin = sessionParams.get('fieldsMin')
+                    fieldsMin = sessionEntries.get('fieldsMin')
 
                     if rowUpdates and not nooverwriteRow and prevSubmitted:
                         raise Exception("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'");
@@ -896,7 +895,7 @@ def handleResponse(params):
                             if lateToken == PARTIAL_SUBMIT:
                                 if newRow or not rowUpdates:
                                     raise Exception("Error::Partial submission only works for pre-existing rows")
-                                if sessionAttributes and sessionAttributes.participationCredit:
+                                if sessionAttributes.params.participationCredit:
                                     raise Exception("Error::Partial submission not allowed for participation credit")
                                 partialSubmission = True
                                 rowUpdates = None
@@ -970,7 +969,7 @@ def handleResponse(params):
                 if rowUpdates:
                     # Update all non-null and non-id row values
                     # Timestamp is always updated, unless it is specified by admin
-                    if adminUser and sessionParams and userId != MAXSCORE_ID:
+                    if adminUser and sessionEntries and userId != MAXSCORE_ID:
                         raise Exception("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'")
 
                     if submitTimestampCol and rowUpdates[submitTimestampCol-1]:
@@ -1058,7 +1057,7 @@ def handleResponse(params):
                     # Save updated row
                     userRange.setValues([rowValues])
 
-                    if paramId == TESTUSER_ID and sessionParams and adminPaced:
+                    if paramId == TESTUSER_ID and sessionEntries and adminPaced:
                         lastSlideCol = columnIndex.get('lastSlide')
                         if lastSlideCol and rowValues[lastSlideCol-1]:
                             # Copy test user last slide number as new adminPaced value
@@ -1080,7 +1079,7 @@ def handleResponse(params):
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
-                        if sessionParams and not prevSubmitted:
+                        if sessionEntries and not prevSubmitted:
                             raise Exception("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteSubmission:
@@ -1124,7 +1123,7 @@ def handleResponse(params):
                             if voteSubmission and colValue:
                                 # Cannot un-vote, vote can be transferred
                                 otherCol = columnIndex.get('q_other')
-                                if not rowValues[headerColumn-1] and otherCol and sessionParams.get('otherWeight') and sessionAttributes and sessionAttributes.get('shareAnswers'):
+                                if not rowValues[headerColumn-1] and otherCol and sessionEntries.get('otherWeight') and sessionAttributes.get('shareAnswers'):
                                     # Tally newly added vote
                                     qshare = sessionAttributes['shareAnswers'].get(colHeader.split('_')[0]);
                                     if qshare:
@@ -1157,7 +1156,7 @@ def handleResponse(params):
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
 
-                if paramId != TESTUSER_ID and sessionParams and adminPaced:
+                if paramId != TESTUSER_ID and sessionEntries and adminPaced:
                     returnInfo['adminPaced'] = adminPaced
 
                 # Return updated timestamp

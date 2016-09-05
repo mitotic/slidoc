@@ -87,6 +87,7 @@ Sliobj.answerPlugins = null;
 Sliobj.incrementPlugins = null;
 Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
+Sliobj.scores = null;
 
 Sliobj.errorRetries = 0;
 
@@ -448,6 +449,24 @@ function onreadystateaux() {
 
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
+function parseNumber(x) {
+    try {
+	var retval;
+	if (!isNumber(x))
+	    return null;
+	if (!isNaN(x))
+	    return x || 0;
+	if (/^[\+\-]?\d+$/.exec()) {
+	    retval = parseInt(x);
+	} else {
+            retval = parseFloat(x);
+	}
+	return isNaN(retval) ? null : retval;
+    } catch(err) {
+        return null;
+    }
+}
+
 function zeroPad(num, pad) {
     // Pad num with zeros to make pad digits
     var maxInt = Math.pow(10, pad);
@@ -498,7 +517,7 @@ function escapeHtml(unsafe) {
 }
 
 function unescapeAngles(text) {
-    return text.replace('&lt;', '<').replace('&gt;', '>')
+    return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
 
 function copyAttributes(oldObj, newObj, excludeAttributes) {
@@ -635,14 +654,26 @@ function resetSessionCallback() {
 }
 
 Slidoc.showConcepts = function (msg) {
+    var firstSlideId = getVisibleSlides()[0].id;
+    var attr_vals = getChapterAttrs(firstSlideId);
+    var chapter_id = parseSlideId(firstSlideId)[0];
+    var questionConcepts = [];
+    for (var j=0; j<attr_vals.length; j++) {
+	var question_attrs = attr_vals[j];
+	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	var concept_elem = document.getElementById(slide_id+"-concepts");
+	questionConcepts.push( concept_elem ? concept_elem.textContent.trim().split('; ') : [] );
+    }
+    var missedConcepts = trackConcepts(Sliobj.scores.qscores, questionConcepts, Sliobj.allQuestionConcepts)
+
     var html = msg || '';
     if (!msg && Sliobj.params.gd_sheet_url)
 	html += 'Click <span class="slidoc-clickable" onclick="Slidoc.showGrades();">here</span> to view other scores/grades<p></p>'
-    if (Sliobj.questionConcepts.length && (!controlledPace() || Sliobj.session.submitted)) {
+    if (Sliobj.allQuestionConcepts.length && (!controlledPace() || Sliobj.session.submitted)) {
 	html += '<b>Question Concepts</b><br>';
 	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
 	for (var m=0; m<labels.length; m++)
-	    html += labels[m]+conceptStats(Sliobj.questionConcepts[m], Sliobj.session.missedConcepts[m])+'<p></p>';
+	    html += labels[m]+conceptStats(Sliobj.allQuestionConcepts[m], missedConcepts[m])+'<p></p>';
     }
     Slidoc.showPopup(html || (Sliobj.session.lastSlide ? 'Not tracking concepts!' : 'Concepts tracked only in paced mode!') );
 }
@@ -1141,8 +1172,8 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    Slidoc.Plugins[pluginName] = {};
 
 	if (!(pluginName in Sliobj.session.plugins))
-	    Sliobj.session.plugins[pluginName] = {};
-
+	    Slidoc.log('ERROR: Persistent plugin store not found for plugin '+pluginName);
+	
 	defCopy.persist = Sliobj.session.plugins[pluginName];
 	defCopy.paced = Sliobj.session.paced;
 
@@ -1260,6 +1291,8 @@ function selectUserCallback(userId, result, retStatus) {
     var unpacked = unpackSession(result);
     Sliobj.session = unpacked.session;
     Sliobj.feedback = unpacked.feedback || null;
+    Sliobj.score = null;
+    scoreSession(Sliobj.session);
     prepGradeSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
     showSubmitted();
@@ -1405,7 +1438,7 @@ function slidocReadyAux2(auth) {
     Sliobj.lastInputValue = null;
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
-    Sliobj.questionConcepts = [];
+    Sliobj.allQuestionConcepts = [];
     Sliobj.sidebar = false;
     Sliobj.prevSidebar = false;
 
@@ -1597,6 +1630,7 @@ function slidocSetupAux(session, feedback) {
     // New/restored ression
     Slidoc.reportTestAction('initSession');
 
+    scoreSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
 
     if (Sliobj.adminState)
@@ -1605,7 +1639,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.gd_sheet_url)
 	toggleClass(true, 'slidoc-remote-view');
 
-    if (Sliobj.session.questionsCount)
+    if (Sliobj.scores.questionsCount)
 	Slidoc.showScore();
 
     if (Sliobj.session.submitted || Sliobj.adminState) // Suppress incremental display
@@ -1627,7 +1661,7 @@ function slidocSetupAux(session, feedback) {
     if (!toc_elem && Sliobj.session) {
 	if (Sliobj.session.paced || Sliobj.session.submitted) {
 	    var firstSlideId = getVisibleSlides()[0].id;
-	    Sliobj.questionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
+	    Sliobj.allQuestionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
 	}
 	if (!isHeadless && Sliobj.session.paced) {
 	    Slidoc.startPaced(); // This will call preAnswer later
@@ -1857,6 +1891,15 @@ function updateGradingStatus(userId) {
     option.innerHTML += html;
 }
 
+function scoreSession(session) {
+    // Tally of scores
+    Slidoc.log('scoreSession:');
+    var skipAhead = 'skip_ahead' in Sliobj.params.features;
+    var firstSlideId = getVisibleSlides()[0].id;
+    Sliobj.scores = tallyScores(getChapterAttrs(firstSlideId), session.questionsAttempted, session.hintsUsed,
+				Sliobj.params);
+}
+
 function preAnswer() {
     // Pre-answer questions (and display notes for those)
     Slidoc.log('preAnswer:');
@@ -1899,9 +1942,10 @@ function preAnswer() {
     var keys = Object.keys(Sliobj.session.questionsAttempted);
     for (var j=0; j<keys.length; j++) {
 	var qnumber = keys[j];
+	var question_attrs = attr_vals[qnumber-1];
 	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	var slide_id = chapter_id + '-' + zeroPad(qAttempted.slide, 2);
+	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.plugin, qfeedback);
     }
 
@@ -1996,7 +2040,7 @@ function showCorrectAnswersAfterSubmission() {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	Slidoc.answerClick(null, slide_id, 'submit', '', question_attrs.explain, null, qfeedback);
+	Slidoc.answerClick(null, slide_id, 'submit', '', question_attrs.explain||null, null, qfeedback);
     }
 }
 
@@ -2014,6 +2058,10 @@ function makeRandomFunction(seed) {
 }
 
 function sessionCreate() {
+    var persistPlugins = {};
+    for (var j=0; j<Sliobj.pluginList.length; j++)
+	persistPlugins[Sliobj.pluginList[j]] = {};
+
     var randomSeed = Slidoc.Random.getRandomSeed();
     return {version: Sliobj.params.sessionVersion,
 	    revision: Sliobj.params.sessionRevision,
@@ -2028,25 +2076,17 @@ function sessionCreate() {
             lastTries: 0,
             remainingTries: 0,
             tryDelay: 0,
-            lastAnswersCorrect: 0,
-            skipToSlide: 0,
 	    showTime: null,
-            questionsCount: 0,
-            questionsCorrect: 0,
-            questionsSkipped: 0,
-            weightedCount: 0,
-            weightedCorrect: 0,
             questionsAttempted: {},
 	    hintsUsed: {},
-	    plugins: {},
-            missedConcepts: []
+	    plugins: persistPlugins
 	   };
 }
 
 function unpackSession(row) {
     var result = {};
     // Unpack hidden session
-    result.session = JSON.parse( atob(row.session_hidden.replace(/\s+/, '')) );
+    result.session = JSON.parse( atob(row.session_hidden.replace(/\s+/g, '')) );
     result.session.lateToken = row.lateToken || '';
     if (row.submitTimestamp) {
 	result.session.submitted = row.submitTimestamp;
@@ -2313,7 +2353,10 @@ function sessionPut(userId, session, opts, callback) {
 	for (var j=0; j<Sliobj.params.sessionFields.length; j++) {
 	    var header = Sliobj.params.sessionFields[j];
 	    if (header.slice(0,7) != '_hidden' && header.slice(-9) != 'Timestamp') {
-		rowObj[header] = session[header];
+		if (header in session)
+		    rowObj[header] = session[header];
+		else if (opts.scores && header in opts.scores)
+		    rowObj[header] = opts.scores[header];
 	    }
 	}
 	for (var j=0; j<Sliobj.params.gradeFields.length; j++) {
@@ -2366,7 +2409,7 @@ function sessionPut(userId, session, opts, callback) {
 //////////////////////////////////////
 
 function make_id_from_text(text) {
-    return text.toLowerCase().trim().replace(/[^-\w\.]+/, '-').replace(/^[-\.]+/, '').replace(/[-\.]+$/, '');
+    return text.toLowerCase().trim().replace(/[^-\w\.]+/g, '-').replace(/^[-\.]+/g, '').replace(/[-\.]+$/g, '');
 }
 
 function getBaseURL() {
@@ -2640,8 +2683,7 @@ Slidoc.toggleInline = function (elem) {
 Slidoc.PluginRetry = function (msg) {
     Slidoc.log('Slidoc.PluginRetry:', msg);
     Sliobj.session.lastTime = Date.now();
-    if (Sliobj.params.paceLevel >= QUESTION_PACE) {
-	Sliobj.session.lastAnswersCorrect = -2;   // Incorrect answer
+    if (Sliobj.params.paceLevel == QUESTION_PACE) {
 	document.body.classList.add('slidoc-incorrect-answer-state');
     }
     var after_str = '';
@@ -2872,9 +2914,11 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 
     Slidoc.log('Slidoc.answerUpdate:', slide_id);
 
+    var expect = '';
+    var qscore = null;
     if (pluginResp) {
-	qscore = isNumber(pluginResp.score) ? pluginResp.score : null;
-	corr_answer = (isNumber(pluginResp.correctAnswer) || pluginResp.correctAnswer) ? pluginResp.correctAnswer : '';
+	qscore = parseNumber(pluginResp.score);
+	expect = pluginResp.correctAnswer || '';
     } else {
 	var pluginMatch = PLUGIN_RE.exec(corr_answer);
 	if (pluginMatch && pluginMatch[3] == 'expect') {
@@ -2883,52 +2927,18 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	    if (val) {
 		corr_answer = val;
 		corr_answer_html = '<code>'+corr_answer+'</code>';
+		expect = corr_answer;
 	    } else {
 		corr_answer = pluginMatch[1].trim();
 	    }
 	}
-	if (corr_answer) {
-	    // Check response against correct answer
-	    qscore = 0;
-	    if (question_attrs.qtype == 'number') {
-		// Check if numeric answer is correct
-		var corr_value = null;
-		var corr_error = 0.0;
-		try {
-		    var comps = corr_answer.split('+/-');
-		    corr_value = parseFloat(comps[0]);
-		    if (comps.length > 1)
-			corr_error = parseFloat(comps[1]);
-		} catch(err) {Slidoc.log('Slidoc.answerUpdate: Error in correct numeric answer:'+corr_answer);}
-		var resp_value = null;
-		try {
-		    resp_value = parseFloat(response);
-		} catch(err) {Slidoc.log('Slidoc.answerUpdate: Error - invalid numeric response:'+response);}
-		
-		if (resp_value !== null && corr_value !== null && !isNaN(resp_value) && !isNaN(corr_value) && !isNaN(corr_error))
-		    qscore = (Math.abs(resp_value - corr_value) <= 1.001*corr_error) ? 1 : 0;
-	    } else {
-		// Check if non-numeric answer is correct (all spaces are removed before comparison)
-		var norm_resp = response.trim().toLowerCase();
-		var correct_options = corr_answer.split(' OR ');
-		for (var k=0; k < correct_options.length; k++) {
-		    var norm_corr = correct_options[k].trim().toLowerCase().replace(/\s+/, ' ');
-		    if (norm_corr.indexOf(' ') > 0) {
-			// Correct answer has space(s); compare using normalized spaces
-			qscore = (norm_resp.replace(/\s+/, ' ') == norm_corr) ? 1 : 0;
-		    } else {
-			// Strip all spaces from response
-			qscore = (norm_resp.replace(/\s+/, '') == norm_corr) ? 1 : 0;
-		    }
-		    if (qscore)
-			break;
-		}
-	    }
-	    if (!setup && isNumber(qscore) && qscore < 1 && Sliobj.session.remainingTries > 0) {
-	        Slidoc.PluginRetry();
-	        return false;
-	    }
-	}
+	// Check response against correct answer
+	qscore = scoreAnswer(response, question_attrs.qtype, corr_answer);
+    }
+    if (!setup && isNumber(qscore) && qscore < 1 && Sliobj.session.remainingTries > 0) {
+	sessionPut();  // Save try count
+	Slidoc.PluginRetry();
+	return false;
     }
 
     // Handle randomized choices
@@ -2979,123 +2989,46 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	setAnswerElement(slide_id, '-response-span', disp_response);
     }
 
-    if (!setup) {
-	var explain = '';
-	if (question_attrs.explain) {
-	    var textareaElem = document.getElementById(slide_id+'-answer-textarea');
-	    explain = textareaElem.value;
-	}
-	Sliobj.session.questionsAttempted[question_attrs.qnumber] = {slide: parseSlideId(slide_id)[2],
-							      resp_type: question_attrs.qtype,
-							      response: response,
-							      explain: explain,
-							      shuffle: shuffleStr,
-							      plugin: pluginResp||null,
-							      expect: corr_answer,
-						              vote: null,
-							      score: isNumber(qscore) ? qscore : null};
-	Slidoc.answerTally(qscore, slide_id, question_attrs);
+    if (setup)
+	return;
+
+    // Not setup
+    var explain = '';
+    if (question_attrs.explain) {
+	var textareaElem = document.getElementById(slide_id+'-answer-textarea');
+	explain = textareaElem.value;
     }
-}
+    Sliobj.session.questionsAttempted[question_attrs.qnumber] = {response: response,
+								 explain: explain,
+								 shuffle: shuffleStr,
+								 plugin: pluginResp||null,
+								 expect: expect,
+								 retries: (Sliobj.session.lastTries > 1) ? Sliobj.session.lastTries-1 : 0,
+								 vote: null};
+    // Score newly attempted question (and all others)
+    scoreSession(Sliobj.session);
 
-
-Slidoc.answerTally = function (qscore, slide_id, question_attrs) {
-    Slidoc.log('Slidoc.answerTally: ', qscore, slide_id, question_attrs);
+    // Copy non-authoritative score
+    if (Sliobj.scores.qscores[question_attrs.qnumber-1] != null)
+	Sliobj.session.questionsAttempted[question_attrs.qnumber].temscore = Sliobj.scores.qscores[question_attrs.qnumber-1]
 
     var slide_num = parseSlideId(slide_id)[2];
-    if (slide_num < Sliobj.session.skipToSlide) {
+    var qnumber = question_attrs.qnumber;
+    if (slide_num < Sliobj.scores.skipToSlide) {
 	Slidoc.reportTestAction('answerSkip');
-	saveSessionAnswered(slide_id, question_attrs);
-	return;
-    }
+    } else {
+	toggleClassAll(true, 'slidoc-forward-link-allowed', Sliobj.scores.lastSkipRef);
 
-    var qHintsUsed = Sliobj.session.hintsUsed[question_attrs.qnumber] || 0;
-    
-    var qSkipCount = 0;
-    var qSkipWeight = 0;
-
-    if (Sliobj.session.paced) {
-	Sliobj.session.remainingTries = 0;
-	document.body.classList.remove('slidoc-expect-answer-state');
-
-	if ('skip_ahead' in Sliobj.params.features && Sliobj.params.paceLevel == QUESTION_PACE) {
-	    // Skip ahead only if configured and QUESTION_PACE
-	    var skip = question_attrs.skip || null;
-
-	    // If hints were used, treat answer as "incorrect"
-	    if (qscore === 1 && !qHintsUsed && Sliobj.session.lastAnswersCorrect >= 0) {
-		// 2 => Current sequence of "correct" answers
-		if (skip && skip[0] > slide_num) {
-		    // Skip ahead
-		    Sliobj.session.lastAnswersCorrect = 1;
-		    Sliobj.session.skipToSlide = skip[0];
-
-		    // Give credit for all skipped questions
-		    qSkipCount += skip[1];
-		    qSkipWeight += skip[2]
-		    Sliobj.session.questionsSkipped += skip[1];
-
-		    if (skip[3]) // Re-enable forward links for this slide
-			toggleClassAll(true, 'slidoc-forward-link-allowed', skip[3]);
-		} else {
-		    // No skipping
-		    Sliobj.session.lastAnswersCorrect = 2;
-		}
-	    } else {
-		// -2 => Current sequence with at least one incorrect answer (or hints used)
-		Sliobj.session.lastAnswersCorrect = -2;
+	if (Sliobj.session.paced) {
+	    Sliobj.session.remainingTries = 0;
+	    document.body.classList.remove('slidoc-expect-answer-state');
+	    
+	    if ('skip_ahead' in Sliobj.params.features && Sliobj.params.paceLevel == QUESTION_PACE && !Sliobj.scores.correctSequence) 
 		document.body.classList.add('slidoc-incorrect-answer-state');
-	    }
 	}
-    }
 
-    // Keep score
-    var qWeight = question_attrs.weight || 0;
-    Sliobj.session.questionsCount += 1 + qSkipCount;
-    Sliobj.session.weightedCount += qWeight + qSkipWeight;
-    var effectiveScore = isNumber(qscore) ? qscore : 1;   // Give full credit to unscored answers
-
-    if (question_attrs.hints && qHintsUsed > question_attrs.hints.length)
-	alert('Internal Error: Inconsistent hint count');
-
-    if (Sliobj.params.participationCredit) {
-	// Full/late participation credit
-	effectiveScore = !Sliobj.dueDate ? 1 : (Sliobj.params.lateCredit || 0);
-    } else if (question_attrs.hints) {
-	for (var j=0; j<qHintsUsed; j++)
-	    effectiveScore -= Math.abs(question_attrs.hints[j]);
-    }
-
-    if (effectiveScore > 0) {
-        Sliobj.session.questionsCorrect += 1 + qSkipCount;
-        Sliobj.session.weightedCorrect += effectiveScore*qWeight + qSkipWeight;
-    }
-    Slidoc.showScore();
-    Slidoc.reportTestAction('answerTally');
-    
-    if (Sliobj.session.paced && Sliobj.questionConcepts.length > 0) {
-	// Track missed concepts
-	var concept_elem = document.getElementById(slide_id+"-concepts");
-	var concepts = concept_elem ? concept_elem.textContent.split('; ') : ['null'];
-	var miss_count = (!isNumber(qscore) || qscore === 1) ? 0 : 1;
-	var primary_offset = 1;
-	for (var j=0; j<concepts.length; j++) {
-	    if (!concepts[j].trim()) {
-		primary_offset = j;
-		break;
-	    }
-	}
-	for (var j=0; j<concepts.length; j++) {
-	    if (!concepts[j].trim())
-		continue;
-	    var m = (j < primary_offset) ? 0 : 1;   // Primary/secondary concept
-	    for (var k=0; k<Sliobj.questionConcepts[m].length; k++) {
-		if (concepts[j] == Sliobj.questionConcepts[m][k]) {
-		    Sliobj.session.missedConcepts[m][k][0] += miss_count;  // Missed count
-		    Sliobj.session.missedConcepts[m][k][1] += 1;           // Attempted count
-		}
-	    }
-	}
+	Slidoc.showScore();
+	Slidoc.reportTestAction('answerTally');
     }
     saveSessionAnswered(slide_id, question_attrs);
 }
@@ -3115,7 +3048,8 @@ function saveSessionAnswered(slide_id, qattrs) {
 	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-prev', 'slidoc-slide-nav-next');
 	}
     }
-    sessionPut(null, null, {}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
+    // Save session and non-authoritative scores components
+    sessionPut(null, null, {scores: Sliobj.scores}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
 }
 
 function saveCallback(slide_id, qattrs, result, retStatus) {
@@ -3128,13 +3062,13 @@ Slidoc.showScore = function () {
     var scoreElem = document.getElementById('slidoc-score-display');
     if (!scoreElem)
 	return;
-    if (Sliobj.session.questionsCount) {
+    if (Sliobj.scores.questionsCount) {
 	if (controlledPace())
-	    scoreElem.textContent = Sliobj.session.questionsCount;
+	    scoreElem.textContent = Sliobj.scores.questionsCount;
 	else if (Sliobj.session.submitted && Sliobj.params.scoreWeight && !delayAnswers())
-	    scoreElem.textContent = Sliobj.session.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
+	    scoreElem.textContent = Sliobj.scores.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
 	else
-	    scoreElem.textContent = Sliobj.session.questionsCount+'/'+Sliobj.params.questionsMax;
+	    scoreElem.textContent = Sliobj.scores.questionsCount+'/'+Sliobj.params.questionsMax;
     } else {
 	scoreElem.textContent = '';
     }
@@ -3184,6 +3118,212 @@ Slidoc.renderText = function(elem, slide_id) {
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
 	}
     }
+}
+
+////////////////////////////
+// Section 17b: Answering2
+////////////////////////////
+
+
+function scoreAnswer(response, qtype, corrAnswer) {
+    // Handle answer types: choice, number, text
+    Slidoc.log('Slidoc.scoreAnswer:', response, qtype, corrAnswer);
+
+    if (!corrAnswer) {
+        return null;
+    }
+    var respValue = null;
+    var qscore = null;
+
+    // Check response against correct answer
+    var qscore = 0;
+    if (qtype == 'number') {
+        // Check if numeric answer is correct
+        var corrValue = null;
+        var corrError = 0.0;
+        var comps = corrAnswer.split('+/-');
+        var corrValue = parseNumber(comps[0]);
+        if (corrValue == null) {
+            qscore = null;
+            Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric answer:'+comps[0]);
+        }
+        if (comps.length > 1) {
+            corrError = parseNumber(comps[1]);
+            if (corrError == null) {
+                qscore = null;
+                Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric error:'+comps[1])
+            }
+        }
+        respValue = parseNumber(response);
+
+        if (respValue != null && corrValue != null && corrError != null) {
+            qscore = (Math.abs(respValue-corrValue) <= 1.001*corrError) ? 1 : 0;
+        }
+    } else {
+        // Check if non-numeric answer is correct (all spaces are removed before comparison)
+        var normResp = response.trim().toLowerCase();
+	// For choice, allow multiple correct answers (to fix grading problems)
+        var correctOptions = corrAnswer.split( (qtype == 'choice') ? '' : ' OR ');
+        for (var j=0; j<correctOptions.length; j++) {
+            var normCorr = correctOptions[j].trim().toLowerCase().replace(/\s+/g,' ');
+            if (normCorr.indexOf(' ') > 0) {
+                // Correct answer has space(s); compare using normalized spaces
+                qscore = (normResp.replace(/\s+/g,' ') == normCorr) ? 1 : 0;
+            } else {
+                // Strip all spaces from response
+                qscore = (normResp.replace(/\s+/g,'') == normCorr) ? 1 : 0;
+            }
+            if (qscore) {
+                break;
+            }
+        }
+    }
+
+    return qscore;
+}
+
+function tallyScores(questions, questionsAttempted, hintsUsed, params) {
+    var skipAhead = 'skip_ahead' in params.features;
+
+    var questionsCount = 0;
+    var weightedCount = 0;
+    var questionsCorrect = 0;
+    var weightedCorrect = 0;
+    var questionsSkipped = 0;
+
+    var correctSequence = 0;
+    var lastSkipRef = '';
+
+    var skipToSlide = 0;
+    var prevQuestionSlide = -1;
+
+    var qscores = [];
+    for (var j=0; j<questions.length; j++) {
+        var qnumber = j+1;
+        var qAttempted = questionsAttempted[qnumber];
+        if (!qAttempted && params.paceLevel >= QUESTION_PACE) {
+            // Process answers only in sequence
+            break;
+        }
+
+        var questionAttrs = questions[j];
+        var slideNum = questionAttrs['slide'];
+        if (!qAttempted || slideNum < skipToSlide) {
+            // Unattempted || skipped
+            qscores.push(null);
+            continue;
+        }
+
+	if (qAttempted.pluginResp)
+	    var qscore = parseNumber(qAttempted.pluginResp.score);
+	else
+            var qscore = scoreAnswer(qAttempted.response, questionAttrs.qtype,
+			 	     (qAttempted.expect || questionAttrs.correct || ''));
+
+        qscores.push(qscore);
+        var qSkipCount = 0;
+        var qSkipWeight = 0;
+
+        // Check for skipped questions
+        if (skipAhead && qscore == 1 && !hintsUsed[qnumber] && !qAttempted.retries) {
+            // Correct answer (without hints and retries)
+            if (slideNum > prevQuestionSlide+1) {
+                // Question  not part of sequence
+                correctSequence = 1;
+            } else if (correctSequence > 0) {
+                // Question part of correct sequence
+                correctSequence += 1;
+            }
+        } else {
+            // Wrong/partially correct answer or no skipAhead
+            correctSequence = 0;
+        }
+
+        prevQuestionSlide = slideNum;
+
+        lastSkipRef = ''
+        if (correctSequence && params.paceLevel == QUESTION_PACE) {
+            skip = questionAttrs.skip;
+            if (skip && skip[0] > slideNum) {
+                // Skip ahead
+                skipToSlide = skip[0];
+
+                // Give credit for all skipped questions
+                qSkipCount = skip[1];
+                qSkipWeight = skip[2];
+                lastSkipRef = skip[3];
+	    }
+        }
+
+        // Keep score for this question
+        var qWeight = questionAttrs.weight || 0;
+        questionsSkipped += qSkipCount
+        questionsCount += 1 + qSkipCount
+        weightedCount += qWeight + qSkipWeight
+
+        var effectiveScore = (parseNumber(qscore) != null) ? qscore : 1;   // Give full credit to unscored answers
+
+        if (params.participationCredit) {
+            // Full participation credit simply for attempting question (lateCredit applied in sheet)
+            effectiveScore = 1;
+
+        } else if (hintsUsed[qnumber] && questionAttrs.hints && questionAttrs.hints.length) {
+	    if (hintsUsed[qnumber] > questionAttrs.hints.length)
+		alert('Internal Error: Inconsistent hint count');
+	    for (var j=0; j<hintsUsed[qnumber]; j++)
+		effectiveScore -= Math.abs(questionAttrs.hints[j]);
+	}
+
+        if (effectiveScore > 0) {
+            questionsCorrect += 1 + qSkipCount;
+            weightedCorrect += effectiveScore*qWeight + qSkipWeight;
+        }
+    }
+
+    return { questionsCount: questionsCount, weightedCount: weightedCount,
+             questionsCorrect: questionsCorrect, weightedCorrect: weightedCorrect,
+             questionsSkipped: questionsSkipped, correctSequence: correctSequence, skipToSlide: skipToSlide,
+             correctSequence: correctSequence, lastSkipRef: lastSkipRef, qscores: qscores};
+}
+
+function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
+    // Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
+    var missedConcepts = [ [], [] ];
+    for (var m=0; m<2; m++) {
+	for (var k=0; k<allQuestionConcepts[m].length; k++) {
+	    missedConcepts[m].push([0,0]);
+	}
+    }
+
+    for (var qnumber=1; qnumber<=qscores.length; qnumber++) {
+	var qConcepts = questionConcepts[qnumber-1];
+	if (qscores[qnumber-1] === null || !qConcepts.length)
+	    continue;
+	var missed = qscores[qnumber-1] < 1;
+
+	var primaryOffset = 1;
+	for (var j=0;j<qConcepts.length;j++) {
+            if (!qConcepts[j].trim()) {
+		primaryOffset = j;
+		break;
+            }
+	}
+
+	for (var j=0;j<qConcepts.length;j++) {
+            if (!qConcepts[j].trim()) {
+		continue;
+            }
+            var m = (j < primaryOffset) ? 0 : 1;   // Primary/secondary concept
+            for (var k=0; k < allQuestionConcepts[m].length; k++) {
+		if (qConcepts[j] == allQuestionConcepts[m][k]) {
+                    if (missed)
+			missedConcepts[m][k][0] += 1;    // Missed count
+                    missedConcepts[m][k][1] += 1;        // Attempted count
+		}
+	    }
+	}
+    }
+    return missedConcepts;
 }
 
 //////////////////////////
@@ -3258,8 +3398,8 @@ Slidoc.submitClick = function(elem, noFinalize) {
     }
 
     var prompt = '';
-    if (Sliobj.session.questionsCount < Sliobj.params.questionsMax)
-	prompt = 'You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to proceed with submission?'
+    if (Sliobj.scores.questionsCount < Sliobj.params.questionsMax)
+	prompt = 'You have only answered '+Sliobj.scores.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to proceed with submission?'
 
     var finalize_answers = [];
     if (prompt && !noFinalize) {
@@ -3395,8 +3535,8 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var question_attrs = getQuestionAttrs(slide_id);
 	var gradeValue = gradeInput.value.trim();
 
-	if (gradeValue && gradeValue > question_attrs.gweight) {
-	    if (!window.confirm('Entering grade '+gradeValue+' that exceeds the maximum '+question_attrs.gweight+'. Proceed anyway?'))
+	if (gradeValue && gradeValue > (question_attrs.gweight||0)) {
+	    if (!window.confirm('Entering grade '+gradeValue+' that exceeds the maximum '+(question_attrs.gweight||0)+'. Proceed anyway?'))
 		return;
 	}
 	var commentsValue = commentsArea.value.trim();
@@ -3477,25 +3617,6 @@ Slidoc.startPaced = function () {
     Sliobj.delaySec = null;
 
     var firstSlideId = getVisibleSlides()[0].id;
-
-    if (!Sliobj.session.lastSlide) {
-	// Start of session
-	if (Sliobj.questionConcepts.length > 0) {
-	    Sliobj.session.missedConcepts = [ [], [] ];
-	    for (var m=0; m<2; m++) {
-		for (var k=0; k<Sliobj.questionConcepts[m].length; k++) {
-		    Sliobj.session.missedConcepts[m].push([0,0]);
-		}
-	    }
-	} else {
-	    Sliobj.session.missedConcepts = [];
-	}
-    } else {
-	if (Sliobj.session.missedConcepts.length > 0 && Sliobj.questionConcepts.length > 0 &&
-	    (Sliobj.session.missedConcepts[0].length != Sliobj.questionConcepts[0].length ||
-	     Sliobj.session.missedConcepts[1].length != Sliobj.questionConcepts[1].length) )
-	    alert('ERROR: Mismatch between question concepts and missed concepts length (reset session, if possible)');
-    }
 
     Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-'); // Hide notes for slide view
     Slidoc.classDisplay('slidoc-question-notes', 'none'); // Hide notes toggle for pacing
@@ -3722,7 +3843,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     if (!slides || slide_num < 1 || slide_num > slides.length)
 	return false;
 
-    if (Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.session.skipToSlide) {
+    if (Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
 	showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	return false;
@@ -3735,8 +3856,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
-	if (!controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.session.questionsCount < Sliobj.params.questionsMax)) {
-	    var prompt = 'You have only answered '+Sliobj.session.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
+	if (!controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
+	    var prompt = 'You have only answered '+Sliobj.scores.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
 	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
 		return false;
 	}
@@ -3781,10 +3902,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	Sliobj.session.remainingTries = 0;
 	Sliobj.session.tryDelay = 0;
 	if (Sliobj.questionSlide) {
-	    if (Sliobj.session.lastAnswersCorrect != 2 && Sliobj.session.lastAnswersCorrect != -2) // New seq. of questions
-		Sliobj.session.lastAnswersCorrect = 0;
 	    if (Sliobj.params.paceLevel >= QUESTION_PACE)  {
-		// Non-zero remaining tries for QUESTION_PACE or greater
+		// Non-zero remaining tries only for QUESTION_PACE or greater
 		if (Sliobj.params.paceLevel == QUESTION_PACE && question_attrs.retry) {
 		    // Multiple tries only allowed for QUESTION_PACE
 		    Sliobj.session.remainingTries = 1+question_attrs.retry[0];
@@ -3793,9 +3912,6 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		    Sliobj.session.remainingTries = 1;
 		}
 	    }
-	} else {
-            // 1 => Last sequence of questions was answered correctly
-	    Sliobj.session.lastAnswersCorrect = (Sliobj.session.lastAnswersCorrect > 0) ? 1 : -1;
         }
 
 	var pluginButton = document.getElementById("slidoc-button-plugin");
@@ -3856,11 +3972,11 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     }
 
     if (Sliobj.session.paced) {
-	toggleClass(Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.session.lastAnswersCorrect < 0, 'slidoc-incorrect-answer-state');
+	toggleClass(Sliobj.questionSlide && Sliobj.params.paceLevel == QUESTION_PACE && !Sliobj.scores.correctSequence, 'slidoc-incorrect-answer-state');
 	toggleClass(slide_num == Sliobj.session.lastSlide, 'slidoc-paced-last-slide');
 	toggleClass(Sliobj.session.remainingTries, 'slidoc-expect-answer-state');
     }
-    toggleClass(slide_num < Sliobj.session.skipToSlide, 'slidoc-skip-optional-slide');
+    toggleClass(slide_num < Sliobj.scores.skipToSlide, 'slidoc-skip-optional-slide');
 
     var prev_elem = document.getElementById('slidoc-slide-nav-prev');
     var next_elem = document.getElementById('slidoc-slide-nav-next');

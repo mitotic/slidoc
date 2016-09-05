@@ -20,8 +20,7 @@ Share = {
     answerSave: function () {
 	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
 	if (this.paced == 3) {
-	    if (!this.testUser)
-		Slidoc.sendEvent(2, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber);
+	    Slidoc.sendEvent(2, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber);
 	} else {
 	    if (this.qattributes.share != 'after_submission' || !window.GService)
 		return;
@@ -32,8 +31,13 @@ Share = {
 
     answerNotify: function (qnumber) {
 	Slidoc.log('Slidoc.Plugins.Share.answerNotify:');
-	if (this.testUser && qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
-	    this.getResponses(false);
+	if (this.testUser) {
+	    if (qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
+		this.getResponses(false);
+	} else {
+	    if (this.qattributes.share == 'after_submission')
+		toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
+	}
     },
 
     showDetails: function () {

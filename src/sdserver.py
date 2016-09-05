@@ -115,7 +115,7 @@ class UserIdMixin(object):
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
-            token = token + ',' + sliauth.gen_user_token(token, TESTUSER_ID)
+            token = token + ',' + sliauth.gen_user_token(str(token), TESTUSER_ID)
         cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
@@ -201,6 +201,34 @@ class ActionHandler(BaseHandler):
             self.clear_id()
             sdproxy.start_shutdown('shutdown')
             self.write('Starting shutdown (also cleared cookies)')
+        elif action in ('_getcol', '_getrow'):
+            sessionName, sep, label = sessionName.partition('.')
+            sheet = sdproxy.Sheet_cache[sessionName]
+            if not sheet:
+                self.write('Session '+sessionName+' not in cache')
+            else:
+                if label.isdigit():
+                    labelNum = int(label)
+                elif len(label) == 1:
+                    labelNum = ord(label) - ord('A') + 1
+                else:
+                    colIndex = sdproxy.indexColumns(sheet)
+                    if action == '_getcol':
+                        labelNum = colIndex.get(label, 0)
+                    else:
+                        labelNum = sdproxy.indexRows(sheet, colIndex['id'], 2).get(label, 0)
+                if action == '_getcol':
+                    if labelNum < 1 or labelNum > sheet.getLastColumn():
+                        self.write('Column '+label+' not found in cached session '+sessionName)
+                    else:
+                        self.write('<pre>'+'\n'.join(str(x) for x in json.loads(json.dumps([x[0] for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1)], default=sliauth.json_default)))+'</pre>')
+                else:
+                    if labelNum < 1 or labelNum > sheet.getLastRow():
+                        self.write('Row '+label+' not found in cached session '+sessionName)
+                    else:
+                        headerVals = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0]
+                        rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
+                        self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(rowVals))) +'</pre>')
         elif action == '_unlock':
             if sessionName in Lock_cache:
                 del sdproxy.Lock_cache[sessionName]
@@ -211,9 +239,9 @@ class ActionHandler(BaseHandler):
             if sessionName:
                 sdproxy.Lock_cache[sessionName] = True
             self.write('Locked sessions: %s' % (', '.join(sdproxy.get_locked())) )
-        elif action == '_stats':
+        elif action == '_status':
             self.write('<pre>')
-            self.write(sdproxy.getCacheStats())
+            self.write(sdproxy.getCacheStatus())
             curTime = time.time()
             wsKeys = WSHandler._connections.keys()
             wsConnections = WSHandler.get_connections()
@@ -433,7 +461,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                         if evType > 0:
                             # If evType > 0, only the latest occurrence of an event type with same evType name+arguments is buffered
                             for j in range(len(conn.eventBuffer)):
-                                if conn.eventBuffer[j][1:evType+1] == sendEvent[1,evType+1]:
+                                if conn.eventBuffer[j][1:evType+1] == sendEvent[1:evType+1]:
                                     conn.eventBuffer[j] = sendEvent
                                     sendEvent = None
                                     break
@@ -445,11 +473,12 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                             if evType == -1:
                                 conn.flushEventBuffer()
 
-
             if callback_index:
                 return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
         except Exception, err:
             if Options['debug']:
+                import traceback
+                traceback.print_exc()
                 raise Exception('Error in response: '+err.message)
             elif callback_index:
                     retObj = {"result":"error", "error": err.message, "value": None, "messages": ""}
@@ -513,6 +542,8 @@ class BaseStaticFileHandler(tornado.web.StaticFileHandler):
 class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
         userId = self.get_id_from_cookie() or None
+        if Options['debug']:
+            print >>sys.stderr, "AuthStaticFileHandler.get_current_user", userId
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
@@ -546,6 +577,8 @@ class AuthLoginHandler(BaseHandler):
         username = str(self.get_argument("username", ""))
         token = str(self.get_argument("token", ""))
         next = self.get_argument("next", "/")
+        if Options['debug']:
+            print >>sys.stderr, "AuthLoginHandler.get", username, token, next, error_msg
         if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
@@ -670,7 +703,7 @@ class Application(tornado.web.Application):
 
         settings = {}
         Global.login_domain = ''
-        Global.login_url = '/_auth/login'
+        Global.login_url = '/_auth/login/'
         if Options['auth_type']:
             Global.login_url = '/_oauth/login'
             comps = Options['auth_type'].split(',')
@@ -717,7 +750,8 @@ class Application(tornado.web.Application):
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
-                          (r"/(_(dash|clear|shutdown|stats))", ActionHandler),
+                          (r"/(_(getcol|getrow)/[-\w.]+)", ActionHandler),
+                          (r"/(_(clear|dash|shutdown|status))", ActionHandler),
                            ]
 
         fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
@@ -730,7 +764,6 @@ class Application(tornado.web.Application):
             if dir:
                 handlers += [ (r'/(%s/.*)' % path, fileHandler, {"path": dir}) ]
             
-
         super(Application, self).__init__(handlers, **settings)
 
 def processTweet(fromName, message):

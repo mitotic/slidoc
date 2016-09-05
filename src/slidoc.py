@@ -34,10 +34,15 @@ import md2md
 import md2nb
 import sliauth
 
-from pygments import highlight
-from pygments.lexers import get_lexer_by_name
-from pygments.formatters import HtmlFormatter
-from pygments.util import ClassNotFound
+try:
+    import pygments
+    from pygments import highlight
+    from pygments.lexers import get_lexer_by_name
+    from pygments.formatters import HtmlFormatter
+    from pygments.util import ClassNotFound
+except ImportError:
+    pass
+
 
 from xml.etree import ElementTree
 
@@ -690,6 +695,7 @@ class SlidocRenderer(MathRenderer):
         self.plugin_defs = {}
         self.plugin_tops = []
         self.plugin_loads = set()
+        self.plugin_embeds = set()
         self.load_python = False
 
     def _new_slide(self):
@@ -819,8 +825,12 @@ class SlidocRenderer(MathRenderer):
             # Question slide
             self.question_concepts.append(self.slide_concepts)
 
-            if self.questions[-1]['share'] and 'Share' not in self.slide_plugin_embeds:
-                prefix_html += self.embed_plugin_body('Share', self.get_slide_id())
+            if self.questions[-1].get('share'):
+                if 'Share' not in self.slide_plugin_embeds:
+                    prefix_html += self.embed_plugin_body('Share', self.get_slide_id())
+
+                if self.options['config'].pace == ADMIN_PACE and 'Timer' not in self.slide_plugin_embeds:
+                    prefix_html += self.embed_plugin_body('Timer', self.get_slide_id())
 
             if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
@@ -1091,6 +1101,7 @@ class SlidocRenderer(MathRenderer):
         if plugin_name in self.slide_plugin_embeds:
             abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+self.slide_number)
         self.slide_plugin_embeds.add(plugin_name)
+        self.plugin_embeds.add(plugin_name)
 
         self.plugin_number += 1
 
@@ -1164,6 +1175,9 @@ class SlidocRenderer(MathRenderer):
         opt_values = { 'explain': ('text', 'markdown'),
                        'share': ('after_due_date', 'after_submission', 'after_grading'),
                        'vote': ('show_completed', 'show_live') }
+        if self.options['config'].pace == ADMIN_PACE:
+            # Change default share value for admin pace
+            opt_values['share'] = ('after_submission', 'after_due_date', 'after_grading')
         answer_opts = { 'explain': '', 'share': '', 'vote': ''}
         for opt in opt_comps[1:]:
             num_match = re.match(r'^(weight|retry)=([\s\d,]+)$', opt)
@@ -1250,9 +1264,9 @@ class SlidocRenderer(MathRenderer):
                     text = ''.join(x for x in text if ord(x) >= ord('A') and ord(x)-ord('A') < len(self.choices))
 
                 if qtype == 'choice':
+                    # Multiple answers for choice are allowed with a warning (to fix grading problems)
                     if len(text) > 1:
-                        message("    ****ANSWER-ERROR: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
-                    text = text[0] if text else ''
+                        message("    ****ANSWER-WARNING: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
                 elif not qtype:
                     qtype = 'multichoice' if len(text) > 1 else 'choice'
             else:
@@ -1303,8 +1317,17 @@ class SlidocRenderer(MathRenderer):
             correct_val = correct_text
 
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
-                                  explain=answer_opts['explain'], share=answer_opts['share'], vote=answer_opts['vote'],
-                                  weight=1, gweight=0, vweight=0, hints=[])
+                                  weight=1)
+
+        if answer_opts['explain']:
+            self.questions[-1].update(explain=answer_opts['explain'])
+        if answer_opts['share']:
+            self.questions[-1].update(share=answer_opts['share'])
+        if answer_opts['vote']:
+            self.questions[-1].update(vote=answer_opts['vote'])
+
+        if self.cur_qtype in ('choice', 'multichoice'):
+            self.questions[-1].update(choices=len(self.choices))
         if retry_counts[0]:
             self.questions[-1].update(retry=retry_counts)
         if correct_html and correct_html != correct_text:
@@ -1348,7 +1371,7 @@ class SlidocRenderer(MathRenderer):
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'
 
-        grade_max_str = '/'+str(self.questions[-1]['gweight']) if self.questions[-1]['gweight'] else ''
+        grade_max_str = '/'+str(self.questions[-1]['gweight']) if self.questions[-1].get('gweight') else ''
 
         ans_params.update(ans_classes=ans_classes,
                         inp_type='number' if self.cur_qtype == 'number' else 'text',
@@ -1414,7 +1437,11 @@ class SlidocRenderer(MathRenderer):
         if vweight:
             self.sheet_attributes['shareAnswers']['q'+str(self.questions[-1]['qnumber'])]['voteWeight'] = vweight
 
-        self.questions[-1].update(weight=sweight, gweight=gweight, vweight=vweight)
+        self.questions[-1].update(weight=sweight)
+        if gweight:
+            self.questions[-1].update(gweight=gweight)
+        if vweight:
+            self.questions[-1].update(vweight=vweight)
 
         if len(self.questions) == 1:
             self.cum_weights.append(sweight)
@@ -1424,19 +1451,19 @@ class SlidocRenderer(MathRenderer):
             self.cum_gweights.append(self.cum_gweights[-1] + gweight)
 
         ans_grade_fields = []
-        if 'grade_response' in self.options['config'].features or self.questions[-1]['share']:
+        if 'grade_response' in self.options['config'].features or self.questions[-1].get('share'):
             qno = 'q%d' % len(self.questions)
             if self.qtypes[-1].startswith('text/'):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
-            elif self.questions[-1]['share']:
+            elif self.questions[-1].get('share'):
                 ans_grade_fields += [qno+'_response']
             if ans_grade_fields:
-                if self.questions[-1]['share']:
+                if self.questions[-1].get('share'):
                     # Share response/explain columns
                     ans_grade_fields += [qno+'_share']
-                if self.questions[-1]['vote']:
+                if self.questions[-1].get('vote'):
                     ans_grade_fields += [qno+'_vote']
                 self.grade_fields += ans_grade_fields
                 self.max_fields += ['' for field in ans_grade_fields]
@@ -1534,7 +1561,8 @@ class SlidocRenderer(MathRenderer):
         qhints.append(hint_penalty)
         hint_number = len(qhints)
 
-        self.questions[-1]['hints'] = qhints[:]
+        if qhints:
+            self.questions[-1]['hints'] = qhints[:]
 
         prefix = self.end_hint()
 
@@ -1681,7 +1709,7 @@ Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect'
                   'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate', 'gradeDate', 'mediaURL', 'paceLevel',
                 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'attributes', 'questions',
-                'primary_qconcepts', 'secondary_qconcepts']
+                'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, due_date, media_url, pace_level,
@@ -1709,13 +1737,9 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             # Do not overwrite previous value of adminPaced
             admin_paced = prev_row[admin_paced_col]
 
-    qprops = []
-    for j, q in enumerate(questions):
-        qprops.append( [j+1, q['slide'], q['qtype'], q['correct'], q['weight'], q['explain'], question_concepts[j]] )
-
     row_values = [session_name, session_name, revision, None, session_weight, due_date, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
-                json.dumps(sheet_attributes), json.dumps(qprops),
+                json.dumps(sheet_attributes), json.dumps(questions), json.dumps(question_concepts),
                 '; '.join(sort_caseless(list(p_concepts))),
                 '; '.join(sort_caseless(list(s_concepts)))
                  ]
@@ -1795,23 +1819,23 @@ def plugin_heads(plugin_defs, plugin_loads):
         plugin_code.append('<script>(function() {\n'+plugin_defs[plugin_name]['JS'].strip()+'\n})();</script>\n')
     return ''.join(plugin_code)
 
-def strip_name(filepath):
-    # Strips dir/extension from filepath, and returns last subname assuming '-' is used to split subnames
+def strip_name(filepath, split_char=''):
+    # Strips dir/extension from filepath, and returns last subname assuming split_char to split subnames
     name = os.path.splitext(os.path.basename(filepath))[0]
-    return name.split('-')[-1]
+    return name.split(split_char)[-1] if split_char else name
     
-def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
+def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_char=''):
     if opts == 'args':
         # Generate top navigation menu from argument filenames
-        label_list = [ ('Home', '/') ] + [ (strip_name(x), site_url+x+'.html') for x in fnames if x != 'index' ]
+        label_list = [ ('Home', '/') ] + [ (strip_name(x, split_char), site_url+x+'.html') for x in fnames if x != 'index' ]
 
     elif opts in ('dirs', 'files'):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
         _, subdirs, subfiles = next(os.walk(cur_dir or '.'))
         if opts == 'dirs':
-            label_list = [(strip_name(x), x+'/index.html') for x in subdirs if x[0] not in '._']
+            label_list = [(strip_name(x, split_char), x+'/index.html') for x in subdirs if x[0] not in '._']
         else:
-            label_list = [(strip_name(x), x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
+            label_list = [(strip_name(x, split_char), x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
         label_list.sort()
         label_list = [ ('Home', '/') ] + label_list
 
@@ -1822,9 +1846,9 @@ def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir=''):
             if opt == '/' or opt == '/index.html':
                 label_list.append( ('Home', '/') )
             elif opt.endswith('/index.html'):
-                label_list.append( (strip_name(opt[:-len('/index.html')]), opt) )
+                label_list.append( (strip_name(opt[:-len('/index.html')], split_char), opt) )
             else:
-                label_list.append( (strip_name(opt), opt) )
+                label_list.append( (strip_name(opt, split_char), opt) )
                             
     elems = []
     for j, names in enumerate(label_list):
@@ -1894,7 +1918,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
 
-    combined_name = strip_name(config.all or input_paths[0])
+    combined_name = strip_name(config.all or input_paths[0], config.split_name)
     combined_file = '' if config.separate else combined_name+'.html'
 
     # Reset config properties that will be overridden for separate files
@@ -1929,7 +1953,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     config.images = set(config.images.split(',')) if config.images else set()
 
-    config.strip = md2md.make_arg_set(config.strip, strip_all)
+    config.strip = md2md.make_arg_set(config.strip, Strip_all)
     if len(input_files) == 1:
         config.strip.add('chapters')
 
@@ -2013,7 +2037,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     comb_plugin_loads = set()
     fnames = []
     for j, f in enumerate(input_files):
-        fname = strip_name(input_paths[j])
+        fname = strip_name(input_paths[j], config.split_name)
         fnames.append(fname)
         fext = os.path.splitext(os.path.basename(input_paths[j]))[1]
         if fext != '.md':
@@ -2123,12 +2147,12 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         if not j or config.separate:
             # First file or separate files
-            mathjax_config = []
+            mathjax_config = ''
             if 'equation_number' in file_config.features:
-                mathjax_config.append( r"TeX: { equationNumbers: { autoNumber: 'AMS' } }" )
+                mathjax_config += r", TeX: { equationNumbers: { autoNumber: 'AMS' } }"
             if 'tex_math' in file_config.features:
-                mathjax_config.append( r", tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }" )
-            math_inc = Mathjax_js % ','.join(mathjax_config)
+                mathjax_config += r", tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }"
+            math_inc = Mathjax_js % mathjax_config
 
         if not file_config.features.issubset(set(Features_all)):
             abort('Error: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
@@ -2181,6 +2205,10 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             # Include column for total grades
             max_score_fields += [max_params['q_grades']]
         max_score_fields += renderer.max_fields if renderer.max_fields else []
+
+        plugin_list = list(renderer.plugin_embeds)
+        plugin_list.sort()
+        js_params['plugins'] = plugin_list
         if js_params['paceLevel']:
             # File-specific js_params
             js_params['pacedSlides'] = renderer.slide_number
@@ -2269,9 +2297,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
             if gd_hmac_key:
                 tem_attributes = renderer.sheet_attributes.copy()
-                tem_attributes.update(voteDate=vote_date_str)
-                tem_attributes.update(lateCredit=js_params['lateCredit'])
-                tem_attributes.update(participationCredit=js_params['participationCredit'])
+                tem_attributes.update(params=js_params)
                 update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                      file_config.session_weight, due_date, file_config.media_url, js_params['paceLevel'],
                                      js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
@@ -2686,6 +2712,7 @@ parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due lo
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
+alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')

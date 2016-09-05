@@ -30,11 +30,12 @@ TestScripts.basic = [
   ['answerTally', 3, 500, 'choice', [randChoice(), 'C']],
   ['answerTally', 4, 500, 'input', [5.5]],
   ['answerTally', 5, 500, 'input', ['T. Rex']],
-  ['answerTally', 6, 500, 'textarea', ['def add(a,b):\n    return a+b\n']],
-  ['answerTally', 8, 500, 'choice', [randChoice()]],
-  ['answerTally', 9, 500, 'input', [42, 'According to Douglas Adams']],
-  ['answerTally', 10, 500, 'input', ['To be ...']],
-  ['answerTally', 12, 0, 'submitSession'],
+  ['answerTally', 6, 500, 'input', ['100, 35,0, -40']],
+  ['answerTally', 7, 500, 'textarea', ['def add(a,b):\n    return a+b\n']],
+  ['answerTally', 9, 500, 'choice', [randChoice()]],
+  ['answerTally', 10, 500, 'input', [42, 'According to Douglas Adams']],
+  ['answerTally', 11, 500, 'input', ['To be ...']],
+  ['answerTally', 13, 0, 'submitSession'],
   ['+lastSlideDialog', 0, 0, 'dialogReturn', [true]],
   ['endPaced', 0, 0, 'end']
   ];
@@ -160,6 +161,24 @@ normalized spaces, i.e, `T Rex` would be considered correct, but not
 the answer to a coding question, then all spaces are stripped from the
 user response before comparison, i.e., `T.Rex` and `T. Rex` would be
 considered correct.
+
+---
+
+## Text response 2
+
+Convert the following temperature values from &deg;F to &deg;C:
+
+    212, 95, 32, -40
+
+Enter only the integer portion of the &deg;C values (i.e., no decimal
+points), separated by commas, as your answer. For example,
+
+    1, 2, -4, 5
+ 
+Answer: 100,35,0,-40
+
+Note: Do not include any spaces in the correct answer; otherwise
+spaces will be expected in the user response.
 
 ---
 

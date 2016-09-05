@@ -104,6 +104,10 @@ var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
 
+var BASIC_PACE    = 1;
+var QUESTION_PACE = 2;
+var ADMIN_PACE    = 3;
+
 var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
@@ -222,7 +226,7 @@ function handleResponse(evt) {
 	var protectedSheet = (sheetName == SCORES_SHEET);
 	var restrictedSheet = (sheetName.slice(-7) == '_slidoc') && !protectedSheet;
 	var loggingSheet = (sheetName.slice(-4) == '_log');
-	var sessionParams = null;
+	var sessionEntries = null;
 	var sessionAttributes = null;
 	var adminPaced = null;
 	var dueDate = null;
@@ -360,13 +364,12 @@ function handleResponse(evt) {
 
 	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
 		// Indexed session
-		sessionParams = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
-		if (sessionParams.attributes)
-		    sessionAttributes = JSON.parse(sessionParams.attributes);
-		adminPaced = sessionParams.adminPaced;
-		dueDate = sessionParams.dueDate;
-		gradeDate = sessionParams.gradeDate;
-		voteDate = sessionAttributes && sessionAttributes.voteDate ? createDate(sessionAttributes.voteDate) : null;
+		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
+		sessionAttributes = JSON.parse(sessionEntries.attributes);
+		adminPaced = sessionEntries.adminPaced;
+		dueDate = sessionEntries.dueDate;
+		gradeDate = sessionEntries.gradeDate;
+		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
 	    }
 
 	    // Check parameter consistency
@@ -410,7 +413,7 @@ function handleResponse(evt) {
 	    var displayName = null;
 
 	    var voteSubmission = '';
-	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].slice(-5) == '_vote' && sessionAttributes && sessionAttributes.shareAnswers) {
+	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].slice(-5) == '_vote' && sessionAttributes.shareAnswers) {
 		var qno = selectedUpdates[1][0].split('_')[0];
 		voteSubmission = sessionAttributes.shareAnswers[qno] ? (sessionAttributes.shareAnswers[qno].share||'') : '';
 	    }
@@ -437,7 +440,7 @@ function handleResponse(evt) {
 
 	if (delRow) {
             // Delete row only allowed for session sheet and test user
-            if (!sessionParams || paramId != TESTUSER_ID)
+            if (!sessionEntries || paramId != TESTUSER_ID)
                 throw("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
             var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2);
             var testRow = temIndexRow[TESTUSER_ID];
@@ -705,9 +708,9 @@ function handleResponse(evt) {
 		if (!newRow && submitTimestampCol)
 		    prevSubmitted = modSheet.getSheetValues(userRow, submitTimestampCol, 1, 1)[0][0] || null;
 
-		if (sessionParams) {
+		if (sessionEntries) {
 		    // Indexed session
-		    fieldsMin = sessionParams.fieldsMin;
+		    fieldsMin = sessionEntries.fieldsMin;
 
 		    if (rowUpdates && !nooverwriteRow && prevSubmitted)
 			throw("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'");
@@ -731,7 +734,7 @@ function handleResponse(evt) {
 			    if (lateToken == PARTIAL_SUBMIT) {
 				if (newRow || !rowUpdates)
 				    throw("Error::Partial submission only works for pre-existing rows");
-                                if (sessionAttributes && sessionAttributes.participationCredit)
+                                if (sessionAttributes.params.participationCredit)
                                     throw("Error::Partial submission not allowed for participation credit")
 
 				partialSubmission = true;
@@ -813,7 +816,7 @@ function handleResponse(evt) {
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
-		    if (adminUser && sessionParams && userId != MAXSCORE_ID)
+		    if (adminUser && sessionEntries && userId != MAXSCORE_ID)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
 
 		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1])
@@ -892,7 +895,7 @@ function handleResponse(evt) {
 		    // Save updated row
 		    userRange.setValues([rowValues]);
 
-                    if (paramId == TESTUSER_ID && sessionParams && adminPaced) {
+                    if (paramId == TESTUSER_ID && sessionEntries && adminPaced) {
                         var lastSlideCol = columnIndex['lastSlide'];
                         if (lastSlideCol && rowValues[lastSlideCol-1]) {
                             // Copy test user last slide number as new adminPaced value
@@ -919,7 +922,7 @@ function handleResponse(evt) {
 			if (!adminUser)
 			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
-			if (sessionParams && !prevSubmitted)
+			if (sessionEntries && !prevSubmitted)
 			    throw("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'");
 		    }
 
@@ -962,7 +965,7 @@ function handleResponse(evt) {
 			    if (voteSubmission && colValue) {
 				// Cannot un-vote, vote can be transferred
 				var otherCol = columnIndex['q_other'];
-				if (!rowValues[headerColumn-1] && otherCol && sessionParams.otherWeight && sessionAttributes && sessionAttributes.shareAnswers) {
+				if (!rowValues[headerColumn-1] && otherCol && sessionEntries.otherWeight && sessionAttributes.shareAnswers) {
 				    // Tally newly added vote
 				    var qshare = sessionAttributes.shareAnswers[colHeader.split('_')[0]];
 				    if (qshare) {
@@ -992,7 +995,7 @@ function handleResponse(evt) {
 
 		}
 		
-                if (paramId != TESTUSER_ID && sessionParams && adminPaced)
+                if (paramId != TESTUSER_ID && sessionEntries && adminPaced)
                     returnInfo['adminPaced'] = adminPaced;
 
 		// Return updated timestamp
@@ -1034,6 +1037,24 @@ function setup() {
 
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
+function parseNumber(x) {
+    try {
+	var retval;
+	if (!isNumber(x))
+	    return null;
+	if (!isNaN(x))
+	    return x || 0;
+	if (/^[\+\-]?\d+$/.exec()) {
+	    retval = parseInt(x);
+	} else {
+            retval = parseFloat(x);
+	}
+	return isNaN(retval) ? null : retval;
+    } catch(err) {
+        return null;
+    }
+}
+
 function normalizeText(s) {
    // Lowercase, replace '" with null, all other non-alphanumerics with spaces,
    // replace 'a', 'an', 'the' with space, and then normalize spaces
@@ -1046,22 +1067,6 @@ function bin2hex(array) {
 
 function digestHex(s, n) {
     return bin2hex(Utilities.computeDigest(DIGEST_ALGORITHM, s)).slice(0, n||TRUNCATE_DIGEST);
-}
-
-function parseNumber(x) {
-    try {
-	var retval;
-	if (!isNaN(x))
-	    return x || 0;
-	if (/^[\+\-]?\d+$/.exec()) {
-	    retval = parseInt(x);
-	} else {
-            retval = parseFloat(x);
-	}
-	return isNaN(retval) ? null : retval;
-    } catch(err) {
-        return null;
-    }
 }
 
 function splitToken(token) {
@@ -1233,7 +1238,7 @@ function setValue(idValue, colName, colValue, sheetName) {
     if (!(colName in indexColIndex))
         throw('Column '+colName+' not found in index sheet '+sheetName);
 
-    indexSheet.setSheetValues(sessionRow, indexColIndex[colName], 1, 1, [[colValue]]);
+    indexSheet.getRange(sessionRow, indexColIndex[colName], 1, 1).setValue(colValue);
 }
 
 function locateNewRow(newName, newId, nameValues, idValues, skipId) {
@@ -1271,7 +1276,7 @@ function getSessionName(prompt) {
     try {
 	// Check if active sheet is a slidoc sheet
 	var sessionName = SpreadsheetApp.getActiveSheet().getName();
-	var sessionParams = lookupValues(sessionName, ['scoreWeight'], INDEX_SHEET);
+	var sessionEntries = lookupValues(sessionName, ['scoreWeight'], INDEX_SHEET);
 	return sessionName;
     } catch(err) {
 	if (!prompt)
@@ -1297,14 +1302,14 @@ function sessionAnswerSheet() {
 
 	var sessionColIndex = indexColumns(sessionSheet);
 
-	var sessionParams = lookupValues(sessionName, ['questions', 'answers', 'attributes'], INDEX_SHEET);
-	var attributes = sessionParams.attributes ? JSON.parse(sessionParams.attributes) : {};
-	var questions = JSON.parse(sessionParams.questions);
+	var sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET);
+	var attributes = JSON.parse(sessionEntries.attributes);
+	var questions = JSON.parse(sessionEntries.questions);
 	var qtypes = [];
 	var answers = [];
 	for (var j=0; j<questions.length; j++) {
-	    qtypes[j] = questions[j][2];
-	    answers[j] = questions[j][3];
+	    qtypes[j] = questions[j].qtype||'';
+	    answers[j] = questions[j].correct;
 	}
 
 	// Copy first two columns from session sheet
@@ -1312,7 +1317,7 @@ function sessionAnswerSheet() {
 	var answerHeaders = sessionSheet.getSheetValues(1, 1, 1, copyCols)[0];
 
 	var respCols = [];
-	var extraCols = ['expect', 'score', 'plugin', 'hints'];
+	var extraCols = ['expect', 'temscore', 'plugin', 'hints'];
 	for (var j=0; j<qtypes.length; j++) {
 	    var qprefix = 'q'+(j+1);
 	    var pluginMatch = PLUGIN_RE.exec(answers[j] || '');
@@ -1329,7 +1334,7 @@ function sessionAnswerSheet() {
 	    if (pluginAction == 'expect')
 		answerHeaders.push(qprefix+'_expect');
 	    if (answers[j] || pluginAction == 'response')
-		answerHeaders.push(qprefix+'_score');
+		answerHeaders.push(qprefix+'_temscore');
 	    if (pluginAction == 'response')
 		answerHeaders.push(qprefix+'_plugin');
 	    if (attributes.hints && attributes.hints[qprefix])
@@ -1360,7 +1365,7 @@ function sessionAnswerSheet() {
 	answerSheet.getRange(2, ansHeaderCols['id'], 1, 1).setValues([[AVERAGE_ID]]);
 
 	for (var ansCol=copyCols+1; ansCol<=answerHeaders.length; ansCol++) {
-	    if (answerHeaders[ansCol-1].slice(-6) == '_score') {
+	    if (answerHeaders[ansCol-1].slice(-9) == '_temscore') {
 		var ansAvgRange = answerSheet.getRange(2, ansCol, 1, 1);
 		ansAvgRange.setNumberFormat('0.###');
 		ansAvgRange.setValues([['=AVERAGE('+colIndexToChar(ansCol)+'$'+answerStartRow+':'+colIndexToChar(ansCol)+')']]);
@@ -1442,9 +1447,13 @@ function sessionStatSheet() {
 	var sessionStartRow = SESSION_START_ROW;
 	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
 
-	var sessionParams = lookupValues(sessionName, ['primary_qconcepts', 'secondary_qconcepts'], INDEX_SHEET);
-	var p_concepts = sessionParams.primary_qconcepts ? sessionParams.primary_qconcepts.split('; ') : [];
-	var s_concepts = sessionParams.secondary_qconcepts ? sessionParams.secondary_qconcepts.split('; ') : [];
+	var sessionEntries = lookupValues(sessionName, ['attributes', 'questions', 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts'], INDEX_SHEET);
+	var attributes = JSON.parse(sessionEntries.attributes);
+	var questions = JSON.parse(sessionEntries.questions);
+	var questionConcepts = JSON.parse(sessionEntries.questionConcepts);
+	var p_concepts = sessionEntries.primary_qconcepts ? sessionEntries.primary_qconcepts.split('; ') : [];
+	var s_concepts = sessionEntries.secondary_qconcepts ? sessionEntries.secondary_qconcepts.split('; ') : [];
+	var allQuestionConcepts = [p_concepts, s_concepts];
 	 
 	// Session stats headers
 	var sessionCopyCols = ['name', 'id', 'Timestamp', 'lateToken', 'lastSlide'];
@@ -1507,10 +1516,13 @@ function sessionStatSheet() {
 	for (var j=0; j<nids; j++) {
 	    var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
 	    var savedSession = JSON.parse(jsonSession);
-	    questionTallies.push([savedSession.weightedCorrect, savedSession.questionsCorrect, savedSession.questionsCount, savedSession.questionsSkipped]);
+	    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, attributes.params);
 
-	    var missedConcepts = savedSession.missedConcepts;
-	    if (missedConcepts.length) {
+	    questionTallies.push([scores.weightedCorrect, scores.questionsCorrect, scores.questionsCount, scores.questionsSkipped]);
+
+	    var qscores = scores.qscores;
+	    var missedConcepts = trackConcepts(scores.qscores, questionConcepts, allQuestionConcepts);
+	    if (missedConcepts[0].length || missedConcepts[1].length) {
 		var missedFraction = [];
 		for (var m=0; m<missedConcepts.length; m++)
 		    for (var k=0; k<missedConcepts[m].length; k++)
@@ -1528,6 +1540,249 @@ function sessionStatSheet() {
     }
 
     notify('Created sheet '+statSheet.getParent().getName()+':'+statSheetName, 'Slidoc Stats');
+}
+
+function scoreSession(sessionName) {
+    // Tally scores for all users and copy to score columns
+    var sessionSheet = getSheet(sessionName);
+    if (!sessionSheet)
+	throw('scoreSession: Sheet not found '+sessionName);
+    if (!sessionSheet.getLastColumn())
+	throw('scoreSession: No columns in sheet '+sessionName);
+
+    var sessionColIndex = indexColumns(sessionSheet);
+
+    // Session sheet columns
+    var sessionStartRow = SESSION_START_ROW;
+    var nids = sessionSheet.getLastRow()-sessionStartRow+1;
+    if (!nids)
+	return;
+
+    var sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET);
+    var attributes = JSON.parse(sessionEntries.attributes);
+    var questions = JSON.parse(sessionEntries.questions);
+    var hiddenSessionCol = sessionColIndex['session_hidden'];
+    var hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1);
+
+    var copyHeaders = ['questionsCount', 'questionsCorrect', 'weightedCorrect'];
+    var copyVals = [];
+    for (var k=0; k<copyHeaders.length; k++)
+	copyVals.push([]);
+
+    for (var j=0; j<nids; j++) {
+	var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
+	var savedSession = JSON.parse(jsonSession);
+	var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, attributes.params);
+	for (var k=0; k<copyHeaders.length; k++)
+	    copyVals[k].push([(copyHeaders[k] in scores) ? scores[copyHeaders[k]] : '']);
+    }
+    for (var k=0; k<copyHeaders.length; k++) {
+	var colIndex = sessionColIndex[copyHeaders[k]];
+	if (!colIndex)
+	    throw('Score column '+copyHeaders[k]+' not found in sheet '+sessionName);
+	sessionSheet.getRange(sessionStartRow, colIndex, nids, 1).setValues(copyVals[k]);
+    }
+}
+
+
+function scoreAnswer(response, qtype, corrAnswer) {
+    // Handle answer types: choice, number, text
+
+    if (!corrAnswer) {
+        return null;
+    }
+    var respValue = null;
+    var qscore = null;
+
+    // Check response against correct answer
+    var qscore = 0;
+    if (qtype == 'number') {
+        // Check if numeric answer is correct
+        var corrValue = null;
+        var corrError = 0.0;
+        var comps = corrAnswer.split('+/-');
+        var corrValue = parseNumber(comps[0]);
+        if (corrValue == null) {
+            qscore = null;
+            throw('Slidoc.scoreAnswer: Error in correct numeric answer:'+comps[0]);
+        }
+        if (comps.length > 1) {
+            corrError = parseNumber(comps[1]);
+            if (corrError == null) {
+                qscore = null;
+                throw('Slidoc.scoreAnswer: Error in correct numeric error:'+comps[1])
+            }
+        }
+        respValue = parseNumber(response);
+
+        if (respValue != null && corrValue != null && corrError != null) {
+            qscore = (Math.abs(respValue-corrValue) <= 1.001*corrError) ? 1 : 0;
+        }
+    } else {
+        // Check if non-numeric answer is correct (all spaces are removed before comparison)
+        var normResp = response.trim().toLowerCase();
+	// For choice, allow multiple correct answers (to fix grading problems)
+        var correctOptions = corrAnswer.split( (qtype == 'choice') ? '' : ' OR ');
+        for (var j=0; j<correctOptions.length; j++) {
+            var normCorr = correctOptions[j].trim().toLowerCase().replace(/\s+/g,' ');
+            if (normCorr.indexOf(' ') > 0) {
+                // Correct answer has space(s); compare using normalized spaces
+                qscore = (normResp.replace(/\s+/g,' ') == normCorr) ? 1 : 0;
+            } else {
+                // Strip all spaces from response
+                qscore = (normResp.replace(/\s+/g,'') == normCorr) ? 1 : 0;
+            }
+            if (qscore) {
+                break;
+            }
+        }
+    }
+
+    return qscore;
+}
+
+function tallyScores(questions, questionsAttempted, hintsUsed, params) {
+    var skipAhead = 'skip_ahead' in params.features;
+
+    var questionsCount = 0;
+    var weightedCount = 0;
+    var questionsCorrect = 0;
+    var weightedCorrect = 0;
+    var questionsSkipped = 0;
+
+    var correctSequence = 0;
+    var lastSkipRef = '';
+
+    var skipToSlide = 0;
+    var prevQuestionSlide = -1;
+
+    var qscores = [];
+    for (var j=0; j<questions.length; j++) {
+        var qnumber = j+1;
+        var qAttempted = questionsAttempted[qnumber];
+        if (!qAttempted && params.paceLevel >= QUESTION_PACE) {
+            // Process answers only in sequence
+            break;
+        }
+
+        var questionAttrs = questions[j];
+        var slideNum = questionAttrs['slide'];
+        if (!qAttempted || slideNum < skipToSlide) {
+            // Unattempted || skipped
+            qscores.push(null);
+            continue;
+        }
+
+	if (qAttempted.pluginResp)
+	    var qscore = parseNumber(qAttempted.pluginResp.score);
+	else
+            var qscore = scoreAnswer(qAttempted.response, questionAttrs.qtype,
+			 	     (qAttempted.expect || questionAttrs.correct || ''));
+
+        qscores.push(qscore);
+        var qSkipCount = 0;
+        var qSkipWeight = 0;
+
+        // Check for skipped questions
+        if (skipAhead && qscore == 1 && !hintsUsed[qnumber] && !qAttempted.retries) {
+            // Correct answer (without hints and retries)
+            if (slideNum > prevQuestionSlide+1) {
+                // Question  not part of sequence
+                correctSequence = 1;
+            } else if (correctSequence > 0) {
+                // Question part of correct sequence
+                correctSequence += 1;
+            }
+        } else {
+            // Wrong/partially correct answer or no skipAhead
+            correctSequence = 0;
+        }
+
+        prevQuestionSlide = slideNum;
+
+        lastSkipRef = ''
+        if (correctSequence && params.paceLevel == QUESTION_PACE) {
+            skip = questionAttrs.skip;
+            if (skip && skip[0] > slideNum) {
+                // Skip ahead
+                skipToSlide = skip[0];
+
+                // Give credit for all skipped questions
+                qSkipCount = skip[1];
+                qSkipWeight = skip[2];
+                lastSkipRef = skip[3];
+	    }
+        }
+
+        // Keep score for this question
+        var qWeight = questionAttrs.weight || 0;
+        questionsSkipped += qSkipCount
+        questionsCount += 1 + qSkipCount
+        weightedCount += qWeight + qSkipWeight
+
+        var effectiveScore = (parseNumber(qscore) != null) ? qscore : 1;   // Give full credit to unscored answers
+
+        if (params.participationCredit) {
+            // Full participation credit simply for attempting question (lateCredit applied in sheet)
+            effectiveScore = 1;
+
+        } else if (hintsUsed[qnumber] && questionAttrs.hints && questionAttrs.hints.length) {
+	    if (hintsUsed[qnumber] > questionAttrs.hints.length)
+		alert('Internal Error: Inconsistent hint count');
+	    for (var j=0; j<hintsUsed[qnumber]; j++)
+		effectiveScore -= Math.abs(questionAttrs.hints[j]);
+	}
+
+        if (effectiveScore > 0) {
+            questionsCorrect += 1 + qSkipCount;
+            weightedCorrect += effectiveScore*qWeight + qSkipWeight;
+        }
+    }
+
+    return { questionsCount: questionsCount, weightedCount: weightedCount,
+             questionsCorrect: questionsCorrect, weightedCorrect: weightedCorrect,
+             questionsSkipped: questionsSkipped, correctSequence: correctSequence, skipToSlide: skipToSlide,
+             correctSequence: correctSequence, lastSkipRef: lastSkipRef, qscores: qscores};
+}
+
+function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
+    // Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
+    var missedConcepts = [ [], [] ];
+    for (var m=0; m<2; m++) {
+	for (var k=0; k<allQuestionConcepts[m].length; k++) {
+	    missedConcepts[m].push([0,0]);
+	}
+    }
+
+    for (var qnumber=1; qnumber<=qscores.length; qnumber++) {
+	var qConcepts = questionConcepts[qnumber-1];
+	if (qscores[qnumber-1] === null || !qConcepts.length)
+	    continue;
+	var missed = qscores[qnumber-1] < 1;
+
+	var primaryOffset = 1;
+	for (var j=0;j<qConcepts.length;j++) {
+            if (!qConcepts[j].trim()) {
+		primaryOffset = j;
+		break;
+            }
+	}
+
+	for (var j=0;j<qConcepts.length;j++) {
+            if (!qConcepts[j].trim()) {
+		continue;
+            }
+            var m = (j < primaryOffset) ? 0 : 1;   // Primary/secondary concept
+            for (var k=0; k < allQuestionConcepts[m].length; k++) {
+		if (qConcepts[j] == allQuestionConcepts[m][k]) {
+                    if (missed)
+			missedConcepts[m][k][0] += 1;    // Missed count
+                    missedConcepts[m][k][1] += 1;        // Attempted count
+		}
+	    }
+	}
+    }
+    return missedConcepts;
 }
 
 function emailTokens() {
@@ -1703,15 +1958,16 @@ function updateScoreSheet() {
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
 
-	    var sessionAttributes = null;
-	    var sessionParams = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes'], INDEX_SHEET);
-	    if (sessionParams.attributes)
-		    sessionAttributes = JSON.parse(sessionParams.attributes);
-	    var gradeDate = parseNumber(sessionParams.gradeDate) || null;
-	    var sessionWeight = parseNumber(sessionParams.sessionWeight) || 0;
-	    var scoreWeight = parseNumber(sessionParams.scoreWeight) || 0;
-	    var gradeWeight = parseNumber(sessionParams.gradeWeight) || 0;
-	    var otherWeight = parseNumber(sessionParams.otherWeight) || 0;
+	    // Update session scores (in case weights or correct answers have changed)
+	    scoreSession(sessionName);
+
+	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes'], INDEX_SHEET);
+            var sessionAttributes = JSON.parse(sessionEntries.attributes);
+	    var gradeDate = parseNumber(sessionEntries.gradeDate) || null;
+	    var sessionWeight = parseNumber(sessionEntries.sessionWeight) || 0;
+	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
+	    var gradeWeight = parseNumber(sessionEntries.gradeWeight) || 0;
+	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
 
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
 		continue;
@@ -1787,8 +2043,8 @@ function updateScoreSheet() {
 		    var lateToken = vlookup('lateToken', j+scoreStartRow);
 		    var cumScore = lookups.join('+');
 		    var combinedScore = '';
-		    if (sessionAttributes && sessionAttributes.lateCredit) {
-			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", '+sessionAttributes.lateCredit+', 1)*( '+cumScore+' )';
+		    if (sessionAttributes.params.lateCredit) {
+			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", '+sessionAttributes.params.lateCredit+', 1)*( '+cumScore+' )';
 		    } else {
 			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", "", '+cumScore+ ' )';
 		    }
