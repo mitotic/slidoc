@@ -642,7 +642,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                         return
                     username = username[:-len(Global.login_domain)]
 
-                if username in (ADMINUSER_ID, TESTUSER_ID):
+                if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
                     self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
 
             displayName = user.get('family_name','').replace(',', ' ')
@@ -675,7 +675,7 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             user = yield self.get_authenticated_user()
             # Save the user using e.g. set_secure_cookie()
             username = user['username']
-            if username in (ADMINUSER_ID, TESTUSER_ID):
+            if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
             username = self.get_alt_name(username)
             displayName = user['name']

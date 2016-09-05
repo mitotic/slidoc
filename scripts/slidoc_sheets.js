@@ -234,12 +234,10 @@ function handleResponse(evt) {
 	var voteDate = null;
 	var curDate = new Date();
 
-	if (!adminUser) {
-	    if (proxy)
-		throw("Error::Must be admin user for proxy access to sheet '"+sheetName+"'");
-	    if (restrictedSheet)
-		throw("Error::Must be admin user to access restricted sheet '"+sheetName+"'");
-	}
+	if (proxy && !adminUser)
+	    throw("Error::Must be admin user for proxy access to sheet '"+sheetName+"'");
+	if (restrictedSheet && !adminUser)
+	    throw("Error::Must be admin user to access restricted sheet '"+sheetName+"'");
 
 	var rosterValues = [];
 	var rosterSheet = getSheet(ROSTER_SHEET);
@@ -261,8 +259,16 @@ function handleResponse(evt) {
 	returnInfo.prevTimestamp = null;
 	returnInfo.timestamp = null;
 
-	if (proxy && params.allupdates) {
-	    // Update multiple sheets
+	if (proxy && params.get && params.all) {
+	    // Return all sheet values to proxy
+	    var modSheet = getSheet(sheetName);
+	    if (!modSheet)
+		throw("Error:NOSHEET:Sheet '"+sheetName+"' not found");
+	    returnValues = modSheet.getSheetValues(1, 1, modSheet.getLastRow(), modSheet.getLastColumn());
+
+	} else if (proxy && params.allupdates) {
+	    // Update multiple sheets from proxy
+	    returnValues = [];
 	    var data = JSON.parse(params.data);
 	    for (var j=0; j<data.length; j++) {
 		var updateSheetName = data[j][0];
@@ -450,14 +456,11 @@ function handleResponse(evt) {
 	} else if (!rowUpdates && !selectedUpdates && !getRow && !getShare) {
 	    // No row updates/gets
 	    returnValues = [];
-	} else if (proxy && params.allupdates) {
-	    // Already handled
-	    returnValues = [];
+	} else if (proxy) {
+	    // Already handled proxy get and updates
 	} else if (getRow && allRows) {
 	    // Get all rows and columns
-	    if (proxy)
-		returnValues = modSheet.getSheetValues(1, 1, modSheet.getLastRow(), columnHeaders.length);
-	    else if (modSheet.getLastRow() > numStickyRows)
+	    if (modSheet.getLastRow() > numStickyRows)
 		returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
 	    else
 		returnValues = [];
@@ -1748,6 +1751,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
 function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
     // Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
     var missedConcepts = [ [], [] ];
+    if (allQuestionConcepts.length != 2)
+	return;
     for (var m=0; m<2; m++) {
 	for (var k=0; k<allQuestionConcepts[m].length; k++) {
 	    missedConcepts[m].push([0,0]);

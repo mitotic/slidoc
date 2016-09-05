@@ -250,6 +250,8 @@ function setupCache(auth, callback) {
 		selectUser(auth, callback);
 		for (var j=0; j<Sliobj.userList.length; j++)
 		    gsheet.getRow(Sliobj.userList[j], checkGradingCallback.bind(null, Sliobj.userList[j]));
+		if (Sliobj.gradingUser == 1)
+		    Slidoc.nextUser(true, true);
 	    }
 	} else {
 	    var err_msg = 'Failed to setup Google Docs cache: ' + (retStatus ? retStatus.error : '');
@@ -1299,8 +1301,10 @@ function selectUserCallback(userId, result, retStatus) {
     preAnswer();
 }
 
-Slidoc.nextUser = function (forward) {
+Slidoc.nextUser = function (forward, first) {
     if (!Sliobj.gradingUser)
+	return;
+    if (first && nextUserAux(Sliobj.gradingUser))
 	return;
     if (forward) {
 	for (var j=Sliobj.gradingUser+1; j <= Sliobj.userList.length; j++) {
@@ -1317,7 +1321,7 @@ Slidoc.nextUser = function (forward) {
 
 function nextUserAux(gradingUser) {
     var option = document.getElementById('slidoc-switch-user-'+gradingUser);
-    if (!option || option.disabled)
+    if (!option || option.dataset.unsubmitted)
 	return false;
     option.selected = true;
     Sliobj.gradingUser = gradingUser;
@@ -1857,7 +1861,7 @@ function checkGradingStatus(userId, session, feedback) {
 	Sliobj.userGrades[userId].grading = need_grading;
     updateGradingStatus(userId);
 
-    if (need_updates) {
+    if (need_updates && Sliobj.userGrades[userId].submitted) {
 	// Set unattempted grades to zero
 	var gsheet = getSheet(Sliobj.sessionName);
 
@@ -1875,17 +1879,14 @@ function updateGradingStatus(userId) {
 	return;
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
     var html = ''
-    if (!Sliobj.userGrades[userId].grading) {
-	html += SYMS.wrongMark;
-	option.disabled = 'disabled';
-    } else {
+    if (Sliobj.userGrades[userId].grading) {
 	var count = Object.keys(Sliobj.userGrades[userId].grading).length;
 	if (Sliobj.userGrades[userId].submitted)
-	    html += count || SYMS.correctMark;
+	    html += count ? (count+' '+SYMS.anyMark) : SYMS.correctMark;
 	else
-	    html += count + ' ' + SYMS.wrongMark;
-	option.disabled = null;
+	    html += count
     }
+    option.dataset.unsubmitted = Sliobj.userGrades[userId].submitted ? '' : 'unsubmitted';
     option.innerHTML = '';
     option.appendChild(document.createTextNode(text));
     option.innerHTML += html;
@@ -3289,6 +3290,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
 function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
     // Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
     var missedConcepts = [ [], [] ];
+    if (allQuestionConcepts.length != 2)
+	return;
     for (var m=0; m<2; m++) {
 	for (var k=0; k<allQuestionConcepts[m].length; k++) {
 	    missedConcepts[m].push([0,0]);
@@ -3334,10 +3337,10 @@ function showSubmitted() {
     var submitElem = document.getElementById('slidoc-submit-display');
     if (!submitElem || !Sliobj.params.gd_sheet_url)
 	return;
-    if (Sliobj.session.submitted) {
-	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? SYMS['xBoxMark'] : SYMS['correctMark'];
+    if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
+	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? 'Late submission' : 'Submitted';
     } else {
-	submitElem.innerHTML = Sliobj.session.submitted ? SYMS['wrongMark'] : SYMS['anyMark'];
+	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : 'SUBMIT';
     }
 }
 
@@ -3357,7 +3360,7 @@ Slidoc.submitStatus = function () {
 	    html += '<ul>';
 	    if (incomplete) {
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.saveClick();">Save session</span></li><p></p>'
-	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span> ('+(incomplete ? ' without reaching the last slide':'')+')<li>'
+	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span>'+(incomplete ? ' (without reaching the last slide)':'')+'</li>'
 		html += '</ul>';
 	    }
 	}

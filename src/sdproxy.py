@@ -6,11 +6,14 @@ Caches an in-memory copy of Google Sheet sheets and updates them using the same 
 Updates the Google Sheets version, using one active REST request at a time.
 
 admin commands:
-    /_shutdown         Initiate clean shutdown (transmitting cache updates)
-    /_lock/session     Lock session (before direct editing of Google Sheet)
-    /_unlock/session   Unlock session (after direct edits are completed)
-    /_lock             List locked sessions (* => still trasmitting cache updates)
-    /_status           Display update status
+    /_status                 Display update status
+    /_clear                  Clear cache
+    /_shutdown               Initiate clean shutdown (transmitting cache updates)
+    /_lock/session           Lock session (before direct editing of Google Sheet)
+    /_unlock/session         Unlock session (after direct edits are completed)
+    /_lock                   List locked sessions (* => still trasmitting cache updates)
+    /_getcol/session.colname   Return column
+    /_getrow/session.rowid     Return row
 """
 from __future__ import print_function
 
@@ -76,7 +79,7 @@ def http_post(url, params_dict):
     try:
         result = json.loads(result)
     except Exception, excp:
-        pass
+        result = {'result': 'error', 'error': 'Error in http_post: result='+str(result)+': '+str(excp)}
     return result
 
 class Dummy():
@@ -116,6 +119,7 @@ def getSheet(sheetName, optional=False):
     retval = http_post(Options['SHEET_URL'], getParams) if Options['SHEET_URL'] else {'result': 'error', 'error': 'No Sheet URL'}
     if Options['DEBUG']:
         print("DEBUG:getSheet", sheetName, retval['result'], file=sys.stderr)
+
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
             Miss_cache[sheetName] = sliauth.epoch_ms()
@@ -407,7 +411,6 @@ def update_remote_sheets(force=False):
     body = urllib.urlencode(post_data)
     http_client.fetch(Options['SHEET_URL'], handle_http_response, method='POST', headers=None, body=body)
     Global.cacheRequestTime = cur_time
-
 
 def handle_http_response(response):
     Global.cacheResponseTime = sliauth.epoch_ms()

@@ -412,7 +412,7 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    var cookieUserName = cookieUserInfo.user;
 	    var cookieUserToken = cookieUserInfo.token;
 	    if (cookieUserName == 'admin') {
-		if (window.confirm('Login as _test_user?')) {
+		if (window.confirm('Login as _test_user? (Cancel for grading)')) {
 		    cookieUserName = '_test_user';
 		    cookieUserToken = cookieUserToken.split(',')[1];
 		} else {
