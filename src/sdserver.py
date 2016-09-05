@@ -230,7 +230,7 @@ class ActionHandler(BaseHandler):
                         rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
                         self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(rowVals))) +'</pre>')
         elif action == '_unlock':
-            if sessionName in Lock_cache:
+            if sessionName in sdproxy.Lock_cache:
                 del sdproxy.Lock_cache[sessionName]
             if sessionName in Sheet_cache:
                 del sdproxy.Sheet_cache[sessionName]

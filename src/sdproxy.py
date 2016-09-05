@@ -118,7 +118,7 @@ def getSheet(sheetName, optional=False):
 
     retval = http_post(Options['SHEET_URL'], getParams) if Options['SHEET_URL'] else {'result': 'error', 'error': 'No Sheet URL'}
     if Options['DEBUG']:
-        print("DEBUG:getSheet", sheetName, retval['result'], file=sys.stderr)
+        print("DEBUG:getSheet", sheetName, retval['result'], retval.get('messages'), file=sys.stderr)
 
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):

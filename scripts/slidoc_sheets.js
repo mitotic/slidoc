@@ -444,7 +444,9 @@ function handleResponse(evt) {
 	    }
 	}
 
-	if (delRow) {
+	if (proxy) {
+	    // Already handled proxy get and updates
+	} else if (delRow) {
             // Delete row only allowed for session sheet and test user
             if (!sessionEntries || paramId != TESTUSER_ID)
                 throw("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
@@ -456,8 +458,6 @@ function handleResponse(evt) {
 	} else if (!rowUpdates && !selectedUpdates && !getRow && !getShare) {
 	    // No row updates/gets
 	    returnValues = [];
-	} else if (proxy) {
-	    // Already handled proxy get and updates
 	} else if (getRow && allRows) {
 	    // Get all rows and columns
 	    if (modSheet.getLastRow() > numStickyRows)

@@ -469,6 +469,18 @@ function parseNumber(x) {
     }
 }
 
+function parseDate(dateStr) {
+    if (dateStr == 'GRADING')
+	return '(NOT YET)';
+    if (!dateStr || !dateStr.trim())
+	return null;
+    try {
+	return new Date(dateStr);
+    } catch(err) {
+	return null;
+    }
+}
+
 function zeroPad(num, pad) {
     // Pad num with zeros to make pad digits
     var maxInt = Math.pow(10, pad);
@@ -742,7 +754,7 @@ Slidoc.viewHelp = function () {
 	if (Sliobj.params.questionsMax)
 	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
 	if (Sliobj.params.gd_sheet_url && Sliobj.session)
-	    html += Sliobj.session.submitted ? ', Submitted '+Sliobj.session.submitted : ', NOT SUBMITTED';
+	    html += Sliobj.session.submitted ? ', Submitted '+parseDate(Sliobj.session.submitted) : ', NOT SUBMITTED';
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
@@ -3348,7 +3360,7 @@ Slidoc.submitStatus = function () {
     Slidoc.log('Slidoc.submitStatus: ');
     var html = '';
     if (Sliobj.session.submitted) {
-	html += 'User '+GService.gprofile.auth.id+' submitted session to Google Docs on '+ Sliobj.session.submitted;
+	html += 'User '+GService.gprofile.auth.id+' submitted session to Google Docs on '+ parseDate(Sliobj.session.submitted);
 	if (Sliobj.session.lateToken)
 	    html += ' EXCUSED LATE';
 	if (Sliobj.session.lateToken == LATE_SUBMIT)
@@ -3532,7 +3544,8 @@ Slidoc.gradeClick = function (elem, slide_id) {
     if (startGrading) {
 	if (!commentsArea.value && 'quote_response' in Sliobj.params.features)
 	    Slidoc.quoteText(null, slide_id);
-	setTimeout(function(){gradeInput.focus();}, 200);
+	var gradeElement = document.getElementById(slide_id+'-grade-element');
+	setTimeout(function(){if (gradeElement) gradeElement.scrollIntoView(true); gradeInput.focus();}, 200);
 	Slidoc.reportTestAction('gradeStart');
     } else {
 	var question_attrs = getQuestionAttrs(slide_id);
@@ -3706,11 +3719,11 @@ function showCompletionStatus() {
 	    if (Sliobj.closePopup) {
 		// Re-display popup
 		Sliobj.closePopup(true);
-		msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+Sliobj.session.submitted+'<br>';
+		msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+parseDate(Sliobj.session.submitted)+'<br>';
 		if (!Sliobj.session.paced)
 		    msg += 'You may now exit slide view and access this document normally.<br>';
 	    } else {
-		alert('Completed session submitted successfully to Google Docs at '+Sliobj.session.submitted);
+		alert('Completed session submitted successfully to Google Docs at '+parseDate(Sliobj.session.submitted));
 		return;
 	    }
 	} else  {

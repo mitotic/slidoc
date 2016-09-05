@@ -628,7 +628,7 @@ class SlidocRenderer(MathRenderer):
 '''                
 
     grading_template = '''
-  <div class="slidoc-grade-element slidoc-answeredonly">
+  <div id="%(sid)s-grade-element" class="slidoc-grade-element slidoc-answeredonly">
     <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
     <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
@@ -1720,18 +1720,27 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     admin_paced = 1 if pace_level >= ADMIN_PACE else None
 
     get_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
-                  'get': '1', 'headers': json.dumps(Index_fields)}
+                  'get': '1', 'headers': json.dumps(Index_fields), 'getheaders': '1'}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
 
+    prev_headers = retval.get('headers')
     prev_row = retval.get('value')
+    prev_questions = None
     if prev_row:
         revision_col = Index_fields.index('revision')
         admin_paced_col = Index_fields.index('adminPaced')
         if prev_row[revision_col] != revision:
             message('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
+
+        prev_questions = json.loads(prev_row[prev_headers.index('questions')])
+        if len(prev_questions) != len(questions):
+            abort('Mismatch in question numbers for session %s: previously %d but now %d' % (session_name, len(prev_questions), len(questions)))
+        for j, question in enumerate(questions):
+            if prev_questions[j]['qtype'] != question['qtype']:
+                abort('Mismatch in question %d type for session %s: previously %s but now %s' % (j+1, session_name, prev_questions[j]['qtype'], question['qtype']))
 
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
