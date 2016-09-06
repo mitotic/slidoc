@@ -1,4 +1,11 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
+
+var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
+var VERSION = '0.96.3a';
+
+var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
+var SITE_LABEL = '';        // Site label, e.g., 'calc101'
+
 //
 // SENDING FORM DATA TO GOOGLE SHEETS
 //     http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/
@@ -70,12 +77,6 @@
 //   - Any custom header names should not begin with an underscore, to avoid being mistaken for session names.
 //   - "Update scores for session" menu action will only update session columns with lookup formulas.
 //   - If you add new user rows, then you can simply copy the lookup formula from existing rows.
-
-
-var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-
-var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
-var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
@@ -184,7 +185,7 @@ function handleResponse(evt) {
 
     var returnValues = null;
     var returnHeaders = null;
-    var returnInfo = {};
+    var returnInfo = {version: VERSION};
     var returnMessages = [];
     var jsonPrefix = '';
     var jsonSuffix = '';
@@ -925,8 +926,13 @@ function handleResponse(evt) {
 			if (!adminUser)
 			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
-			if (sessionEntries && !prevSubmitted)
-			    throw("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'");
+			if (sessionEntries) {
+			    // Admin can modify grade columns only for submitted sessions before 'effective' due date
+			    // and only for non-late submissions thereafter
+			    var allowGrading = prevSubmitted || (pastSubmitDeadline && lateToken != LATE_SUBMIT);
+			    if (!allowGrading)
+				throw("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'");
+			}
 		    }
 
 		    if (voteSubmission) {
@@ -1026,6 +1032,7 @@ function handleResponse(evt) {
 	// if error return this
 	return ContentService
             .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": ''+err, "value": null,
+							 "info": returnInfo,
 							 "messages": returnMessages.join('\n')})+jsonSuffix)
             .setMimeType(mimeType);
     } finally { //release lock

@@ -31,6 +31,8 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
+VERSION = '0.96.3a'
+
 # Usually modified by importing module
 Options = {
     'DEBUG': None,      
@@ -118,7 +120,7 @@ def getSheet(sheetName, optional=False):
 
     retval = http_post(Options['SHEET_URL'], getParams) if Options['SHEET_URL'] else {'result': 'error', 'error': 'No Sheet URL'}
     if Options['DEBUG']:
-        print("DEBUG:getSheet", sheetName, retval['result'], retval.get('messages'), file=sys.stderr)
+        print("DEBUG:getSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
 
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
@@ -495,7 +497,7 @@ def handleResponse(params):
 
     returnValues = None
     returnHeaders = None
-    returnInfo = {}
+    returnInfo = {'version': VERSION}
     returnMessages = []
 
     try:
@@ -1082,8 +1084,12 @@ def handleResponse(params):
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
-                        if sessionEntries and not prevSubmitted:
-                            raise Exception("Error::Cannot selectively update non-submitted session for user "+userId+" in sheet '"+sheetName+"'")
+                        if sessionEntries:
+                            # Admin can modify grade columns only for submitted sessions before 'effective' due date
+                            # and only for non-late submissions thereafter
+                            allowGrading = prevSubmitted or (pastSubmitDeadline and lateToken != LATE_SUBMIT)
+                            if not allowGrading:
+                                raise Exception("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteSubmission:
                         # Allow vote submissions only after due date and before voting deadline
@@ -1186,6 +1192,7 @@ def handleResponse(params):
             traceback.print_exc()
 
         retObj = {"result": "error", "error": err.message, "value": None,
+                  "info": returnInfo,
                   "messages": '\n'.join(returnMessages)}
 
     if Options['DEBUG']:

@@ -29,7 +29,8 @@ var ADMIN_PACE    = 3;
 var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
-var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;'};
+var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;',
+	    xMark: '&#x2A2F'};
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
@@ -470,10 +471,10 @@ function parseNumber(x) {
 }
 
 function parseDate(dateStr) {
-    if (dateStr == 'GRADING')
-	return '(NOT YET)';
     if (!dateStr || !dateStr.trim())
 	return null;
+    if (dateStr == 'GRADING')
+	return '(NOT YET)';
     try {
 	return new Date(dateStr);
     } catch(err) {
@@ -1333,7 +1334,7 @@ Slidoc.nextUser = function (forward, first) {
 
 function nextUserAux(gradingUser) {
     var option = document.getElementById('slidoc-switch-user-'+gradingUser);
-    if (!option || option.dataset.unsubmitted)
+    if (!option || option.dataset.nograding)
 	return false;
     option.selected = true;
     Sliobj.gradingUser = gradingUser;
@@ -1830,7 +1831,7 @@ function checkGradingCallback(userId, result, retStatus) {
 
 function checkGradingStatus(userId, session, feedback) {
     Slidoc.log('checkGradingStatus:', userId);
-    if (Sliobj.userGrades[userId].grading)
+    if (Sliobj.userGrades[userId].needGrading)
 	return;
 
     if (session.submitted && session.submitted != 'GRADING')
@@ -1868,13 +1869,23 @@ function checkGradingStatus(userId, session, feedback) {
     Slidoc.log('checkGradingStatus:B', need_grading, updates);
 
     if (!Object.keys(need_grading).length && !Sliobj.userGrades[userId].submitted)
-	Sliobj.userGrades[userId].grading = null;
+	Sliobj.userGrades[userId].needGrading = null;
     else
-	Sliobj.userGrades[userId].grading = need_grading;
+	Sliobj.userGrades[userId].needGrading = need_grading;
+
+    // Admin can modify grade columns only for submitted sessions before 'effective' due date
+    // and only for non-late submissions thereafter
+    var dueDate = parseDate(Sliobj.session.lateToken) || parseDate(Sliobj.params.dueDate);
+    var pastSubmitDeadline =  dueDate && ((new Date()) > dueDate);
+    var allowGrading = Sliobj.userGrades[userId].submitted || (pastSubmitDeadline && Sliobj.session.lateToken != LATE_SUBMIT);
+
+    Sliobj.userGrades[userId].allowGrading = allowGrading;
+
     updateGradingStatus(userId);
 
-    if (need_updates && Sliobj.userGrades[userId].submitted) {
-	// Set unattempted grades to zero
+    if (need_updates && allowGrading) {
+	// Set unattempted grades to zero (to avoid 'undefined' spreadsheet cells)
+	// These will be blanked out if user later submits using a late submission token
 	var gsheet = getSheet(Sliobj.sessionName);
 
 	try {
@@ -1891,14 +1902,17 @@ function updateGradingStatus(userId) {
 	return;
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
     var html = ''
-    if (Sliobj.userGrades[userId].grading) {
-	var count = Object.keys(Sliobj.userGrades[userId].grading).length;
+    var gradeCount = Sliobj.userGrades[userId].needGrading ? Object.keys(Sliobj.userGrades[userId].needGrading).length : 0;
+    if (Sliobj.userGrades[userId].needGrading) {
 	if (Sliobj.userGrades[userId].submitted)
-	    html += count ? (count+' '+SYMS.anyMark) : SYMS.correctMark;
+	    html += gradeCount ? (gradeCount+' '+SYMS.anyMark) : SYMS.correctMark;
+	else if (Sliobj.userGrades[userId].allowGrading)
+	    html += gradeCount ? (gradeCount+' '+SYMS.xMark) : SYMS.correctMark;
 	else
-	    html += count
+	    html += gradeCount
     }
-    option.dataset.unsubmitted = Sliobj.userGrades[userId].submitted ? '' : 'unsubmitted';
+
+    option.dataset.nograding = (Sliobj.userGrades[userId].allowGrading && gradeCount) ? '' : 'nograding';
     option.innerHTML = '';
     option.appendChild(document.createTextNode(text));
     option.innerHTML += html;
@@ -3619,7 +3633,7 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
 
 function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
     Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
-    delete Sliobj.userGrades[userId].grading[qnumber];
+    delete Sliobj.userGrades[userId].needGrading[qnumber];
     updateGradingStatus(userId);
     Slidoc.reportTestAction('gradeUpdate');
 }
@@ -3640,8 +3654,8 @@ Slidoc.startPaced = function () {
 
     var curDate = new Date();
     if (Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
-	// Past submit deadline; try partial submit if QUESTION_PACE, if not submitted and not participation credit
-	if (!Sliobj.session.submitted && Sliobj.params.paceLevel >= QUESTION_PACE && !Sliobj.params.participationCredit) {
+	// Past submit deadline; try partial submit if not submitted and not participation credit
+	if (!Sliobj.session.submitted && !Sliobj.params.participationCredit) {
 	    Slidoc.endPaced();
 	    return;
 	}

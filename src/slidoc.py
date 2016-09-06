@@ -1712,9 +1712,9 @@ Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate
                 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, due_date, media_url, pace_level,
+def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
-                         questions, question_concepts, p_concepts, s_concepts):
+                         questions, question_concepts, p_concepts, s_concepts, debug=False):
     user = ADMINUSER_ID
     user_token = sliauth.gen_admin_token(hmac_key, user)
     admin_paced = 1 if pace_level >= ADMIN_PACE else None
@@ -1726,6 +1726,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
 
+    if debug:
+        print('slidoc.update_session_index: slidoc_sheets VERSION =', retval.get('info',{}).get('version'), file=sys.stderr)
     prev_headers = retval.get('headers')
     prev_row = retval.get('value')
     prev_questions = None
@@ -1746,7 +1748,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             # Do not overwrite previous value of adminPaced
             admin_paced = prev_row[admin_paced_col]
 
-    row_values = [session_name, session_name, revision, None, session_weight, due_date, None, media_url, pace_level, admin_paced,
+    row_values = [session_name, session_name, revision, None, session_weight, due_date_str, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
                 json.dumps(sheet_attributes), json.dumps(questions), json.dumps(question_concepts),
                 '; '.join(sort_caseless(list(p_concepts))),
@@ -2110,7 +2112,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     paced_files = {}
     for j, f in enumerate(input_files):
         fname = fnames[j]
-        due_date = None
+        due_date_str = ''
         vote_date_str = ''
         if not config.separate:
             file_config = config
@@ -2130,7 +2132,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if js_params['paceLevel']:
                 # Note: pace does not work with combined files
                 if file_config.due_date:
-                    due_date = sliauth.get_utc_date(file_config.due_date)
+                    due_date_str = sliauth.get_utc_date(file_config.due_date)
 
                 if file_config.vote_date:
                     vote_date_str = sliauth.get_utc_date(file_config.vote_date)
@@ -2146,6 +2148,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             gd_sheet_url = file_config.gsheet_url or ''
             js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['plugin_share_voteDate'] = vote_date_str
+            js_params['dueDate'] = due_date_str
             js_params['fileName'] = fname
 
             if js_params['paceLevel'] >= ADMIN_PACE and not gd_sheet_url:
@@ -2233,7 +2236,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 # Include column for total votes etc.
                 js_params['gradeFields'] = ['q_other'] + js_params['gradeFields']
 
-            paced_files[fname] = {'due_date': sliauth.parse_date(due_date).ctime() if due_date else ''} 
+            paced_files[fname] = {'due_date': sliauth.parse_date(due_date_str).ctime() if due_date_str else ''} 
             if gd_sheet_url:
                 if js_params['gradeWeight']:
                     paced_files[fname]['type'] = 'graded'
@@ -2308,9 +2311,10 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 tem_attributes = renderer.sheet_attributes.copy()
                 tem_attributes.update(params=js_params)
                 update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
-                                     file_config.session_weight, due_date, file_config.media_url, js_params['paceLevel'],
+                                     file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
                                      js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
-                                    renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1])
+                                     renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
+                                     debug=config.debug)
 
             if gd_sheet_url and (gd_hmac_key or not return_html):
                 create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
