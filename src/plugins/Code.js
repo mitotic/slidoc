@@ -1,5 +1,6 @@
 Code = {
     // Code execution and testing plugin
+    // Invoke as Answer: Code/python OR Code/javascript OR Code/test
     setup: { initSetup: function() {Slidoc.log('Slidoc.Plugins.Code.setup.initSetup:');},
 	   },
 
@@ -220,7 +221,7 @@ function execCode(codeType, code, expect, callback) {
     // Otherwise score = 1 for (expect == stdout), 0 otherwise
     Slidoc.log('execCode:', codeType, code, expect);
 
-    if (codeType == 'text/x-test') {
+    if (codeType == 'Code/test') {
 	if (code.indexOf('Syntax error') > -1)
 	    callback(null, null, 'Syntax error');
 	else if (code.indexOf('Semantic error') > -1)
@@ -229,13 +230,13 @@ function execCode(codeType, code, expect, callback) {
 	    callback((expect == 'Correct output')?1:0, 'Correct output', '');
 	else
 	    callback(null, 'Correct output', '');
-    } else if (codeType == 'text/x-python') {
+    } else if (codeType == 'Code/python') {
 	if (!window.Sk) {
 	    alert('Error: Skulpt module not loaded');
 	    return;
 	}
 	skRunit(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
-    } else if (codeType == 'text/x-javascript') {
+    } else if (codeType == 'Code/javascript') {
 	execJS(code, execCodeOut.bind(null, expect, callback), execCodeErr.bind(null, callback));
     }
 }
@@ -252,7 +253,7 @@ function execCodeErr(callback, err) {
 }
 
 
-/* PluginHead:
+/* PluginHead: ^(javascript|python|test)$
 <style>
 .%(pluginLabel)s-textarea,
   .%(pluginLabel)s-check-button {display: block;}

@@ -813,7 +813,7 @@ def handleResponse(params):
                         continue
                     if respCount[subrow[0]] > 1:
                         # Response occurs multiple times
-                        newSubrow = [subrow[0]+' ('+str(respCount[subrow[0]])+')'] + subrow[1:]
+                        newSubrow = [str(subrow[0])+' ('+str(respCount[subrow[0]])+')'] + subrow[1:]
                     else:
                         newSubrow = subrow
                     del respCount[subrow[0]]

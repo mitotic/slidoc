@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=1,5,2,30 -->
+<!--slidoc-defaults --pace=2 --slide_delay=5 -->
 
 # Introduction to `xarray` and `netCDF`
 

@@ -1102,7 +1102,7 @@ Slidoc.PluginManager.invoke = function (pluginInstance, action) //... extra argu
     }
 }
 
-Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) {
+Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) { // Extra args
     Slidoc.log('Slidoc.PluginManager.remoteCall:',pluginName, pluginMethod);
     if (!Slidoc.websocketPath) {
 	alert('Remote calling '+pluginName+'.'+pluginMethod+' only works with websocket connections');
@@ -1116,6 +1116,16 @@ Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) 
 
 Slidoc.PluginManager.answered = function(qnumber) {
     return Sliobj.session && Sliobj.session.questionsAttempted[qnumber];
+}
+
+Slidoc.PluginManager.lateSession = function() {
+    return Sliobj.session.lateToken == LATE_SUBMIT || Sliobj.session.lateToken == PARTIAL_SUBMIT;
+}
+
+Slidoc.PluginManager.saveSession = function() {
+    if (!Sliobj.session.paced || Sliobj.session.submitted)
+	return;
+    sessionPut();
 }
 
 function evalPluginArgs(pluginName, argStr, slide_id) {
@@ -1820,6 +1830,14 @@ Slidoc.pluginButtonClick = function () {
     return false;
 }
 
+function responseAvailable(session, qnumber) { // qnumber is optional
+    // Returns true value if uploaded files are available for a particular question or for the whole session
+    if (qnumber)
+	return session.plugins.Upload && session.plugins.Upload[qnumber];
+    else
+	return session.plugins.Upload && Object.keys(session.plugins.Upload);
+}
+
 function checkGradingCallback(userId, result, retStatus) {
     Slidoc.log('checkGradingCallback:', userId, result, retStatus);
     if (!result) {
@@ -1851,7 +1869,7 @@ function checkGradingStatus(userId, session, feedback) {
 	if (qfeedback && qfeedback.grade !== '') // Graded
 	    continue;
 	// Needs grading
-	if (qnumber in session.questionsAttempted) {
+	if (qnumber in session.questionsAttempted || responseAvailable(session, qnumber)) {
 	    need_grading[qnumber] = 1;
 	} else {
 	    // Unattempted
@@ -1860,7 +1878,7 @@ function checkGradingStatus(userId, session, feedback) {
 		var gradeField = 'q'+question_attrs.qnumber+'_grade';
 		updates[gradeField] = 0;
 	    }
-	    if (question_attrs.qtype.slice(0,5) == 'text/' || question_attrs.explain) {
+	    if (question_attrs.qtype.match(/^(text|Code)\//) || question_attrs.explain) {
 		var commentsField = 'q'+question_attrs.qnumber+'_comments';
 		updates[commentsField] = 'Not attempted';
 	    }
@@ -2271,14 +2289,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 		return;
 
 	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
-		var prompt = prefix+"Enter late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise ";
-		if (Sliobj.params.paceLevel && Sliobj.session && Object.keys(Sliobj.session.questionsAttempted).length)
-		    prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
-		else
-		    prompt += "enter '"+LATE_SUBMIT+"' to submit late (with reduced or no credit).";
-		var token = showDialog('prompt', 'lateTokenDialog', prompt);
-		if (token && token.trim()) {
-		    this.lateToken = token.trim();
+		if (setLateToken(prefix)) {
 		    retryCall();
 		    return;
 		}
@@ -2293,6 +2304,22 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
     }
     Slidoc.reportTestAction('ERROR '+err_msg);
     sessionAbort('Error in accessing session info from Google Docs: '+err_msg+' (session aborted)');
+}
+
+function setLateToken(prefix) {
+    var prompt = (prefix||'')+"Enter a valid late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise ";
+    if (Sliobj.params.paceLevel && Sliobj.session && (Object.keys(Sliobj.session.questionsAttempted).length) || responseAvailable(Sliobj.session) )
+	prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
+    else
+	prompt += "enter '"+LATE_SUBMIT+"' to submit late (with reduced or no credit).";
+    var token = showDialog('prompt', 'lateTokenDialog', prompt);
+    token = (token || '').trim();
+    if (token == PARTIAL_SUBMIT || token == LATE_SUBMIT || token.indexOf(':') > 0) {
+	this.lateToken = token;
+	return token;
+    }
+    sessionAbort('No token or invalid token provided');
+    return null;
 }
 
 function sessionManage() {
@@ -2888,7 +2915,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    }
 	}
     }  else {
-	var multiline = question_attrs.qtype.slice(0,5) == 'text/';
+	var multiline = question_attrs.qtype.match(/^(text|Code)\//);
 	var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
 	if (inpElem) {
 	    if (setup) {
@@ -2979,6 +3006,8 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	    disp_response = choiceShuffle(response, shuffleStr);
 	    disp_corr_answer = choiceShuffle(corr_answer, shuffleStr);
 	}
+    } else if (disp_corr_answer.match(/=\w+\.response\(\)/)) {
+	disp_corr_answer = '';
     }
 
     // Display correctness of response
@@ -3008,7 +3037,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     if (pluginResp)
 	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', dispCorrect && qscore !== 1);
 
-    if (question_attrs.qtype.slice(0,5) == 'text/') {
+    if (question_attrs.qtype.match(/^(text|Code)\//)) {
 	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
     } else {
 	if (question_attrs.explain)
@@ -3446,14 +3475,17 @@ Slidoc.submitClick = function(elem, noFinalize) {
 
 	    // Unattempted question
 	    var response = '';
-	    if (question_attrs.qtype.slice(-6) == 'choice') {
+	    var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
+	    if (pluginMatch && pluginMatch[3] == 'response') {
+		response = responseAvailable(Sliobj.session, qnumber);
+	    } else if (question_attrs.qtype.slice(-6) == 'choice') {
 		var choices = document.getElementsByClassName(slide_id+"-choice");
 	    	for (var i=0; i < choices.length; i++) {
 		    if (choices[i].classList.contains("slidoc-choice-selected"))
 			response += choices[i].dataset.choice;
 		}
 	    } else {
-		var multiline = question_attrs.qtype.slice(0,5) == 'text/';
+		var multiline = question_attrs.qtype.match(/^(text|Code)\//);
 		var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
 		if (inpElem)
 		    response = inpElem.value.trim();
@@ -3653,12 +3685,13 @@ Slidoc.startPaced = function () {
     preAnswer();
 
     var curDate = new Date();
-    if (Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
-	// Past submit deadline; try partial submit if not submitted and not participation credit
-	if (!Sliobj.session.submitted && !Sliobj.params.participationCredit) {
+    if (!Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
+	// Past submit deadline; force partial or late submit if not submitted
+	if (setLateToken() == PARTIAL_SUBMIT)
 	    Slidoc.endPaced();
-	    return;
-	}
+	else
+	    sessionPut();
+	return;
     }
 
     document.body.classList.add('slidoc-paced-view');

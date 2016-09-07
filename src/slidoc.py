@@ -1217,16 +1217,6 @@ class SlidocRenderer(MathRenderer):
             text = plugin_match.group(1).strip()
             plugin_name = plugin_match.group(2)
             plugin_action = plugin_match.group(3)
-        elif text.lower() in ('text/x-python', 'text/x-javascript', 'text/x-test'):
-            plugin_name = 'Code'
-            plugin_action = 'response'
-
-        if plugin_name:
-            if 'inline_js' in self.options['config'].strip and plugin_action == 'expect':
-                plugin_name = ''
-                plugin_action = ''
-            elif plugin_name not in self.slide_plugin_embeds:
-                html_prefix += self.embed_plugin_body(plugin_name, slide_id)
 
         qtype = ''
         num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
@@ -1249,10 +1239,41 @@ class SlidocRenderer(MathRenderer):
             else:
                 message("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number))
 
-        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/x-code', 'text/x-python', 'text/x-javascript', 'text/x-test', 'text/markdown', 'text/multiline', 'point', 'line'):
+        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/x-code', 'text/markdown', 'text/multiline', 'point', 'line'):
             # Unspecified answer
             qtype = text.lower()
             text = ''
+        elif not plugin_name:
+            tem_name, _, tem_args = text.partition('/')
+            tem_name = tem_name.strip()
+            tem_args = tem_args.strip()
+
+            arg_pattern = None
+            if tem_name in self.plugin_defs:
+                arg_pattern = self.plugin_defs[tem_name].get('ArgPattern', '')
+            elif tem_name in self.options['plugin_defs']:
+                arg_pattern = self.options['plugin_defs'][tem_name].get('ArgPattern', '')
+
+            if arg_pattern is not None:
+                plugin_name = tem_name
+                plugin_action = 'response'
+                if not arg_pattern:
+                    # Ignore argument
+                    qtype = plugin_name
+                    text = ''
+                elif re.match(arg_pattern, tem_args):
+                    qtype = plugin_name + '/' + tem_args
+                    text = ''
+                else:
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
+
+
+        if plugin_name:
+            if 'inline_js' in self.options['config'].strip and plugin_action == 'expect':
+                plugin_name = ''
+                plugin_action = ''
+            elif plugin_name not in self.slide_plugin_embeds:
+                html_prefix += self.embed_plugin_body(plugin_name, slide_id)
 
         if self.choices:
             if not qtype or qtype in ('choice', 'multichoice'):
@@ -1280,7 +1301,7 @@ class SlidocRenderer(MathRenderer):
         elif qtype and qtype != self.cur_qtype:
             message("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number))
 
-        if self.cur_qtype == 'text/x-python':
+        if self.cur_qtype == 'Code/python':
             self.load_python = True
 
         # Handle correct answer
@@ -1784,11 +1805,12 @@ def parse_plugin(text, name=None):
     if name and name != plugin_name:
         abort("Plugin definition must start with '"+name+" = {'")
     plugin_def = {}
-    match = re.match(r'^(.*)\n(\s*/\*\s*)?PluginHead:(.*)$', text, flags=re.DOTALL)
+    match = re.match(r'^(.*)\n(\s*/\*\s*)?PluginHead:([^\n]*)\n(.*)$', text, flags=re.DOTALL)
     if match:
         text = match.group(1)+'\n'
         comment = match.group(2)
-        tail = match.group(3).strip()
+        plugin_def['ArgPattern'] = match.group(3).strip()
+        tail = match.group(4).strip()
         if comment and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
         tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in Head/Body template

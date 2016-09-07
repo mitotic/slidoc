@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=2 --features=assessment,grade_response -->
+<!--slidoc-defaults --pace=1 --features=assessment,grade_response -->
 # Test code execution
 
 Test file
@@ -41,7 +41,7 @@ to produce the following output:
 6.25
 ```
 
-Answer: text/x-python
+Answer: Code/python
 
 ---
 
@@ -76,7 +76,7 @@ print sq(3.5)
 12.25
 ```
 
-Answer: text/x-python
+Answer: Code/python
 
 ---
 
@@ -111,7 +111,7 @@ sq(3.5)
 12.25
 ```
 
-Answer: text/x-javascript
+Answer: Code/javascript
 
 ---
 
@@ -154,7 +154,7 @@ Type `Semantic error` to generate incorrect output.
 
 Anything else will generate correct output.
 
-Answer: text/x-test
+Answer: Code/test
 
 ---
 
@@ -179,7 +179,7 @@ Correct output
 
 Type anything to generate incorrect output.
 
-Answer: text/x-test
+Answer: Code/test
 
 ---
 
@@ -214,7 +214,7 @@ Correct output
 
 Type anything to generate syntax error.
 
-Answer: text/x-test
+Answer: Code/test
 
 ---
 

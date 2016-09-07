@@ -6,6 +6,9 @@ Viewer = {
 	this.iframeElem = document.getElementById(this.pluginId+'-vieweriframe');
 
 	viewer.displayURL = this.displayURL.bind(this);
+	if (viewer.initURL)
+	    this.displayURL(viewer.initURL);
+	    
     },
 
     displayURL: function (url) {

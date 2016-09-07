@@ -53,7 +53,7 @@ Share = {
     finalizeShare: function () {
 	Slidoc.log('Slidoc.Plugins.Share.finalizeShare:');
 	if (this.paced == 3) {
-	    if (this.testUser && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
+	    if (this.testUser && !Slidoc.PluginManager.answered(this.qattributes.qnumber))
 		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
 	}
 	this.getResponses(true);
@@ -158,7 +158,7 @@ Share = {
 		prefixVal = respVal;
 		suffixVal = result[prefix+'explain'] ? result[prefix+'explain'][j] : '';
 	    }
-	    line += '<span class="slidoc-plugin-Share-resp"></span>'
+	    line += (this.qattributes.qtype == 'text/x-code') ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'
 	    line += '</li>';
 	    if (isCorrect)
 		ulistCorr.push([line, prefixVal, suffixVal]);
@@ -179,7 +179,7 @@ Share = {
 	     // answer in code element
 	    childNodes[2].textContent = ulistAll[j][1];
 
-	    // response/explanation in span element
+	    // response/explanation in pre/span element
 	    if (this.qattributes.explain == 'markdown' && window.MDConverter) 
 		childNodes[3].innerHTML = MDConverter(ulistAll[j][2], true); 
 	    else

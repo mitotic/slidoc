@@ -109,14 +109,14 @@ EVENT_BUFFER_SEC = 3
 
 
 class UserIdMixin(object):
-    def set_id(self, username, origId='', token='', displayName=''):
+    def set_id(self, username, origId='', token='', displayName='', restrict=''):
         if Options['debug']:
             print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
             token = token + ',' + sliauth.gen_user_token(str(token), TESTUSER_ID)
-        cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')
+        cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')+':'+restrict
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
@@ -134,10 +134,9 @@ class UserIdMixin(object):
     def get_alt_name(self, username):
         if username in Global.rename:
             alt_name, _, session_prefix = Global.rename[username].partition(':')
-            # Alt name may be followed by an option session name prefix for which the altname is valid, e.g., admin:ex
-            if not session_prefix or self.get_path_base(self.get_argument("next", "/")).startswith(session_prefix):
-                return alt_name
-        return username
+            # Alt name may be followed by an option session name prefix for which the altname is valid, e.g., admin:assignments
+            return alt_name, session_prefix
+        return username, ''
 
     def check_access(self, username, token):
         if username == ADMINUSER_ID:
@@ -145,13 +144,16 @@ class UserIdMixin(object):
         else:
             return token == sliauth.gen_user_token(Options['auth_key'], username)
 
-    def get_id_from_cookie(self, orig=False):
+    def get_id_from_cookie(self, orig=False, prefix=False):
         # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
         cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         if not cookieStr:
             return None
         try:
-            userId, origId, token, displayName = cookieStr.split(':')
+            comps = cookieStr.split(':')
+            userId, origId, token, displayName = comps[:4]
+            if prefix:
+                return comps[4] if len(comps) >= 5 else ''
             return origId if orig else userId
         except Exception, err:
             print >> sys.stderr, 'sdserver: Cookie error - '+str(err)
@@ -493,6 +495,11 @@ class PluginManager(object):
             cls._managers[pluginName] = PluginManager(pluginName)
         return cls._managers[pluginName]
 
+    @classmethod
+    def getFileKey(cls, filepath):
+        filename = os.path.basename(filepath)
+        return urllib.quote(sliauth.gen_hmac_token(Options['auth_key'],'_filename:'+filename), safe='')
+
     def __init__(self, pluginName):
         self.pluginName = pluginName
 
@@ -520,6 +527,14 @@ class PluginManager(object):
         except Exception, err:
             raise Exception('sdserver.PluginManager.readFile: ERROR in reading file %s: %s' % (fullpath, err))
 
+    def lockFile(self, relativeURL):
+        fullpath = Options['plugindata_dir']+relativeURL
+        if os.path.exists(fullpath):
+            try:
+                os.chmod(fullpath, 0400)
+            except Exception:
+                pass
+
     def writeFile(self, filepath, content, restricted=True, private=True):
         # Returns relative file URL
         fullpath = self.makePath(filepath, restricted=restricted, private=private)
@@ -541,21 +556,36 @@ class BaseStaticFileHandler(tornado.web.StaticFileHandler):
 
 class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
+        # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         userId = self.get_id_from_cookie() or None
         if Options['debug']:
             print >>sys.stderr, "AuthStaticFileHandler.get_current_user", userId
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
-            if not userId:
+            path = self.request.path
+            query = self.request.query
+            if getattr(self,'abs_query',''):
+                path, _, tail = path.partition('%3F')
+                query = getattr(self,'abs_query','')
+
+            if query == PluginManager.getFileKey(path):
+                return "noauth"
+            elif not userId:
                 return None
-            if self.get_path_base(self.request.path).endswith('-'+userId) or userID == ADMINUSER_ID:
+            elif self.get_path_base(self.request.path).endswith('-'+userId) or userId == ADMINUSER_ID:
                 return userId
             raise tornado.web.HTTPError(404)
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/_private' are always protected
-            return userId
+            sessionPrefix = self.get_id_from_cookie(prefix=True)
+            if not sessionPrefix:
+                return userId
+            head, _, tail = self.request.path.partition('/'+PRIVATE_PATH+'/')
+            if tail.startswith(sessionPrefix):
+                return userId
+            raise tornado.web.HTTPError(404)
 
         if not Options['auth_key']:
             self.clear_id()   # Clear any cookies
@@ -569,8 +599,18 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     @tornado.web.authenticated
     def validate_absolute_path(self, *args, **kwargs):
         return super(AuthStaticFileHandler, self).validate_absolute_path(*args, **kwargs)
-    
 
+    # Workaround for nbviewer chomping up query strings
+    def get_absolute_path(self, *args, **kwargs):
+        abs_path = super(AuthStaticFileHandler, self).get_absolute_path(*args, **kwargs)
+        if '?' in abs_path:
+            # Treat ? in path as the query delimiter (but not in get_current_user)
+            abs_path, _, self.abs_query = abs_path.partition('?')
+            if Options['debug']:
+                print >>sys.stderr, "AuthStaticFileHandler.get_absolute_path", abs_path, self.abs_query
+        return abs_path
+
+    
 class AuthLoginHandler(BaseHandler):
     def get(self):
         error_msg = self.get_argument("error", "")
@@ -652,9 +692,9 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             if not displayName:
                 displayName = username
 
-            username = self.get_alt_name(username)
+            username, prefix = self.get_alt_name(username)
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
-            self.set_id(username, user['email'], token, displayName)
+            self.set_id(username, user['email'], token, displayName, prefix)
             self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
 
@@ -677,10 +717,10 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             username = user['username']
             if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
-            username = self.get_alt_name(username)
+            username, prefix = self.get_alt_name(username, prefix)
             displayName = user['name']
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
-            self.set_id(username, user['username'], token, displayName)
+            self.set_id(username, user['username'], token, displayName, prefix)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()
@@ -844,8 +884,10 @@ def main():
         http_server = tornado.httpserver.HTTPServer(Application(), ssl_options=ssl_options)
 
         # Redirect plain HTTP to HTTPS
-        plain_http_app = tornado.web.Application([ (r'/', PlainHTTPHandler) ])
+        handlers = [ (r'/', PlainHTTPHandler) ]
+        plain_http_app = tornado.web.Application(handlers)
         plain_http_app.listen(80)
+        print >> sys.stderr, "Listening on HTTP port"
     else:
         sys.exit('SSL options must be specified for port 443')
     http_server.listen(options.port)

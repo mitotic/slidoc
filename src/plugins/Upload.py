@@ -12,6 +12,10 @@ class Upload(object):
         self.path = path
         self.userId = userId
 
+    def lockFile(self, fileURL):
+        print >> sys.stderr, 'Upload.lockFile:', fileURL
+        self.pluginManager.lockFile(fileURL)
+
     def _uploadData(self, dataParams, contentLength, content=None):
         print >> sys.stderr, 'Upload._uploadData:', dataParams, contentLength, type(content)
         if content is None:
@@ -30,9 +34,10 @@ class Upload(object):
             # Prepend session name to file path
             filepath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + filename
 
-            url = self.pluginManager.writeFile(filepath, content, restricted=True)
+            fileKey = self.pluginManager.getFileKey(filepath)
+            fileURL = self.pluginManager.writeFile(filepath, content, restricted=True)
 
-            return {'result': 'success', 'value': {'url': url, 'name': os.path.basename(filepath)}}
+            return {'result': 'success', 'value': {'name': os.path.basename(filepath), 'url': fileURL, 'fileKey': fileKey}}
         except Exception, err:
             print >> sys.stderr, 'Upload._uploadData: ERROR', str(err)
             return {'result': 'error', 'error': 'Error in saving uploaded data'}
