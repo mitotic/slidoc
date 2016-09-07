@@ -28,15 +28,17 @@ Upload = {
 
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
 	Slidoc.log('Slidoc.Plugins.Upload.init2:', fileInfo);
-	if (fileInfo && fileInfo.loadURL)
+	if (fileInfo && fileInfo.loadURL) {
+	    this.display();
 	    this.viewer.initURL = fileInfo.loadURL;
+	}
     },
 
     display: function (response, pluginResp) {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
 	if (fileInfo) {
-	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.origName+' at '+(new Date(fileInfo.uploadTime));
+	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.origName+' on '+(new Date(fileInfo.uploadTime));
 	    this.confirmLoadElem.href = fileInfo.loadURL;
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
