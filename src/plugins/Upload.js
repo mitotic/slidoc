@@ -6,7 +6,8 @@ Upload = {
 	//    =Upload('doc,docx')
 	// Or as upload response plugin
 	//    Answer: Upload/ipynb;...
-	this.confirmElem = document.getElementById(this.pluginId+'-uploadconfirm');
+	this.confirmMsgElem = document.getElementById(this.pluginId+'-uploadconfirm-msg');
+	this.confirmLoadElem = document.getElementById(this.pluginId+'-uploadconfirm-load');
 	this.uploadElem = document.getElementById(this.pluginId+'-uploadbutton');
 	this.uploadElem.addEventListener('change', this.fileUpload.bind(this), false);
 
@@ -34,7 +35,13 @@ Upload = {
     display: function (response, pluginResp) {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
-	this.confirmElem.textContent = fileInfo ? 'Successfully uploaded '+fileInfo.origName+' at '+(new Date(fileInfo.uploadTime)) : 'Nothing uploaded';
+	if (fileInfo) {
+	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.origName+' at '+(new Date(fileInfo.uploadTime));
+	    this.confirmLoadElem.href = fileInfo.loadURL;
+	} else {
+	    this.confirmMsgElem.textContent = 'Nothing uploaded';
+	    this.confirmLoadElem.href = '';
+	}
 	if (this.viewer.displayURL)
 	    this.viewer.displayURL(fileInfo ? fileInfo.loadURL : '');
     },
@@ -160,5 +167,8 @@ var fileTypeMap = {
    <input type="file" id="%(pluginId)s-uploadbutton" 
    class="slidoc-clickable slidoc-button slidoc-plugin-Upload-button %(pluginId)s-uploadbutton"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].fileUpload(this);"></input>
-   <div id="%(pluginId)s-uploadconfirm"></div>
+   <div id="%(pluginId)s-uploadconfirm">
+     <span id="%(pluginId)s-uploadconfirm-msg"></span>
+     <a id="%(pluginId)s-uploadconfirm-load" target="_blank" href="">Click here to view/download</a>
+   </div>
 */

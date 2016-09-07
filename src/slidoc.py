@@ -1447,8 +1447,8 @@ class SlidocRenderer(MathRenderer):
 
             gweight = 0
 
-        if gweight and not self.qtypes[-1].startswith('text/') and not self.questions[-1].get('explain') and self.questions[-1].get('correct','').indexOf('()') < 0:
-            message("    ****WEIGHT-WARNING: %s: Ignoring unexpected grade weight %d in non-text/non-explained slide %s" % (self.options["filename"], gweight, self.slide_number))
+        if gweight and '/' not in self.qtypes[-1] and not self.questions[-1].get('explain') and '()' not in self.questions[-1].get('correct','') < 0:
+            message("    ****WEIGHT-WARNING: %s: Ignoring unexpected grade weight %d in non-multiline/non-explained slide %s" % (self.options["filename"], gweight, self.slide_number))
             gweight = 0
 
         if vweight and not self.questions[-1].get('vote'):
@@ -1474,7 +1474,7 @@ class SlidocRenderer(MathRenderer):
         ans_grade_fields = []
         if 'grade_response' in self.options['config'].features or self.questions[-1].get('share'):
             qno = 'q%d' % len(self.questions)
-            if self.qtypes[-1].startswith('text/'):
+            if '/' in self.qtypes[-1] and self.qtypes[-1].split('/')[0] in ('text', 'Code', 'Upload'):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']

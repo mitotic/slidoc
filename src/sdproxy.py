@@ -87,13 +87,34 @@ def http_post(url, params_dict):
 class Dummy():
     pass
     
-Global = Dummy()
-
-Global.suspending = ""
-
 Sheet_cache = {}    # Cache of sheets
 Miss_cache = {}     # For optional sheets that are missing
 Lock_cache = {}     # Locked sheets
+
+Global = Dummy()
+
+def initCache():
+    Sheet_cache.clear()
+    Miss_cache.clear()
+    Lock_cache.clear()
+
+    Global.suspending = ""
+    Global.cacheRequestTime = 0
+    Global.cacheResponseTime = 0
+    Global.cacheUpdateTime = sliauth.epoch_ms()
+
+    Global.cacheRetryCount = 0
+    Global.cacheWaitTime = 0
+
+    Global.totalCacheResponseInterval = 0
+    Global.totalCacheResponseCount = 0
+    Global.totalCacheRetryCount = 0
+    Global.totalCacheRequestBytes = 0
+    Global.totalCacheResponseBytes = 0
+
+    Global.cachePendingUpdate = None
+
+initCache()
 
 def getSheet(sheetName, optional=False):
     if Global.suspending or sheetName in Lock_cache:
@@ -300,28 +321,18 @@ class Range(object):
     def setValues(self, values):
         self.sheet.setSheetValues(*(self.rng+[values]))
 
-Global.cacheRequestTime = 0
-Global.cacheResponseTime = 0
-Global.cacheUpdateTime = sliauth.epoch_ms()
-
-Global.cacheRetryCount = 0
-Global.cacheWaitTime = 0
-
-Global.totalCacheResponseInterval = 0
-Global.totalCacheResponseCount = 0
-Global.totalCacheRetryCount = 0
-
-Global.cachePendingUpdate = None
-
 def getCacheStatus():
     out = 'Cache:\n'
-    out += '  No. of updates (retries): %d (%d)\n  Average update time = %ss\n\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount, Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheRetryCount)) )
+    out += '  No. of updates (retries): %d (%d)\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount)
+    out += '  Average update time = %.2fs\n\n' % (Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheResponseCount)) )
+    out += '  Average request bytes = %d\n\n' % (Global.totalCacheRequestBytes/max(1,Global.totalCacheResponseCount) )
+    out += '  Average response bytes = %d\n\n' % (Global.totalCacheResponseBytes/max(1,Global.totalCacheResponseCount) )
     curTime = sliauth.epoch_ms()
     for sheetName, sheet in Sheet_cache.items():
-        out += 'Sheet_cache %s: %s\n' % (sheetName, (curTime-sheet.accessTime)/1000.)
+        out += 'Sheet_cache: %s: %ds\n' % (sheetName, (curTime-sheet.accessTime)/1000.)
     out += '\n'
     for sheetName in Miss_cache:
-        out += 'Miss_cache %s: %s\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
+        out += 'Miss_cache: %s: %ds\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
     out += '\n'
     return out
 
@@ -345,9 +356,7 @@ def check_shutdown():
     if not Global.suspending:
         return
     if Global.suspending == "clear":
-        Sheet_cache.clear()
-        Miss_cache.clear()
-        Global.suspending = ""
+        initCache()
         print("Cleared cache", file=sys.stderr)
     else:
         print("Completing shutdown", file=sys.stderr)
@@ -407,11 +416,13 @@ def update_remote_sheets(force=False):
     userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
 
     http_client = tornado.httpclient.AsyncHTTPClient()
+    json_data = json.dumps(modRequests, default=sliauth.json_default)
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
-                  'data': json.dumps(modRequests, default=sliauth.json_default) }
+                  'data':  json_data}
     post_data['create'] = 1
     body = urllib.urlencode(post_data)
     http_client.fetch(Options['SHEET_URL'], handle_http_response, method='POST', headers=None, body=body)
+    Global.totalCacheRequestBytes += len(json_data)
     Global.cacheRequestTime = cur_time
 
 def handle_http_response(response):
@@ -431,6 +442,7 @@ def handle_http_response(response):
         Global.cacheWaitTime += RETRY_WAIT_TIME
         schedule_update(Global.cacheWaitTime)
     else:
+        Global.totalCacheResponseBytes += len(response.body)
         if Options['DEBUG']:
             print("handle_http_response: Update SUCCESS", response.body[:256], file=sys.stderr)
         try:

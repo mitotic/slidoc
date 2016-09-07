@@ -3575,15 +3575,18 @@ Slidoc.gradeClick = function (elem, slide_id) {
     }
 
     var userId = GService.gprofile.auth.id;
-    if (!Sliobj.userGrades[userId].submitted || !Sliobj.session.submitted || Sliobj.session.submitted == 'GRADING') {
-	alert('Session not submitted for user '+userId);
+    if (!Sliobj.userGrades[userId].allowGrading) {
+	alert('ERROR: Grading currently not permitted for user '+userId);
 	return;
     }
 
+    var question_attrs = getQuestionAttrs(slide_id);
     var gradeInput = document.getElementById(slide_id+'-grade-input');
     var commentsArea = document.getElementById(slide_id+'-comments-textarea');
     if (!elem && gradeInput.value)  // Grading already completed; do not automatically start
 	return false;
+    if (!question_attrs.gweight)
+	gradeInput.disabled = 'disabled';
 
     var startGrading = !elem || elem.classList.contains('slidoc-gstart-click');
     toggleClass(startGrading, 'slidoc-grading-slideview', document.getElementById(slide_id));
@@ -3594,7 +3597,6 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	setTimeout(function(){if (gradeElement) gradeElement.scrollIntoView(true); gradeInput.focus();}, 200);
 	Slidoc.reportTestAction('gradeStart');
     } else {
-	var question_attrs = getQuestionAttrs(slide_id);
 	var gradeValue = gradeInput.value.trim();
 
 	if (gradeValue && gradeValue > (question_attrs.gweight||0)) {
@@ -3610,7 +3612,8 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	if (!(gradeField in Sliobj.gradeFieldsObj))
 	    Slidoc.log('Slidoc.gradeClick: ERROR grade field '+gradeField+' not found in sheet');
 	var updates = {id: userId};
-	updates[gradeField] = gradeValue;
+	if (question_attrs.gweight)
+	    updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
 	gradeUpdate(slide_id, question_attrs.qnumber, updates);
     }
