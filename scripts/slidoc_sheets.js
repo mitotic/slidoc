@@ -536,7 +536,8 @@ function handleResponse(evt) {
 		}
 
 		var votingCompleted = voteDate && voteDate.getTime() < curDate.getTime();
-		var tallyVotes = adminUser || shareParams.vote == 'show_live' || (shareParams.vote == 'show_completed' && votingCompleted);
+		var voteParam = shareParams.vote;
+		var tallyVotes = voteParam && (adminUser || voteParam == 'show_live' || (voteParam == 'show_completed' && votingCompleted));
 
 		var userResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
 
@@ -550,7 +551,7 @@ function handleResponse(evt) {
 		    disableVoting = true;
 
 		// If voting not enabled or voting completed, disallow  voting.
-		if (!shareParams.vote || votingCompleted)
+		if (!voteParam || votingCompleted)
 		    disableVoting = true;
 
 		if (voteOffset) {
@@ -596,7 +597,7 @@ function handleResponse(evt) {
 		    }
 		}
 
-                var sortVotes = tallyVotes && (votingCompleted || adminUser || (shareParams.vote == 'show_live' && paramId == TESTUSER_ID));
+                var sortVotes = tallyVotes && (votingCompleted || adminUser || (voteParam == 'show_live' && paramId == TESTUSER_ID));
                 var respCount = {};
 		var sortVals = [];
 		for (var j=0; j<nRows; j++) {
@@ -703,7 +704,6 @@ function handleResponse(evt) {
 	    } else if (newRow && selectedUpdates) {
 		throw('Error::Selected updates cannot be applied to new row');
 	    } else {
-		var allowLateMods = !REQUIRE_LATE_TOKEN;
 		var pastSubmitDeadline = false;
 		var partialSubmission = false;
 		var fieldsMin = columnHeaders.length;
@@ -722,18 +722,32 @@ function handleResponse(evt) {
 		    if (voteDate)
 			returnInfo.voteDate = voteDate;
 
-		    if (dueDate && !prevSubmitted && !adminUser && !voteSubmission) {
+		    if (dueDate && !prevSubmitted && !voteSubmission) {
 			// Check if past submission deadline
 			var lateTokenCol = columnIndex['lateToken'];
 			var lateToken = null;
+			var lateDueDate = null;
 			if (lateTokenCol) {
 			    lateToken = (rowUpdates && rowUpdates.length >= lateTokenCol) ? (rowUpdates[lateTokenCol-1] || null) : null;
 			    if (!lateToken && !newRow)
 				lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] || null;
+			    if (lateToken && lateToken.indexOf(':') > 0) {
+				var comps = splitToken(lateToken);
+				var dateStr = comps[0];
+				var tokenStr = comps[1];
+				if (genLateToken(AUTH_KEY, userId, sheetName, dateStr) == lateToken) {
+				    lateDueDate = true;
+				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
+				} else {
+				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
+				}
 			}
+
+			returnInfo.dueDate = dueDate; // May have been updated
 
 			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
+			var allowLateMods = !REQUIRE_LATE_TOKEN || adminUser;
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
 			    if (lateToken == PARTIAL_SUBMIT) {
 				if (newRow || !rowUpdates)
@@ -748,22 +762,11 @@ function handleResponse(evt) {
 			    } else if (lateToken == LATE_SUBMIT) {
 				// Late submission for reduced/no credit
 				allowLateMods = true;
-			    } else if (lateToken.indexOf(':') < 0) {
+			    } else if (!lateDueDate) {
                                 // Invalid token
                                 returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-			    } else {
-				var comps = splitToken(lateToken);
-				var dateStr = comps[0];
-				var tokenStr = comps[1];
-				if (genLateToken(AUTH_KEY, userId, sheetName, dateStr) == lateToken) {
-				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
-				    pastSubmitDeadline = (curTime > dueDate.getTime());
-				} else {
-				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-				}
 			    }
 			}
-			returnInfo.dueDate = dueDate; // May have been updated
 			if (!allowLateMods && !partialSubmission) {
 			    if (pastSubmitDeadline) {
 				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {

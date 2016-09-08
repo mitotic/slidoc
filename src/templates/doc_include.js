@@ -1869,19 +1869,27 @@ function checkGradingStatus(userId, session, feedback) {
 	if (qfeedback && qfeedback.grade !== '') // Graded
 	    continue;
 	// Needs grading
+	var gradeField = 'q'+question_attrs.qnumber+'_grade';
+	var commentsField = 'q'+question_attrs.qnumber+'_comments';
 	if (qnumber in session.questionsAttempted || responseAvailable(session, qnumber)) {
-	    need_grading[qnumber] = 1;
+	    // Attempted (or uploaded)
+	    if (question_attrs.gweight) {
+		// Weighted gradeable question
+		need_grading[qnumber] = 1;
+	    } else if ('gweight' in question_attrs) {
+		// Zero weight gradeable question; set grade to zero to avoid blank cells in computation
+		need_updates += 1;
+		updates[gradeField] = 0;
+	    }
 	} else {
 	    // Unattempted
 	    need_updates += 1;
-	    if (question_attrs.gweight) {
-		var gradeField = 'q'+question_attrs.qnumber+'_grade';
+	    // set grade to zero to avoid blank cells in computation
+	    if ('gweight' in question_attrs)
 		updates[gradeField] = 0;
-	    }
-	    if (question_attrs.qtype.match(/^(text|Code)\//) || question_attrs.explain) {
-		var commentsField = 'q'+question_attrs.qnumber+'_comments';
+
+	    if (question_attrs.qtype.match(/^(text|Code)\//) || question_attrs.explain)
 		updates[commentsField] = 'Not attempted';
-	    }
 	}
     }
     Slidoc.log('checkGradingStatus:B', need_grading, updates);

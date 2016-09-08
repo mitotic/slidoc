@@ -727,7 +727,8 @@ def handleResponse(params):
 
                 votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate);
 
-                tallyVotes = adminUser or shareParams.get('vote') == 'show_live' or (shareParams.get('vote') == 'show_completed' and votingCompleted)
+                voteParam = shareParams.get('vote')
+                tallyVotes = voteParam and (adminUser or voteParam == 'show_live' or (voteParam == 'show_completed' and votingCompleted))
                 userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
 
                 if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_submission' and not userResponded:
@@ -740,7 +741,7 @@ def handleResponse(params):
                     disableVoting = True
 
                 # If voting not enabled or voting completed, disallow  voting.
-                if not shareParams.get('vote') or votingCompleted:
+                if not voteParam or votingCompleted:
                     disableVoting = True
 
                 if voteOffset:
@@ -778,7 +779,7 @@ def handleResponse(params):
                         for j in range(nRows):
                             shareSubrow[j][shareOffset] = ''
 
-                sortVotes = tallyVotes and (votingCompleted or adminUser or (shareParams.get('vote') == 'show_live' and paramId == TESTUSER_ID))
+                sortVotes = tallyVotes and (votingCompleted or adminUser or (voteParam == 'show_live' and paramId == TESTUSER_ID))
                 respCount = {}
                 sortVals = []
                 for j in range(nRows):
@@ -877,7 +878,6 @@ def handleResponse(params):
             elif newRow and selectedUpdates:
                 raise Exception('Error::Selected updates cannot be applied to new row')
             else:
-                allowLateMods = not REQUIRE_LATE_TOKEN
                 pastSubmitDeadline = False
                 partialSubmission = False
                 fieldsMin = len(columnHeaders)
@@ -897,18 +897,32 @@ def handleResponse(params):
                     if voteDate:
                         returnInfo['voteDate'] = voteDate
 
-                    if dueDate and not prevSubmitted and not adminUser and not voteSubmission:
+                    if dueDate and not prevSubmitted and not voteSubmission:
                         # Check if past submission deadline
                         lateTokenCol = columnIndex.get('lateToken')
                         lateToken = None
+                        lateDueDate = None
                         if lateTokenCol:
                             lateToken = (rowUpdates[lateTokenCol-1] or None)  if (rowUpdates and len(rowUpdates) >= lateTokenCol) else None
                             if not lateToken and not newRow:
                                 lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] or None
 
+                            if lateToken and ':' in lateToken:
+                                comps = splitToken(lateToken)
+                                dateStr = comps[0]
+                                tokenStr = comps[1]
+                                if sliauth.gen_late_token(Options['AUTH_KEY'], userId, sheetName, dateStr) == lateToken:
+                                    lateDueDate = True
+                                    dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
+                                else:
+                                    returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
+
+                        returnInfo['dueDate'] = dueDate # May have been updated
+
                         curTime = sliauth.epoch_ms(curDate)
                         pastSubmitDeadline = (dueDate and curTime > sliauth.epoch_ms(dueDate))
 
+                        allowLateMods = not REQUIRE_LATE_TOKEN or adminUser
                         if not allowLateMods and pastSubmitDeadline and lateToken:
                             if lateToken == PARTIAL_SUBMIT:
                                 if newRow or not rowUpdates:
@@ -922,20 +936,10 @@ def handleResponse(params):
                             elif lateToken == LATE_SUBMIT:
                                 # Late submission for reduced/no credit
                                 allowLateMods = True
-                            elif ':' not in lateToken:
+                            elif not lateDueDate:
                                 # Invalid token
                                 returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
-                            else:
-                                comps = splitToken(lateToken)
-                                dateStr = comps[0]
-                                tokenStr = comps[1]
-                                if sliauth.gen_late_token(Options['AUTH_KEY'], userId, sheetName, dateStr) == lateToken:
-                                    dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
-                                    pastSubmitDeadline = (curTime > sliauth.epoch_ms(dueDate))
-                                else:
-                                    returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
 
-                        returnInfo['dueDate'] = dueDate # May have been updated
                         if not allowLateMods and not partialSubmission:
                             if pastSubmitDeadline:
                                 if newRow or selectedUpdates or (rowUpdates and not nooverwriteRow):

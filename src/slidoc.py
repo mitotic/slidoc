@@ -1434,7 +1434,9 @@ class SlidocRenderer(MathRenderer):
 
 
     def process_weights(self, text):
-        sweight, gweight, vweight = 1, 0, 0
+        # Note: gweight=0 is treated differently from omitted gweight;
+        # grade column is created for gweight=0 to allow later changes in grade weights
+        sweight, gweight, vweight = 1, None, 0
         comps = [x.strip() for x in text.split(',') if x.strip()]
         if len(comps) > 0:
             sweight = parse_number(comps[0])
@@ -1443,17 +1445,17 @@ class SlidocRenderer(MathRenderer):
         if len(comps) > 2:
             vweight = parse_number(comps[2])
 
-        if sweight is None or gweight is None or vweight is None:
+        if sweight is None or vweight is None:
             abort("    ****WEIGHT-ERROR: %s: Error in parsing 'weight=%s' answer option; expected ';weight=number[,number[,number]]' in slide %s" % (self.options["filename"], text, self.slide_number))
             return []
 
         if 'grade_response' not in self.options['config'].features:
-            if gweight:
+            if gweight is not None:
                 message("    ****WEIGHT-WARNING: %s: Not grading question with weight %d line in slide %s" % (self.options["filename"], gweight, self.slide_number))
 
             gweight = 0
 
-        if gweight and '/' not in self.qtypes[-1] and not self.questions[-1].get('explain') and '()' not in self.questions[-1].get('correct','') < 0:
+        if gweight is not None and '/' not in self.qtypes[-1] and not self.questions[-1].get('explain') and '()' not in self.questions[-1].get('correct','') < 0:
             message("    ****WEIGHT-WARNING: %s: Ignoring unexpected grade weight %d in non-multiline/non-explained slide %s" % (self.options["filename"], gweight, self.slide_number))
             gweight = 0
 
@@ -1465,17 +1467,17 @@ class SlidocRenderer(MathRenderer):
             self.sheet_attributes['shareAnswers']['q'+str(self.questions[-1]['qnumber'])]['voteWeight'] = vweight
 
         self.questions[-1].update(weight=sweight)
-        if gweight:
+        if gweight is not None:
             self.questions[-1].update(gweight=gweight)
         if vweight:
             self.questions[-1].update(vweight=vweight)
 
         if len(self.questions) == 1:
             self.cum_weights.append(sweight)
-            self.cum_gweights.append(gweight)
+            self.cum_gweights.append(gweight or 0)
         else:
             self.cum_weights.append(self.cum_weights[-1] + sweight)
-            self.cum_gweights.append(self.cum_gweights[-1] + gweight)
+            self.cum_gweights.append(self.cum_gweights[-1] + (gweight or 0))
 
         ans_grade_fields = []
         if 'grade_response' in self.options['config'].features or self.questions[-1].get('share'):
@@ -1494,7 +1496,7 @@ class SlidocRenderer(MathRenderer):
                     ans_grade_fields += [qno+'_vote']
                 self.grade_fields += ans_grade_fields
                 self.max_fields += ['' for field in ans_grade_fields]
-                if gweight:
+                if gweight is not None:
                     self.grade_fields += [qno+'_grade']
                     self.max_fields += [gweight]
                 self.grade_fields += [qno+'_comments']
