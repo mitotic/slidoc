@@ -31,7 +31,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3a'
+VERSION = '0.96.3b'
 
 # Usually modified by importing module
 Options = {
@@ -731,7 +731,7 @@ def handleResponse(params):
                 tallyVotes = voteParam and (adminUser or voteParam == 'show_live' or (voteParam == 'show_completed' and votingCompleted))
                 userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
 
-                if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_submission' and not userResponded:
+                if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_answering' and not userResponded:
                     raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
 
                 disableVoting = False

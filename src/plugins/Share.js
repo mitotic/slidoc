@@ -22,7 +22,7 @@ Share = {
 	if (this.paced == 3) {
 	    Slidoc.sendEvent(2, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber);
 	} else {
-	    if (this.qattributes.share != 'after_submission' || !window.GService)
+	    if (this.qattributes.share != 'after_answering' || !window.GService)
 		return;
 	    this.getResponses(true);
 	    toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
@@ -35,7 +35,7 @@ Share = {
 	    if (qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
 		this.getResponses(false);
 	} else {
-	    if (this.qattributes.share == 'after_submission')
+	    if (this.qattributes.share == 'after_answering')
 		toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
 	}
     },

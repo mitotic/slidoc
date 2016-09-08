@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3a';
+var VERSION = '0.96.3b';
 
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
@@ -541,7 +541,7 @@ function handleResponse(evt) {
 
 		var userResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
 
-                if (!adminUser && paramId != TESTUSER_ID && shareParams['share'] == 'after_submission' && !userResponded)
+                if (!adminUser && paramId != TESTUSER_ID && shareParams['share'] == 'after_answering' && !userResponded)
 		    throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
 
 		var disableVoting = false;

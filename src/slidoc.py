@@ -1173,11 +1173,11 @@ class SlidocRenderer(MathRenderer):
         weight_answer = ''
         retry_counts = [0, 0]  # Retry count, retry delay
         opt_values = { 'explain': ('text', 'markdown'),
-                       'share': ('after_due_date', 'after_submission', 'after_grading'),
+                       'share': ('after_due_date', 'after_answering', 'after_grading'),
                        'vote': ('show_completed', 'show_live') }
         if self.options['config'].pace == ADMIN_PACE:
             # Change default share value for admin pace
-            opt_values['share'] = ('after_submission', 'after_due_date', 'after_grading')
+            opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
         answer_opts = { 'explain': '', 'share': '', 'vote': ''}
         for opt in opt_comps[1:]:
             num_match = re.match(r'^(weight|retry)=([\s\d,]+)$', opt)

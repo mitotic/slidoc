@@ -1627,7 +1627,7 @@ function slidocSetupAux(session, feedback) {
 
 	    if (question_attrs.share) {
 		var shareAnswers = ( (question_attrs.share == 'after_due_date' && Sliobj.dueDate && (new Date()) > Sliobj.dueDate) ||
-				     (question_attrs.share == 'after_submission' && Sliobj.session.questionsAttempted[qnumber]) ||
+				     (question_attrs.share == 'after_answering' && Sliobj.session.questionsAttempted[qnumber]) ||
 				     (question_attrs.share == 'after_grading' && Sliobj.gradeDateStr) );
 
 		toggleClassAll(!shareAnswers, 'slidoc-shareable-hide', slide_id+'-plugin-Share-sharebutton');
