@@ -55,6 +55,7 @@ import os.path
 import sys
 import time
 import urllib
+import uuid
 
 import tornado.auth
 import tornado.escape
@@ -496,9 +497,15 @@ class PluginManager(object):
         return cls._managers[pluginName]
 
     @classmethod
-    def getFileKey(cls, filepath):
+    def getFileKey(cls, filepath, salt=''):
         filename = os.path.basename(filepath)
-        return urllib.quote(sliauth.gen_hmac_token(Options['auth_key'],'_filename:'+filename), safe='')
+        salt = salt or uuid.uuid4().hex[:12]
+        return urllib.quote(sliauth.gen_hmac_token(Options['auth_key'], salt+':'+filename), safe='')
+
+    @classmethod
+    def validFileKey(cls, filepath, key):
+        salt, _, oldpath = key.partition(':')
+        return key == cls.getFileKey(filepath, salt=salt)
 
     def __init__(self, pluginName):
         self.pluginName = pluginName
@@ -569,7 +576,8 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 path, _, tail = path.partition('%3F')
                 query = getattr(self,'abs_query','')
 
-            if query == PluginManager.getFileKey(path):
+            if PluginManager.validFileKey(path, query) or query == PluginManager.getFileKey(path, salt='_filename'):
+                # Last check for backward compatibility with earlier non-salted version of file key
                 return "noauth"
             elif not userId:
                 return None
