@@ -504,8 +504,8 @@ class PluginManager(object):
 
     @classmethod
     def validFileKey(cls, filepath, key):
-        salt, _, oldpath = key.partition('%3A')
-        return key == cls.getFileKey(filepath, salt=salt)
+        salt, _, oldpath = key.partition(':')
+        return urllib.quote(key, safe='') == cls.getFileKey(filepath, salt=salt)
 
     def __init__(self, pluginName):
         self.pluginName = pluginName
