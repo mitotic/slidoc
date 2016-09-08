@@ -628,7 +628,7 @@ class SlidocRenderer(MathRenderer):
 '''                
 
     grading_template = '''
-  <div id="%(sid)s-grade-element" class="slidoc-grade-element slidoc-answeredonly">
+  <div id="%(sid)s-grade-element" class="slidoc-grade-element slidoc-answeredonly %(zero_gwt)s">
     <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
     <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
@@ -1392,11 +1392,17 @@ class SlidocRenderer(MathRenderer):
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'
 
-        grade_max_str = '/'+str(self.questions[-1]['gweight']) if self.questions[-1].get('gweight') else ''
+        if self.questions[-1].get('gweight'):
+            gweight_str = '/'+str(self.questions[-1]['gweight'])
+            zero_gwt = ''
+        else:
+            gweight_str = ''
+            zero_gwt = ' slidoc-zero-gradeweight'
 
         ans_params.update(ans_classes=ans_classes,
                         inp_type='number' if self.cur_qtype == 'number' else 'text',
-                        gweight=grade_max_str,
+                        gweight=gweight_str,
+                        zero_gwt=zero_gwt,
                         explain=('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if answer_opts['explain'] else '')
 
         html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s">\n'''+self.answer_template

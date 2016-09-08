@@ -1894,7 +1894,7 @@ function checkGradingStatus(userId, session, feedback) {
     // Admin can modify grade columns only for submitted sessions before 'effective' due date
     // and only for non-late submissions thereafter
     var dueDate = parseDate(Sliobj.session.lateToken) || parseDate(Sliobj.params.dueDate);
-    var pastSubmitDeadline =  dueDate && ((new Date()) > dueDate);
+    var pastSubmitDeadline = dueDate && ((new Date()) > dueDate);
     var allowGrading = Sliobj.userGrades[userId].submitted || (pastSubmitDeadline && Sliobj.session.lateToken != LATE_SUBMIT);
 
     Sliobj.userGrades[userId].allowGrading = allowGrading;
@@ -2289,7 +2289,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 		return;
 
 	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
-		if (setLateToken(prefix)) {
+		if (setLateToken(this, prefix)) {
 		    retryCall();
 		    return;
 		}
@@ -2306,16 +2306,16 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
     sessionAbort('Error in accessing session info from Google Docs: '+err_msg+' (session aborted)');
 }
 
-function setLateToken(prefix) {
+function setLateToken(session, prefix) {
     var prompt = (prefix||'')+"Enter a valid late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise ";
-    if (Sliobj.params.paceLevel && Sliobj.session && (Object.keys(Sliobj.session.questionsAttempted).length) || responseAvailable(Sliobj.session) )
+    if (Sliobj.params.paceLevel && session && (Object.keys(session.questionsAttempted).length) || responseAvailable(session) )
 	prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
     else
 	prompt += "enter '"+LATE_SUBMIT+"' to submit late (with reduced or no credit).";
     var token = showDialog('prompt', 'lateTokenDialog', prompt);
     token = (token || '').trim();
     if (token == PARTIAL_SUBMIT || token == LATE_SUBMIT || token.indexOf(':') > 0) {
-	this.lateToken = token;
+	session.lateToken = token;
 	return token;
     }
     sessionAbort('No token or invalid token provided');
@@ -2586,7 +2586,7 @@ Slidoc.contentsDisplay = function() {
 	Slidoc.sidebarDisplay();
 	return;
     }
-    var lines = [];
+    var lines = ['<a href="/">Home</a>\n'];
     lines.push('<ul class="slidoc-contents-list">');
     var slideElems = getVisibleSlides();
     var nSlides = slideElems.length;
@@ -3395,7 +3395,7 @@ function showSubmitted() {
     if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
 	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? 'Late submission' : 'Submitted';
     } else {
-	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : 'SUBMIT';
+	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : ((Sliobj.session.lateToken == LATE_SUBMIT) ? 'SUBMIT LATE' : 'SUBMIT');
     }
 }
 
@@ -3404,10 +3404,12 @@ Slidoc.submitStatus = function () {
     var html = '';
     if (Sliobj.session.submitted) {
 	html += 'User '+GService.gprofile.auth.id+' submitted session to Google Docs on '+ parseDate(Sliobj.session.submitted);
-	if (Sliobj.session.lateToken)
-	    html += ' EXCUSED LATE';
-	if (Sliobj.session.lateToken == LATE_SUBMIT)
+	if (Sliobj.session.lateToken == PARTIAL_SUBMIT)
+	    html += ' (PARTIAL)';
+	else if (Sliobj.session.lateToken == LATE_SUBMIT)
 	    html += ' (UNEXCUSED LATE)';
+	else if (Sliobj.session.lateToken)
+	    html += ' EXCUSED LATE';
     } else {
 	var html = 'Session not submitted.'
 	if (!Sliobj.adminState) {
@@ -3690,7 +3692,7 @@ Slidoc.startPaced = function () {
     var curDate = new Date();
     if (!Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
 	// Past submit deadline; force partial or late submit if not submitted
-	if (setLateToken() == PARTIAL_SUBMIT)
+	if (setLateToken(Sliobj.session) == PARTIAL_SUBMIT)
 	    Slidoc.endPaced();
 	else
 	    sessionPut();

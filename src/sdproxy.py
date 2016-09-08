@@ -908,11 +908,12 @@ def handleResponse(params):
 
                         curTime = sliauth.epoch_ms(curDate)
                         pastSubmitDeadline = (dueDate and curTime > sliauth.epoch_ms(dueDate))
+
                         if not allowLateMods and pastSubmitDeadline and lateToken:
                             if lateToken == PARTIAL_SUBMIT:
                                 if newRow or not rowUpdates:
                                     raise Exception("Error::Partial submission only works for pre-existing rows")
-                                if sessionAttributes.params.participationCredit:
+                                if sessionAttributes['params'].get('participationCredit'):
                                     raise Exception("Error::Partial submission not allowed for participation credit")
                                 partialSubmission = True
                                 rowUpdates = None
