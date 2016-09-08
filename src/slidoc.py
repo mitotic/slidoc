@@ -1453,11 +1453,11 @@ class SlidocRenderer(MathRenderer):
             if gweight is not None:
                 message("    ****WEIGHT-WARNING: %s: Not grading question with weight %d line in slide %s" % (self.options["filename"], gweight, self.slide_number))
 
-            gweight = 0
+            gweight = None
 
         if gweight is not None and '/' not in self.qtypes[-1] and not self.questions[-1].get('explain') and '()' not in self.questions[-1].get('correct','') < 0:
             message("    ****WEIGHT-WARNING: %s: Ignoring unexpected grade weight %d in non-multiline/non-explained slide %s" % (self.options["filename"], gweight, self.slide_number))
-            gweight = 0
+            gweight = None
 
         if vweight and not self.questions[-1].get('vote'):
             message("    ****WEIGHT-WARNING: %s: Ignoring unexpected vote weight %d line without vote option in slide %s" % (self.options["filename"], vweight, self.slide_number))

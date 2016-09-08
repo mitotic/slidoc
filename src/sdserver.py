@@ -500,11 +500,11 @@ class PluginManager(object):
     def getFileKey(cls, filepath, salt=''):
         filename = os.path.basename(filepath)
         salt = salt or uuid.uuid4().hex[:12]
-        return urllib.quote(sliauth.gen_hmac_token(Options['auth_key'], salt+':'+filename), safe='')
+        return urllib.quote(salt+':'+sliauth.gen_hmac_token(Options['auth_key'], salt+':'+filename), safe='')
 
     @classmethod
     def validFileKey(cls, filepath, key):
-        salt, _, oldpath = key.partition(':')
+        salt, _, oldpath = key.partition('%3A')
         return key == cls.getFileKey(filepath, salt=salt)
 
     def __init__(self, pluginName):
