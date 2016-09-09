@@ -1714,7 +1714,7 @@ function slidocSetupAux(session, feedback) {
 	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
 	if (parseSlideId(slideHash)[0])
 	    goSlide(slideHash, false, true);
-	if (slideHash.slice(0,21) == '#slidoc-index-concept') {
+	if (slideHash.match(/^#slidoc-index-concept/)) {
 	    // Directly jump to index element
 	    var elem = document.getElementById(slideHash.slice(1));
 	    if (elem) {
@@ -1999,7 +1999,7 @@ function preAnswer() {
 	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.plugin, qfeedback);
+	Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.plugin||null, qfeedback);
     }
 
     for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
@@ -2136,15 +2136,105 @@ function sessionCreate() {
 	   };
 }
 
+function createQuestionAttempted(response, explain) {
+    // response field should always be present, non-null for attempted questions
+    Slidoc.log('createQuestionAttempted:', response, explain);
+    var qAttempted = {response: response||''};
+    if (explain)
+	qAttempted.explain = explain;
+    return qAttempted;
+}
+
+function copyObj(oldObj, excludeAttrs) {
+    var newObj = {};
+    var keys = Object.keys(oldObj);
+    for (var j=0; j<keys.length; j++) {
+	if (excludeAttrs && excludeAttrs.indexOf(keys[j]) >= 0)
+	    continue;
+	newObj[keys[j]] = oldObj[keys[j]];
+    }
+    return newObj;
+}
+
+function packSession(session) {
+    // Converts session to row for transmission to sheet
+    Slidoc.log('packSession:', session);
+    var rowObj = {};
+    for (var j=0; j<Sliobj.params.sessionFields.length; j++) {
+	var header = Sliobj.params.sessionFields[j];
+	if (!header.match(/_hidden$/) && !header.match(/Timestamp$/)) {
+	    if (header in session)
+		rowObj[header] = session[header];
+	}
+    }
+    // Copy session to allow deletion of fields from questionAttempted objects
+    var sessionCopy = copyObj(session);
+    sessionCopy.questionsAttempted = copyObj(sessionCopy.questionsAttempted);
+    var keys = Object.keys(sessionCopy.questionsAttempted);
+    for (var j=0; j<keys.length; j++)
+	sessionCopy.questionsAttempted[keys[j]] = copyObj(sessionCopy.questionsAttempted[keys[j]]);
+    
+    for (var j=0; j<Sliobj.params.gradeFields.length; j++) {
+	var header = Sliobj.params.gradeFields[j];
+	var hmatch = QFIELD_RE.exec(header);
+	// For attempted questions, one of response/explain must be non-null
+	if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
+	    // Copy only response/explain field for grading (all others are not updated)
+	    var qnumber = parseInt(hmatch[1]);
+	    if (qnumber in sessionCopy.questionsAttempted) {
+		if (hmatch[2] in sessionCopy.questionsAttempted[qnumber]) {
+		    // Copy field to column and delete from session object
+		    rowObj[header] = sessionCopy.questionsAttempted[qnumber][hmatch[2]] || '';
+
+		    delete sessionCopy.questionsAttempted[qnumber][hmatch[2]];
+
+		    if (!Object.keys(sessionCopy.questionsAttempted[qnumber]))
+			delete sessionCopy.questionsAttempted[qnumber];
+		} else {
+		    rowObj[header] = '';
+		}
+	    }
+	}
+    }
+    // Break up Base64 version of object-json into lines (commented out; does not work with JSONP)
+    ///var base64str = btoa(JSON.stringify(sessionCopy));
+    ///var comps = [];
+    ///for (var j=0; j < base64str.length; j+=80)
+    ///    comps.push(base64str.slice(j,j+80));
+    ///comps.join('')+'';
+    rowObj.session_hidden = JSON.stringify(sessionCopy);
+    return rowObj;
+}
+
 function unpackSession(row) {
-    var result = {};
-    // Unpack hidden session
-    result.session = JSON.parse( atob(row.session_hidden.replace(/\s+/g, '')) );
-    result.session.lateToken = row.lateToken || '';
+    // Unpacks hidden session object and adds response/explain fields from sheet row, as needed
+    // Also returns feedback for session:
+    //   {session:, feedback:}
+    Slidoc.log('unpackSession:', row);
+    var session_hidden = row.session_hidden.replace(/\s+/g, '');
+    if (session_hidden.charAt(0) != '{')
+	session_hidden = atob(session_hidden);
+
+    var session = JSON.parse(session_hidden);
+    session.lateToken = row.lateToken || '';
     if (row.submitTimestamp) {
-	result.session.submitted = row.submitTimestamp;
+	session.submitted = row.submitTimestamp;
 	if (!controlledPace())
-	    result.session.lastSlide = Sliobj.params.pacedSlides;
+	    session.lastSlide = Sliobj.params.pacedSlides;
+    }
+
+    for (var j=0; j<Sliobj.params.gradeFields.length; j++) {
+	var header = Sliobj.params.gradeFields[j];
+	if (row[header]) {
+	    var hmatch = QFIELD_RE.exec(header);
+	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
+		// Copy only response/explain field to session
+		var qnumber = parseInt(hmatch[1]);
+		if (!(qnumber in session.questionsAttempted))
+		    session.questionsAttempted[qnumber] = createQuestionAttempted();
+		session.questionsAttempted[qnumber][hmatch[2]] = row[header];
+	    }
+	}
     }
 
     var keys = Object.keys(row);
@@ -2171,8 +2261,8 @@ function unpackSession(row) {
 	}
     }
 
-    result.feedback = count ? feedback : null;
-    return result;
+    return {session: session,
+	    feedback: count ? feedback : null};
 }
 
 function showPendingCalls() {
@@ -2411,35 +2501,7 @@ function sessionPut(userId, session, opts, callback) {
 	if (opts.get) putOpts.get = 1;
 	if (opts.submit) putOpts.submit = 1;
 
-	var rowObj = {};
-	for (var j=0; j<Sliobj.params.sessionFields.length; j++) {
-	    var header = Sliobj.params.sessionFields[j];
-	    if (header.slice(0,7) != '_hidden' && header.slice(-9) != 'Timestamp') {
-		if (header in session)
-		    rowObj[header] = session[header];
-		else if (opts.scores && header in opts.scores)
-		    rowObj[header] = opts.scores[header];
-	    }
-	}
-	for (var j=0; j<Sliobj.params.gradeFields.length; j++) {
-	    var header = Sliobj.params.gradeFields[j];
-	    var hmatch = QFIELD_RE.exec(header);
-	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
-		// Copy only response/explain field for grading (all others are not updated)
-		var qnumber = parseInt(hmatch[1]);
-		if (qnumber in session.questionsAttempted) {
-		    rowObj[header] = session.questionsAttempted[qnumber][hmatch[2]] || '';
-		}
-	    }
-	}
-
-	var base64str = btoa(JSON.stringify(session));
-        // Break up Base64 version of object-json into lines (commnted out; does not work with JSONP)
-	///var comps = [];
-	///for (var j=0; j < base64str.length; j+=80)
-	///    comps.push(base64str.slice(j,j+80));
-	///comps.join('')+'';
-	rowObj.session_hidden = base64str;
+	var rowObj = packSession(session);
 	var gsheet = getSheet(Sliobj.sessionName);
 	// Bind session to this in sessionGetPutAux
 	try {
@@ -3062,13 +3124,18 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	var textareaElem = document.getElementById(slide_id+'-answer-textarea');
 	explain = textareaElem.value;
     }
-    Sliobj.session.questionsAttempted[question_attrs.qnumber] = {response: response,
-								 explain: explain,
-								 shuffle: shuffleStr,
-								 plugin: pluginResp||null,
-								 expect: expect,
-								 retries: (Sliobj.session.lastTries > 1) ? Sliobj.session.lastTries-1 : 0,
-								 vote: null};
+
+    var qAttempted = createQuestionAttempted(response, explain);
+    if (pluginResp)
+	qAttempted.plugin = pluginResp;
+    if (expect)
+	qAttempted.expect = expect;
+    if (Sliobj.session.lastTries > 1)
+	qAttempted.retries = Sliobj.session.lastTries-1;
+    if (shuffleStr)
+	qAttempted.shuffle = shuffleStr;
+    Sliobj.session.questionsAttempted[question_attrs.qnumber] = qAttempted;
+
     // Score newly attempted question (and all others)
     scoreSession(Sliobj.session);
 
@@ -3112,8 +3179,8 @@ function saveSessionAnswered(slide_id, qattrs) {
 	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-prev', 'slidoc-slide-nav-next');
 	}
     }
-    // Save session and non-authoritative scores components
-    sessionPut(null, null, {scores: Sliobj.scores}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
+    // Save session
+    sessionPut(null, null, {}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
 }
 
 function saveCallback(slide_id, qattrs, result, retStatus) {

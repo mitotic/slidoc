@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3b';
+var VERSION = '0.96.3c';
 
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
@@ -741,6 +741,7 @@ function handleResponse(evt) {
 				} else {
 				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
 				}
+			    }
 			}
 
 			returnInfo.dueDate = dueDate; // May have been updated
@@ -1314,9 +1315,10 @@ function sessionAnswerSheet() {
 	    throw('No columns in sheet: '+sessionName);
 
 	var sessionColIndex = indexColumns(sessionSheet);
+	var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
 	var sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET);
-	var attributes = JSON.parse(sessionEntries.attributes);
+	var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	var questions = JSON.parse(sessionEntries.questions);
 	var qtypes = [];
 	var answers = [];
@@ -1350,7 +1352,7 @@ function sessionAnswerSheet() {
 		answerHeaders.push(qprefix+'_temscore');
 	    if (pluginAction == 'response')
 		answerHeaders.push(qprefix+'_plugin');
-	    if (attributes.hints && attributes.hints[qprefix])
+	    if (sessionAttributes.hints && sessionAttributes.hints[qprefix])
 		answerHeaders.push(qprefix+'_hints');
 	}
 	Logger.log('ansHeaders: '+answerHeaders);
@@ -1396,8 +1398,8 @@ function sessionAnswerSheet() {
 	var qRows = [];
 
 	for (var j=0; j<nids; j++) {
-	    var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
-	    var savedSession = JSON.parse(jsonSession);
+	    var rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, sessionColHeaders.length)[0];
+	    var savedSession = unpackSession(sessionColHeaders, rowValues);
 	    var qAttempted = savedSession.questionsAttempted;
 	    var qHints = savedSession.hintsUsed;
 
@@ -1455,13 +1457,14 @@ function sessionStatSheet() {
 	    throw('No columns in sheet '+sessionName);
 
 	var sessionColIndex = indexColumns(sessionSheet);
+	var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
 	// Session sheet columns
 	var sessionStartRow = SESSION_START_ROW;
 	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
 
 	var sessionEntries = lookupValues(sessionName, ['attributes', 'questions', 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts'], INDEX_SHEET);
-	var attributes = JSON.parse(sessionEntries.attributes);
+	var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	var questions = JSON.parse(sessionEntries.questions);
 	var questionConcepts = JSON.parse(sessionEntries.questionConcepts);
 	var p_concepts = sessionEntries.primary_qconcepts ? sessionEntries.primary_qconcepts.split('; ') : [];
@@ -1527,9 +1530,9 @@ function sessionStatSheet() {
 	for (var j=0; j<nconcepts; j++) nullConcepts.push('');
 
 	for (var j=0; j<nids; j++) {
-	    var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
-	    var savedSession = JSON.parse(jsonSession);
-	    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, attributes.params);
+	    var rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, sessionColHeaders.length)[0];
+	    var savedSession = unpackSession(sessionColHeaders, rowValues);
+	    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params);
 
 	    questionTallies.push([scores.weightedCorrect, scores.questionsCorrect, scores.questionsCount, scores.questionsSkipped]);
 
@@ -1554,49 +1557,6 @@ function sessionStatSheet() {
 
     notify('Created sheet '+statSheet.getParent().getName()+':'+statSheetName, 'Slidoc Stats');
 }
-
-function scoreSession(sessionName) {
-    // Tally scores for all users and copy to score columns
-    var sessionSheet = getSheet(sessionName);
-    if (!sessionSheet)
-	throw('scoreSession: Sheet not found '+sessionName);
-    if (!sessionSheet.getLastColumn())
-	throw('scoreSession: No columns in sheet '+sessionName);
-
-    var sessionColIndex = indexColumns(sessionSheet);
-
-    // Session sheet columns
-    var sessionStartRow = SESSION_START_ROW;
-    var nids = sessionSheet.getLastRow()-sessionStartRow+1;
-    if (!nids)
-	return;
-
-    var sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET);
-    var attributes = JSON.parse(sessionEntries.attributes);
-    var questions = JSON.parse(sessionEntries.questions);
-    var hiddenSessionCol = sessionColIndex['session_hidden'];
-    var hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1);
-
-    var copyHeaders = ['questionsCount', 'questionsCorrect', 'weightedCorrect'];
-    var copyVals = [];
-    for (var k=0; k<copyHeaders.length; k++)
-	copyVals.push([]);
-
-    for (var j=0; j<nids; j++) {
-	var jsonSession = Utilities.newBlob(Utilities.base64Decode(hiddenVals[j][0])).getDataAsString();
-	var savedSession = JSON.parse(jsonSession);
-	var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, attributes.params);
-	for (var k=0; k<copyHeaders.length; k++)
-	    copyVals[k].push([(copyHeaders[k] in scores) ? scores[copyHeaders[k]] : '']);
-    }
-    for (var k=0; k<copyHeaders.length; k++) {
-	var colIndex = sessionColIndex[copyHeaders[k]];
-	if (!colIndex)
-	    throw('Score column '+copyHeaders[k]+' not found in sheet '+sessionName);
-	sessionSheet.getRange(sessionStartRow, colIndex, nids, 1).setValues(copyVals[k]);
-    }
-}
-
 
 function scoreAnswer(response, qtype, corrAnswer) {
     // Handle answer types: choice, number, text
@@ -1888,6 +1848,37 @@ function emailLateToken() {
     notify('Emailed late submission token to '+userId+' <'+email+'>');
 }
 
+function createQuestionAttempted(response, explain) {
+    // response field should always be present, non-null for attempted questions
+    var qAttempted = {response: response||''};
+    if (explain)
+	qAttempted.explain = explain;
+    return qAttempted;
+}
+
+function unpackSession(headers, row) {
+    // Unpacks hidden session object and adds response/explain fields from sheet row, as needed
+    var session_hidden = row[headers.indexOf('session_hidden')];
+    if (!session_hidden)
+	return null;
+    if (session_hidden.charAt(0) != '{')
+	session_hidden = Utilities.newBlob(Utilities.base64Decode(session_hidden)).getDataAsString();
+    var session = JSON.parse(session_hidden);
+    for (var j=0; j<headers.length; j++) {
+	var header = headers[j];
+	if (row[j]) {
+	    var hmatch = QFIELD_RE.exec(header);
+	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
+		// Copy only response/explain field to session
+		var qnumber = parseInt(hmatch[1]);
+		if (!(qnumber in session.questionsAttempted))
+		    session.questionsAttempted[qnumber] = createQuestionAttempted();
+		session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+	    }
+	}
+    }
+    return session;
+}
 
 function updateScoreSheet() {
     // Update scores sheet
@@ -1972,12 +1963,12 @@ function updateScoreSheet() {
 	    var sessionName = validNames[m];
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
+	    var sessionRowIndex = indexRows(sessionSheet, sessionColIndex['id'], 2);
+	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
-	    // Update session scores (in case weights or correct answers have changed)
-	    scoreSession(sessionName);
-
-	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes'], INDEX_SHEET);
+	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
             var sessionAttributes = JSON.parse(sessionEntries.attributes);
+	    var questions = JSON.parse(sessionEntries.questions);
 	    var gradeDate = parseNumber(sessionEntries.gradeDate) || null;
 	    var sessionWeight = parseNumber(sessionEntries.sessionWeight) || 0;
 	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
@@ -1989,12 +1980,7 @@ function updateScoreSheet() {
 	    updatedNames.push(sessionName);
 
 	    // Session sheet columns
-	    var idCol = sessionColIndex['id'];
 	    var lateCol = sessionColIndex['lateToken'];
-	    var correctCol = sessionColIndex['questionsCorrect'];
-
-	    var idColChar = colIndexToChar( idCol );
-	    var correctColChar = colIndexToChar( correctCol );
 
 	    var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
 	    var scoreColIndex = indexColumns(scoreSheet);
@@ -2032,23 +2018,40 @@ function updateScoreSheet() {
 	    if (sessionWeight)
 		weightedTotal.push(sessionWeight+'*'+colChar+'@');
 
-	    var nids = scoreSheet.getLastRow()-scoreStartRow+1;
+	    var sessionIdCol = sessionColIndex['id'];
+	    var sessionIdColChar = colIndexToChar( sessionIdCol );
 
-	    var idCol = sessionColIndex['id'];
-	    var idColChar = colIndexToChar( idCol );
+	    var scoreIdCol = scoreColIndex['id'];
+	    var scoreIdColChar = colIndexToChar( scoreIdCol );
+
+	    var nids = scoreSheet.getLastRow()-scoreStartRow+1;
+	    var scoreIdVals = scoreSheet.getSheetValues(scoreStartRow, scoreIdCol, nids, 1);
+
 	    var lookupStartRow = SESSION_MAXSCORE_ROW ? sessionStartRow-1 : sessionStartRow;
 	    function vlookup(colName, scoreRowIndex) {
 		var nameCol = sessionColIndex[colName];
 		var nameColChar = colIndexToChar( nameCol );
-		var sessionRange = "'"+sessionName+"'!$"+idColChar+"$"+lookupStartRow+":$"+nameColChar;
-		return 'VLOOKUP($'+idColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-idCol+1)+', false)';
+		var sessionRange = "'"+sessionName+"'!$"+sessionIdColChar+"$"+lookupStartRow+":$"+nameColChar;
+		return 'VLOOKUP($'+scoreIdColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-sessionIdCol+1)+', false)';
 	    }
 
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		var lookups = [];
-		if (scoreWeight)
-		    lookups.push( vlookup('weightedCorrect', j+scoreStartRow) );
+		if (scoreWeight) {
+		    // Tally scores
+		    var rowId = scoreIdVals[j];
+		    if (rowId == MAXSCORE_ID) {
+			lookups.push( scoreWeight );
+		    } else {
+			var rowValues = sessionSheet.getSheetValues(sessionRowIndex[rowId], 1, 1, sessionColHeaders.length)[0];
+			var savedSession = unpackSession(sessionColHeaders, rowValues);
+			if (savedSession) {
+			    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params);
+			    lookups.push( scores.weightedCorrect );
+			}
+		    }
+		}
 		if (gradeWeight)
 		    lookups.push( vlookup('q_grades', j+scoreStartRow) );
 		if (otherWeight)

@@ -1734,8 +1734,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp']
-Session_fields = ['lateToken', 'lastSlide', 'questionsCount', 'questionsCorrect', 'weightedCorrect',
-                  'session_hidden']
+Session_fields = ['lateToken', 'lastSlide', 'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate', 'gradeDate', 'mediaURL', 'paceLevel',
                 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'attributes', 'questions',
                 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
@@ -2234,9 +2233,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         max_params = {}
         max_params['id'] = '_max_score'
         max_params['initTimestamp'] = None
-        max_params['questionsCount'] = len(renderer.questions)
-        max_params['questionsCorrect'] = len(renderer.questions)
-        max_params['weightedCorrect'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
         max_params['q_other'] = sum(q.get('vweight',0) for q in renderer.questions) if renderer.questions else 0
         max_params['q_grades'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
         max_score_fields = [max_params.get(x,'') for x in Manage_fields+Session_fields]
@@ -2254,8 +2250,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if js_params['paceLevel']:
             # File-specific js_params
             js_params['pacedSlides'] = renderer.slide_number
-            js_params['questionsMax'] = max_params['questionsCount']
-            js_params['scoreWeight'] = max_params['weightedCorrect']
+            js_params['questionsMax'] = len(renderer.questions)
+            js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
             js_params['otherWeight'] = max_params['q_other']
             js_params['gradeWeight'] = max_params['q_grades']
             js_params['gradeFields'] = renderer.grade_fields[:] if renderer.grade_fields else []
