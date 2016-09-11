@@ -228,7 +228,7 @@ function setupCache(auth, callback) {
 
 		var userId = auth.id;
 		if (userId && !(userId in Sliobj.userGrades)) {
-		    alert('Error: userID '+userId+' not found for this session');
+		    //alert('Error: userID '+userId+' not found for this session');
 		    userId = '';
 		}
 		if (!userId)  // Pick the first userID
@@ -250,7 +250,7 @@ function setupCache(auth, callback) {
 		}
 		selectUser(auth, callback);
 		for (var j=0; j<Sliobj.userList.length; j++)
-		    gsheet.getRow(Sliobj.userList[j], checkGradingCallback.bind(null, Sliobj.userList[j]));
+		    gsheet.getRow(Sliobj.userList[j], {}, checkGradingCallback.bind(null, Sliobj.userList[j]));
 		if (Sliobj.gradingUser == 1)
 		    Slidoc.nextUser(true, true);
 	    }
@@ -344,9 +344,15 @@ function getServerCookie() {
 	return null;
     
     var comps = slidocCookie.split(":");
-    return {user: comps[0], origid: comps.length > 1 ? comps[1] : '',
-	                    token:  comps.length > 2 ? decodeURIComponent(comps[2]) : '',
-     	                     name:  comps.length > 3 ? decodeURIComponent(comps[3]) : ''};
+    for (var j=0; j<comps.length; j++)
+	comps[j] = decodeURIComponent(comps[j]);
+    return {user:   comps[0],
+	    origid: comps.length > 1 ? comps[1] : '',
+	    token:  comps.length > 2 ? comps[2] : '',
+     	    name:   comps.length > 3 ? comps[3] : '',
+     	    email:  comps.length > 4 ? comps[4] : '',
+     	    altid:  comps.length > 5 ? comps[5] : ''
+	   };
 }
 
 function getParameter(name, number, queryStr) {
@@ -644,21 +650,27 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
 
 Slidoc.resetPaced = function () {
     Slidoc.log('Slidoc.resetPaced:');
+    var userId = window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
+    if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely delete all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
+	return false;
+
     if (Sliobj.params.gd_sheet_url) {
-	var userId = window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
-	if (userId == Sliobj.params.testUserId && window.confirm('Reset test user session?')) {
-	    var gsheet = getSheet(Sliobj.sessionName);
-	    gsheet.delRow(userId, resetSessionCallback);
-	} else if (!Slidoc.testingActive()) {
-	    alert('Cannot reset session linked to Google Docs');
+	if (!Sliobj.adminState && userId != Sliobj.params.testUserId) {
+	    alert('Unable to reset session linked to Google Docs');
+	    return false;
 	}
-	return false;
+
+	if (!Slidoc.testingActive() && !window.confirm('Re-confirm session reset for user '+userId+'?'))
+	    return false;
+	var gsheet = getSheet(Sliobj.sessionName);
+	gsheet.delRow(userId, resetSessionCallback); // Will reload page after delete
+
+    } else {
+	Sliobj.session = createSession();
+	Sliobj.feedback = null;
+	sessionPut();
     }
-    if (!Slidoc.testingActive() && !window.confirm('Do you want to completely delete all answers/scores for this session and start over?'))
-	return false;
-    Sliobj.session = sessionCreate();
-    Sliobj.feedback = null;
-    sessionPut();
+
     if (!Slidoc.testingActive())
 	location.reload(true);
 }
@@ -769,7 +781,7 @@ Slidoc.viewHelp = function () {
 	    html += 'User: <b>'+cookieUserInfo.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
     html += '<table class="slidoc-slide-help-table">';
-    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId))
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
     if (Sliobj.currentSlide) {
@@ -1303,7 +1315,7 @@ function selectUser(auth, callback) {
 	callback(auth);  // Usually callback slidocReadyAux1
     } else {
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.getRow(userId, selectUserCallback.bind(null, userId));
+	gsheet.getRow(userId, {}, selectUserCallback.bind(null, userId));
     }
 }
 
@@ -1357,7 +1369,7 @@ Slidoc.showGrades = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     var userId = GService.gprofile.auth.id;
-    Sliobj.scoreSheet.getRow(userId, showGradesCallback.bind(null, userId));
+    Sliobj.scoreSheet.getRow(userId, {}, showGradesCallback.bind(null, userId));
 }
 
 function showGradesCallback(userId, result, retStatus) {
@@ -1418,7 +1430,7 @@ Slidoc.slidocReady = function (auth) {
 	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
 						     Sliobj.params.indexFields.slice(0,2),
 						     Sliobj.params.indexFields.slice(2), useJSONP);
-	Sliobj.indexSheet.getRow(Sliobj.sessionName, function (result, retStatus) {
+	Sliobj.indexSheet.getRow(Sliobj.sessionName, {}, function (result, retStatus) {
 	    if (result && result.gradeDate)
 		Sliobj.gradeDateStr = result.gradeDate;
 	});
@@ -1475,8 +1487,6 @@ function slidocReadyAux2(auth) {
     Slidoc.Random = LCRandom;
     sessionManage();
 
-    var newSession = sessionCreate();
-
     Slidoc.log("slidocReadyAux2:B", Sliobj.sessionName, Sliobj.params.paceLevel);
     if (Sliobj.sessionName) {
 	// Paced named session
@@ -1486,22 +1496,22 @@ function slidocReadyAux2(auth) {
 
 	if (Sliobj.adminState) {
 	    // Retrieve session, possibly from cache (without creating)
-	    sessionGet(null, Sliobj.sessionName, slidocSetup, 'ready')
+	    sessionGet(null, Sliobj.sessionName, {retry: 'ready'}, slidocSetup);
 	} else if (Sliobj.params.sessionPrereqs) {
 	    // Retrieve prerequisite session(s)
 	    var prereqs = Sliobj.params.sessionPrereqs.split(',');
-	    sessionGet(null, prereqs[0], slidocReadyPaced.bind(null, newSession, prereqs));
+	    sessionGet(null, prereqs[0], {}, slidocReadyPaced.bind(null, prereqs));
 	} else {
-	    slidocReadyPaced(newSession)
+	    slidocReadyPaced()
 	}
     
     } else {
-	slidocSetup(newSession);
+	slidocSetup(createSession());
     }
 }
 
-function slidocReadyPaced(newSession, prereqs, prevSession, prevFeedback) {
-    Slidoc.log('slidocReadyPaced:', newSession, prereqs, prevSession, prevFeedback);
+function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
+    Slidoc.log('slidocReadyPaced:', prereqs, prevSession, prevFeedback);
     if (prereqs) {
 	if (!prevSession) {
 	    sessionAbort("Prerequisites: "+prereqs.join(',')+". Error: session '"+prereqs[0]+"' not attempted!");
@@ -1511,12 +1521,12 @@ function slidocReadyPaced(newSession, prereqs, prevSession, prevFeedback) {
 	}
 	if (prereqs.length > 1) {
 	    prereqs = prereqs.slice(1);
-	    sessionGet(null, prereqs[0], slidocReadyPaced.bind(null, newSession, prereqs));
+	    sessionGet(null, prereqs[0], {}, slidocReadyPaced.bind(null, prereqs));
 	    return;
 	}
     }
-	
-    sessionPut(null, newSession, {nooverwrite: true, get: true, retry: 'ready'}, slidocSetup);
+
+    sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
 }
 
 ///////////////////////////////
@@ -1595,7 +1605,7 @@ function slidocSetupAux(session, feedback) {
 
     if (!Sliobj.session) {
 	// New paced session
-	Sliobj.session = sessionCreate();
+	Sliobj.session = createSession();
 	Sliobj.feedback = null;
 	sessionPut(null, null, {retry: 'new'});
     }
@@ -2110,29 +2120,28 @@ function makeRandomFunction(seed) {
     return Slidoc.Random.randomNumber.bind(null, seed);
 }
 
-function sessionCreate() {
+function createSession() {
     var persistPlugins = {};
-    for (var j=0; j<Sliobj.pluginList.length; j++)
-	persistPlugins[Sliobj.pluginList[j]] = {};
+    for (var j=0; j<Sliobj.params.plugins.length; j++)
+	persistPlugins[Sliobj.params.plugins[j]] = {};
 
-    var randomSeed = Slidoc.Random.getRandomSeed();
-    return {version: Sliobj.params.sessionVersion,
-	    revision: Sliobj.params.sessionRevision,
-	    paced: Sliobj.params.paceLevel || 0,
-	    submitted: null,
-	    lateToken: '',
-	    randomSeed: randomSeed,                   // Save random seed
-            expiryTime: Date.now() + 180*86400*1000,  // 180 day lifetime
-            startTime: Date.now(),
-            lastTime: 0,
-	    lastSlide: 0,
-            lastTries: 0,
-            remainingTries: 0,
-            tryDelay: 0,
-	    showTime: null,
-            questionsAttempted: {},
-	    hintsUsed: {},
-	    plugins: persistPlugins
+    return {'version': params.sessionVersion,
+	    'revision': params.sessionRevision,
+	    'paced': params.paceLevel || 0,
+	    'submitted': null,
+	    'lateToken': '',
+	    'randomSeed': Slidoc.Random.getRandomSeed(), // Save random seed
+            'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
+            'startTime': Date.now(),
+            'lastTime': 0,
+	    'lastSlide': 0,
+            'lastTries': 0,
+            'remainingTries': 0,
+            'tryDelay': 0,
+	    'showTime': null,
+            'questionsAttempted': {},
+	    'hintsUsed': {},
+	    'plugins': persistPlugins
 	   };
 }
 
@@ -2405,7 +2414,7 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 }
 
 function setLateToken(session, prefix) {
-    var prompt = (prefix||'')+"Enter a valid late submission token, if you have one, for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise ";
+    var prompt = (prefix||'The submission deadline has passed.')+" If you have a valid excuse, please request late submission authorization for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+" from your instructor. Otherwise ";
     if (Sliobj.params.paceLevel && session && (Object.keys(session.questionsAttempted).length) || responseAvailable(session) )
 	prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
     else
@@ -2438,17 +2447,21 @@ function sessionManage() {
     }
 }
 
-function sessionGet(userId, sessionName, callback, retry) {
+function sessionGet(userId, sessionName, opts, callback) {
     // callback(session, feedback)
+    // opts = {create:true/false, retry:str}
+    opts = opts || {};
     if (Sliobj.params.gd_sheet_url) {
 	// Google Docs storage
 	var gsheet = getSheet(sessionName);
 	// Freeze userId for retry only if validated
 	if (!userId && GService.gprofile.auth.validated)
 	    userId = GService.gprofile.auth.id;
-	var retryCall = retry ? sessionGet.bind(null, userId, sessionName, callback, retry) : null;
+	var retryCall = opts.retry ? sessionGet.bind(null, userId, sessionName, opts, callback) : null;
+	var getOpts = {};
+	if (opts.create) getOpts.create = 1;
 	try {
-	    gsheet.getRow(userId, sessionGetPutAux.bind(null, 'get', callback, retryCall, retry||''));
+	    gsheet.getRow(userId, getOpts, sessionGetPutAux.bind(null, 'get', callback, retryCall, opts.retry||''));
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
 	    return;
@@ -2471,7 +2484,7 @@ function sessionGet(userId, sessionName, callback, retry) {
 function sessionPut(userId, session, opts, callback) {
     // Remote saving only happens if session.paced is true or force is true
     // callback(session, feedback)
-    // opts = {nooverwrite:, get:, force: }
+    // opts = {nooverwrite:, get:, retry:, force: }
     Slidoc.log('sessionPut:', userId, Sliobj.sessionName, session, !!callback, opts);
     if (Sliobj.adminState) {
 	alert('Internal error: admin user cannot update row');

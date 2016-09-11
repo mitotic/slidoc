@@ -349,7 +349,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
     this.auth.type = resp.authType || '';
     this.auth.id = resp.id || email;
     this.auth.origid = resp.origid || '';
-    this.auth.altid = '';
+    this.auth.altid = resp.altid ||'';
 
     var name = resp.displayName;
     if (name.indexOf(',') < 0) {
@@ -371,27 +371,36 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
 	this.authCallback(this.auth);
 }
 
-GoogleProfile.prototype.receiveUserInfo = function (authType, loginUser, loginOrig, loginToken, loginName, loginRemember, callback) {
+GoogleProfile.prototype.receiveUserInfo = function (authType, userInfo, loginRemember, callback) {
     var adminKey = '';
-    if (/admin(\s|$)/.exec(loginUser)) {
+    var loginUser = userInfo.user;
+    var loginToken = userInfo.token;
+    if (loginUser.match(/admin(\s\w|$)/)) {
 	// Login as admin user using HMAC key. To select specific user initially, use "admin username"
-	loginUser = loginUser.slice(5).trim();
+	loginUser = loginUser.match(/admin\s/) ? loginUser.slice(5).trim() : loginUser;
 	adminKey = loginToken;
 	loginToken = gen_admin_token(adminKey, 'admin');
     }
 
-    var email = (loginUser.indexOf('@')>0) ? loginUser : '';
+    var email = userInfo.email || ( (loginUser.indexOf('@')>0) ? loginUser : '' );
     if (callback)
 	this.authCallback = callback;
-	this.onUserInfo({adminKey: adminKey, id: loginUser, origid: loginOrig, displayName: loginName || loginUser,
-		     token: loginToken, authType: authType, emails: [{type: 'account', value:email}], remember: !!loginRemember});
+    this.onUserInfo({adminKey: adminKey,
+		     id: loginUser,
+		     origid: userInfo.origid||'',
+		     displayName: userInfo.name || loginUser,
+		     token: loginToken,
+		     authType: authType,
+		     emails: [{type: 'account', value: email}],
+		     altid: userInfo.altid||'',
+		     remember: !!loginRemember});
 }
 	
 GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback) {
     var cookieUserInfo = Slidoc.getServerCookie();
     if (!authType && !cookieUserInfo) {
 	var randStr = Math.random().toString(16).slice(2);
-	this.receiveUserInfo(authType, 'anon'+randStr, '', '', 'User Anon'+randStr, false, callback);
+	this.receiveUserInfo(authType, {user: 'anon'+randStr, name: 'User Anon'+randStr}, false, callback);
 	return;
     }
     if (cookieUserInfo) {
@@ -420,7 +429,12 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 		}
 	    }
 
-	    this.receiveUserInfo(authType, cookieUserName, cookieUserInfo.origid, cookieUserToken, cookieUserInfo.name, false, callback);
+	    this.receiveUserInfo(authType, {user: cookieUserName,
+					    origid: cookieUserInfo.origid,
+					    token: cookieUserToken,
+					    name: cookieUserInfo.name||'',
+					    email: cookieUserInfo.email||'',
+					    altid: cookieUserInfo.altid||''}, false, callback);
 	    return;
 	}
     }
@@ -449,7 +463,10 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    alert('Please provide token for login');
 	    return false;
 	}
-	gprofile.receiveUserInfo(authType, loginUser, '', loginToken, loginUser, loginRememberElem.checked, callback);
+	gprofile.receiveUserInfo(authType, {user: loginUser,
+					    token: loginToken,
+					    name: loginUser},
+					    loginRememberElem.checked, callback);
     }
     loginElem.style.display = 'block';
     loginOverlay.style.display = 'block';
@@ -495,6 +512,17 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     if ( (callType == 'putRow' && !params.nooverwrite) ||
 	 (callType == 'updateRow' && !params.vote) )
 	params.write = 1;
+
+    if (params.create) {
+	if (GService.gprofile.auth.displayName)
+	    params.name = GService.gprofile.auth.displayName;
+
+	if (GService.gprofile.auth.email)
+	    params.email = GService.gprofile.auth.email;
+
+	if (GService.gprofile.auth.altid)
+	    params.altid = GService.gprofile.auth.altid;
+    }
 
     GService.sendData(params, this.url, this.callback.bind(this, userId, callType, callback),
 		      this.useJSONP);
@@ -740,16 +768,21 @@ GoogleSheet.prototype.delRow = function (id, callback) {
     if (!callback)
         throw('GoogleSheet.delRow: Must specify callback for delRow');
 
-    if (this.cacheAll)
-	throw('GoogleSheet.delRow: Cannot delete from cache');
-
     var params = {id: id, delrow: '1'};
     this.callbackCounter += 1;
-    this.send(params, 'delRow', callback);
+
+    try {
+	this.send(params, 'delRow', callback);
+    } finally {
+	// If deleting when caching, reload page
+	if (this.cacheAll)
+	    location.reload(true)
+    }
 }
 
-GoogleSheet.prototype.getRow = function (id, callback) {
+GoogleSheet.prototype.getRow = function (id, opts, callback) {
     // If !id, GService.gprofile.auth.id is used
+    // Specify opts.create to create new row
     // callback(result, retStatus)
     // result == null on error
     // result == {} for non-existent row
@@ -772,6 +805,8 @@ GoogleSheet.prototype.getRow = function (id, callback) {
     }
 
     var params = {id: id, get: '1'};
+    if (opts.create)
+	params.create = '1';
     this.callbackCounter += 1;
     this.send(params, 'getRow', callback);
 }

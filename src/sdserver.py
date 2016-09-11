@@ -110,14 +110,14 @@ EVENT_BUFFER_SEC = 3
 
 
 class UserIdMixin(object):
-    def set_id(self, username, origId='', token='', displayName='', restrict=''):
+    def set_id(self, username, origId='', token='', displayName='', email='', altid='', restrict=''):
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName
+            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, restrict
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
             token = token + ',' + sliauth.gen_user_token(str(token), TESTUSER_ID)
-        cookieStr = username+':'+origId+':'+urllib.quote(token, safe='')+':'+urllib.quote(displayName, safe='')+':'+restrict
+        cookieStr = ':'.join( urllib.quote(x, safe='') for x in [username, origId, token, displayName, email, altid, restrict] );
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
@@ -145,19 +145,25 @@ class UserIdMixin(object):
         else:
             return token == sliauth.gen_user_token(Options['auth_key'], username)
 
-    def get_id_from_cookie(self, orig=False, prefix=False):
+    def get_id_from_cookie(self, orig=False, email=False, altid=False, prefix=False):
         # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
         cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         if not cookieStr:
             return None
         try:
             comps = cookieStr.split(':')
+            if Options['debug']:
+                print >> sys.stderr, "DEBUG: sdserver.UserIdMixin.get_id_from_cookie", comps
             userId, origId, token, displayName = comps[:4]
+            if email:
+                return comps[4] if len(comps) > 4 else ''
+            if altid:
+                return comps[5] if len(comps) > 5 else ''
             if prefix:
-                return comps[4] if len(comps) >= 5 else ''
+                return comps[6] if len(comps) > 6 else ''
             return origId if orig else userId
         except Exception, err:
-            print >> sys.stderr, 'sdserver: Cookie error - '+str(err)
+            print >> sys.stderr, 'sdserver: COOKIE ERROR - '+str(err)
             self.clear_id()
             return None
 
@@ -281,9 +287,9 @@ class ProxyHandler(BaseHandler):
             args[arg_name] = self.get_argument(arg_name)
 
         if Options['debug']:
-            print "DEBUG: URI", self.request.uri
+            print >> sys.stderr, "DEBUG: URI", self.request.uri
 
-        retObj = sdproxy.handleResponse(args)
+        retObj = sdproxy.sheetAction(args)
 
         self.set_header('Content-Type', mimeType)
         self.write(jsonPrefix+json.dumps(retObj, default=sliauth.json_default)+jsonSuffix)
@@ -313,7 +319,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.awaitBinary = None
 
         if Options['debug']:
-            print "DEBUG: WSopen", self.userId
+            print >> sys.stderr, "DEBUG: WSopen", self.userId
         if not self.userId:
             self.close()
 
@@ -414,7 +420,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                                 connection.locked = 'Session locked due to modifications by another user. Reload page, if necessary.'
                                 connection.write_message(json.dumps([0, 'lock', connection.locked]))
 
-                retObj = sdproxy.handleResponse(args)
+                retObj = sdproxy.sheetAction(args)
 
             elif method == 'plugin':
                 if len(args) < 2:
@@ -571,7 +577,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         userId = self.get_id_from_cookie() or None
         if Options['debug']:
-            print >>sys.stderr, "AuthStaticFileHandler.get_current_user", userId
+            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
@@ -631,7 +637,7 @@ class AuthLoginHandler(BaseHandler):
         token = str(self.get_argument("token", ""))
         next = self.get_argument("next", "/")
         if Options['debug']:
-            print >>sys.stderr, "AuthLoginHandler.get", username, token, next, error_msg
+            print >> sys.stderr, "AuthLoginHandler.get", username, token, next, error_msg
         if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
@@ -669,7 +675,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 redirect_uri=self.settings['google_oauth']['redirect_uri'],
                 code=self.get_argument('code'))
             if Options['debug']:
-                print >>sys.stderr, "GoogleAuth: step 1", user
+                print >> sys.stderr, "GoogleAuth: step 1", user.get('token_type')
 
             if not user:
                 self.custom_error(500, '<h2>Google authentication failed</h2><a href="/">Home</a>', clear_cookies=True)
@@ -682,7 +688,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
 
             user = json.loads(response.body)
             if Options['debug']:
-                print >>sys.stderr, "GoogleAuth: step 2", user
+                print >> sys.stderr, "GoogleAuth: step 2", user
 
             username = user['email'].lower()
             if username in Global.rename:
@@ -707,7 +713,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
 
             username, prefix = self.get_alt_name(username)
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
-            self.set_id(username, user['email'], token, displayName, prefix)
+            self.set_id(username, user['email'], token, displayName, email=user['email'].lower(), restrict=prefix)
             self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
 
@@ -733,7 +739,7 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             username, prefix = self.get_alt_name(username, prefix)
             displayName = user['name']
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
-            self.set_id(username, user['username'], token, displayName, prefix)
+            self.set_id(username, user['username'], token, displayName, restrict=prefix)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()

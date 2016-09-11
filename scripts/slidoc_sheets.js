@@ -1,10 +1,10 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3c';
+var VERSION = '0.96.3d';
 
-var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
+var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
 
 //
 // SENDING FORM DATA TO GOOGLE SHEETS
@@ -136,6 +136,11 @@ function onOpen() {
    ss.addMenu("Slidoc", menuEntries);
 }
 
+function setup() {
+    var doc = SpreadsheetApp.getActiveSpreadsheet();
+    SCRIPT_PROP.setProperty("key", doc.getId());
+}
+
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 function doGet(evt){
   return handleResponse(evt);
@@ -146,7 +151,22 @@ function doPost(evt){
 }
 
 function handleResponse(evt) {
-    // Returns a JSON object
+    var jsonPrefix = '';
+    var jsonSuffix = '';
+    var mimeType = ContentService.MimeType.JSON;
+    var parmPrefix = evt.parameter.prefix || null;
+    if (parmPrefix) {
+	jsonPrefix = parmPrefix + '(' + (evt.parameter.callback || '0') + ', ';
+        jsonSuffix = ')';
+	mimeType = ContentService.MimeType.JAVASCRIPT;
+    }
+    return ContentService
+        .createTextOutput(jsonPrefix+JSON.stringify(sheetAction(evt.parameter))+jsonSuffix)
+        .setMimeType(mimeType);
+}
+
+function sheetAction(params) {
+    // Returns an object
     // object.result = 'success' or 'error'
     // object.value contains updated row values list if get=1; otherwise it is [].
     // object.headers contains column headers list, if getheaders=1
@@ -171,7 +191,8 @@ function handleResponse(evt) {
     // update: 1 to modify part of row
     // get: 1 to retrieve row (id must be specified)
     // getheaders: 1 to return headers as well
-    // all: 1 to retrueve all rows
+    // all: 1 to retrieve all rows
+    // create: 1 to create and initialize non-existent rows (for get/put)
     // Can add row with fewer columns than already present.
     // This allows user to add additional columns without affecting script actions.
     // (User added columns are returned on gets and selective updates, but not row updates.)
@@ -187,20 +208,8 @@ function handleResponse(evt) {
     var returnHeaders = null;
     var returnInfo = {version: VERSION};
     var returnMessages = [];
-    var jsonPrefix = '';
-    var jsonSuffix = '';
-    var mimeType = ContentService.MimeType.JSON;
     try {
-	var params = evt.parameter;
-
-	if (params.prefix) {
-	    jsonPrefix = params.prefix + '(' + (params.callback || '0') + ', ';
-            jsonSuffix = ')';
-	    mimeType = ContentService.MimeType.JAVASCRIPT;
-	}
-
 	var adminUser = '';
-	var authUser = '';
 	var paramId = params.id || '';
 
 	if (params.admin) {
@@ -216,7 +225,6 @@ function handleResponse(evt) {
 		throw('Error:NEED_TOKEN:Need token for id authentication');
 	    if (!validateHMAC('id:'+paramId+':'+params.token, AUTH_KEY))
 		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'");
-	    authUser = paramId;
 	}
 
 	var proxy = params.proxy || '';
@@ -410,6 +418,7 @@ function handleResponse(evt) {
 	    var getRow = params.get || '';
 	    var getShare = params.getshare || '';
 	    var allRows = params.all || '';
+	    var createRow = params.create || '';
 	    var nooverwriteRow = params.nooverwrite || '';
 	    var delRow = params.delrow || '';
 	    
@@ -420,7 +429,7 @@ function handleResponse(evt) {
 	    var displayName = null;
 
 	    var voteSubmission = '';
-	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].slice(-5) == '_vote' && sessionAttributes.shareAnswers) {
+	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].match(/_vote$/) && sessionAttributes.shareAnswers) {
 		var qno = selectedUpdates[1][0].split('_')[0];
 		voteSubmission = sessionAttributes.shareAnswers[qno] ? (sessionAttributes.shareAnswers[qno].share||'') : '';
 	    }
@@ -448,13 +457,12 @@ function handleResponse(evt) {
 	if (proxy) {
 	    // Already handled proxy get and updates
 	} else if (delRow) {
-            // Delete row only allowed for session sheet and test user
-            if (!sessionEntries || paramId != TESTUSER_ID)
+            // Delete row only allowed for session sheet and admin/test user
+            if (!sessionEntries || (!adminUser && paramId != TESTUSER_ID))
                 throw("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
-            var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2);
-            var testRow = temIndexRow[TESTUSER_ID];
-            if (testRow)
-                modSheet.deleteRow(testRow);
+            var delRowCOl = lookupRowIndex(paramId, modSheet, 2);
+            if (delRowCOl)
+                modSheet.deleteRow(delRowCOl);
             returnValues = [];
 	} else if (!rowUpdates && !selectedUpdates && !getRow && !getShare) {
 	    // No row updates/gets
@@ -679,23 +687,30 @@ function handleResponse(evt) {
 
 	    if (!userId)
 		throw('Error::userID must be specified for updates/gets');
-	    var userRow = -1;
+	    var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1);
+	    var userRow = 0;
 	    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
-		// Locate ID row (except for log files)
-		var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1);
-		for (var j=0; j<userIds.length; j++) {
-		    // Unique ID
-		    if (userIds[j][0] == userId) {
-			userRow = j+1+numStickyRows;
-			break;
-		    }
-		}
+		// Locate unique ID row (except for log files)
+		userRow = lookupRowIndex(userId, modSheet, 1+numStickyRows);
 	    }
 	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues);
-	    var newRow = (userRow < 0);
+	    var newRow = !userRow;
 
 	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID)
 		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
+
+	    if (newRow && !rowUpdates && createRow) {
+		// Initialize new row
+		if (sessionEntries) {
+		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
+						  userId, params.name, params.email, params.altid);
+		    displayName = rowUpdates[columnIndex['name']-1] || '';
+		} else {
+		    rowUpdates = [];
+		    for (var j=0; j<columnHeaders.length; j++)
+			rowUpdates[j] = null;
+		}
+	    }
 
 	    if (newRow && getRow && !rowUpdates) {
 		// Row does not exist; return empty list
@@ -773,11 +788,11 @@ function handleResponse(evt) {
 				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
 					// Creating/modifying row; require valid lateToken
 					if (!lateToken)
-					    throw("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'. (If valid excuse, request late submission token.)")
+					    throw("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'.")
 					else
 					    throw("Error:INVALID_LATE_TOKEN:Invalid token for late submission to session '"+sheetName+"'");
 				    } else {
-					returnMessages.push("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'. (If valid excuse, request late submission token.)");
+					returnMessages.push("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'. ");
 				    }
 			    } else if ( (dueDate.getTime() - curTime) < 2*60*60*1000) {
 				returnMessages.push("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline ("+dueDate+") for session '"+sheetName+"'.");
@@ -790,12 +805,12 @@ function handleResponse(evt) {
 		    // New user; insert row in sorted order of name (except for log files)
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
-		    var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], numStickyRows+1);
                     if (userId == MAXSCORE_ID) {
 			userRow = numStickyRows+1;
                     } else if (userId == TESTUSER_ID && !loggingSheet) {
                         // Test user always appears after max score
-                        userRow = temIndexRow[MAXSCORE_ID] ? temIndexRow[MAXSCORE_ID]+1 : numStickyRows+1
+			var maxScoreRow = lookupRowIndex(MAXSCORE_ID, modSheet, numStickyRows+1);
+                        userRow = maxScoreRow ? maxScoreRow+1 : numStickyRows+1
 		    } else if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1);
 			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID);
@@ -974,7 +989,7 @@ function handleResponse(evt) {
 				modValue = curDate;
 				returnInfo.submitTimestamp = curDate;
 			    }
-			} else if (colHeader.slice(-5) == '_vote') {
+			} else if (colHeader.match(/_vote$/)) {
 			    if (voteSubmission && colValue) {
 				// Cannot un-vote, vote can be transferred
 				var otherCol = columnIndex['q_other'];
@@ -1026,28 +1041,107 @@ function handleResponse(evt) {
 	    }
 	}
 
-	// return json success results
-	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"success", "value": returnValues, "headers": returnHeaders,
-							 "info": returnInfo,
-							 "messages": returnMessages.join('\n')})+jsonSuffix)
-            .setMimeType(mimeType);
+	// return success results
+	return {"result":"success", "value": returnValues, "headers": returnHeaders,
+		"info": returnInfo,
+		"messages": returnMessages.join('\n')};
     } catch(err){
 	// if error return this
-	return ContentService
-            .createTextOutput(jsonPrefix+JSON.stringify({"result":"error", "error": ''+err, "value": null,
-							 "info": returnInfo,
-							 "messages": returnMessages.join('\n')})+jsonSuffix)
-            .setMimeType(mimeType);
+	return {"result":"error", "error": ''+err, "value": null,
+		"info": returnInfo,
+		"messages": returnMessages.join('\n')};
     } finally { //release lock
 	lock.releaseLock();
     }
 }
 
-function setup() {
-    var doc = SpreadsheetApp.getActiveSpreadsheet();
-    SCRIPT_PROP.setProperty("key", doc.getId());
+function getRandomSeed() {
+    return Math.round(Math.random() * Math.pow(2,32));
 }
+
+function createSession(sessionName, params) {
+    var persistPlugins = {};
+    for (var j=0; j<params.plugins.length; j++)
+	persistPlugins[params.plugins[j]] = {};
+
+    return {'version': params.sessionVersion,
+	    'revision': params.sessionRevision,
+	    'paced': params.paceLevel || 0,
+	    'submitted': null,
+	    'lateToken': '',
+	    'randomSeed': getRandomSeed(),              // Save random seed
+            'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
+            'startTime': Date.now(),
+            'lastTime': 0,
+	    'lastSlide': 0,
+            'lastTries': 0,
+            'remainingTries': 0,
+            'tryDelay': 0,
+	    'showTime': null,
+            'questionsAttempted': {},
+	    'hintsUsed': {},
+	    'plugins': persistPlugins
+	   };
+
+}
+
+function createSessionRow(sessionName, fieldsMin, params, userId, displayName, email, altid) {
+    var headers = params.sessionFields.concat(params.gradeFields);
+    var idCol = headers.indexOf('id') + 1;
+    var nameCol = headers.indexOf('name') + 1;
+    var emailCol = headers.indexOf('email') + 1;
+    var altidCol = headers.indexOf('altid') + 1;
+    var session = createSession(sessionName, params);
+    var rowVals = [];
+    for (var j=0; j<headers.length; j++) {
+	var header = headers[j];
+	rowVals[j] = null;
+	if (!header.match(/_hidden$/) && !header.match(/Timestamp$/)) {
+	    if (header in session)
+		rowVals[j] = session[header];
+	}
+    }
+    rowVals[headers.indexOf('session_hidden')] = JSON.stringify(session);
+
+    var rosterSheet = getSheet(ROSTER_SHEET);
+    if (rosterSheet) {
+	var rosterVals = lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, true);
+	if (!rosterVals)
+	    throw('User ID '+userId+' not found in roster');
+
+	for (var j=0; j<rosterVals.length; j++) {
+	    if (rosterVals[j])
+		rowVals[j] = rosterVals[j];
+	}
+    }
+
+    // Management fields
+    rowVals[idCol-1] = userId;
+
+    if (!rowVals[nameCol-1]) {
+	if (!displayName)
+	    throw('Name parameter must be specified to create row');
+	rowVals[nameCol-1] = displayName;
+    }
+
+    if (!rowVals[emailCol-1] && email)
+	rowVals[emailCol-1] = email;
+
+    if (!rowVals[altidCol-1] && altid)
+	rowVals[altidCol-1] = altid;
+    
+    return rowVals;
+}
+    
+function requestUserRow(sessionName, userId, displayName) {
+    var token = genUserToken(AUTH_KEY, userId);
+    var getParams = {'id': userId, 'token': token,'sheet': sessionName,
+		     'name': displayName, 'get': '1', 'create': '1'};
+
+    return sheetAction(getParams);
+}
+
+////// Utilitye functions
 
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
@@ -1189,6 +1283,8 @@ function indexColumns(sheet) {
 }
 
 function indexRows(sheet, indexCol, startRow) {
+    // startRow defaults to 2
+    startRow = startRow || 2;
     var rowIndex = {};
     var nRows = sheet.getLastRow()-startRow+1;
     if (nRows > 0) {
@@ -1216,6 +1312,21 @@ function getColumns(header, sheetName, colCount, skipRows) {
 	    retvals.push(vals[j][0]);
 	return retvals;
     }
+}
+
+function lookupRowIndex(idValue, sheet, startRow) {
+    // Return row number for idValue in sheet or return 0
+    // startRow defaults to 2
+    startRow = startRow || 2;
+    var nRows = sheet.getLastRow()-startRow+1;
+    if (!nRows)
+	return 0;
+    var rowIds = sheet.getSheetValues(startRow, indexColumns(sheet)['id'], nRows, 1);
+    for (var j=0; j<rowIds.length; j++) {
+	if (idValue == rowIds[j][0])
+	    return j+startRow;
+    }
+    return 0;
 }
 
 function lookupValues(idValue, colNames, sheetName, listReturn) {
@@ -1558,6 +1669,38 @@ function sessionStatSheet() {
     notify('Created sheet '+statSheet.getParent().getName()+':'+statSheetName, 'Slidoc Stats');
 }
 
+function createQuestionAttempted(response, explain) {
+    // response field should always be present, non-null for attempted questions
+    var qAttempted = {response: response||''};
+    if (explain)
+	qAttempted.explain = explain;
+    return qAttempted;
+}
+
+function unpackSession(headers, row) {
+    // Unpacks hidden session object and adds response/explain fields from sheet row, as needed
+    var session_hidden = row[headers.indexOf('session_hidden')];
+    if (!session_hidden)
+	return null;
+    if (session_hidden.charAt(0) != '{')
+	session_hidden = Utilities.newBlob(Utilities.base64Decode(session_hidden)).getDataAsString();
+    var session = JSON.parse(session_hidden);
+    for (var j=0; j<headers.length; j++) {
+	var header = headers[j];
+	if (row[j]) {
+	    var hmatch = QFIELD_RE.exec(header);
+	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
+		// Copy only response/explain field to session
+		var qnumber = parseInt(hmatch[1]);
+		if (!(qnumber in session.questionsAttempted))
+		    session.questionsAttempted[qnumber] = createQuestionAttempted();
+		session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+	    }
+	}
+    }
+    return session;
+}
+
 function scoreAnswer(response, qtype, corrAnswer) {
     // Handle answer types: choice, number, text
 
@@ -1808,10 +1951,6 @@ function emailTokens() {
 function emailLateToken() {
     // Send late token
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
-    var rosterSheet = getSheet(ROSTER_SHEET);
-    if (!rosterSheet)
-	throw('Roster sheet '+ROSTER_SHEET+' not found!');
-
     var sessionName = getSessionName();
     if (sessionName) {
 	var userId = getPrompt('Email late submission token for session '+sessionName, "userID");
@@ -1825,9 +1964,28 @@ function emailLateToken() {
 	var userId = comps[0];
 	sessionName = comps[1];
     }
-    var email = lookupValues(userId,['email'], ROSTER_SHEET, true)[0];
-    if (email.indexOf('@') <= 0)
-	throw("Invalid email address '"+email+"' for userID '"+userId+"'");
+    var sessionSheet = getSheet(sessionName);
+    if (!sessionSheet)
+	throw('Session '+sessionName+' not found!');
+    var numStickyRows = 1;
+    var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+    if (!userRow) {
+	var retval = requestUserRow(sessionName, userId);
+	if (retval.result != 'success')
+	    throw('Error in creating session for user '+userId+': '+retval.error);
+	userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+    }
+
+    var displayName = '';
+    var email = '';
+    var rosterSheet = getSheet(ROSTER_SHEET);
+    if (rosterSheet) {
+	displayName = lookupValues(userId, ['name'], ROSTER_SHEET, true)[0];
+	email = lookupValues(userId, ['email'], ROSTER_SHEET, true)[0];
+    }
+
+    if (!displayName)
+	email = getPrompt('Enter name (Last, First) user '+userId, 'Name');
 
     var dateStr = getPrompt('New submission date/time', "'yyyy-mm-ddTmm:hh' (or 'yyyy-mm-dd', implying 'T23:59')");
     if (!dateStr)
@@ -1835,49 +1993,23 @@ function emailLateToken() {
     if (dateStr.indexOf('T') < 0)
 	dateStr += 'T23:59';
 
-    var subject;
-    if (SITE_LABEL)
-	subject = 'Late submission token for '+SITE_LABEL;
-    else
-	subject = 'Slidoc late submission token';
-
     var token = genLateToken(AUTH_KEY, userId, sessionName, dateStr);
-    var message = 'Late submission token for userID '+userId+' and session '+sessionName+' is '+token;
-    MailApp.sendEmail(email, subject, message);
+    sessionSheet.getRange(userRow, indexColumns(sessionSheet)['lateToken'], 1, 1).setValue(token);
 
-    notify('Emailed late submission token to '+userId+' <'+email+'>');
-}
+    var note = 'Late submission on '++' authorized for user '+userId+'.';
+    if (email && email.indexOf('@') > 0) {
+	var subject;
+	if (SITE_LABEL)
+	    subject = 'Late submission allowed for '+SITE_LABEL;
+	else
+	    subject = 'Late submission for '+sessionName;
 
-function createQuestionAttempted(response, explain) {
-    // response field should always be present, non-null for attempted questions
-    var qAttempted = {response: response||''};
-    if (explain)
-	qAttempted.explain = explain;
-    return qAttempted;
-}
+	var message = 'Late submission allowed for userID '+userId+' in session '+sessionName+'. New due date is  '+dateStr;
+	MailApp.sendEmail(email, subject, message);
 
-function unpackSession(headers, row) {
-    // Unpacks hidden session object and adds response/explain fields from sheet row, as needed
-    var session_hidden = row[headers.indexOf('session_hidden')];
-    if (!session_hidden)
-	return null;
-    if (session_hidden.charAt(0) != '{')
-	session_hidden = Utilities.newBlob(Utilities.base64Decode(session_hidden)).getDataAsString();
-    var session = JSON.parse(session_hidden);
-    for (var j=0; j<headers.length; j++) {
-	var header = headers[j];
-	if (row[j]) {
-	    var hmatch = QFIELD_RE.exec(header);
-	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
-		// Copy only response/explain field to session
-		var qnumber = parseInt(hmatch[1]);
-		if (!(qnumber in session.questionsAttempted))
-		    session.questionsAttempted[qnumber] = createQuestionAttempted();
-		session.questionsAttempted[qnumber][hmatch[2]] = row[j];
-	    }
-	}
+	note += ' Emailed notification to '+email;
     }
-    return session;
+    notify(note);
 }
 
 function updateScoreSheet() {

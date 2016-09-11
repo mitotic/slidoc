@@ -20,6 +20,7 @@ from __future__ import print_function
 import datetime
 import json
 import math
+import random
 import re
 import sys
 import time
@@ -31,7 +32,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3b'
+VERSION = '0.96.3d'
 
 # Usually modified by importing module
 Options = {
@@ -468,7 +469,7 @@ def handle_http_response(response):
         schedule_update(0 if Global.suspending else Options['MIN_WAIT_TIME'])
 
         
-def handleResponse(params):
+def sheetAction(params):
     # Returns a JSON object
     # object.result = 'success' or 'error'
     # object.value contains updated row values list if get=1; otherwise it is [].
@@ -495,6 +496,7 @@ def handleResponse(params):
     # get: 1 to retrieve row (id must be specified)
     # getheaders: 1 to return headers as well
     # all: 1 to retrieve all rows
+    # create: 1 to create and initialize non-existent rows (for get/put)
     # Can add row with fewer columns than already present.
     # This allows user to add additional columns without affecting script actions.
     # (User added columns are returned on gets and selective updates, but not row updates.)
@@ -505,7 +507,7 @@ def handleResponse(params):
     # we want a public lock, one that locks for all invocations
 
     if Options['DEBUG']:
-        print("DEBUG: handleResponse PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
+        print("DEBUG: sheetAction PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
 
     returnValues = None
     returnHeaders = None
@@ -518,7 +520,6 @@ def handleResponse(params):
             raise Exception('Error:SHEETNAME::No sheet name specified')
 
         adminUser = ''
-        authUser = ''
         paramId = params.get('id','') #var
 
         if params.get('admin',''):
@@ -534,7 +535,6 @@ def handleResponse(params):
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
             if not validateHMAC('id:'+paramId+':'+params.get('token',''), Options['AUTH_KEY']):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
-            authUser = paramId
 
         protectedSheet = (sheetName == SCORES_SHEET)
         restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
@@ -608,6 +608,7 @@ def handleResponse(params):
         getRow = params.get('get','')
         getShare = params.get('getshare', '');
         allRows = params.get('all','')
+        createRow = params.get('create', '')
         nooverwriteRow = params.get('nooverwrite','')
         delRow = params.get('delrow','')
 
@@ -618,7 +619,7 @@ def handleResponse(params):
         displayName = None
 
         voteSubmission = ''
-        if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0][-5:] == '_vote' and sessionAttributes.get('shareAnswers'):
+        if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
             qno = selectedUpdates[1][0].split('_')[0]
             voteSubmission = sessionAttributes['shareAnswers'][qno].get('share', '') if sessionAttributes['shareAnswers'].get(qno) else ''
 
@@ -642,13 +643,12 @@ def handleResponse(params):
                 pass
 
         if delRow:
-            # Delete row only allowed for session sheet and test user
-            if not sessionEntries or paramId != TESTUSER_ID:
+            # Delete row only allowed for session sheet and admin/test user
+            if not sessionEntries or ( not adminUser and paramId != TESTUSER_ID):
                 raise Exception("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
-            temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
-            testRow = temIndexRow.get(TESTUSER_ID)
-            if testRow:
-                modSheet.deleteRow(testRow)
+            delRowCol = lookupRowIndex(paramId, modSheet, 2)
+            if delRowCol:
+                modSheet.deleteRow(delRowCol)
             returnValues = []
         elif not rowUpdates and not selectedUpdates and not getRow and not getShare:
             # No row updates/gets
@@ -855,21 +855,28 @@ def handleResponse(params):
 
             if not userId:
                 raise Exception('Error::userID must be specified for updates/gets')
-            userRow = -1
+            userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1)
+            userRow = 0
             if modSheet.getLastRow() > numStickyRows and not loggingSheet:
-                # Locate ID row (except for log files)
-                userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1)
-                for j in range(len(userIds)):
-                    # Unique ID
-                    if userIds[j][0] == userId:
-                        userRow = j+1+numStickyRows
-                        break
+                # Locate unique ID row (except for log files)
+                userRow = lookupRowIndex(userId, modSheet, 1+numStickyRows)
 
             ##returnMessages.append('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues)
-            newRow = (userRow < 0)
+            newRow = (not userRow)
 
             if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID:
                 raise Exception("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'")
+
+            if newRow and (not rowUpdates) and createRow:
+                # Initialize new row
+                if sessionEntries:
+                    rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
+                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''));
+                    displayName = rowUpdates[columnIndex['name']-1] or ''
+                else:
+                    rowUpdates = []
+                    for j in range(len(columnHeaders)):
+                        rowUpdates[j] = None
 
             if newRow and getRow and not rowUpdates:
                 # Row does not exist return empty list
@@ -945,11 +952,11 @@ def handleResponse(params):
                                 if newRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
                                     # Creating/modifying row; require valid lateToken
                                     if not lateToken:
-                                        raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'. (If valid excuse, request late submission token.)" % (dueDate, sheetName))
+                                        raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'." % (dueDate, sheetName))
                                     else:
                                         raise Exception("Error:INVALID_LATE_TOKEN:Invalid token for late submission to session '"+sheetName+"'")
                                 else:
-                                    returnMessages.append("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'. (If valid excuse, request late submission token.)" % (dueDate, sheetName))
+                                    returnMessages.append("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'." % (dueDate, sheetName))
                             elif (sliauth.epoch_ms(dueDate) - curTime) < 2*60*60*1000:
                                 returnMessages.append("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline (%s) for session '%s'." % (dueDate, sheetName))
 
@@ -958,12 +965,12 @@ def handleResponse(params):
                     if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
                         raise Exception('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName)
 
-                    temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 1+numStickyRows)
                     if userId == MAXSCORE_ID:
                         userRow = numStickyRows+1
                     elif userId == TESTUSER_ID and not loggingSheet:
                         # Test user always appears after max score
-                        userRow = temIndexRow[MAXSCORE_ID]+1 if temIndexRow.get(MAXSCORE_ID) else numStickyRows+1
+                        maxScoreRow = lookupRowIndex(MAXSCORE_ID, modSheet, numStickyRows+1)
+                        userRow = maxScoreRow+1 if maxScoreRow else numStickyRows+1
                     elif modSheet.getLastRow() > numStickyRows and not loggingSheet:
                         displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1)
                         userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID)
@@ -1145,7 +1152,7 @@ def handleResponse(params):
                                 modValue = curDate
                                 returnInfo['submitTimestamp'] = curDate
 
-                        elif colHeader[-5:] == '_vote':
+                        elif colHeader.endswith('_vote'):
                             if voteSubmission and colValue:
                                 # Cannot un-vote, vote can be transferred
                                 otherCol = columnIndex.get('q_other')
@@ -1217,6 +1224,83 @@ def handleResponse(params):
     
     return retObj
 
+def getRandomSeed():
+    return int(random.random() * (2**32))
+
+def createSession(sessionName, params):
+    persistPlugins = {}
+    for pluginName in params['plugins']:
+        persistPlugins[pluginName] = {}
+
+    return {'version': params.get('sessionVersion'),
+	    'revision': params.get('sessionRevision'),
+	    'paced': params.get('paceLevel', 0),
+	    'submitted': None,
+	    'lateToken': '',
+	    'randomSeed': getRandomSeed(),                     # Save random seed
+        'expiryTime': sliauth.epoch_ms() + 180*86400*1000, # 180 day lifetime
+        'startTime': sliauth.epoch_ms(),
+        'lastTime': 0,
+	    'lastSlide': 0,
+        'lastTries': 0,
+        'remainingTries': 0,
+        'tryDelay': 0,
+	    'showTime': None,
+        'questionsAttempted': {},
+	    'hintsUsed': {},
+	    'plugins': persistPlugins
+	   }
+
+def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', email='', altid=''):
+    headers = params['sessionFields'] + params['gradeFields']
+    idCol = headers.index('id') + 1
+    nameCol = headers.index('name') + 1
+    emailCol = headers.index('email') + 1
+    altidCol = headers.index('altid') + 1
+    session = createSession(sessionName, params)
+    rowVals = []
+    for header in headers:
+        rowVals.append(None)
+        if not header.endswith('_hidden') and not header.endswith('Timestamp'):
+            if header in session:
+                rowVals[-1] = session[header]
+
+    rowVals[headers.index('session_hidden')] = json.dumps(session)
+
+    rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+    if rosterSheet:
+        rosterVals = lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, True)
+        if not rosterVals:
+            raise Exception('User ID '+userId+' not found in roster')
+
+        for j in range(len(rosterVals)):
+            if rosterVals[j]:
+                rowVals[j] = rosterVals[j]
+
+    # Management fields
+    rowVals[idCol-1] = userId
+
+    if not rowVals[nameCol-1]:
+        if not displayName:
+            raise Exception('Name parameter must be specified to create row')
+        rowVals[nameCol-1] = displayName
+
+    if not rowVals[emailCol-1] and email:
+        rowVals[emailCol-1] = email
+    
+    if not rowVals[altidCol-1] and altid:
+        rowVals[altidCol-1] = altid
+    
+    return rowVals
+
+    
+def requestUserRow(sessionName, userId, displayName):
+    token = sliauth.gen_user_token(AUTH_KEY, userId)
+    getParams = {'id': userId, 'token': token,'sheet': sessionName,
+                 'name': displayName, 'get': '1', 'create': '1'}
+
+    return sheetAction(getParams)
+
 
 WUSCORE_RE = re.compile(r'[_\W]')
 ARTICLE_RE = re.compile(r'\b(a|an|the) ')
@@ -1276,7 +1360,7 @@ def indexColumns(sheet):
     return columnIndex
 
 
-def indexRows(sheet, indexCol, startRow):
+def indexRows(sheet, indexCol, startRow=2):
     rowIndex = {}
     nRows = sheet.getLastRow()-startRow+1
     if nRows > 0:
@@ -1303,6 +1387,19 @@ def getColumns(header, sheetName, colCount, skipRows):
         for val in vals:
             retvals.append(val[0])
         return retvals
+
+
+def lookupRowIndex(idValue, sheet, startRow=2):
+    # Return row number for idValue in sheet or return 0
+    # startRow defaults to 2
+    nRows = sheet.getLastRow()-startRow+1
+    if not nRows:
+        return 0
+    rowIds = sheet.getSheetValues(startRow, indexColumns(sheet)['id'], nRows, 1)
+    for j, rowId in enumerate(rowIds):
+        if idValue == rowId[0]:
+            return j+startRow
+    return 0
 
 
 def lookupValues(idValue, colNames, sheetName, listReturn=False):
