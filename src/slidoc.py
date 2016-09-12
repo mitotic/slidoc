@@ -825,13 +825,6 @@ class SlidocRenderer(MathRenderer):
             # Question slide
             self.question_concepts.append(self.slide_concepts)
 
-            if self.questions[-1].get('share'):
-                if 'Share' not in self.slide_plugin_embeds:
-                    prefix_html += self.embed_plugin_body('Share', self.get_slide_id())
-
-                if self.options['config'].pace == ADMIN_PACE and 'Timer' not in self.slide_plugin_embeds:
-                    prefix_html += self.embed_plugin_body('Timer', self.get_slide_id())
-
             if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
                 self.qforward[self.slide_forward_links[0]].append(len(self.questions))
@@ -1275,6 +1268,14 @@ class SlidocRenderer(MathRenderer):
             elif plugin_name not in self.slide_plugin_embeds:
                 html_prefix += self.embed_plugin_body(plugin_name, slide_id)
 
+        html_suffix = ''
+        if answer_opts['share']:
+            if 'Share' not in self.slide_plugin_embeds:
+                html_suffix += self.embed_plugin_body('Share', slide_id)
+
+            if self.options['config'].pace == ADMIN_PACE and 'Timer' not in self.slide_plugin_embeds:
+                html_suffix += self.embed_plugin_body('Timer', slide_id)
+                
         if self.choices:
             if not qtype or qtype in ('choice', 'multichoice'):
                 # Correct choice(s)
@@ -1430,7 +1431,7 @@ class SlidocRenderer(MathRenderer):
 
         ans_html = html_template % ans_params
             
-        return html_prefix+ans_html+'\n'
+        return html_prefix+ans_html+html_suffix+'\n'
 
 
     def process_weights(self, text):

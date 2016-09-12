@@ -125,7 +125,7 @@ GService.openWebsocket = function (wsPath) {
 	var callback_method = msgObj[1];
 	var callback_args = msgObj[2];
 	
-	Slidoc.log('GService.ws.onmessage:', callback_index);
+	Slidoc.log('GService.ws.onmessage:', callback_index, callback_method);
 
 	if (!callback_index) {
 	    try {

@@ -1,0 +1,24 @@
+<div id="main-container">
+  <h2><a href="/">{{site_label}}</a></h2>
+  <h3>{{session_label}}</h3>
+  <div id="main">
+    <div id="message-form">
+      <form action="/interact" method="post" id="message_form">
+        <div>
+          Status: <span class="sdserver-note"><em>{{note}}</em></span>
+        </div>
+	<p></p>
+        <fieldset>
+          <label for="username">Message:</label>
+          <textarea name="message" autocapitalize="off" autocorrect="off" class="sdserver-textarea"></textarea>
+        </fieldset>
+        {% module xsrf_form_html() %}
+        <div id="form_btn">
+	  <input id="submit-btn" type="submit" value="Submit">
+	</div>
+      </form>
+    </div>
+  <p></p>
+  <a href="/">Home</a>
+  </div>
+</div>

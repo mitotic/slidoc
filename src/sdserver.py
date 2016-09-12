@@ -52,6 +52,7 @@ import json
 import logging
 import math
 import os.path
+import re
 import sys
 import time
 import urllib
@@ -67,6 +68,7 @@ import tornado.websocket
 from tornado.options import define, options, parse_config_file, parse_command_line
 from tornado.ioloop import IOLoop, PeriodicCallback
 
+import sdproxy
 import sliauth
 import plugins
 
@@ -110,6 +112,14 @@ EVENT_BUFFER_SEC = 3
 
 
 class UserIdMixin(object):
+    @classmethod
+    def get_path_base(cls, path):
+        # Extract basename, without file extension, from URL path
+        basename = path.split('/')[-1]
+        if '.' in basename:
+            basename, sep, suffix = basename.rpartition('.')
+        return basename
+
     def set_id(self, username, origId='', token='', displayName='', email='', altid='', restrict=''):
         if Options['debug']:
             print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, restrict
@@ -125,13 +135,6 @@ class UserIdMixin(object):
         self.clear_cookie(USER_COOKIE_SECURE)
         self.clear_cookie(SERVER_COOKIE)
 
-    def get_path_base(self, path):
-        # Extract basename, without file extension, from URL path
-        basename = path.split('/')[-1]
-        if '.' in basename:
-            basename, sep, suffix = basename.rpartition('.')
-        return basename
-
     def get_alt_name(self, username):
         if username in Global.rename:
             alt_name, _, session_prefix = Global.rename[username].partition(':')
@@ -145,16 +148,18 @@ class UserIdMixin(object):
         else:
             return token == sliauth.gen_user_token(Options['auth_key'], username)
 
-    def get_id_from_cookie(self, orig=False, email=False, altid=False, prefix=False):
+    def get_id_from_cookie(self, orig=False, name=False, email=False, altid=False, prefix=False):
         # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
         cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
         if not cookieStr:
             return None
         try:
-            comps = cookieStr.split(':')
+            comps = [urllib.unquote(x) for x in cookieStr.split(':')]
             if Options['debug']:
                 print >> sys.stderr, "DEBUG: sdserver.UserIdMixin.get_id_from_cookie", comps
             userId, origId, token, displayName = comps[:4]
+            if name:
+                return displayName
             if email:
                 return comps[4] if len(comps) > 4 else ''
             if altid:
@@ -199,20 +204,20 @@ class ActionHandler(BaseHandler):
         if self.get_current_user() not in (ADMINUSER_ID, TESTUSER_ID):
             self.write('Action not permitted: '+self.get_current_user())
             return
-        import sdproxy
         action, sep, sessionName = subpath.partition('/')
         if action == '_dash':
             self.render('dashboard.html')
         elif action == '_clear':
             sdproxy.start_shutdown('clear')
-            self.write('Clearing cache')
+            self.write('Clearing cache<br><a href="/_dash">Dashboard</a>')
         elif action == '_shutdown':
             self.clear_id()
             sdproxy.start_shutdown('shutdown')
-            self.write('Starting shutdown (also cleared cookies)')
+            self.write('Starting shutdown (also cleared cookies)<br><a href="/_dash">Dashboard</a>')
         elif action in ('_getcol', '_getrow'):
             sessionName, sep, label = sessionName.partition('.')
             sheet = sdproxy.Sheet_cache[sessionName]
+            self.write('<a href="/_dash">Dashboard</a><br>')
             if not sheet:
                 self.write('Session '+sessionName+' not in cache')
             else:
@@ -243,12 +248,13 @@ class ActionHandler(BaseHandler):
                 del sdproxy.Lock_cache[sessionName]
             if sessionName in sdproxy.Sheet_cache:
                 del sdproxy.Sheet_cache[sessionName]
-            self.write('Unlocked '+sessionName)
+            self.write('Unlocked '+sessionName+'<br><a href="/_dash">Dashboard</a>')
         elif action == '_lock':
             if sessionName:
                 sdproxy.Lock_cache[sessionName] = True
-            self.write('Locked sessions: %s' % (', '.join(sdproxy.get_locked())) )
+            self.write('Locked sessions: %s<br><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
         elif action == '_status':
+            self.write('<a href="/_dash">Dashboard</a><br>')
             self.write('<pre>')
             self.write(sdproxy.getCacheStatus())
             curTime = time.time()
@@ -281,7 +287,6 @@ class ProxyHandler(BaseHandler):
             jsonSuffix = ')'
             mimeType = 'application/javascript'
 
-        import sdproxy
         args = {}
         for arg_name in self.request.arguments:
             args[arg_name] = self.get_argument(arg_name)
@@ -296,6 +301,8 @@ class ProxyHandler(BaseHandler):
 
 class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     _connections = collections.defaultdict(functools.partial(collections.defaultdict,list))
+    _interactiveSession = (None, None, None)
+    _interactiveErrors = {}
     @classmethod
     def get_connections(cls):
         # Return list of tuples [ (path, user, connections) ]
@@ -304,6 +311,163 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             for user, connections in path_dict.items():
                 lst.append( (path, user, connections) )
         return lst
+
+    @classmethod
+    def getInteractive(cls):
+        return cls._interactiveSession
+
+    @classmethod
+    def setupInteractive(cls, path, slideId='', questionAttrs=None):
+        cls._interactiveSession = (path, slideId, questionAttrs)
+        cls._interactiveErrors = {}
+        if Options['debug']:
+            print >> sys.stderr, 'sdserver.setupInteractive:', cls._interactiveSession
+
+    @classmethod
+    def processMessage(cls, fromUser, fromName, message):
+        # Return null string on success or error message
+        print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromName, message
+
+        path, slideId, questionAttrs = cls._interactiveSession
+        if not path or not slideId:
+            msg = 'Message from '+fromUser+' discarded. No active session'
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.processMessage:', msg
+            return msg
+
+        sessionName = cls.get_path_base(path)
+        if not questionAttrs:
+            msg = 'Message from '+fromUser+' discarded. No active slide/question for '+sessionName
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.processMessage:', msg
+            return msg
+
+        session_connections = cls._connections.get(path)
+        if ADMINUSER_ID not in session_connections:
+            cls._interactiveSession = (None, None, None)
+            msg = 'Message from '+fromUser+' discarded. No active controller for session '+sessionName
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.processMessage:', msg
+            return msg
+
+        # Close any active connections associated with user for interactive session
+        for connection in session_connections.get(fromUser,[]):
+            connection.close()
+
+        retval = sdproxy.getUserRow(sessionName, fromUser, fromName, opts={'getheaders': '1', 'create': '1'})
+        if retval['result'] != 'success':
+            msg = 'Error in processing message from '+fromUser+': '+retval['error']
+            print >> sys.stderr, 'sdserver.processMessage:', msg
+            return msg
+
+        qnumber = questionAttrs['qnumber']
+        if 'q'+str(qnumber)+'_response' not in retval['headers']:
+            msg = 'Message from '+fromUser+' discarded. No shared response expected for '+sessionName
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.processMessage:', msg
+            return msg
+
+        errMsg = cls.processMessageAux(sessionName, fromUser, retval['value'], retval['headers'], questionAttrs, message)
+
+        if errMsg:
+            cls._interactiveErrors[fromUser] = errMsg
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.processMessage:', errMsg
+        else:
+            if fromUser in cls._interactiveErrors:
+                del cls._interactiveErrors[fromUser]
+            
+        cls.sendEvent(path, fromUser, ['', 2, 'Share.answerNotify.'+slideId, [qnumber, cls._interactiveErrors]])
+        return errMsg
+
+    @classmethod
+    def processMessageAux(cls, sessionName, fromUser, row, headers, questionAttrs, message):
+        qnumber = questionAttrs['qnumber']
+        qResponse = 'q'+str(qnumber)+'_response'
+        qExplain = 'q'+str(qnumber)+'_explain'
+        message = message.strip()
+
+        if not message:
+            return 'Null answer'
+
+        qmatch = re.match(r'^q(\d+)\s', message)
+        if qmatch:
+            message = message[len(qmatch.group(0)):].strip()
+            if int(qmatch.group(1)) != qnumber:
+                return 'Wrong question'
+
+        if qExplain in headers:
+            response, _, explain = message.partition(' ')
+            explain = explain.strip()
+        else:
+            response = message
+            explain = ''
+
+        if questionAttrs['qtype'] == 'choice' and len(response) != 1:
+            return 'Expecting letter'
+        elif questionAttrs['qtype'] in ('choice', 'multichoice'):
+            response = response.upper()
+            for ch in response:
+                offset = ord(ch) - ord('A')
+                if offset < 0 or offset >= questionAttrs['choices']:
+                    return 'Invalid choice'
+        elif questionAttrs['qtype'] == 'number' and sdproxy.parseNumber(response) is None:
+            return 'Expecting number'
+                    
+        row[headers.index(qResponse)] = response
+        if qExplain in headers:
+            row[headers.index(qExplain)] = explain
+        row[headers.index('lastSlide')] = questionAttrs['slide']
+
+        for j, header in enumerate(headers):
+            if header.endswith('Timestamp'):
+                row[j] = None
+
+        retval = sdproxy.putUserRow(sessionName, fromUser, row)
+        if retval['result'] != 'success':
+            print >> sys.stderr, 'sdserver.processMessage:', 'Error in updating response from '+fromUser+': '+retval['error']
+            return 'Unknown error'
+
+        return ''
+            
+    @classmethod
+    def sendEvent(cls, path, fromUser, args):
+        # event_target: '*' OR 'admin' or '' (for server) (IGNORED FOR NOW)
+        # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
+        # event_name = [plugin.]event_name[.slide_id]
+        evTarget, evType, evName, evArgs = args
+        if Options['debug'] and not evName.startswith('Timer.clockTick'):
+            print >> sys.stderr, 'sdserver.sendEvent: event', fromUser, evType, evName
+        pathConnections = cls._connections[path]
+        for toUser, connections in pathConnections.items():
+            if toUser == fromUser:
+                continue
+            if fromUser in (ADMINUSER_ID, TESTUSER_ID):
+                # From special user: broadcast to all but the sender
+                pass
+            elif toUser in (ADMINUSER_ID, TESTUSER_ID):
+                # From non-special user: send only to special users
+                pass
+            else:
+                continue
+
+            # Event [source, name, arg1, arg2, ...]
+            sendList = [fromUser, evName] + evArgs
+            for conn in connections:
+                if evType > 0:
+                    # If evType > 0, only the latest occurrence of an event type with same evType name+arguments is buffered
+                    for j in range(len(conn.eventBuffer)):
+                        if conn.eventBuffer[j][1:evType+1] == sendList[1:evType+1]:
+                            conn.eventBuffer[j] = sendList
+                            sendList = None
+                            break
+                    if sendList:
+                        conn.eventBuffer.append(sendList)
+                else:
+                    # evType <= 0
+                    conn.eventBuffer.append(sendList)
+                    if evType == -1:
+                        conn.flushEventBuffer()
 
     def open(self, path=''):
         self.msgTime = time.time()
@@ -319,7 +483,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.awaitBinary = None
 
         if Options['debug']:
-            print >> sys.stderr, "DEBUG: WSopen", self.userId
+            print >> sys.stderr, "DEBUG: WSopen", self.pathUser
         if not self.userId:
             self.close()
 
@@ -328,6 +492,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.eventFlusher.start()
 
     def on_close(self):
+        if Options['debug']:
+            print >> sys.stderr, "DEBUG: WSon_close", self.pathUser
         try:
             if self.eventFlusher:
                 self.eventFlusher.stop()
@@ -344,9 +510,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     def flushEventBuffer(self):
         while self.eventBuffer:
             # sendEvent: source, evName, evArg1, ...
-            sendEvent = self.eventBuffer.pop(0)
+            sendList = self.eventBuffer.pop(0)
             # Message: source, evName, [args]
-            msg = [0, 'event', [sendEvent[0], sendEvent[1], sendEvent[2:]] ]
+            msg = [0, 'event', [sendList[0], sendList[1], sendList[2:]] ]
             self.write_message(json.dumps(msg, default=sliauth.json_default))
 
     def _close_on_timeout(self):
@@ -397,7 +563,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         if self.timeout:
             IOLoop.current().remove_timeout(self.timeout)
             self.timeout = None
-        import sdproxy
+
         callback_index = None
         try:
             obj = json.loads(message)
@@ -405,6 +571,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             method = obj[1]
             args = obj[2]
             retObj = None
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
             if method == 'close':
                 self.close()
 
@@ -421,6 +589,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                                 connection.write_message(json.dumps([0, 'lock', connection.locked]))
 
                 retObj = sdproxy.sheetAction(args)
+
+            elif method == 'interact':
+                if self.userId == ADMINUSER_ID:
+                    self.setupInteractive(self.pathUser[0], args[0], args[1])
 
             elif method == 'plugin':
                 if len(args) < 2:
@@ -444,43 +616,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
             elif method == 'event':
-                # event_target: '*' OR 'admin' or '' (for server) (IGNORED FOR NOW)
-                # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
-                # event_name = [plugin.]event_name[.slide_id]
-                evTarget, evType, evName, evArgs = args
-                if Options['debug'] and not evName.startswith('Timer.clockTick'):
-                    print >> sys.stderr, 'sdserver.on_message_aux: event', self.userId, evType, evName
-
-                pathConnections = self._connections[self.pathUser[0]]
-                for toUser, connections in pathConnections.items():
-                    if toUser == self.userId:
-                        continue
-                    if self.userId in (ADMINUSER_ID, TESTUSER_ID):
-                        # From special user: broadcast to all but the sender
-                        pass
-                    elif toUser in (ADMINUSER_ID, TESTUSER_ID):
-                        # From non-special user: send only to special users
-                        pass
-                    else:
-                        continue
-
-                    # Event [source, name, arg1, arg2, ...]
-                    sendEvent = [self.userId, evName] + evArgs
-                    for conn in connections:
-                        if evType > 0:
-                            # If evType > 0, only the latest occurrence of an event type with same evType name+arguments is buffered
-                            for j in range(len(conn.eventBuffer)):
-                                if conn.eventBuffer[j][1:evType+1] == sendEvent[1:evType+1]:
-                                    conn.eventBuffer[j] = sendEvent
-                                    sendEvent = None
-                                    break
-                            if sendEvent:
-                                conn.eventBuffer.append(sendEvent)
-                        else:
-                            # evType <= 0
-                            conn.eventBuffer.append(sendEvent)
-                            if evType == -1:
-                                conn.flushEventBuffer()
+                self.sendEvent(self.pathUser[0], self.pathUser[1], args)
 
             if callback_index:
                 return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
@@ -630,6 +766,31 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         return abs_path
 
     
+class AuthMessageHandler(BaseHandler):
+    @tornado.web.authenticated
+    def get(self, subpath=''):
+        note = self.get_argument("note", "")
+        path, slideId, qnumber = WSHandler.getInteractive()
+        label = '%s: %s' % (self.get_id_from_cookie(), self.get_path_base(path) if slideId else 'No interactive session')
+        self.render("interact.html", note=note, site_label=Options['site_label'], session_label=label)
+
+    @tornado.web.authenticated
+    def post(self, subpath=''):
+        try:
+            msg = WSHandler.processMessage(self.get_id_from_cookie(), self.get_id_from_cookie(name=True), self.get_argument("message", ""))
+            if not msg:
+                msg = 'Previous message accepted'
+        except Exception, excp:
+            if Options['debug']:
+                import traceback
+                traceback.print_exc()
+                msg = 'Error in processing message: '+str(excp)
+                print >> sys.stderr, "AuthMessageHandler.post", msg
+            else:
+                msg = 'Error in processing message'
+        self.redirect('/interact/?note='+urllib.quote(msg, safe=''))            
+
+
 class AuthLoginHandler(BaseHandler):
     def get(self):
         error_msg = self.get_argument("error", "")
@@ -654,7 +815,7 @@ class AuthLoginHandler(BaseHandler):
                 token = sliauth.gen_user_token(Options['auth_key'], username)
         auth = self.check_access(username, token)
         if auth:
-            self.set_id(username, '', token)
+            self.set_id(username, '', token, username)
             self.redirect(next)
         else:
             error_msg = "?error=" + tornado.escape.url_escape("Incorrect username or token")
@@ -806,6 +967,7 @@ class Application(tornado.web.Application):
         if Options['proxy_wait'] is not None:
             handlers += [ (r"/_proxy", ProxyHandler),
                           (r"/_websocket/(.*)", WSHandler),
+                          (r"/interact(/.*)?", AuthMessageHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
@@ -825,8 +987,22 @@ class Application(tornado.web.Application):
             
         super(Application, self).__init__(handlers, **settings)
 
-def processTweet(fromName, message):
-    print >> sys.stderr, 'sdserver.processTweet:', fromName, message
+def processTwitterMessage(fromUser, fromName, message):
+    print >> sys.stderr, 'sdserver.processTwitterMessage:', fromUser, fromName, message
+    if Options['auth_type'].startswith('twitter,'):
+        return WSHandler.processMessage(fromUser, fromName, message)
+
+    twitterMap = sdproxy.lookupRoster('twitter')
+    if not twitterMap:
+        msg = 'Error - no twitter entries in roster. Message from '+fromUser+' dropped'
+        print >> sys.stderr, msg
+        return msg
+    for userId, twitterId in twitterMap.items():
+        if fromUser == twitterId:
+            return WSHandler.processMessage(userId, lookupRoster('name', userId), message)
+    msg = 'Error - twitter ID '+fromUser+' not found in roster'
+    print >> sys.stderr, msg
+    return msg
 
 def main():
     define("config", type=str, help="Path to config file",
@@ -863,7 +1039,6 @@ def main():
         logging.getLogger('tornado.access').disabled = True
 
     if options.proxy_wait is not None:
-        import sdproxy
         sdproxy.Options.update(AUTH_KEY=options.auth_key, SHEET_URL=options.gsheet_url, DEBUG=options.debug,
                                DRY_RUN=options.dry_run, MIN_WAIT_TIME=options.proxy_wait)
 
@@ -892,7 +1067,7 @@ def main():
             }
 
         import sdstream
-        twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTweet)
+        twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTwitterMessage)
         twitterStream.fetch()
 
     if options.port != 443:

@@ -40,7 +40,7 @@ Options = {
     'DRY_RUN': None,     # Dry run (read from, but do not update, Google Sheets)
     'SHEET_URL': None,   # Google Sheet URL
     'AUTH_KEY': None,    # Digest authentication key
-    'MIN_WAIT_SEC': 0   # Minimum time (sec) between successful Google Sheet requests
+    'MIN_WAIT_SEC': 0    # Minimum time (sec) between successful Google Sheet requests
     }
 
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
@@ -265,6 +265,8 @@ class Sheet(object):
         return [row[colMin-1:colMin+colCount-1] for row in self.xrows[rowMin-1:rowMin+rowCount-1]]
 
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
+        ##if Options['DEBUG']:
+        ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
         if Global.suspending or self.name in Lock_cache:
             raise Exception('Sheet %s is locked!' % self.name)
         if rowMin < 2:
@@ -330,7 +332,8 @@ def getCacheStatus():
     out += '  Average response bytes = %d\n\n' % (Global.totalCacheResponseBytes/max(1,Global.totalCacheResponseCount) )
     curTime = sliauth.epoch_ms()
     for sheetName, sheet in Sheet_cache.items():
-        out += 'Sheet_cache: %s: %ds\n' % (sheetName, (curTime-sheet.accessTime)/1000.)
+        action = 'unlock' if sheetName in Lock_cache else 'lock'
+        out += 'Sheet_cache: %s: %ds <a href="/_%s/%s">%s</a>\n' % (sheetName, (curTime-sheet.accessTime)/1000., action, sheetName, action)
     out += '\n'
     for sheetName in Miss_cache:
         out += 'Miss_cache: %s: %ds\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
@@ -381,7 +384,7 @@ def update_remote_sheets(force=False):
         return
 
     if Options['DEBUG']:
-            print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
+        print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
     if Global.cacheRequestTime:
         return
 
@@ -466,7 +469,7 @@ def handle_http_response(response):
         Global.cacheRequestTime = 0
         Global.cacheRetryCount = 0
         Global.cacheWaitTime = 0
-        schedule_update(0 if Global.suspending else Options['MIN_WAIT_TIME'])
+        schedule_update(0 if Global.suspending else Options['MIN_WAIT_SEC'])
 
         
 def sheetAction(params):
@@ -1094,8 +1097,8 @@ def sheetAction(params):
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
                             setValue(sheetName, 'dueDate', curDate, INDEX_SHEET)
-                            idColValues = getColumns('id', sheetName, 1, numStickyRows)
-                            initColValues = getColumns('initTimestamp', sheetName, 1, numStickyRows)
+                            idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
+                            initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows)
                             for j in range(len(idColValues)):
                                 # Submit all other users who have started a session
                                 if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
@@ -1200,7 +1203,8 @@ def sheetAction(params):
                 if not adminUser and not gradeDate and len(returnValues) > fieldsMin:
                     # If session not graded, Nullify columns to be graded
                     for j in range(fieldsMin, len(columnHeaders)):
-                        returnValues[j] = None
+                        if not columnHeaders[j].endswith('_response') and not columnHeaders[j].endswith('_explain'):
+                            returnValues[j] = None
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
 
@@ -1294,12 +1298,36 @@ def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', ema
     return rowVals
 
     
-def requestUserRow(sessionName, userId, displayName):
-    token = sliauth.gen_user_token(AUTH_KEY, userId)
+def getUserRow(sessionName, userId, displayName, opts={}):
+    token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
     getParams = {'id': userId, 'token': token,'sheet': sessionName,
-                 'name': displayName, 'get': '1', 'create': '1'}
+                 'name': displayName, 'get': '1'}
+    getParams.update(opts)
 
     return sheetAction(getParams)
+
+def putUserRow(sessionName, userId, rowValues, opts={}):
+    token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
+    putParams = {'id': userId, 'token': token,'sheet': sessionName,
+                 'row': json.dumps(rowValues, default=sliauth.json_default)}
+    putParams.update(opts)
+
+    return sheetAction(putParams)
+
+def lookupRoster(field, userId=None):
+    rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+    if not rosterSheet:
+        return None
+
+    if userId:
+        return lookupValues(userId, field, ROSTER_SHEET, True)[0]
+
+    idVals = getColumns('id', rosterSheet, 1, 2)
+    fieldVals = getColumns(field, rosterSheet, 1, 2)
+    fieldDict = {}
+    for j, idVal in enumerate(idVals):
+        fieldDict[idVal] = fieldVals[j]
+    return fieldDict
 
 
 WUSCORE_RE = re.compile(r'[_\W]')
@@ -1370,19 +1398,18 @@ def indexRows(sheet, indexCol, startRow=2):
     return rowIndex
 
 
-def getColumns(header, sheetName, colCount, skipRows):
-    skipRows = skipRows or 1
-    sheet = getSheet(sheetName)
+def getColumns(header, sheet, colCount, startRow):
+    startRow = startRow or 2
     colIndex = indexColumns(sheet)
     if header not in colIndex:
         raise Exception('Column '+header+' not found in sheet '+sheetName)
 
     if colCount and colCount > 1:
         # Multiple columns (list of lists)
-        return sheet.getSheetValues(1+skipRows, colIndex[header], sheet.getLastRow()-skipRows, colCount)
+        return sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, colCount)
     else:
         # Single column
-        vals = sheet.getSheetValues(1+skipRows, colIndex[header], sheet.getLastRow()-skipRows, 1)
+        vals = sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, 1)
         retvals = []
         for val in vals:
             retvals.append(val[0])

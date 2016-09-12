@@ -1,11 +1,19 @@
-<div id="consolediv">
+<script>
+function check(action) {
+if (window.confirm('Confirm '+action+'?'))
+    location = '/_' + action;
+}
+</script>
+
+<div id="dashboarddiv">
+  <a href="/">Home</a>
+  <p></p>
   <ul>
-    <li><a href="/_stats">stats</a>
+    <li><a href="/_status">status</a>
     <hr>
-    <li><a href="/_clear">clear</a>
+    <li><a href="javascript:check('clear')">clear</a>
     <hr>
-    <li><a href="/_shutdown">shutdown</a>
+    <li><a href="javascript:check('shutdown')">shutdown</a>
   </ul>
   <p></p>
-  <a href="/">Home</a>
 </div>

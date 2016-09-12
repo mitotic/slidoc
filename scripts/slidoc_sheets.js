@@ -927,8 +927,8 @@ function sheetAction(params) {
                         if (params.submit) {
                             // Use test user submission time as due date for admin-paced sessions
                             setValue(sheetName, 'dueDate', curDate, INDEX_SHEET);
-                            var idColValues = getColumns('id', sheetName, 1, numStickyRows);
-                            var initColValues = getColumns('initTimestamp', sheetName, 1, numStickyRows);
+                            var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
+                            var initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows);
                             for (var j=0; j < idColValues.length; j++) {
                                 // Submit all other users who have started a session
                                 if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
@@ -1033,8 +1033,10 @@ function sheetAction(params) {
 
 		if (!adminUser && !gradeDate && returnValues.length > fieldsMin) {
 		    // If session not graded, nullify columns to be graded
-		    for (var j=fieldsMin; j < columnHeaders.length; j++)
-			returnValues[j] = null;
+		    for (var j=fieldsMin; j < columnHeaders.length; j++) {
+			if (!columnHeaders[j].match(/_response$/) && !columnHeaders[j].match(/_explain$/))
+			    returnValues[j] = null;
+		    }
 		} else if (!adminUser && gradeDate) {
 		    returnInfo.gradeDate = gradeDate;
 		}
@@ -1133,10 +1135,15 @@ function createSessionRow(sessionName, fieldsMin, params, userId, displayName, e
     return rowVals;
 }
     
-function requestUserRow(sessionName, userId, displayName) {
+function getUserRow(sessionName, userId, displayName, opts) {
     var token = genUserToken(AUTH_KEY, userId);
     var getParams = {'id': userId, 'token': token,'sheet': sessionName,
-		     'name': displayName, 'get': '1', 'create': '1'};
+		     'name': displayName, 'get': '1'};
+    if (opts) {
+	var keys = Object.keys(opts);
+	for (var j=0; j<keys.length; j++)
+	    getParams[keys[j]] = opts[keys[j]];
+    }
 
     return sheetAction(getParams);
 }
@@ -1295,18 +1302,17 @@ function indexRows(sheet, indexCol, startRow) {
     return rowIndex;
 }
 
-function getColumns(header, sheetName, colCount, skipRows) {
-    skipRows = skipRows || 1;
-    var sheet = getSheet(sheetName);
+function getColumns(header, sheet, colCount, startRow) {
+    startRow = startRow || 2;
     var colIndex = indexColumns(sheet);
     if (!(header in colIndex))
 	throw('Column '+header+' not found in sheet '+sheetName);
     if (colCount && colCount > 1) {
 	// Multiple columns (list of lists)
-	return sheet.getSheetValues(1+skipRows, colIndex[header], sheet.getLastRow()-skipRows, colCount)
+	return sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, colCount)
     } else {
 	// Single column
-	var vals = sheet.getSheetValues(1+skipRows, colIndex[header], sheet.getLastRow()-skipRows, 1);
+	var vals = sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, 1);
 	var retvals = [];
 	for (var j=0; j<vals.length; j++)
 	    retvals.push(vals[j][0]);
@@ -1967,14 +1973,6 @@ function emailLateToken() {
     var sessionSheet = getSheet(sessionName);
     if (!sessionSheet)
 	throw('Session '+sessionName+' not found!');
-    var numStickyRows = 1;
-    var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
-    if (!userRow) {
-	var retval = requestUserRow(sessionName, userId);
-	if (retval.result != 'success')
-	    throw('Error in creating session for user '+userId+': '+retval.error);
-	userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
-    }
 
     var displayName = '';
     var email = '';
@@ -1985,7 +1983,16 @@ function emailLateToken() {
     }
 
     if (!displayName)
-	email = getPrompt('Enter name (Last, First) user '+userId, 'Name');
+	displayName = getPrompt('Enter name (Last, First) user '+userId, 'Name');
+
+    var numStickyRows = 1;
+    var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+    if (!userRow) {
+	var retval = getUserRow(sessionName, userId, displayName, {'create': '1'});
+	if (retval.result != 'success')
+	    throw('Error in creating session for user '+userId+': '+retval.error);
+	userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+    }
 
     var dateStr = getPrompt('New submission date/time', "'yyyy-mm-ddTmm:hh' (or 'yyyy-mm-dd', implying 'T23:59')");
     if (!dateStr)
@@ -1996,7 +2003,7 @@ function emailLateToken() {
     var token = genLateToken(AUTH_KEY, userId, sessionName, dateStr);
     sessionSheet.getRange(userRow, indexColumns(sessionSheet)['lateToken'], 1, 1).setValue(token);
 
-    var note = 'Late submission on '++' authorized for user '+userId+'.';
+    var note = 'Late submission on '+dateStr+' authorized for user '+userId+'.';
     if (email && email.indexOf('@') > 0) {
 	var subject;
 	if (SITE_LABEL)

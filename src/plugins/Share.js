@@ -7,12 +7,15 @@ Share = {
 	this.countElem = document.getElementById(this.pluginId+'-sharecount');
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
+
 	var manage = (this.paced == 3 && (this.adminState || this.testUser));
 	toggleClass(!manage, 'slidoc-shareable-hide', this.shareElem);
 	toggleClass(!manage, 'slidoc-shareable-hide', this.countElem);
 	toggleClass(!manage, 'slidoc-shareable-hide', this.detailsElem);
 	this.countElem.textContent = manage ? '(?)' : '';
 	this.respondersElem.textContent = '';
+
+	this.respErrors = null;
 	if (manage)
 	    this.detailsElem.style.display = 'none';
     },
@@ -20,7 +23,7 @@ Share = {
     answerSave: function () {
 	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
 	if (this.paced == 3) {
-	    Slidoc.sendEvent(2, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber);
+	    Slidoc.sendEvent(3, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber, null);
 	} else {
 	    if (this.qattributes.share != 'after_answering' || !window.GService)
 		return;
@@ -29,11 +32,14 @@ Share = {
 	}
     },
 
-    answerNotify: function (qnumber) {
-	Slidoc.log('Slidoc.Plugins.Share.answerNotify:');
+    answerNotify: function (qnumber, respErrors) {
+	Slidoc.log('Slidoc.Plugins.Share.answerNotify:', qnumber, respErrors);
 	if (this.testUser) {
-	    if (qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber])
+	    if (qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber]) {
+		if (respErrors)
+		    this.respErrors = respErrors;
 		this.getResponses(false);
+	    }
 	} else {
 	    if (this.qattributes.share == 'after_answering')
 		toggleClass(false, 'slidoc-shareable-hide', this.shareElem);
@@ -84,10 +90,31 @@ Share = {
 	    return;
 	var prefix = 'q'+this.qattributes.qnumber+'_';
 
+	var respList = [];
+	var temObj = {};
 	if (retStatus.info && retStatus.info.responders) {
-	    this.countElem.textContent = '('+retStatus.info.responders.length+')';
-	    this.respondersElem.textContent = retStatus.info.responders.join('\t');
+	    for (var j=0; j<retStatus.info.responders.length; j++) {
+		var responder = retStatus.info.responders[j];
+		temObj[responder] = 1;
+		if (this.respErrors && responder in this.respErrors)
+		    respList.push(responder+'*');
+		else
+		    respList.push(responder);
+	    }
 	}
+
+	if (this.respErrors) {
+	    var keys = Object.keys(this.respErrors);
+	    for (var j=0; j<keys.length; j++) {
+		if (!(keys[j] in temObj))
+		    respList.push(keys[j]+'**');
+	    }
+	}
+
+	respList.sort();
+
+	this.countElem.textContent = '('+respList.length+')';
+	this.respondersElem.textContent = respList.join('\t');
 	    
 	if (!display)
 	    return;

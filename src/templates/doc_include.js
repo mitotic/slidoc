@@ -77,6 +77,7 @@ Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
 
+Sliobj.interactive = false;
 Sliobj.adminState = null;
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
@@ -1025,6 +1026,34 @@ Sliobj.eventReceiver = function(eventMessage) {
 	}
 	Slidoc.reportTestAction('AdminPacedAdvance');
     }
+}
+
+Slidoc.interact = function() {
+    if (!isController() || Sliobj.session.submitted)
+	return;
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    interactAux(!Sliobj.interactive);
+}
+
+function interactAux(active) {
+    Slidoc.log('interactAux:', active, Sliobj.session.lastSlide);
+    Sliobj.interactive = active;
+    if (!Sliobj.interactive) {
+	GService.requestWS('interact', ['', null], interactCallback);
+	return;
+    }
+    if (!isController() || Sliobj.session.submitted)
+	return;
+    var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
+    var qattrs = getQuestionAttrs(lastSlideId);
+    if (qattrs && qattrs.qnumber in Sliobj.session.questionsAttempted)
+	qattrs = null;
+    GService.requestWS('interact', [lastSlideId, qattrs], interactCallback);
+}
+
+function interactCallback() {
+    Slidoc.log('interactCallback:');
 }
 
 ////////////////////////
@@ -3182,6 +3211,8 @@ function saveSessionAnswered(slide_id, qattrs) {
 	return;
     Sliobj.session.lastTime = Date.now();
     if (isController()) {
+	if (Sliobj.interactive)
+	    interactAux(true);
 	Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
 
     } else if (!Sliobj.delaySec && Sliobj.params.slideDelay && MIN_ANSWER_NOTES_DELAY && allowDelay()) {
@@ -3508,6 +3539,10 @@ Slidoc.submitStatus = function () {
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span>'+(incomplete ? ' (without reaching the last slide)':'')+'</li>'
 		html += '</ul>';
 	    }
+	    if (isController()) {
+		html += '<hr>';
+		html += '<li><span class="slidoc-clickable" onclick="Slidoc.interact();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span></li><p></p>'
+	    }
 	}
     }
     if (Sliobj.adminState) {
@@ -3831,6 +3866,8 @@ Slidoc.endPaced = function () {
 	Sliobj.session.paced = 0;
     }
     Slidoc.reportTestAction('endPaced');
+    if (Sliobj.interactive)
+	interactAux(false);
     sessionPut(null, null, {force: true, retry: 'end_paced', submit: true});
     showCompletionStatus();
     var answerElems = document.getElementsByClassName('slidoc-answer-button');
@@ -3949,10 +3986,10 @@ Slidoc.slideViewEnd = function() {
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
 
-   if (slides && Sliobj.currentSlide > 0 && Sliobj.currentSlide <= slides.length) {
-     location.href = '#'+slides[Sliobj.currentSlide-1].id;
-   }
-   Sliobj.currentSlide = 0;
+    if (slides && Sliobj.currentSlide > 0 && Sliobj.currentSlide <= slides.length) {
+       location.href = '#'+slides[Sliobj.currentSlide-1].id;
+    }
+    Sliobj.currentSlide = 0;
     Sliobj.questionSlide = '';
 
     var pluginButton = document.getElementById("slidoc-button-plugin");
@@ -4105,6 +4142,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    sessionPut();
 	} else if (isController()) {
 	    // Not last slide for test user in admin-paced; save lastSlide value
+	    if (Sliobj.interactive)
+		interactAux(true);
 	    sessionPut();
 	    Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
 	}
