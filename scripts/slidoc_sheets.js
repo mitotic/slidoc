@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3d';
+var VERSION = '0.96.3e';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -193,6 +193,7 @@ function sheetAction(params) {
     // getheaders: 1 to return headers as well
     // all: 1 to retrieve all rows
     // create: 1 to create and initialize non-existent rows (for get/put)
+    // late: lateToken (set when creating row)
     // Can add row with fewer columns than already present.
     // This allows user to add additional columns without affecting script actions.
     // (User added columns are returned on gets and selective updates, but not row updates.)
@@ -473,6 +474,8 @@ function sheetAction(params) {
 		returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
 	    else
 		returnValues = [];
+	    if (sessionEntries && adminPaced)
+                returnInfo['adminPaced'] = adminPaced;
 	} else if (getShare) {
 	    // Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
 	    if (!sessionAttributes || !sessionAttributes.shareAnswers)
@@ -687,7 +690,6 @@ function sheetAction(params) {
 
 	    if (!userId)
 		throw('Error::userID must be specified for updates/gets');
-	    var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1);
 	    var userRow = 0;
 	    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate unique ID row (except for log files)
@@ -705,6 +707,8 @@ function sheetAction(params) {
 		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
 						  userId, params.name, params.email, params.altid);
 		    displayName = rowUpdates[columnIndex['name']-1] || '';
+		    if (params.late && columnIndex['lateToken'])
+			rowUpdates[columnIndex['lateToken']-1] = params.late;
 		} else {
 		    rowUpdates = [];
 		    for (var j=0; j<columnHeaders.length; j++)
@@ -813,6 +817,7 @@ function sheetAction(params) {
                         userRow = maxScoreRow ? maxScoreRow+1 : numStickyRows+1
 		    } else if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1);
+			var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1);
 			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID);
 		    } else {
 			userRow = modSheet.getLastRow()+1;
@@ -1023,7 +1028,7 @@ function sheetAction(params) {
 
 		}
 		
-                if (paramId != TESTUSER_ID && sessionEntries && adminPaced)
+                if ((paramId != TESTUSER_ID || prevSubmitted) && sessionEntries && adminPaced)
                     returnInfo['adminPaced'] = adminPaced;
 
 		// Return updated timestamp
@@ -1071,11 +1076,11 @@ function createSession(sessionName, params) {
 	    'paced': params.paceLevel || 0,
 	    'submitted': null,
 	    'lateToken': '',
+	    'lastSlide': 0,
 	    'randomSeed': getRandomSeed(),              // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
             'startTime': Date.now(),
             'lastTime': 0,
-	    'lastSlide': 0,
             'lastTries': 0,
             'remainingTries': 0,
             'tryDelay': 0,
@@ -1691,9 +1696,14 @@ function unpackSession(headers, row) {
     if (session_hidden.charAt(0) != '{')
 	session_hidden = Utilities.newBlob(Utilities.base64Decode(session_hidden)).getDataAsString();
     var session = JSON.parse(session_hidden);
+
     for (var j=0; j<headers.length; j++) {
 	var header = headers[j];
-	if (row[j]) {
+	if (header == 'lateToken')
+	    session.lateToken = row[j];
+	else if (header == 'lastSlide')
+	    session.lastSlide = row[j];
+	else if (row[j]) {
 	    var hmatch = QFIELD_RE.exec(header);
 	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
 		// Copy only response/explain field to session

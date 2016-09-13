@@ -783,6 +783,7 @@ GoogleSheet.prototype.delRow = function (id, callback) {
 GoogleSheet.prototype.getRow = function (id, opts, callback) {
     // If !id, GService.gprofile.auth.id is used
     // Specify opts.create to create new row
+    // Specify opts.late for late token in new row
     // callback(result, retStatus)
     // result == null on error
     // result == {} for non-existent row
@@ -807,6 +808,8 @@ GoogleSheet.prototype.getRow = function (id, opts, callback) {
     var params = {id: id, get: '1'};
     if (opts.create)
 	params.create = '1';
+    if (opts.late)
+	params.late = opts.late;
     this.callbackCounter += 1;
     this.send(params, 'getRow', callback);
 }

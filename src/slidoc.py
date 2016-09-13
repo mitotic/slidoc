@@ -1092,7 +1092,7 @@ class SlidocRenderer(MathRenderer):
 
     def embed_plugin_body(self, plugin_name, slide_id, args='', content=''):
         if plugin_name in self.slide_plugin_embeds:
-            abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+self.slide_number)
+            abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+str(self.slide_number))
         self.slide_plugin_embeds.add(plugin_name)
         self.plugin_embeds.add(plugin_name)
 

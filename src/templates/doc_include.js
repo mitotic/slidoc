@@ -211,6 +211,8 @@ function setupCache(auth, callback) {
     var gsheet = getSheet(Sliobj.sessionName);
     function allCallback(allRows, retStatus) {
 	Slidoc.log('allCallback:', allRows, retStatus);
+	if (Sliobj.params.paceLevel >= ADMIN_PACE && retStatus.info.adminPaced)
+	    Sliobj.adminPaced = retStatus.info.adminPaced;
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -661,6 +663,11 @@ Slidoc.resetPaced = function () {
 	    return false;
 	}
 
+	if (Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session.submitted) {
+	    alert('Cannot reset submitted instructor-paced session');
+	    return false;
+	}
+
 	if (!Slidoc.testingActive() && !window.confirm('Re-confirm session reset for user '+userId+'?'))
 	    return false;
 	var gsheet = getSheet(Sliobj.sessionName);
@@ -697,7 +704,7 @@ Slidoc.showConcepts = function (msg) {
     var html = msg || '';
     if (!msg && Sliobj.params.gd_sheet_url)
 	html += 'Click <span class="slidoc-clickable" onclick="Slidoc.showGrades();">here</span> to view other scores/grades<p></p>'
-    if (Sliobj.allQuestionConcepts.length && (!controlledPace() || Sliobj.session.submitted)) {
+    if (Sliobj.allQuestionConcepts.length && !controlledPace()) {
 	html += '<b>Question Concepts</b><br>';
 	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
 	for (var m=0; m<labels.length; m++)
@@ -1567,7 +1574,8 @@ function getUserId() {
 }
 
 function controlledPace() {
-    return (Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.adminState && getUserId() != Sliobj.params.testUserId);
+    // If test user has submitted, assume controlledPace
+    return (Sliobj.params.paceLevel >= ADMIN_PACE && (getUserId() != Sliobj.params.testUserId || (Sliobj.session && Sliobj.session.submitted)));
 }
 
 function isController() {
@@ -2154,16 +2162,16 @@ function createSession() {
     for (var j=0; j<Sliobj.params.plugins.length; j++)
 	persistPlugins[Sliobj.params.plugins[j]] = {};
 
-    return {'version': params.sessionVersion,
-	    'revision': params.sessionRevision,
-	    'paced': params.paceLevel || 0,
+    return {'version': Sliobj.params.sessionVersion,
+	    'revision': Sliobj.params.sessionRevision,
+	    'paced': Sliobj.params.paceLevel || 0,
 	    'submitted': null,
 	    'lateToken': '',
+	    'lastSlide': 0,
 	    'randomSeed': Slidoc.Random.getRandomSeed(), // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
             'startTime': Date.now(),
             'lastTime': 0,
-	    'lastSlide': 0,
             'lastTries': 0,
             'remainingTries': 0,
             'tryDelay': 0,
@@ -2255,6 +2263,8 @@ function unpackSession(row) {
 
     var session = JSON.parse(session_hidden);
     session.lateToken = row.lateToken || '';
+    session.lastSlide = row.lastSlide || 0;
+
     if (row.submitTimestamp) {
 	session.submitted = row.submitTimestamp;
 	if (!controlledPace())
@@ -2314,9 +2324,8 @@ function showPendingCalls() {
     pendingElem.innerHTML = hourglasses;
 }
 
-function sessionGetPutAux(callType, callback, retryCall, retryType, result, retStatus) {
-    // For sessionPut, session should be bound to this function as 'this'
-    Slidoc.log('Slidoc.sessionGetPutAux: ', callType, !!callback, !!retryCall, retryType, result, retStatus);
+function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType, result, retStatus) {
+    Slidoc.log('Slidoc.sessionGetPutAux: ', prevSession, callType, !!callback, !!retryCall, retryType, result, retStatus);
     var session = null;
     var feedback = null;
     var nullReturn = false;
@@ -2349,20 +2358,36 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.gradeDate)
 		Sliobj.gradeDateStr = retStatus.info.gradeDate;
+
 	    if (retStatus.info.voteDate)
 		try { Sliobj.voteDate = new Date(retStatus.info.voteDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error VOTE_DATE: '+retStatus.info.voteDate, err); }
+
 	    if (retStatus.info.dueDate)
 		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err); }
-	    if (retStatus.info.adminPaced && controlledPace()) // This should occur before Sliobj.session.lastSlide is set; used by visibleSlideCount
+
+	    var limitSlides = (controlledPace() || (isController() && session && session.submitted));
+	    if (retStatus.info.adminPaced && limitSlides) {
+		// This should occur before Sliobj.session.lastSlide is set; used by visibleSlideCount
 		Sliobj.adminPaced = retStatus.info.adminPaced;
+		if (session) {
+		    if (session.submitted)
+			session.lastSlide = retStatus.info.adminPaced;
+		    else
+			session.lastSlide = Math.min(session.lastSlide, retStatus.info.adminPaced);
+		}
+	    }
+
 	    if (retStatus.info.submitTimestamp) {
 		if (!Sliobj.session && window.confirm('Internal error in submit timestamp'))
 		    sessionAbort('Internal error in submit timestamp')
 		Sliobj.session.submitted = retStatus.info.submitTimestamp;
-		if (controlledPace())   // Ensure adminPaced has been used to modify visibleSlide Count
+		if (Sliobj.params.paceLevel >= ADMIN_PACE) {
+		    if (retStatus.info.adminPaced)
+			Sliobj.adminPaced = retStatus.info.adminPaced;
 		    Sliobj.session.lastSlide = visibleSlideCount();
-		else
+		} else {
 		    Sliobj.session.lastSlide = Sliobj.params.pacedSlides;
+		}
 		showCorrectAnswersAfterSubmission();
 		if (Sliobj.session.lateToken == PARTIAL_SUBMIT && window.confirm('Partial submission; reload page for accurate scores'))
 		    location.reload(true);
@@ -2424,9 +2449,10 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 		Slidoc.userLogin('Invalid username/token or key mismatch. Please re-enter', retryCall);
 		return;
 
-	    } else if (this && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
-		if (setLateToken(this, prefix)) {
-		    retryCall();
+	    } else if ((prevSession||retryType == 'ready') && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
+		var temToken = setLateToken(prevSession||Sliobj.session, prefix);
+		if (temToken) {
+		    retryCall(temToken);
 		    return;
 		}
 	    } else if (retryType == 'ready' || retryType == 'new' || retryType == 'end_paced') {
@@ -2443,15 +2469,17 @@ function sessionGetPutAux(callType, callback, retryCall, retryType, result, retS
 }
 
 function setLateToken(session, prefix) {
+    Slidoc.log('setLateToken', session, prefix);
     var prompt = (prefix||'The submission deadline has passed.')+" If you have a valid excuse, please request late submission authorization for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+" from your instructor. Otherwise ";
-    if (Sliobj.params.paceLevel && session && (Object.keys(session.questionsAttempted).length) || responseAvailable(session) )
+    if (Sliobj.params.paceLevel && session && (Object.keys(session.questionsAttempted).length || responseAvailable(session)))
 	prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
     else
 	prompt += "enter '"+LATE_SUBMIT+"' to submit late (with reduced or no credit).";
     var token = showDialog('prompt', 'lateTokenDialog', prompt);
     token = (token || '').trim();
     if (token == PARTIAL_SUBMIT || token == LATE_SUBMIT || token.indexOf(':') > 0) {
-	session.lateToken = token;
+	if (session)
+	    session.lateToken = token;
 	return token;
     }
     sessionAbort('No token or invalid token provided');
@@ -2476,9 +2504,10 @@ function sessionManage() {
     }
 }
 
-function sessionGet(userId, sessionName, opts, callback) {
+function sessionGet(userId, sessionName, opts, callback, lateToken) {
     // callback(session, feedback)
     // opts = {create:true/false, retry:str}
+    Slidoc.log('sessionGet', userId, sessionName, opts, callback, lateToken);
     opts = opts || {};
     if (Sliobj.params.gd_sheet_url) {
 	// Google Docs storage
@@ -2489,8 +2518,9 @@ function sessionGet(userId, sessionName, opts, callback) {
 	var retryCall = opts.retry ? sessionGet.bind(null, userId, sessionName, opts, callback) : null;
 	var getOpts = {};
 	if (opts.create) getOpts.create = 1;
+	if (lateToken) getOpts.late = lateToken;
 	try {
-	    gsheet.getRow(userId, getOpts, sessionGetPutAux.bind(null, 'get', callback, retryCall, opts.retry||''));
+	    gsheet.getRow(userId, getOpts, sessionGetPutAux.bind(null, null, 'get', callback, retryCall, opts.retry||''));
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
 	    return;
@@ -2510,11 +2540,12 @@ function sessionGet(userId, sessionName, opts, callback) {
     }
 }
 
-function sessionPut(userId, session, opts, callback) {
+function sessionPut(userId, session, opts, callback, lateToken) {
     // Remote saving only happens if session.paced is true or force is true
     // callback(session, feedback)
     // opts = {nooverwrite:, get:, retry:, force: }
-    Slidoc.log('sessionPut:', userId, Sliobj.sessionName, session, !!callback, opts);
+    // lateToken is not used, but is already set in session, It is provided for compatibility with sessionGet
+    Slidoc.log('sessionPut:', userId, Sliobj.sessionName, session, opts, !!callback, lateToken);
     if (Sliobj.adminState) {
 	alert('Internal error: admin user cannot update row');
 	return;
@@ -2545,9 +2576,8 @@ function sessionPut(userId, session, opts, callback) {
 
 	var rowObj = packSession(session);
 	var gsheet = getSheet(Sliobj.sessionName);
-	// Bind session to this in sessionGetPutAux
 	try {
-	    gsheet.authPutRow(rowObj, putOpts, sessionGetPutAux.bind(session, 'put', callback||null, retryCall, opts.retry||''),
+	    gsheet.authPutRow(rowObj, putOpts, sessionGetPutAux.bind(null, session, 'put', callback||null, retryCall, opts.retry||''),
 			      false);
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
@@ -2631,7 +2661,7 @@ function delayElement(delaySec) // ElemendIds to be hidden as extra args
 }
 
 function visibleSlideCount() {
-    if (controlledPace())
+    if (controlledPace() || (isController() && Sliobj.session.submitted) )
 	return Math.min(Math.max(1,Sliobj.adminPaced), Sliobj.params.pacedSlides);
     else
 	return Sliobj.params.pacedSlides;
@@ -3753,7 +3783,7 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
     var retryCall = gradeUpdate.bind(null, qnumber, updates, callback);
 
     try {
-	gsheet.updateRow(updateObj, {}, sessionGetPutAux.bind(null, 'update',
+	gsheet.updateRow(updateObj, {}, sessionGetPutAux.bind(null, null, 'update',
  		         gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, callback), retryCall, 'gradeUpdate') );
     } catch(err) {
 	sessionAbort(''+err, err.stack);
@@ -3932,7 +3962,7 @@ Slidoc.slideViewStart = function () {
 
    var startSlide;
    if (Sliobj.session.paced) {
-       startSlide = Sliobj.session.lastSlide || 1; 
+       startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
    } else {
        startSlide = getCurrentlyVisibleSlide(slides) || 1;
        // Hide notes (for paced view, this is handled earlier)
@@ -4133,7 +4163,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
 	Slidoc.log('Slidoc.slideViewGo:C', Sliobj.session.lastSlide, slides.length, controlledPace());
 	if (Sliobj.session.lastSlide == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE) {
-	    // Last slide (with try count); if admin-paced, save only if test user
+	    // Last slide (with question-pacing); if admin-paced, save only if test user
 	    if (!controlledPace())
 		Slidoc.endPaced();
 

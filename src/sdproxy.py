@@ -32,7 +32,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3d'
+VERSION = '0.96.3e'
 
 # Usually modified by importing module
 Options = {
@@ -246,14 +246,14 @@ class Sheet(object):
 
     def checkRange(self, rowMin, colMin, rowCount, colCount):
         if rowMin < 1 or rowMin > len(self.xrows):
-            raise Exception('Invalid min row number for range: %s' % rowMin)
+            raise Exception('Invalid min row number for range %s in sheet %s' % (rowMin, self.name))
         if rowCount < 0 or rowCount > len(self.xrows)-rowMin+1:
-            raise Exception('Invalid row count for range: %s' % rowCount)
+            raise Exception('Invalid row count for range %s in sheet %s' % (rowCount, self.name))
 
         if colMin < 1 or colMin > self.nCols:
-            raise Exception('Invalid min col number for range: %s' % colMin)
+            raise Exception('Invalid min col number for range %s in sheet %s' % (colMin, self.name))
         if colCount < 0 or colCount > self.nCols-colMin+1:
-            raise Exception('Invalid col count for range: %s' % colCount)
+            raise Exception('Invalid col count for range %s in sheet %s' % (colCount, self.name))
 
     def getRange(self, rowMin, colMin, rowCount, colCount):
         self.checkRange(rowMin, colMin, rowCount, colCount)
@@ -500,6 +500,7 @@ def sheetAction(params):
     # getheaders: 1 to return headers as well
     # all: 1 to retrieve all rows
     # create: 1 to create and initialize non-existent rows (for get/put)
+    # late: lateToken (set when creating row)
     # Can add row with fewer columns than already present.
     # This allows user to add additional columns without affecting script actions.
     # (User added columns are returned on gets and selective updates, but not row updates.)
@@ -662,7 +663,8 @@ def sheetAction(params):
                 returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
             else:
                 returnValues = []
-
+            if sessionEntries and adminPaced:
+                returnInfo['adminPaced'] = adminPaced
         elif getShare:
             # Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
             if not sessionAttributes or not sessionAttributes.get('shareAnswers'):
@@ -858,7 +860,7 @@ def sheetAction(params):
 
             if not userId:
                 raise Exception('Error::userID must be specified for updates/gets')
-            userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1)
+
             userRow = 0
             if modSheet.getLastRow() > numStickyRows and not loggingSheet:
                 # Locate unique ID row (except for log files)
@@ -876,6 +878,8 @@ def sheetAction(params):
                     rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
                                                   userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''));
                     displayName = rowUpdates[columnIndex['name']-1] or ''
+                    if params.get('late') and columnIndex.get('lateToken'):
+                        rowUpdates[columnIndex['lateToken']-1] = params['late'];
                 else:
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
@@ -950,6 +954,7 @@ def sheetAction(params):
                                 # Invalid token
                                 returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
 
+                        print("ABClate", allowLateMods, pastSubmitDeadline, partialSubmission, rowUpdates)
                         if not allowLateMods and not partialSubmission:
                             if pastSubmitDeadline:
                                 if newRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
@@ -976,6 +981,7 @@ def sheetAction(params):
                         userRow = maxScoreRow+1 if maxScoreRow else numStickyRows+1
                     elif modSheet.getLastRow() > numStickyRows and not loggingSheet:
                         displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1)
+                        userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1)
                         userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID)
                     else:
                         userRow = modSheet.getLastRow()+1
@@ -1192,7 +1198,7 @@ def sheetAction(params):
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
 
-                if paramId != TESTUSER_ID and sessionEntries and adminPaced:
+                if (paramId != TESTUSER_ID or prevSubmitted) and sessionEntries and adminPaced:
                     returnInfo['adminPaced'] = adminPaced
 
                 # Return updated timestamp
@@ -1241,11 +1247,11 @@ def createSession(sessionName, params):
 	    'paced': params.get('paceLevel', 0),
 	    'submitted': None,
 	    'lateToken': '',
+	    'lastSlide': 0,
 	    'randomSeed': getRandomSeed(),                     # Save random seed
         'expiryTime': sliauth.epoch_ms() + 180*86400*1000, # 180 day lifetime
         'startTime': sliauth.epoch_ms(),
         'lastTime': 0,
-	    'lastSlide': 0,
         'lastTries': 0,
         'remainingTries': 0,
         'tryDelay': 0,
