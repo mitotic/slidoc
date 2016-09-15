@@ -1424,7 +1424,7 @@ def lookupRoster(field, userId=None):
         return None
 
     if userId:
-        return lookupValues(userId, field, ROSTER_SHEET, True)[0]
+        return lookupValues(userId, [field], ROSTER_SHEET, True)[0]
 
     idVals = getColumns('id', rosterSheet, 1, 2)
     fieldVals = getColumns(field, rosterSheet, 1, 2)

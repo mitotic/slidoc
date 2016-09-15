@@ -41,7 +41,7 @@ Share = {
     answerNotify: function (qnumber, respErrors) {
 	Slidoc.log('Slidoc.Plugins.Share.answerNotify:', qnumber, respErrors);
 	if (this.testUser) {
-	    if (qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered[this.qattributes.qnumber]) {
+	    if (qnumber == this.qattributes.qnumber && !Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
 		if (respErrors)
 		    this.respErrors = respErrors;
 		this.getResponses(false);
@@ -160,12 +160,14 @@ Share = {
 	for (var j=0; j<result[prefix+'response'].length; j++) {
 	    var respVal = result[prefix+'response'][j];
 	    var isCorrect = false;
-	    if (checkResp.length == 1) {
-		isCorrect = (checkResp[0] == respVal);
-	    } else if (checkResp.length == 2) {
-		try {
-		    isCorrect = (Math.abs(parseFloat(respVal) - checkResp[0]) <= 1.001*checkResp[1]); 
-		} catch(err) {Slidoc.log('Share.responseCallback: Error - invalid numeric response:'+respVal);}
+	    if (Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
+		if (checkResp.length == 1) {
+		    isCorrect = (checkResp[0] == respVal);
+		} else if (checkResp.length == 2) {
+		    try {
+			isCorrect = (Math.abs(parseFloat(respVal) - checkResp[0]) <= 1.001*checkResp[1]); 
+		    } catch(err) {Slidoc.log('Share.responseCallback: Error - invalid numeric response:'+respVal);}
+		}
 	    }
 	    var correctResp = isCorrect ? '1' : '0';
 	    var line = '<li class="slidoc-plugin-Share-li">';
@@ -274,6 +276,7 @@ Share = {
 }
 .slidoc-plugin-Share-prefix-correct {
   font-weight: bold;
+  color: green;
 }
 .slidoc-plugin-Share-votebutton,
   .slidoc-plugin-Share-votebutton-disabled {
@@ -296,6 +299,7 @@ pre.slidoc-plugin-Share-responders {
     -moz-white-space: pre-wrap;
     -o-white-space:   pre-wrap;
     white-space:      pre-wrap;
+    font-size: 90%;
 }
    </style>
    PluginBody:

@@ -390,14 +390,16 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if int(qmatch.group(1)) != qnumber:
                 return 'Wrong question'
 
-        if qExplain in headers:
-            response, _, explain = message.partition(' ')
-            explain = explain.strip()
-        else:
-            response = message
-            explain = ''
+        response = message
+        explain = ''
+        if questionAttrs['qtype'] in ('number', 'choice', 'multichoice'):
+            response, _, tail = response.partition(' ')
+            if qExplain in headers:
+                explain = tail.strip()
 
-        if questionAttrs['qtype'] == 'choice' and len(response) != 1:
+        if questionAttrs['qtype'] == 'number' and sdproxy.parseNumber(response) is None:
+            return 'Expecting number'
+        elif questionAttrs['qtype'] == 'choice' and len(response) != 1:
             return 'Expecting letter'
         elif questionAttrs['qtype'] in ('choice', 'multichoice'):
             response = response.upper()
@@ -405,8 +407,6 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 offset = ord(ch) - ord('A')
                 if offset < 0 or offset >= questionAttrs['choices']:
                     return 'Invalid choice'
-        elif questionAttrs['qtype'] == 'number' and sdproxy.parseNumber(response) is None:
-            return 'Expecting number'
                     
         row[headers.index(qResponse)] = response
         if qExplain in headers:

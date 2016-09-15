@@ -2957,7 +2957,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
 	else
 	    elem.classList.add('slidoc-choice-selected');
-    } else if (choice_val && choice_val != SKIP_ANSWER) {
+    } else if (choice_val) {
 	// Setup
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	var shuffleStr = choiceBlock.dataset.shuffle;
@@ -2991,6 +2991,9 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	alert(Slidoc.sheetIsLocked());
 	return;
     }
+    if (response == SKIP_ANSWER)
+	    response = '';
+
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
@@ -3026,8 +3029,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
     if (pluginMatch && pluginMatch[3] == 'response') {
 	var pluginName = pluginMatch[2];
 	if (setup) {
-	    Slidoc.PluginMethod(pluginName, slide_id, 'display',
-				(response != SKIP_ANSWER) ? response : '', pluginResp);
+	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
 	    Slidoc.answerUpdate(setup, slide_id, response, pluginResp);
 	} else {
 	    if (Sliobj.session.remainingTries > 0)
@@ -3083,7 +3085,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
 	if (inpElem) {
 	    if (setup) {
-		inpElem.value = (response != SKIP_ANSWER) ? response : '';
+		inpElem.value = response;
 	    } else {
 		response = inpElem.value.trim();
 		if (question_attrs.qtype == 'number' && !isNumber(response)) {
@@ -3109,9 +3111,6 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	}
 
     }
-
-    if (!response && force == 'controlled')
-	response = SKIP_ANSWER;
 
     Slidoc.answerUpdate(setup, slide_id, response);
     return false;
@@ -3166,8 +3165,6 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     var disp_corr_answer = corr_answer;
     var shuffleStr = '';
     if (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice') {
-	if (disp_response == SKIP_ANSWER)
-	    disp_response = '';
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	shuffleStr = choiceBlock.dataset.shuffle;
 	if (shuffleStr) {
@@ -3221,6 +3218,9 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 
     // Not setup or after submit
     // Record attempt and tally up scores
+    if (!response)
+	response = SKIP_ANSWER;  // Response needs to be non-null for attempted questions
+
     var explain = '';
     if (question_attrs.explain) {
 	var textareaElem = document.getElementById(slide_id+'-answer-textarea');
