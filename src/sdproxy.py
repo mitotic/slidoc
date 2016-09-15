@@ -68,6 +68,10 @@ INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
 
+BASIC_PACE    = 1
+QUESTION_PACE = 2
+ADMIN_PACE    = 3
+
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
@@ -633,6 +637,7 @@ def sheetAction(params):
 
         sessionEntries = None
         sessionAttributes = None
+        paceLevel = None
         adminPaced = None
         dueDate = None
         gradeDate = None
@@ -665,8 +670,9 @@ def sheetAction(params):
 
         if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
             # Indexed session
-            sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
+            sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
             sessionAttributes = json.loads(sessionEntries['attributes'])
+            paceLevel = sessionEntries.get('paceLevel')
             adminPaced = sessionEntries.get('adminPaced')
             dueDate = sessionEntries.get('dueDate')
             gradeDate = sessionEntries.get('gradeDate')
@@ -802,10 +808,13 @@ def sheetAction(params):
                 lateValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, 1)
 
                 curUserVals = None
+                testUserVals = None
                 for j in range(nRows):
                     if idValues[j][0] == paramId:
                         curUserVals = shareSubrow[j]
-                        break
+                    elif idValues[j][0] == TESTUSER_ID:
+                        testUserVals = shareSubrow[j]
+
 
                 if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
@@ -823,8 +832,11 @@ def sheetAction(params):
                 tallyVotes = voteParam and (adminUser or voteParam == 'show_live' or (voteParam == 'show_completed' and votingCompleted))
                 userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
 
-                if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_answering' and not userResponded:
-                    raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
+                if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_answering':
+                    if not userResponded:
+                        raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
+                    if paceLevel == ADMIN_PACE and (not testUserVals or not testUserVals[0]):
+                        raise Exception('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName)
 
                 disableVoting = False
 
@@ -1041,7 +1053,6 @@ def sheetAction(params):
                                 # Invalid token
                                 returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
 
-                        print("ABClate", allowLateMods, pastSubmitDeadline, partialSubmission, rowUpdates)
                         if not allowLateMods and not partialSubmission:
                             if pastSubmitDeadline:
                                 if newRow or selectedUpdates or (rowUpdates and not nooverwriteRow):

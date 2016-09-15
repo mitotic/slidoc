@@ -450,12 +450,13 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             for conn in connections:
                 if evType > 0:
                     # If evType > 0, only the latest occurrence of an event type with same evType name+arguments is buffered
+                    buffered = False
                     for j in range(len(conn.eventBuffer)):
                         if conn.eventBuffer[j][1:evType+1] == sendList[1:evType+1]:
                             conn.eventBuffer[j] = sendList
-                            sendList = None
+                            buffered = True
                             break
-                    if sendList:
+                    if not buffered:
                         conn.eventBuffer.append(sendList)
                 else:
                     # evType <= 0

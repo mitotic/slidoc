@@ -118,6 +118,8 @@ var BASIC_PACE    = 1;
 var QUESTION_PACE = 2;
 var ADMIN_PACE    = 3;
 
+var SKIP_ANSWER = 'skip';
+
 var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
@@ -247,6 +249,7 @@ function sheetAction(params) {
 	var loggingSheet = (sheetName.slice(-4) == '_log');
 	var sessionEntries = null;
 	var sessionAttributes = null;
+	var paceLevel = null;
 	var adminPaced = null;
 	var dueDate = null;
 	var gradeDate = null;
@@ -389,8 +392,9 @@ function sheetAction(params) {
 
 	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
 		// Indexed session
-		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
+		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
+		paceLevel = sessionEntries.paceLevel;
 		adminPaced = sessionEntries.adminPaced;
 		dueDate = sessionEntries.dueDate;
 		gradeDate = sessionEntries.gradeDate;
@@ -537,11 +541,12 @@ function sheetAction(params) {
 		var lateValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, 1);
 
                 var curUserVals = null;
+                var testUserVals = null;
                 for (var j=0; j<nRows; j++) {
-                    if (idValues[j][0] == paramId) {
+                    if (idValues[j][0] == paramId)
                         curUserVals = shareSubrow[j];
-                        break;
-		    }
+                    else if (idValues[j][0] == TESTUSER_ID)
+                        testUserVals = shareSubrow[j];
 		}
                 if (!curUserVals && !adminUser)
                     throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName);
@@ -561,9 +566,12 @@ function sheetAction(params) {
 
 		var userResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
 
-                if (!adminUser && paramId != TESTUSER_ID && shareParams['share'] == 'after_answering' && !userResponded)
-		    throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
-
+                if (!adminUser && paramId != TESTUSER_ID && shareParams['share'] == 'after_answering') {
+		    if (!userResponded)
+			throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
+		    if (paceLevel == ADMIN_PACE && (!testUserVals || !testUserVals[0]))
+			throw('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName);
+		}
 		var disableVoting = false;
 
 		// If test/admin user, or current user has provided no response/no explanation, disallow voting
@@ -1735,9 +1743,12 @@ function unpackSession(headers, row) {
 function scoreAnswer(response, qtype, corrAnswer) {
     // Handle answer types: choice, number, text
 
-    if (!corrAnswer) {
+    if (!corrAnswer)
         return null;
-    }
+
+    if (response == SKIP_ANSWER)
+	return 0;
+
     var respValue = null;
     var qscore = null;
 

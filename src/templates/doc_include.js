@@ -26,6 +26,12 @@ var BASIC_PACE    = 1;
 var QUESTION_PACE = 2;
 var ADMIN_PACE    = 3;
 
+Slidoc.PluginManager.BASIC_PACE    = 1;  // Move to Slidoc.BASIC_PACE ...?
+Slidoc.PluginManager.QUESTION_PACE = 2;
+Slidoc.PluginManager.ADMIN_PACE    = 3;
+
+var SKIP_ANSWER = 'skip';
+
 var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
@@ -480,7 +486,7 @@ function parseNumber(x) {
 }
 
 function parseDate(dateStr) {
-    if (!dateStr || !dateStr.trim())
+    if (!dateStr || !(''+dateStr).trim())
 	return null;
     if (dateStr == 'GRADING')
 	return '(NOT YET)';
@@ -2154,7 +2160,7 @@ function showCorrectAnswersAfterSubmission() {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	Slidoc.answerClick(null, slide_id, 'submit', '', question_attrs.explain||null, null, qfeedback);
+	Slidoc.answerClick(null, slide_id, 'submit', '', '', null, qfeedback);
     }
 }
 
@@ -2248,7 +2254,7 @@ function packSession(session) {
 
 		    delete sessionCopy.questionsAttempted[qnumber][hmatch[2]];
 
-		    if (!Object.keys(sessionCopy.questionsAttempted[qnumber]))
+		    if (!Object.keys(sessionCopy.questionsAttempted[qnumber]).length)
 			delete sessionCopy.questionsAttempted[qnumber];
 		} else {
 		    rowObj[header] = '';
@@ -2951,7 +2957,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
 	else
 	    elem.classList.add('slidoc-choice-selected');
-    } else if (choice_val) {
+    } else if (choice_val && choice_val != SKIP_ANSWER) {
 	// Setup
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	var shuffleStr = choiceBlock.dataset.shuffle;
@@ -3020,7 +3026,8 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
     if (pluginMatch && pluginMatch[3] == 'response') {
 	var pluginName = pluginMatch[2];
 	if (setup) {
-	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
+	    Slidoc.PluginMethod(pluginName, slide_id, 'display',
+				(response != SKIP_ANSWER) ? response : '', pluginResp);
 	    Slidoc.answerUpdate(setup, slide_id, response, pluginResp);
 	} else {
 	    if (Sliobj.session.remainingTries > 0)
@@ -3055,6 +3062,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    choices[i].removeAttribute("onclick");
 	    choices[i].classList.remove("slidoc-clickable");
 	}
+
 	Slidoc.log("Slidoc.answerClick:choice", response);
 	var corr_answer = question_attrs.correct;
 	if (corr_answer && displayCorrect(question_attrs)) {
@@ -3075,7 +3083,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
 	if (inpElem) {
 	    if (setup) {
-		inpElem.value = response;
+		inpElem.value = (response != SKIP_ANSWER) ? response : '';
 	    } else {
 		response = inpElem.value.trim();
 		if (question_attrs.qtype == 'number' && !isNumber(response)) {
@@ -3090,7 +3098,6 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 		    } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
 			if (forceQuit(force, 'Please try a different answer this time!'))
 			    return false;
-			response = '';
 		    }
 		    Sliobj.lastInputValue = response;
 		}
@@ -3102,6 +3109,9 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	}
 
     }
+
+    if (!response && force == 'controlled')
+	response = SKIP_ANSWER;
 
     Slidoc.answerUpdate(setup, slide_id, response);
     return false;
@@ -3156,11 +3166,13 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     var disp_corr_answer = corr_answer;
     var shuffleStr = '';
     if (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice') {
+	if (disp_response == SKIP_ANSWER)
+	    disp_response = '';
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	shuffleStr = choiceBlock.dataset.shuffle;
 	if (shuffleStr) {
-	    disp_response = choiceShuffle(response, shuffleStr);
-	    disp_corr_answer = choiceShuffle(corr_answer, shuffleStr);
+	    disp_response = choiceShuffle(disp_response, shuffleStr);
+	    disp_corr_answer = choiceShuffle(disp_corr_answer, shuffleStr);
 	}
     } else if (disp_corr_answer.match(/=\w+\.response\(\)/)) {
 	disp_corr_answer = '';
@@ -3204,16 +3216,18 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	setAnswerElement(slide_id, '-response-span', disp_response);
     }
 
-    if (setup)
+    if (setup || Sliobj.session.submitted)
 	return;
 
-    // Not setup
+    // Not setup or after submit
+    // Record attempt and tally up scores
     var explain = '';
     if (question_attrs.explain) {
 	var textareaElem = document.getElementById(slide_id+'-answer-textarea');
 	explain = textareaElem.value;
     }
 
+    // Save attempt info
     var qAttempted = createQuestionAttempted(response, explain);
     if (pluginResp)
 	qAttempted.plugin = pluginResp;
@@ -3223,6 +3237,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	qAttempted.retries = Sliobj.session.lastTries-1;
     if (shuffleStr)
 	qAttempted.shuffle = shuffleStr;
+
     Sliobj.session.questionsAttempted[question_attrs.qnumber] = qAttempted;
 
     // Score newly attempted question (and all others)
@@ -3349,11 +3364,15 @@ Slidoc.renderText = function(elem, slide_id) {
 
 function scoreAnswer(response, qtype, corrAnswer) {
     // Handle answer types: choice, number, text
+    // Returns null (unscored), or 0..1
     Slidoc.log('Slidoc.scoreAnswer:', response, qtype, corrAnswer);
 
-    if (!corrAnswer) {
+    if (!corrAnswer)
         return null;
-    }
+
+    if (response == SKIP_ANSWER)
+	return 0;
+
     var respValue = null;
     var qscore = null;
 

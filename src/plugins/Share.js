@@ -8,11 +8,13 @@ Share = {
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
 
-	var manage = (this.paced == 3 && (this.adminState || this.testUser));
+	var manage = (this.paced == Slidoc.PluginManager.ADMIN_PACE && (this.adminState || this.testUser));
 	toggleClass(!manage, 'slidoc-shareable-hide', this.countElem);
 
 	if (!manage)
 	    this.detailsElem.style.display = 'none';
+	else
+	    toggleClass(false, 'slidoc-shareable-hide', this.detailsElem);
 
 	toggleClass(!manage && !Slidoc.PluginManager.shareReady(this.qattributes.share), 'slidoc-shareable-hide', this.shareElem);
 
@@ -26,7 +28,7 @@ Share = {
 
     answerSave: function () {
 	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
-	if (this.paced == 3) {
+	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
 	    Slidoc.sendEvent(3, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber, null);
 	} else {
 	    if (this.qattributes.share != 'after_answering' || !window.GService)
@@ -62,7 +64,7 @@ Share = {
 
     finalizeShare: function () {
 	Slidoc.log('Slidoc.Plugins.Share.finalizeShare:');
-	if (this.paced == 3) {
+	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
 	    if (this.testUser && !Slidoc.PluginManager.answered(this.qattributes.qnumber))
 		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
 	}

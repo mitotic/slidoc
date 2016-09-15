@@ -2605,10 +2605,16 @@ Mathjax_js = r'''<script type="text/x-mathjax-config">
 <script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
 
-Skulpt_js = r'''
+Skulpt_js_non_https = r'''
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js" type="text/javascript"></script> 
 <script src="http://www.skulpt.org/static/skulpt.min.js" type="text/javascript"></script> 
 <script src="http://www.skulpt.org/static/skulpt-stdlib.js" type="text/javascript"></script> 
+'''
+
+Skulpt_js = r'''
+<script src="https://dl.dropboxusercontent.com/u/72208800/Skulpt/jquery.min.js" type="text/javascript"></script> 
+<script src="https://dl.dropboxusercontent.com/u/72208800/Skulpt/skulpt.min.js" type="text/javascript"></script> 
+<script src="https://dl.dropboxusercontent.com/u/72208800/Skulpt/skulpt-stdlib.js" type="text/javascript"></script> 
 '''
 
 
