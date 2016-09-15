@@ -349,7 +349,7 @@ class Sheet(object):
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
         ##if Options['DEBUG']:
         ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
-        if sheetName in Lock_cache or Global.suspended:
+        if self.name in Lock_cache or Global.suspended:
             raise Exception('Sheet %s is locked!' % self.name)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
