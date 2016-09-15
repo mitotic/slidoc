@@ -3560,8 +3560,10 @@ function showSubmitted() {
 	return;
     if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
 	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? 'Late submission' : 'Submitted';
-    } else {
+    } else if (Sliobj.session && Sliobj.session.paced) {
 	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : ((Sliobj.session.lateToken == LATE_SUBMIT) ? 'SUBMIT LATE' : 'SUBMIT');
+    } else {
+	submitElem.innerHTML = '';
     }
 }
 
