@@ -8,6 +8,7 @@ Updates the Google Sheets version, using one active REST request at a time.
 admin commands:
     /_status                 Display update status
     /_clear                  Clear cache
+    /_backup/dir             Backup to directory (append timestamp, if dir ends with a hyphen)
     /_shutdown               Initiate clean shutdown (transmitting cache updates)
     /_lock/session           Lock session (before direct editing of Google Sheet)
     /_unlock/session         Unlock session (after direct edits are completed)
@@ -17,9 +18,11 @@ admin commands:
 """
 from __future__ import print_function
 
+import csv
 import datetime
 import json
 import math
+import os
 import random
 import re
 import sys
@@ -32,10 +35,11 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3e'
+VERSION = '0.96.3f'
 
 # Usually modified by importing module
 Options = {
+    'BACKUP_DIR': '_BACKUPS/', # Backup directory prefix, including slash
     'DEBUG': None,      
     'DRY_RUN': None,     # Dry run (read from, but do not update, Google Sheets)
     'SHEET_URL': None,   # Google Sheet URL
@@ -94,12 +98,13 @@ Lock_cache = {}     # Locked sheets
 
 Global = Dummy()
 
+Global.remoteVersion = ''
+
 def initCache():
     Sheet_cache.clear()
     Miss_cache.clear()
     Lock_cache.clear()
 
-    Global.suspending = ""
     Global.cacheRequestTime = 0
     Global.cacheResponseTime = 0
     Global.cacheUpdateTime = sliauth.epoch_ms()
@@ -114,11 +119,87 @@ def initCache():
     Global.totalCacheResponseBytes = 0
 
     Global.cachePendingUpdate = None
+    Global.suspended = ""
 
 initCache()
 
+def backupCache(dirpath=''):
+    dirpath = dirpath or Options['BACKUP_DIR'] or '_backup'
+    if dirpath.endswith('-'):
+        dirpath += sliauth.iso_date()[:16].replace(':','-')
+    suspend_cache("backup")
+    if Options['DEBUG']:
+        print("DEBUG:backupCache: %s started %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
+    errorList = []
+    try:
+        if not os.path.exists(dirpath):
+            os.makedirs(dirpath)
+
+        rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+        if rosterSheet:
+            backupSheet(ROSTER_SHEET, rosterSheet, dirpath, errorList)
+
+        indexSheet = getSheet(INDEX_SHEET, optional=True)
+        if indexSheet:
+            sessionNames = getColumns('id', indexSheet)
+            backupSheet(INDEX_SHEET, indexSheet, dirpath, errorList)
+        else:
+            sessionNames = []
+            errorList.append('Error: Index sheet %s not found' % INDEX_SHEET)
+
+        for sheetName in sessionNames:
+            alreadyCached = sheetName in Sheet_cache
+            sessionSheet = getSheet(sheetName, optional=True)
+            if not sessionSheet:
+                errorList.append('Error: Session sheet %s not found' % sheetName)
+                continue
+            backupSheet(sheetName, sessionSheet, dirpath, errorList)
+            if not alreadyCached:
+                del Sheet_cache[sheetName]
+    except Exception, excp:
+        errorList.append('Error in backup: '+str(excp))
+
+    errors = '\n'.join(errorList)+'\n' if errorList else ''
+    if errors:
+        try:
+            with  open(dirpath+'/ERRORS_IN_BACKUP.txt', 'w') as errfile:
+                errfile.write(errors)
+        except Exception, excp:
+            print("ERROR:backupCache: ", str(excp), file=sys.stderr)
+
+    if Options['DEBUG']:
+        if errors:
+            print(errors, file=sys.stderr)
+        print("DEBUG:backupCache: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
+    suspend_cache("")
+    return errors
+
+
+def backupCell(value):
+    if value is None:
+        return ''
+    if isinstance(value, datetime.datetime):
+        return sliauth.iso_date(value, utc=True)
+    if isinstance(value, unicode):
+        return value.encode('utf-8')
+    return str(value)
+
+
+def backupSheet(name, sheet, dirpath, errorList):
+    try:
+        rowNum = 0
+        with open(dirpath+'/'+name+'.csv', 'wb') as csvfile:
+            writer = csv.writer(csvfile)
+            for rowNum in range(1,sheet.getLastRow()+1):
+                row = sheet.getSheetValues(rowNum, 1, 1, sheet.getLastColumn())[0]
+                rowStr = [backupCell(x) for x in row]
+                writer.writerow(rowStr)
+    except Exception, excp:
+        errorList.append('Error in saving sheet %s (row %d): %s' % (name, rowNum, excp))
+
+
 def getSheet(sheetName, optional=False):
-    if Global.suspending or sheetName in Lock_cache:
+    if sheetName in Lock_cache or (Global.suspended and Global.suspended != 'backup'):
         raise Exception('Sheet %s is locked!' % sheetName)
 
     if sheetName in Sheet_cache:
@@ -144,6 +225,7 @@ def getSheet(sheetName, optional=False):
     if Options['DEBUG']:
         print("DEBUG:getSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
 
+    Global.remoteVersion = retval.get('info',{}).get('version','')
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
             Miss_cache[sheetName] = sliauth.epoch_ms()
@@ -158,7 +240,7 @@ def getSheet(sheetName, optional=False):
     return Sheet_cache[sheetName]
 
 def createSheet(sheetName, headers):
-    if Global.suspending or sheetName in Lock_cache:
+    if sheetName in Lock_cache or Global.suspended:
         raise Exception('Sheet %s is locked!' % sheetName)
 
     if not headers:
@@ -231,7 +313,7 @@ class Sheet(object):
 
         self.modTime = sliauth.epoch_ms()
         self.accessTime = self.modTime
-        newRow = [None]*self.nCols
+        newRow = ['']*self.nCols
         if self.keyHeader:
             if keyValue is None:
                 raise Exception('Must specify key for row insertion in sheet '+self.name)
@@ -267,7 +349,7 @@ class Sheet(object):
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
         ##if Options['DEBUG']:
         ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
-        if Global.suspending or self.name in Lock_cache:
+        if sheetName in Lock_cache or Global.suspended:
             raise Exception('Sheet %s is locked!' % self.name)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
@@ -325,15 +407,19 @@ class Range(object):
         self.sheet.setSheetValues(*(self.rng+[values]))
 
 def getCacheStatus():
-    out = 'Cache:\n'
+    out = 'Cache: version %s (%s)\n' % (VERSION, Global.remoteVersion)
     out += '  No. of updates (retries): %d (%d)\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount)
     out += '  Average update time = %.2fs\n\n' % (Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheResponseCount)) )
     out += '  Average request bytes = %d\n\n' % (Global.totalCacheRequestBytes/max(1,Global.totalCacheResponseCount) )
     out += '  Average response bytes = %d\n\n' % (Global.totalCacheResponseBytes/max(1,Global.totalCacheResponseCount) )
     curTime = sliauth.epoch_ms()
     for sheetName, sheet in Sheet_cache.items():
-        action = 'unlock' if sheetName in Lock_cache else 'lock'
-        out += 'Sheet_cache: %s: %ds <a href="/_%s/%s">%s</a>\n' % (sheetName, (curTime-sheet.accessTime)/1000., action, sheetName, action)
+        if sheetName in Lock_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+            sheetStr = sheetName+' (locking...)'
+        else:
+            action = 'unlock' if sheetName in Lock_cache else 'lock'
+            sheetStr = '<a href="/_%s/%s">%s</a>' % (action, sheetName, action)
+        out += 'Sheet_cache: %s: %ds %s\n' % (sheetName, (curTime-sheet.accessTime)/1000., sheetStr)
     out += '\n'
     for sheetName in Miss_cache:
         out += 'Miss_cache: %s: %ds\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
@@ -351,20 +437,21 @@ def schedule_update(waitSec=0, force=False):
     else:
         update_remote_sheets(force=force)
 
-def start_shutdown(action="shutdown"):
-    Global.suspending = action
-    print("Suspending for", action, file=sys.stderr)
-    schedule_update(force=True)
+def suspend_cache(action="shutdown"):
+    Global.suspended = action
+    if action:
+        print("Suspended for", action, file=sys.stderr)
+        schedule_update(force=True)
 
-def check_shutdown():
-    if not Global.suspending:
+def updates_complete():
+    if not Global.suspended:
         return
-    if Global.suspending == "clear":
-        initCache()
-        print("Cleared cache", file=sys.stderr)
-    else:
+    if Global.suspended == "shutdown":
         print("Completing shutdown", file=sys.stderr)
         IOLoop.current().stop()
+    elif Global.suspended == "clear":
+        initCache()
+        print("Cleared cache", file=sys.stderr)
 
 def get_locked():
     # Return list of locked sheet name (* if updates not yet send to Google sheets)
@@ -380,7 +467,7 @@ def get_locked():
 def update_remote_sheets(force=False):
     if not Options['SHEET_URL'] or Options['DRY_RUN']:
         # No updates if no sheet URL or dry run
-        check_shutdown()
+        updates_complete()
         return
 
     if Options['DEBUG']:
@@ -410,7 +497,7 @@ def update_remote_sheets(force=False):
             print("update_remote_sheets:B", modRequests is not None, file=sys.stderr)
     if not modRequests:
         # Nothing to update
-        check_shutdown()
+        updates_complete()
         return
 
     if Options['DEBUG']:
@@ -438,7 +525,7 @@ def handle_http_response(response):
     if response.error:
         print("handle_http_response: Update ERROR:", response.error, file=sys.stderr)
         errMsg = response.error
-        if Global.suspending or Global.cacheRetryCount > RETRY_MAX_COUNT:
+        if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
             sys.exit('Failed to update cache after %d tries' % RETRY_MAX_COUNT)
         Global.cacheRequestTime = 0
         Global.cacheRetryCount += 1
@@ -469,7 +556,7 @@ def handle_http_response(response):
         Global.cacheRequestTime = 0
         Global.cacheRetryCount = 0
         Global.cacheWaitTime = 0
-        schedule_update(0 if Global.suspending else Options['MIN_WAIT_SEC'])
+        schedule_update(0 if Global.suspended else Options['MIN_WAIT_SEC'])
 
         
 def sheetAction(params):
@@ -1404,8 +1491,7 @@ def indexRows(sheet, indexCol, startRow=2):
     return rowIndex
 
 
-def getColumns(header, sheet, colCount, startRow):
-    startRow = startRow or 2
+def getColumns(header, sheet, colCount=1, startRow=2):
     colIndex = indexColumns(sheet)
     if header not in colIndex:
         raise Exception('Column '+header+' not found in sheet '+sheetName)

@@ -792,6 +792,9 @@ Slidoc.viewHelp = function () {
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
+    if (userId == Sliobj.params.testUserId || Sliobj.adminState)
+	html += '<a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
+
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list.length; j++)
 	    html += formatHelp(Slide_help_list[j]);
@@ -1160,6 +1163,23 @@ Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) 
     for (var j=3; j<arguments.length; j++)
 	data.push(arguments[j]);
     GService.requestWS('plugin', data, callback);
+}
+
+Slidoc.PluginManager.shareReady = function(share) {
+    return ( (share == 'after_due_date' && Slidoc.PluginManager.pastDueDate()) ||
+	     (share == 'after_answering' && Slidoc.PluginManager.answered()) ||
+	     (share == 'after_grading' && Slidoc.PluginManager.graded()) );
+}
+
+Slidoc.PluginManager.pastDueDate = function() {
+    if (!Sliobj.session)
+	return null;
+    var dueDate = parseDate(Sliobj.dueDate) || parseDate(Sliobj.session ? Sliobj.session.lateToken : '') || parseDate(Sliobj.params.dueDate);
+    return dueDate && ((new Date()) > dueDate);
+}
+
+Slidoc.PluginManager.graded = function(qnumber) {
+    return Sliobj.gradeDateStr;
 }
 
 Slidoc.PluginManager.answered = function(qnumber) {
@@ -1673,11 +1693,7 @@ function slidocSetupAux(session, feedback) {
 	    var slideElem = document.getElementById(slide_id);
 
 	    if (question_attrs.share) {
-		var shareAnswers = ( (question_attrs.share == 'after_due_date' && Sliobj.dueDate && (new Date()) > Sliobj.dueDate) ||
-				     (question_attrs.share == 'after_answering' && Sliobj.session.questionsAttempted[qnumber]) ||
-				     (question_attrs.share == 'after_grading' && Sliobj.gradeDateStr) );
-
-		toggleClassAll(!shareAnswers, 'slidoc-shareable-hide', slide_id+'-plugin-Share-sharebutton');
+		toggleClassAll(!Slidoc.PluginManager.shareReady(question_attrs.share), 'slidoc-shareable-hide', slide_id+'-plugin-Share-sharebutton');
 	    }
 
 	    if (!Sliobj.firstTime) {
@@ -1948,9 +1964,7 @@ function checkGradingStatus(userId, session, feedback) {
 
     // Admin can modify grade columns only for submitted sessions before 'effective' due date
     // and only for non-late submissions thereafter
-    var dueDate = parseDate(Sliobj.session.lateToken) || parseDate(Sliobj.params.dueDate);
-    var pastSubmitDeadline = dueDate && ((new Date()) > dueDate);
-    var allowGrading = Sliobj.userGrades[userId].submitted || (pastSubmitDeadline && Sliobj.session.lateToken != LATE_SUBMIT);
+    var allowGrading = Sliobj.userGrades[userId].submitted || (Slidoc.PluginManager.pastDueDate() && Sliobj.session.lateToken != LATE_SUBMIT);
 
     Sliobj.userGrades[userId].allowGrading = allowGrading;
 
@@ -3170,6 +3184,9 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	Slidoc.idDisplay(notes_id);
 	notes_elem.style.display = 'inline';
 	Slidoc.classDisplay(notes_id, 'block');
+	ansContainer = document.getElementById(slide_id+"-answer-container");
+	if (ansContainer)
+	    ansContainer.scrollIntoView(true)
     }
 
     // Question has been answered
@@ -3981,7 +3998,7 @@ Slidoc.slideViewStart = function () {
 }
 
 Slidoc.slideViewEnd = function() {
-    if (Sliobj.session.paced && ('slides_only' in Sliobj.params.features)) {
+    if (Sliobj.session.paced && !Sliobj.adminState && ('slides_only' in Sliobj.params.features)) {
 	var msgStr = 'Cannot exit slide view when in strictly paced mode';
 	alert(msgStr);
 	return false;

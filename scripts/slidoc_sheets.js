@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3e';
+var VERSION = '0.96.3f';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -57,6 +57,15 @@ var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.co
 //  The 'name', 'email' and 'altid' values will be copied from this column to sesssion sheets (using 'id' as the index).
 //  Names should be of the form 'last name(s), first_name middle_name ...'. Rows should be sorted by name.
 //  If roster_slidoc sheet is present and userID is not present in it, user will not be allowed to access sessions.
+//
+//  The order and content of the roster entries determine the corresponding entries in the score sheet as well.
+//
+//  The first row after the header row may contain the special test user entry with TESTUSER_ID.
+//  There can be zero or more additional rows with special display names starting with a hyphen.
+//  Such rows and any test user row will be excluded from class averages etc.
+//
+//  An additional column named twitter may be used to map twitter IDs to session IDs.
+//  
 //
 // USING THE SLIDOC MENU
 //  - After installing this script, quit the spreadsheet and re-open to activate the Slidoc menu. You will see:
@@ -1612,10 +1621,16 @@ function sessionStatSheet() {
 
 	var avgStartRow = statStartRow;
 	if (nids) {
-	    var temId = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], 1, 1);
-	    // Skip test user row for averages etc
-	    if (temId[0][0] == TESTUSER_ID)
-		avgStartRow += 1;
+	    var temIds = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], nids, 1);
+	    var temNames = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['name'], nids, 1);
+	    for (var j=0; j<nids; j++) {
+		// Skip any initial row(s) in the roster with test user or IDs/names starting with hyphen
+		// when computing averages and other stats
+		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\-/) || temNames[j][0].match(/^\-/))
+		    avgStartRow += 1;
+		else
+		    break;
+	    }
 	}
 
 	// New stat sheet
@@ -1932,7 +1947,7 @@ function emailTokens() {
     if (userId != 'all') {
 	emailList = [ [userId, lookupValues(userId,['email'],ROSTER_SHEET,true)[0] ] ];
     } else {
-	emailList = getColumns('id', ROSTER_SHEET, 2);
+	emailList = getColumns('id', rosterSheet, 2);
     }
     for (var j=0; j<emailList.length; j++)
 	if (emailList[j][1].trim() && emailList[j][1].indexOf('@') <= 0)
@@ -2036,7 +2051,11 @@ function updateScoreSheet() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
-	var sessionNames = getColumns('id', INDEX_SHEET);
+	var indexSheet = getSheet(INDEX_SHEET);
+	if (!indexSheet) {
+	    SpreadsheetApp.getUi().alert('Sheet not found: '+INDEX_SHEET);
+	}
+	var sessionNames = getColumns('id', indexSheet);
 	var validNames = [];
 	var validSheet = null;
 	for (var m=0; m<sessionNames.length; m++) {
@@ -2080,28 +2099,50 @@ function updateScoreSheet() {
 		userInfoSheet = validSheet;
 		startRow = sessionStartRow;
 	    }
-	    var nUserIds = userInfoSheet.getLastRow()-startRow+1;
-	    if (nUserIds) {
-		var temId = userInfoSheet.getSheetValues(startRow, MIN_HEADERS.indexOf('id')+1, 1, 1);
-		// Skip test user row for averages etc
-		if (temId[0][0] == TESTUSER_ID)
-		    avgStartRow += 1;
-	    }
+
+	    // Score sheet headers
 	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
 	    scoreSheet.getRange(1, MIN_HEADERS.length+1, 1, extraHeaders.length).setValues([extraHeaders]);
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
+
+	    var idCol = MIN_HEADERS.indexOf('id')+1;
 	    if (scoreAvgRow) {
-		scoreSheet.getRange(scoreAvgRow, MIN_HEADERS.indexOf('id')+1, 1, 1).setValues([[AVERAGE_ID]]);
+		scoreSheet.getRange(scoreAvgRow, idCol, 1, 1).setValues([[AVERAGE_ID]]);
 		scoreSheet.getRange(scoreAvgRow+':'+scoreAvgRow).setFontStyle('italic');
 	    }
 
 	    if (SESSION_MAXSCORE_ROW) {
-		scoreSheet.getRange(scoreStartRow, MIN_HEADERS.indexOf('id')+1, 1, 1).setValues([[MAXSCORE_ID]]);
+		scoreSheet.getRange(scoreStartRow, idCol, 1, 1).setValues([[MAXSCORE_ID]]);
 		scoreSheet.getRange(scoreStartRow+':'+scoreStartRow).setFontWeight('bold');
 	    }
 
-	    if (nUserIds)
+	    var nUserIds = userInfoSheet.getLastRow()-startRow+1;
+	    var nPrevIds = scoreSheet.getLastRow()-nonmaxStartRow+1;
+	    if (nUserIds) {
+		var temIds = userInfoSheet.getSheetValues(startRow, idCol, nUserIds, 1);
+		var temNames = userInfoSheet.getSheetValues(startRow, MIN_HEADERS.indexOf('name')+1, nUserIds, 1);
+		for (var j=0; j<nUserIds; j++) {
+		    // Skip any initial row(s) in the roster with test user or IDs/names starting with hyphen
+		    // when computing averages and other stats
+		    if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\-/) || temNames[j][0].match(/^\-/))
+			avgStartRow += 1;
+		    else
+			break;
+		}
+
+		for (var j=0; j<nUserIds; j++) {
+		    // Check that prior IDs match
+		    var prevId = scoreSheet.getRange(nonmaxStartRow+j, idCol, 1, 1)[0][0];
+		    if (prevId && prevId != temIds[j][0])
+			throw('Id mismatch in row '+(nonmaxStartRow+j)+' of score sheet: expected '+temIds[j][0]+' but found '+prevId+'; fix it or re-create score sheet');
+		}
+
 		scoreSheet.getRange(nonmaxStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
+
+		// Clear any 'excess' prior ID values
+		for (var j=nUserIds; j<nPrevIds; j++)
+		    scoreSheet.getRange(nonmaxStartRow+j, idCol, 1, 1).setValue('');
+	    }
 	}
 
 	var rawTotal = [];

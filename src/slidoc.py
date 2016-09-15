@@ -2158,6 +2158,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 # No grading without google sheet
                 file_config.features.remove('grade_response')
 
+            js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
             if js_params['paceLevel']:
                 # Note: pace does not work with combined files

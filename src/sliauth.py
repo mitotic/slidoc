@@ -76,8 +76,10 @@ def epoch_ms(date_time=None):
     else:
         return epoch_ms(datetime.datetime.now())
 
-def iso_date(date_time, utc=False):
+def iso_date(date_time=None, utc=False):
     """Return ISO date time string for local time (or UTC time)"""
+    if not date_time:
+        date_time = datetime.datetime.now()
     if utc:
         return datetime.datetime.utcfromtimestamp(epoch_ms(date_time)/1000.0).isoformat() + 'Z'
     else:

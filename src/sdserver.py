@@ -23,25 +23,10 @@ Command arguments:
     proxy: Enable proxy mode (cache copies of Google Sheets)
     site_label: Site label, e.g., 'calc101'
     static_dir: path to static files directory containing Slidoc html files (default='static')
-    twitter: path to Twitter JSON config file (to sign in via Twitter)
     xsrf: Enable XSRF cookies for security
 
-Twitter auth workflow:
-  - Register your application with Twitter at http://twitter.com/apps, using the Callback URL http://website/_oauth/twitter
-  - Then copy your Consumer Key and Consumer Secret to command config file:
-       auth_type = 'twitter,key,secret'
-     or in command line
-       sudo python sdserver.py --auth_key=... --auth_type=... --gsheet_url=... --static_dir=... --port=80 --proxy_wait=0 --site_label=...
-  - For live tweeting, also create an AccessToken for yourself and use in --twitter_stream
-  - Create an initial Slidoc, say ex00-setup.md
-  - Ask all users to ex00-setup.html using their Twitter login
-  - In Google Docs, copy the first four columns of the ex00-setup sheet to a new roster_slidoc sheet
-  - Once the roster_slidoc sheet is created, only users listed in that sheet can login
-    Correct any name entries in the sheet, and add emails and/or ID values as needed
-  - For additional users, manually add rows to roster_slidoc later
-  - If some users need to change their Twitter IDs later, include a dict in twitter.json, {..., "rename": {"old_id": "new_id", ...}}
-  - For admin user, include "admin_id": "admin" in rename dict
-    
+    For Twitter auth workflow, see sdstream.py
+
 """
 
 import collections
@@ -95,6 +80,7 @@ class Dummy():
     
 Global = Dummy()
 Global.rename = {}
+Global.backup = None
 
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
@@ -208,11 +194,14 @@ class ActionHandler(BaseHandler):
         if action == '_dash':
             self.render('dashboard.html')
         elif action == '_clear':
-            sdproxy.start_shutdown('clear')
+            sdproxy.suspend_cache('clear')
             self.write('Clearing cache<br><a href="/_dash">Dashboard</a>')
         elif action == '_shutdown':
             self.clear_id()
-            sdproxy.start_shutdown('shutdown')
+            if Global.backup:
+                Global.backup.stop()
+                Global.backup = None
+            sdproxy.suspend_cache('shutdown')
             self.write('Starting shutdown (also cleared cookies)<br><a href="/_dash">Dashboard</a>')
         elif action in ('_getcol', '_getrow'):
             sessionName, sep, label = sessionName.partition('.')
@@ -253,6 +242,11 @@ class ActionHandler(BaseHandler):
             if sessionName:
                 sdproxy.Lock_cache[sessionName] = True
             self.write('Locked sessions: %s<br><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
+        elif action == '_backup':
+            errors = sdproxy.backupCache(sessionName)
+            self.write('Backed up cache to directory '+sessionName)
+            if errors:
+                self.write('<pre>'+errors+'</pre>')
         elif action == '_status':
             self.write('<a href="/_dash">Dashboard</a><br>')
             self.write('<pre>')
@@ -968,6 +962,7 @@ class Application(tornado.web.Application):
             handlers += [ (r"/_proxy", ProxyHandler),
                           (r"/_websocket/(.*)", WSHandler),
                           (r"/interact(/.*)?", AuthMessageHandler),
+                          (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
@@ -987,22 +982,27 @@ class Application(tornado.web.Application):
             
         super(Application, self).__init__(handlers, **settings)
 
-def processTwitterMessage(fromUser, fromName, message):
-    print >> sys.stderr, 'sdserver.processTwitterMessage:', fromUser, fromName, message
+def processTwitterMessage(msg):
+    # Return null string on success or error message
+    print >> sys.stderr, 'sdserver.processTwitterMessage:', msg
+    fromUser = msg['sender']
+    fromName = msg['name']
+    message = msg['text']
+    status = None
     if Options['auth_type'].startswith('twitter,'):
-        return WSHandler.processMessage(fromUser, fromName, message)
-
-    twitterMap = sdproxy.lookupRoster('twitter')
-    if not twitterMap:
-        msg = 'Error - no twitter entries in roster. Message from '+fromUser+' dropped'
-        print >> sys.stderr, msg
-        return msg
-    for userId, twitterId in twitterMap.items():
-        if fromUser == twitterId:
-            return WSHandler.processMessage(userId, lookupRoster('name', userId), message)
-    msg = 'Error - twitter ID '+fromUser+' not found in roster'
-    print >> sys.stderr, msg
-    return msg
+        status = WSHandler.processMessage(fromUser, fromName, message)
+    else:
+        twitterMap = sdproxy.lookupRoster('twitter')
+        if not twitterMap:
+            status = 'Error - no twitter entries in roster. Message from '+fromUser+' dropped'
+        else:
+            for userId, twitterId in twitterMap.items():
+                if fromUser == twitterId:
+                    status = WSHandler.processMessage(userId, sdproxy.lookupRoster('name', userId), message)
+            if status is None:
+                status = 'Error - twitter ID '+fromUser+' not found in roster'
+    print >> sys.stderr, status
+    return status
 
 def main():
     define("config", type=str, help="Path to config file",
@@ -1010,19 +1010,20 @@ def main():
 
     define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
-    define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
+    define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("gsheet_url", default="", help="Google sheet URL")
-    define("ssl", default="", help="SSLcertfile,SSLkeyfile")
-    define("plugins", default="", help="List of plugin paths (comma separated)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
-    define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
+    define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
+    define("plugins", default="", help="List of plugin paths (comma separated)")
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
+    define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("site_label", default=Options["site_label"], help="Site label for Login page")
     define("site_url", default=Options["site_url"], help="Site URL, e.g., http://example.com")
-    define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
+    define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
+    define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
     define("xsrf", default=False, help="XSRF cookies for security")
 
     define("port", default=Options['port'], help="Web server port", type=int)
@@ -1057,6 +1058,29 @@ def main():
 
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
+
+    if options.backup:
+        comps = options.backup.split(',')
+        sdproxy.Options['BACKUP_DIR'] = comps[0]
+        hhmm = comps[1] if len(comps) > 1 else '03:00'
+        curTimeSec = sliauth.epoch_ms()/1000.0
+        curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
+        if hhmm:
+            backupTimeSec = sliauth.epoch_ms(sliauth.parse_date(curDate+'T'+hhmm))/1000.0
+        else:
+            backupTimeSec = curTimeSec + 31
+        backupInterval = 86400
+        if backupTimeSec - curTimeSec < 30:
+            backupTimeSec += backupInterval
+        print >> sys.stderr, 'Scheduled backup in dir %s every %s hours, starting at %s' % (comps[0], backupInterval/3600, sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
+        def start_backup():
+            if Options['debug']:
+                print >> sys.stderr, "Starting periodic backup"
+            sdproxy.backupCache()
+            Global.backup = PeriodicCallback(sdproxy.backupCache, backupInterval*1000.0)
+            Global.backup.start()
+        
+        IOLoop.current().call_at(backupTimeSec, start_backup)
 
     if options.twitter_stream:
         comps = options.twitter_stream.split(',')

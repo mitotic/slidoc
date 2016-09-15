@@ -9,9 +9,13 @@ Share = {
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
 
 	var manage = (this.paced == 3 && (this.adminState || this.testUser));
-	toggleClass(!manage, 'slidoc-shareable-hide', this.shareElem);
 	toggleClass(!manage, 'slidoc-shareable-hide', this.countElem);
-	toggleClass(!manage, 'slidoc-shareable-hide', this.detailsElem);
+
+	if (!manage)
+	    this.detailsElem.style.display = 'none';
+
+	toggleClass(!manage && !Slidoc.PluginManager.shareReady(this.qattributes.share), 'slidoc-shareable-hide', this.shareElem);
+
 	this.countElem.textContent = manage ? '(?)' : '';
 	this.respondersElem.textContent = '';
 

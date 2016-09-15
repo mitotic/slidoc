@@ -1,7 +1,20 @@
 <script>
-function check(action) {
-if (window.confirm('Confirm '+action+'?'))
-    location = '/_' + action;
+function check(label) {
+if (window.confirm('Confirm '+label+'?'))
+    location = '/_' + label;
+}
+function action(label) {
+    var prompt;
+    if (label == 'backup')
+       prompt = 'Backup directory (end with hyphen to append date/time)';
+    else
+       prompt = label;
+    var value = window.prompt(prompt+': ');
+    if (value) {
+      var statusElem = document.getElementById('actionstatus');
+      if (statusElem) statusElem.textContent = 'Loading...';
+      location = '/_' + label + '/' + value;
+    }
 }
 </script>
 
@@ -9,11 +22,14 @@ if (window.confirm('Confirm '+action+'?'))
   <a href="/">Home</a>
   <p></p>
   <ul>
-    <li><a href="/_status">status</a>
+    <li><a href="/_status">status</a></li>
     <hr>
-    <li><a href="javascript:check('clear')">clear</a>
+    <li><a href="javascript:check('clear')">clear</a></li>
     <hr>
-    <li><a href="javascript:check('shutdown')">shutdown</a>
+    <li><a href="javascript:check('shutdown')">shutdown</a></li>
+    <hr>
+    <li><a href="javascript:action('backup')">backup</a></li>
   </ul>
+  <span id="actionstatus"></span>
   <p></p>
 </div>
