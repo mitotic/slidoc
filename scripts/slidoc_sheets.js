@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3f';
+var VERSION = '0.96.3g';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -543,6 +543,8 @@ function sheetAction(params) {
                 var curUserVals = null;
                 var testUserVals = null;
                 for (var j=0; j<nRows; j++) {
+		    if (shareSubrow[j][0] == SKIP_ANSWER)
+                        shareSubrow[j][0] = '';
                     if (idValues[j][0] == paramId)
                         curUserVals = shareSubrow[j];
                     else if (idValues[j][0] == TESTUSER_ID)
@@ -626,29 +628,31 @@ function sheetAction(params) {
 		}
 
                 var sortVotes = tallyVotes && (votingCompleted || adminUser || (voteParam == 'show_live' && paramId == TESTUSER_ID));
-                var respCount = {};
 		var sortVals = [];
 		for (var j=0; j<nRows; j++) {
                     if (idValues[j][0] == TESTUSER_ID) {
                         // Ignore test user response
+                        continue;
+                    }
+
+		    // Always skip null responses and ungraded lates
+                    if (!shareSubrow[j][0] || lateValues[j][0] == LATE_SUBMIT) {
+                        continue;
+                    }
+                    // If voting, skip incomplete/late submissions (but allow partials)
+                    if (voteParam && (lateValues[j][0] && lateValues[j][0] != PARTIAL_SUBMIT)) {
+                        continue;
+                    }
+                    // If voting, skip if explanations expected
+                    if (voteParam && explainOffset && !shareSubrow[j][explainOffset]) {
                         continue
                     }
+
 		    // Use earlier of submit time or timestamp to sort
 		    var timeVal = submitValues[j][0] || timeValues[j][0];
 		    timeVal = timeVal ? timeVal.getTime() : 0;
 
-		    // Skip incomplete/late submissions (but allow partials)
-		    if (!timeVal || (lateValues[j][0] && lateValues[j][0] != PARTIAL_SUBMIT))
-			continue;
-		    if (!shareSubrow[j][0] || (explainOffset && !shareSubrow[j][1]))
-			continue;
-
                     var respVal = shareSubrow[j][0];
-                    if (respVal in respCount) {
-                        respCount[respVal] += 1;
-                    } else {
-                        respCount[respVal] = 1;
-                    }
                     if (parseNumber(respVal) != null) {
                         var respSort = parseNumber(respVal);
                     } else {
@@ -656,14 +660,14 @@ function sheetAction(params) {
                     }
 
                     if (sortVotes) {
-                        // Sort by (-) vote tally && then by response
-                        sortVals.push( [-shareSubrow[j][voteOffset], respSort, j])
-                    } else if (explainOffset) {
-                        // Sort by response value && then time
-                        sortVals.push( [respSort, timeVal, j] )
+                        // Voted: sort by (-) vote tally and then by response
+                        sortVals.push( [-shareSubrow[j][voteOffset], respSort, j]);
+                    } else if (voteParam && !explainOffset) {
+                        // Voting on responses: sort by time and then response value
+                        sortVals.push( [timeVal, respSort, j]);
                     } else {
-                        // Sort by time && then response value
-                        sortVals.push( [timeVal, respSort, j])
+                        // Explaining response or not voting; sort by response value and then time
+                        sortVals.push( [respSort, timeVal, j] );
                     }
 		}
 		sortVals.sort();
@@ -671,17 +675,7 @@ function sheetAction(params) {
 		//returnMessages.push('Debug::getShare: '+nCols+', '+nRows+', ['+curUserVals+']');
 		returnValues = [];
 		for (var j=0; j<sortVals.length; j++) {
-		    var subrow = shareSubrow[sortVals[j][2]];
-		    if (!(subrow[0] in respCount))
-                        continue;
-		    if (respCount[subrow[0]] > 1) {
-                        // Response occurs multiple times
-                        var newSubrow = [subrow[0]+' ('+respCount[subrow[0]]+')'].concat(subrow.slice(1));
-                    } else {
-			var newSubrow = subrow;
-		    }
-                    delete respCount[subrow[0]];
-                    returnValues.push( newSubrow );
+                    returnValues.push( shareSubrow[sortVals[j][2]] );
 		}
 	    }
 	} else {
@@ -911,11 +905,13 @@ function sheetAction(params) {
 			} else if (colHeader == 'submitTimestamp' && params.submit) {
 			    rowValues[j] = curDate;
 			    returnInfo.submitTimestamp = curDate;
-			} else if (colHeader.slice(-6) == '_share') {
+			} else if (colHeader.match(/_share$/)) {
 			    // Generate share value by computing message digest of 'response [: explain]'
-			    if (j >= 1 && rowValues[j-1] && columnHeaders[j-1].slice(-9) == '_response') {
+			    if (j >= 1 && rowValues[j-1] && rowValues[j-1] != SKIP_ANSWER && columnHeaders[j-1].match(/_response$/)) {
+				// Upvote response
 				rowValues[j] = digestHex(normalizeText(rowValues[j-1]));
-			    } else if (j >= 2 && rowValues[j-1] && columnHeaders[j-1].slice(-8) == '_explain' && columnHeaders[j-2].slice(-9) == '_response') {
+			    } else if (j >= 2 && rowValues[j-1] && columnHeaders[j-1].match(/_explain$/) && columnHeaders[j-2].match(/_response$/)) {
+				// Upvote response: explanation
 				rowValues[j] = digestHex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]));
 			    } else {
 				rowValues[j] = '';
@@ -1632,9 +1628,9 @@ function sessionStatSheet() {
 	    var temIds = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], nids, 1);
 	    var temNames = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['name'], nids, 1);
 	    for (var j=0; j<nids; j++) {
-		// Skip any initial row(s) in the roster with test user or IDs/names starting with hyphen
+		// Skip any initial row(s) in the roster with test user or ID/names starting with underscore/hyphen
 		// when computing averages and other stats
-		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\-/) || temNames[j][0].match(/^\-/))
+		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^_/) || temNames[j][0].match(/^\-/))
 		    avgStartRow += 1;
 		else
 		    break;

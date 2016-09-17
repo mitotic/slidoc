@@ -24,6 +24,7 @@ Share = {
 	this.respErrors = null;
 	if (manage)
 	    this.detailsElem.style.display = 'none';
+	this.responseTally = null;
     },
 
     answerSave: function () {
@@ -95,17 +96,19 @@ Share = {
 	if (!result || !retStatus)
 	    return;
 	var prefix = 'q'+this.qattributes.qnumber+'_';
+	var responseHeader = prefix + 'response';
+	var explainHeader = prefix + 'explain';
 
-	var respList = [];
+	var responderList = [];
 	var temObj = {};
 	if (retStatus.info && retStatus.info.responders) {
 	    for (var j=0; j<retStatus.info.responders.length; j++) {
 		var responder = retStatus.info.responders[j];
 		temObj[responder] = 1;
 		if (this.respErrors && responder in this.respErrors)
-		    respList.push(responder+'*');
+		    responderList.push(responder+'*');
 		else
-		    respList.push(responder);
+		    responderList.push(responder);
 	    }
 	}
 
@@ -113,31 +116,36 @@ Share = {
 	    var keys = Object.keys(this.respErrors);
 	    for (var j=0; j<keys.length; j++) {
 		if (!(keys[j] in temObj))
-		    respList.push(keys[j]+'**');
+		    responderList.push(keys[j]+'**');
 	    }
 	}
 
-	respList.sort();
+	responderList.sort();
 
-	this.countElem.textContent = '('+respList.length+')';
-	this.respondersElem.textContent = respList.join('\t');
+	this.countElem.textContent = '('+responderList.length+')';
+	this.respondersElem.innerHTML = '';
+	for (var j=0; j<responderList.length; j++) {
+	    var responder = responderList[j];
+	    var spanElem = document.createElement("span");
+	    spanElem.classList.add('slidoc-plugin-Share-responder');
+	    if (responder.slice(-2) == '**') {
+		spanElem.classList.add('slidoc-plugin-Share-responder-invalid');
+		spanElem.textContent = responder.slice(0,-2);
+	    } else if (responder.slice(-1) == '*') {
+		spanElem.classList.add('slidoc-plugin-Share-responder-repeat');
+		spanElem.textContent = responder.slice(0,-1);
+	    } else {
+		spanElem.classList.add('slidoc-plugin-Share-responder-valid');
+		spanElem.textContent = responder;
+	    }
+	    this.respondersElem.appendChild(spanElem);
+	}
 	    
 	if (!display)
 	    return;
 
-	var lines = [];
-
-	if (retStatus.info && retStatus.info.voteDate) {
-	    var voteDate = retStatus.info.voteDate;
-	    try { voteDate = new Date(voteDate); } catch(err) {  }
-	    lines.push('Submit Likes by: '+voteDate+'<p></p>')
-	}
-	
-	lines.push(result[prefix+'explain'] ? 'Explanations:<br>' : 'Responses:<br>');
-	this.voteCodes = retStatus.info.vote ? retStatus.info.vote.split(',') : ['', ''];
-
 	var checkResp = [];
-	if (this.correctAnswer) {
+	if (this.correctAnswer && Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
 	    if (this.qattributes.qtype == 'number') {
 		var corrValue = null;
 		var corrError = 0.0;
@@ -154,74 +162,148 @@ Share = {
 	    }
 	}
 
-	Slidoc.log('Slidoc.Plugins.Share.responseCallback2:', this.correctAnswer, checkResp);
+	function checkIfCorrect(respVal) {
+	    if (checkResp.length == 1) {
+		return (checkResp[0] == respVal);
+	    } else if (checkResp.length == 2) {
+		try {
+		    return (Math.abs(parseFloat(respVal) - checkResp[0]) <= 1.001*checkResp[1]); 
+		} catch(err) {
+		    Slidoc.log('Share.responseCallback: Error - invalid numeric response:'+respVal);
+		    return null;
+		}
+	    } else {
+		return null;
+	    }
+	}
+
+	Slidoc.log('Slidoc.Plugins.Share.responseCallback2:', this.qattributes.vote, this.correctAnswer, checkResp);
+
+	var codeResp = (this.qattributes.qtype == 'text/x-code'	|| this.qattributes.qtype.match(/^Code\//));
+	var nResp = result[responseHeader].length;
+	if (this.qattributes.qtype == 'number' || this.qattributes.qtype == 'choice') { 
+	    // Count choice/numeric answers
+	    this.responseTally = [];
+	    var prevResp = null;
+	    var respCount = 0;
+	    var explanations = [];
+	    for (var j=0; j<nResp; j++) {
+		var respVal = result[responseHeader][j];
+		if (respCount && respVal != prevResp) {
+		    this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations]);
+		    respCount = 0;
+		    explanations = [];
+		}
+		respCount += 1;
+		if (result[explainHeader] && result[explainHeader][j])
+		    explanations.push(result[explainHeader][j])
+		prevResp = respVal;
+	    }
+	    if (respCount)
+		this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations]);
+
+	    Slidoc.log('Slidoc.Plugins.Share.responseCallback3:', this.responseTally.length, this.responseTally);
+	    if (this.qattributes.qtype == 'number' && !this.qattributes.vote) {
+		// No voting; display sorted numeric responses
+		// (If voting, this display will be suppressed)
+		var lines = ['Numeric responses:<p></p>\n'];
+		lines.push['<ul>\n'];
+		for (var j=0; j<this.responseTally.length; j++) {
+		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
+		    var label = this.responseTally[j][0] + ' ('+this.responseTally[j][2]+')';
+		    var color = 'slidoc-bar-'+(this.responseTally[j][1] ? 'green' : 'orange')
+		    lines.push( ('<li class="slidoc-numeric-chart"><span class="slidoc-chart-box %(id)s-chart-box"><span id="%(id)s-chartbar-%(index)s" class="slidoc-chart-bar '+color+'" onclick="Slidoc.PluginMethod('+"'Share', '%(id)s', 'shareExplain'"+', %(index)s);" style="width: %(percent)s;">'+label+'</span></span></li>\n').replace(/%\(id\)s/g,this.slideId).replace(/%\(index\)s/g,''+(j+1)).replace(/%\(percent\)s/g,percent) );
+		}
+		lines.push['</ul>\n'];
+		var popupContent = Slidoc.showPopup(lines.join('\n'), null, true);
+		return;
+
+	    } else if (this.qattributes.qtype == 'choice') {
+		// Display choice responses inline (both for voting and non-voting cases)
+		var boxes = document.getElementsByClassName(this.slideId+'-chart-box');
+		for (var j=0; j<boxes.length; j++)
+		    boxes[j].style.display = null;
+		for (var j=0; j<this.responseTally.length; j++) {
+		    var choice = this.responseTally[j][0];
+		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
+		    var bar = document.getElementById(this.slideId+'-chartbar-'+choice);
+		    if (bar) {
+			bar.textContent = choice+': '+this.responseTally[j][2];
+			bar.style.width = percent;
+			bar.classList.remove('slidoc-bar-orange');
+			bar.classList.remove('slidoc-bar-green');
+			bar.classList.add('slidoc-bar-'+(this.responseTally[j][1] ? 'green' : 'orange'));
+		    }
+		}
+		if (!this.qattributes.vote)
+		    return;
+	    }
+	} else if (!this.qattributes.vote) {
+	    // Not choice/number question and not voting; display responses
+	    var lines = [];
+	    var content = []
+	    for (var j=0; j<nResp.length; j++) {
+		lines.push(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>');
+		content.push(result[responseHeader][j]);
+	    }
+	    Slidoc.showPopupWithList('Responses:<p></p>\n', lines, content, this.qattributes.qtype == 'text/markdown');
+	    return;
+	}
+
+	// Voting
+	var lines = [];
+
+	if (retStatus.info && retStatus.info.voteDate) {
+	    var voteDate = retStatus.info.voteDate;
+	    try { voteDate = new Date(voteDate); } catch(err) {  }
+	    lines.push('Submit Likes by: '+voteDate+'<p></p>')
+	}
+	lines.push(result[explainHeader] ? 'Explanations:<br>' : 'Responses:<br>');
+	this.voteCodes = retStatus.info.vote ? retStatus.info.vote.split(',') : ['', ''];
+
 	var ulistCorr = [];
 	var ulistOther = [];
-	for (var j=0; j<result[prefix+'response'].length; j++) {
-	    var respVal = result[prefix+'response'][j];
-	    var isCorrect = false;
-	    if (Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
-		if (checkResp.length == 1) {
-		    isCorrect = (checkResp[0] == respVal);
-		} else if (checkResp.length == 2) {
-		    try {
-			isCorrect = (Math.abs(parseFloat(respVal) - checkResp[0]) <= 1.001*checkResp[1]); 
-		    } catch(err) {Slidoc.log('Share.responseCallback: Error - invalid numeric response:'+respVal);}
-		}
-	    }
+	for (var j=0; j<nResp; j++) {
+	    var respVal = result[responseHeader][j];
+	    var isCorrect = checkIfCorrect(respVal);
 	    var correctResp = isCorrect ? '1' : '0';
-	    var line = '<li class="slidoc-plugin-Share-li">';
-	    if (result[prefix+'share']) {
-		var voteCode = result[prefix+'share'][j];
-		if (voteCode)
-		    line += '<a href="javascript:void(0);" data-correct-resp="'+correctResp+'" class="slidoc-plugin-Share-votebutton slidoc-plugin-Share-votebutton-'+voteCode+'" onclick="Slidoc.Plugins.'+this.name+"['"+this.slideId+"'].upVote('"+voteCode+"', this)"+';">&#x1f44d</a> &nbsp;'
-		else
-		    line += '<a href="javascript:void(0);" class="slidoc-plugin-Share-votebutton-disabled">&#x1f44d</a> &nbsp;'
-	    } else {
-		line += '<span></span>';
-	    }
+	    var line = '';
+
+	    // Column 1: upvote button
+	    var voteCode = result[prefix+'share'][j];
+	    if (voteCode)
+		line += '<a href="javascript:void(0);" data-correct-resp="'+correctResp+'" class="slidoc-plugin-Share-votebutton slidoc-plugin-Share-votebutton-'+voteCode+'" onclick="Slidoc.Plugins.'+this.name+"['"+this.slideId+"'].upVote('"+voteCode+"', this)"+';">&#x1f44d</a> &nbsp;'
+	    else
+		line += '<a href="javascript:void(0);" class="slidoc-plugin-Share-votebutton-disabled">&#x1f44d</a> &nbsp;'
+
+	    // Column 2: vote count
 	    if (result[prefix+'vote'] && result[prefix+'vote'][j] !== null)
 		line += '[<code class="slidoc-plugin-Share-vote">'+(1000+parseInt(result[prefix+'vote'][j])).toString().slice(-3)+'</code>]&nbsp;';
 	    else
 		line += '<code></code>';
 
+	    // Column 3 (fill in with response/explanation)
 	    line += '<code class="slidoc-plugin-Share-prefix'+(isCorrect ? '-correct' : '')+'"></code>';
 	    var prefixVal = '';
 	    var suffixVal = respVal;
-	    if (result[prefix+'explain'] || checkResp.length) {
+	    if (result[explainHeader] || checkResp.length) {
 		line += ': ';
 		prefixVal = respVal;
-		suffixVal = result[prefix+'explain'] ? result[prefix+'explain'][j] : '';
+		suffixVal = result[explainHeader] ? result[explainHeader][j] : '';
 	    }
-	    line += (this.qattributes.qtype == 'text/x-code') ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'
-	    line += '</li>';
+
+	    // Column 4 (fill in with response/explanation)
+	    line += codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'
+
+            // Columns 1, 2, 3, 4
+	    var comp = [line, null, null, prefixVal, suffixVal];
 	    if (isCorrect)
-		ulistCorr.push([line, prefixVal, suffixVal]);
+		ulistCorr.push(comp);
 	    else
-		ulistOther.push([line, prefixVal, suffixVal]);
+		ulistOther.push(comp);
 	}
 
-	var ulistAll = ulistCorr.concat(ulistOther);
-	lines.push('<ul class="slidoc-plugin-Share-list">');
-	for (var j=0; j<ulistAll.length; j++)
-	    lines.push(ulistAll[j][0]);
-	lines.push('</ul>');
-
-	var popupContent = Slidoc.showPopup(lines.join('\n'), null, true);
-	var listNodes = popupContent.lastElementChild.children;
-	for (var j=0; j<ulistAll.length; j++) {
-	    var childNodes = listNodes[j].children;
-	     // answer in code element
-	    childNodes[2].textContent = ulistAll[j][1];
-
-	    // response/explanation in pre/span element
-	    if (this.qattributes.explain == 'markdown' && window.MDConverter) 
-		childNodes[3].innerHTML = MDConverter(ulistAll[j][2], true); 
-	    else
-		childNodes[3].textContent = ulistAll[j][2];
-	}
-	if (this.qattributes.explain == 'markdown' && window.MathJax)
-	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, popupContent.id]);
+	Slidoc.showPopupWithList(lines.join('\n'), ulistCorr.concat(ulistOther), this.qattributes.explain == 'markdown');
 
 	for (var k=0; k<this.voteCodes.length; k++) {
 	    if (!this.voteCodes[k])
@@ -230,6 +312,30 @@ Share = {
 	    for (var j=0; j<elems.length; j++)
 		elems[j].classList.add('slidoc-plugin-Share-votebutton-activated');
 	}
+    },
+
+    shareExplain: function(val) {
+	Slidoc.log('Slidoc.Plugins.Share.shareExplain:', val, this.responseTally);
+	if (!this.responseTally )
+	    return;
+	var index = 0;
+	if (this.qattributes.qtype == 'number') {
+	    index = val;
+	} else {
+	    for (var j=0; j<this.responseTally.length; j++) {
+		if (this.responseTally[j][0] == val) {
+		    index = j+1;
+		    break;
+		}
+	    }
+	}
+	Slidoc.log('Slidoc.Plugins.Share.shareExplain2:', index);
+	if (!index || index > this.responseTally.length)
+	    return;
+	var lines = [];
+	for (var j=0; j<this.responseTally[index-1][3].length; j++)
+	    lines.push([ '<span class="slidoc-plugin-Share-resp"></span>', this.responseTally[index-1][3][j] ]);
+	Slidoc.showPopupWithList('Explanations for answer '+this.responseTally[index-1][0]+':<p></p>\n', lines, this.qattributes.explain == 'markdown');
     },
 
     upVote: function (voteCode, elem) {
@@ -271,6 +377,17 @@ Share = {
 
 /* PluginHead:
    <style>
+.slidoc-plugin-Share-responder {
+    display: inline-block;
+    padding: 0.5em 0.5em;
+    text-align: center;
+    background-color: #e3e3e3; /* very light gray */
+}
+
+.slidoc-plugin-Share-responder-valid { background-color: #ffcc00; }
+.slidoc-plugin-Share-responder-invalid { background-color: red; }
+.slidoc-plugin-Share-responder-repeat { background-color: orange; }
+
 .slidoc-plugin-Share-list {
   list-style-type: none;
 }

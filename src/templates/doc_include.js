@@ -2753,9 +2753,7 @@ Slidoc.contentsDisplay = function() {
     var slideElems = getVisibleSlides();
     var nSlides = slideElems.length;
     if (Sliobj.session.paced || Sliobj.params.paceLevel >= QUESTION_PACE)
-	nSlides = Math.max(1,Sliobj.session.lastSlide);
-    else
-	nSlides = slideElems.length;
+	nSlides = Math.min(nSlides, Math.max(1,Sliobj.session.lastSlide));
     var headers = [];
     for (var j=0; j<nSlides; j++) {
 	var headerElems = document.getElementsByClassName(slideElems[j].id+'-header');
@@ -4600,6 +4598,36 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
     }
     window.scrollTo(0,0);
     return contentElem;
+}
+
+Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
+    // Show popup ending with a tabular list [ [html, insertText1, insertText2, ...], ... ]
+    // Safely populate list with plain text, or Markdown (last column only)
+    //Slidoc.log('showPopupWithList:', listElems, lastMarkdown);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup(true);
+    var lines = [prefixHTML || ''];
+    lines.push('<ul class="slidoc-popup-with-list">');
+    for (var j=0; j<listElems.length; j++)
+	lines.push('<li class="slidoc-plugin-Share-li">'+listElems[j][0]+'</li>');
+    lines.push('</ul>');
+
+    var popupContent = Slidoc.showPopup(lines.join('\n'), null, true);
+    var listNodes = popupContent.lastElementChild.children;
+    for (var j=0; j<listElems.length; j++) {
+	var childNodes = listNodes[j].children;
+	var curElems = listElems[j];
+	for (var k=1; k<curElems.length; k++) {
+	    if (!curElems[k])
+		continue;
+	    if (k == curElems.length-1 && lastMarkdown && window.MDConverter)
+		childNodes[k-1].innerHTML = MDConverter(curElems[k], true);
+	    else
+		childNodes[k-1].textContent = curElems[k];
+	}
+    }
+    if (lastMarkdown && window.MathJax)
+	MathJax.Hub.Queue(["Typeset", MathJax.Hub, popupContent.id]);
 }
 
 //////////////////////////////////

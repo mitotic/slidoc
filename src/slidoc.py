@@ -213,7 +213,7 @@ def make_index(primary_tags, sec_tags, site_url, question=False, fprefix='', ind
             first_ref_list.append( f_index[0][:3] )
 
         tagid_list = [(fname[len(fprefix):] if index_file else '')+'#'+slide_id for fname, slide_id, header, reftype in tag_index]
-        tagids_quoted = urllib.quote(';'.join(tagid_list), safe='')
+        tagids_quoted = sliauth.safe_quote(';'.join(tagid_list))
 
         started = False
         j = 0
@@ -223,8 +223,8 @@ def make_index(primary_tags, sec_tags, site_url, question=False, fprefix='', ind
                 out_list.append(', ')
 
             started = True
-            query_str = '?tagindex=%d&tagconcept=%s&tagconceptref=%s&taglist=%s' % (j, urllib.quote(tag, safe=''),
-                                                urllib.quote(index_file+'#'+tag_id, safe=''), tagids_quoted )
+            query_str = '?tagindex=%d&tagconcept=%s&tagconceptref=%s&taglist=%s' % (j, sliauth.safe_quote(tag),
+                                                sliauth.safe_quote(index_file+'#'+tag_id), tagids_quoted )
             if len(query_str) > MAX_QUERY:
                 query_str = ''
             header = header or 'slide'
@@ -1072,18 +1072,22 @@ class SlidocRenderer(MathRenderer):
         if alt_choice and 'randomize_choice' not in self.options['config'].features:
             message("    ****CHOICE-WARNING: %s: Specify --features=randomize_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
 
+        params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
+            
         prefix = ''
         if not self.choice_end:
-            prefix = '</p><blockquote id="%s-choice-block" data-shuffle=""><p>\n' % self.get_slide_id()
+            prefix += '</p><blockquote id="%(id)s-choice-block" data-shuffle=""><p>\n'
             self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
-        params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
+        if name != 'Q' and (self.options['config'].hide or self.options['config'].pace):
+            prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
+
         if name == 'Q':
-            return prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''' % params
+            return (prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''') % params
         elif self.options['config'].hide or self.options['config'].pace:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''' % params
+            return (prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''') % params
         else:
-            return prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''' % params
+            return (prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''') % params
 
     
     def plugin_definition(self, name, text):
@@ -1112,9 +1116,9 @@ class SlidocRenderer(MathRenderer):
         plugin_params = {'pluginName': plugin_name,
                          'pluginLabel': 'slidoc-plugin-'+plugin_name,
                          'pluginId': slide_id+'-plugin-'+plugin_name,
-                         'pluginInitArgs': urllib.quote(args),
+                         'pluginInitArgs': sliauth.safe_quote(args),
                          'pluginNumber': self.plugin_number,
-                         'pluginButton': urllib.quote(plugin_def.get('Button', ''))}
+                         'pluginButton': sliauth.safe_quote(plugin_def.get('Button', ''))}
 
         if plugin_def_name not in self.plugin_loads:
             self.plugin_loads.add(plugin_def_name)
@@ -1763,6 +1767,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     if prev_row:
         revision_col = Index_fields.index('revision')
         admin_paced_col = Index_fields.index('adminPaced')
+        due_date_col = Index_fields.index('dueDate')
         if prev_row[revision_col] != revision:
             message('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
@@ -1776,6 +1781,9 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
             admin_paced = prev_row[admin_paced_col]
+            # Do not overwrite due date, unless it is actually specified
+            if not due_date_str:
+                due_date_str = prev_row[due_date_col]
 
     row_values = [session_name, session_name, revision, None, session_weight, due_date_str, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
@@ -1791,6 +1799,9 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     if retval['result'] != 'success':
         abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
     message('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name))
+
+    # Return possibly modified due date
+    return due_date_str
 
                 
 def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
@@ -2140,6 +2151,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     skulpt_load = False
     flist = []
     paced_files = {}
+    admin_due_date = {}
     for j, f in enumerate(input_files):
         fname = fnames[j]
         due_date_str = ''
@@ -2338,7 +2350,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if gd_hmac_key:
                 tem_attributes = renderer.sheet_attributes.copy()
                 tem_attributes.update(params=js_params)
-                update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+                admin_due_date[fname] = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                      file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
                                      js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                      renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
@@ -2391,15 +2403,19 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
             if fname in paced_files:
                 doc_str = paced_files[fname]['type'] + ' exercise'
-                due_date = paced_files[fname]['due_date']
-                if due_date:
-                    doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
+                if admin_due_date.get(fname):
+                    due_date = sliauth.parse_date(admin_due_date[fname]).ctime()
+                    doc_str += ', completed '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
+                else:
+                    due_date = paced_files[fname]['due_date']
+                    if due_date:
+                        doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
                 doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
                 toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
                 if test_params:
                     for label, query, proxy_query in test_params:
                         if config.proxy_url:
-                            doc_link += ', <a href="/_auth/login/%s&next=%s" target="_blank">%s</a>' % (proxy_query, urllib.quote('/'+outname+query), label)
+                            doc_link += ', <a href="/_auth/login/%s&next=%s" target="_blank">%s</a>' % (proxy_query, sliauth.safe_quote('/'+outname+query), label)
                         else:
                             doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
             else:

@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import hmac
 import time
+import urllib
 
 TRUNCATE_DIGEST = 8
 
@@ -34,6 +35,12 @@ def gen_late_token(key, user_id, session_name, date_str):
     # Use date string of the form '1995-12-17T03:24'
     token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s' % (user_id, session_name, date_str) )
     return token
+
+def str_encode(value):
+    return value.encode('utf-8') if isinstance(value, unicode) else value
+
+def safe_quote(value):
+    return urllib.quote(str_encode(value), safe='')
 
 def get_utc_date(date_time_str):
     """Convert local date string of the form yyyy-mm-ddThh:mm to UTC (unless it already ends with 'Z')"""

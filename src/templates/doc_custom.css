@@ -229,6 +229,26 @@ iframe {
     }
 }
 
+/* Chart bars */
+
+.slidoc-chart-box {
+}
+
+.slidoc-chart-box span, .slidoc-chart-box div {
+  display: block;
+  text-align: left;
+  font-weight: bold; 
+  font-size: 0.70em;
+  text-shadow: none;
+  overflow: hidden;
+  margin: 1px 5px;
+}
+
+.slidoc-bar-green  { background: linear-gradient(to bottom, rgb(139, 217, 47), rgb(95, 178, 33)); }
+.slidoc-bar-blue   { background: linear-gradient(to bottom,rgb(85, 177, 219), rgb(38,75, 171) ); }
+.slidoc-bar-purple { background: linear-gradient(to bottom, rgb(217, 84, 208), rgb(128, 41, 171) ); }
+.slidoc-bar-orange { background: linear-gradient(to bottom, #faa51a, #f47a20); }
+
 /* Top nav bar (responsive) http://www.w3schools.com/howto/howto_js_topnav.asp */
 ul.slidoc-topnav {
   list-style-type: none;

@@ -35,7 +35,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3f'
+VERSION = '0.96.3g'
 
 # Usually modified by importing module
 Options = {
@@ -71,6 +71,8 @@ SCORES_SHEET = 'scores_slidoc'
 BASIC_PACE    = 1
 QUESTION_PACE = 2
 ADMIN_PACE    = 3
+
+SKIP_ANSWER = 'skip'
 
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
@@ -810,6 +812,8 @@ def sheetAction(params):
                 curUserVals = None
                 testUserVals = None
                 for j in range(nRows):
+                    if shareSubrow[j][0] == SKIP_ANSWER:
+                        shareSubrow[j][0] = ''
                     if idValues[j][0] == paramId:
                         curUserVals = shareSubrow[j]
                     elif idValues[j][0] == TESTUSER_ID:
@@ -884,57 +888,47 @@ def sheetAction(params):
                             shareSubrow[j][shareOffset] = ''
 
                 sortVotes = tallyVotes and (votingCompleted or adminUser or (voteParam == 'show_live' and paramId == TESTUSER_ID))
-                respCount = {}
                 sortVals = []
                 for j in range(nRows):
                     if idValues[j][0] == TESTUSER_ID:
                         # Ignore test user response
                         continue
+                    # Always skip null responses and ungraded lates
+                    if not shareSubrow[j][0] or lateValues[j][0] == LATE_SUBMIT:
+                        continue
+                    # If voting, skip incomplete/late submissions (but allow partials)
+                    if voteParam and (lateValues[j][0] and lateValues[j][0] != PARTIAL_SUBMIT):
+                        continue
+                    # If voting, skip if explanations expected
+                    if voteParam and explainOffset and not shareSubrow[j][explainOffset]:
+                        continue
+
                     # Use earlier of submit time or timestamp to sort
                     timeVal = submitValues[j][0] or timeValues[j][0]
-                    timeVal =  sliauth.epoch_ms(timeVal) if timeVal else 0
-
-                    # Skip incomplete/late submissions (but allow partials)
-                    if not timeVal or (lateValues[j][0] and lateValues[j][0] != PARTIAL_SUBMIT):
-                        continue
-                    if not shareSubrow[j][0] or (explainOffset and not shareSubrow[j][1]):
-                        continue
+                    timeVal = sliauth.epoch_ms(timeVal) if timeVal else 0
 
                     respVal = shareSubrow[j][0]
-                    if respVal in respCount:
-                        respCount[respVal] += 1
-                    else:
-                        respCount[respVal] = 1
                     if parseNumber(respVal) is not None:
                         respSort = parseNumber(respVal)
                     else:
                         respSort = respVal
 
                     if sortVotes:
-                        # Sort by (-) vote tally and then by response
+                        # Voted: sort by (-) vote tally and then by response
                         sortVals.append( [-shareSubrow[j][voteOffset], respSort, j])
-                    elif explainOffset:
-                        # Sort by response value and then time
-                        sortVals.append( [respSort, timeVal, j] )
-                    else:
-                        # Sort by time and then response value
+                    elif voteParam and not explainOffset:
+                        # Voting on responses: sort by time and then response value
                         sortVals.append( [timeVal, respSort, j])
+                    else:
+                        # Explaining response or not voting; sort by response value and then time
+                        sortVals.append( [respSort, timeVal, j] )
 
                 sortVals.sort()
 
                 ##returnMessages.append('Debug::getShare: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
                 returnValues = []
                 for x, y, j in sortVals:
-                    subrow = shareSubrow[j]
-                    if not (subrow[0] in respCount):
-                        continue
-                    if respCount[subrow[0]] > 1:
-                        # Response occurs multiple times
-                        newSubrow = [str(subrow[0])+' ('+str(respCount[subrow[0]])+')'] + subrow[1:]
-                    else:
-                        newSubrow = subrow
-                    del respCount[subrow[0]]
-                    returnValues.append( newSubrow )
+                    returnValues.append( shareSubrow[j] )
 
         else:
             if rowUpdates and selectedUpdates:
@@ -942,7 +936,6 @@ def sheetAction(params):
             elif rowUpdates:
                 if len(rowUpdates) > len(columnHeaders):
                     raise Exception("Error::row_headers length exceeds no. of columns in sheet '"+sheetName+"'; delete it or edit headers.")
-
 
                 userId = rowUpdates[columnIndex['id']-1] or ''
                 displayName = rowUpdates[columnIndex['name']-1] or ''
@@ -1160,11 +1153,13 @@ def sheetAction(params):
                             rowValues[j] = curDate
                             returnInfo['submitTimestamp'] = curDate
 
-                        elif colHeader[-6:] == '_share':
+                        elif colHeader.endswith('_share'):
                             # Generate share value by computing message digest of 'response [: explain]'
-                            if j >= 1 and rowValues[j-1] and columnHeaders[j-1][-9:] == '_response':
+                            if j >= 1 and rowValues[j-1] and rowValues[j-1] != SKIP_ANSWER and columnHeaders[j-1].endswith('_response'):
+                                # Upvote response
                                 rowValues[j] = sliauth.digest_hex(normalizeText(rowValues[j-1]))
-                            elif j >= 2 and rowValues[j-1] and columnHeaders[j-1][-8:] == '_explain' and columnHeaders[j-2][-9:] == '_response':
+                            elif j >= 2 and rowValues[j-1] and columnHeaders[j-1].endswith('_explain') and columnHeaders[j-2].endswith('_response'):
+                                # Upvote response: explanation
                                 rowValues[j] = sliauth.digest_hex(rowValues[j-1]+': '+normalizeText(rowValues[j-2]))
                             else:
                                 rowValues[j] = ''

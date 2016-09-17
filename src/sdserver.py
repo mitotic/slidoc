@@ -96,7 +96,6 @@ EXPIRES_DAYS = 30
 WS_TIMEOUT_SEC = 3600
 EVENT_BUFFER_SEC = 3
 
-
 class UserIdMixin(object):
     @classmethod
     def get_path_base(cls, path):
@@ -113,7 +112,7 @@ class UserIdMixin(object):
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
             token = token + ',' + sliauth.gen_user_token(str(token), TESTUSER_ID)
-        cookieStr = ':'.join( urllib.quote(x, safe='') for x in [username, origId, token, displayName, email, altid, restrict] );
+        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, restrict] );
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
@@ -640,14 +639,14 @@ class PluginManager(object):
         key = sliauth.gen_hmac_token(Options['auth_key'], salt+':'+filename)
         if salt == '_filename':
             # Backwards compatibility
-            return urllib.quote(key, safe='')
+            return sliauth.safe_quote(key)
         else:
-            return urllib.quote(salt+':'+key, safe='')
+            return sliauth.safe_quote(salt+':'+key)
 
     @classmethod
     def validFileKey(cls, filepath, key):
         salt, _, oldpath = key.partition(':')
-        return urllib.quote(key, safe='') == cls.getFileKey(filepath, salt=salt)
+        return sliauth.safe_quote(key) == cls.getFileKey(filepath, salt=salt)
 
     def __init__(self, pluginName):
         self.pluginName = pluginName
@@ -783,7 +782,7 @@ class AuthMessageHandler(BaseHandler):
                 print >> sys.stderr, "AuthMessageHandler.post", msg
             else:
                 msg = 'Error in processing message'
-        self.redirect('/interact/?note='+urllib.quote(msg, safe=''))            
+        self.redirect('/interact/?note='+sliauth.safe_quote(msg))            
 
 
 class AuthLoginHandler(BaseHandler):
