@@ -28,8 +28,13 @@ function action(label) {
     <hr>
     <li><a href="javascript:check('shutdown')">shutdown</a></li>
     <hr>
+    <li><a href="/_import">import</a></li>
+    <hr>
+    <li><a href="javascript:action('export')">export</a></li>
+    <hr>
     <li><a href="javascript:action('backup')">backup</a></li>
   </ul>
+  Interactive session: <a href="/_respond/{{interactive}}">{{interactive}}</a>
   <span id="actionstatus"></span>
   <p></p>
 </div>

@@ -2202,13 +2202,9 @@ function createSession() {
 	   };
 }
 
-function createQuestionAttempted(response, explain) {
-    // response field should always be present, non-null for attempted questions
-    Slidoc.log('createQuestionAttempted:', response, explain);
-    var qAttempted = {response: response||''};
-    if (explain)
-	qAttempted.explain = explain;
-    return qAttempted;
+function createQuestionAttempted(response) {
+    Slidoc.log('createQuestionAttempted:', response);
+    return {'response': response||''};
 }
 
 function copyObj(oldObj, excludeAttrs) {
@@ -2250,7 +2246,11 @@ function packSession(session) {
 	    if (qnumber in sessionCopy.questionsAttempted) {
 		if (hmatch[2] in sessionCopy.questionsAttempted[qnumber]) {
 		    // Copy field to column and delete from session object
-		    rowObj[header] = sessionCopy.questionsAttempted[qnumber][hmatch[2]] || '';
+		    var rowValue = sessionCopy.questionsAttempted[qnumber][hmatch[2]] || '';
+		    // Use SKIP_ANSWER as place holder for null answer attempts in spreadsheet column
+		    if (!rowValue && hmatch[2] == 'response')
+			rowValue = SKIP_ANSWER;
+		    rowObj[header] = rowValue;
 
 		    delete sessionCopy.questionsAttempted[qnumber][hmatch[2]];
 
@@ -2298,9 +2298,22 @@ function unpackSession(row) {
 	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
 		// Copy only response/explain field to session
 		var qnumber = parseInt(hmatch[1]);
-		if (!(qnumber in session.questionsAttempted))
-		    session.questionsAttempted[qnumber] = createQuestionAttempted();
-		session.questionsAttempted[qnumber][hmatch[2]] = row[header];
+		if (hmatch[2] == 'response') {
+		    if (!row[header]) {
+			// Null row entry deletes attempt
+			if (qnumber in session.questionsAttempted)
+			    delete session.questionsAttempted[qnumber];
+		    } else {
+			if (!(qnumber in session.questionsAttempted))
+			    session.questionsAttempted[qnumber] = createQuestionAttempted();
+			// SKIP_ANSWER implies null answer attempt
+			session.questionsAttempted[qnumber][hmatch[2]] = (row[header] == SKIP_ANSWER) ? '' : row[header];
+		    }
+		} else {
+		    // Explanation (ignored if no attempt)
+		    if (qnumber in session.questionsAttempted)
+			session.questionsAttempted[qnumber][hmatch[2]] = row[header];
+		}
 	    }
 	}
     }
@@ -2989,9 +3002,6 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	alert(Slidoc.sheetIsLocked());
 	return;
     }
-    if (response == SKIP_ANSWER)
-	    response = '';
-
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
@@ -3216,9 +3226,6 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 
     // Not setup or after submit
     // Record attempt and tally up scores
-    if (!response)
-	response = SKIP_ANSWER;  // Response needs to be non-null for attempted questions
-
     var explain = '';
     if (question_attrs.explain) {
 	var textareaElem = document.getElementById(slide_id+'-answer-textarea');
@@ -3226,7 +3233,9 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     }
 
     // Save attempt info
-    var qAttempted = createQuestionAttempted(response, explain);
+    var qAttempted = createQuestionAttempted(response);
+    if (explain)
+	qAttempted.explain = explain;
     if (pluginResp)
 	qAttempted.plugin = pluginResp;
     if (expect)
@@ -3368,7 +3377,7 @@ function scoreAnswer(response, qtype, corrAnswer) {
     if (!corrAnswer)
         return null;
 
-    if (response == SKIP_ANSWER)
+    if (!response)
 	return 0;
 
     var respValue = null;

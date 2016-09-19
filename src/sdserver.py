@@ -30,6 +30,8 @@ Command arguments:
 """
 
 import collections
+import cStringIO
+import csv
 import datetime
 import functools
 import importlib
@@ -191,7 +193,7 @@ class ActionHandler(BaseHandler):
             return
         action, sep, sessionName = subpath.partition('/')
         if action == '_dash':
-            self.render('dashboard.html')
+            self.render('dashboard.html', interactive=WSHandler.getInteractiveSession())
         elif action == '_clear':
             sdproxy.suspend_cache('clear')
             self.write('Clearing cache<br><a href="/_dash">Dashboard</a>')
@@ -202,8 +204,33 @@ class ActionHandler(BaseHandler):
                 Global.backup = None
             sdproxy.suspend_cache('shutdown')
             self.write('Starting shutdown (also cleared cookies)<br><a href="/_dash">Dashboard</a>')
+        elif action in ('_respond'):
+            sessionName, sep, respId = sessionName.partition(';')
+            if not sessionName:
+                self.write('Please specify /_respond/session name')
+                return
+            nameMap = sdproxy.lookupRoster('name')
+            if respId:
+                if respId in nameMap:
+                    sdproxy.importUserAnswers(sessionName, respId)
+                else:
+                    self.write('User ID '+respId+' not in roster')
+                    return
+            sheet = sdproxy.Sheet_cache[sessionName]
+            colIndex = sdproxy.indexColumns(sheet)
+            idSet = set([x[0] for x in sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)])
+            lines = ['<ul>\n']
+            count = 0
+            for idVal, name in nameMap.items():
+                if idVal in idSet:
+                    count += 1
+                    lines.append('<li>'+name+'</li>\n')
+                else:
+                    lines.append('<li>%s (<a href="/_respond/%s;%s">respond</a>)</li>\n' % (name, sessionName, idVal))
+            lines.append('</ul>\n')
+            self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
         elif action in ('_getcol', '_getrow'):
-            sessionName, sep, label = sessionName.partition('.')
+            sessionName, sep, label = sessionName.partition(';')
             sheet = sdproxy.Sheet_cache[sessionName]
             self.write('<a href="/_dash">Dashboard</a><br>')
             if not sheet:
@@ -243,9 +270,17 @@ class ActionHandler(BaseHandler):
             self.write('Locked sessions: %s<br><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
         elif action == '_backup':
             errors = sdproxy.backupCache(sessionName)
+            self.set_header('Content-Type', 'text/plain')
             self.write('Backed up cache to directory '+sessionName)
             if errors:
-                self.write('<pre>'+errors+'</pre>')
+                self.write(errors)
+        elif action == '_import':
+            self.render('import.html', site_label=Options['site_label'])
+        elif action == '_export':
+            self.set_header('Content-Type', 'text/csv')
+            self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % (sessionName+'_answers'))
+            content = sdproxy.exportAnswers(sessionName)
+            self.write(content)
         elif action == '_status':
             self.write('<a href="/_dash">Dashboard</a><br>')
             self.write('<pre>')
@@ -263,6 +298,37 @@ class ActionHandler(BaseHandler):
                 self.write("  %s: %s (idle: %ds)\n" % x)
             self.write('</pre>')
 
+    def post(self, subpath, inner=None):
+        if self.get_current_user() not in (ADMINUSER_ID, TESTUSER_ID):
+            self.write('Action not permitted: '+self.get_current_user())
+            return
+        action, sep, sessionName = subpath.partition('/')
+        if action == '_import':
+            if 'upload' not in self.request.files:
+                self.write('No file to upload!')
+                return
+            fileinfo = self.request.files['upload'][0]
+            fname = fileinfo['filename']
+            fbody = fileinfo['body']
+            sessionName = self.get_argument('session','')
+            submitDate = self.get_argument('submitdate','')
+            if Options['debug']:
+                print >> sys.stderr, 'ActionHandler:_import', sessionName, submitDate, fname, len(fbody)
+            self.set_header('Content-Type', 'text/plain')
+            if not sessionName:
+                self.write('Must specify session name')
+                return
+            uploadedFile = cStringIO.StringIO(fbody)
+            missed, errors = importAnswersAux(sessionName, submitDate, fname, uploadedFile)
+            if not missed and not errors:
+                self.write('Imported answers from '+fname)
+            else:
+                if missed:
+                    self.write('ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n')
+                if errors:
+                    self.write('\n'.join(errors)+'\n')
+        else:
+            self.write('Invalid post action: '+action)
 
 class ProxyHandler(BaseHandler):
     def get(self):
@@ -306,8 +372,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         return lst
 
     @classmethod
-    def getInteractive(cls):
-        return cls._interactiveSession
+    def getInteractiveSession(cls):
+        if cls._interactiveSession[1]:
+            return UserIdMixin.get_path_base(cls._interactiveSession[0])
+        else:
+            return ''
 
     @classmethod
     def setupInteractive(cls, path, slideId='', questionAttrs=None):
@@ -389,12 +458,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if int(qmatch.group(1)) != qnumber:
                 return 'Wrong question'
 
-        response = message
+        response = message.strip()
         explain = ''
         if questionAttrs['qtype'] in ('number', 'choice', 'multichoice'):
-            response, _, tail = response.partition(' ')
-            if qExplain in headers:
-                explain = tail.strip()
+            comps = response.split()
+            if len(comps) > 1:
+                if qExplain in headers:
+                    explain = response[len(comps[0]):].strip()
+                response = comps[0]    # Ignore tail portion of message
 
         if questionAttrs['qtype'] == 'number' and sdproxy.parseNumber(response) is None:
             return 'Expecting number'
@@ -764,8 +835,8 @@ class AuthMessageHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath=''):
         note = self.get_argument("note", "")
-        path, slideId, qnumber = WSHandler.getInteractive()
-        label = '%s: %s' % (self.get_id_from_cookie(), self.get_path_base(path) if slideId else 'No interactive session')
+        interactiveSession = WSHandler.getInteractiveSession()
+        label = '%s: %s' % (self.get_id_from_cookie(), interactiveSession if interactiveSession else 'No interactive session')
         self.render("interact.html", note=note, site_label=Options['site_label'], session_label=label)
 
     @tornado.web.authenticated
@@ -963,11 +1034,14 @@ class Application(tornado.web.Application):
                           (r"/_websocket/(.*)", WSHandler),
                           (r"/interact(/.*)?", AuthMessageHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
+                          (r"/(_export/[-\w.]+)", ActionHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
-                          (r"/(_(getcol|getrow)/[-\w.]+)", ActionHandler),
-                          (r"/(_(clear|dash|shutdown|status))", ActionHandler),
+                          (r"/(_respond)", ActionHandler),
+                          (r"/(_respond/[-\w.;]+)", ActionHandler),
+                          (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
+                          (r"/(_(clear|dash|import|shutdown|status))", ActionHandler),
                            ]
 
         fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
@@ -992,7 +1066,7 @@ def processTwitterMessage(msg):
     if Options['auth_type'].startswith('twitter,'):
         status = WSHandler.processMessage(fromUser, fromName, message)
     else:
-        twitterMap = sdproxy.lookupRoster('twitter')
+        twitterMap = sdproxy.makeRosterMap('twitter', lowercase=True)
         if not twitterMap:
             status = 'Error - no twitter entries in roster. Message from '+fromUser+' dropped'
         else:
@@ -1004,6 +1078,104 @@ def processTwitterMessage(msg):
     print >> sys.stderr, status
     return status
 
+def importAnswers():
+    comps = options.import_answers.split(',')
+    sessionName = comps[0]
+    filepath = comps[1] if len(comps) > 1 else ''
+    submitDate = comps[2] if len(comps) > 2 else ''
+    if not filepath:
+        filepath = sessionName+'.csv'
+    print >> sys.stderr, "Importing answers from", filepath
+
+    with open(filepath, 'rb') as csvfile:
+        missed, errors = importAnswersAux(sessionName, submitDate, filepath, csvfile)
+
+    if not missed and not errors:
+        print >> sys.stderr, 'Imported answers from', filepath
+    else:
+        if errors:
+            print >> sys.stderr, '\n'.join(errors)
+        if missed:
+            print >> sys.stderr, "ERROR: Missed uploading IDs: ", ' '.join(missed)
+
+def importAnswersAux(sessionName, submitDate, filepath, csvfile):
+    missed = []
+    errors = []
+    try:
+        dialect = csv.Sniffer().sniff(csvfile.read(1024))
+        csvfile.seek(0)
+        reader = csv.reader(csvfile, dialect)
+        headers = reader.next()
+        idCol = 0
+        nameCol = 0
+        twitterCol = 0
+        qresponse = {}
+        for j, header in enumerate(headers):
+            hmatch = re.match(r'^(qx?)(\d+)$', header)
+            if hmatch:
+                qnumber = int(hmatch.group(2))
+                qresponse[qnumber] = (j, (hmatch.group(1) == 'qx'))
+            elif header == 'id':
+                idCol = j+1
+            elif header == 'name':
+                nameCol = j+1
+            elif header == 'twitter':
+                twitterCol = j+1
+
+        nameMap = sdproxy.lookupRoster('name')
+        idMap = {}
+        if twitterCol:
+            idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
+            if not idMap:
+                raise Exception('No twitter ids found in roster')
+        elif not idCol:
+            raise Exception('No id or twitter column for importing answers from '+filepath)
+
+        for row in reader:
+            answers = {}
+            for qnumber, value in qresponse.items():
+                response = row[value[0]].strip()
+                if not response:
+                    continue
+                explain = ''
+                if value[1]:
+                    comps = response.split()
+                    if len(comps) > 1:
+                        explain = response[len(comps[0]):].strip()
+                        response = comps[0]
+                answers[qnumber] = {'response': response}
+                if value[1]:
+                    answers[qnumber]['explain'] = explain
+            userId = None
+            if idCol:
+                userId = row[idCol-1]
+                if nameMap and userId not in nameMap:
+                    missed.append(userId)
+                    errors.append('MISSING: User ID '+userId+' not found in roster')
+                    continue
+            elif twitterCol:
+                twitterId = row[twitterCol-1] 
+                userId = idMap.get(twitterId.lower())
+                if not userId:
+                    missed.append('@'+twitterId)
+                    errors.append('MISSING: Twitter ID '+twitterId+' not found in roster')
+                    continue
+
+            displayName = row[nameCol-1] if nameCol else ''
+            try:
+                if Options['debug']:
+                    print >> sys.stderr, 'DEBUG: importAnswersAux', sessionName, userId, displayName, answers
+                sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate)
+            except Exception, excp:
+                errors.append('Error in import for '+userId+': '+str(excp))
+                missed.append(userId)
+                missed.append('... and others')
+                break
+    except Exception, excp:
+        errors = [ 'Error in importAnswersAux: '+str(excp)] + errors
+
+    return missed, errors
+
 def main():
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
@@ -1014,6 +1186,7 @@ def main():
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("gsheet_url", default="", help="Google sheet URL")
+    define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
@@ -1110,6 +1283,8 @@ def main():
         sys.exit('SSL options must be specified for port 443')
     http_server.listen(options.port)
     print >> sys.stderr, "Listening on port", options.port
+    if options.import_answers:
+        IOLoop.current().add_callback(importAnswers)
     IOLoop.current().start()
 
 

@@ -1080,6 +1080,8 @@ class SlidocRenderer(MathRenderer):
             self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
         if name != 'Q' and (self.options['config'].hide or self.options['config'].pace):
+            if prefix:
+                prefix += '''<div class="slidoc-chart-header %(id)s-chart-header" style="display: none;"></div>\n'''
             prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
 
         if name == 'Q':
@@ -2185,7 +2187,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['slideDelay'] = file_config.slide_delay or 0
 
             js_params['lateCredit'] = file_config.late_credit or 0
-            js_params['participationCredit'] = file_config.participation or None
+            js_params['participationCredit'] = file_config.participation_credit or 0
                 
             topnav_opts = file_config.topnav or ''
             gd_sheet_url = file_config.gsheet_url or ''
@@ -2651,7 +2653,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation', 'prereqs', 'revision', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'revision', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
     
 def read_first_line(file):
     # Read first line of file and rewind it
@@ -2757,7 +2759,7 @@ parser.add_argument('--media_url', metavar='URL', help='URL for media')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')
-parser.add_argument('--participation', help='Participation credit', action="store_true", default=None)
+parser.add_argument('--participation_credit', type=int, metavar='INTEGER', help='Participation credit: 0 (none), 1 (per question), 2 (for whole session)')
 parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)

@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3g';
+var VERSION = '0.96.3h';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -61,7 +61,7 @@ var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.co
 //  The order and content of the roster entries determine the corresponding entries in the score sheet as well.
 //
 //  The first row after the header row may contain the special test user entry with TESTUSER_ID.
-//  There can be zero or more additional rows with special display names starting with a hyphen.
+//  There can be zero or more additional rows with special display names starting with a hash (#).
 //  Such rows and any test user row will be excluded from class averages etc.
 //
 //  An additional column named twitter may be used to map twitter IDs to session IDs.
@@ -101,7 +101,7 @@ var AVERAGE_ID = '_average';
 var TESTUSER_ID = '_test_user';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
-var TESTUSER_ROSTER = ['-user, -test', TESTUSER_ID, '', ''];
+var TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', ''];
 
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
@@ -858,7 +858,7 @@ function sheetAction(params) {
 		    if (adminUser && sessionEntries && userId != MAXSCORE_ID)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
 
-		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1])
+		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1] && userId != TESTUSER_ID)
 			throw("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'");
 
 		    if (!adminUser && rowUpdates.length > fieldsMin) {
@@ -896,15 +896,20 @@ function sheetAction(params) {
 			if (colHeader == 'Timestamp') {
 			    // Timestamp is always updated, unless it is explicitly specified by admin
 			    if (adminUser && colValue) {
-				try { rowValues[j] = createDate(colValue); } catch (err) {}
+				rowValues[j] = createDate(colValue);
 			    } else {
 				rowValues[j] = curDate;
 			    }
 			} else if (colHeader == 'initTimestamp' && newRow) {
 			    rowValues[j] = curDate;
 			} else if (colHeader == 'submitTimestamp' && params.submit) {
-			    rowValues[j] = curDate;
-			    returnInfo.submitTimestamp = curDate;
+			    if (userId == TESTUSER_ID && colValue) {
+				// Only test user may overwrite submitTimestamp
+				rowValues[j] = createDate(colValue);
+			    } else {
+				rowValues[j] = curDate;
+			    }
+			    returnInfo.submitTimestamp = rowValues[j];
 			} else if (colHeader.match(/_share$/)) {
 			    // Generate share value by computing message digest of 'response [: explain]'
 			    if (j >= 1 && rowValues[j-1] && rowValues[j-1] != SKIP_ANSWER && columnHeaders[j-1].match(/_response$/)) {
@@ -944,13 +949,14 @@ function sheetAction(params) {
                         }
                         if (params.submit) {
                             // Use test user submission time as due date for admin-paced sessions
-                            setValue(sheetName, 'dueDate', curDate, INDEX_SHEET);
+			    var submitTimetamp = rowValues[submitTimestampCol-1];
+                            setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
                             var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
                             var initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows);
                             for (var j=0; j < idColValues.length; j++) {
                                 // Submit all other users who have started a session
                                 if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
-                                    setValue(idColValues[j], 'submitTimestamp', curDate, sheetName);
+                                    setValue(idColValues[j], 'submitTimestamp', submitTimetamp, sheetName);
                                 }
                             }
                         }
@@ -967,7 +973,7 @@ function sheetAction(params) {
 			    // Admin can modify grade columns only for submitted sessions before 'effective' due date
 			    // and only for non-late submissions thereafter
 			    var allowGrading = prevSubmitted || (pastSubmitDeadline && lateToken != LATE_SUBMIT);
-			    if (!allowGrading)
+			    if (!allowGrading && !params.import)
 				throw("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'");
 			}
 		    }
@@ -998,7 +1004,7 @@ function sheetAction(params) {
 			    if (voteSubmission) {
 				// Do not modify timestamp for voting (to avoid race conditions with grading etc.)
 			    } else if (adminUser && colValue) {
-				try { modValue = createDate(colValue); } catch (err) {}
+				modValue = createDate(colValue);
 			    } else {
 				modValue = curDate;
 			    }
@@ -1006,6 +1012,8 @@ function sheetAction(params) {
 			    if (partialSubmission) {
 				modValue = curDate;
 				returnInfo.submitTimestamp = curDate;
+			    } else if (adminUser && colValue) {
+				modValue = createDate(colValue);
 			    }
 			} else if (colHeader.match(/_vote$/)) {
 			    if (voteSubmission && colValue) {
@@ -1628,9 +1636,9 @@ function sessionStatSheet() {
 	    var temIds = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], nids, 1);
 	    var temNames = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['name'], nids, 1);
 	    for (var j=0; j<nids; j++) {
-		// Skip any initial row(s) in the roster with test user or ID/names starting with underscore/hyphen
+		// Skip any initial row(s) in the roster with test user or ID/names starting with underscore/hash
 		// when computing averages and other stats
-		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^_/) || temNames[j][0].match(/^\-/))
+		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^_/) || temNames[j][0].match(/^#/))
 		    avgStartRow += 1;
 		else
 		    break;
@@ -1699,12 +1707,8 @@ function sessionStatSheet() {
     notify('Created sheet '+statSheet.getParent().getName()+':'+statSheetName, 'Slidoc Stats');
 }
 
-function createQuestionAttempted(response, explain) {
-    // response field should always be present, non-null for attempted questions
-    var qAttempted = {response: response||''};
-    if (explain)
-	qAttempted.explain = explain;
-    return qAttempted;
+function createQuestionAttempted(response) {
+    return {'response': response||''};
 }
 
 function unpackSession(headers, row) {
@@ -1727,9 +1731,22 @@ function unpackSession(headers, row) {
 	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
 		// Copy only response/explain field to session
 		var qnumber = parseInt(hmatch[1]);
-		if (!(qnumber in session.questionsAttempted))
-		    session.questionsAttempted[qnumber] = createQuestionAttempted();
-		session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+		if (hmatch[2] == 'response') {
+		    if (!row[j]) {
+			// Null row entry deletes attempt
+			if (qnumber in session.questionsAttempted)
+			    delete session.questionsAttempted[qnumber];
+		    } else {
+			if (!(qnumber in session.questionsAttempted))
+			    session.questionsAttempted[qnumber] = createQuestionAttempted();
+			// SKIP_ANSWER implies null answer attempt
+			session.questionsAttempted[qnumber][hmatch[2]] = (row[j] == SKIP_ANSWER) ? '' : row[j];
+		    }
+		} else {
+		    // Explanation (ignored if no attempt)
+		    if (qnumber in session.questionsAttempted)
+			session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+		}
 	    }
 	}
     }
@@ -1742,7 +1759,7 @@ function scoreAnswer(response, qtype, corrAnswer) {
     if (!corrAnswer)
         return null;
 
-    if (response == SKIP_ANSWER)
+    if (!response)
 	return 0;
 
     var respValue = null;
@@ -2129,9 +2146,9 @@ function updateScoreSheet() {
 		var temIds = userInfoSheet.getSheetValues(startRow, idCol, nUserIds, 1);
 		var temNames = userInfoSheet.getSheetValues(startRow, MIN_HEADERS.indexOf('name')+1, nUserIds, 1);
 		for (var j=0; j<nUserIds; j++) {
-		    // Skip any initial row(s) in the roster with test user or IDs/names starting with hyphen
+		    // Skip any initial row(s) in the roster with test user or IDs/names starting with underscore/hash
 		    // when computing averages and other stats
-		    if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\-/) || temNames[j][0].match(/^\-/))
+		    if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\_/) || temNames[j][0].match(/^#/))
 			avgStartRow += 1;
 		    else
 			break;
@@ -2235,24 +2252,30 @@ function updateScoreSheet() {
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		var lookups = [];
-		if (scoreWeight) {
-		    // Tally scores
-		    var rowId = scoreIdVals[j];
-		    if (rowId == MAXSCORE_ID) {
-			lookups.push( scoreWeight );
-		    } else {
-			var rowValues = sessionSheet.getSheetValues(sessionRowIndex[rowId], 1, 1, sessionColHeaders.length)[0];
-			var savedSession = unpackSession(sessionColHeaders, rowValues);
-			if (savedSession) {
-			    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params);
-			    lookups.push( scores.weightedCorrect );
+		var rowId = scoreIdVals[j];
+		var sessionRowNum = sessionRowIndex[rowId];
+		if (sessionRowNum || rowId == MAXSCORE_ID) {
+		    if (sessionAttributes.params.participationCredit && sessionAttributes.params.participationCredit > 1) {
+			// Per session participation credit
+			lookups.push( scoreWeight || 1 );
+		    } else if (scoreWeight) {
+			// Tally scores
+			if (rowId == MAXSCORE_ID) {
+			    lookups.push( scoreWeight );
+			} else {
+			    var rowValues = sessionSheet.getSheetValues(sessionRowNum, 1, 1, sessionColHeaders.length)[0];
+			    var savedSession = unpackSession(sessionColHeaders, rowValues);
+			    if (savedSession) {
+				var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params);
+				lookups.push( scores.weightedCorrect );
+			    }
 			}
 		    }
+		    if (gradeWeight)
+			lookups.push( vlookup('q_grades', j+scoreStartRow) );
+		    if (otherWeight)
+			lookups.push( vlookup('q_other', j+scoreStartRow) );
 		}
-		if (gradeWeight)
-		    lookups.push( vlookup('q_grades', j+scoreStartRow) );
-		if (otherWeight)
-		    lookups.push( vlookup('q_other', j+scoreStartRow) );
 		
 		if (lookups.length) {
 		    var lateToken = vlookup('lateToken', j+scoreStartRow);
@@ -2264,6 +2287,8 @@ function updateScoreSheet() {
 			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", "", '+cumScore+ ' )';
 		    }
 		    scoreFormulas.push(['=IFERROR('+combinedScore+')']);
+		} else {
+		    scoreFormulas.push(['']);
 		}
 	    }
 

@@ -206,8 +206,10 @@ Share = {
 	    if (this.qattributes.qtype == 'number' && !this.qattributes.vote) {
 		// No voting; display sorted numeric responses
 		// (If voting, this display will be suppressed)
-		var lines = ['Numeric responses:<p></p>\n'];
-		lines.push['<ul>\n'];
+		var lines = ['Numeric responses:\n'];
+		if (result[explainHeader])
+		    lines += '<br><em>Click on the bars to see explanations for each answer</em>\n'
+		lines.push['<p></p><ul>\n'];
 		for (var j=0; j<this.responseTally.length; j++) {
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
 		    var label = this.responseTally[j][0] + ' ('+this.responseTally[j][2]+')';
@@ -220,9 +222,14 @@ Share = {
 
 	    } else if (this.qattributes.qtype == 'choice') {
 		// Display choice responses inline (both for voting and non-voting cases)
+		var chartHeader = document.getElementById(this.slideId+'-chart-header');
+		if (chartHeader && result[explainHeader])
+		    chartheader.innerHTML = '<em>Click on the bars to see explanations for each choice</em>';
+
 		var boxes = document.getElementsByClassName(this.slideId+'-chart-box');
 		for (var j=0; j<boxes.length; j++)
 		    boxes[j].style.display = null;
+
 		for (var j=0; j<this.responseTally.length; j++) {
 		    var choice = this.responseTally[j][0];
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';

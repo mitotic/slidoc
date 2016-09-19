@@ -18,6 +18,7 @@ admin commands:
 """
 from __future__ import print_function
 
+import cStringIO
 import csv
 import datetime
 import json
@@ -30,12 +31,14 @@ import time
 import urllib
 import urllib2
 
+from collections import defaultdict, OrderedDict
+
 import tornado.httpclient
 from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3g'
+VERSION = '0.96.3h'
 
 # Usually modified by importing module
 Options = {
@@ -62,7 +65,7 @@ AVERAGE_ID = '_average'
 TESTUSER_ID = '_test_user'   #var
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
-TESTUSER_ROSTER = ['-user, -test', TESTUSER_ID, '', '']  #var
+TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']  #var
 
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
@@ -130,6 +133,7 @@ def initCache():
 initCache()
 
 def backupCache(dirpath=''):
+    # Returns null string on success or error string
     dirpath = dirpath or Options['BACKUP_DIR'] or '_backup'
     if dirpath.endswith('-'):
         dirpath += sliauth.iso_date()[:16].replace(':','-')
@@ -202,7 +206,6 @@ def backupSheet(name, sheet, dirpath, errorList):
                 writer.writerow(rowStr)
     except Exception, excp:
         errorList.append('Error in saving sheet %s (row %d): %s' % (name, rowNum, excp))
-
 
 def getSheet(sheetName, optional=False):
     if sheetName in Lock_cache or (Global.suspended and Global.suspended != 'backup'):
@@ -565,7 +568,7 @@ def handle_http_response(response):
         schedule_update(0 if Global.suspended else Options['MIN_WAIT_SEC'])
 
         
-def sheetAction(params):
+def sheetAction(params, notrace=False):
     # Returns a JSON object
     # object.result = 'success' or 'error'
     # object.value contains updated row values list if get=1; otherwise it is [].
@@ -679,7 +682,6 @@ def sheetAction(params):
             dueDate = sessionEntries.get('dueDate')
             gradeDate = sessionEntries.get('gradeDate')
             voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
-
 
         # Check parameter consistency
         headers = json.loads(params.get('headers','')) if params.get('headers','') else None
@@ -818,7 +820,6 @@ def sheetAction(params):
                         curUserVals = shareSubrow[j]
                     elif idValues[j][0] == TESTUSER_ID:
                         testUserVals = shareSubrow[j]
-
 
                 if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
@@ -1101,7 +1102,7 @@ def sheetAction(params):
                     if adminUser and sessionEntries and userId != MAXSCORE_ID:
                         raise Exception("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'")
 
-                    if submitTimestampCol and rowUpdates[submitTimestampCol-1]:
+                    if submitTimestampCol and rowUpdates[submitTimestampCol-1] and userId != TESTUSER_ID:
                         raise Exception("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'")
 
                     if not adminUser and len(rowUpdates) > fieldsMin:
@@ -1140,18 +1141,19 @@ def sheetAction(params):
                         if colHeader == 'Timestamp':
                             # Timestamp is always updated, unless it is explicitly specified by admin
                             if adminUser and colValue:
-                                try:
-                                    rowValues[j] = createDate(colValue)
-                                except Exception, err:
-                                    pass
+                                rowValues[j] = createDate(colValue)
                             else:
                                 rowValues[j] = curDate
 
                         elif colHeader == 'initTimestamp' and newRow:
                             rowValues[j] = curDate
                         elif colHeader == 'submitTimestamp' and params.get('submit',''):
-                            rowValues[j] = curDate
-                            returnInfo['submitTimestamp'] = curDate
+                            if userId == TESTUSER_ID and colValue:
+                                # Only test user may overwrite submitTimestamp
+                                rowValues[j] = createDate(colValue)
+                            else:
+                                rowValues[j] = curDate
+                            returnInfo['submitTimestamp'] = rowValues[j]
 
                         elif colHeader.endswith('_share'):
                             # Generate share value by computing message digest of 'response [: explain]'
@@ -1195,13 +1197,14 @@ def sheetAction(params):
                             setValue(sheetName, 'adminPaced', rowValues[lastSlideCol-1], INDEX_SHEET)
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
-                            setValue(sheetName, 'dueDate', curDate, INDEX_SHEET)
+                            submitTimetamp = rowValues[submitTimestampCol-1]
+                            setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
                             idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
                             initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows)
                             for j in range(len(idColValues)):
                                 # Submit all other users who have started a session
                                 if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
-                                    setValue(idColValues[j], 'submitTimestamp', curDate, sheetName)
+                                    setValue(idColValues[j], 'submitTimestamp', submitTimestamp, sheetName)
 
                 elif selectedUpdates:
                     # Update selected row values
@@ -1214,7 +1217,7 @@ def sheetAction(params):
                             # Admin can modify grade columns only for submitted sessions before 'effective' due date
                             # and only for non-late submissions thereafter
                             allowGrading = prevSubmitted or (pastSubmitDeadline and lateToken != LATE_SUBMIT)
-                            if not allowGrading:
+                            if not allowGrading and not params.get('import'):
                                 raise Exception("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteSubmission:
@@ -1242,10 +1245,7 @@ def sheetAction(params):
                                 # Do not modify timestamp for voting (to avoid race conditions with grading etc.)
                                 pass
                             elif adminUser and colValue:
-                                try:
-                                    modValue = createDate(colValue)
-                                except Exception, err:
-                                    pass
+                                modValue = createDate(colValue)
                             else:
                                 modValue = curDate
 
@@ -1253,6 +1253,8 @@ def sheetAction(params):
                             if partialSubmission:
                                 modValue = curDate
                                 returnInfo['submitTimestamp'] = curDate
+                            elif adminUser and colValue:
+                                modValue = createDate(colValue)
 
                         elif colHeader.endswith('_vote'):
                             if voteSubmission and colValue:
@@ -1314,7 +1316,7 @@ def sheetAction(params):
 
     except Exception, err:
         # if error, return this
-        if Options['DEBUG']:
+        if Options['DEBUG'] and not notrace:
             import traceback
             traceback.print_exc()
 
@@ -1322,7 +1324,7 @@ def sheetAction(params):
                   "info": returnInfo,
                   "messages": '\n'.join(returnMessages)}
 
-    if Options['DEBUG']:
+    if Options['DEBUG'] and not notrace:
         print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
     
     return retObj
@@ -1397,21 +1399,202 @@ def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', ema
     return rowVals
 
     
-def getUserRow(sessionName, userId, displayName, opts={}):
+def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
     getParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'name': displayName, 'get': '1'}
     getParams.update(opts)
 
-    return sheetAction(getParams)
+    return sheetAction(getParams, notrace=notrace)
 
-def putUserRow(sessionName, userId, rowValues, opts={}):
+def getAllRows(sessionName, opts={}, notrace=False):
+    token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+    getParams = {'admin': 'admin', 'token': token,'sheet': sessionName,
+                 'get': '1', 'all': '1'}
+    getParams.update(opts)
+
+    return sheetAction(getParams, notrace=notrace)
+
+def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
     token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
     putParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'row': json.dumps(rowValues, default=sliauth.json_default)}
     putParams.update(opts)
 
-    return sheetAction(putParams)
+    return sheetAction(putParams, notrace=notrace)
+
+def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
+    token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+    updates = []
+    for j, header in enumerate(headers):
+        if header in updateObj:
+            updates.append( [header, updateObj[header]] )
+
+    updateParams = {'admin': 'admin', 'id': updateObj['id'], 'token': token,'sheet': sessionName,
+                    'update': json.dumps(updates, default=sliauth.json_default)}
+    updateParams.update(opts)
+
+    return sheetAction(updateParams, notrace=notrace)
+
+def makeRosterMap(colName, lowercase=False):
+    # Return map of other IDs from colName to roster ID
+    colValues = lookupRoster(colName) or {}
+    rosterMap = OrderedDict()
+    for userId, otherIds in colValues.items():
+        for otherId in otherIds.strip().split(','):
+            otherId = otherId.strip()
+            if lowercase:
+                otherId = otherId.lower()
+            if otherId:
+                rosterMap[otherId] = userId
+    return rosterMap
+
+def exportAnswers(sessionName):
+    retval = getAllRows(sessionName, {'getheaders': '1'}, notrace=True)
+    if retval['result'] != 'success':
+	    raise Exception('Error in exporting session '+sessionName+': '+retval.get('error'))
+    headers = retval['headers']
+    allRows = retval['value']
+    headerCols = dict((hdr, j+1) for j, hdr in enumerate(headers))
+    sessionCol = headerCols['session_hidden']
+    responseCols = {}
+    explainCols = {}
+    qmaxCols = 0
+    for j, header in enumerate(headers):
+        hmatch = QFIELD_RE.match(header)
+        if hmatch:
+            qnumber = int(hmatch.group(1))
+            qmaxCols = max( qmaxCols, qnumber )
+            if hmatch.group(2) == 'response':
+                responseCols[qnumber] = j+1
+            elif hmatch.group(2) == 'explain':
+                explainCols[qnumber] = j+1
+        
+    if Options['DEBUG']:
+        print("DEBUG:exportAnswers", sessionName, qmaxCols, file=sys.stderr)
+    outRows = []
+    qmaxAll = qmaxCols
+    explainSet = set(explainCols.keys())
+    for j, rowValues in enumerate(allRows):
+        qmaxRow = qmaxCols
+        qAttempted = None
+        session_hidden = rowValues[sessionCol-1]
+        if session_hidden:
+            session = json.loads(session_hidden)
+            qAttempted = session['questionsAttempted']
+            if qAttempted:
+                qmaxRow = max(qmaxRow, max(int(key) for key in qAttempted.keys()) ) # Because JSON serialization converts integer keys to strings
+        qmaxAll = max(qmaxAll, qmaxRow)
+
+        rowOutput = [sliauth.str_encode(rowValues[headerCols[hdr]-1]) for hdr in MIN_HEADERS]
+        for qnumber in range(1,qmaxRow+1):
+            qnumberStr = str(qnumber)  # Because JSON serialization converts integer keys to strings
+            cellValue = ''
+            if qnumber in responseCols:
+                cellValue = rowValues[responseCols[qnumber]-1]
+                if qnumber in explainCols:
+                    cellValue += ' ' + rowValues[explainCols[qnumber]-1]
+            elif qAttempted and qnumberStr in qAttempted:
+                cellValue = qAttempted[qnumberStr].get('response','')
+                if qAttempted[qnumberStr].get('explain',''):
+                    explainSet.add(qnumber)
+                    cellValue += ' ' + sliauth.str_encode(qAttempted[qnumberStr]['explain'])
+            rowOutput.append(cellValue)
+        outRows.append(rowOutput)
+
+    memfile = cStringIO.StringIO()
+    writer = csv.writer(memfile)
+    outHeaders = MIN_HEADERS + [ ('qx' if qnumber in explainSet else 'q')+str(qnumber) for qnumber in range(1,qmaxAll+1)]
+    writer.writerow(outHeaders)
+    for j in range(len(outRows)):
+        # Ensure all rows have the same number of columns
+        temRow = outRows[j] + ['']*(len(outHeaders)-len(outRows[j]))
+        writer.writerow(temRow)
+
+    content = memfile.getvalue()
+    memfile.close()
+    return content
+
+
+def createQuestionAttempted(response):
+    return {'response': response or ''};
+
+
+def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=''):
+    # answers = {1:{'response':, 'explain':},...}
+    if Options['DEBUG']:
+        print("DEBUG:importUserAnswers", sessionName, submitDate, userId, displayName, answers, file=sys.stderr)
+    if not getSheet(sessionName, optional=True):
+        raise Exception('Session '+sessionName+' not found')
+    if submitDate:
+        # Check that it is a valid date
+        createDate(submitDate)
+    sessionEntries = lookupValues(sessionName, ['dueDate', 'paceLevel', 'adminPaced', 'attributes'], INDEX_SHEET)
+    sessionAttributes = json.loads(sessionEntries['attributes'])
+    dueDate = sessionEntries.get('dueDate')
+    paceLevel = sessionEntries.get('paceLevel')
+    adminPaced = sessionEntries.get('adminPaced')
+
+    retval = getUserRow(sessionName, userId, displayName, {'create': '1', 'getheaders': '1'}, notrace=True)
+    if retval['result'] != 'success':
+	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
+    headers = retval['headers']
+    rowValues = retval['value']
+    headerCols = dict((hdr, j+1) for j, hdr in enumerate(headers))
+    sessionCol = headerCols['session_hidden']
+    session = json.loads(rowValues[sessionCol-1])
+    qAttempted = session['questionsAttempted']
+    qnumbers = answers.keys()
+    qnumbers.sort()
+    for qnumber in qnumbers:
+        answer = answers[qnumber]
+        q_response = 'q%d_response' % qnumber
+        q_explain = 'q%d_explain' % qnumber
+        if q_response in headers:
+            rowValues[headerCols[q_response]-1] = answer.get('response', '')
+            if q_explain in headers:
+                rowValues[headerCols[q_explain]-1] = answer.get('explain', '')
+        else:
+            qAttempted[qnumber] = createQuestionAttempted( answer.get('response', '') )
+            if 'explain' in answer:
+                qAttempted[qnumber]['explain'] = answer['explain']
+
+    rowValues[sessionCol-1] = json.dumps(session)
+    for j, header in enumerate(headers):
+        if header.endswith('Timestamp'):
+            rowValues[j] = None             # Do not modify (most) timestamps
+
+    putOpts = {}
+    submitTimestamp = None
+    if paceLevel == ADMIN_PACE:
+        if userId == TESTUSER_ID:
+            # Import first? separately?
+            rowValues[headerCols['lastSlide']-1] = sessionAttributes['params']['pacedSlides']
+            if submitDate:
+                rowValues[headerCols['submitTimestamp']-1] = submitDate
+                putOpts['submit'] = '1'
+        else:
+            rowValues[headerCols['lastSlide']-1] = adminPaced or sessionAttributes['params']['pacedSlides']
+            if submitDate:
+                submitTimestamp = submitDate
+    else:
+        rowValues[headerCols['lastSlide']-1] = sessionAttributes['params']['pacedSlides']
+        if submitDate:
+            submitTimestamp = submitDate
+
+    if Options['DEBUG']:
+        print("DEBUG:importUserAnswers2", sessionName, userId, adminPaced, file=sys.stderr)
+            
+    retval = putUserRow(sessionName, userId, rowValues)
+    if retval['result'] != 'success':
+	    raise Exception('Error in importing session for user '+userId+': '+retval.get('error'))
+
+    if submitTimestamp:
+        updateObj = {'id': userId, 'submitTimestamp': submitTimestamp}
+        retval = updateUserRow(sessionName, headers, updateObj, {'import': '1'})
+        if retval['result'] != 'success':
+            raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
+
 
 def lookupRoster(field, userId=None):
     rosterSheet = getSheet(ROSTER_SHEET, optional=True)
@@ -1423,7 +1606,7 @@ def lookupRoster(field, userId=None):
 
     idVals = getColumns('id', rosterSheet, 1, 2)
     fieldVals = getColumns(field, rosterSheet, 1, 2)
-    fieldDict = {}
+    fieldDict = OrderedDict()
     for j, idVal in enumerate(idVals):
         fieldDict[idVal] = fieldVals[j]
     return fieldDict
