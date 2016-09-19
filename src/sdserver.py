@@ -959,10 +959,12 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
         if self.get_argument("oauth_token", None):
             user = yield self.get_authenticated_user()
             # Save the user using e.g. set_secure_cookie()
+            if Options['debug']:
+                print >> sys.stderr, "TwitterAuth: step 2 access_token =", user.get('access_token')
             username = user['username']
             if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
-            username, prefix = self.get_alt_name(username, prefix)
+            username, prefix = self.get_alt_name(username)
             displayName = user['name']
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
             self.set_id(username, user['username'], token, displayName, restrict=prefix)
@@ -1265,7 +1267,7 @@ def main():
 
         import sdstream
         twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTwitterMessage)
-        twitterStream.fetch()
+        twitterStream.start_stream()
 
     if options.port != 443:
         http_server = tornado.httpserver.HTTPServer(Application())

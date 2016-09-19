@@ -16,6 +16,10 @@
     For live tweeting, also create an Access Token for yourself and use in --twitter_stream=...
     (If you change any app permissions, re-generate the token)
 
+For local testing:
+    Change settings for app at https://apps.twitter.com/ to http://127.0.0.1:8081 and Callback URL http://127.0.0.1:8081/_oauth/login
+    Access local server as http://127.0.0.1:8081 (not as localhost)
+    
   - Create an initial Slidoc, say ex00-setup.md
   - Ask all users to ex00-setup.html using their Twitter login
   - In Google Docs, copy the first four columns of the ex00-setup sheet to a new roster_slidoc sheet
@@ -36,12 +40,19 @@ import uuid
 
 import tornado.auth
 import tornado.httpclient
+from tornado.ioloop import IOLoop
 
 TWITTER_USER_STREAM_URL = "https://userstream.twitter.com/1.1"
 
 TWITTER_CONDENSE_KEYS = set(["created_at", "direct_message", "friends", "id", "in_reply_to_status_id", "in_reply_to_screen_name", "in_reply_to_user_id", "name", "screen_name", "sender", "status", "text", "user"])
 
 MAX_MSG_TEXT = 5000                 # Max. text size for all messages
+
+NORMAL_BACKOFF_MINDELAY = 5
+NORMAL_BACKOFF_MAXDELAY = 480
+
+RATELIMIT_BACKOFF_MINDELAY = 60     # Min. delay time for reconnecting to rate-limited twitter stream
+RATELIMIT_BACKOFF_MAXDELAY = 14400  # Max. delay time for reconnecting to rate-limited twitter stream
 
 
 class TwitterStreamReader(object):
@@ -54,25 +65,65 @@ class TwitterStreamReader(object):
         self.http_request = None
         self.http_client = None
 
-    def fetch(self):
+        self.opened = False
+        self.closed = False
+        self.restart_cb = 0
+        self.restart_delay_time = 0
+
+    def end_stream(self):
+        if self.closed:
+            return
+        self.closed = True
+
+        print >> sys.stderr, 'TwitterStreamReader.end_stream*********END TWITTER USER STREAM'
+
+        if self.http_client:
+            self.http_client.shutdown()
+            self.http_client = None
+
+        if self.restart_cb:
+            IOLoop.current().remove_timeout(self.restart_cb)
+            self.restart_cb = None
+
+    def start_stream(self):
+        if self.closed:
+            return
         self.http_request = twitter_request(self.twitter_config,
                                        "/user", path_prefix=TWITTER_USER_STREAM_URL,
                                        streaming_callback=self.handle_stream,
                                        connect_timeout=60.0,
                                        timeout=0)
 
-        ##print >> sys.stderr, 'TwitterStreamReader.fetch', self.twitter_config
+        ##print >> sys.stderr, 'TwitterStreamReader.start', self.twitter_config
 
         self.http_client = tornado.httpclient.AsyncHTTPClient()
         self.http_client.fetch(self.http_request, self.handle_response)
 
     def handle_response(self, response):
+        if self.closed:
+            return
+        
+        self.http_client = None
+        self.opened = False
+
         resp_code = getattr(response, "code", 0)
         rate_limited = (resp_code == 420)
         if hasattr(response, "error"):
             print >> sys.stderr, "TwitterStreamReader.handle_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error)
         else:
             print >> sys.stderr, "TwitterStreamReader.handle_response: NORMAL STREAM RESPONSE: code %s" % resp_code
+
+        # Restart stream
+        if self.restart_delay_time:
+            # Double restart delay time (exponential backoff)
+            if not rate_limited or self.restart_delay_time < NORMAL_BACKOFF_MAXDELAY:
+                self.restart_delay_time = min(2*self.restart_delay_time, NORMAL_BACKOFF_MAXDELAY)
+            else:
+                self.restart_delay_time = min(2*self.restart_delay_time, RATELIMIT_BACKOFF_MAXDELAY)
+        else:
+            self.restart_delay_time = RATELIMIT_BACKOFF_MINDELAY if rate_limited else NORMAL_BACKOFF_MINDELAY
+        print >> sys.stderr, "RESTART STREAM AFTER %s SEC" % self.restart_delay_time
+        self.restart_cb = IOLoop.current().add_timeout(time.time()+self.restart_delay_time, self.start_stream)
 
     def handle_stream(self, data):
         self.tbuffer += data
@@ -85,6 +136,16 @@ class TwitterStreamReader(object):
 
         content = json.loads(line)
         self.tbuffer = ''
+
+        if "friends" in content:
+            # List of friends
+            if not self.opened:
+                # Open connection and reset delay time
+                self.opened = True
+                self.restart_cb = None
+                self.restart_delay_time = 0
+                print >> sys.stderr, 'TwitterStreamReader.handle_stream: CONNECTED TO TWITTER STREAM', content['friends']
+            return
 
         ##print >> sys.stderr, "TwitterStreamReader.handle_stream:content=%s", str(content)
         try:
@@ -247,7 +308,6 @@ def twitter_task(twitter_config, action, target_name="", text="", callback=None)
     else:
         raise Exception("Invalid twitter action: "+action)
 
-    print "ABCtwitter_task", twitter_config, action, target_name, text, get_args, post_args
     http_request = twitter_request(twitter_config,
                                    path, 
                                    get_args=get_args,
@@ -266,7 +326,6 @@ def printTwitterMessage(fromUser, fromName, message):
 
 if __name__ == "__main__":
     from tornado.options import define, options, parse_config_file, parse_command_line
-    from tornado.ioloop import IOLoop
 
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
@@ -284,20 +343,20 @@ if __name__ == "__main__":
             }
 
         twitterStream = TwitterStreamReader(twitter_config, printTwitterMessage)
-        twitterStream.fetch()
+        twitterStream.start_stream()
 
     def test_twitter_dm():
         def test_callback(response):
-            print "ABC test_dm_callback", response
-        print "ABCtest_twitter_dm"
+            print "test_dm_callback", response
+        print "test_twitter_dm"
         twitter_dm(twitter_config, "Send DM4back", from_name="geos210", target_name="atmo321e", callback=test_callback)
 
     def test_twitter_request():
         ##create_master_user_stream()
         def test_callback(response):
-            print "ABC test_callback", response
-            print "ABC test_callback", response.body
-        #print "ABCtest_twitter_request", twitter_config
+            print "test_callback", response
+            print "test_callback", response.body
+        #print "test_twitter_request", twitter_config
         #twitter_task(twitter_config, "followers", callback=test_callback)
         #twitter_task(twitter_config, "friends", callback=test_callback)
         #twitter_task(twitter_config, "follow", target_name="atmo201", callback=test_callback)
