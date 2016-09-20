@@ -231,7 +231,7 @@ Share = {
 		    boxes[j].style.display = null;
 
 		for (var j=0; j<this.responseTally.length; j++) {
-		    var choice = this.responseTally[j][0];
+		    var choice = this.responseTally[j][0].toUpperCase();
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
 		    var bar = document.getElementById(this.slideId+'-chartbar-'+choice);
 		    if (bar) {
