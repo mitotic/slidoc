@@ -544,7 +544,7 @@ def handle_http_response(response):
     else:
         Global.totalCacheResponseBytes += len(response.body)
         if Options['DEBUG']:
-            print("handle_http_response: Update SUCCESS", response.body[:256], file=sys.stderr)
+            print("handle_http_response: Update RESPONSE", response.body[:256], file=sys.stderr)
         try:
             respObj = json.loads(response.body)
             if respObj['result'] == 'error':
@@ -1197,7 +1197,7 @@ def sheetAction(params, notrace=False):
                             setValue(sheetName, 'adminPaced', rowValues[lastSlideCol-1], INDEX_SHEET)
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
-                            submitTimetamp = rowValues[submitTimestampCol-1]
+                            submitTimestamp = rowValues[submitTimestampCol-1]
                             setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
                             idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
                             initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows)
