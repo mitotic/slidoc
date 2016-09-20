@@ -189,6 +189,8 @@ Share = {
 	    var explanations = [];
 	    for (var j=0; j<nResp; j++) {
 		var respVal = result[responseHeader][j];
+		if (Slidoc.parseNumber(respVal) == null)
+		    respVal = respVal.toUpperCase();
 		if (respCount && respVal != prevResp) {
 		    this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations]);
 		    respCount = 0;
