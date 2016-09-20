@@ -386,7 +386,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             print >> sys.stderr, 'sdserver.setupInteractive:', cls._interactiveSession
 
     @classmethod
-    def processMessage(cls, fromUser, fromName, message):
+    def processMessage(cls, fromUser, fromName, message, allStatus=False):
         # Return null string on success or error message
         print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromName, message
 
@@ -395,14 +395,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             msg = 'Message from '+fromUser+' discarded. No active session'
             if Options['debug']:
                 print >> sys.stderr, 'sdserver.processMessage:', msg
-            return msg
+            return msg if allStatus else ''
 
         sessionName = cls.get_path_base(path)
         if not questionAttrs:
             msg = 'Message from '+fromUser+' discarded. No active slide/question for '+sessionName
             if Options['debug']:
                 print >> sys.stderr, 'sdserver.processMessage:', msg
-            return msg
+            return msg if allStatus else ''
 
         session_connections = cls._connections.get(path)
         if ADMINUSER_ID not in session_connections:
@@ -410,7 +410,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             msg = 'Message from '+fromUser+' discarded. No active controller for session '+sessionName
             if Options['debug']:
                 print >> sys.stderr, 'sdserver.processMessage:', msg
-            return msg
+            return msg if allStatus else ''
 
         # Close any active connections associated with user for interactive session
         for connection in session_connections.get(fromUser,[]):
@@ -842,7 +842,7 @@ class AuthMessageHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self, subpath=''):
         try:
-            msg = WSHandler.processMessage(self.get_id_from_cookie(), self.get_id_from_cookie(name=True), self.get_argument("message", ""))
+            msg = WSHandler.processMessage(self.get_id_from_cookie(), self.get_id_from_cookie(name=True), self.get_argument("message", ""), allStatus=True)
             if not msg:
                 msg = 'Previous message accepted'
         except Exception, excp:
@@ -1077,7 +1077,7 @@ def processTwitterMessage(msg):
                     status = WSHandler.processMessage(userId, sdproxy.lookupRoster('name', userId), message)
             if status is None:
                 status = 'Error - twitter ID '+fromUser+' not found in roster'
-    print >> sys.stderr, status
+    print >> sys.stderr, 'processTwitterMessage:', status
     return status
 
 def importAnswers():
@@ -1182,6 +1182,7 @@ def main():
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
 
+    define("allow_replies", default=False, help="Allow replies to twitter direct messages")
     define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
@@ -1266,7 +1267,8 @@ def main():
             }
 
         import sdstream
-        twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTwitterMessage)
+        twitterStream = sdstream.TwitterStreamReader(Global.twitter_config, processTwitterMessage,
+                                                     allow_replies=options.allow_replies)
         twitterStream.start_stream()
 
     if options.port != 443:

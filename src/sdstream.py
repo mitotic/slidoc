@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
    Twitter support
 
@@ -9,16 +11,16 @@
     In Settings, use the website URL http://website and Callback URL http://website/_oauth/login (use https, if your website uses it)
   - In Permissions, enable Read, Write and Access direct messages
   - From Keys and Access Tokens, copy your Consumer Key and Consumer Secret to command config file:
-       auth_type = 'twitter,key,secret'
+       auth_type = 'twitter,consumer_key,consumer_secret'
      or in command line
        sudo python sdserver.py --auth_key=... --auth_type=... --gsheet_url=... --static_dir=... --port=80 --proxy_wait=0 --site_label=
 
     For live tweeting, also create an Access Token for yourself and use in --twitter_stream=...
     (If you change any app permissions, re-generate the token)
 
-For local testing:
-    Change settings for app at https://apps.twitter.com/ to http://127.0.0.1:8081 and Callback URL http://127.0.0.1:8081/_oauth/login
-    Access local server as http://127.0.0.1:8081 (not as localhost)
+    For local testing:
+        Change settings for app at https://apps.twitter.com/ to http://127.0.0.1:8081 and Callback URL http://127.0.0.1:8081/_oauth/login
+        Access local server as http://127.0.0.1:8081 (not as localhost)
     
   - Create an initial Slidoc, say ex00-setup.md
   - Ask all users to ex00-setup.html using their Twitter login
@@ -48,26 +50,26 @@ TWITTER_CONDENSE_KEYS = set(["created_at", "direct_message", "friends", "id", "i
 
 MAX_MSG_TEXT = 5000                 # Max. text size for all messages
 
-NORMAL_BACKOFF_MINDELAY = 5
-NORMAL_BACKOFF_MAXDELAY = 480
-
-RATELIMIT_BACKOFF_MINDELAY = 60     # Min. delay time for reconnecting to rate-limited twitter stream
-RATELIMIT_BACKOFF_MAXDELAY = 14400  # Max. delay time for reconnecting to rate-limited twitter stream
-
-
 class TwitterStreamReader(object):
-    def __init__(self, twitter_config, tweet_callback=None):
+    NORMAL_BACKOFF_MINDELAY = 5
+    NORMAL_BACKOFF_MAXDELAY = 480
+
+    RATELIMIT_BACKOFF_MINDELAY = 60     # Min. delay time for reconnecting to rate-limited twitter stream
+    RATELIMIT_BACKOFF_MAXDELAY = 14400  # Max. delay time for reconnecting to rate-limited twitter stream
+
+    def __init__(self, twitter_config, tweet_callback=None, allow_replies=False):
         # tweet_callback({sender: userid, name: display_name, text: message_text, type:'tweet'/'direct'})
         #
         self.twitter_config = twitter_config
         self.tweet_callback = tweet_callback
+        self.allow_replies = allow_replies
         self.tbuffer = ''
         self.http_request = None
         self.http_client = None
 
         self.opened = False
         self.closed = False
-        self.restart_cb = 0
+        self.restart_cb = None
         self.restart_delay_time = 0
 
     def end_stream(self):
@@ -97,9 +99,9 @@ class TwitterStreamReader(object):
         ##print >> sys.stderr, 'TwitterStreamReader.start', self.twitter_config
 
         self.http_client = tornado.httpclient.AsyncHTTPClient()
-        self.http_client.fetch(self.http_request, self.handle_response)
+        self.http_client.fetch(self.http_request, self.handle_stream_response)
 
-    def handle_response(self, response):
+    def handle_stream_response(self, response):
         if self.closed:
             return
         
@@ -109,19 +111,21 @@ class TwitterStreamReader(object):
         resp_code = getattr(response, "code", 0)
         rate_limited = (resp_code == 420)
         if hasattr(response, "error"):
-            print >> sys.stderr, "TwitterStreamReader.handle_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error)
+            print >> sys.stderr, "TwitterStreamReader.handle_stream_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error)
         else:
-            print >> sys.stderr, "TwitterStreamReader.handle_response: NORMAL STREAM RESPONSE: code %s" % resp_code
+            print >> sys.stderr, "TwitterStreamReader.handle_stream_response: NORMAL STREAM RESPONSE: code %s" % resp_code
 
         # Restart stream
+        if self.restart_cb:
+            return
         if self.restart_delay_time:
             # Double restart delay time (exponential backoff)
-            if not rate_limited or self.restart_delay_time < NORMAL_BACKOFF_MAXDELAY:
-                self.restart_delay_time = min(2*self.restart_delay_time, NORMAL_BACKOFF_MAXDELAY)
+            if not rate_limited or self.restart_delay_time < self.NORMAL_BACKOFF_MAXDELAY:
+                self.restart_delay_time = min(2*self.restart_delay_time, self.NORMAL_BACKOFF_MAXDELAY)
             else:
-                self.restart_delay_time = min(2*self.restart_delay_time, RATELIMIT_BACKOFF_MAXDELAY)
+                self.restart_delay_time = min(2*self.restart_delay_time, self.RATELIMIT_BACKOFF_MAXDELAY)
         else:
-            self.restart_delay_time = RATELIMIT_BACKOFF_MINDELAY if rate_limited else NORMAL_BACKOFF_MINDELAY
+            self.restart_delay_time = self.RATELIMIT_BACKOFF_MINDELAY if rate_limited else self.NORMAL_BACKOFF_MINDELAY
         print >> sys.stderr, "RESTART STREAM AFTER %s SEC" % self.restart_delay_time
         self.restart_cb = IOLoop.current().add_timeout(time.time()+self.restart_delay_time, self.start_stream)
 
@@ -144,7 +148,7 @@ class TwitterStreamReader(object):
                 self.opened = True
                 self.restart_cb = None
                 self.restart_delay_time = 0
-                print >> sys.stderr, 'TwitterStreamReader.handle_stream: CONNECTED TO TWITTER STREAM', content['friends']
+                print >> sys.stderr, 'TwitterStreamReader.handle_stream: CONNECTED TO TWITTER STREAM FOR', self.twitter_config['screen_name'], ':', content['friends']
             return
 
         ##print >> sys.stderr, "TwitterStreamReader.handle_stream:content=%s", str(content)
@@ -164,15 +168,23 @@ class TwitterStreamReader(object):
             traceback.print_exc()
             return
 
+        print >> sys.stderr, "TwitterStreamReader.handle_stream:status=", self.allow_replies, repr(status)
         try:
-            if status and parsed_msg['type'] == 'direct':
-                # Send error status via direct message
+            if self.allow_replies and status and parsed_msg['type'] == 'direct' and parsed_msg['sender'] != self.twitter_config['screen_name']:
+                # Send error status via direct message (but not to self)
                 twitter_dm(self.twitter_config, status, from_name=self.twitter_config['screen_name'],
                            target_name=parsed_msg['sender'], callback=self.handle_response)
         except Exception, err:
             import traceback
             traceback.print_exc()
             return
+
+    def handle_response(self, response):
+        resp_code = getattr(response, "code", 0)
+        if hasattr(response, "error"):
+            print >> sys.stderr, "TwitterStreamReader.handle_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error)
+        else:
+            print >> sys.stderr, "TwitterStreamReader.handle_response: NORMAL STREAM RESPONSE: code %s" % resp_code
 
 
 def condense_twitter_content(content):
@@ -330,9 +342,9 @@ if __name__ == "__main__":
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
 
-    define("auth_type", default="", help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
+    define("dm", default=False, help="Send direct message")
     define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
-    parse_command_line()
+    args = parse_command_line()
 
     if options.twitter_stream:
         comps = options.twitter_stream.split(',')
@@ -342,6 +354,14 @@ if __name__ == "__main__":
             'access_token': {'key': comps[3], 'secret': comps[4]}
             }
 
+
+    if options.dm and len(args) > 2 and args[0] == 'd':
+        # Direct message
+        def dm_callback(response):
+            print 'dm_callback', response
+            IOLoop.current().stop()
+        twitter_dm(twitter_config, ' '.join(args[2:]), from_name=twitter_config['screen_name'], target_name=args[1], callback=dm_callback)
+    else:
         twitterStream = TwitterStreamReader(twitter_config, printTwitterMessage)
         twitterStream.start_stream()
 
@@ -362,8 +382,8 @@ if __name__ == "__main__":
         #twitter_task(twitter_config, "follow", target_name="atmo201", callback=test_callback)
         #twitter_task(twitter_config, "direct", target_name="meldr101", text="Send DM2", callback=test_callback)
 
-    IOLoop.current().add_callback(test_twitter_request)
-    IOLoop.current().add_callback(test_twitter_dm)
+    #IOLoop.current().add_callback(test_twitter_request)
+    #IOLoop.current().add_callback(test_twitter_dm)
         
     IOLoop.current().start()
 
