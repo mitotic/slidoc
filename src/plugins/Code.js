@@ -243,9 +243,50 @@ function execCode(codeType, code, expect, callback) {
 
 function execCodeOut(expect, callback, text) {
     Slidoc.log('execCodeOut:', expect, text);
-    var score = expect ? ((expect.trim() == text.trim())?1:0) : '';
-    callback(score, text, '');
+    var score = scoreCodeOutput(expect, text);
+    callback(score, text.trim(), '');
 }
+
+function scoreCodeOutput(expect, response) {
+    // Compares space-separated list of text and/or numeric output from code to expected values (to within 0.01%)
+    expect = expect.trim().toLowerCase();
+    response = response.trim().toLowerCase();
+    if (!expect)
+	return '';
+
+    var expectComps, responseComps;
+    if (expect.indexOf(' ') > 0) {
+	// Normalize spaces
+	expect = expect.replace(/\s+/g,' ');
+	response = response.replace(/\s+/g,' ');
+	expectComps = expect.split(/\s+/);
+	responseComps = response.split(/\s+/);
+    } else {
+	// Strip all spaces from response
+	response = response.replace(/\s+/g,'');
+	expectComps = [expect];
+	responseComps = [response];
+    }
+    if (expectComps.length != responseComps.length)
+	return 0;
+    for (var j=0; j<expectComps.length; j++) {
+	var expNum = Slidoc.parseNumber(expectComps[j]);
+	if (expNum == null) {
+	    // Compare text
+	    if (expectComps[j] != responseComps[j])
+		return 0;
+	} else {
+	    // Expecting the correct number (within 0.01%)
+	    var epsilon = 0.0001*Math.abs(expNum ? expNum : 1);
+	    var respNum = Slidoc.parseNumber(responseComps[j]);
+	    
+	    if (respNum == null || Math.abs(respNum-expNum) > epsilon)
+		return 0;
+	}
+    }
+    return 1;
+}
+
 
 function execCodeErr(callback, err) {
     Slidoc.log('execCodeErr:', err);

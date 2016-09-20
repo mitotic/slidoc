@@ -248,12 +248,10 @@ Share = {
 	} else if (!this.qattributes.vote) {
 	    // Not choice/number question and not voting; display responses
 	    var lines = [];
-	    var content = []
-	    for (var j=0; j<nResp.length; j++) {
-		lines.push(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>');
-		content.push(result[responseHeader][j]);
+	    for (var j=0; j<nResp; j++) {
+		lines.push([(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'), result[responseHeader][j]]);
 	    }
-	    Slidoc.showPopupWithList('Responses:<p></p>\n', lines, content, this.qattributes.qtype == 'text/markdown');
+	    Slidoc.showPopupWithList('Responses:<p></p>\n', lines, this.qattributes.qtype == 'text/markdown');
 	    return;
 	}
 

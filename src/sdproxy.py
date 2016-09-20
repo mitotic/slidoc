@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3h'
+VERSION = '0.96.3i'
 
 # Usually modified by importing module
 Options = {
@@ -427,7 +427,7 @@ def getCacheStatus():
             sheetStr = sheetName+' (locking...)'
         else:
             action = 'unlock' if sheetName in Lock_cache else 'lock'
-            sheetStr = '<a href="/_%s/%s">%s</a>' % (action, sheetName, action)
+            sheetStr = '<a href="/_%s/%s">%s</a> %s' % (action, sheetName, action, Lock_cache.get(sheetName,''))
         out += 'Sheet_cache: %s: %ds %s\n' % (sheetName, (curTime-sheet.accessTime)/1000., sheetStr)
     out += '\n'
     for sheetName in Miss_cache:
@@ -521,18 +521,18 @@ def update_remote_sheets(force=False):
                   'data':  json_data}
     post_data['create'] = 1
     body = urllib.urlencode(post_data)
-    http_client.fetch(Options['SHEET_URL'], handle_http_response, method='POST', headers=None, body=body)
+    http_client.fetch(Options['SHEET_URL'], handle_proxy_response, method='POST', headers=None, body=body)
     Global.totalCacheRequestBytes += len(json_data)
     Global.cacheRequestTime = cur_time
 
-def handle_http_response(response):
+def handle_proxy_response(response):
     Global.cacheResponseTime = sliauth.epoch_ms()
     Global.totalCacheResponseInterval += (Global.cacheResponseTime - Global.cacheRequestTime)
     Global.totalCacheResponseCount += 1
 
     errMsg = ""
     if response.error:
-        print("handle_http_response: Update ERROR:", response.error, file=sys.stderr)
+        print("handle_proxy_response: Update ERROR:", response.error, file=sys.stderr)
         errMsg = response.error
         if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
             sys.exit('Failed to update cache after %d tries' % RETRY_MAX_COUNT)
@@ -544,7 +544,7 @@ def handle_http_response(response):
     else:
         Global.totalCacheResponseBytes += len(response.body)
         if Options['DEBUG']:
-            print("handle_http_response: Update RESPONSE", response.body[:256], file=sys.stderr)
+            print("handle_proxy_response: Update RESPONSE", response.body[:256], file=sys.stderr)
         try:
             respObj = json.loads(response.body)
             if respObj['result'] == 'error':
@@ -553,13 +553,17 @@ def handle_http_response(response):
             errMsg = 'JSON parsing error: '+str(err)
 
         if errMsg:
-            print("handle_http_response: Update ERROR:", errMsg, file=sys.stderr)
+            print("handle_proxy_response: Update ERROR:", errMsg, file=sys.stderr)
             sys.exit(errMsg)
+
+        for errSessionName, proxyErrMsg in respObj['info'].get('updateErrors',[]):
+            Lock_cache[errSessionName] = proxyErrMsg
+            print("handle_proxy_response: Update LOCKED %s: %s" % (errSessionName, proxyErrMsg), file=sys.stderr)
 
     if not errMsg:
         # Update succeeded
         if Options['DEBUG']:
-            print("handle_http_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
+            print("handle_proxy_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
 
         Global.cacheUpdateTime = Global.cacheRequestTime
         Global.cacheRequestTime = 0

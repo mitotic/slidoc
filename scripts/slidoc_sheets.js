@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3h';
+var VERSION = '0.96.3i';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -291,6 +291,7 @@ function sheetAction(params) {
 	} else if (proxy && params.allupdates) {
 	    // Update multiple sheets from proxy
 	    returnValues = [];
+	    returnInfo.updateErrors = [];
 	    var data = JSON.parse(params.data);
 	    for (var j=0; j<data.length; j++) {
 		var updateSheetName = data[j][0];
@@ -299,92 +300,100 @@ function sheetAction(params) {
 		var updateRows = data[j][3];
 		//returnMessages.push('Debug::updateSheet, keys, rows: '+updateSheetName+', '+updateKeys+', '+updateRows.length);
 
-		var updateSheet = getSheet(updateSheetName);
-		if (!updateSheet) {
-		    if (params.create)
-			updateSheet = createSheet(updateSheetName, updateHeaders);
-		    else
-			throw("Error::Sheet not found: '"+updateSheetName+"'");
-		}
-
-		var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
-		if (updateHeaders.length > temHeaders.length)
-		    throw("Error::Number of headers exceeds that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
-		for (var m=0; m<updateHeaders.length; m++) {
-		    if (updateHeaders[m] != temHeaders[m])
-			throw("Error::Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
-		}
-
-		if (updateKeys === null) {
-		    // Update non-keyed sheet
-		    for (var k=0; k<updateRows.length; k++) {
-			var rowNum = updateRows[k][0];
-			var rowVals = updateRows[k][1];
-			var lastRowNum = updateSheet.getLastRow();
-			for (var m=0; m<rowVals.length; m++)
-			    rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
-
-			if (rowNum > lastRowNum)
-			    updateSheet.insertRowBefore(lastRowNum+1)
-			updateSheet.getRange(rowNum, 1, 1, rowVals.length).setValues([rowVals]);
+		try {
+		    var updateSheet = getSheet(updateSheetName);
+		    if (!updateSheet) {
+			if (params.create)
+			    updateSheet = createSheet(updateSheetName, updateHeaders);
+			else
+			    throw("Error:PROXY_MISSING_SHEET:Sheet not found: '"+updateSheetName+"'");
 		    }
-		} else {
-		    // Update keyed sheet
-		    var lastRowNum = updateSheet.getLastRow();
-		    if (lastRowNum < 1)
-			throw("Error::Sheet has no data rows '"+updateSheetName+"'");
 
-		    var updateColumnIndex = indexColumns(updateSheet);
-		    var idCol = updateColumnIndex['id'];
-		    var nameCol = updateColumnIndex['name'] || idCol;
+		    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
+		    if (updateHeaders.length > temHeaders.length)
+			throw("Error:PROXY_HEADER_COUNT:Number of headers exceeds that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
+		    for (var m=0; m<updateHeaders.length; m++) {
+			if (updateHeaders[m] != temHeaders[m])
+			    throw("Error:PROXY_HEADER_NAMES:Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
+		    }
 
-		    var updateStickyRows = lastRowNum;
-		    if (lastRowNum > 1) {
-			var keys = updateSheet.getSheetValues(2, idCol, lastRowNum-1, 1);
+		    if (updateKeys === null) {
+			// Update non-keyed sheet
+			for (var k=0; k<updateRows.length; k++) {
+			    var rowNum = updateRows[k][0];
+			    var rowVals = updateRows[k][1];
+			    var lastRowNum = updateSheet.getLastRow();
+			    for (var m=0; m<rowVals.length; m++)
+				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
 
-			// Determine number of sticky rows
-			for (var k=0; k < keys.length; k++) {
-			    // Locate first non-null key
-			    if (keys[k][0]) {
-				updateStickyRows = k+1;
-				break
-			    }
+			    if (rowNum > lastRowNum)
+				updateSheet.insertRowBefore(lastRowNum+1)
+			    updateSheet.getRange(rowNum, 1, 1, rowVals.length).setValues([rowVals]);
 			}
-			for (var rowNum=lastRowNum; rowNum > updateStickyRows; rowNum--) {
-			    // Delete rows for which keys are not found (backwards)
-			    if (!(keys[rowNum-2][0] in updateKeys))
-				updateSheet.deleteRow(rowNum);
-			}
-			var idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, updateSheet.getLastRow()-updateStickyRows, 1);
-			var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, updateSheet.getLastRow()-updateStickyRows, 1);
 		    } else {
-			var idValues = [];
-			var nameValues = [];
-		    }
-		    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
+			// Update keyed sheet
+			var lastRowNum = updateSheet.getLastRow();
+			if (lastRowNum < 1)
+			    throw("Error:PROXY_DATA_ROWS:Sheet has no data rows '"+updateSheetName+"'");
 
-		    for (var k=0; k<updateRows.length; k++) {
-			// Update rows with pre-existing or new keys
-			var rowId = updateRows[k][0];
-			var rowVals = updateRows[k][1];
-			var modRow = temIndexRow[rowId];
-			if (!modRow) {
-			    if (rowId == MAXSCORE_ID) {
-				modRow = updateStickyRows+1;
-			    } else if (rowId == TESTUSER_ID) {
-				// Test user always appears after max score
-				modRow = temIndexRow[MAXSCORE_ID] ? temIndexRow[MAXSCORE_ID]+1 : updateStickyRows+1;
-			    } else {
-				modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues, TESTUSER_ID);
+			var updateColumnIndex = indexColumns(updateSheet);
+			var idCol = updateColumnIndex['id'];
+			var nameCol = updateColumnIndex['name'] || idCol;
+
+			var updateStickyRows = lastRowNum;
+			if (lastRowNum > 1) {
+			    var keys = updateSheet.getSheetValues(2, idCol, lastRowNum-1, 1);
+
+			    // Determine number of sticky rows
+			    for (var k=0; k < keys.length; k++) {
+				// Locate first non-null key
+				if (keys[k][0]) {
+				    updateStickyRows = k+1;
+				    break
+				}
 			    }
-			    updateSheet.insertRowBefore(modRow);
+			    for (var rowNum=lastRowNum; rowNum > updateStickyRows; rowNum--) {
+				// Delete rows for which keys are not found (backwards)
+				if (!(keys[rowNum-2][0] in updateKeys))
+				    updateSheet.deleteRow(rowNum);
+			    }
+			    var idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, updateSheet.getLastRow()-updateStickyRows, 1);
+			    var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, updateSheet.getLastRow()-updateStickyRows, 1);
+			} else {
+			    var idValues = [];
+			    var nameValues = [];
 			}
-			for (var m=0; m<rowVals.length; m++)
-			    rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
+			var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 
-			updateSheet.getRange(modRow, 1, 1, rowVals.length).setValues([rowVals]);
-			//returnMessages.push('Debug::updateRow: '+modRow+', '+rowVals);
+			for (var k=0; k<updateRows.length; k++) {
+			    // Update rows with pre-existing or new keys
+			    var rowId = updateRows[k][0];
+			    var rowVals = updateRows[k][1];
+			    var modRow = temIndexRow[rowId];
+			    if (!modRow) {
+				if (rowId == MAXSCORE_ID) {
+				    modRow = updateStickyRows+1;
+				} else if (rowId == TESTUSER_ID) {
+				    // Test user always appears after max score
+				    modRow = temIndexRow[MAXSCORE_ID] ? temIndexRow[MAXSCORE_ID]+1 : updateStickyRows+1;
+				} else {
+				    modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues, TESTUSER_ID);
+				}
+				updateSheet.insertRowBefore(modRow);
+			    }
+			    for (var m=0; m<rowVals.length; m++)
+				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
+
+			    updateSheet.getRange(modRow, 1, 1, rowVals.length).setValues([rowVals]);
+			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowVals);
+			}
 		    }
+		} catch(err) {
+		    var errMsg = ''+err;
+		    ///if (errMsg.match(/^Error:PROXY_/))
+			returnInfo.updateErrors.push([updateSheetName, errMsg]);
+		    ///else
+			///throw(errMsg);
 		}
 	    }
 	} else {

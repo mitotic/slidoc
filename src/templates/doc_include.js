@@ -485,6 +485,8 @@ function parseNumber(x) {
     }
 }
 
+Slidoc.parseNumber = parseNumber;
+
 function parseDate(dateStr) {
     if (!dateStr || !(''+dateStr).trim())
 	return null;
@@ -4124,11 +4126,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
-	if (!controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
-	    var prompt = 'You have only answered '+Sliobj.scores.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
-	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
-		return false;
-	}
+
 	if (Sliobj.questionSlide && Sliobj.session.remainingTries) {
 	    // Current (not new) slide is question slide
 	    var tryCount =  (Sliobj.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
@@ -4145,6 +4143,14 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		return false;
 	    }
 	}
+
+	if (!controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
+	    // To last slide
+	    var prompt = 'You have only answered '+Sliobj.scores.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
+	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
+		return false;
+	}
+
         // Update session for new slide
 	Sliobj.session.lastSlide = slide_num; 
 	Sliobj.session.lastTime = Date.now();
