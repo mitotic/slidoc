@@ -145,7 +145,7 @@ Share = {
 	    return;
 
 	var checkResp = [];
-	if (this.correctAnswer && Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
+	if (this.correctAnswer && (this.testUser || Slidoc.PluginManager.submitted() || Slidoc.PluginManager.answered(this.qattributes.qnumber))) {
 	    if (this.qattributes.qtype == 'number') {
 		var corrValue = null;
 		var corrError = 0.0;

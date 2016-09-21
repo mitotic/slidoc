@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3k';
+var VERSION = '0.96.3l';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -249,6 +249,7 @@ function sheetAction(params) {
 	var loggingSheet = (sheetName.slice(-4) == '_log');
 	var sessionEntries = null;
 	var sessionAttributes = null;
+	var questions = null;
 	var paceLevel = null;
 	var adminPaced = null;
 	var dueDate = null;
@@ -399,8 +400,9 @@ function sheetAction(params) {
 
 	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
 		// Indexed session
-		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET);
+		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
+		questions = JSON.parse(sessionEntries.questions);
 		paceLevel = sessionEntries.paceLevel;
 		adminPaced = sessionEntries.adminPaced;
 		dueDate = sessionEntries.dueDate;
@@ -723,6 +725,8 @@ function sheetAction(params) {
 	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
 		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
 
+	    var teamCol = columnIndex.team;
+
 	    if (newRow && !rowUpdates && createRow) {
 		// Initialize new row
 		if (sessionEntries) {
@@ -731,6 +735,14 @@ function sheetAction(params) {
 		    displayName = rowUpdates[columnIndex['name']-1] || '';
 		    if (params.late && columnIndex['lateToken'])
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
+
+                    if (teamCol && sessionAttributes.sessionTeam == 'roster') {
+			// Copy team name from roster
+			var teamName = lookupRoster('team', userId);
+			if (teamName) {
+                            rowUpdates[teamCol-1] = teamName;
+			}
+                    }
 		} else {
 		    rowUpdates = [];
 		    for (var j=0; j<columnHeaders.length; j++)
@@ -863,6 +875,7 @@ function sheetAction(params) {
 		if (returnInfo.prevTimestamp && params.timestamp && parseNumber(params.timestamp) && returnInfo.prevTimestamp > parseNumber(params.timestamp))
 		    throw('Error::Row timestamp too old by '+Math.ceil((returnInfo.prevTimestamp-parseNumber(params.timestamp))/1000)+' seconds. Conflicting modifications from another active browser session?');
 
+		var teamCopyCols = [];
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
@@ -919,6 +932,9 @@ function sheetAction(params) {
 				rowValues[j] = createDate(colValue);
 			    } else {
 				rowValues[j] = curDate;
+				if (teamCol && rowValues[teamCol]) {
+                                    teamCopyCols.push(j+1);
+                                }
 			    }
 			    returnInfo.submitTimestamp = rowValues[j];
 			} else if (colHeader.match(/_share$/)) {
@@ -934,9 +950,27 @@ function sheetAction(params) {
 			    }
 			} else if (colValue == null) {
 			    // Do not modify field
-			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') ) {
+			} else if (newRow || (MIN_HEADERS.indexOf(colHeader) == -1 && !colHeader.match(/Timestamp$/)) ) {
 			    // Id, name, email, altid, *Timestamp cannot be updated programmatically
 			    // (If necessary to change name manually, then re-sort manually)
+			    var hmatch = QFIELD_RE.exec(colHeader);
+                            var teamAttr = '';
+                            if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
+                                var qno = parseInt(hmatch[1]);
+                                if (questions && qno <= questions.length) {
+                                    teamAttr = questions[qno-1].team || '';
+                                }
+                            }
+                            if (teamAttr == 'setup') {
+                                if (hmatch[2] == 'response') {
+                                    rowValues[teamCol] = colValue;
+                                }
+                            } else if (teamAttr == 'response') {
+                                if (rowValues[j] != colValue && rowValues[teamCol]) {
+                                    teamCopyCols.push(j+1);
+                                }
+                            }
+
 			    rowValues[j] = parseInput(colValue, colHeader);
 			} else {
 			    if (rowValues[j] !== colValue)
@@ -1046,6 +1080,15 @@ function sheetAction(params) {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
 			    if (!restrictedSheet && !partialSubmission && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
 				throw("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
+			    var hmatch = QFIELD_RE.exec(colHeader);
+                            if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {
+                                var qno = parseInt(hmatch[1]);
+                                if (questions && qno <= questions.length && questions[qno-1].team == 'response') {
+                                    if (rowValues[headerColumn-1] != colValue && rowValues[teamCol]) {
+                                        teamCopyCols.push(headerColumn);
+                                    }
+                                }
+                            }
 			    colValue = parseInput(colValue, colHeader);
 			    modValue = colValue;
 			} else {
@@ -1060,6 +1103,25 @@ function sheetAction(params) {
 
 		}
 		
+                if (teamCopyCols.length) {
+                    var teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1);
+                    var userOffset = userRow-numStickyRows-1;
+                    var teamName = teamValues[userOffset][0];
+                    if (teamName) {
+                        returnInfo['teamModifiedIds'] = [];
+                        for (var j=0; j < idValues.length; j++) {
+                            if (j != userOffset && teamValues[j][0] == teamName) {
+                                returnInfo['teamModifiedIds'].push(idValues[j][0]);
+                            }
+                        }
+
+                        for (var j=0; j < teamCopyCols.length; j++) {
+                            // Broadcast modified team values
+                            teamCopy(modSheet, numStickyRows, userRow, teamCol, teamCopyCols[j]);
+                        }
+                    }
+                }
+
                 if ((paramId != TESTUSER_ID || prevSubmitted) && sessionEntries && adminPaced)
                     returnInfo['adminPaced'] = adminPaced;
 
@@ -1107,6 +1169,8 @@ function createSession(sessionName, params) {
 	    'revision': params.sessionRevision,
 	    'paced': params.paceLevel || 0,
 	    'submitted': null,
+	    'source': '',
+	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
 	    'randomSeed': getRandomSeed(),              // Save random seed
@@ -1423,6 +1487,53 @@ function locateNewRow(newName, newId, nameValues, idValues, skipId) {
     return nameValues.length+1;
 }
 
+function lookupRoster(field, userId) {
+    var rosterSheet = getSheet(ROSTER_SHEET);
+    if (!rosterSheet) {
+        return null;
+    }
+
+    var colIndex = indexColumns(rosterSheet);
+    if (!colIndex[field]) {
+        return null;
+    }
+
+    if (userId) {
+        var rowIndex = indexRows(rosterSheet, colIndex['id'], 2);
+        if (!rowIndex[userId]) {
+            return null;
+        }
+        return lookupValues(userId, [field], ROSTER_SHEET, true)[0];
+    }
+
+    var idVals = getColumns('id', rosterSheet, 1, 2);
+    var fieldVals = getColumns(field, rosterSheet, 1, 2);
+    var fieldDict = {};
+    for (var j=0; j < idVals.length; j++) {
+        fieldDict[idVals[j]] = fieldVals[j];
+    }
+    return fieldDict;
+}
+
+function teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol) {
+    // Copy column value from user row to entire team
+    var nRows = modSheet.getLastRow()-numStickyRows;
+    var teamValues = sessionSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1);
+    var colRange = sessionSheet.getRange(1+numStickyRows, copyCol, nRows, 1);
+    var colValues = colRange.getValues();
+    var teamName = teamValues[userRow-numStickyRows-1][0];
+    var copyValue = colValues[userRow-numStickyRows-1][0];
+    if (!teamName) {
+        return;
+    }
+    for (var j=0; j < colValues.length; j++) {
+        if (teamValues[j][0] == teamName) {
+            colValues[j][0] = copyValue;
+        }
+    }
+    colRange.setValues(colValues);
+}
+
 function notify(message, title) {
     SpreadsheetApp.getActiveSpreadsheet().toast(message, title||'');
 }
@@ -1734,6 +1845,10 @@ function unpackSession(headers, row) {
 
     for (var j=0; j<headers.length; j++) {
 	var header = headers[j];
+	if (header == 'source')
+	    session.source = row[j];
+	if (header == 'team')
+	    session.team = row[j];
 	if (header == 'lateToken')
 	    session.lateToken = row[j];
 	else if (header == 'lastSlide')

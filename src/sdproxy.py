@@ -646,6 +646,7 @@ def sheetAction(params, notrace=False):
 
         sessionEntries = None
         sessionAttributes = None
+        questions = None
         paceLevel = None
         adminPaced = None
         dueDate = None
@@ -679,8 +680,9 @@ def sheetAction(params, notrace=False):
 
         if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
             # Indexed session
-            sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'attributes'], INDEX_SHEET)
+            sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
             sessionAttributes = json.loads(sessionEntries['attributes'])
+            questions = json.loads(sessionEntries['questions'])
             paceLevel = sessionEntries.get('paceLevel')
             adminPaced = sessionEntries.get('adminPaced')
             dueDate = sessionEntries.get('dueDate')
@@ -973,6 +975,7 @@ def sheetAction(params, notrace=False):
             if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
                 raise Exception("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'")
 
+            teamCol = columnIndex.get('team')
             if newRow and (not rowUpdates) and createRow:
                 # Initialize new row
                 if sessionEntries:
@@ -980,7 +983,13 @@ def sheetAction(params, notrace=False):
                                                   userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''), createRow);
                     displayName = rowUpdates[columnIndex['name']-1] or ''
                     if params.get('late') and columnIndex.get('lateToken'):
-                        rowUpdates[columnIndex['lateToken']-1] = params['late'];
+                        rowUpdates[columnIndex['lateToken']-1] = params['late']
+
+                    if teamCol and sessionAttributes.get('sessionTeam') == 'roster':
+                        # Copy team name from roster
+                        teamName = lookupRoster('team', userId)
+                        if teamName:
+                            rowUpdates[teamCol-1] = teamName
                 else:
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
@@ -1104,6 +1113,7 @@ def sheetAction(params, notrace=False):
                     ##returnMessages.append('Debug::prevTimestamp, timestamp: %s %s' % (returnInfo['prevTimestamp'] , params.get('timestamp','')) )
                     raise Exception('Error::Row timestamp too old by '+str(math.ceil(returnInfo['prevTimestamp']-parseNumber(params.get('timestamp','')))/1000)+' seconds. Conflicting modifications from another active browser session?')
 
+                teamCopyCols = []
                 if rowUpdates:
                     # Update all non-null and non-id row values
                     # Timestamp is always updated, unless it is specified by admin
@@ -1161,6 +1171,8 @@ def sheetAction(params, notrace=False):
                                 rowValues[j] = createDate(colValue)
                             else:
                                 rowValues[j] = curDate
+                                if teamCol and rowValues[teamCol]:
+                                    teamCopyCols.append(j+1)
                             returnInfo['submitTimestamp'] = rowValues[j]
 
                         elif colHeader.endswith('_share'):
@@ -1186,6 +1198,19 @@ def sheetAction(params, notrace=False):
                                 except Exception, err:
                                     pass
                             else:
+                                hmatch = QFIELD_RE.match(colHeader)
+                                teamAttr = ''
+                                if hmatch and (hmatch.group(2) == 'response' or hmatch.group(2) == 'explain'):
+                                    qno = int(hmatch.group(1))
+                                    if questions and qno <= len(questions):
+                                        teamAttr = questions[qno-1].get('team','')
+                                if teamAttr == 'setup':
+                                    if hmatch.group(2) == 'response':
+                                        rowValues[teamCol] = colValue
+                                elif teamAttr == 'response':
+                                    if rowValues[j] != colValue and rowValues[teamCol]:
+                                        teamCopyCols.append(j+1) 
+
                                 rowValues[j] = colValue
                         else:
                             if rowValues[j] != colValue:
@@ -1290,6 +1315,13 @@ def sheetAction(params, notrace=False):
                                     colValue = createDate(colValue)
                                 except Exception, err:
                                     pass
+                            else:
+                                hmatch = QFIELD_RE.match(colHeader)
+                                if hmatch and (hmatch.group(2) == 'grade' or hmatch.group(2) == 'comments'):
+                                    qno = int(hmatch.group(1))
+                                    if questions and qno <= len(questions) and questions[qno-1].get('team','') == 'response':
+                                        if rowValues[headerColumn-1] != colValue and rowValues[teamCol]:
+                                            teamCopyCols.append(headerColumn)
 
                             modValue = colValue
                         else:
@@ -1300,6 +1332,20 @@ def sheetAction(params, notrace=False):
                             rowValues[headerColumn-1] = modValue
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
+
+                if len(teamCopyCols):
+                    teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1)
+                    userOffset = userRow-numStickyRows-1
+                    teamName = teamValues[userOffset][0]
+                    if teamName:
+                        returnInfo['teamModifiedIds'] = []
+                        for j in range(len(idValues)):
+                            if j != userOffset and teamValues[j][0] == teamName:
+                                returnInfo['teamModifiedIds'].append(idValues[j][0])
+
+                        for j in range(len(teamCopyCols)):
+                            # Broadcast modified team values
+                            teamCopy(modSheet, numStickyRows, userRow, teamCol, teamCopyCols[j])
 
                 if (paramId != TESTUSER_ID or prevSubmitted) and sessionEntries and adminPaced:
                     returnInfo['adminPaced'] = adminPaced
@@ -1349,6 +1395,8 @@ def createSession(sessionName, params):
 	    'revision': params.get('sessionRevision'),
 	    'paced': params.get('paceLevel', 0),
 	    'submitted': None,
+	    'source': '',
+	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
 	    'randomSeed': getRandomSeed(),                     # Save random seed
@@ -1621,7 +1669,14 @@ def lookupRoster(field, userId=None):
     if not rosterSheet:
         return None
 
+    colIndex = indexColumns(rosterSheet)
+    if not colIndex.get(field):
+        return None
+
     if userId:
+        rowIndex = indexRows(rosterSheet, colIndex['id'], 2)
+        if not rowIndex.get(userId):
+            return None
         return lookupValues(userId, [field], ROSTER_SHEET, True)[0]
 
     idVals = getColumns('id', rosterSheet, 1, 2)
@@ -1773,3 +1828,18 @@ def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
             # Sort by name and then by id
             return j+1
     return len(nameValues)+1
+
+def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
+    # Copy column value from user row to entire team
+    nRows = modSheet.getLastRow()-numStickyRows
+    teamValues = sessionSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1)
+    colRange = sessionSheet.getRange(1+numStickyRows, copyCol, nRows, 1)
+    colValues = colRange.getValues()
+    teamName = teamValues[userRow-numStickyRows-1][0]
+    copyValue = colValues[userRow-numStickyRows-1][0]
+    if not teamName:
+        return
+    for j in range(len(colValues)):
+        if teamValues[j][0] == teamName:
+            colValues[j][0] = copyValue
+    colRange.setValues(colValues)

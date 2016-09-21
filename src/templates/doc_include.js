@@ -1035,8 +1035,8 @@ Sliobj.eventReceiver = function(eventMessage) {
 	    Sliobj.adminPaced = Math.max(eventArgs[0]||0, Sliobj.adminPaced);
 
 	    if (Sliobj.session.paced && !Sliobj.session.submitted && Sliobj.adminPaced == Sliobj.session.lastSlide+1 && Sliobj.currentSlide == Sliobj.session.lastSlide) {
-		// Advance if viewing last slide
-		if (Sliobj.questionSlide && Sliobj.session.remainingTries)
+		// Advance if viewing last slide (if question has been attempted)
+		if (Sliobj.questionSlide && !Sliobj.session.questionsAttempted[Sliobj.questionSlide.qnumber] && Sliobj.session.remainingTries)
 		    alert('Please answer question to proceed');
 		else
 		    Slidoc.slideViewGo(true, Sliobj.session.lastSlide+1);  // visible slides list has been updated
@@ -1188,6 +1188,10 @@ Slidoc.PluginManager.pastDueDate = function() {
 
 Slidoc.PluginManager.graded = function(qnumber) {
     return Sliobj.gradeDateStr;
+}
+
+Slidoc.PluginManager.submitted = function(qnumber) {
+    return Sliobj.session && Sliobj.session.submitted;
 }
 
 Slidoc.PluginManager.answered = function(qnumber) {
@@ -2188,6 +2192,8 @@ function createSession() {
 	    'revision': Sliobj.params.sessionRevision,
 	    'paced': Sliobj.params.paceLevel || 0,
 	    'submitted': null,
+	    'source': '',
+	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
 	    'randomSeed': Slidoc.Random.getRandomSeed(), // Save random seed
@@ -2284,6 +2290,8 @@ function unpackSession(row) {
 	session_hidden = atob(session_hidden);
 
     var session = JSON.parse(session_hidden);
+    session.source = row.source || '';
+    session.team = row.team || '';
     session.lateToken = row.lateToken || '';
     session.lastSlide = row.lastSlide || 0;
 
@@ -4067,7 +4075,7 @@ Slidoc.slideViewEnd = function() {
        location.href = '#'+slides[Sliobj.currentSlide-1].id;
     }
     Sliobj.currentSlide = 0;
-    Sliobj.questionSlide = '';
+    Sliobj.questionSlide = null;
 
     var pluginButton = document.getElementById("slidoc-button-plugin");
     pluginButton.innerHTML = '';
@@ -4127,9 +4135,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
 
-	if (Sliobj.questionSlide && Sliobj.session.remainingTries) {
+	if (Sliobj.questionSlide && !Sliobj.session.questionsAttempted[Sliobj.questionSlide.qnumber] && Sliobj.session.remainingTries) {
 	    // Current (not new) slide is question slide
-	    var tryCount =  (Sliobj.questionSlide=='choice') ? 1 : Sliobj.session.remainingTries;
+	    var tryCount =  (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
 	    var prompt = 'Please answer before proceeding.'
 	    if (tryCount > 1)
 		prompt += 'You have '+tryCount+' try(s)';
@@ -4154,7 +4162,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
         // Update session for new slide
 	Sliobj.session.lastSlide = slide_num; 
 	Sliobj.session.lastTime = Date.now();
-	Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
+	Sliobj.questionSlide = question_attrs;
 
 	var curTime = Date.now();
 	if (slide_num == 1 && Sliobj.params.paceLevel == ADMIN_PACE)
@@ -4175,7 +4183,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	Sliobj.session.lastTries = 0;
 	Sliobj.session.remainingTries = 0;
 	Sliobj.session.tryDelay = 0;
-	if (Sliobj.questionSlide) {
+	if (Sliobj.questionSlide && !Sliobj.session.questionsAttempted[Sliobj.questionSlide.qnumber]) {
 	    if (Sliobj.params.paceLevel >= QUESTION_PACE)  {
 		// Non-zero remaining tries only for QUESTION_PACE or greater
 		if (Sliobj.params.paceLevel == QUESTION_PACE && question_attrs.retry) {
@@ -4240,7 +4248,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	if (Sliobj.session.paced && Sliobj.session.showTime)
 	    Sliobj.session.showTime.back.slice(-1)[0].push( [slide_num, Date.now()-Sliobj.session.showTime.initTime] );
 
-	Sliobj.questionSlide = question_attrs ? question_attrs.qtype : '';
+	Sliobj.questionSlide = question_attrs;
 	if (slide_id in Sliobj.slidePlugins) {
 	    for (var j=0; j<Sliobj.slidePlugins[slide_id].length; j++)
 		Slidoc.PluginManager.optCall(Sliobj.slidePlugins[slide_id][j], 'enterSlide', false, backward);

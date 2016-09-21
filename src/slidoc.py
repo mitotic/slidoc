@@ -1173,11 +1173,12 @@ class SlidocRenderer(MathRenderer):
         retry_counts = [0, 0]  # Retry count, retry delay
         opt_values = { 'explain': ('text', 'markdown'),
                        'share': ('after_due_date', 'after_answering', 'after_grading'),
+                       'team': ('response', 'setup'),
                        'vote': ('show_completed', 'show_live') }
         if self.options['config'].pace == ADMIN_PACE:
             # Change default share value for admin pace
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
-        answer_opts = { 'explain': '', 'share': '', 'vote': ''}
+        answer_opts = { 'explain': '', 'share': '', 'team': '', 'vote': ''}
         for opt in opt_comps[1:]:
             num_match = re.match(r'^(weight|retry)=([\s\d,]+)$', opt)
             if num_match:
@@ -1191,7 +1192,7 @@ class SlidocRenderer(MathRenderer):
             elif opt == 'retry':
                 retry_counts = [1, 0]
             else:
-                option_match = re.match(r'^(explain|share|vote)(=(\w+))?$', opt)
+                option_match = re.match(r'^(explain|share|team|vote)(=(\w+))?$', opt)
                 if option_match:
                     opt_name = option_match.group(1)
                     if option_match.group(3) and option_match.group(3) not in opt_values[opt_name]:
@@ -1351,6 +1352,8 @@ class SlidocRenderer(MathRenderer):
             self.questions[-1].update(explain=answer_opts['explain'])
         if answer_opts['share']:
             self.questions[-1].update(share=answer_opts['share'])
+        if answer_opts['team']:
+            self.questions[-1].update(team=answer_opts['team'])
         if answer_opts['vote']:
             self.questions[-1].update(vote=answer_opts['vote'])
 
@@ -1369,6 +1372,14 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['share']:
             self.sheet_attributes['shareAnswers']['q'+str(qnumber)] = {'share': answer_opts['share'], 'vote': answer_opts['vote'], 'voteWeight': 0}
+
+        if answer_opts['team']:
+            if answer_opts['team'] == 'setup':
+                if self.sheet_attributes['sessionTeam']:
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must occur as first team option in slide %s" % (self.options["filename"], self.slide_number))
+                self.sheet_attributes['sessionTeam'] = 'setup'
+            elif not self.sheet_attributes['sessionTeam']:
+                self.sheet_attributes['sessionTeam'] = 'roster'
 
         ans_grade_fields = self.process_weights(weight_answer)
 
@@ -1487,13 +1498,13 @@ class SlidocRenderer(MathRenderer):
             self.cum_gweights.append(self.cum_gweights[-1] + (gweight or 0))
 
         ans_grade_fields = []
-        if 'grade_response' in self.options['config'].features or self.questions[-1].get('share'):
+        if 'grade_response' in self.options['config'].features or self.questions[-1].get('share') or self.questions[-1].get('team'):
             qno = 'q%d' % len(self.questions)
             if '/' in self.qtypes[-1] and self.qtypes[-1].split('/')[0] in ('text', 'Code', 'Upload'):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
-            elif self.questions[-1].get('share'):
+            elif self.questions[-1].get('share') or self.questions[-1].get('team'):
                 ans_grade_fields += [qno+'_response']
             if ans_grade_fields:
                 if self.questions[-1].get('share'):
@@ -1741,7 +1752,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields =  ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
-Session_fields = ['lateToken', 'lastSlide', 'session_hidden']
+Session_fields = ['team', 'lateToken', 'lastSlide', 'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate', 'gradeDate', 'mediaURL', 'paceLevel',
                 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'attributes', 'questions',
                 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
