@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3k'
+VERSION = '0.96.3l'
 
 # Usually modified by importing module
 Options = {
