@@ -932,7 +932,7 @@ function sheetAction(params) {
 				rowValues[j] = createDate(colValue);
 			    } else {
 				rowValues[j] = curDate;
-				if (teamCol && rowValues[teamCol]) {
+				if (teamCol && rowValues[teamCol-1]) {
                                     teamCopyCols.push(j+1);
                                 }
 			    }
@@ -963,10 +963,10 @@ function sheetAction(params) {
                             }
                             if (teamAttr == 'setup') {
                                 if (hmatch[2] == 'response') {
-                                    rowValues[teamCol] = colValue;
+                                    rowValues[teamCol-1] = colValue;
                                 }
                             } else if (teamAttr == 'response') {
-                                if (rowValues[j] != colValue && rowValues[teamCol]) {
+                                if (rowValues[j] != colValue && rowValues[teamCol-1]) {
                                     teamCopyCols.push(j+1);
                                 }
                             }
@@ -1084,7 +1084,7 @@ function sheetAction(params) {
                             if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {
                                 var qno = parseInt(hmatch[1]);
                                 if (questions && qno <= questions.length && questions[qno-1].team == 'response') {
-                                    if (rowValues[headerColumn-1] != colValue && rowValues[teamCol]) {
+                                    if (rowValues[headerColumn-1] != colValue && rowValues[teamCol-1]) {
                                         teamCopyCols.push(headerColumn);
                                     }
                                 }
@@ -1104,6 +1104,7 @@ function sheetAction(params) {
 		}
 		
                 if (teamCopyCols.length) {
+		    var nRows = modSheet.getLastRow()-numStickyRows;
                     var teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1);
                     var userOffset = userRow-numStickyRows-1;
                     var teamName = teamValues[userOffset][0];

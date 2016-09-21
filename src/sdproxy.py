@@ -1171,7 +1171,7 @@ def sheetAction(params, notrace=False):
                                 rowValues[j] = createDate(colValue)
                             else:
                                 rowValues[j] = curDate
-                                if teamCol and rowValues[teamCol]:
+                                if teamCol and rowValues[teamCol-1]:
                                     teamCopyCols.append(j+1)
                             returnInfo['submitTimestamp'] = rowValues[j]
 
@@ -1206,9 +1206,9 @@ def sheetAction(params, notrace=False):
                                         teamAttr = questions[qno-1].get('team','')
                                 if teamAttr == 'setup':
                                     if hmatch.group(2) == 'response':
-                                        rowValues[teamCol] = colValue
+                                        rowValues[teamCol-1] = colValue
                                 elif teamAttr == 'response':
-                                    if rowValues[j] != colValue and rowValues[teamCol]:
+                                    if rowValues[j] != colValue and rowValues[teamCol-1]:
                                         teamCopyCols.append(j+1) 
 
                                 rowValues[j] = colValue
@@ -1320,7 +1320,7 @@ def sheetAction(params, notrace=False):
                                 if hmatch and (hmatch.group(2) == 'grade' or hmatch.group(2) == 'comments'):
                                     qno = int(hmatch.group(1))
                                     if questions and qno <= len(questions) and questions[qno-1].get('team','') == 'response':
-                                        if rowValues[headerColumn-1] != colValue and rowValues[teamCol]:
+                                        if rowValues[headerColumn-1] != colValue and rowValues[teamCol-1]:
                                             teamCopyCols.append(headerColumn)
 
                             modValue = colValue
@@ -1334,6 +1334,7 @@ def sheetAction(params, notrace=False):
 
 
                 if len(teamCopyCols):
+                    nRows = modSheet.getLastRow()-numStickyRows
                     teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1)
                     userOffset = userRow-numStickyRows-1
                     teamName = teamValues[userOffset][0]
