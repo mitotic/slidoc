@@ -2407,7 +2407,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 doc_str = paced_files[fname]['type'] + ' exercise'
                 if admin_due_date.get(fname):
                     due_date = sliauth.parse_date(admin_due_date[fname]).ctime()
-                    doc_str += ', completed '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
+                    doc_str += ', ended '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
                 else:
                     due_date = paced_files[fname]['due_date']
                     if due_date:

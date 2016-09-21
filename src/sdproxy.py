@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3i'
+VERSION = '0.96.3j'
 
 # Usually modified by importing module
 Options = {
@@ -716,6 +716,7 @@ def sheetAction(params, notrace=False):
         createRow = params.get('create', '')
         nooverwriteRow = params.get('nooverwrite','')
         delRow = params.get('delrow','')
+        importSession = params.get('import','')
 
         selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
         rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
@@ -730,6 +731,9 @@ def sheetAction(params, notrace=False):
 
         if not adminUser and selectedUpdates and not voteSubmission:
             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
+
+        if importSession and not adminUser:
+            raise Exception("Error::Only admin user allowed to import to sheet '"+sheetName+"'")
 
         if protectedSheet and (rowUpdates or selectedUpdates) :
             raise Exception("Error::Cannot modify protected sheet '"+sheetName+"'")
@@ -916,7 +920,7 @@ def sheetAction(params, notrace=False):
                     if parseNumber(respVal) is not None:
                         respSort = parseNumber(respVal)
                     else:
-                        respSort = respVal
+                        respSort = respVal.lower()
 
                     if sortVotes:
                         # Voted: sort by (-) vote tally and then by response
@@ -966,7 +970,7 @@ def sheetAction(params, notrace=False):
             ##returnMessages.append('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues)
             newRow = (not userRow)
 
-            if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID:
+            if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
                 raise Exception("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'")
 
             if newRow and (not rowUpdates) and createRow:
@@ -1053,7 +1057,7 @@ def sheetAction(params, notrace=False):
 
                         if not allowLateMods and not partialSubmission:
                             if pastSubmitDeadline:
-                                if newRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
+                                if not importSession and (newRow  or selectedUpdates or (rowUpdates and not nooverwriteRow)):
                                     # Creating/modifying row; require valid lateToken
                                     if not lateToken:
                                         raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'." % (dueDate, sheetName))
@@ -1103,7 +1107,7 @@ def sheetAction(params, notrace=False):
                 if rowUpdates:
                     # Update all non-null and non-id row values
                     # Timestamp is always updated, unless it is specified by admin
-                    if adminUser and sessionEntries and userId != MAXSCORE_ID:
+                    if adminUser and sessionEntries and userId != MAXSCORE_ID and not importSession:
                         raise Exception("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'")
 
                     if submitTimestampCol and rowUpdates[submitTimestampCol-1] and userId != TESTUSER_ID:
@@ -1221,7 +1225,7 @@ def sheetAction(params, notrace=False):
                             # Admin can modify grade columns only for submitted sessions before 'effective' due date
                             # and only for non-late submissions thereafter
                             allowGrading = prevSubmitted or (pastSubmitDeadline and lateToken != LATE_SUBMIT)
-                            if not allowGrading and not params.get('import'):
+                            if not allowGrading and not importSession:
                                 raise Exception("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteSubmission:
@@ -1404,7 +1408,10 @@ def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', ema
 
     
 def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
-    token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
+    if opts.get('admin'):
+        token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+    else:
+        token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
     getParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'name': displayName, 'get': '1'}
     getParams.update(opts)
@@ -1420,7 +1427,10 @@ def getAllRows(sessionName, opts={}, notrace=False):
     return sheetAction(getParams, notrace=notrace)
 
 def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
-    token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
+    if opts.get('admin'):
+        token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+    else:
+        token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
     putParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'row': json.dumps(rowValues, default=sliauth.json_default)}
     putParams.update(opts)
@@ -1428,13 +1438,17 @@ def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
     return sheetAction(putParams, notrace=notrace)
 
 def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
+    if opts.get('admin'):
+        token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+    else:
+        token = sliauth.gen_user_token(Options['AUTH_KEY'], updateObj['id'])
     token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
     updates = []
     for j, header in enumerate(headers):
         if header in updateObj:
             updates.append( [header, updateObj[header]] )
 
-    updateParams = {'admin': 'admin', 'id': updateObj['id'], 'token': token,'sheet': sessionName,
+    updateParams = {'id': updateObj['id'], 'token': token,'sheet': sessionName,
                     'update': json.dumps(updates, default=sliauth.json_default)}
     updateParams.update(opts)
 
@@ -1539,7 +1553,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     paceLevel = sessionEntries.get('paceLevel')
     adminPaced = sessionEntries.get('adminPaced')
 
-    retval = getUserRow(sessionName, userId, displayName, {'create': '1', 'getheaders': '1'}, notrace=True)
+    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': '1', 'getheaders': '1'}, notrace=True)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
     headers = retval['headers']
@@ -1568,11 +1582,11 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if header.endswith('Timestamp'):
             rowValues[j] = None             # Do not modify (most) timestamps
 
-    putOpts = {}
+    putOpts = {'admin': 'admin', 'import': '1' }
     submitTimestamp = None
     if paceLevel == ADMIN_PACE:
         if userId == TESTUSER_ID:
-            # Import first? separately?
+            # Import first to set paced slides etc.
             rowValues[headerCols['lastSlide']-1] = sessionAttributes['params']['pacedSlides']
             if submitDate:
                 rowValues[headerCols['submitTimestamp']-1] = submitDate
@@ -1589,13 +1603,13 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     if Options['DEBUG']:
         print("DEBUG:importUserAnswers2", sessionName, userId, adminPaced, file=sys.stderr)
             
-    retval = putUserRow(sessionName, userId, rowValues)
+    retval = putUserRow(sessionName, userId, rowValues, putOpts)
     if retval['result'] != 'success':
 	    raise Exception('Error in importing session for user '+userId+': '+retval.get('error'))
 
     if submitTimestamp:
         updateObj = {'id': userId, 'submitTimestamp': submitTimestamp}
-        retval = updateUserRow(sessionName, headers, updateObj, {'import': '1'})
+        retval = updateUserRow(sessionName, headers, updateObj, {'admin': 'admin', 'import': '1'})
         if retval['result'] != 'success':
             raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
 

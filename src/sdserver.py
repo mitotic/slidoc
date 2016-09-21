@@ -1068,14 +1068,14 @@ def processTwitterMessage(msg):
     if Options['auth_type'].startswith('twitter,'):
         status = WSHandler.processMessage(fromUser, fromName, message)
     else:
-        twitterMap = sdproxy.makeRosterMap('twitter', lowercase=True)
-        if not twitterMap:
+        idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
+        if not idMap:
             status = 'Error - no twitter entries in roster. Message from '+fromUser+' dropped'
         else:
-            for userId, twitterId in twitterMap.items():
-                if fromUser == twitterId:
-                    status = WSHandler.processMessage(userId, sdproxy.lookupRoster('name', userId), message)
-            if status is None:
+            userId = idMap.get(fromUser.lower())
+            if userId:
+                status = WSHandler.processMessage(userId, sdproxy.lookupRoster('name', userId), message)
+            else:
                 status = 'Error - twitter ID '+fromUser+' not found in roster'
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
@@ -1156,8 +1156,13 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
                     errors.append('MISSING: User ID '+userId+' not found in roster')
                     continue
             elif twitterCol:
-                twitterId = row[twitterCol-1] 
-                userId = idMap.get(twitterId.lower())
+                twitterId = row[twitterCol-1]
+                if twitterId == TESTUSER_ID:
+                    # Special case of test user; not really Twitter ID
+                    userId = twitterId
+                else:
+                    # Map Twitter ID to user ID
+                    userId = idMap.get(twitterId.lower())
                 if not userId:
                     missed.append('@'+twitterId)
                     errors.append('MISSING: Twitter ID '+twitterId+' not found in roster')

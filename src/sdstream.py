@@ -138,7 +138,12 @@ class TwitterStreamReader(object):
         if not line:
             return
 
-        content = json.loads(line)
+        try:
+            content = json.loads(line)
+        except Exception, excp:
+            print >> sys.stderr, "TwitterStreamReader.handle_stream: JSON error for line '"+str(line)+"': "+str(excp)
+            return
+
         self.tbuffer = ''
 
         if "friends" in content:
@@ -182,9 +187,9 @@ class TwitterStreamReader(object):
     def handle_response(self, response):
         resp_code = getattr(response, "code", 0)
         if hasattr(response, "error"):
-            print >> sys.stderr, "TwitterStreamReader.handle_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error)
+            print >> sys.stderr, "TwitterStreamReader.handle_response: ERROR RESPONSE: code %s - %s" % (resp_code, response.error)
         else:
-            print >> sys.stderr, "TwitterStreamReader.handle_response: NORMAL STREAM RESPONSE: code %s" % resp_code
+            print >> sys.stderr, "TwitterStreamReader.handle_response: NORMAL RESPONSE: code %s" % resp_code
 
 
 def condense_twitter_content(content):

@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3i';
+var VERSION = '0.96.3j';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -357,26 +357,24 @@ function sheetAction(params) {
 				if (!(keys[rowNum-2][0] in updateKeys))
 				    updateSheet.deleteRow(rowNum);
 			    }
-			    var idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, updateSheet.getLastRow()-updateStickyRows, 1);
-			    var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, updateSheet.getLastRow()-updateStickyRows, 1);
-			} else {
-			    var idValues = [];
-			    var nameValues = [];
 			}
-			var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 
 			for (var k=0; k<updateRows.length; k++) {
 			    // Update rows with pre-existing or new keys
 			    var rowId = updateRows[k][0];
 			    var rowVals = updateRows[k][1];
+			    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 			    var modRow = temIndexRow[rowId];
 			    if (!modRow) {
-				if (rowId == MAXSCORE_ID) {
+				if (rowId == MAXSCORE_ID || updateSheet.getLastRow() == updateStickyRows) {
+				    // MaxScore or no rows
 				    modRow = updateStickyRows+1;
 				} else if (rowId == TESTUSER_ID) {
 				    // Test user always appears after max score
 				    modRow = temIndexRow[MAXSCORE_ID] ? temIndexRow[MAXSCORE_ID]+1 : updateStickyRows+1;
 				} else {
+				    var idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, updateSheet.getLastRow()-updateStickyRows, 1);
+				    var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, updateSheet.getLastRow()-updateStickyRows, 1);
 				    modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues, TESTUSER_ID);
 				}
 				updateSheet.insertRowBefore(modRow);
@@ -385,7 +383,7 @@ function sheetAction(params) {
 				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
 
 			    updateSheet.getRange(modRow, 1, 1, rowVals.length).setValues([rowVals]);
-			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowVals);
+			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowId+', '+rowVals);
 			}
 		    }
 		} catch(err) {
@@ -444,6 +442,7 @@ function sheetAction(params) {
 	    var createRow = params.create || '';
 	    var nooverwriteRow = params.nooverwrite || '';
 	    var delRow = params.delrow || '';
+	    var importSession = params.import || '';
 	    
 	    var selectedUpdates = params.update ? JSON.parse(params.update) : null;
 	    var rowUpdates = params.row ? JSON.parse(params.row) : null;
@@ -459,6 +458,9 @@ function sheetAction(params) {
 
 	    if (!adminUser && selectedUpdates && !voteSubmission)
 		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
+
+            if (importSession && !adminUser)
+		throw("Error::Only admin user allowed to import to sheet '"+sheetName+"'")
 
 	    if (protectedSheet && (rowUpdates || selectedUpdates) )
 		throw("Error::Cannot modify protected sheet '"+sheetName+"'")
@@ -665,7 +667,7 @@ function sheetAction(params) {
                     if (parseNumber(respVal) != null) {
                         var respSort = parseNumber(respVal);
                     } else {
-                        var respSort = respVal;
+                        var respSort = respVal.toLowerCase();
                     }
 
                     if (sortVotes) {
@@ -718,7 +720,7 @@ function sheetAction(params) {
 	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues);
 	    var newRow = !userRow;
 
-	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID)
+	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
 		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
 
 	    if (newRow && !rowUpdates && createRow) {
@@ -809,7 +811,7 @@ function sheetAction(params) {
 			}
 			if (!allowLateMods && !partialSubmission) {
 			    if (pastSubmitDeadline) {
-				    if (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
+				if (!importSession && (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow))) {
 					// Creating/modifying row; require valid lateToken
 					if (!lateToken)
 					    throw("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'.")
@@ -864,7 +866,7 @@ function sheetAction(params) {
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
-		    if (adminUser && sessionEntries && userId != MAXSCORE_ID)
+		    if (adminUser && sessionEntries && userId != MAXSCORE_ID && !importSession)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
 
 		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1] && userId != TESTUSER_ID)
@@ -982,7 +984,7 @@ function sheetAction(params) {
 			    // Admin can modify grade columns only for submitted sessions before 'effective' due date
 			    // and only for non-late submissions thereafter
 			    var allowGrading = prevSubmitted || (pastSubmitDeadline && lateToken != LATE_SUBMIT);
-			    if (!allowGrading && !params.import)
+			    if (!allowGrading && !importSession)
 				throw("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'");
 			}
 		    }
