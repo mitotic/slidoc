@@ -807,7 +807,7 @@ GoogleSheet.prototype.getRow = function (id, opts, callback) {
 
     var params = {id: id, get: '1'};
     if (opts.create)
-	params.create = '1';
+	params.create = 'browser';
     if (opts.late)
 	params.late = opts.late;
     this.callbackCounter += 1;

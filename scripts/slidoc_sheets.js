@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.3j';
+var VERSION = '0.96.3k';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -727,7 +727,7 @@ function sheetAction(params) {
 		// Initialize new row
 		if (sessionEntries) {
 		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
-						  userId, params.name, params.email, params.altid);
+						  userId, params.name, params.email, params.altid, createRow);
 		    displayName = rowUpdates[columnIndex['name']-1] || '';
 		    if (params.late && columnIndex['lateToken'])
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
@@ -1124,7 +1124,7 @@ function createSession(sessionName, params) {
 
 }
 
-function createSessionRow(sessionName, fieldsMin, params, userId, displayName, email, altid) {
+function createSessionRow(sessionName, fieldsMin, params, userId, displayName, email, altid, source) {
     var headers = params.sessionFields.concat(params.gradeFields);
     var idCol = headers.indexOf('id') + 1;
     var nameCol = headers.indexOf('name') + 1;
@@ -1140,6 +1140,7 @@ function createSessionRow(sessionName, fieldsMin, params, userId, displayName, e
 		rowVals[j] = session[header];
 	}
     }
+    rowVals[headers.indexOf('source')] = source || '';
     rowVals[headers.indexOf('session_hidden')] = JSON.stringify(session);
 
     var rosterSheet = getSheet(ROSTER_SHEET);

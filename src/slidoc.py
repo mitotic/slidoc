@@ -1202,7 +1202,7 @@ class SlidocRenderer(MathRenderer):
                 else:
                     abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s' is not a valid answer option for slide %s" % (self.options["filename"], opt, self.slide_number))
 
-        if answer_opts['vote'] and not answer_opts['share']:
+        if not answer_opts['share'] and (answer_opts['vote'] or 'share_all' in self.options['config'].features):
             answer_opts['share'] = opt_values['share'][0]
 
         if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
@@ -1740,7 +1740,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Manage_fields =  ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp']
+Manage_fields =  ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['lateToken', 'lastSlide', 'session_hidden']
 Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate', 'gradeDate', 'mediaURL', 'paceLevel',
                 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'attributes', 'questions',
@@ -2248,6 +2248,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                                                         index_id=index_id, qindex_id=qindex_id)
         max_params = {}
         max_params['id'] = '_max_score'
+        max_params['source'] = 'slidoc'
         max_params['initTimestamp'] = None
         max_params['q_other'] = sum(q.get('vweight',0) for q in renderer.questions) if renderer.questions else 0
         max_params['q_grades'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
@@ -2727,12 +2728,13 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
 #   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
+#   share_all: share answers for all questions
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
+Features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)

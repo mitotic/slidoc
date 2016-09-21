@@ -212,7 +212,7 @@ class ActionHandler(BaseHandler):
             nameMap = sdproxy.lookupRoster('name')
             if respId:
                 if respId in nameMap:
-                    sdproxy.importUserAnswers(sessionName, respId)
+                    sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual')
                 else:
                     self.write('User ID '+respId+' not in roster')
                     return
@@ -386,7 +386,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             print >> sys.stderr, 'sdserver.setupInteractive:', cls._interactiveSession
 
     @classmethod
-    def processMessage(cls, fromUser, fromName, message, allStatus=False):
+    def processMessage(cls, fromUser, fromName, message, allStatus=False, source=''):
         # Return null string on success or error message
         print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromName, message
 
@@ -416,7 +416,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         for connection in session_connections.get(fromUser,[]):
             connection.close()
 
-        retval = sdproxy.getUserRow(sessionName, fromUser, fromName, opts={'getheaders': '1', 'create': '1'})
+        create = source or 'message'
+        retval = sdproxy.getUserRow(sessionName, fromUser, fromName, opts={'getheaders': '1', 'create': create})
         if retval['result'] != 'success':
             msg = 'Error in processing message from '+fromUser+': '+retval['error']
             print >> sys.stderr, 'sdserver.processMessage:', msg
@@ -842,7 +843,7 @@ class AuthMessageHandler(BaseHandler):
     @tornado.web.authenticated
     def post(self, subpath=''):
         try:
-            msg = WSHandler.processMessage(self.get_id_from_cookie(), self.get_id_from_cookie(name=True), self.get_argument("message", ""), allStatus=True)
+            msg = WSHandler.processMessage(self.get_id_from_cookie(), self.get_id_from_cookie(name=True), self.get_argument("message", ""), allStatus=True, source='interact')
             if not msg:
                 msg = 'Previous message accepted'
         except Exception, excp:
@@ -1066,7 +1067,7 @@ def processTwitterMessage(msg):
     message = msg['text']
     status = None
     if Options['auth_type'].startswith('twitter,'):
-        status = WSHandler.processMessage(fromUser, fromName, message)
+        status = WSHandler.processMessage(fromUser, fromName, message, source='twitter')
     else:
         idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
         if not idMap:
@@ -1074,7 +1075,7 @@ def processTwitterMessage(msg):
         else:
             userId = idMap.get(fromUser.lower())
             if userId:
-                status = WSHandler.processMessage(userId, sdproxy.lookupRoster('name', userId), message)
+                status = WSHandler.processMessage(userId, sdproxy.lookupRoster('name', userId), message, source='twitter')
             else:
                 status = 'Error - twitter ID '+fromUser+' not found in roster'
     print >> sys.stderr, 'processTwitterMessage:', status
@@ -1172,7 +1173,7 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
             try:
                 if Options['debug']:
                     print >> sys.stderr, 'DEBUG: importAnswersAux', sessionName, userId, displayName, answers
-                sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate)
+                sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate, source='import')
             except Exception, excp:
                 errors.append('Error in import for '+userId+': '+str(excp))
                 missed.append(userId)

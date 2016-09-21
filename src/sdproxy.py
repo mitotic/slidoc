@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.3j'
+VERSION = '0.96.3k'
 
 # Usually modified by importing module
 Options = {
@@ -519,7 +519,7 @@ def update_remote_sheets(force=False):
     json_data = json.dumps(modRequests, default=sliauth.json_default)
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
                   'data':  json_data}
-    post_data['create'] = 1
+    post_data['create'] = 'proxy'
     body = urllib.urlencode(post_data)
     http_client.fetch(Options['SHEET_URL'], handle_proxy_response, method='POST', headers=None, body=body)
     Global.totalCacheRequestBytes += len(json_data)
@@ -977,7 +977,7 @@ def sheetAction(params, notrace=False):
                 # Initialize new row
                 if sessionEntries:
                     rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
-                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''));
+                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''), createRow);
                     displayName = rowUpdates[columnIndex['name']-1] or ''
                     if params.get('late') and columnIndex.get('lateToken'):
                         rowUpdates[columnIndex['lateToken']-1] = params['late'];
@@ -1364,7 +1364,7 @@ def createSession(sessionName, params):
 	    'plugins': persistPlugins
 	   }
 
-def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', email='', altid=''):
+def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', email='', altid='', source=''):
     headers = params['sessionFields'] + params['gradeFields']
     idCol = headers.index('id') + 1
     nameCol = headers.index('name') + 1
@@ -1378,6 +1378,7 @@ def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', ema
             if header in session:
                 rowVals[-1] = session[header]
 
+    rowVals[headers.index('source')] = source
     rowVals[headers.index('session_hidden')] = json.dumps(session)
 
     rosterSheet = getSheet(ROSTER_SHEET, optional=True)
@@ -1538,7 +1539,7 @@ def createQuestionAttempted(response):
     return {'response': response or ''};
 
 
-def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=''):
+def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate='', source=''):
     # answers = {1:{'response':, 'explain':},...}
     if Options['DEBUG']:
         print("DEBUG:importUserAnswers", sessionName, submitDate, userId, displayName, answers, file=sys.stderr)
@@ -1553,7 +1554,8 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     paceLevel = sessionEntries.get('paceLevel')
     adminPaced = sessionEntries.get('adminPaced')
 
-    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': '1', 'getheaders': '1'}, notrace=True)
+    create = source or 'import'
+    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=True)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
     headers = retval['headers']
