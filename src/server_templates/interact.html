@@ -1,3 +1,12 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    textarea { font-size: 14px; }
+  </style>
+</head>
+<body>
 <div id="main-container">
   <h2><a href="/">{{site_label}}</a></h2>
   <h3>{{session_label}}</h3>
@@ -7,18 +16,18 @@
         <div>
           Status: <span class="sdserver-note"><em>{{note}}</em></span>
         </div>
+        <hr>
 	<p></p>
-        <fieldset>
-          <label for="username">Message:</label>
-          <textarea name="message" autocapitalize="off" autocorrect="off" class="sdserver-textarea"></textarea>
-        </fieldset>
+          <label for="username">Message:</label><p></p>
+          <textarea name="message" cols=40 autocapitalize="off" autocorrect="off" class="sdserver-textarea"></textarea>
         {% module xsrf_form_html() %}
+	<p></p>
         <div id="form_btn">
 	  <input id="submit-btn" type="submit" value="Submit">
 	</div>
       </form>
     </div>
-  <p></p>
-  <a href="/">Home</a>
   </div>
 </div>
+</body>
+</html>

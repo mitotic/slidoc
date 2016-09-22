@@ -1042,7 +1042,7 @@ class Application(tornado.web.Application):
         if Options['proxy_wait'] is not None:
             handlers += [ (r"/_proxy", ProxyHandler),
                           (r"/_websocket/(.*)", WSHandler),
-                          (r"/interact(/.*)?", AuthMessageHandler),
+                          (r"/interact", AuthMessageHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),
                           (r"/(_twitter)", ActionHandler),
