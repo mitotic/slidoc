@@ -173,13 +173,15 @@ class TwitterStreamReader(object):
                 self.log_msg('handle_stream: '+self.status+' '+str(content['friends']), True)
             return
 
-        self.log_msg("handle_stream: message="+str(content))
         try:
             parsed_msg = parse_tweet(content, user_name=self.twitter_config.get('screen_name'))
         except Exception, err:
             import traceback
             traceback.print_exc()
             return
+
+        if parsed_msg:
+            self.log_msg("handle_stream: message="+parsed_msg)
 
         status = None
         try:
