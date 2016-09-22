@@ -181,7 +181,7 @@ class TwitterStreamReader(object):
             return
 
         if parsed_msg:
-            self.log_msg("handle_stream: message="+parsed_msg)
+            self.log_msg("handle_stream: message="+str(parsed_msg))
 
         status = None
         try:
