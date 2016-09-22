@@ -107,7 +107,7 @@ Lock_cache = {}     # Locked sheets
 
 Global = Dummy()
 
-Global.remoteVersion = ''
+Global.remoteVersions = set()
 
 def initCache():
     Sheet_cache.clear()
@@ -234,7 +234,7 @@ def getSheet(sheetName, optional=False):
     if Options['DEBUG']:
         print("DEBUG:getSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
 
-    Global.remoteVersion = retval.get('info',{}).get('version','')
+    Global.remoteVersions.add( retval.get('info',{}).get('version','') )
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
             Miss_cache[sheetName] = sliauth.epoch_ms()
@@ -416,7 +416,7 @@ class Range(object):
         self.sheet.setSheetValues(*(self.rng+[values]))
 
 def getCacheStatus():
-    out = 'Cache: version %s (%s)\n' % (VERSION, Global.remoteVersion)
+    out = 'Cache: version %s (%s)\n' % (VERSION, list(Global.remoteVersions))
     out += '  No. of updates (retries): %d (%d)\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount)
     out += '  Average update time = %.2fs\n\n' % (Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheResponseCount)) )
     out += '  Average request bytes = %d\n\n' % (Global.totalCacheRequestBytes/max(1,Global.totalCacheResponseCount) )

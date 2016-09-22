@@ -51,6 +51,8 @@ TWITTER_CONDENSE_KEYS = set(["created_at", "direct_message", "friends", "id", "i
 MAX_MSG_TEXT = 5000                 # Max. text size for all messages
 
 class TwitterStreamReader(object):
+    MAX_LOG = 200
+    
     NORMAL_BACKOFF_MINDELAY = 5
     NORMAL_BACKOFF_MAXDELAY = 480
 
@@ -72,10 +74,23 @@ class TwitterStreamReader(object):
         self.restart_cb = None
         self.restart_delay_time = 0
 
+        self.status = ''
+        self.log_buffer = []
+
+
+    def log_msg(self, msg, prnt=False):
+        if len(self.log_buffer) < self.MAX_LOG:
+            self.log_buffer.insert(0, msg)
+        else:
+            self.log_buffer = [ msg ] + self.log_buffer[:-1]
+        if prnt:
+            print >> sys.stderr, 'TwitterStreamReader.log_msg', msg
+
     def end_stream(self):
         if self.closed:
             return
         self.closed = True
+        self.status = 'Closed'
 
         print >> sys.stderr, 'TwitterStreamReader.end_stream*********END TWITTER USER STREAM'
 
@@ -111,9 +126,9 @@ class TwitterStreamReader(object):
         resp_code = getattr(response, "code", 0)
         rate_limited = (resp_code == 420)
         if hasattr(response, "error"):
-            print >> sys.stderr, "TwitterStreamReader.handle_stream_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error)
+            self.log_msg("handle_stream_response: ERROR STREAM RESPONSE: code %s - %s" % (resp_code, response.error), True)
         else:
-            print >> sys.stderr, "TwitterStreamReader.handle_stream_response: NORMAL STREAM RESPONSE: code %s" % resp_code
+            self.log_msg("handle_stream_response: NORMAL STREAM RESPONSE: code %s" % resp_code, True)
 
         # Restart stream
         if self.restart_cb:
@@ -126,7 +141,8 @@ class TwitterStreamReader(object):
                 self.restart_delay_time = min(2*self.restart_delay_time, self.RATELIMIT_BACKOFF_MAXDELAY)
         else:
             self.restart_delay_time = self.RATELIMIT_BACKOFF_MINDELAY if rate_limited else self.NORMAL_BACKOFF_MINDELAY
-        print >> sys.stderr, "RESTART STREAM AFTER %s SEC" % self.restart_delay_time
+        self.status = "RESTART STREAM AFTER %s SEC" % self.restart_delay_time
+        print >> sys.stderr, self.status
         self.restart_cb = IOLoop.current().add_timeout(time.time()+self.restart_delay_time, self.start_stream)
 
     def handle_stream(self, data):
@@ -153,10 +169,11 @@ class TwitterStreamReader(object):
                 self.opened = True
                 self.restart_cb = None
                 self.restart_delay_time = 0
-                print >> sys.stderr, 'TwitterStreamReader.handle_stream: CONNECTED TO TWITTER STREAM FOR', self.twitter_config['screen_name'], ':', content['friends']
+                self.status = 'CONNECTED TO TWITTER STREAM FOR '+self.twitter_config['screen_name']
+                self.log_msg('handle_stream: '+self.status+' '+str(content['friends']), True)
             return
 
-        ##print >> sys.stderr, "TwitterStreamReader.handle_stream:content=%s", str(content)
+        self.log_msg("handle_stream: message="+str(content))
         try:
             parsed_msg = parse_tweet(content, user_name=self.twitter_config.get('screen_name'))
         except Exception, err:
@@ -173,7 +190,9 @@ class TwitterStreamReader(object):
             traceback.print_exc()
             return
 
-        print >> sys.stderr, "TwitterStreamReader.handle_stream:status=", self.allow_replies, repr(status)
+        if status:
+            self.log_msg("handle_stream: return status (%s) = %s" % (self.allow_replies, status))
+
         try:
             if self.allow_replies and status and parsed_msg['type'] == 'direct' and parsed_msg['sender'] != self.twitter_config['screen_name']:
                 # Send error status via direct message (but not to self)

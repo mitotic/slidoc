@@ -297,6 +297,13 @@ class ActionHandler(BaseHandler):
             for x in wsInfo:
                 self.write("  %s: %s (idle: %ds)\n" % x)
             self.write('</pre>')
+        elif action == '_twitter':
+            self.set_header('Content-Type', 'text/plain')
+            if not twitterStream:
+                self.write('No twitter stream active')
+            else:
+                self.write('Twitter stream status: '+twitterStream.status+'\n\n')
+                self.write('Twitter stream log: '+'\n'.join(twitterStream.log_buffer)+'\n')
 
     def post(self, subpath, inner=None):
         if self.get_current_user() not in (ADMINUSER_ID, TESTUSER_ID):
@@ -1038,6 +1045,7 @@ class Application(tornado.web.Application):
                           (r"/interact(/.*)?", AuthMessageHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),
+                          (r"/(_twitter)", ActionHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_unlock/[-\w.]+)", ActionHandler),
@@ -1184,7 +1192,9 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
 
     return missed, errors
 
+twitterStream = None
 def main():
+    global twitterStream
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
 
