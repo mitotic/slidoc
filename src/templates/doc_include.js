@@ -2578,7 +2578,7 @@ function sessionGet(userId, sessionName, opts, callback, lateToken) {
 	    if (sessionName in sessionObj)
 		callback(sessionObj[sessionName]);
 	    else
-		callback(null);
+		callback(opts.create ? createSession() : null);
 	}
     }
 }

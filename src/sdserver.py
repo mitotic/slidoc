@@ -1043,6 +1043,7 @@ class Application(tornado.web.Application):
             handlers += [ (r"/_proxy", ProxyHandler),
                           (r"/_websocket/(.*)", WSHandler),
                           (r"/interact", AuthMessageHandler),
+                          (r"/interact/(.*)", AuthMessageHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),
                           (r"/(_twitter)", ActionHandler),

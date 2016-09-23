@@ -1618,7 +1618,7 @@ class SlidocRenderer(MathRenderer):
         prefix += start_str
         self.hint_end = end_str
         classes = 'slidoc-clickable slidoc-question-hint'
-        return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.hintDisplay(this, '%s', %s, %s)" style="display: inline;">Hint %s:</span>\n''' % (id_str, classes, self.get_slide_id() , self.questions[-1]['qnumber'], hint_number, hint_number)) + ' ' + text + ' ' + suffix
+        return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.hintDisplay(this, '%s', %s, %s)" style="display: inline;">Hint %s:</span>\n''' % (id_str, classes, self.get_slide_id() , self.questions[-1]['qnumber'], hint_number, hint_number)) + ' ' + text + '% ' + suffix
 
 
     def slidoc_notes(self, name, text):
@@ -1826,7 +1826,7 @@ def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
         post_params['row'] = json.dumps(row)
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
-        abort("Error in creating sheet '%s': %s" % (sheet_name, retval['error']))
+        abort("Error in creating sheet '%s': %s, headers=%s" % (sheet_name, retval['error'], headers))
     message('slidoc: Created remote spreadsheet:', sheet_name)
 
 def parse_plugin(text, name=None):

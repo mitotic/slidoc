@@ -4,21 +4,31 @@ Viewer = {
     init: function(viewer) {
 	Slidoc.log('Slidoc.Plugins.Viewer.init:', viewer);
 	this.iframeElem = document.getElementById(this.pluginId+'-vieweriframe');
+	this.imgElem = document.getElementById(this.pluginId+'-viewerimg');
 
 	viewer.displayURL = this.displayURL.bind(this);
 	if (viewer.initURL)
-	    this.displayURL(viewer.initURL);
+	    this.displayURL(viewer.initURL, viewer.fileType);
 	    
     },
 
-    displayURL: function (url) {
-	Slidoc.log('Slidoc.Plugins.Viewer.displayURL:', this, url);
-	this.iframeElem.src = url;
+    displayURL: function (url, fileType) {
+	Slidoc.log('Slidoc.Plugins.Viewer.displayURL:', this, url, fileType);
+	if (fileType && fileType.match(/^(gif|jpg|jpeg|png)/)) {
+	    this.imgElem.src = url;
+	    this.iframeElem.src = '';
+	    this.iframeElem.style.display = 'none';
+	} else {
+	    this.imgElem.src = '';
+	    this.iframeElem.src = url;
+	    this.iframeElem.style.display = null;
+	}
     }
 };
 
 /* PluginHead:
    PluginBody:
+   <img id="%(pluginId)s-viewerimg" src="">
    <iframe id="%(pluginId)s-vieweriframe" src=""
    class="slidoc-plugin-Viewer-iframe %(pluginSlideId)s-vieweriframe"
    allowfullscreen frameborder="0">

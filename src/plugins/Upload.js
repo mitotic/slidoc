@@ -31,6 +31,7 @@ Upload = {
 	if (fileInfo && fileInfo.loadURL) {
 	    this.display();
 	    this.viewer.initURL = fileInfo.loadURL;
+	    this.viewer.fileType = fileInfo.fileType;
 	}
     },
 
@@ -44,8 +45,12 @@ Upload = {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
 	    this.confirmLoadElem.href = '';
 	}
-	if (this.viewer.displayURL)
-	    this.viewer.displayURL(fileInfo ? fileInfo.loadURL : '');
+	if (this.viewer.displayURL) {
+	    if (fileInfo)
+		this.viewer.displayURL(fileInfo.loadURL, fileInfo.fileType);
+	    else
+		this.viewer.displayURL('', '');
+	}
     },
 
     uploaded: function(value) {
@@ -140,8 +145,9 @@ Upload = {
 
 	if (fileInfo) {
 	    var response = fileInfo.origName;
-	    var pluginResp = {name: fileInfo.upload.name, score: 1, correctAnswer: '', time: fileInfo.uploadTime,
-			      fileType: this.fileType, url: fileInfo.upload.url, fileKey: fileInfo.upload.fileKey};
+	    var pluginResp = {name: this.name, score: 1, correctAnswer: '', filename: fileInfo.upload.name,
+			      time: fileInfo.uploadTime, fileType: this.fileType, url: fileInfo.upload.url,
+			      fileKey: fileInfo.upload.fileKey};
 	    this.remoteCall('lockFile', null, fileInfo.upload.url);
 	} else {
 	    var response = '';
@@ -158,7 +164,7 @@ var fileTypeMap = {
 };
 		   
 
-/* PluginHead: ^(,?ipynb|,?pdf)+$
+/* PluginHead: ^(,?ipynb|,?pdf|,?gif|,?jpg|,?jpeg|,?png)+$
    <style>
      .slidoc-plugin-Upload-body {
      font-size: 0.66em;
