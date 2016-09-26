@@ -232,7 +232,7 @@ function setupCache(auth, callback) {
 		for (var j=0; j<roster.length; j++) {
 		    var id = roster[j][1];
 		    Sliobj.userList.push(id);
-		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], submitted:null, grading: null};
+		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], team: roster[j][2], submitted:null, grading: null};
 		}
 
 		var userId = auth.id;
@@ -777,6 +777,8 @@ Slidoc.viewHelp = function () {
     if (Sliobj.sessionName) {
 	if (userId)
 	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	if (Sliobj.session && Sliobj.session.team)
+	    html += 'Team: ' + Sliobj.session.team + '<br>';
 	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session && Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
@@ -1173,10 +1175,16 @@ Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) 
     GService.requestWS('plugin', data, callback);
 }
 
-Slidoc.PluginManager.shareReady = function(share) {
-    return ( (share == 'after_due_date' && Slidoc.PluginManager.pastDueDate()) ||
-	     (share == 'after_answering' && Slidoc.PluginManager.answered()) ||
-	     (share == 'after_grading' && Slidoc.PluginManager.graded()) );
+Slidoc.PluginManager.shareReady = function(share, qnumber) {
+    if (share == 'after_answering' && Slidoc.PluginManager.answered(qnumber))
+	return true;
+    if (Slidoc.PluginManager.submitted())
+	return (share == 'after_answering' ||
+	        (share == 'after_due_date' && Slidoc.PluginManager.pastDueDate()) ||
+	        (share == 'after_grading' && Slidoc.PluginManager.graded())
+	       );
+    else
+	return false;
 }
 
 Slidoc.PluginManager.pastDueDate = function() {
@@ -1186,11 +1194,11 @@ Slidoc.PluginManager.pastDueDate = function() {
     return dueDate && ((new Date()) > dueDate);
 }
 
-Slidoc.PluginManager.graded = function(qnumber) {
+Slidoc.PluginManager.graded = function() {
     return Sliobj.gradeDateStr;
 }
 
-Slidoc.PluginManager.submitted = function(qnumber) {
+Slidoc.PluginManager.submitted = function() {
     return Sliobj.session && Sliobj.session.submitted;
 }
 
@@ -1200,6 +1208,10 @@ Slidoc.PluginManager.answered = function(qnumber) {
 
 Slidoc.PluginManager.lateSession = function() {
     return Sliobj.session.lateToken == LATE_SUBMIT || Sliobj.session.lateToken == PARTIAL_SUBMIT;
+}
+
+Slidoc.PluginManager.teamName = function() {
+    return Sliobj.session ? (Sliobj.session.team || '') : '';
 }
 
 Slidoc.PluginManager.saveSession = function() {
@@ -1705,7 +1717,7 @@ function slidocSetupAux(session, feedback) {
 	    var slideElem = document.getElementById(slide_id);
 
 	    if (question_attrs.share) {
-		toggleClassAll(!Slidoc.PluginManager.shareReady(question_attrs.share), 'slidoc-shareable-hide', slide_id+'-plugin-Share-sharebutton');
+		toggleClassAll(!Slidoc.PluginManager.shareReady(question_attrs.share, qnumber), 'slidoc-shareable-hide', slide_id+'-plugin-Share-sharebutton');
 	    }
 
 	    if (!Sliobj.firstTime) {
@@ -2000,6 +2012,8 @@ function updateGradingStatus(userId) {
     if (!option)
 	return;
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
+    if (Sliobj.userGrades[userId].team)
+	text += '('+Sliobj.userGrades[userId].team+') ';
     var html = ''
     var gradeCount = Sliobj.userGrades[userId].needGrading ? Object.keys(Sliobj.userGrades[userId].needGrading).length : 0;
     if (Sliobj.userGrades[userId].needGrading) {
@@ -2420,6 +2434,9 @@ function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType,
 		}
 	    }
 
+	    if (retStatus.info.team && Sliobj.session) {
+		Sliobj.session.team = retStatus.info.team;
+	    }
 	    if (retStatus.info.submitTimestamp) {
 		if (!Sliobj.session && window.confirm('Internal error in submit timestamp'))
 		    sessionAbort('Internal error in submit timestamp')
@@ -2983,7 +3000,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	var shuffleStr = choiceBlock.dataset.shuffle;
 	for (var j=0; j<choice_val.length; j++) {
-            var elemId = slide_id+'-choice-'+choice_val[j];
+            var elemId = slide_id+'-choice-'+choice_val[j].toUpperCase();
 	    if (shuffleStr && shuffleStr.charAt(0) == '1')
 		elemId += '-alt';
             var setupElem = document.getElementById(elemId);
@@ -3089,7 +3106,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	    var shuffleStr = choiceBlock.dataset.shuffle;
 	    for (var j=0; j<corr_answer.length; j++) {
-		var elemId = slide_id+'-choice-'+corr_answer[j];
+		var elemId = slide_id+'-choice-'+corr_answer[j].toUpperCase();
 		if (shuffleStr && shuffleStr.charAt(0) == '1')
 		    elemId += '-alt';
 		var corr_choice = document.getElementById(elemId);
@@ -3825,12 +3842,15 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	if (question_attrs.gweight)
 	    updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
-	gradeUpdate(slide_id, question_attrs.qnumber, updates);
+	var teamUpdate = '';
+	if (question_attrs.team == 'response' && Sliobj.session.team)
+	    teamUpdate = Sliobj.session.team;
+	gradeUpdate(slide_id, question_attrs.qnumber, teamUpdate, updates);
     }
 }
 
-function gradeUpdate(slide_id, qnumber, updates, callback) {
-    Slidoc.log('gradeUpdate: ', slide_id, qnumber, updates, !!callback);
+function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
+    Slidoc.log('gradeUpdate: ', slide_id, qnumber, teamUpdate, updates, !!callback);
     var updateObj = copyAttributes(updates);
     updateObj.Timestamp = null;  // Ensure that Timestamp is updated
 
@@ -3838,8 +3858,8 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
     var retryCall = gradeUpdate.bind(null, qnumber, updates, callback);
 
     try {
-	gsheet.updateRow(updateObj, {}, sessionGetPutAux.bind(null, null, 'update',
- 		         gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, callback), retryCall, 'gradeUpdate') );
+	gsheet.updateRow(updateObj, {team: !!teamUpdate}, sessionGetPutAux.bind(null, null, 'update',
+		   gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, teamUpdate, callback), retryCall, 'gradeUpdate') );
     } catch(err) {
 	sessionAbort(''+err, err.stack);
 	return;
@@ -3876,10 +3896,17 @@ function gradeUpdate(slide_id, qnumber, updates, callback) {
     }
 }
 
-function gradeUpdateAux(userId, slide_id, qnumber, callback, result, retStatus) {
-    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, !!callback, result, retStatus);
+function gradeUpdateAux(userId, slide_id, qnumber, teamUpdate, callback, result, retStatus) {
+    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, teamUpdate, !!callback, result, retStatus);
     delete Sliobj.userGrades[userId].needGrading[qnumber];
     updateGradingStatus(userId);
+    if (teamUpdate) {
+	for (var j=0; j<Sliobj.userList.length; j++) {
+	    var id = Sliobj.userList[j];
+	    if (id != userId && Sliobj.userGrades[id].team == teamUpdate)
+		updateGradingStatus(id);
+	}
+    }
     Slidoc.reportTestAction('gradeUpdate');
 }
 

@@ -16,7 +16,7 @@ Share = {
 	else
 	    toggleClass(false, 'slidoc-shareable-hide', this.detailsElem);
 
-	toggleClass(!manage && !Slidoc.PluginManager.shareReady(this.qattributes.share), 'slidoc-shareable-hide', this.shareElem);
+	toggleClass(!manage && !Slidoc.PluginManager.shareReady(this.qattributes.share, this.qattributes.qnumber), 'slidoc-shareable-hide', this.shareElem);
 
 	this.countElem.textContent = manage ? '(?)' : '';
 	this.respondersElem.textContent = '';
@@ -139,13 +139,17 @@ Share = {
 		spanElem.textContent = responder;
 	    }
 	    this.respondersElem.appendChild(spanElem);
+	    if (this.qattributes.team == 'setup')
+		this.respondersElem.appendChild(document.createElement("br"));
 	}
 	    
 	if (!display)
 	    return;
 
 	var checkResp = [];
-	if (this.correctAnswer && (this.testUser || Slidoc.PluginManager.submitted() || Slidoc.PluginManager.answered(this.qattributes.qnumber))) {
+	var testShare = this.adminState || (this.testUser && (Slidoc.PluginManager.submitted() || Slidoc.PluginManager.answered(this.qattributes.qnumber)) );
+	if (this.correctAnswer && (testShare || Slidoc.PluginManager.shareReady(this.qattributes.share, this.qattributes.qnumber)) ) {
+	    // Display correct answer
 	    if (this.qattributes.qtype == 'number') {
 		var corrValue = null;
 		var corrError = 0.0;

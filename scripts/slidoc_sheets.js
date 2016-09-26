@@ -454,8 +454,8 @@ function sheetAction(params) {
 
 	    var voteSubmission = '';
 	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].match(/_vote$/) && sessionAttributes.shareAnswers) {
-		var qno = selectedUpdates[1][0].split('_')[0];
-		voteSubmission = sessionAttributes.shareAnswers[qno] ? (sessionAttributes.shareAnswers[qno].share||'') : '';
+		var qprefix = selectedUpdates[1][0].split('_')[0];
+		voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
 	    }
 
 	    if (!adminUser && selectedUpdates && !voteSubmission)
@@ -513,6 +513,9 @@ function sheetAction(params) {
 	    if (shareParams.vote && voteDate)
 		returnInfo.voteDate = voteDate;
 
+            var qno = parseInt(getShare.slice(1));
+            var teamAttr = questions[qno-1].team || '';
+
 	    if (!adminUser && shareParams.share == 'after_grading' && !gradeDate) {
 		returnMessages.push("Warning:SHARE_AFTER_GRADING:");
 		returnValues = [];
@@ -548,52 +551,54 @@ function sheetAction(params) {
 
 		var shareSubrow = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols);
 
-		var idValues     = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1)
+		var idValues     = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1);
+		var nameValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], nRows, 1);
 		var timeValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, 1);
 		var submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, 1);
+		var teamValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['team'], nRows, 1);
 		var lateValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, 1);
 
                 var curUserVals = null;
                 var testUserVals = null;
+		var curUserSubmitted = null;
+                var testUserSubmitted = null;
                 for (var j=0; j<nRows; j++) {
 		    if (shareSubrow[j][0] == SKIP_ANSWER)
                         shareSubrow[j][0] = '';
-                    if (idValues[j][0] == paramId)
+                    if (idValues[j][0] == paramId) {
                         curUserVals = shareSubrow[j];
-                    else if (idValues[j][0] == TESTUSER_ID)
+			curUserSubmitted = submitValues[j][0];
+                    } else if (idValues[j][0] == TESTUSER_ID) {
                         testUserVals = shareSubrow[j];
+			testUserSubmitted = submitValues[j][0];
+		    }
 		}
                 if (!curUserVals && !adminUser)
                     throw('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName);
-
-                if (adminUser || paramId == TESTUSER_ID) {
-                    returnInfo.responders = [];
-                    for (var j=0; j<nRows; j++) {
-                        if (shareSubrow[j][0] && idValues[j][0] != TESTUSER_ID)
-                            returnInfo.responders.push(idValues[j][0]);
-		    }
-                    returnInfo.responders.sort();
-		}
 
 		var votingCompleted = voteDate && voteDate.getTime() < curDate.getTime();
 		var voteParam = shareParams.vote;
 		var tallyVotes = voteParam && (adminUser || voteParam == 'show_live' || (voteParam == 'show_completed' && votingCompleted));
 
-		var userResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
+		var curUserResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
 
-                if (!adminUser && paramId != TESTUSER_ID && shareParams['share'] == 'after_answering') {
-		    if (!userResponded)
-			throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
-		    if (paceLevel == ADMIN_PACE && (!testUserVals || !testUserVals[0]))
-			throw('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName);
-		}
+                if (!adminUser && paramId != TESTUSER_ID) {
+                    if (paceLevel == ADMIN_PACE && (!testUserVals || (!testUserVals[0] && !testUserSubmitted))) {
+                        throw('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName);
+                    }
+
+                    if (shareParams.share == 'after_answering' && !curUserResponded && !curUserSubmitted) {
+                        throw('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName);
+                    }
+                }
+
 		var disableVoting = false;
 
 		// If test/admin user, or current user has provided no response/no explanation, disallow voting
-		if (paramId == TESTUSER_ID || !userResponded)
+		if (paramId == TESTUSER_ID || !curUserResponded)
 		    disableVoting = true;
 
-		// If voting not enabled or voting completed, disallow  voting.
+		// If voting not enabled or voting completed, disallow voting.
 		if (!voteParam || votingCompleted)
 		    disableVoting = true;
 
@@ -627,39 +632,72 @@ function sheetAction(params) {
 		    }
 		}
 
-		if (shareOffset) {
-		    if (curUserVals) {
-			returnInfo.share = disableVoting ? '' : curUserVals[shareOffset];
-			// Disable self voting
-			curUserVals[shareOffset] = '';
-		    }
-		    if (disableVoting) {
-			// This needs to be done after vote tallying, because vote codes are cleared
-			for (var j=0; j<nRows; j++)
-			    shareSubrow[j][shareOffset] = '';
-		    }
-		}
+		var selfShare = '';
+                if (shareOffset) {
+                    if (curUserVals) {
+                        selfShare = curUserVals[shareOffset];
+                        returnInfo['share'] = disableVoting ? '' : selfShare;
+                    }
+
+                    // Disable voting/self voting
+                    // This needs to be done after vote tallying, because vote codes are cleared
+                    for (var j=0; j < nRows; j++) {
+                        if (disableVoting || shareSubrow[j][shareOffset] == selfShare) {
+                            shareSubrow[j][shareOffset] = '';
+                        }
+                    }
+                }
 
                 var sortVotes = tallyVotes && (votingCompleted || adminUser || (voteParam == 'show_live' && paramId == TESTUSER_ID));
 		var sortVals = [];
-		for (var j=0; j<nRows; j++) {
-                    if (idValues[j][0] == TESTUSER_ID) {
+                var teamResponded = {};
+                var responderTeam = {};
+                var includeId = {};
+
+                // Traverse by reverse timestamp order
+                var timeIndex = [];
+                for (var j=0; j < nRows; j++) {
+                    var timeVal = timeValues[j][0] ? timeValues[j][0].getTime() : 0;
+                    timeIndex.push([timeVal, j]);
+                }
+                timeIndex.sort();
+                timeIndex.reverse();
+
+                for (var k=0; k < nRows; k++) {
+                    var j = timeIndex[k][1];
+
+                    var idValue = idValues[j][0];
+                    if (idValue == TESTUSER_ID) {
                         // Ignore test user response
                         continue;
                     }
 
-		    // Always skip null responses and ungraded lates
+                    // Always skip null responses and ungraded lates
                     if (!shareSubrow[j][0] || lateValues[j][0] == LATE_SUBMIT) {
                         continue;
                     }
+
                     // If voting, skip incomplete/late submissions (but allow partials)
                     if (voteParam && (lateValues[j][0] && lateValues[j][0] != PARTIAL_SUBMIT)) {
                         continue;
                     }
-                    // If voting, skip if explanations expected
+
+                    // If voting, skip if explanations expected and not provided
                     if (voteParam && explainOffset && !shareSubrow[j][explainOffset]) {
-                        continue
+                        continue;
                     }
+
+                    // Process only one non-null response per team
+                    if (teamAttr && teamValues[j][0]) {
+                        var teamName = teamValues[j][0];
+                        if (teamName in teamResponded) {
+                            continue;
+                        }
+                        teamResponded[teamName] = 1;
+                        responderTeam[idValue] = teamName;
+                    }
+
+                    includeId[idValue] = 1;
 
 		    // Use earlier of submit time or timestamp to sort
 		    var timeVal = submitValues[j][0] || timeValues[j][0];
@@ -684,6 +722,57 @@ function sheetAction(params) {
                     }
 		}
 		sortVals.sort();
+
+                if (adminUser || paramId == TESTUSER_ID) {
+                    var nameMap = lookupRoster('name');
+                    if (!nameMap) {
+                        nameMap = {};
+                        for (var j=0; j < nRows; j++) {
+                            nameMap[idValues[j][0]] = nameValues[j][0];
+                        }
+                    }
+                    nameMap = makeShortNames(nameMap);
+                    returnInfo.responders = [];
+                    if (teamAttr == 'setup') {
+                        var teamMembers = {}
+                        for (var j=0; j < nRows; j++) {
+                            var idValue = idValues[j][0];
+                            if (nameMap && nameMap[idValue]) {
+                                var name = nameMap[idValue];
+                            } else {
+                                var name = idValue;
+                            }
+                            var teamName = shareSubrow[j][0];
+                            if (teamName) {
+                                if (teamName in teamMembers) {
+                                    teamMembers[teamName].push(name);
+                                } else {
+                                    teamMembers[teamName] = [name];
+                                }
+                            }
+                        }
+                        var teamNames = Object.keys(teamMembers);
+                        teamNames.sort();
+                        for (var k=0; k < teamNames.length; k++) {
+                            returnInfo['responders'].push(teamNames[k]+': '+(teamMembers[teamNames[k]]).join(', '));
+                        }
+                    } else {
+                        for (var j=0; j < nRows; j++) {
+                            var idValue = idValues[j][0];
+                            if (!includeId[idValue]) {
+                                continue;
+                            }
+                            if (responderTeam[idValue]) {
+                                returnInfo['responders'].push(responderTeam[idValue]);
+                            } else if (nameMap && nameMap[idValue]) {
+                                returnInfo['responders'].push(nameMap[idValue]);
+                            } else {
+                                returnInfo['responders'].push(idValue);
+                            }
+                        }
+                    }
+                    returnInfo['responders'].sort();
+                }
 
 		//returnMessages.push('Debug::getShare: '+nCols+', '+nRows+', ['+curUserVals+']');
 		returnValues = [];
@@ -931,6 +1020,9 @@ function sheetAction(params) {
 				// Only test user may overwrite submitTimestamp
 				rowValues[j] = createDate(colValue);
 			    } else {
+                                if (paceLevel == ADMIN_PACE && userId != TESTUSER_ID && !dueDate) {
+                                    throw("Error::Cannot submit instructor-paced session before instructor for sheet '"+sheetName+"'");
+                                }
 				rowValues[j] = curDate;
 				if (teamCol && rowValues[teamCol-1]) {
                                     teamCopyCols.push(j+1);
@@ -963,11 +1055,17 @@ function sheetAction(params) {
                             }
                             if (teamAttr == 'setup') {
                                 if (hmatch[2] == 'response') {
-                                    rowValues[teamCol-1] = colValue;
+                                    // Set up team name
+                                    rowValues[teamCol-1] = safeName(colValue).toLowerCase();
+                                    returnInfo['team'] = rowValues[teamCol-1];
                                 }
-                            } else if (teamAttr == 'response') {
-                                if (rowValues[j] != colValue && rowValues[teamCol-1]) {
-                                    teamCopyCols.push(j+1);
+                            } else if (teamAttr == 'response' && rowValues[teamCol-1]) {
+                                teamCopyCols.push(j+1);
+                                if (hmatch && hmatch[2] == 'response') {
+                                    var shareCol = columnIndex['q'+hmatch[1]+'_share'];
+                                    if (shareCol) {
+                                        teamCopyCols.push(shareCol);
+                                    }
                                 }
                             }
 
@@ -1083,10 +1181,9 @@ function sheetAction(params) {
 			    var hmatch = QFIELD_RE.exec(colHeader);
                             if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {
                                 var qno = parseInt(hmatch[1]);
-                                if (questions && qno <= questions.length && questions[qno-1].team == 'response') {
-                                    if (rowValues[headerColumn-1] != colValue && rowValues[teamCol-1]) {
-                                        teamCopyCols.push(headerColumn);
-                                    }
+                                if (rowValues[teamCol-1] && questions && qno <= questions.length && questions[qno-1].team == 'response') {
+                                    // Broadcast grade/comments to all team members
+                                    teamCopyCols.push(headerColumn);
                                 }
                             }
 			    colValue = parseInput(colValue, colHeader);
@@ -1105,6 +1202,7 @@ function sheetAction(params) {
 		
                 if (teamCopyCols.length) {
 		    var nRows = modSheet.getLastRow()-numStickyRows;
+		    var idValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1);
                     var teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1);
                     var userOffset = userRow-numStickyRows-1;
                     var teamName = teamValues[userOffset][0];
@@ -1276,7 +1374,7 @@ function parseNumber(x) {
 function normalizeText(s) {
    // Lowercase, replace '" with null, all other non-alphanumerics with spaces,
    // replace 'a', 'an', 'the' with space, and then normalize spaces
-    return s.toLowerCase().replace(/['"]/g,'').replace(/\b(a|an|the) /g, ' ').replace(/[_\W]/g,' ').replace(/\s+/g, ' ').trim();
+    return (''+s).toLowerCase().replace(/['"]/g,'').replace(/\b(a|an|the) /g, ' ').replace(/[_\W]/g,' ').replace(/\s+/g, ' ').trim();
 }
 
 function bin2hex(array) {
@@ -1516,9 +1614,13 @@ function lookupRoster(field, userId) {
     return fieldDict;
 }
 
+function safeName(s) {
+    return s.replace(/[^A-Za-z0-9-]/g, '_');
+}
+
 function teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol) {
     // Copy column value from user row to entire team
-    var nRows = modSheet.getLastRow()-numStickyRows;
+    var nRows = sessionSheet.getLastRow()-numStickyRows;
     var teamValues = sessionSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1);
     var colRange = sessionSheet.getRange(1+numStickyRows, copyCol, nRows, 1);
     var colValues = colRange.getValues();
@@ -1533,6 +1635,85 @@ function teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol) {
         }
     }
     colRange.setValues(colValues);
+}
+
+function makeShortNames(nameMap, first) {
+    // Make short versions of names from dict of the form {id: 'Last, First ...', ...}
+    // If first, use first name as prefix, rather than last name
+    var prefixDict = {};
+    var suffixesDict = {};
+    var keys = Object.keys(nameMap);
+    for (var j=0; j<keys.length; j++) {
+	var idValue = keys[j];
+	var name = nameMap[idValue];
+	var ncomps = name.split(',');
+	var lastName = ncomps[0].trim();
+	var firstmiddle = (ncomps.length > 0) ? ncomps[1].trim() : '';
+        var fcomps = firstmiddle.split(/\s+/);
+        if (first) {
+            // For Firstname, try suffixes in following order: middle_initials+Lastname
+            var firstName = fcomps[0] || idValue;
+            var suffix = lastName;
+	    for (var k=1; k<fcomps.length; k++)
+                suffix = fcomps[k].slice(0,1).toUpperCase() + suffix;
+	    if (!(firstName in prefixDict))
+		prefixDict[firstName] = [];
+            prefixDict[firstName].push(idValue);
+            suffixesDict[idValue] = suffix;
+        } else {
+            // For Lastname, try suffixes in following order: initials, first/middle names
+            if (!lastName)
+                lastName = idValue;
+	    var initials = '';
+	    for (var k=0; k<fcomps.length; k++)
+                initials += fcomps[k].slice(0,1).toUpperCase() ;
+	    if (!(lastName in prefixDict))
+		prefixDict[lastName] = [];
+            prefixDict[lastName].push(idValue);
+            suffixesDict[idValue] = [initials, firstmiddle];
+        }
+    }
+
+    var shortMap = {};
+    var prefixes = Object.keys(prefixDict);
+    for (var m=0; m<prefixes.length; m++) {
+	var prefix = prefixes[m];
+	var idValues = prefixDict[prefix];
+        var unique = null;
+        for (var j=0; j < (first ? 1 : 2); j++) {
+	    var suffixes = [];
+	    var maxlen = 0;
+	    for (var k=0; k < idValues.length; k++) {
+		var suffix = suffixesDict[idValues[k]][j];
+		maxlen = Math.max(maxlen, suffix.length);
+		suffixes.push(suffix);
+	    }
+            for (var k=0; k < maxlen+1; k++) {
+		var truncObj = {};
+		for (var l=0; l < suffixes.length; l++)
+		    truncObj[suffixes[l].slice(0,k)] = 1;
+
+                if (suffixes.length == Object.keys(truncObj).length) {
+                    // Suffixes uniquely map id for this truncation
+                    unique = [j, k];
+                    break;
+                }
+            }
+            if (unique) {
+                break;
+            }
+        }
+        for (var j=0; j<idValues.length; j++) {
+	    var idValue = idValues[j];
+            if (unique) {
+                shortMap[idValue] = prefix + suffixesDict[idValue][unique[0]].slice(0,unique[1]);
+            } else {
+                shortMap[idValue] = prefix + '-' + idValue;
+            }
+        }
+    }
+
+    return shortMap;
 }
 
 function notify(message, title) {

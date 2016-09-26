@@ -7,15 +7,18 @@
 	  <label for="session">Session Name:</label>
           <input  type="text" autocapitalize="off" autocorrect="off" class="sdserver-input" id="session" name="session" value="">
           <p></p>
+	  <label for="submittest">Submit test user only:</label>
+          <input  type="checkbox" class="sdserver-input" id="submittest" name="submittest" value="submittest">
+          <p></p>
 	  <label for="submitdate">Submit date (optional):</label>
-          <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" tabindex="2" value="">
+          <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="">
           <p></p>
           <label for="username">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, q3, qx4, ..."):</label><br>
           <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file">
         </fieldset>
         {% module xsrf_form_html() %}
         <div id="form_btn">
-	  <input id="submit-btn" type="submit" value="Upload file">
+	  <input id="submit-btn" type="submit" value="Upload">
 	</div>
       </form>
     </div>

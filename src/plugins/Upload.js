@@ -64,7 +64,7 @@ Upload = {
 	    else
 		loadURL = 'http://nbviewer.jupyter.org/url/'+loadURL;
 	} else {
-	    loadURL = '//'+loadURL;
+	    loadURL = '//'+loadURL+'?'+value.fileKey;
 	}
 	this.persist[this.qattributes.qnumber] = {origName: this.origName, fileType: this.fileType, upload: value, loadURL: loadURL,
 						  uploadTime: Date.now()};
@@ -119,6 +119,8 @@ Upload = {
 	    filePrefix += '-' + match[1].trim().replace(' ','-').toLowerCase() + (match[3] ? '-'+match[3].toLowerCase() : '');	    
 
 	var dataParams = {filename: file.name, mimeType: file.type, filePrefix: filePrefix}
+	if (this.qattributes.team == 'response' && Slidoc.PluginManager.teamName())
+	    dataParams.teamName = Slidoc.PluginManager.teamName();
 	var loadHandler = function(loadEvt) {
 	    var arrBuffer = loadEvt.target.result;
 	    Slidoc.log('Slidoc.Plugins.Upload.fileUpload.loadHandler:', file.name, file.type, arrBuffer.byteLength);

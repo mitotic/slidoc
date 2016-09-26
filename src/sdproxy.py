@@ -728,8 +728,8 @@ def sheetAction(params, notrace=False):
 
         voteSubmission = ''
         if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
-            qno = selectedUpdates[1][0].split('_')[0]
-            voteSubmission = sessionAttributes['shareAnswers'][qno].get('share', '') if sessionAttributes['shareAnswers'].get(qno) else ''
+            qprefix = selectedUpdates[1][0].split('_')[0]
+            voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
 
         if not adminUser and selectedUpdates and not voteSubmission:
             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
@@ -783,6 +783,9 @@ def sheetAction(params, notrace=False):
             if shareParams.get('vote') and voteDate:
                 returnInfo['voteDate'] = voteDate
 
+            qno = int(getShare[1:])
+            teamAttr = questions[qno-1].get('team','')
+
             if not adminUser and shareParams.get('share') == 'after_grading' and not gradeDate:
                 returnMessages.append("Warning:SHARE_AFTER_GRADING:")
                 returnValues = []
@@ -817,49 +820,49 @@ def sheetAction(params, notrace=False):
                 shareSubrow  = modSheet.getSheetValues(1+numStickyRows, respIndex, nRows, nCols)
 
                 idValues     = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1)
+                nameValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], nRows, 1)
                 timeValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['Timestamp'], nRows, 1)
                 submitValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['submitTimestamp'], nRows, 1)
+                teamValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['team'], nRows, 1)
                 lateValues   = modSheet.getSheetValues(1+numStickyRows, columnIndex['lateToken'], nRows, 1)
 
                 curUserVals = None
                 testUserVals = None
+                curUserSubmitted = None
+                testUserSubmitted = None
                 for j in range(nRows):
                     if shareSubrow[j][0] == SKIP_ANSWER:
                         shareSubrow[j][0] = ''
                     if idValues[j][0] == paramId:
                         curUserVals = shareSubrow[j]
+                        curUserSubmitted = submitValues[j][0]
                     elif idValues[j][0] == TESTUSER_ID:
                         testUserVals = shareSubrow[j]
+                        testUserSubmitted = submitValues[j][0]
 
                 if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
-
-                if adminUser or paramId == TESTUSER_ID:
-                    returnInfo['responders'] = []
-                    for j in range(nRows):
-                        if shareSubrow[j][0] and idValues[j][0] != TESTUSER_ID:
-                            returnInfo['responders'].append(idValues[j][0])
-                    returnInfo['responders'].sort()
 
                 votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate);
 
                 voteParam = shareParams.get('vote')
                 tallyVotes = voteParam and (adminUser or voteParam == 'show_live' or (voteParam == 'show_completed' and votingCompleted))
-                userResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
+                curUserResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
 
-                if not adminUser and paramId != TESTUSER_ID and shareParams.get('share') == 'after_answering':
-                    if not userResponded:
-                        raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
-                    if paceLevel == ADMIN_PACE and (not testUserVals or not testUserVals[0]):
+                if not adminUser and paramId != TESTUSER_ID:
+                    if paceLevel == ADMIN_PACE and (not testUserVals or (not testUserVals[0] and not testUserSubmitted)):
                         raise Exception('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName)
+
+                    if shareParams.get('share') == 'after_answering' and not curUserResponded and not curUserSubmitted:
+                        raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
 
                 disableVoting = False
 
                 # If test/admin user, or current user has provided no response/no explanation, disallow voting
-                if paramId == TESTUSER_ID or not userResponded:
+                if paramId == TESTUSER_ID or not curUserResponded:
                     disableVoting = True
 
-                # If voting not enabled or voting completed, disallow  voting.
+                # If voting not enabled or voting completed, disallow voting.
                 if not voteParam or votingCompleted:
                     disableVoting = True
 
@@ -888,31 +891,60 @@ def sheetAction(params, notrace=False):
                         for j in range(nRows):
                             shareSubrow[j][voteOffset] = None
 
+                selfShare = ''
                 if shareOffset:
                     if curUserVals:
-                        returnInfo['share'] = '' if disableVoting else curUserVals[shareOffset]
-                        # Disable self voting
-                        curUserVals[shareOffset] = ''
-                    if disableVoting:
-                        # This needs to be done after vote tallying, because vote codes are cleared
-                        for j in range(nRows):
+                        selfShare = curUserVals[shareOffset]
+                        returnInfo['share'] = '' if disableVoting else selfShare
+                        
+                    # Disable voting/self voting
+                    # This needs to be done after vote tallying, because vote codes are cleared
+                    for j in range(nRows):
+                        if disableVoting or shareSubrow[j][shareOffset] == selfShare:
                             shareSubrow[j][shareOffset] = ''
 
                 sortVotes = tallyVotes and (votingCompleted or adminUser or (voteParam == 'show_live' and paramId == TESTUSER_ID))
                 sortVals = []
+                teamResponded = {}
+                responderTeam = {}
+                includeId = {}
+
+                # Traverse by reverse timestamp order
+                timeIndex = []
                 for j in range(nRows):
-                    if idValues[j][0] == TESTUSER_ID:
+                    timeVal = sliauth.epoch_ms(timeValues[j][0]) if timeValues[j][0] else 0
+                    timeIndex.append([timeVal, j])
+                timeIndex.sort(reverse=True)
+
+                for k in range(nRows):
+                    j = timeIndex[k][1]
+
+                    idValue = idValues[j][0]
+                    if idValue == TESTUSER_ID:
                         # Ignore test user response
                         continue
+
                     # Always skip null responses and ungraded lates
                     if not shareSubrow[j][0] or lateValues[j][0] == LATE_SUBMIT:
                         continue
+
                     # If voting, skip incomplete/late submissions (but allow partials)
                     if voteParam and (lateValues[j][0] and lateValues[j][0] != PARTIAL_SUBMIT):
                         continue
-                    # If voting, skip if explanations expected
+
+                    # If voting, skip if explanations expected and not provided
                     if voteParam and explainOffset and not shareSubrow[j][explainOffset]:
                         continue
+
+                    # Process only one non-null response per team
+                    if teamAttr and teamValues[j][0]:
+                        teamName = teamValues[j][0]
+                        if teamName in teamResponded:
+                            continue
+                        teamResponded[teamName] = 1
+                        responderTeam[idValue] = teamName
+
+                    includeId[idValue] = 1
 
                     # Use earlier of submit time or timestamp to sort
                     timeVal = submitValues[j][0] or timeValues[j][0]
@@ -935,6 +967,45 @@ def sheetAction(params, notrace=False):
                         sortVals.append( [respSort, timeVal, j] )
 
                 sortVals.sort()
+
+                if adminUser or paramId == TESTUSER_ID:
+                    nameMap = lookupRoster('name', userId=None)
+                    if not nameMap:
+                        nameMap = {}
+                        for j in range(nRows):
+                            nameMap[idValues[j][0]] = nameValues[j][0]
+                    nameMap = makeShortNames(nameMap)
+                    returnInfo['responders'] = []
+                    if teamAttr == 'setup':
+                        teamMembers = {}
+                        for j in range(nRows):
+                            idValue = idValues[j][0]
+                            if nameMap and nameMap.get(idValue):
+                                name = nameMap[idValue]
+                            else:
+                                name = idValue
+                            teamName = shareSubrow[j][0]
+                            if teamName:
+                                if teamName in teamMembers:
+                                    teamMembers[teamName].append(name)
+                                else:
+                                    teamMembers[teamName] = [name]
+                        teamNames = teamMembers.keys()
+                        teamNames.sort()
+                        for k in range(len(teamNames)):
+                            returnInfo['responders'].append(teamNames[k]+': '+', '.join(teamMembers[teamNames[k]]))
+                    else:
+                        for j in range(nRows):
+                            idValue = idValues[j][0]
+                            if not includeId.get(idValue):
+                                continue
+                            if responderTeam.get(idValue):
+                                returnInfo['responders'].append(responderTeam[idValue])
+                            elif nameMap and nameMap.get(idValue):
+                                returnInfo['responders'].append(nameMap[idValue])
+                            else:
+                                returnInfo['responders'].append(idValue)
+                    returnInfo['responders'].sort()
 
                 ##returnMessages.append('Debug::getShare: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
                 returnValues = []
@@ -1170,6 +1241,8 @@ def sheetAction(params, notrace=False):
                                 # Only test user may overwrite submitTimestamp
                                 rowValues[j] = createDate(colValue)
                             else:
+                                if paceLevel == ADMIN_PACE and userId != TESTUSER_ID and not dueDate:
+                                    raise Exception("Error::Cannot submit instructor-paced session before instructor for sheet '"+sheetName+"'")
                                 rowValues[j] = curDate
                                 if teamCol and rowValues[teamCol-1]:
                                     teamCopyCols.append(j+1)
@@ -1206,10 +1279,15 @@ def sheetAction(params, notrace=False):
                                         teamAttr = questions[qno-1].get('team','')
                                 if teamAttr == 'setup':
                                     if hmatch.group(2) == 'response':
-                                        rowValues[teamCol-1] = colValue
-                                elif teamAttr == 'response':
-                                    if rowValues[j] != colValue and rowValues[teamCol-1]:
-                                        teamCopyCols.append(j+1) 
+                                        # Set up team name
+                                        rowValues[teamCol-1] = safeName(colValue).lower()
+                                        returnInfo['team'] = rowValues[teamCol-1]
+                                elif teamAttr == 'response' and rowValues[teamCol-1]:
+                                    teamCopyCols.append(j+1)
+                                    if hmatch and hmatch.group(2) == 'response':
+                                        shareCol = columnIndex.get('q'+hmatch.group(1)+'_share')
+                                        if shareCol:
+                                            teamCopyCols.append(shareCol)
 
                                 rowValues[j] = colValue
                         else:
@@ -1319,9 +1397,9 @@ def sheetAction(params, notrace=False):
                                 hmatch = QFIELD_RE.match(colHeader)
                                 if hmatch and (hmatch.group(2) == 'grade' or hmatch.group(2) == 'comments'):
                                     qno = int(hmatch.group(1))
-                                    if questions and qno <= len(questions) and questions[qno-1].get('team','') == 'response':
-                                        if rowValues[headerColumn-1] != colValue and rowValues[teamCol-1]:
-                                            teamCopyCols.append(headerColumn)
+                                    if rowValues[teamCol-1] and questions and qno <= len(questions) and questions[qno-1].get('team','') == 'response':
+                                        # Broadcast grade/comments to all team members
+                                        teamCopyCols.append(headerColumn)
 
                             modValue = colValue
                         else:
@@ -1335,6 +1413,7 @@ def sheetAction(params, notrace=False):
 
                 if len(teamCopyCols):
                     nRows = modSheet.getLastRow()-numStickyRows
+                    idValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1)
                     teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1)
                     userOffset = userRow-numStickyRows-1
                     teamName = teamValues[userOffset][0]
@@ -1588,20 +1667,24 @@ def createQuestionAttempted(response):
     return {'response': response or ''};
 
 
-def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate='', source=''):
+def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
     # answers = {1:{'response':, 'explain':},...}
     if Options['DEBUG']:
         print("DEBUG:importUserAnswers", sessionName, submitDate, userId, displayName, answers, file=sys.stderr)
     if not getSheet(sessionName, optional=True):
         raise Exception('Session '+sessionName+' not found')
-    if submitDate:
-        # Check that it is a valid date
-        createDate(submitDate)
     sessionEntries = lookupValues(sessionName, ['dueDate', 'paceLevel', 'adminPaced', 'attributes'], INDEX_SHEET)
     sessionAttributes = json.loads(sessionEntries['attributes'])
     dueDate = sessionEntries.get('dueDate')
     paceLevel = sessionEntries.get('paceLevel')
     adminPaced = sessionEntries.get('adminPaced')
+
+    if submitDate == 'dueDate':
+        submitDate = dueDate or None
+
+    if submitDate:
+        # Check that it is a valid date
+        createDate(submitDate)
 
     create = source or 'import'
     retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=True)
@@ -1695,6 +1778,7 @@ MSPACE_RE  = re.compile(r'\s+')
 def normalizeText(s):
     # Lowercase, replace '" with null, all other non-alphanumerics with spaces,
     # replace 'a', 'an', 'the' with space, and then normalize spaces
+    s = str(s)
     return MSPACE_RE.sub(' ', WUSCORE_RE.sub(' ', ARTICLE_RE.sub(' ', s.lower().replace("'",'').replace('"','') ))).strip()
 
 
@@ -1830,9 +1914,12 @@ def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
             return j+1
     return len(nameValues)+1
 
+def safeName(s):
+    return re.sub(r'[^A-Za-z0-9-]', '_', s)
+
 def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
     # Copy column value from user row to entire team
-    nRows = modSheet.getLastRow()-numStickyRows
+    nRows = sessionSheet.getLastRow()-numStickyRows
     teamValues = sessionSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1)
     colRange = sessionSheet.getRange(1+numStickyRows, copyCol, nRows, 1)
     colValues = colRange.getValues()
@@ -1844,3 +1931,53 @@ def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
         if teamValues[j][0] == teamName:
             colValues[j][0] = copyValue
     colRange.setValues(colValues)
+
+def makeShortNames(nameMap, first=False):
+    # Make short versions of names from dict of the form {id: 'Last, First ...', ...}
+    # If first, use first name as prefix, rather than last name
+    prefixDict = defaultdict(list)
+    suffixesDict = {}
+    for idValue, name in nameMap.items():
+        lastName, _, firstmiddle = name.partition(',')
+        lastName = lastName.strip()
+        firstmiddle = firstmiddle.strip()
+        if first:
+            # For Firstname, try suffixes in following order: middle_initials+Lastname
+            comps = firstmiddle.split()
+            firstName = comps[0] or idValue
+            suffix = lastName
+            if len(comps) > 1:
+                suffix = ''.join(x[0] for x in comps[1:]).upper() + suffix
+            prefixDict[firstName].append(idValue)
+            suffixesDict[idValue] = suffix
+        else:
+            # For Lastname, try suffixes in following order: initials, first/middle names
+            if not lastName:
+                lastName = idValue
+            initials = ''.join(x[0] for x in firstmiddle.split()).upper()
+            prefixDict[lastName].append(idValue)
+            suffixesDict[idValue] = [initials, firstmiddle]
+
+    shortMap = {}
+    for prefix, idValues in prefixDict.items():
+        unique = None
+        for j in range(1 if first else 2):
+            suffixes = [suffixesDict[idValue][j] for idValue in idValues]
+            maxlen = max([len(x) for x in suffixes])
+            for k in range(maxlen+1):
+                truncSet = set([x[:k] for x in suffixes])
+                if len(suffixes) == len(truncSet):
+                    # Suffixes uniquely map id for this truncation
+                    unique = [j, k]
+                    break
+            if unique:
+                break
+        for idValue in idValues:
+            if unique:
+                shortMap[idValue] = prefix + suffixesDict[idValue][unique[0]][:unique[1]]
+            else:
+                shortMap[idValue] = prefix + '-' + idValue
+                
+    return shortMap
+        
+        

@@ -212,7 +212,7 @@ class ActionHandler(BaseHandler):
             nameMap = sdproxy.lookupRoster('name')
             if respId:
                 if respId in nameMap:
-                    sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual')
+                    sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual', submitDate='dueDate')
                 else:
                     self.write('User ID '+respId+' not in roster')
                     return
@@ -311,29 +311,37 @@ class ActionHandler(BaseHandler):
             return
         action, sep, sessionName = subpath.partition('/')
         if action == '_import':
-            if 'upload' not in self.request.files:
-                self.write('No file to upload!')
-                return
-            fileinfo = self.request.files['upload'][0]
-            fname = fileinfo['filename']
-            fbody = fileinfo['body']
             sessionName = self.get_argument('session','')
             submitDate = self.get_argument('submitdate','')
-            if Options['debug']:
-                print >> sys.stderr, 'ActionHandler:_import', sessionName, submitDate, fname, len(fbody)
             self.set_header('Content-Type', 'text/plain')
             if not sessionName:
                 self.write('Must specify session name')
                 return
-            uploadedFile = cStringIO.StringIO(fbody)
-            missed, errors = importAnswersAux(sessionName, submitDate, fname, uploadedFile)
-            if not missed and not errors:
-                self.write('Imported answers from '+fname)
+
+            if self.get_argument('submittest',''):
+                try:
+                    sdproxy.importUserAnswers(sessionName, TESTUSER_ID, '', submitDate=submitDate, source='import')
+                    self.write('Imported '+TESTUSER_ID+' row')
+                except Exception, excp:
+                    self.write('Error in import for '+TESTUSER_ID+': '+str(excp))
             else:
-                if missed:
-                    self.write('ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n')
-                if errors:
-                    self.write('\n'.join(errors)+'\n')
+                if 'upload' not in self.request.files:
+                    self.write('No file to upload!')
+                    return
+                fileinfo = self.request.files['upload'][0]
+                fname = fileinfo['filename']
+                fbody = fileinfo['body']
+                if Options['debug']:
+                    print >> sys.stderr, 'ActionHandler:_import', sessionName, submitDate, fname, len(fbody)
+                uploadedFile = cStringIO.StringIO(fbody)
+                missed, errors = importAnswersAux(sessionName, submitDate, fname, uploadedFile)
+                if not missed and not errors:
+                    self.write('Imported answers from '+fname)
+                else:
+                    if missed:
+                        self.write('ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n')
+                    if errors:
+                        self.write('\n'.join(errors)+'\n')
         else:
             self.write('Invalid post action: '+action)
 
@@ -662,6 +670,17 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                                 connection.write_message(json.dumps([0, 'lock', connection.locked]))
 
                 retObj = sdproxy.sheetAction(args)
+
+                teamModifiedIds = retObj.get('info', {}).get('teamModifiedIds')
+                if teamModifiedIds:
+                    # Close other connections for the same team
+                    sessionConnections = self._connections[self.pathUser[0]]
+                    for userId in teamModifiedIds:
+                        connection = sessionConnections.get(userId)
+                        if connection and userId != self.userId:
+                            connection.close()
+                            if Options['debug']:
+                                print >> sys.stderr, "DEBUG: on_message_aux", 'Closing other team connection:', userId
 
             elif method == 'interact':
                 if self.userId == ADMINUSER_ID:

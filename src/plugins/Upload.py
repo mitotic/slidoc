@@ -24,7 +24,7 @@ class Upload(object):
             return {'result': 'error', 'error': 'Incorrect data upload: expected '+str(contentLength)+' but received '+str(len(content))+ 'bytes'}
 
         try:
-            filename = self.userId
+            filename = dataParams.get('teamName') or self.userId
             extn = os.path.splitext(dataParams.get('filename',''))[1]
             if extn:
                 filename += extn

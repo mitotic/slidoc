@@ -1375,10 +1375,12 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['team']:
             if answer_opts['team'] == 'setup':
-                if self.sheet_attributes['sessionTeam']:
+                if self.sheet_attributes.get('sessionTeam'):
                     abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must occur as first team option in slide %s" % (self.options["filename"], self.slide_number))
+                if self.cur_qtype != 'text':
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must have answer type as 'text' in slide %s" % (self.options["filename"], self.slide_number))
                 self.sheet_attributes['sessionTeam'] = 'setup'
-            elif not self.sheet_attributes['sessionTeam']:
+            elif not self.sheet_attributes.get('sessionTeam'):
                 self.sheet_attributes['sessionTeam'] = 'roster'
 
         ans_grade_fields = self.process_weights(weight_answer)
@@ -2364,11 +2366,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if gd_hmac_key:
                 tem_attributes = renderer.sheet_attributes.copy()
                 tem_attributes.update(params=js_params)
-                admin_due_date[fname] = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+                mod_due_date = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                      file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
                                      js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                      renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
                                      debug=config.debug)
+
+                admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
 
             if gd_sheet_url and (gd_hmac_key or not return_html):
                 create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
