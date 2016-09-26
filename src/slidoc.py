@@ -1508,6 +1508,10 @@ class SlidocRenderer(MathRenderer):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
             elif self.questions[-1].get('share') or self.questions[-1].get('team'):
                 ans_grade_fields += [qno+'_response']
+
+            if self.questions[-1].get('team') and re.match(r'^(.*)=\s*(\w+)\.response\(\s*\)$', self.questions[-1].get('correct', '')):
+                ans_grade_fields += [qno+'_plugin']
+
             if ans_grade_fields:
                 if self.questions[-1].get('share'):
                     # Share response/explain columns

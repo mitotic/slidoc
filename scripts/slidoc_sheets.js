@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.4a';
+var VERSION = '0.96.4b';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -985,7 +985,7 @@ function sheetAction(params) {
 			    var hmatch = QFIELD_RE.exec(columnHeaders[j]);
 			    if (hmatch && hmatch[2] == 'grade') // Grade value to summed
 				totalCells.push(colIndexToChar(j+1) + userRow);
-			    if (!hmatch || (hmatch[2] != 'response' && hmatch[2] != 'explain')) // Non-response/explain admin column
+			    if (!hmatch || (hmatch[2] != 'response' && hmatch[2] != 'explain' && hmatch[2] != 'plugin')) // Non-response/explain/plugin admin column
 				adminColumns[columnHeaders[j]] = 1;
 			}
 			if (nonNullExtraColumn) {
@@ -1047,7 +1047,7 @@ function sheetAction(params) {
 			    // (If necessary to change name manually, then re-sort manually)
 			    var hmatch = QFIELD_RE.exec(colHeader);
                             var teamAttr = '';
-                            if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
+                            if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain' || hmatch[2] == 'plugin')) {
                                 var qno = parseInt(hmatch[1]);
                                 if (questions && qno <= questions.length) {
                                     teamAttr = questions[qno-1].team || '';
@@ -1060,10 +1060,12 @@ function sheetAction(params) {
                                     returnInfo['team'] = rowValues[teamCol-1];
                                 }
                             } else if (teamAttr == 'response' && rowValues[teamCol-1]) {
+				// Copy response/explain/plugin for team
                                 teamCopyCols.push(j+1);
                                 if (hmatch && hmatch[2] == 'response') {
                                     var shareCol = columnIndex['q'+hmatch[1]+'_share'];
                                     if (shareCol) {
+					// Copy share code
                                         teamCopyCols.push(shareCol);
                                     }
                                 }
@@ -1232,7 +1234,7 @@ function sheetAction(params) {
 		if (!adminUser && !gradeDate && returnValues.length > fieldsMin) {
 		    // If session not graded, nullify columns to be graded
 		    for (var j=fieldsMin; j < columnHeaders.length; j++) {
-			if (!columnHeaders[j].match(/_response$/) && !columnHeaders[j].match(/_explain$/))
+			if (!columnHeaders[j].match(/_response$/) && !columnHeaders[j].match(/_explain$/) && !columnHeaders[j].match(/_plugin$/))
 			    returnValues[j] = null;
 		    }
 		} else if (!adminUser && gradeDate) {
@@ -2037,8 +2039,8 @@ function unpackSession(headers, row) {
 	    session.lastSlide = row[j];
 	else if (row[j]) {
 	    var hmatch = QFIELD_RE.exec(header);
-	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
-		// Copy only response/explain field to session
+	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain' || hmatch[2] == 'plugin')) {
+		// Copy only response/explain/plugin field to session
 		var qnumber = parseInt(hmatch[1]);
 		if (hmatch[2] == 'response') {
 		    if (!row[j]) {
@@ -2051,10 +2053,14 @@ function unpackSession(headers, row) {
 			// SKIP_ANSWER implies null answer attempt
 			session.questionsAttempted[qnumber][hmatch[2]] = (row[j] == SKIP_ANSWER) ? '' : row[j];
 		    }
-		} else {
-		    // Explanation (ignored if no attempt)
-		    if (qnumber in session.questionsAttempted)
+		} else if (qnumber in session.questionsAttempted) {
+		    // Explanation/plugin (ignored if no attempt)
+		    if (hmatch[2] == 'plugin') {
+			if (row[j])
+			    session.questionsAttempted[qnumber][hmatch[2]] = JSON.parse(row[j]);
+		    } else {
 			session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+		    }
 		}
 	    }
 	}
@@ -2153,8 +2159,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
             continue;
         }
 
-	if (qAttempted.pluginResp)
-	    var qscore = parseNumber(qAttempted.pluginResp.score);
+	if (qAttempted.plugin)
+	    var qscore = parseNumber(qAttempted.plugin.score);
 	else
             var qscore = scoreAnswer(qAttempted.response, questionAttrs.qtype,
 			 	     (qAttempted.expect || questionAttrs.correct || ''));

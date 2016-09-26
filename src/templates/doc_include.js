@@ -2262,8 +2262,8 @@ function packSession(session) {
 	var header = Sliobj.params.gradeFields[j];
 	var hmatch = QFIELD_RE.exec(header);
 	// For attempted questions, one of response/explain must be non-null
-	if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
-	    // Copy only response/explain field for grading (all others are not updated)
+	if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain' || hmatch[2] == 'plugin')) {
+	    // Copy only response/explain/plugin field for grading (all others are not updated)
 	    var qnumber = parseInt(hmatch[1]);
 	    if (qnumber in sessionCopy.questionsAttempted) {
 		if (hmatch[2] in sessionCopy.questionsAttempted[qnumber]) {
@@ -2272,6 +2272,8 @@ function packSession(session) {
 		    // Use SKIP_ANSWER as place holder for null answer attempts in spreadsheet column
 		    if (!rowValue && hmatch[2] == 'response')
 			rowValue = SKIP_ANSWER;
+		    if (rowValue && hmatch[2] == 'plugin')
+			rowValue = JSON.stringify(rowValue);
 		    rowObj[header] = rowValue;
 
 		    delete sessionCopy.questionsAttempted[qnumber][hmatch[2]];
@@ -2319,8 +2321,8 @@ function unpackSession(row) {
 	var header = Sliobj.params.gradeFields[j];
 	if (row[header]) {
 	    var hmatch = QFIELD_RE.exec(header);
-	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain')) {
-		// Copy only response/explain field to session
+	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain' || hmatch[2] == 'plugin')) {
+		// Copy only response/explain/plugin field to session
 		var qnumber = parseInt(hmatch[1]);
 		if (hmatch[2] == 'response') {
 		    if (!row[header]) {
@@ -2333,10 +2335,14 @@ function unpackSession(row) {
 			// SKIP_ANSWER implies null answer attempt
 			session.questionsAttempted[qnumber][hmatch[2]] = (row[header] == SKIP_ANSWER) ? '' : row[header];
 		    }
-		} else {
-		    // Explanation (ignored if no attempt)
-		    if (qnumber in session.questionsAttempted)
-			session.questionsAttempted[qnumber][hmatch[2]] = row[header];
+		} else if (qnumber in session.questionsAttempted) {
+		    // Explanation/plugin (ignored if no attempt)
+		    if (hmatch[2] == 'plugin') {
+			if (row[j])
+			    session.questionsAttempted[qnumber][hmatch[2]] = JSON.parse(row[j]);
+		    } else {
+			session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+		    }
 		}
 	    }
 	}
@@ -3489,8 +3495,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
             continue;
         }
 
-	if (qAttempted.pluginResp)
-	    var qscore = parseNumber(qAttempted.pluginResp.score);
+	if (qAttempted.plugin)
+	    var qscore = parseNumber(qAttempted.plugin.score);
 	else
             var qscore = scoreAnswer(qAttempted.response, questionAttrs.qtype,
 			 	     (qAttempted.expect || questionAttrs.correct || ''));

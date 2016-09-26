@@ -263,11 +263,11 @@ class ActionHandler(BaseHandler):
                 del sdproxy.Lock_cache[sessionName]
             if sessionName in sdproxy.Sheet_cache:
                 del sdproxy.Sheet_cache[sessionName]
-            self.write('Unlocked '+sessionName+'<br><a href="/_dash">Dashboard</a>')
+            self.write('Unlocked '+sessionName+'<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>')
         elif action == '_lock':
             if sessionName:
                 sdproxy.Lock_cache[sessionName] = 'user'
-            self.write('Locked sessions: %s<br><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
+            self.write('Locked sessions: %s<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
         elif action == '_backup':
             errors = sdproxy.backupCache(sessionName)
             self.set_header('Content-Type', 'text/plain')

@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.4a'
+VERSION = '0.96.4b'
 
 # Usually modified by importing module
 Options = {
@@ -1206,8 +1206,8 @@ def sheetAction(params, notrace=False):
                             if hmatch and hmatch.group(2) == 'grade':
                                 # Grade value to summed
                                 totalCells.append(colIndexToChar(j+1) + str(userRow))
-                            if not hmatch or (hmatch.group(2) != 'response' and hmatch.group(2) != 'explain'):
-                                # Non-response/explain admin column
+                            if not hmatch or (hmatch.group(2) != 'response' and hmatch.group(2) != 'explain' and hmatch.group(2) != 'plugin'):
+                                # Non-response/explain/plugin admin column
                                 adminColumns[columnHeaders[j]] = 1
 
                         if nonNullExtraColumn:
@@ -1273,7 +1273,7 @@ def sheetAction(params, notrace=False):
                             else:
                                 hmatch = QFIELD_RE.match(colHeader)
                                 teamAttr = ''
-                                if hmatch and (hmatch.group(2) == 'response' or hmatch.group(2) == 'explain'):
+                                if hmatch and (hmatch.group(2) == 'response' or hmatch.group(2) == 'explain' or hmatch.group(2) == 'plugin'):
                                     qno = int(hmatch.group(1))
                                     if questions and qno <= len(questions):
                                         teamAttr = questions[qno-1].get('team','')
@@ -1283,10 +1283,12 @@ def sheetAction(params, notrace=False):
                                         rowValues[teamCol-1] = safeName(colValue).lower()
                                         returnInfo['team'] = rowValues[teamCol-1]
                                 elif teamAttr == 'response' and rowValues[teamCol-1]:
+                                    # Copy response/explain/plugin for team
                                     teamCopyCols.append(j+1)
                                     if hmatch and hmatch.group(2) == 'response':
                                         shareCol = columnIndex.get('q'+hmatch.group(1)+'_share')
                                         if shareCol:
+                                            # Copy share code
                                             teamCopyCols.append(shareCol)
 
                                 rowValues[j] = colValue
@@ -1438,7 +1440,7 @@ def sheetAction(params, notrace=False):
                 if not adminUser and not gradeDate and len(returnValues) > fieldsMin:
                     # If session not graded, Nullify columns to be graded
                     for j in range(fieldsMin, len(columnHeaders)):
-                        if not columnHeaders[j].endswith('_response') and not columnHeaders[j].endswith('_explain'):
+                        if not columnHeaders[j].endswith('_response') and not columnHeaders[j].endswith('_explain') and not columnHeaders[j].endswith('_plugin'):
                             returnValues[j] = None
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
