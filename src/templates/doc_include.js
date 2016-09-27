@@ -3551,8 +3551,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
         } else if (hintsUsed[qnumber] && questionAttrs.hints && questionAttrs.hints.length) {
 	    if (hintsUsed[qnumber] > questionAttrs.hints.length)
 		alert('Internal Error: Inconsistent hint count');
-	    for (var j=0; j<hintsUsed[qnumber]; j++)
-		effectiveScore -= Math.abs(questionAttrs.hints[j]);
+	    for (var k=0; k<hintsUsed[qnumber]; k++)
+		effectiveScore -= Math.abs(questionAttrs.hints[k]);
 	}
 
         if (effectiveScore > 0) {

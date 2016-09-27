@@ -16,10 +16,12 @@ Viewer = {
 	Slidoc.log('Slidoc.Plugins.Viewer.displayURL:', this, url, fileType);
 	if (fileType && fileType.match(/^(gif|jpg|jpeg|png)/)) {
 	    this.imgElem.src = url;
+	    this.imgElem.style.display = null;
 	    this.iframeElem.src = '';
 	    this.iframeElem.style.display = 'none';
 	} else {
 	    this.imgElem.src = '';
+	    this.imgElem.style.display = 'none';
 	    this.iframeElem.src = url;
 	    this.iframeElem.style.display = null;
 	}
@@ -28,9 +30,9 @@ Viewer = {
 
 /* PluginHead:
    PluginBody:
-   <img id="%(pluginId)s-viewerimg" src="">
+   <img id="%(pluginId)s-viewerimg" src="" style="display: none;">
    <iframe id="%(pluginId)s-vieweriframe" src=""
    class="slidoc-plugin-Viewer-iframe %(pluginSlideId)s-vieweriframe"
-   allowfullscreen frameborder="0">
+   allowfullscreen frameborder="0" style="display: none;">
    </iframe>
 */
