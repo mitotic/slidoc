@@ -1780,6 +1780,8 @@ MSPACE_RE  = re.compile(r'\s+')
 def normalizeText(s):
     # Lowercase, replace '" with null, all other non-alphanumerics with spaces,
     # replace 'a', 'an', 'the' with space, and then normalize spaces
+    if isinstance(s, unicode):
+        s = s.encode('utf-8')
     s = str(s)
     return MSPACE_RE.sub(' ', WUSCORE_RE.sub(' ', ARTICLE_RE.sub(' ', s.lower().replace("'",'').replace('"','') ))).strip()
 

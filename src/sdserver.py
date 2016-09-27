@@ -1135,7 +1135,7 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
     try:
         dialect = csv.Sniffer().sniff(csvfile.read(1024))
         csvfile.seek(0)
-        reader = csv.reader(csvfile, dialect)
+        reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
         headers = reader.next()
         idCol = 0
         nameCol = 0
