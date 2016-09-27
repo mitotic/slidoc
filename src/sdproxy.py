@@ -1800,7 +1800,9 @@ def parseNumber(x):
 
 
 def createDate(date=None):
-    if type(date) in (str, unicode):
+    if isinstance(date, datetime.datetime):
+        return date
+    elif type(date) in (str, unicode):
         return sliauth.parse_date(date)
     else:
         # Create date from local epoch time (in ms)
