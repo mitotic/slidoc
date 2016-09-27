@@ -3617,9 +3617,9 @@ function showSubmitted() {
     var submitElem = document.getElementById('slidoc-submit-display');
     if (!submitElem || !Sliobj.params.gd_sheet_url)
 	return;
-    if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
+    if (Sliobj.session && Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
 	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? 'Late submission' : 'Submitted';
-    } else if (Sliobj.session && Sliobj.session.paced) {
+    } else if (Sliobj.session && (Sliobj.session.paced || Sliobj.session.submitted == 'GRADING')) {
 	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : ((Sliobj.session.lateToken == LATE_SUBMIT) ? 'SUBMIT LATE' : 'SUBMIT');
     } else {
 	submitElem.innerHTML = '';
