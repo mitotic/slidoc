@@ -1069,7 +1069,8 @@ class SlidocRenderer(MathRenderer):
                 # Out of sequence choice; ignore
                 return name+'..'
 
-        if alt_choice and 'randomize_choice' not in self.options['config'].features:
+        randomizing = 'randomize_choice' in self.options['config'].features
+        if alt_choice and not randomizing:
             message("    ****CHOICE-WARNING: %s: Specify --features=randomize_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
 
         params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
@@ -1079,7 +1080,7 @@ class SlidocRenderer(MathRenderer):
             prefix += '</p><blockquote id="%(id)s-choice-block" data-shuffle=""><p>\n'
             self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
-        if name != 'Q' and (self.options['config'].hide or self.options['config'].pace):
+        if not randomizing and name != 'Q' and (self.options['config'].hide or self.options['config'].pace):
             if prefix:
                 prefix += '''<div class="slidoc-chart-header %(id)s-chart-header" style="display: none;"></div>\n'''
             prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
@@ -1208,6 +1209,9 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
             answer_opts['share'] = opt_values['share'][2]
+
+        if answer_opts['share'] and 'randomize_choice' in self.options['config'].features:
+            abort("    ****ANSWER-ERROR: %s: 'Answer: ' sharing not compatible with randomize_choice for slide %s" % (self.options["filename"], self.slide_number))
 
         slide_id = self.get_slide_id()
         plugin_name = ''

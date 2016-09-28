@@ -1847,6 +1847,9 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
+    if ('slides_only' in Sliobj.params.features)
+	Slidoc.slideViewStart();
+
     ///if (Slidoc.testingActive())
 	///Slidoc.slideViewStart();
 }
@@ -2088,7 +2091,7 @@ function preAnswer() {
 			    shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
 		    }
 		    
-		} else if (!shuffleStr && !qAttempted && Sliobj.session.paced) {
+		} else if (!shuffleStr && !qAttempted) {
 		    // Randomize choice
 		    var choices = document.getElementsByClassName(slide_id+"-choice-elem");
 		    shuffleStr = Math.floor(2*randFunc());
@@ -4082,8 +4085,8 @@ Slidoc.slideViewStart = function () {
 }
 
 Slidoc.slideViewEnd = function() {
-    if (Sliobj.session.paced && !Sliobj.adminState && ('slides_only' in Sliobj.params.features)) {
-	var msgStr = 'Cannot exit slide view when in strictly paced mode';
+    if (!Sliobj.adminState && ('slides_only' in Sliobj.params.features)) {
+	var msgStr = 'Cannot exit slide view when in restricted mode';
 	alert(msgStr);
 	return false;
     }
