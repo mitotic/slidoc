@@ -1219,7 +1219,7 @@ class SlidocRenderer(MathRenderer):
             plugin_action = plugin_match.group(3)
 
         qtype = ''
-        num_match = re.match(r'^([-+/\d\.eE\s]+)$', text)
+        num_match = re.match(r'^([-+/\d\.eE\s%]+)$', text)
         if num_match and text.lower() != 'e':
             # Numeric default answer
             text = num_match.group(1).strip()
@@ -1233,7 +1233,7 @@ class SlidocRenderer(MathRenderer):
             else:
                 ans = text
             ans, error = ans.strip(), error.strip()
-            if isfloat(ans) and (not error or isfloat(error)):
+            if isfloat(ans) and (not error or isfloat(error[:-1] if error.endswith('%') else error)):
                 qtype = 'number'
                 text = ans + (' +/- '+error if error else '')
             else:

@@ -151,16 +151,11 @@ Share = {
 	if (this.correctAnswer && (testShare || Slidoc.PluginManager.shareReady(this.qattributes.share, this.qattributes.qnumber)) ) {
 	    // Display correct answer
 	    if (this.qattributes.qtype == 'number') {
-		var corrValue = null;
-		var corrError = 0.0;
-		try {
-		    var comps = this.correctAnswer.split('+/-');
-		    corrValue = parseFloat(comps[0]);
-		    if (comps.length > 1)
-			corrError = parseFloat(comps[1]);
-		    if (!isNaN(corrValue) && !isNaN(corrError))
-			checkResp = [corrValue, corrError];
-		} catch(err) {Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.correctAnswer);}
+		var corrComps = Slidoc.PluginManager.splitNumericAnswer(this.correctAnswer);
+		if (corrComps[0] != null && corrComps[1] != null)
+		    checkResp = corrComps;
+		else
+		    Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.correctAnswer);
 	    } else if (this.correctAnswer.length == 1) {
 		checkResp = [this.correctAnswer];
 	    }

@@ -15,14 +15,16 @@ Slider = {
 
 	this.correctAnswer = null;
 	this.errAnswer = 0.0;
+	this.correctAnswerStr = '';
 	if (slider.correctAnswer) {
-	    try {
-		// Correct answer: ans+/-err
-		var comps = slider.correctAnswer.split('+/-');
-		this.correctAnswer = parseFloat(comps[0]);
-		if (comps.length > 1)
-		    this.errAnswer = parseFloat(comps[1]);
-	    } catch (err) {}
+	    var corrComps = Slidoc.PluginManager.splitNumericAnswer(slider.correctAnswer);
+	    if (corrComps[0] != null && corrComps[1] != null) {
+		this.correctAnswer = corrComps[0];
+		this.errAnswer = corrComps[1];
+		this.correctAnswerStr = slider.correctAnswer;
+	    } else {
+		Slidoc.log('Slider.init: Error in correct numeric answer:'+slider.correctAnswer);
+	    }
 	}
 
 	this.labelElem = document.getElementById(this.pluginId+'-label');
@@ -87,11 +89,9 @@ Slider = {
 	if (this.correctAnswer === null) {
 	    pluginResp.score = null;
 	} else {
-	    pluginResp.correctAnswer = this.correctAnswer;
-   	    if (this.errAnswer)
-		pluginResp.correctAnswer += '+/-' + this.errAnswer;
-	    if (this.val >= this.correctAnswer-this.errAnswer &&
-		this.val <= this.correctAnswer+this.errAnswer)
+	    pluginResp.correctAnswer = this.correctAnswerStr;
+	    if (this.val >= this.correctAnswer-1.001*this.errAnswer &&
+		this.val <= this.correctAnswer+1.001*this.errAnswer)
 		pluginResp.score = 1;
             else
 		pluginResp.score = 0;

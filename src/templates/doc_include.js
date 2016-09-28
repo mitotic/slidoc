@@ -469,20 +469,17 @@ function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
 function parseNumber(x) {
     try {
-	var retval;
 	if (!isNumber(x))
 	    return null;
+	if (typeof x == 'string') {
+	    var retval = parseFloat(x);
+	    return isNaN(retval) ? null : retval;
+	}
 	if (!isNaN(x))
 	    return x || 0;
-	if (/^[\+\-]?\d+$/.exec()) {
-	    retval = parseInt(x);
-	} else {
-            retval = parseFloat(x);
-	}
-	return isNaN(retval) ? null : retval;
     } catch(err) {
-        return null;
     }
+    return null;
 }
 
 Slidoc.parseNumber = parseNumber;
@@ -1218,6 +1215,29 @@ Slidoc.PluginManager.saveSession = function() {
     if (!Sliobj.session.paced || Sliobj.session.submitted)
 	return;
     sessionPut();
+}
+
+
+Slidoc.PluginManager.splitNumericAnswer = function(corrAnswer) {
+    // Return [answer|null, error|null]
+    if (!corrAnswer)
+	return [null, 0.0];
+    var comps = corrAnswer.split('+/-');
+    var corrValue = parseNumber(comps[0]);
+    var corrError = 0.0;
+    if (corrValue != null && comps.length > 1) {
+	comps[1] = comps[1].trim();
+	if (comps[1].slice(-1) == '%') {
+	    corrError = parseNumber(comps[1].slice(0,-1));
+	    if (corrError && corrError > 0)
+		corrError = (corrError/100.0)*corrValue;
+	} else {
+	    corrError = parseNumber(comps[1]);
+	}
+    }
+    if (corrError)
+	corrError = Math.abs(corrError);
+    return [corrValue, corrError];
 }
 
 function evalPluginArgs(pluginName, argStr, slide_id) {
@@ -3420,25 +3440,18 @@ function scoreAnswer(response, qtype, corrAnswer) {
     var qscore = 0;
     if (qtype == 'number') {
         // Check if numeric answer is correct
-        var corrValue = null;
-        var corrError = 0.0;
-        var comps = corrAnswer.split('+/-');
-        var corrValue = parseNumber(comps[0]);
-        if (corrValue == null) {
-            qscore = null;
-            Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric answer:'+comps[0]);
-        }
-        if (comps.length > 1) {
-            corrError = parseNumber(comps[1]);
-            if (corrError == null) {
-                qscore = null;
-                Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric error:'+comps[1])
-            }
-        }
         respValue = parseNumber(response);
+	var corrComps = Slidoc.PluginManager.splitNumericAnswer(corrAnswer);
 
-        if (respValue != null && corrValue != null && corrError != null) {
-            qscore = (Math.abs(respValue-corrValue) <= 1.001*corrError) ? 1 : 0;
+        if (respValue != null && corrComps[0] != null && corrComps[1] != null) {
+            qscore = (Math.abs(respValue-corrComps[0]) <= 1.001*corrComps[1]) ? 1 : 0;
+        } else if (corrComps[0] == null) {
+            qscore = null;
+	    if (corrAnswer)
+		Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric answer:'+corrAnswer);
+        } else if (corrComps[1] == null) {
+            qscore = null;
+            Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric error:'+corrAnswer)
         }
     } else {
         // Check if non-numeric answer is correct (all spaces are removed before comparison)
