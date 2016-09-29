@@ -19,7 +19,7 @@ var MAX_SYS_ERROR_RETRIES = 5;    // Maximum number of system error retries
 
 var CACHE_GRADING = true; // If true, cache all rows for grading
 
-var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
+var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
 var BASIC_PACE    = 1;
@@ -3099,9 +3099,11 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries -= 1;
 
+	    var responseArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
 	    Slidoc.PluginMethod(pluginName, slide_id, 'response',
 				(Sliobj.session.remainingTries > 0),
-				Slidoc.answerUpdate.bind(null, setup, slide_id));
+				Slidoc.answerUpdate.bind(null, setup, slide_id),
+			        responseArg);
 	}
 	if (setup || !Sliobj.session.paced || !Sliobj.session.remainingTries)
 	    Slidoc.PluginMethod(pluginName, slide_id, 'disable');
@@ -3201,14 +3203,16 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     var qscore = null;
     if (pluginResp) {
 	qscore = parseNumber(pluginResp.score);
-	expect = pluginResp.correctAnswer || '';
+	if (pluginResp.correctAnswer != null)
+	    expect = pluginResp.correctAnswer+'';
     } else {
 	var pluginMatch = PLUGIN_RE.exec(corr_answer);
 	if (pluginMatch && pluginMatch[3] == 'expect') {
 	    var pluginName = pluginMatch[2];
-	    var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect');
-	    if (val) {
-		corr_answer = val;
+	    var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
+	    var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
+	    if (val != null) {
+		corr_answer = val+'';
 		corr_answer_html = '<code>'+corr_answer+'</code>';
 		expect = corr_answer;
 	    } else {
@@ -3235,7 +3239,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	    disp_response = choiceShuffle(disp_response, shuffleStr);
 	    disp_corr_answer = choiceShuffle(disp_corr_answer, shuffleStr);
 	}
-    } else if (disp_corr_answer.match(/=\w+\.response\(\)/)) {
+    } else if (disp_corr_answer.match(/=\w+\.response\(\s*(\d*)\s*\)/)) {
 	disp_corr_answer = '';
     }
 

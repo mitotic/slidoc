@@ -385,7 +385,7 @@ Share = {
    <style>
 .slidoc-plugin-Share-responder {
     display: inline-block;
-    padding: 0.5em 0.5em;
+    padding: 0.25em 0.5em;
     text-align: center;
     background-color: #e3e3e3; /* very light gray */
 }

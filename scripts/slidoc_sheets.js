@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.4c';
+var VERSION = '0.96.4d';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -127,7 +127,7 @@ var TRUNCATE_DIGEST = 8;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
 var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
 
-var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$/;
+var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service

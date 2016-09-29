@@ -899,7 +899,8 @@ Answer: 2.5 +/- 0.1 = SqrtTest.expect()
 
 Concepts: questions, numeric response; questions, formulas; questions, randomized
 
-Notes: An optional error range may be provided after `+/-`.
+Notes: An optional error range may be provided after `+/-`. The error
+range may be a number or a percent value, i.e. `+/- 5%`
 
 Embedded javascript functions may be used as formulas, using the notation
 

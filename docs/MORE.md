@@ -125,7 +125,7 @@ The following are defined only for global and slide instances:
  
 The following are defined only for slide instances:
 
-> `this.global`: global instance
+> `this.global`: global instance (shared across all slides)
 
 > `this.slideId`: `slidoc01-01`
 
@@ -164,13 +164,13 @@ preserve the sequence in which global random generators may be called.
 
 The following methods may be defined for plugins, as needed:
 
-> `expect`: returns expected correct answer (for formula plugins)
+> `expect(intArg)`: returns expected correct answer (for formula plugins)
 
-> `display`: displays previously recorded user response (called at start/switch of session for each question)
+> `display(response, pluginResp)`: displays previously recorded user response (called at start/switch of session for each question)
 
 > `disable(displayCorrect)`: disables plugin (after user response has been recorded)
 
-> `response`: records and returns user response
+> `response(intArg)`: records and returns user response
 
 > `enterSlide(paceStart)`: entering slide; returns slideDelay (in seconds) or null to use default (if paceStart only).
 
@@ -253,9 +253,14 @@ the `init` call.)
 
 The correct answer can also be provided by a formula:
 
-    Answer: number=PluginName.expect()
+    Answer: number=PluginName.expect(2)
 
-with the answer type appearing before the equals sign.
+with the answer type appearing before the equals sign. An optional
+non-negative integer argument may be provided. This argument may be
+used to distinguish between multiple instances of the formula plugin
+appearing on different slides, when used in conjunction with
+`initGlobal()` to initialize a global instance for data shared across
+slides.
 
 Simple formula-substitution plugins usually define `init` and `expect`
 (returning the correct answer) and at least one other function
@@ -271,11 +276,12 @@ question. They appears in the Answer portion of the slide.
 
     Answer: text/x-python=PluginName.response()
 
-    Answer: 300+/-10=PluginName.response()
+    Answer: 300+/-10=PluginName.response(1)
 
+An optional non-negative integer argument may be provided.
 The `response` method uses callback to return the user response (as a
 string) and an optional `pluginResp` object of the form:
-`{name:pluginName, score:1/0/0.75/.../null,
+`{name: pluginName, score: 1/0/0.75/.../null,
 answer: ans_plus_err, invalid: invalid_msg,
 output:output, tests:0/1/2}`
 

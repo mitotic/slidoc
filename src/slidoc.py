@@ -1216,11 +1216,13 @@ class SlidocRenderer(MathRenderer):
         slide_id = self.get_slide_id()
         plugin_name = ''
         plugin_action = ''
-        plugin_match = re.match(r'^(.*)=\s*(\w+)\.(expect|response)\(\s*\)$', text)
+        plugin_arg = ''
+        plugin_match = re.match(r'^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$', text)
         if plugin_match:
             text = plugin_match.group(1).strip()
             plugin_name = plugin_match.group(2)
             plugin_action = plugin_match.group(3)
+            plugin_arg = plugin_match.group(4) or ''
 
         qtype = ''
         num_match = re.match(r'^([-+/\d\.eE\s%]+)$', text)
@@ -1343,7 +1345,7 @@ class SlidocRenderer(MathRenderer):
         self.questions.append({})
         qnumber = len(self.questions)
         if plugin_name:
-            correct_val = '=' + plugin_name + '.' + plugin_action + '()'
+            correct_val = '=' + plugin_name + '.' + plugin_action + '(' + plugin_arg + ')'
             if correct_text:
                 correct_val = correct_text + correct_val
         else:
