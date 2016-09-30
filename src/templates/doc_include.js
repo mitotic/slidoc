@@ -3668,11 +3668,10 @@ Slidoc.submitStatus = function () {
 	if (!Sliobj.adminState) {
 	    var incomplete = Sliobj.session.lastSlide < getVisibleSlides().length;
 	    html += '<ul>';
-	    if (incomplete) {
+	    if (incomplete)
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.saveClick();">Save session</span></li><p></p>'
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span>'+(incomplete ? ' (without reaching the last slide)':'')+'</li>'
-		html += '</ul>';
-	    }
+	    html += '</ul>';
 	    if (isController()) {
 		html += '<hr>';
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.interact();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span></li><p></p>'
