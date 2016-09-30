@@ -862,6 +862,7 @@ var Key_codes = {
 };
 
 document.onkeydown = function(evt) {
+    //Slidoc.log('document.onkeydown:', evt);
     if ((!Sliobj.currentSlide || Sliobj.questionSlide) && (evt.keyCode == 32 || evt.keyCode > 44))
 	return;  // Handle printable input normally (non-slide view or question slide)
 
@@ -918,6 +919,7 @@ Slidoc.inputKeyDown = function (evt) {
     if (evt.keyCode == 13) {
 	var inputElem = document.getElementById(evt.target.id.replace('-input', '-click'));
 	inputElem.onclick();
+	evt.target.blur();
     }
 }
 
@@ -1097,16 +1099,15 @@ function setupPlugins() {
 	}
 	if (!(pluginName in Sliobj.activePlugins)) {
 	    Sliobj.pluginList.push(pluginName);
-	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {}, button: {} };
+	    Sliobj.activePlugins[pluginName] = {number: Sliobj.pluginList.length, args: {}, firstSlide: slide_id, button: {} };
 	}
 	Sliobj.activePlugins[pluginName].args[slide_id] = args;
 	Sliobj.activePlugins[pluginName].button[slide_id] = button;
     }
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginInstance = createPluginInstance(Sliobj.pluginList[j], true);
-	Slidoc.PluginManager.optCall(pluginInstance, 'initSetup');
+	Slidoc.PluginManager.optCall.apply(null, [pluginInstance, 'initSetup'].concat(pluginInstance.initArgs));
     }
-
 }
 
 Slidoc.PluginManager.optCall = function (pluginInstance, action) //... extra arguments
@@ -1242,17 +1243,17 @@ Slidoc.PluginManager.splitNumericAnswer = function(corrAnswer) {
 
 function evalPluginArgs(pluginName, argStr, slide_id) {
     // Evaluates plugin init args in appropriate context
-    if (!argStr || !slide_id)
+    if (!argStr)
 	return [];
     try {
-	var pluginList = Sliobj.slidePlugins[slide_id]; // Plugins instantiated in the slide so far
+	var pluginList = slide_id ? Sliobj.slidePlugins[slide_id] : []; // Plugins instantiated in the slide so far
 	var SlidePlugins = {};
 	for (var j=0; j<pluginList.length; j++)
 	    SlidePlugins[pluginList[j].name] = pluginList[j];
 	var argVals = eval('['+argStr+']');
 	return argVals;
     } catch (err) {
-	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+slide_id+': '+err;
+	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+(slide_id||'global instance')+': '+err;
 	Slidoc.log(errMsg);
 	alert(errMsg);
 	return [argStr];
@@ -1276,8 +1277,11 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	defCopy = copyAttributes(pluginDef, ['setup', 'global']);
     defCopy.name = pluginName;
     defCopy.pluginLabel = 'slidoc-plugin-'+pluginName;
-    defCopy.initArgs = slide_id ? evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id) : [];
     defCopy.slideData = slideData || null;
+
+    // Use init args from first slide where plugin occures for initSetup/initGlobal
+    var evalSlideId = slide_id || Sliobj.activePlugins[pluginName].firstSlide;
+    defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[evalSlideId], slide_id||'');
 
     var auth = window.GService && GService.gprofile && GService.gprofile.auth;
     defCopy.userId = auth ? auth.id : null;
@@ -1875,7 +1879,7 @@ function initSessionPlugins(session) {
 	var pluginName = Sliobj.pluginList[j];
 	var pluginInstance = createPluginInstance(pluginName);
 	Sliobj.slidePlugins[''].push(pluginInstance);   // Use '' as slide_id for session plugins
-	Slidoc.PluginManager.optCall(pluginInstance, 'initGlobal');
+	Slidoc.PluginManager.optCall.apply(null, [pluginInstance, 'initGlobal'].concat(pluginInstance.initArgs));
     }
 
     // Sort plugin content elements in order of occurrence
@@ -2222,8 +2226,10 @@ function makeRandomFunction(seed) {
 
 function createSession() {
     var persistPlugins = {};
-    for (var j=0; j<Sliobj.params.plugins.length; j++)
-	persistPlugins[Sliobj.params.plugins[j]] = {};
+    if (Sliobj.params.plugins) {
+	for (var j=0; j<Sliobj.params.plugins.length; j++)
+	    persistPlugins[Sliobj.params.plugins[j]] = {};
+    }
 
     return {'version': Sliobj.params.sessionVersion,
 	    'revision': Sliobj.params.sessionRevision,

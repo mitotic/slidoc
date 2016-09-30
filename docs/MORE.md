@@ -151,16 +151,16 @@ be reset explicitly.
 
 The following methods are automatically called for plugin instances;
 
-> `initSetup()`: when setup instance is inititiated (after document
-is ready). May insert/modify DOM and plugin content.
+> `initSetup(args)`: when setup instance is inititiated (after document is ready). May insert/modify DOM and plugin content.
 
-> `initGlobal()`: when the global instance is instantiated (at start of
-session or user switching)
+> `initGlobal(args)`: when the global instance is instantiated (at start of session or user switching)
 
 > `init(args)`: when the slide instance is instantiated
 
-The slide-specific `init` will be called in a deterministic order, to
-preserve the sequence in which global random generators may be called.
+`initSetup` and `initGlobal` will be called with arguments from the
+first slide where the plugin occurs. All the `init` calls will be in a
+deterministic order, to preserve the sequence in which global random
+generators may be called.
 
 The following methods may be defined for plugins, as needed:
 
