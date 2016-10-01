@@ -27,6 +27,8 @@ body:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
 
 body:not(.slidoc-admin-view):not(.slidoc-graded-view) .slidoc-admin-graded { display: none; }
 
+body:not(.slidoc-interact-view) .slidoc-interactonly { display: none; }
+
 section:not(.slidoc-answered-slideview) .slidoc-answeredonly { display: none; }
 section:not(.slidoc-grading-slideview) .slidoc-gradingonly { display: none; }
 

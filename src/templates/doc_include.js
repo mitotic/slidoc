@@ -707,8 +707,6 @@ Slidoc.showConcepts = function (msg) {
     var missedConcepts = trackConcepts(Sliobj.scores.qscores, questionConcepts, Sliobj.allQuestionConcepts)
 
     var html = msg || '';
-    if (!msg && Sliobj.params.gd_sheet_url)
-	html += 'Click <span class="slidoc-clickable" onclick="Slidoc.showGrades();">here</span> to view other scores/grades<p></p>'
     if (Sliobj.allQuestionConcepts.length && !controlledPace()) {
 	html += '<b>Question Concepts</b><br>';
 	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
@@ -776,7 +774,7 @@ Slidoc.viewHelp = function () {
 	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
-	html += 'Session: <b>' + Sliobj.sessionName + '</b>';
+	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session && Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
 	if (Sliobj.params.questionsMax)
@@ -800,7 +798,9 @@ Slidoc.viewHelp = function () {
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
     if (userId == Sliobj.params.testUserId || Sliobj.adminState)
-	html += '<a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
+    else if (Sliobj.params.gd_sheet_url)
+	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">View gradebook</span><p></p>';
 
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list.length; j++)
@@ -1058,6 +1058,7 @@ Slidoc.interact = function() {
 function interactAux(active) {
     Slidoc.log('interactAux:', active, Sliobj.session.lastSlide);
     Sliobj.interactive = active;
+    toggleClass(active, 'slidoc-interact-view');
     if (!Sliobj.interactive) {
 	GService.requestWS('interact', ['', null], interactCallback);
 	return;
@@ -1491,14 +1492,15 @@ function showGradesCallback(userId, result, retStatus) {
     sessionKeys.sort();
     var html = 'Grades for user <b>'+userId+'</b><p></p>';
     if (result.sessionCount)
-	html += 'Session count: <b>'+result.sessionCount+'</b><br>';
+	html += 'Session count: <b>'+result.sessionCount+'</b><p></p>';
     if (result.weightedTotal)
 	html += 'Weighted total: <b>'+result.weightedTotal+'</b><br>';
     for (var j=0; j<sessionKeys.length; j++) {
-	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ result[sessionKeys[j]]+'</b>'
+	var grade = result[sessionKeys[j]];
+	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ (grade == ''?'missed':grade) +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    if (retStatus.info.maxScores)
-		html += ' / '+retStatus.info.maxScores[retStatus.info.headers.indexOf(sessionKeys[j])];
+		html += ' out of '+retStatus.info.maxScores[retStatus.info.headers.indexOf(sessionKeys[j])];
 	    if (retStatus.info.averages) {
 		var temAvg = retStatus.info.averages[retStatus.info.headers.indexOf(sessionKeys[j])];
 		if (isNumber(temAvg))
@@ -3672,12 +3674,16 @@ Slidoc.submitStatus = function () {
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.saveClick();">Save session</span></li><p></p>'
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span>'+(incomplete ? ' (without reaching the last slide)':'')+'</li>'
 	    html += '</ul>';
+
 	    if (isController()) {
 		html += '<hr>';
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.interact();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span></li><p></p>'
 	    }
 	}
     }
+    if (Sliobj.params.gd_sheet_url && getUserId() != Sliobj.params.testUserId)
+	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">View gradebook</span>';
+
     if (Sliobj.adminState) {
 	if (Sliobj.gradeDateStr)
 	    html += '<hr>Grades released to students at '+Sliobj.gradeDateStr;

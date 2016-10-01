@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.4d';
+var VERSION = '0.96.4e';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -139,7 +139,9 @@ function onOpen() {
    menuEntries.push({name: "Display session answers", functionName: "sessionAnswerSheet"});
    menuEntries.push({name: "Display session statistics", functionName: "sessionStatSheet"});
    menuEntries.push(null); // line separator
-   menuEntries.push({name: "Update scores for all sessions", functionName: "updateScoreSheet"});
+   menuEntries.push({name: "Update scores for session", functionName: "updateScoreSession"});
+   menuEntries.push(null); // line separator
+   menuEntries.push({name: "Update scores for all sessions", functionName: "updateScoreAll"});
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Email authentication tokens", functionName: "emailTokens"});
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
@@ -2396,8 +2398,33 @@ function emailLateToken() {
     notify(note);
 }
 
-function updateScoreSheet() {
-    // Update scores sheet
+
+function updateScoreSession() {
+    // Update scores sheet for current session
+
+    var sessionName = getSessionName(true);
+
+    var lock = LockService.getPublicLock();
+    lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
+
+    try {
+	var sessionSheet = getSheet(sessionName);
+	if (!sessionSheet)
+	    throw('Sheet not found: '+sessionName);
+	if (!sessionSheet.getLastColumn())
+	    throw('No columns in sheet: '+sessionName);
+	if (sessionSheet.getLastRow() < 2)
+	    throw('No data rows in sheet: '+sessionName);
+
+	updateScores([sessionName]);
+    } finally { //release lock
+	lock.releaseLock();
+    }
+
+}
+
+function updateScoreAll() {
+    // Update scores sheet for all sessions
 
     var lock = LockService.getPublicLock();
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
@@ -2407,7 +2434,21 @@ function updateScoreSheet() {
 	if (!indexSheet) {
 	    SpreadsheetApp.getUi().alert('Sheet not found: '+INDEX_SHEET);
 	}
-	var sessionNames = getColumns('id', indexSheet);
+	updateScores(getColumns('id', indexSheet));
+    } finally { //release lock
+	lock.releaseLock();
+    }
+
+}
+
+function updateScores(sessionNames) {
+    // Update scores sheet for sessions in list
+
+    try {
+	var indexSheet = getSheet(INDEX_SHEET);
+	if (!indexSheet) {
+	    SpreadsheetApp.getUi().alert('Sheet not found: '+INDEX_SHEET);
+	}
 	var validNames = [];
 	var validSheet = null;
 	for (var m=0; m<sessionNames.length; m++) {
@@ -2484,7 +2525,7 @@ function updateScoreSheet() {
 
 		for (var j=0; j<nUserIds; j++) {
 		    // Check that prior IDs match
-		    var prevId = scoreSheet.getRange(nonmaxStartRow+j, idCol, 1, 1)[0][0];
+		    var prevId = scoreSheet.getSheetValues(nonmaxStartRow+j, idCol, 1, 1)[0][0];
 		    if (prevId && prevId != temIds[j][0])
 			throw('Id mismatch in row '+(nonmaxStartRow+j)+' of score sheet: expected '+temIds[j][0]+' but found '+prevId+'; fix it or re-create score sheet');
 		}
@@ -2585,7 +2626,7 @@ function updateScoreSheet() {
 		if (sessionRowNum || rowId == MAXSCORE_ID) {
 		    if (sessionAttributes.params.participationCredit && sessionAttributes.params.participationCredit > 1) {
 			// Per session participation credit
-			lookups.push( scoreWeight || 1 );
+			lookups.push(1);
 		    } else if (scoreWeight) {
 			// Tally scores
 			if (rowId == MAXSCORE_ID) {
@@ -2644,8 +2685,7 @@ function updateScoreSheet() {
 	scoreSheet.getRange(scoreStartRow, scoreSessionCountCol, nids, 1).setValues(sessionCountFormulas);
 	scoreSheet.getRange(scoreStartRow, scoreWeightedCol, nids, 1).setValues(weightedFormulas);
 
-    } finally { //release lock
-	lock.releaseLock();
+    } finally {
     }
 
     notify("Updated "+scoreSheetName+" for sessions "+updatedNames.join(', '), 'Slidoc Scores');
