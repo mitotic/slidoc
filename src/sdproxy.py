@@ -221,9 +221,10 @@ def getSheet(sheetName, optional=False):
 
     if Options['LOCK_PROXY_URL'] and not sheetName.endswith('_slidoc'):
         lockURL = Options['LOCK_PROXY_URL']+'/_lock/'+sheetName
-        retval = http_post(lockURL+'?token='+Options['AUTH_KEY'])
-        if retval['result'] != 'success':
-            raise Exception("Error in locking proxy sheet %s: %s" % (lockURL, retval['error'][:256]))
+        req = urllib2.Request(lockURL+'?token='+Options['AUTH_KEY'])
+        response = urllib2.urlopen(req)
+        if Options['DEBUG']:
+            print("DEBUG:getSheet: %s LOCKED %s (%s)" % (sheetName, lockURL, response.read()), file=sys.stderr)
         time.sleep(6)
 
     user = 'admin'
