@@ -28,7 +28,7 @@ if [ $# -ge 1 ]; then
     if [ "$1" == "-r" ]; then
         run=1
         shift
-        open -a Safari "http://localhost:${PORT}/_auth/login/?username=_test_user&token=${SHEET_KEY}&next=/_shutdown"
+	curl "http://localhost:${PORT}/_shutdown?token=${SHEET_KEY}"
         sleep 2
 
         cmd="sdserver.py --auth_key=$SHEET_KEY --twitter_stream=$TWSTREAM1 --static_dir=. --proxy_wait=0 --port=$PORT --no_auth --debug"

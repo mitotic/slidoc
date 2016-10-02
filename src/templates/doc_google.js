@@ -439,7 +439,8 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 					    altid: cookieUserInfo.altid||''}, false, callback);
 	    }
 	    if (cookieUserName == 'admin')
-		Slidoc.showPopupOptions('Admin user options:', ['Grade responses', 'Test user'], optCallback);
+		Slidoc.showPopupOptions('Admin user options:', ['Grade responses', 'Test user'],
+					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
 	    else
 		optCallback();
 	    return;

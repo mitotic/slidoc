@@ -4714,7 +4714,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
     return contentElem;
 }
 
-Slidoc.showPopupOptions = function(prefixHTML, optionListHTML, callback) {
+Slidoc.showPopupOptions = function(prefixHTML, optionListHTML, suffixHTML, callback) {
     // Show list of options as popup, with callback(n) invoked on select.
     // n >= 1 for selection, or null if popup is closed
     if (Sliobj.closePopup)
@@ -4724,6 +4724,7 @@ Slidoc.showPopupOptions = function(prefixHTML, optionListHTML, callback) {
     for (var j=0; j<optionListHTML.length; j++)
 	lines.push('<li class="slidoc-popup-option-list-element slidoc-clickable" onclick="Slidoc.selectPopupOption('+(j+1)+');">'+optionListHTML[j]+'</li><p></p>');
     lines.push('</ul>');
+    lines.push(suffixHTML || '');
     Slidoc.showPopup(lines.join('\n'), null, false, 0, '', callback||null);
 }
 

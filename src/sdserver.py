@@ -239,7 +239,7 @@ class ActionHandler(BaseHandler):
             self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
         elif action in ('_getcol', '_getrow'):
             sessionName, sep, label = sessionName.partition(';')
-            sheet = sdproxy.Sheet_cache[sessionName]
+            sheet = sdproxy.Sheet_cache.get(sessionName)
             self.write('<a href="/_dash">Dashboard</a><br>')
             if not sheet:
                 self.write('Session '+sessionName+' not in cache')
@@ -251,12 +251,14 @@ class ActionHandler(BaseHandler):
                 else:
                     colIndex = sdproxy.indexColumns(sheet)
                     if action == '_getcol':
-                        labelNum = colIndex.get(label, 0)
+                        labelNum = colIndex.get(label, 0) if label else colIndex['id']
                     else:
-                        labelNum = sdproxy.indexRows(sheet, colIndex['id'], 2).get(label, 0)
+                        labelNum = sdproxy.indexRows(sheet, colIndex['id'], 2).get(label, 0) if label else 1
                 if action == '_getcol':
                     if labelNum < 1 or labelNum > sheet.getLastColumn():
                         self.write('Column '+label+' not found in cached session '+sessionName)
+                    elif not label or label == 'id':
+                        self.write('<pre>'+'\n'.join('<a href="/_getrow/%s;%s">%s</a>' % (sessionName, x[0], x[0]) for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1))+'</pre>')
                     else:
                         self.write('<pre>'+'\n'.join(str(x) for x in json.loads(json.dumps([x[0] for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1)], default=sliauth.json_default)))+'</pre>')
                 else:
@@ -264,8 +266,11 @@ class ActionHandler(BaseHandler):
                         self.write('Row '+label+' not found in cached session '+sessionName)
                     else:
                         headerVals = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0]
-                        rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
-                        self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(rowVals))) +'</pre>')
+                        if not label or labelNum == 1:
+                            self.write('<pre>'+'\n'.join(['<a href="/_getcol/%s;%s">%s</a>' % (sessionName, headerVals[j], headerVals[j]) for j in range(len(headerVals))]) +'</pre>')
+                        else:
+                            rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
+                            self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
         elif action == '_unlock':
             if sessionName in sdproxy.Lock_cache:
                 del sdproxy.Lock_cache[sessionName]
@@ -352,6 +357,13 @@ class ActionHandler(BaseHandler):
                         self.write('\n'.join(errors)+'\n')
         else:
             self.write('Invalid post action: '+action)
+
+class AuthActionHandler(ActionHandler):
+    @tornado.web.authenticated
+    def get(self, subpath, inner=None):
+        if self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
+            return self.getAction(subpath)
+        raise tornado.web.HTTPError(403)
 
 class ProxyHandler(BaseHandler):
     def get(self):
@@ -1090,7 +1102,8 @@ class Application(tornado.web.Application):
                           (r"/(_respond)", ActionHandler),
                           (r"/(_respond/[-\w.;]+)", ActionHandler),
                           (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
-                          (r"/(_(clear|dash|import|shutdown|status))", ActionHandler),
+                          (r"/(_(clear|import|shutdown|status))", ActionHandler),
+                          (r"/(_dash)", AuthActionHandler),
                            ]
 
         fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
