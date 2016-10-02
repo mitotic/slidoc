@@ -66,6 +66,7 @@ Options = {
     'debug': False,
     'dry_run': False,
     'gsheet_url': '',
+    'lock_proxy_url': '',
     'no_auth': False,
     'proxy_wait': None,
     'port': 8888,
@@ -186,11 +187,18 @@ class HomeHandler(BaseHandler):
 
 
 class ActionHandler(BaseHandler):
-    @tornado.web.authenticated
     def get(self, subpath, inner=None):
-        if self.get_current_user() not in (ADMINUSER_ID, TESTUSER_ID):
-            self.write('Action not permitted: '+self.get_current_user())
-            return
+        token = str(self.get_argument("token", ""))
+        if token == Options['auth_key'] or self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
+            return self.getAction(subpath)
+        raise tornado.web.HTTPError(403)
+
+    def post(self, subpath, inner=None):
+        if self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
+            return self.postAction(subpath)
+        raise tornado.web.HTTPError(403)
+
+    def getAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')
         if action == '_dash':
             self.render('dashboard.html', interactive=WSHandler.getInteractiveSession())
@@ -267,6 +275,9 @@ class ActionHandler(BaseHandler):
         elif action == '_lock':
             if sessionName:
                 sdproxy.Lock_cache[sessionName] = 'user'
+                if not sessionName.endswith('_slidoc'):
+                    # Also lock session index
+                    sdproxy.Lock_cache['sessions_slidoc'] = 'user'
             self.write('Locked sessions: %s<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
         elif action == '_backup':
             errors = sdproxy.backupCache(sessionName)
@@ -305,10 +316,7 @@ class ActionHandler(BaseHandler):
                 self.write('Twitter stream status: '+twitterStream.status+'\n\n')
                 self.write('Twitter stream log: '+'\n'.join(twitterStream.log_buffer)+'\n')
 
-    def post(self, subpath, inner=None):
-        if self.get_current_user() not in (ADMINUSER_ID, TESTUSER_ID):
-            self.write('Action not permitted: '+self.get_current_user())
-            return
+    def postAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')
         if action == '_import':
             sessionName = self.get_argument('session','')
@@ -1235,6 +1243,7 @@ def main():
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("gsheet_url", default="", help="Google sheet URL")
+    define("lock_proxy_url", default="", help="Proxy URL to lock")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
@@ -1263,7 +1272,8 @@ def main():
 
     if options.proxy_wait is not None:
         sdproxy.Options.update(AUTH_KEY=options.auth_key, SHEET_URL=options.gsheet_url, DEBUG=options.debug,
-                               DRY_RUN=options.dry_run, MIN_WAIT_TIME=options.proxy_wait)
+                               DRY_RUN=options.dry_run, LOCK_PROXY_URL=options.lock_proxy_url,
+                               MIN_WAIT_TIME=options.proxy_wait)
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     pluginsDir = scriptdir + '/plugins'

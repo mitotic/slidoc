@@ -87,6 +87,7 @@ Sliobj.interactive = false;
 Sliobj.adminState = null;
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
+Sliobj.popupEvent = '';
 Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
@@ -1028,6 +1029,9 @@ Sliobj.eventReceiver = function(eventMessage) {
 	if (!(eventArgs[0] in Sliobj.liveResponses))
 	    Sliobj.liveResponses[eventArgs[0]] = [];
 	Sliobj.liveResponses[eventArgs[0]][eventSource] = eventArgs.slice(1);
+	if (eventName == Sliobj.popupEvent && Sliobj.closePopup)
+	    Sliobj.closePopup(true, eventName);
+	    
     } else if (eventName == 'AdminPacedForceAnswer') {
 	if (controlledPace() && !Sliobj.session.questionsAttempted[eventArgs[0]]) {
 	    // Force answer to unanswered question
@@ -1450,27 +1454,28 @@ function selectUserCallback(userId, result, retStatus) {
     preAnswer();
 }
 
-Slidoc.nextUser = function (forward, first) {
+Slidoc.nextUser = function (forward, first, needGradingOnly) {
     if (!Sliobj.gradingUser)
 	return;
-    if (first && nextUserAux(Sliobj.gradingUser))
+    if (first && nextUserAux(Sliobj.gradingUser, needGradingOnly))
 	return;
     if (forward) {
 	for (var j=Sliobj.gradingUser+1; j <= Sliobj.userList.length; j++) {
-	    if (nextUserAux(j))
+	    if (nextUserAux(j, needGradingOnly))
 		return;
 	}
     } else {
 	for (var j=Sliobj.gradingUser-1; j >= 1; j--) {
-	    if (nextUserAux(j))
+	    if (nextUserAux(j, needGradingOnly))
 		return;
 	}
     }
 }
 
-function nextUserAux(gradingUser) {
+function nextUserAux(gradingUser, needGradingOnly) {
+    Slidoc.log('nextUserAux:', gradingUser, needGradingOnly);
     var option = document.getElementById('slidoc-switch-user-'+gradingUser);
-    if (!option || option.dataset.nograding)
+    if (!option || (needGradingOnly && option.dataset.nograding))
 	return false;
     option.selected = true;
     Sliobj.gradingUser = gradingUser;
@@ -1580,6 +1585,7 @@ function slidocReadyAux2(auth) {
     if (Sliobj.closePopup)
 	Sliobj.closePopup(true);
     Sliobj.closePopup = null;
+    Sliobj.popupEvent = '';
     Sliobj.popupQueue = [];
     Slidoc.delayIndicator = ('progress_bar' in Sliobj.params.features) ? progressBar : delayElement;
 
@@ -3923,10 +3929,10 @@ function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
 	return;
 
     if (!Slidoc.testingActive()) {
-	// Move on to next user if slideshow mode, else to next question
+	// Move on to next user needing grading if slideshow mode, else to next question
 	if (Sliobj.currentSlide) {
 	    if (Sliobj.gradingUser < Sliobj.userList.length) {
-		Slidoc.nextUser(true);
+		Slidoc.nextUser(true, false, true);
 		setTimeout(function(){Slidoc.gradeClick(null, slide_id);}, 200);
 	    }
 	} else {
@@ -4640,7 +4646,7 @@ Slidoc.closeAllPopups = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup(true);
 }
-Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
+Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popupEvent, closeCallback) {
     // Only one of innerHTML or divElemId needs to be non-null
     if (Slidoc.testingActive()) {
 	if (Sliobj.testScript.stepEvent) {
@@ -4680,9 +4686,11 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
 	overlayElem.style.display = 'block';
 	divElem.style.display = 'block';
 
-	Sliobj.closePopup = function (closeAll) {
+	Sliobj.popupEvent = popupEvent || '';
+	Sliobj.closePopup = function (closeAll, closeArg) {
 	    overlayElem.style.display = 'none';
 	    divElem.style.display = 'none';
+	    Sliobj.popupEvent = '';
 	    Sliobj.closePopup = null;
 	    if (closeAll) {
 		Sliobj.popupQueue = [];
@@ -4691,6 +4699,9 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
 		    var args = Sliobj.popupQueue.shift();
 		    Slidoc.showPopup(args[0], args[1]);
 		}
+	    }
+	    if (closeCallback) {
+		try { closeCallback(closeArg || null); } catch (err) {Slidoc.log('Sliobj.closePopup: ERROR '+err);}
 	    }
 	    Slidoc.advanceStep();
 	}
@@ -4701,6 +4712,25 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec) {
     }
     window.scrollTo(0,0);
     return contentElem;
+}
+
+Slidoc.showPopupOptions = function(prefixHTML, optionListHTML, callback) {
+    // Show list of options as popup, with callback(n) invoked on select.
+    // n >= 1 for selection, or null if popup is closed
+    if (Sliobj.closePopup)
+	Sliobj.closePopup(true);
+    var lines = [prefixHTML || ''];
+    lines.push('<p></p><ul class="slidoc-popup-option-list">');
+    for (var j=0; j<optionListHTML.length; j++)
+	lines.push('<li class="slidoc-popup-option-list-element slidoc-clickable" onclick="Slidoc.selectPopupOption('+(j+1)+');">'+optionListHTML[j]+'</li><p></p>');
+    lines.push('</ul>');
+    Slidoc.showPopup(lines.join('\n'), null, false, 0, '', callback||null);
+}
+
+Slidoc.selectPopupOption = function(closeArg) {
+    Slidoc.log('Slidoc.selectPopupOption:', closeArg);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup(true, closeArg||null);
 }
 
 Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {

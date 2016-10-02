@@ -420,21 +420,28 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    // Use user/token from cookie
 	    var cookieUserName = cookieUserInfo.user;
 	    var cookieUserToken = cookieUserInfo.token;
-	    if (cookieUserName == 'admin') {
-		if (window.confirm('Login as _test_user? (Cancel for grading)')) {
-		    cookieUserName = '_test_user';
-		    cookieUserToken = cookieUserToken.split(',')[1];
-		} else {
-		    cookieUserToken = cookieUserToken.split(',')[0];
-		}
-	    }
+	    var gprofile = this;
 
-	    this.receiveUserInfo(authType, {user: cookieUserName,
+	    function optCallback(altUser) {
+		Slidoc.log('GoogleProfile.promptUserInfo.optCallback:', altUser);
+		if (altUser && altUser > 1) {
+		    var optId = '_test_user';
+		    var userToken = cookieUserToken.split(',')[1];
+		} else {
+		    var optId = cookieUserName;
+		    var userToken = cookieUserToken.split(',')[0];
+		}
+		gprofile.receiveUserInfo(authType, {user: optId,
 					    origid: cookieUserInfo.origid,
-					    token: cookieUserToken,
+					    token: userToken,
 					    name: cookieUserInfo.name||'',
 					    email: cookieUserInfo.email||'',
 					    altid: cookieUserInfo.altid||''}, false, callback);
+	    }
+	    if (cookieUserName == 'admin')
+		Slidoc.showPopupOptions('Admin user options:', ['Grade responses', 'Test user'], optCallback);
+	    else
+		optCallback();
 	    return;
 	}
     }

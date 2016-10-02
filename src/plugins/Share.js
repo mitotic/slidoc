@@ -72,8 +72,8 @@ Share = {
 	this.getResponses(true);
     },
 
-    displayShare: function () {
-	Slidoc.log('Slidoc.Plugins.Share.displayShare:');
+    displayShare: function (eventArg) {
+	Slidoc.log('Slidoc.Plugins.Share.displayShare:', eventArg);
 	if (this.qattributes.team == 'setup' && this.testUser && !Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
 	    var liveResponses = Slidoc.PluginManager.getLiveResponses(this.qattributes.qnumber);
 	    var respIds = Object.keys(liveResponses || {});
@@ -102,7 +102,7 @@ Share = {
 		}
 		html += '</ul>\n';
 	    }
-	    Slidoc.showPopup(html, null, true)
+	    Slidoc.showPopup(html, null, true, 0, 'LiveResponse', this.displayShare.bind(this));
 	} else {
 	    this.getResponses(true);
 	}

@@ -84,9 +84,8 @@ TRUNCATE_DIGEST = 8
 
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
 
-def http_post(url, params_dict):
-    data = urllib.urlencode(params_dict)
-    req = urllib2.Request(url, data)
+def http_post(url, params_dict=None):
+    req = urllib2.Request(url, urllib.urlencode(params_dict)) if params_dict else urllib2.Request(url)
     try:
         response = urllib2.urlopen(req)
     except Exception, excp:
@@ -219,6 +218,13 @@ def getSheet(sheetName, optional=False):
             return None
         # Retry retrieving optional sheet
         del Miss_cache[sheetName]
+
+    if Options['LOCK_PROXY_URL'] and not sheetName.endswith('_slidoc'):
+        lockURL = Options['LOCK_PROXY_URL']+'/_lock/'+sheetName
+        retval = http_post(lockURL+'?token='+Options['AUTH_KEY'])
+        if retval['result'] != 'success':
+            raise Exception("Error in locking proxy sheet %s: %s" % (lockURL, retval['error'][:256]))
+        time.sleep(6)
 
     user = 'admin'
     userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
