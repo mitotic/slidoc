@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.4e'
+VERSION = '0.96.4f'
 
 # Usually modified by importing module
 Options = {
@@ -1278,7 +1278,7 @@ def sheetAction(params, notrace=False):
                                     if questions and qno <= len(questions):
                                         teamAttr = questions[qno-1].get('team','')
                                 if teamAttr == 'setup':
-                                    if hmatch.group(2) == 'response':
+                                    if hmatch.group(2) == 'response' and colValue != SKIP_ANSWER:
                                         # Set up team name
                                         rowValues[teamCol-1] = safeName(colValue).lower()
                                         returnInfo['team'] = rowValues[teamCol-1]
@@ -1422,7 +1422,7 @@ def sheetAction(params, notrace=False):
                     if teamName:
                         returnInfo['teamModifiedIds'] = []
                         for j in range(len(idValues)):
-                            if j != userOffset and teamValues[j][0] == teamName:
+                            if teamValues[j][0] == teamName:
                                 returnInfo['teamModifiedIds'].append(idValues[j][0])
 
                         for j in range(len(teamCopyCols)):
@@ -1477,6 +1477,7 @@ def createSession(sessionName, params):
 	    'revision': params.get('sessionRevision'),
 	    'paced': params.get('paceLevel', 0),
 	    'submitted': None,
+	    'displayName': '',
 	    'source': '',
 	    'team': '',
 	    'lateToken': '',

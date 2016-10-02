@@ -96,6 +96,7 @@ Sliobj.incrementPlugins = null;
 Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
 Sliobj.scores = null;
+Sliobj.liveResponses = {};
 
 Sliobj.errorRetries = 0;
 
@@ -1023,6 +1024,10 @@ Sliobj.eventReceiver = function(eventMessage) {
 		Slidoc.PluginManager.invoke.apply(null, [Sliobj.slidePlugins[slide_id][j], pluginMethodName].concat(eventArgs));
 	}
 
+    } else if (eventName == 'LiveResponse') {
+	if (!(eventArgs[0] in Sliobj.liveResponses))
+	    Sliobj.liveResponses[eventArgs[0]] = [];
+	Sliobj.liveResponses[eventArgs[0]][eventSource] = eventArgs.slice(1);
     } else if (eventName == 'AdminPacedForceAnswer') {
 	if (controlledPace() && !Sliobj.session.questionsAttempted[eventArgs[0]]) {
 	    // Force answer to unanswered question
@@ -1191,6 +1196,10 @@ Slidoc.PluginManager.pastDueDate = function() {
 	return null;
     var dueDate = parseDate(Sliobj.dueDate) || parseDate(Sliobj.session ? Sliobj.session.lateToken : '') || parseDate(Sliobj.params.dueDate);
     return dueDate && ((new Date()) > dueDate);
+}
+
+Slidoc.PluginManager.getLiveResponses = function(qnumber) {
+    return Sliobj.liveResponses[qnumber] || null;
 }
 
 Slidoc.PluginManager.graded = function() {
@@ -2191,7 +2200,7 @@ function displayCorrect(qattrs) {
     if (delayAnswers())
 	return false;
     // If non-submitted admin-paced and answering question on last slide, do not display correct answer
-    if (controlledPace() && Sliobj.session && !Sliobj.session.submitted && Sliobj.session.lastSlide == qattrs.slide)
+    if (controlledPace() && Sliobj.session && !Sliobj.session.submitted && Sliobj.session.lastSlide <= qattrs.slide)
 	return false;
     return true;
 }
@@ -2237,6 +2246,7 @@ function createSession() {
 	    'revision': Sliobj.params.sessionRevision,
 	    'paced': Sliobj.params.paceLevel || 0,
 	    'submitted': null,
+	    'displayName': '',
 	    'source': '',
 	    'team': '',
 	    'lateToken': '',
@@ -2337,6 +2347,7 @@ function unpackSession(row) {
 	session_hidden = atob(session_hidden);
 
     var session = JSON.parse(session_hidden);
+    session.displayName = row.name || '';
     session.source = row.source || '';
     session.team = row.team || '';
     session.lateToken = row.lateToken || '';
@@ -2369,10 +2380,10 @@ function unpackSession(row) {
 		} else if (qnumber in session.questionsAttempted) {
 		    // Explanation/plugin (ignored if no attempt)
 		    if (hmatch[2] == 'plugin') {
-			if (row[j])
-			    session.questionsAttempted[qnumber][hmatch[2]] = JSON.parse(row[j]);
+			if (row[header])
+			    session.questionsAttempted[qnumber][hmatch[2]] = JSON.parse(row[header]);
 		    } else {
-			session.questionsAttempted[qnumber][hmatch[2]] = row[j];
+			session.questionsAttempted[qnumber][hmatch[2]] = row[header];
 		    }
 		}
 	    }
@@ -3032,6 +3043,9 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
 	else
 	    elem.classList.add('slidoc-choice-selected');
+	if (Sliobj.session && question_attrs.team == 'setup')
+	    Slidoc.sendEvent(-1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
+
     } else if (choice_val) {
 	// Setup
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
@@ -3344,6 +3358,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 }
 
 function saveSessionAnswered(slide_id, qattrs) {
+    Slidoc.log('saveSessionAnswered:', slide_id);
     if (!Sliobj.session.paced || Sliobj.session.submitted)
 	return;
     Sliobj.session.lastTime = Date.now();
@@ -4298,7 +4313,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    if (Sliobj.interactive)
 		interactAux(true);
 	    sessionPut();
-	    Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
+	    if (Sliobj.session.lastSlide > 1)
+		Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
 	}
     } else {
 	if (Sliobj.session.paced && slide_num < Sliobj.session.lastSlide && !Sliobj.questionSlide && Sliobj.delaySec) {

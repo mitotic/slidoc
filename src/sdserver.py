@@ -401,6 +401,17 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             print >> sys.stderr, 'sdserver.setupInteractive:', cls._interactiveSession
 
     @classmethod
+    def closeConnections(cls, path, userIdList, excludeId=None):
+        sessionConnections = cls._connections[path]
+        for userId in userIdList:
+            if excludeId and userId == excludeId:
+                continue
+            if Options['debug']:
+                print >> sys.stderr, "DEBUG: sdserver.closeConnections", 'Closing connections for user:', userId
+            for connection in sessionConnections.get(userId,[]):
+                connection.close()
+
+    @classmethod
     def processMessage(cls, fromUser, fromName, message, allStatus=False, source=''):
         # Return null string on success or error message
         print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromName, message
@@ -507,6 +518,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         if retval['result'] != 'success':
             print >> sys.stderr, 'sdserver.processMessage:', 'Error in updating response from '+fromUser+': '+retval['error']
             return 'Unknown error'
+
+        teamModifiedIds = retval.get('info', {}).get('teamModifiedIds')
+        if teamModifiedIds:
+            # Close all connections for the team
+            cls.closeConnections(sessionName, teamModifiedIds)
 
         return ''
             
@@ -674,13 +690,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 teamModifiedIds = retObj.get('info', {}).get('teamModifiedIds')
                 if teamModifiedIds:
                     # Close other connections for the same team
-                    sessionConnections = self._connections[self.pathUser[0]]
-                    for userId in teamModifiedIds:
-                        connection = sessionConnections.get(userId)
-                        if connection and userId != self.userId:
-                            connection.close()
-                            if Options['debug']:
-                                print >> sys.stderr, "DEBUG: on_message_aux", 'Closing other team connection:', userId
+                    self.closeConnections(self.pathUser[0], teamModifiedIds, excludeId=self.userId)
 
             elif method == 'interact':
                 if self.userId == ADMINUSER_ID:

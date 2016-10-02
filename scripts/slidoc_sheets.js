@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.4e';
+var VERSION = '0.96.4f';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -1056,7 +1056,7 @@ function sheetAction(params) {
                                 }
                             }
                             if (teamAttr == 'setup') {
-                                if (hmatch[2] == 'response') {
+                                if (hmatch[2] == 'response' && colValue != SKIP_ANSWER) {
                                     // Set up team name
                                     rowValues[teamCol-1] = safeName(colValue).toLowerCase();
                                     returnInfo['team'] = rowValues[teamCol-1];
@@ -1213,7 +1213,7 @@ function sheetAction(params) {
                     if (teamName) {
                         returnInfo['teamModifiedIds'] = [];
                         for (var j=0; j < idValues.length; j++) {
-                            if (j != userOffset && teamValues[j][0] == teamName) {
+                            if (teamValues[j][0] == teamName) {
                                 returnInfo['teamModifiedIds'].push(idValues[j][0]);
                             }
                         }
@@ -1272,6 +1272,7 @@ function createSession(sessionName, params) {
 	    'revision': params.sessionRevision,
 	    'paced': params.paceLevel || 0,
 	    'submitted': null,
+	    'displayName': '',
 	    'source': '',
 	    'team': '',
 	    'lateToken': '',
@@ -2028,6 +2029,8 @@ function unpackSession(headers, row) {
 
     for (var j=0; j<headers.length; j++) {
 	var header = headers[j];
+	if (header == 'name')
+	    session.displayName = row[j];
 	if (header == 'source')
 	    session.source = row[j];
 	if (header == 'team')

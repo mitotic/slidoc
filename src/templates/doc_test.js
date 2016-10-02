@@ -11,6 +11,17 @@
 //    Prefix '+' for expected events indicates optional event (may not be reported)
 //    Prefix '-' for expected events indicates skipped event (no action to be performed)
 //
+// Events:
+//   autoEvent: Automatically fires after action for current event is completed
+//   end: Ends testing
+//   nextEvent: Fired by next action
+//   resumeEvent: Fired by button click
+//
+// Actions:
+//  next: Schedule nextEvent after delay (default 500ms)
+//  pause: No action, but display message. Usually hit Resume button to generate resumeEvent
+//  wait: No action (wait for some other event to fire)
+//
 // var TestScripts = {};
 // TestScripts.basic = [
 //   ['ready'],
@@ -48,10 +59,13 @@ TestScript.prototype.advanceStep = function () {
     return true;
 }
 
-TestScript.prototype.showStatus = function (state) {
+TestScript.prototype.showStatus = function (state, pause) {
     var statusElem = document.getElementById('slidoc-test-status');
+    var resumeElem = document.getElementById('slidoc-test-resume');
     if (!statusElem)
 	return;
+    if (resumeElem)
+	resumeElem.style.display = pause ? null : 'none';
     if (state == 'done') {
 	statusElem.style.display = 'none';
 	return;
@@ -101,9 +115,7 @@ TestScript.prototype.reportTestAction = function (eventName) {
     }
     Slidoc.log('TestScript.reportTestAction:B ', this.curstep, expectName, this.activeScript);
     if (this.curstep >= curScript.length) {
-	this.activeScript = '';
-	alert("TestScript "+this.activeScript+" completed all steps");
-	this.showStatus('done');
+	this.terminate('')
 	return null;
     }
     if (eventName != expectName) {
@@ -124,16 +136,24 @@ TestScript.prototype.reportTestAction = function (eventName) {
 	Slidoc.slideViewGo(true, slideNum);
     }
     var stepEvent = this.eventAction.bind(this, commands);
-    if (Slidoc.getParameter('teststep') && (action == 'advance') ) {
+    var retval = null;
+    if (Slidoc.getParameter('teststep')) {
 	this.stepEvent = stepEvent;
 	this.showStatus('\u25BA to advance');
-	return null;
     } else if (delay) {
 	setTimeout(stepEvent, delay);
-	return null;
     } else {
-	return stepEvent();
+	retval = stepEvent();
     }
+    if (this.curstep < curScript.length && curScript[this.curstep][0] == 'autoEvent')
+	setTimeout(this.reportTestAction.bind(this, 'autoEvent'), 0);
+    return retval;
+}
+
+TestScript.prototype.terminate = function(lastAction) {
+    this.activeScript = '';
+    this.showStatus('done');
+    Slidoc.showPopup('<pre>TestScript terminated with action '+lastAction+' after '+this.curstep+' steps</pre>');
 }
 
 TestScript.prototype.eventAction = function(commands) {
@@ -186,6 +206,7 @@ TestScript.prototype.eventAction = function(commands) {
 	    Slidoc.resetPaced();   // Does nothing for Google Docs (must delete row in spreadsheet to reset)
 	    break;
 	case 'choice':
+	case 'choiceSel':
 	    if (!slide_id)
 		throw('No current slide for choice action');
 	    if (Slidoc.getParameter('teststep') || !args) {
@@ -199,7 +220,8 @@ TestScript.prototype.eventAction = function(commands) {
 			    document.getElementById(slide_id+'-answer-textarea').value = args[j]; // Explain
 		    }
 		}
-		document.getElementById(slide_id+'-answer-click').onclick();
+		if (action != 'choiceSel')
+		    document.getElementById(slide_id+'-answer-click').onclick();
 	    }
 	    break;
 	case 'input':
@@ -251,16 +273,22 @@ TestScript.prototype.eventAction = function(commands) {
 	    else
 		document.getElementById(slide_id+'-grade-click').onclick();
 	    break;
+	case 'finalizeShare':
+	    var finalizeButton = document.getElementById(slide_id+'-plugin-Share-sharefinalize');
+	    if (finalizeButton)
+		finalizeButton.onclick();
+	    break;
 	case 'next':
-	    setTimeout(Slidoc.reportTestAction.bind(null, 'nextEvent'), 500);
+	    setTimeout(Slidoc.reportTestAction.bind(null, 'nextEvent'), args ? args[0] : 500);
+	    break;
+	case 'pause':
+	    this.showStatus(args ? args[0] : 'Click Resume button to proceed', true)
 	    break;
 	case 'wait':
 	    break;
 	case 'end':
 	default:
-	    this.activeScript = '';
-	    alert('TestScript terminated with action '+action+' after '+this.curstep+' steps');
-	    this.showStatus('done');
+	    this.terminate(action);
 	}
     } catch(err) {
 	this.activeScript = '';

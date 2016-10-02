@@ -61,7 +61,7 @@ BASIC_PACE    = 1
 QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
-SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;',
+SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'lightning': '&#9889;', 'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
@@ -1383,8 +1383,8 @@ class SlidocRenderer(MathRenderer):
             if answer_opts['team'] == 'setup':
                 if self.sheet_attributes.get('sessionTeam'):
                     abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must occur as first team option in slide %s" % (self.options["filename"], self.slide_number))
-                if self.cur_qtype != 'text':
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must have answer type as 'text' in slide %s" % (self.options["filename"], self.slide_number))
+                if self.cur_qtype != 'choice' and self.cur_qtype != 'text':
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must have answer type as 'choice' or 'text' in slide %s" % (self.options["filename"], self.slide_number))
                 self.sheet_attributes['sessionTeam'] = 'setup'
             elif not self.sheet_attributes.get('sessionTeam'):
                 self.sheet_attributes['sessionTeam'] = 'roster'

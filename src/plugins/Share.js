@@ -74,7 +74,38 @@ Share = {
 
     displayShare: function () {
 	Slidoc.log('Slidoc.Plugins.Share.displayShare:');
-	this.getResponses(true);
+	if (this.qattributes.team == 'setup' && this.testUser && !Slidoc.PluginManager.answered(this.qattributes.qnumber)) {
+	    var liveResponses = Slidoc.PluginManager.getLiveResponses(this.qattributes.qnumber);
+	    var respIds = Object.keys(liveResponses || {});
+	    var html = 'Live responses:<p></p>\n';
+	    if (!respIds.length) {
+		html += '(None so far!)';
+	    } else {
+		html += '<ul>\n';
+		var responseLists = {};
+		for (var j=0; j<respIds.length; j++) {
+		    var message = liveResponses[respIds[j]];
+		    if (!(message[0] in responseLists))
+			responseLists[message[0]] = [];
+		    responseLists[message[0]].push(message[1]);
+		}
+		var responses = Object.keys(responseLists);
+		responses.sort();
+		for (var j=0; j<responses.length; j++) {
+		    var respList = responseLists[responses[j]];
+		    respList.sort();
+		    html += '<li>'+responses[j]+': ';
+		    if (this.qattributes.team == 'setup')
+			html += respList.join('; ')+'</li>\n';
+		    else
+			html += respList.length+'</li>\n';
+		}
+		html += '</ul>\n';
+	    }
+	    Slidoc.showPopup(html, null, true)
+	} else {
+	    this.getResponses(true);
+	}
     },
 
     getResponses: function (display) {

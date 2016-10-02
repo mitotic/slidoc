@@ -724,16 +724,17 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     if (!updateObj.id)
         throw('GoogleSheet.updateRow: Must provide id to update row');
 
+    var userIds = [];
     var cachedRow = null;
     if (this.cacheAll) {
 	// Update headers in cached copy
+	userIds = Object.keys(this.cacheAll);
 	cachedRow = this.cacheAll[updateObj.id];
 	if (!cachedRow)
 	    throw("GoogleSheet.updateRow: id '"+updateObj.id+"'not found in cache");
     }
 
     var updates = [];
-    var userIds = Object.keys(this.cacheAll);
     for (var j=0; j<this.headers.length; j++) {
 	var key = this.headers[j];
 	if (key in updateObj) {
