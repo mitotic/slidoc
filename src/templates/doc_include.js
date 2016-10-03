@@ -524,7 +524,7 @@ function zeroPad(num, pad) {
 }
 
 function letterFromIndex(n) {
-    return String.fromCharCode('A'.charCodeAt(0) + n)
+    return String.fromCharCode('A'.charCodeAt(0) + n);
 }
 
 function shuffleArray(array, randFunc) {
@@ -2110,34 +2110,37 @@ function preAnswer() {
     var chapter_id = parseSlideId(firstSlideId)[0];
     clearAnswerElements();
 
-    if ('randomize_choice' in Sliobj.params.features) {
+    if ('randomize_choice' in Sliobj.params.features && Sliobj.session) {
 	// Handle choice randomization
+	var newShuffle = {};
+	var qShuffle = Sliobj.session.questionShuffle || null;
 	var randFunc = makeRandomFunction(getRandomSeed(Sliobj.seedOffset.randomChoice));
 	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	    var question_attrs = attr_vals[qnumber-1];
 	    if (!(question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice'))
 		continue
+	    // Choice question
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	    var shuffleStr = '';
-	    if (!question_attrs.share) {
-		// Non-shared choice question
-		var qAttempted = Sliobj.session.questionsAttempted[qnumber] || null;
-		shuffleStr = qAttempted ? qAttempted.shuffle : '';
-		if (Sliobj.adminState) {
-		    if (shuffleStr) {
-			var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
-			if (shuffleDiv)
-			    shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
-		    }
-		    
-		} else if (!shuffleStr && !qAttempted) {
-		    // Randomize choice
-		    var choices = document.getElementsByClassName(slide_id+"-choice-elem");
-		    shuffleStr = Math.floor(2*randFunc());
-		    shuffleStr += randomLetters(choices.length, randFunc);
+	    var shuffleStr = qShuffle ? (qShuffle[qnumber]||'') : '';
+	    if (Sliobj.adminState) {
+		if (shuffleStr) {
+		    var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
+		    if (shuffleDiv)
+			shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
 		}
+		
+	    } else if (!qShuffle) {
+		// Randomize choice
+		var choices = document.getElementsByClassName(slide_id+"-choice-elem");
+		shuffleStr = Math.floor(2*randFunc());
+		shuffleStr += randomLetters(choices.length, randFunc);
+		newShuffle[qnumber] = shuffleStr;
 	    }
 	    shuffleBlock(slide_id, shuffleStr)
+	}
+	if (Object.keys(newShuffle).length) {
+	    Sliobj.session.questionShuffle = newShuffle;
+	    Slidoc.PluginManager.saveSession();
 	}
     }
 
@@ -2177,8 +2180,13 @@ function shuffleBlock(slide_id, shuffleStr) {
     var altChoice = shuffleStr.charAt(0) != '0';
     for (var i=0; i < childNodes.length; i++) {
 	var childElem = childNodes[i];
-	if (childElem.firstElementChild && childElem.firstElementChild.classList) {
-	    var classList = childElem.firstElementChild.classList;
+	if (childElem.classList && childElem.classList.contains('slidoc-chart-header'))
+	    continue;  // Skip leading chart header div
+	var spanElem = childElem.firstElementChild;
+	if (spanElem && spanElem.classList && spanElem.classList.contains('slidoc-chart-box'))
+	    spanElem = spanElem.nextElementSibling;  // Skip leading chart box span
+	if (spanElem && spanElem.classList) {
+	    var classList = spanElem.classList;
 	    if (classList.contains('slidoc-choice-elem-alt') || classList.contains('slidoc-choice-question-alt')) {
 		// Alternative choice
 		if (altChoice)
@@ -2187,7 +2195,7 @@ function shuffleBlock(slide_id, shuffleStr) {
 		    key = null;              // Skip alternative choice
 	    } else if (classList.contains('slidoc-choice-elem')) {
 		// First choice
-		key = childElem.firstElementChild.dataset.choice;
+		key = spanElem.dataset.choice;
 		choiceElems[key] = [];
 	    }
 	}
@@ -2201,15 +2209,20 @@ function shuffleBlock(slide_id, shuffleStr) {
     }
 
     choiceBlock.dataset.shuffle = shuffleStr;
-    choiceBlock.innerHTML = '';
+    choiceBlock.innerHTML = '<div id="'+slide_id+'-chart-header" class="slidoc-chart-header" style="display: none;">';
     var key = blankKey;
     for (var i=0; i < choiceElems[key].length; i++)
 	choiceBlock.appendChild(choiceElems[key][i]);
     for (var j=1; j < shuffleStr.length; j++) {
 	key = shuffleStr.charAt(j);
 	for (var i=0; i < choiceElems[key].length; i++) {
-	    if (i == 0)
-		choiceElems[key][i].firstElementChild.textContent = letterFromIndex(j-1);
+	    if (i == 0) {
+		var spanElem = choiceElems[key][i].firstElementChild;
+		if (spanElem && spanElem.classList && spanElem.classList.contains('slidoc-chart-box'))
+		    spanElem = spanElem.nextElementSibling;
+		if (spanElem)
+		    spanElem.textContent = letterFromIndex(j-1);
+	    }
 	    choiceBlock.appendChild(choiceElems[key][i]);
 	}
     }
@@ -2283,6 +2296,7 @@ function createSession() {
             'remainingTries': 0,
             'tryDelay': 0,
 	    'showTime': null,
+            'questionShuffle': null,
             'questionsAttempted': {},
 	    'hintsUsed': {},
 	    'plugins': persistPlugins
@@ -3350,8 +3364,6 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	qAttempted.expect = expect;
     if (Sliobj.session.lastTries > 1)
 	qAttempted.retries = Sliobj.session.lastTries-1;
-    if (shuffleStr)
-	qAttempted.shuffle = shuffleStr;
 
     Sliobj.session.questionsAttempted[question_attrs.qnumber] = qAttempted;
 

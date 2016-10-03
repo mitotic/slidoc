@@ -255,19 +255,28 @@ Share = {
 	    } else if (this.qattributes.qtype == 'choice') {
 		// Display choice responses inline (both for voting and non-voting cases)
 		var chartHeader = document.getElementById(this.slideId+'-chart-header');
-		if (chartHeader && result[explainHeader])
-		    chartheader.innerHTML = '<em>Click on the bars to see explanations for each choice</em>';
+		if (chartHeader && result[explainHeader]) {
+		    chartHeader.innerHTML = '<em>Click on the bars to see explanations for each choice</em>';
+		    chartHeader.style.display = null;
+		}
 
 		var boxes = document.getElementsByClassName(this.slideId+'-chart-box');
 		for (var j=0; j<boxes.length; j++)
 		    boxes[j].style.display = null;
 
+		var choiceBlock = document.getElementById(this.slideId+'-choice-block');
+		var shuffleStr = choiceBlock.dataset.shuffle;
 		for (var j=0; j<this.responseTally.length; j++) {
 		    var choice = this.responseTally[j][0].toUpperCase();
+		    var dispChoice = choice;
+		    if (shuffleStr) {
+			var k = shuffleStr.indexOf(choice);
+			dispChoice = (k>=1) ? String.fromCharCode('A'.charCodeAt(0) + k-1) : '';
+		    }
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
 		    var bar = document.getElementById(this.slideId+'-chartbar-'+choice);
 		    if (bar) {
-			bar.textContent = choice+': '+this.responseTally[j][2];
+			bar.textContent = dispChoice+': '+this.responseTally[j][2];
 			bar.style.width = percent;
 			bar.classList.remove('slidoc-bar-orange');
 			bar.classList.remove('slidoc-bar-green');

@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5a'
+VERSION = '0.96.5b'
 
 # Usually modified by importing module
 Options = {
@@ -1497,6 +1497,7 @@ def createSession(sessionName, params):
         'remainingTries': 0,
         'tryDelay': 0,
 	    'showTime': None,
+        'questionShuffle': None,
         'questionsAttempted': {},
 	    'hintsUsed': {},
 	    'plugins': persistPlugins
@@ -1705,19 +1706,30 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     headerCols = dict((hdr, j+1) for j, hdr in enumerate(headers))
     sessionCol = headerCols['session_hidden']
     session = json.loads(rowValues[sessionCol-1])
+    qShuffle = session.get('questionShuffle')
     qAttempted = session['questionsAttempted']
     qnumbers = answers.keys()
     qnumbers.sort()
     for qnumber in qnumbers:
         answer = answers[qnumber]
+        respVal = answer.get('response', '')
+        qnumberStr = str(qnumber)  # Because JSON serialization converts integer keys to strings
+        if qShuffle:
+            shuffleStr = qShuffle.get(qnumberStr,'') or qShuffle.get(qnumber,'')
+            if shuffleStr and respVal:
+                # Import shuffled response value
+                indexVal = ord(respVal.upper()) - ord('A')
+                if indexVal < 0 or indexVal >= len(shuffleStr[1:]):
+                    raise Exception('Error in creating session for user '+userId+': Invalid shuffle choice '+respVal+' ('+shuffleStr+')')
+                respVal = shuffleStr[1:][indexVal].upper()
         q_response = 'q%d_response' % qnumber
         q_explain = 'q%d_explain' % qnumber
         if q_response in headers:
-            rowValues[headerCols[q_response]-1] = answer.get('response', '')
+            rowValues[headerCols[q_response]-1] = respVal
             if q_explain in headers:
                 rowValues[headerCols[q_explain]-1] = answer.get('explain', '')
         else:
-            qAttempted[qnumber] = createQuestionAttempted( answer.get('response', '') )
+            qAttempted[qnumber] = createQuestionAttempted( respVal )
             if 'explain' in answer:
                 qAttempted[qnumber]['explain'] = answer['explain']
 
