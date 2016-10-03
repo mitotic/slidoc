@@ -153,7 +153,7 @@ Upload = {
 	    this.remoteCall('lockFile', null, fileInfo.upload.url);
 	} else {
 	    var response = '';
-	    var pluginResp = {name: '', score: null, correctAnswer: ''};
+	    var pluginResp = {name: this.name, score: null, correctAnswer: ''};
 	}
 
 	if (callback)
