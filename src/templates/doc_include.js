@@ -152,32 +152,44 @@ Slidoc.logDump = function (regexp) {
 	Sliobj.logQueue = [];
 }
 
+Slidoc.logRecursive = 0;
+
 Slidoc.log = function() {
-    if (Sliobj.params.debug) {
-	if (!isHeadless) {
-	    console.log.apply(console, arguments);
-	} else {
-	    var msg = '';
-	    for (var j=0; j<arguments.length; j++)
-		msg += arguments[j];
-	    console.log(msg);
-	}
+    if (isHeadless) {
+	var msg = '';
+	for (var j=0; j<arguments.length; j++)
+	    msg += arguments[j];
+	console.log(msg);
 	return;
+    }
+    var debugging = Sliobj.params.debug || Sliobj.adminState || getUserId() == Sliobj.params.testUserId;
+    if (debugging) {
+	console.log.apply(console, arguments);
     }
     
     var args = Array.prototype.slice.call(arguments);
-    var match = /^([\.\w]+)(:\s*|\s+|$)(ERROR|WARNING)?/i.exec(''+arguments[0]);
-    if (match && match[3] && match[3].toUpperCase() == 'ERROR') {
+    var match   = /^([\.\w]+)(:\s*|\s+|$)(ERROR|WARNING)?/i.exec(''+arguments[0]);
+    var errMsg  = match && match[3] && match[3].toUpperCase() == 'ERROR';
+    var warnMsg = match && match[3] && match[3].toUpperCase() == 'WARNING';
+
+    if (errMsg && !Slidoc.logRecursive && Sliobj.params.remoteLogLevel >= 1) {
+	// Cannot use JSON.stringify(args) due to possible circular references
+	Slidoc.logRecursive += 1;
+	Slidoc.remoteLog(match[1], 'ERROR', ''+args, '');
+	Slidoc.logRecursive -= 1;
+    }
+    
+    if (debugging)
+	return;
+
+    if (errMsg) {
 	Slidoc.logDump();
-	if (Sliobj.params.remoteLogLevel > 1)
-	    Slidoc.remoteLog(match[1], 'ERROR', JSON.stringify(args), '');
-    } else {
-	Sliobj.logQueue.push(JSON.stringify(args));
+    } else  {
+	Sliobj.logQueue.push(''+args);
 	if (Sliobj.logQueue.length > Sliobj.logMax)
 	    Sliobj.logQueue.shift();
     }
-    if ( (Sliobj.logRe && Sliobj.logRe.exec(''+arguments[0])) || !match ||
-		    (match && match[3] && (match[3].toUpperCase() == 'ERROR' || match[3].toUpperCase() == 'WARNING')) )
+    if ( (Sliobj.logRe && Sliobj.logRe.exec(''+arguments[0])) || !match || errMsg || warnMsg)
 	console.log.apply(console, arguments);
 }
 
@@ -279,11 +291,15 @@ function setupCache(auth, callback) {
 }
 
 Slidoc.remoteLog = function (funcName, msgType, msg, msgTrace) {
-    if (Sliobj.logSheet)
-	Sliobj.logSheet.putRow({id: GService.gprofile.auth.id, name: GService.gprofile.auth.id,
-				browser: navigator.userAgent, file: Sliobj.params.fileName, function: funcName||'',
-				type: msgType||'', message: msg||'', trace: msgTrace||'' },
-			       {} );
+    try {
+	if (Sliobj.logSheet)
+	    Sliobj.logSheet.putRow({id: GService.gprofile.auth.id, name: GService.gprofile.auth.id,
+				    browser: navigator.userAgent, file: Sliobj.params.fileName, function: funcName||'',
+				    type: msgType||'', message: msg||'', trace: msgTrace||'' },
+				    {log: 1} );
+    } catch (err) {
+	console.log('Slidoc.remoteLog: ERROR in putRow '+err);
+    }
 }
 
 var sessionAborted = false;
@@ -1257,17 +1273,18 @@ Slidoc.PluginManager.splitNumericAnswer = function(corrAnswer) {
 
 function evalPluginArgs(pluginName, argStr, slide_id) {
     // Evaluates plugin init args in appropriate context
-    if (!argStr)
+    if (!argStr || !slide_id)
 	return [];
     try {
-	var pluginList = slide_id ? Sliobj.slidePlugins[slide_id] : []; // Plugins instantiated in the slide so far
+	Slidoc.log('evalPluginArgs:', pluginName, argStr, slide_id);
+	var pluginList = Sliobj.slidePlugins[slide_id]; // Plugins instantiated in the slide so far
 	var SlidePlugins = {};
 	for (var j=0; j<pluginList.length; j++)
 	    SlidePlugins[pluginList[j].name] = pluginList[j];
 	var argVals = eval('['+argStr+']');
 	return argVals;
     } catch (err) {
-	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+(slide_id||'global instance')+': '+err;
+	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+slide_id+': '+err;
 	Slidoc.log(errMsg);
 	alert(errMsg);
 	return [argStr];
@@ -1293,9 +1310,11 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     defCopy.pluginLabel = 'slidoc-plugin-'+pluginName;
     defCopy.slideData = slideData || null;
 
-    // Use init args from first slide where plugin occures for initSetup/initGlobal
-    var evalSlideId = slide_id || Sliobj.activePlugins[pluginName].firstSlide;
-    defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[evalSlideId], slide_id||'');
+    // Provide init args from first slide (as a string) where plugin occurs for initSetup/initGlobal
+    if (slide_id)
+	defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id);
+    else
+	defCopy.initArgs = [ Sliobj.activePlugins[pluginName].args[ Sliobj.activePlugins[pluginName].firstSlide ] ];
 
     var auth = window.GService && GService.gprofile && GService.gprofile.auth;
     defCopy.userId = auth ? auth.id : null;
@@ -2078,7 +2097,6 @@ function updateGradingStatus(userId) {
 function scoreSession(session) {
     // Tally of scores
     Slidoc.log('scoreSession:');
-    var skipAhead = 'skip_ahead' in Sliobj.params.features;
     var firstSlideId = getVisibleSlides()[0].id;
     Sliobj.scores = tallyScores(getChapterAttrs(firstSlideId), session.questionsAttempted, session.hintsUsed,
 				Sliobj.params);
@@ -2134,7 +2152,7 @@ function preAnswer() {
     }
 
     for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
-	if (Sliobj.session.hintsUsed[qnumber]) {
+	if (Sliobj.session.hintsUsed && Sliobj.session.hintsUsed[qnumber]) {
 	    var question_attrs = attr_vals[qnumber-1];
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    hintDisplayAux(slide_id, qnumber, Sliobj.session.hintsUsed[qnumber]);
@@ -3313,6 +3331,8 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	return;
 
     // Not setup or after submit
+    var prevSkipToSlide = Sliobj.scores ? (Sliobj.scores.skipToSlide || 0) : 0;
+
     // Record attempt and tally up scores
     var explain = '';
     if (question_attrs.explain) {
@@ -3344,7 +3364,8 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 
     var slide_num = parseSlideId(slide_id)[2];
     var qnumber = question_attrs.qnumber;
-    if (slide_num < Sliobj.scores.skipToSlide) {
+
+    if (slide_num < prevSkipToSlide) {
 	Slidoc.reportTestAction('answerSkip');
     } else {
 	toggleClassAll(true, 'slidoc-forward-link-allowed', Sliobj.scores.lastSkipRef);
@@ -3558,7 +3579,7 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
         if (skipAhead && qscore == 1 && !hintsUsed[qnumber] && !qAttempted.retries) {
             // Correct answer (without hints and retries)
             if (slideNum > prevQuestionSlide+1) {
-                // Question  not part of sequence
+                // Question not part of sequence
                 correctSequence = 1;
             } else if (correctSequence > 0) {
                 // Question part of correct sequence

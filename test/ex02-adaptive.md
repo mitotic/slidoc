@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=2 --features=assessment --due_date=2016-05-29T01:01 -->
+<!--slidoc-defaults --pace=2 --features=assessment,skip_ahead-->
 # Testing adaptive assignments
 
 - Datasets are multi-dimensional

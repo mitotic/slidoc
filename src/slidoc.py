@@ -1164,10 +1164,12 @@ class SlidocRenderer(MathRenderer):
             html_prefix = self.choice_end
             self.choice_end = ''
 
+        all_options = ('explain', 'retry', 'share', 'team', 'vote', 'weight')
+
         opt_comps = [x.strip() for x in text.split(';')]
         text = opt_comps[0]
-        if text and (text.split('=')[0].strip() in ('explain', 'retry', 'share', 'vote', 'weight')):
-             abort("    ****ANSWER-ERROR: %s: 'Answer: %s ...' is not a valid answer type in slide %s" % (self.options["filename"], text, self.slide_number))
+        if text and (text.split('=')[0].strip() in all_options):
+             abort("    ****ANSWER-ERROR: %s: 'Answer: %s ...' is not a valid answer type. Insert semicolon before answer option in slide %s" % (self.options["filename"], text, self.slide_number))
              return
 
         weight_answer = ''

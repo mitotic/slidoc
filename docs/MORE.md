@@ -157,9 +157,10 @@ The following methods are automatically called for plugin instances;
 
 > `init(args)`: when the slide instance is instantiated
 
-`initSetup` and `initGlobal` will be called with arguments from the
-first slide where the plugin occurs. All the `init` calls will be in a
-deterministic order, to preserve the sequence in which global random
+`initSetup` and `initGlobal` will be called with the *argument string*
+from the first slide where the plugin occurs. Slide instance `init`
+calls will use a parsed argument list. All the `init` calls will be in
+a deterministic order, to preserve the sequence in which global random
 generators may be called.
 
 The following methods may be defined for plugins, as needed:

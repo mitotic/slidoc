@@ -63,5 +63,5 @@ PluginEmbed: InteractivePlot(0, 10, 2, 0, 10, 0.1)
 
 PluginEnd: InteractivePlot
 
-=Slider(plugins.InteractivePlot.slider)
+=Slider(SlidePlugins.InteractivePlot.slider)
 

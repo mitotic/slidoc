@@ -658,7 +658,8 @@ GoogleSheet.prototype.putRow = function (rowObj, opts, callback) {
     // Specify opts.nooverwrite to not overwrite any existing row with same id
     // Specify opts.submit to update submitTimestamp
     // opts.get with opts.nooverwrite will return the existing row, or the newly inserted row.
-    Slidoc.log('GoogleSheet.putRow:', rowObj, opts);
+    if (!opts.log)
+	Slidoc.log('GoogleSheet.putRow:', rowObj, opts);
 
     if (!rowObj.id || (opts.nooverwrite && !rowObj.name))
         throw('GoogleSheet.putRow: Must provide id and name to put row');

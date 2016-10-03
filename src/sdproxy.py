@@ -219,7 +219,7 @@ def getSheet(sheetName, optional=False):
         # Retry retrieving optional sheet
         del Miss_cache[sheetName]
 
-    if Options['LOCK_PROXY_URL'] and not sheetName.endswith('_slidoc'):
+    if Options['LOCK_PROXY_URL'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
         lockURL = Options['LOCK_PROXY_URL']+'/_lock/'+sheetName
         req = urllib2.Request(lockURL+'?token='+Options['AUTH_KEY'])
         response = urllib2.urlopen(req)
