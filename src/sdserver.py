@@ -138,7 +138,11 @@ class UserIdMixin(object):
 
     def get_id_from_cookie(self, orig=False, name=False, email=False, altid=False, prefix=False):
         # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
-        cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
+        if options.insecure_cookie:
+            cookieStr = self.get_cookie(SERVER_COOKIE)
+        else:
+            cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
+
         if not cookieStr:
             return None
         try:
@@ -610,7 +614,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     def on_close(self):
         if Options['debug']:
-            print >> sys.stderr, "DEBUG: WSon_close", self.pathUser
+            print >> sys.stderr, "DEBUG: WSon_close", getattr(self, 'pathUser', 'NOT OPENED')
         try:
             if self.eventFlusher:
                 self.eventFlusher.stop()
@@ -1258,6 +1262,7 @@ def main():
     define("gsheet_url", default="", help="Google sheet URL")
     define("lock_proxy_url", default="", help="Proxy URL to lock")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
+    define("insecure_cookie", default=False, help="Insecure cookies (for printing)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")

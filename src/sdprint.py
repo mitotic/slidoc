@@ -4,12 +4,14 @@
 Slidoc printing:
 
 Use following command to create session.html:
-  slidoc.py --gsheet_url=... --auth_key=... --proxy_url=http://localhost:8687/_proxy --pace=1,0,1 --printable --debug session.md
+  slidoc.py --gsheet_url=... --auth_key=... --proxy_url=http://localhost:8687/_proxy --pace=1 --printable --debug session.md
+
+  Printing only works for --pace=0, or --pace=1 with --printable
 
 And then
-  sdprint.py --gsheet_url=... --auth_key=... --localhost_port=8687 --title=... --users=aaa,bbb session.html
+  sdprint.py --gsheet_url=... --auth_key=... --localhost_port=8687 --debug title=... --users=aaa,bbb session.html
 
-If using an active proxy, i.e., http://host/session.html, omit the --localhost_port option.
+If using an active proxy, i.e., http://host/session.html, omit the --localhost_port option. (DO NOT specify  --proxy_url=/_websocket)
 
 '''
 
@@ -165,9 +167,9 @@ def main():
                     token = ''
                 print("****Generating %s: %s" % (outname, name), file=sys.stderr)
                 cmd_args = ['wkhtmltopdf', '-s', 'Letter', '--print-media-type',
-                            '--javascript-delay', '5000',
+                            '--javascript-delay', '8000',
                             '--header-spacing', '2', '--header-font-size', '10',
-                            '--header-right', '[page] of [toPage]'
+                            '--header-right', '[page] of [toPage]',
                             '--header-center', options.title or session_name,
                             ]
                 if userId:
@@ -176,6 +178,8 @@ def main():
                 if options.debug:
                     cmd_args += ['--debug-javascript']
                 cmd_args += [session_file, outname]
+
+                ##print("****Command:", cmd_args, file=sys.stderr)
 
                 subprocess.check_call(cmd_args)
                 if options.staple:

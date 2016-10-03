@@ -142,7 +142,11 @@ Slidoc.logMatch = function (regexp) {
 
 Slidoc.logDump = function (regexp) {
     for (var j=0; j<Sliobj.logQueue.length; j++) {
-	var args = JSON.parse(Sliobj.logQueue[j]);
+	try {
+	    var args = JSON.parse(Sliobj.logQueue[j]);
+	} catch(err) {
+	    var args = ['JSONparse '+Sliobj.logQueue[j]];
+	}
 	if (!regexp || regexp.exec(args[0])) {
 	    args[0] = (regexp ? '+ ':'- ') + args[0];
 	    console.log.apply(console, args);
@@ -1735,7 +1739,7 @@ function slidocSetupAux(session, feedback) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
 	    slides[j].style.display = 'block';
-    } else if (Sliobj.session.paced) {
+    } else if (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slides[j].style.display = 'block';
@@ -4171,7 +4175,8 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.PluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
     }
 
-    if (Sliobj.session.paced) {
+    if (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) {
+	// Unhide only viewed slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slides[j].style.display = 'block';
     } else {
