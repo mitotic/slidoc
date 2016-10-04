@@ -142,11 +142,8 @@ Slidoc.logMatch = function (regexp) {
 
 Slidoc.logDump = function (regexp) {
     for (var j=0; j<Sliobj.logQueue.length; j++) {
-	try {
-	    var args = JSON.parse(Sliobj.logQueue[j]);
-	} catch(err) {
-	    var args = ['JSONparse '+Sliobj.logQueue[j]];
-	}
+	// Cannot use JSON.stringify(args) due to possible circular references
+	var args = [''+Sliobj.logQueue[j]];
 	if (!regexp || regexp.exec(args[0])) {
 	    args[0] = (regexp ? '+ ':'- ') + args[0];
 	    console.log.apply(console, args);
@@ -1952,13 +1949,20 @@ function initSessionPlugins(session) {
 	    Sliobj.buttonPlugins[slide_id] = pluginInstance;
 	Slidoc.PluginManager.optCall.apply(null, [pluginInstance, 'init'].concat(pluginInstance.initArgs));
     }
+    expandInlineJS(document);
+}
 
-    var jsSpans = document.getElementsByClassName('slidoc-inline-js');
+function expandInlineJS(elem, methodName, argVal) {
+    Slidoc.log('expandInlineJS:', methodName);
+    var jsSpans = elem.getElementsByClassName('slidoc-inline-js');
     for (var j=0; j<jsSpans.length; j++) {
 	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
-	var jsArg = jsSpans[j].dataset.slidocJsArgument || null;
-	if (jsArg !== null)
-	    try {jsArg = parseInt(jsArg); } catch (err) { jsArg = null; }
+	var jsArg = argVal || null;
+	if (jsArg == null) {
+	    jsArg = jsSpans[j].dataset.slidocJsArgument || null;
+	    if (jsArg !== null)
+		try {jsArg = parseInt(jsArg); } catch (err) { jsArg = null; }
+	}
 	var slide_id = '';
 	for (var k=0; k<jsSpans[j].classList.length; k++) {
 	    var refmatch = /slidoc-inline-js-in-(.*)$/.exec(jsSpans[j].classList[k]);
@@ -1968,9 +1972,11 @@ function initSessionPlugins(session) {
 	    }
 	}
 	var comps = jsFunc.split('.');
-	var val = Slidoc.PluginMethod(comps[0], slide_id, comps[1], jsArg);
-	if (val)
-	    jsSpans[j].innerHTML = val;
+	if (!methodName || methodName == comps[1]) {
+	    var val = Slidoc.PluginMethod(comps[0], slide_id, comps[1], jsArg);
+	    if (val != null)
+		jsSpans[j].innerHTML = val;
+	}
     }
 }
 
@@ -2173,6 +2179,7 @@ function preAnswer() {
 function shuffleBlock(slide_id, shuffleStr) {
     var choiceBlock = document.getElementById(slide_id+'-choice-block');
     choiceBlock.dataset.shuffle = '';
+    // Do not shuffle if adminState
     if (!shuffleStr || Sliobj.adminState)
 	return;
     Slidoc.log('shuffleBlock: shuffleStr', slide_id, shuffleStr);
@@ -2958,9 +2965,9 @@ Slidoc.classDisplay = function (className, displayValue) {
    var elements = document.getElementsByClassName(className);
    for (var i=0; i < elements.length; i++) {
      if (displayValue)
-        elements[i].style.display = displayValue;
+         elements[i].style.display = displayValue;
      else
-        elements[i].style.display = (elements[i].style.display=='none') ? 'block' : 'none'
+         elements[i].style.display = (elements[i].style.display=='none') ? 'block' : 'none';
    }
    return false;
 }
@@ -3322,6 +3329,18 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     var notes_elem = document.getElementById(notes_id);
     if (notes_elem && dispCorrect) {
 	// Display of any notes associated with this question
+	if (question_attrs.qtype == 'choice' && response) {
+	    var choiceIndex = 1 + response.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
+	    if (choiceIndex > 0) {
+		// Display choice notes
+		var choiceNotesId = slide_id+"-choice-notes-"+response.toUpperCase();
+		Slidoc.classDisplay(choiceNotesId, 'block');
+		// Redisplay choiceNotes JS
+		var elems = document.getElementsByClassName(notes_id);
+		for (var j=0; j<elems.length; j++)
+		    expandInlineJS(elems[j], 'choiceNotes', choiceIndex);
+	    }
+	}
 	Slidoc.idDisplay(notes_id);
 	notes_elem.style.display = 'inline';
 	Slidoc.classDisplay(notes_id, 'block');

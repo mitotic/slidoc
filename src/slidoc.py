@@ -1044,6 +1044,10 @@ class SlidocRenderer(MathRenderer):
 
     def slidoc_choice(self, name, star):
         value = name if star else ''
+        if self.notes_end:
+            # Choice notes
+            return '''</p><p class="slidoc-choice-notes %s-choice-notes-%s" style="display: none;">''' % (self.get_slide_id(), name.upper())
+
         alt_choice = False
         if name == 'Q':
             if self.choice_questions == 0:

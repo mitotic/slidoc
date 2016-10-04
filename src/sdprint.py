@@ -11,7 +11,17 @@ Use following command to create session.html:
 And then
   sdprint.py --gsheet_url=... --auth_key=... --localhost_port=8687 --debug title=... --users=aaa,bbb session.html
 
-If using an active proxy, i.e., http://host/session.html, omit the --localhost_port option. (DO NOT specify  --proxy_url=/_websocket)
+If using an active proxy, i.e., http://host/session.html, omit the --localhost_port option.
+DO NOT specify  --proxy_url=/_websocket
+
+
+NOTE:
+
+1. The OS X Carbon version seems to work better
+
+2. Inserting very large figures messes up the fonts. Resize figures for better results.
+
+3. Use 'lp -o StapleLocation=UpperLeft filenames ...' for printing
 
 '''
 
@@ -160,13 +170,19 @@ def main():
 
             for userId, name in user_list:
                 if userId:
-                    outname = session_name+'-'+userId + '.pdf'
+                    lastname, _, firstmiddle = name.partition(',')
+                    lastname = lastname.strip().replace(' ','_').replace('#','_')
+                    firstmiddle = firstmiddle.strip()
+                    namesuffix = lastname.capitalize()+(firstmiddle[0].upper() if firstmiddle else '')
+                    outname = session_name+'-'+namesuffix+'-'+userId + '.pdf'
                     token = sliauth.gen_user_token(options.auth_key, userId)
                 else:
                     outname = session_name+'.pdf'
                     token = ''
                 print("****Generating %s: %s" % (outname, name), file=sys.stderr)
                 cmd_args = ['wkhtmltopdf', '-s', 'Letter', '--print-media-type',
+                            '--margin-top', '15',
+                            '--margin-bottom', '20',
                             '--javascript-delay', '8000',
                             '--header-spacing', '2', '--header-font-size', '10',
                             '--header-right', '[page] of [toPage]',
