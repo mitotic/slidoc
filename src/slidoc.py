@@ -1977,6 +1977,59 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     # Create config object
     config = argparse.Namespace(**tem_dict)
 
+    if config.make:
+        # Process only modified input files
+        if config.toc or config.index or config.qindex or config.index_only:
+            abort('ERROR --make option incompatible with all indexing options')
+        
+    if config.dest_dir and not os.path.isdir(config.dest_dir):
+        os.makedirs(config.dest_dir)
+
+    dest_dir = config.dest_dir+"/" if config.dest_dir else ''
+
+    orig_fnames = []
+    orig_outpaths = []
+    orig_flinks = []
+
+    fnumbers = []
+    fprefix = None
+    nfiles = len(input_files)
+    for j, inpath in enumerate(input_paths):
+        fext = os.path.splitext(os.path.basename(inpath))[1]
+        if fext != '.md':
+            abort('Invalid file extension for '+inpath)
+
+        fnumber = j+1
+        fname = strip_name(inpath, config.split_name)
+        outpath = dest_dir + fname + '.html'
+        flink = fname+'.html' if config.separate else '#'+make_chapter_id(fnumber)
+
+        orig_fnames.append(fname)
+        orig_outpaths.append(outpath)
+        orig_flinks.append(flink)
+
+        if not config.make:
+            fnumbers.append(fnumber)
+        elif not os.path.exists(outpath) or os.path.getmtime(outpath) <= os.path.getmtime(inpath):
+            # Process only modified input files
+            fnumbers.append(fnumber)
+
+        if config.notebook and os.path.exists(dest_dir+fname+'.ipynb') and not config.overwrite and not config.dry_run:
+            abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fname)
+
+        if fprefix == None:
+            fprefix = fname
+        else:
+            # Find common filename prefix
+            while fprefix:
+                if fname[:len(fprefix)] == fprefix:
+                    break
+                fprefix = fprefix[:-1]
+
+    if not fnumbers:
+        message('All output files are newer than corresponding input files')
+        return
+
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
@@ -1996,7 +2049,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
 
-    combined_name = strip_name(config.all or input_paths[0], config.split_name)
+    combined_name = config.all or orig_fnames[0]
     combined_file = '' if config.separate else combined_name+'.html'
 
     # Reset config properties that will be overridden for separate files
@@ -2032,13 +2085,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     config.images = set(config.images.split(',')) if config.images else set()
 
     config.strip = md2md.make_arg_set(config.strip, Strip_all)
-    if len(input_files) == 1:
+    if nfiles == 1:
         config.strip.add('chapters')
 
-    if config.dest_dir and not os.path.isdir(config.dest_dir):
-        os.makedirs(config.dest_dir)
-
-    dest_dir = config.dest_dir+"/" if config.dest_dir else ''
     templates = {}
     for tname in ('doc_custom.css', 'doc_include.css',
                   'doc_include.js', 'doc_google.js', 'doc_test.js',
@@ -2120,21 +2169,24 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         toc_html = []
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
 
-        for j, f in enumerate(input_files):
-            fext = os.path.splitext(os.path.basename(input_paths[j]))[1]
-            if fext != '.html':
-                abort('Invalid file extension for indexing: '+input_paths[j])
-            while 1:
-                line = f.readline()
-                if line.strip() == Index_prefix:
-                    break
-            fheader = f.readline().strip()
+        for j, outpath in enumerate(orig_outpaths):
+            if not os.path.exists(outpath):
+                abort('Output file '+outpath+' not readable for indexing')
+            fheader = ''
+            doc_str = ''
+            with open(outpath) as f:
+                while 1:
+                    line = f.readline()
+                    if not line:
+                        break
+                    if line.strip() == Index_prefix:
+                        fheader = f.readline().strip()
+                        doc_str = f.readline().strip()
             if not fheader:
-                abort('Index header not found in '+input_paths[j])
-            doc_str = f.readline().strip()
+                abort('Index header not found in '+outpath)
             doc_link = ''
             if doc_str:
-                doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (strip_name(input_paths[j], config.split_name), doc_str)
+                doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
             toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
 
         toc_html.append('</ol>\n' if 'sections' in config.strip else '</ul>\n')
@@ -2159,16 +2211,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     comb_plugin_defs = {}
     comb_plugin_loads = set()
-    fnames = []
-    for j, f in enumerate(input_files):
-        fname = strip_name(input_paths[j], config.split_name)
-        fnames.append(fname)
-        fext = os.path.splitext(os.path.basename(input_paths[j]))[1]
-        if fext != '.md':
-            abort('Invalid file extension for '+input_paths[j])
-
-        if config.notebook and os.path.exists(fname+'.ipynb') and not config.overwrite and not config.dry_run:
-            abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fname)
 
     if config.slides:
         reveal_themes = config.slides.split(',')
@@ -2205,8 +2247,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     nb_converter_args = md2nb.Args_obj.create_args(None, **nb_mods_dict)
     index_id = 'slidoc-index'
     qindex_id = 'slidoc-qindex'
-    index_chapter_id = make_chapter_id(len(input_files)+1)
-    qindex_chapter_id = make_chapter_id(len(input_files)+2)
+    index_chapter_id = make_chapter_id(nfiles+1)
+    qindex_chapter_id = make_chapter_id(nfiles+2)
     back_to_contents = nav_link('BACK TO CONTENTS', config.site_url, config.toc, hash='#'+make_chapter_id(0),
                                 separate=config.separate, classes=['slidoc-nosidebar'], printable=config.printable)+'<p></p>\n'
 
@@ -2217,15 +2259,15 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         combined_html.append( '<div id="slidoc-sidebar-right-container" class="slidoc-sidebar-right-container">\n' )
         combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
 
-    fprefix = None
     math_found = False
     pagedown_load = False
     skulpt_load = False
     flist = []
     paced_files = {}
     admin_due_date = {}
-    for j, f in enumerate(input_files):
-        fname = fnames[j]
+    for j, fnumber in enumerate(fnumbers):
+        fhandle = input_files[fnumber-1]
+        fname = orig_fnames[fnumber-1]
         due_date_str = ''
         vote_date_str = ''
         if not config.separate:
@@ -2234,7 +2276,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             # Separate files (may also be paced)
 
             # Merge file config with command line
-            file_config = parse_merge_args(read_first_line(f), fname, parser, vars(config), include_args=Select_file_args,
+            file_config = parse_merge_args(read_first_line(fhandle), fname, parser, vars(config), include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
 
             file_config.features = file_config.features or set()
@@ -2284,9 +2326,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if not file_config.features.issubset(set(Features_all)):
             abort('Error: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
             
-        filepath = input_paths[j]
-        md_text = f.read()
-        f.close()
+        filepath = input_paths[fnumber-1]
+        md_text = fhandle.read()
+        fhandle.close()
 
         base_parser = md2md.Parser(base_mods_args)
         slide_parser = md2md.Parser(slide_mods_args)
@@ -2296,24 +2338,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if file_config.hide and 'hidden' in file_config.strip:
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+file_config.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
-        prev_file = '' if j == 0                    else ('#'+make_chapter_id(j) if combined_file else fnames[j-1]+".html")
-        next_file = '' if j >= len(input_files)-1 else ('#'+make_chapter_id(j+2) if combined_file else fnames[j+1]+".html")
-
-        if fprefix == None:
-            fprefix = fname
-        else:
-            # Find common filename prefix
-            while fprefix:
-                if fname[:len(fprefix)] == fprefix:
-                    break
-                fprefix = fprefix[:-1]
-
-        filenumber = j+1
-
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=filenumber,
+        prev_file = '' if fnumber == 1      else orig_flinks[fnumber-2]
+        next_file = '' if fnumber == nfiles else orig_flinks[fnumber]
+
+        fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
         max_params = {}
@@ -2363,7 +2394,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if renderer.load_python:
             skulpt_load = True
         
-        topnav_html = gen_topnav(topnav_opts, fnames=fnames, site_url=file_config.site_url, separate=config.separate) if topnav_opts else ''
+        topnav_html = gen_topnav(topnav_opts, fnames=orig_fnames, site_url=file_config.site_url, separate=config.separate) if topnav_opts else ''
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
@@ -2413,7 +2444,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
         else:
-            md_prefix = chapter_prefix(filenumber, 'slidoc-reg-chapter', hide=js_params['paceLevel'] and not config.printable)
+            md_prefix = chapter_prefix(fnumber, 'slidoc-reg-chapter', hide=js_params['paceLevel'] and not config.printable)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -2425,9 +2456,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + add_scripts
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
-                if js_params['paceLevel']:
-                    # Prefix index entry as comment
-                    head = '\n'.join([Index_prefix, fheader, paced_files[fname]['doc_str'], Index_suffix, head])
+                # Prefix index entry as comment
+                head = '\n'.join([Index_prefix, fheader, paced_files[fname]['doc_str'] if js_params['paceLevel'] else 'view', Index_suffix, head])
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
@@ -2555,7 +2585,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if config.crossref:
                 index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.site_url, config.crossref, 'CROSS-REFERENCING')) + index_html
 
-            index_output = chapter_prefix(len(input_files)+1, 'slidoc-index-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + index_html + '</article>\n'
+            index_output = chapter_prefix(nfiles+1, 'slidoc-index-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + index_html + '</article>\n'
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+index_output+'</div>\n')
             elif not return_html:
@@ -2590,7 +2620,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         first_references, covered_first, qindex_html = make_index(Global.primary_qtags, Global.sec_qtags, config.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
         qout_list.append(qindex_html)
 
-        qindex_output = chapter_prefix(len(input_files)+2, 'slidoc-qindex-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
+        qindex_output = chapter_prefix(nfiles+2, 'slidoc-qindex-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
         if not config.dry_run:
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
@@ -2636,7 +2666,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
-        topnav_html = gen_topnav(config.topnav, fnames=fnames, site_url=config.site_url, separate=config.separate) if config.topnav else ''
+        topnav_html = gen_topnav(config.topnav, fnames=orig_fnames, site_url=config.site_url, separate=config.separate) if config.topnav else ''
         comb_params = {'session_name': combined_name,
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
@@ -2865,6 +2895,7 @@ parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due lo
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
 alt_parser.add_argument('--index_only', help='Create index.html file from *.html files', action="store_true", default=None)
+alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
