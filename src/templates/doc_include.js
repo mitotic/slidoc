@@ -2878,8 +2878,10 @@ Slidoc.hide = function (elem, className, action) {
 
 Slidoc.contentsDisplay = function() {
     Slidoc.log('Slidoc.contentsDisplay:');
-    if (!Sliobj.params.fileName)
+    if (!Sliobj.params.fileName) {
+	Slidoc.showPopup('<a href="/">Home</a>')
 	return;
+    }
 
     if (!Sliobj.currentSlide && document.getElementById("slidoc00")) {
 	Slidoc.sidebarDisplay();

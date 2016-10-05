@@ -276,18 +276,19 @@ class ActionHandler(BaseHandler):
                             rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
                             self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
         elif action == '_unlock':
-            if sessionName in sdproxy.Lock_cache:
-                del sdproxy.Lock_cache[sessionName]
-            if sessionName in sdproxy.Sheet_cache:
-                del sdproxy.Sheet_cache[sessionName]
+            if not sdproxy.unlockSheet(sessionName):
+                raise Exception('Failed to unlock sheet '+sessionName)
             self.write('Unlocked '+sessionName+'<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>')
         elif action == '_lock':
+            lockType = self.get_argument('type','')
             if sessionName:
-                sdproxy.Lock_cache[sessionName] = 'user'
-                if not sessionName.endswith('_slidoc'):
-                    # Also lock session index
-                    sdproxy.Lock_cache['sessions_slidoc'] = 'user'
-            self.write('Locked sessions: %s<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
+                prefix = 'Locked'
+                locked = sdproxy.lockSheet(sessionName, lockType or 'user')
+                if not locked:
+                    if lockType == 'proxy':
+                        raise Exception('Failed to lock sheet '+sessionName)
+                    prefix = 'Locking'
+                self.write(prefix +' sessions: %s<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
         elif action == '_backup':
             errors = sdproxy.backupCache(sessionName)
             self.set_header('Content-Type', 'text/plain')

@@ -2101,6 +2101,52 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
 
+    toc_mid_params = {'session_name': '',
+                      'math_js': '',
+                      'pagedown_js': '',
+                      'skulpt_js': '',
+                      'plugin_tops': '',
+                      'top_nav': '',
+                      'top_nav_hide': ''}
+    toc_mid_params.update(SYMS)
+
+    if config.index_only:
+        if config.toc_header:
+            header_insert = md2md.read_file(config.toc_header)
+            if config.toc_header.endswith('.md'):
+                header_insert = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(header_insert)
+        else:
+            header_insert = ''
+        toc_html = []
+        toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
+
+        for j, f in enumerate(input_files):
+            fext = os.path.splitext(os.path.basename(input_paths[j]))[1]
+            if fext != '.html':
+                abort('Invalid file extension for indexing: '+input_paths[j])
+            while 1:
+                line = f.readline()
+                if line.strip() == Index_prefix:
+                    break
+            fheader = f.readline().strip()
+            if not fheader:
+                abort('Index header not found in '+input_paths[j])
+            doc_str = f.readline().strip()
+            doc_link = ''
+            if doc_str:
+                doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (strip_name(input_paths[j], config.split_name), doc_str)
+            toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
+
+        toc_html.append('</ol>\n' if 'sections' in config.strip else '</ul>\n')
+        toc_html.append('<p></p><em>'+Formatted_by+'</em><p></p>')
+        toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=False)+header_insert+Toc_header+''.join(toc_html)+'</article>\n'
+        indfile = dest_dir+'index.html'
+        md2md.write_file(indfile, Html_header, head_html,
+                         mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
+        message('Created index HTML file: '+indfile)
+        
+        sys.exit(0)
+
     plugins_dir = scriptdir + '/plugins'
     plugin_paths = [plugins_dir+'/'+fname for fname in os.listdir(plugins_dir) if not fname.startswith('.') and fname.endswith('.js')]
     if config.plugins:
@@ -2303,15 +2349,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 # Include column for total votes etc.
                 js_params['gradeFields'] = ['q_other'] + js_params['gradeFields']
 
-            paced_files[fname] = {'due_date': sliauth.parse_date(due_date_str).ctime() if due_date_str else ''} 
-            if gd_sheet_url:
-                if js_params['gradeWeight']:
-                    paced_files[fname]['type'] = 'graded'
-                else:
-                    paced_files[fname]['type'] = 'scored'
-            else:
-                paced_files[fname]['type'] = 'paced'
-
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
         flist.append( (fname, outname, fheader, file_toc) )
@@ -2336,6 +2373,43 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         mid_params.update(SYMS)
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
+        if not config.dry_run:
+            if gd_hmac_key:
+                tem_attributes = renderer.sheet_attributes.copy()
+                tem_attributes.update(params=js_params)
+                mod_due_date = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+                                     file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
+                                     js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
+                                     renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
+                                     debug=config.debug)
+
+                admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
+
+            if gd_sheet_url and (gd_hmac_key or not return_html):
+                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
+                                  Manage_fields+Session_fields+js_params['gradeFields'], row=max_score_fields)
+                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
+
+        if js_params['paceLevel']:
+            # Additional info for paced files
+            time_str = sliauth.parse_date(due_date_str).ctime() if due_date_str else ''
+            if gd_sheet_url:
+                if js_params['gradeWeight']:
+                    file_type = 'graded'
+                else:
+                    file_type = 'scored'
+            else:
+                file_type = 'paced'
+
+            doc_str = file_type + ' exercise'
+            if admin_due_date.get(fname):
+                end_time = sliauth.parse_date(admin_due_date[fname]).ctime()
+                doc_str += ', ended '+(end_time[:-8]+'Z' if end_time.endswith(':00.000Z') else end_time)
+            elif time_str:
+                doc_str += ', due '+(time_str[:-8]+'Z' if time_str.endswith(':00.000Z') else time_str)
+
+            paced_files[fname] = {'type': file_type, 'due_date': time_str, 'doc_str': doc_str}
+
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
         else:
@@ -2351,6 +2425,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + add_scripts
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
+                if js_params['paceLevel']:
+                    # Prefix index entry as comment
+                    head = '\n'.join([Index_prefix, fheader, paced_files[fname]['doc_str'], Index_suffix, head])
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
@@ -2374,21 +2451,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 md_parser = md2nb.MDParser(nb_converter_args)
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
-            if gd_hmac_key:
-                tem_attributes = renderer.sheet_attributes.copy()
-                tem_attributes.update(params=js_params)
-                mod_due_date = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
-                                     file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
-                                     js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
-                                     renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
-                                     debug=config.debug)
-
-                admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
-
-            if gd_sheet_url and (gd_hmac_key or not return_html):
-                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
-                                  Manage_fields+Session_fields+js_params['gradeFields'], row=max_score_fields)
-                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
 
     if not config.dry_run:
         if not combined_file:
@@ -2431,15 +2493,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
 
             if fname in paced_files:
-                doc_str = paced_files[fname]['type'] + ' exercise'
-                if admin_due_date.get(fname):
-                    due_date = sliauth.parse_date(admin_due_date[fname]).ctime()
-                    doc_str += ', ended '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
-                else:
-                    due_date = paced_files[fname]['due_date']
-                    if due_date:
-                        doc_str += ', due '+(due_date[:-8]+'Z' if due_date.endswith(':00.000Z') else due_date)
-                doc_link = nav_link(doc_str, config.site_url, outname, target='_blank', separate=True)
+                doc_link = nav_link(paced_files[fname]['doc_str'], config.site_url, outname, target='_blank', separate=True)
                 toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
                 if test_params:
                     for label, query, proxy_query in test_params:
@@ -2463,7 +2517,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.slides:
             toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a class="slidoc-clickable" target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
 
-        toc_html.append('<p></p><em>Document formatted by <a href="https://github.com/mitotic/slidoc" class="slidoc-clickable">slidoc</a>.</em><p></p>')
+        toc_html.append('<p></p><em>'+Formatted_by+'</em><p></p>')
 
         if not config.dry_run:
             toc_insert = ''
@@ -2487,7 +2541,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
             elif not return_html:
                 md2md.write_file(dest_dir+config.toc, Html_header, head_html,
-                                  mid_template % mid_params, body_prefix, toc_output, Html_footer)
+                                  mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
                 message("Created ToC in", config.toc)
 
     xref_list = []
@@ -2628,6 +2682,11 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 Html_footer = '''
 </body></html>
 '''
+
+Formatted_by = 'Document formatted by <a href="https://github.com/mitotic/slidoc" class="slidoc-clickable">slidoc</a>.'
+
+Index_prefix = '<!--SlidocIndex'
+Index_suffix = 'SlidocIndex-->'
 
 Toc_header = '''
 <h3>Table of Contents</h3>
@@ -2805,6 +2864,7 @@ parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due lo
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
+alt_parser.add_argument('--index_only', help='Create index.html file from *.html files', action="store_true", default=None)
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 

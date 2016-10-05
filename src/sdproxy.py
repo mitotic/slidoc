@@ -207,8 +207,7 @@ def backupSheet(name, sheet, dirpath, errorList):
         errorList.append('Error in saving sheet %s (row %d): %s' % (name, rowNum, excp))
 
 def getSheet(sheetName, optional=False):
-    if sheetName in Lock_cache or (Global.suspended and Global.suspended != 'backup'):
-        raise Exception('Sheet %s is locked!' % sheetName)
+    check_if_locked(sheetName, get=True)
 
     if sheetName in Sheet_cache:
         return Sheet_cache[sheetName]
@@ -221,10 +220,15 @@ def getSheet(sheetName, optional=False):
 
     if Options['LOCK_PROXY_URL'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
         lockURL = Options['LOCK_PROXY_URL']+'/_lock/'+sheetName
-        req = urllib2.Request(lockURL+'?token='+Options['AUTH_KEY'])
-        response = urllib2.urlopen(req)
-        if Options['DEBUG']:
-            print("DEBUG:getSheet: %s LOCKED %s (%s)" % (sheetName, lockURL, response.read()), file=sys.stderr)
+        try:
+            req = urllib2.Request(lockURL+'?token='+Options['AUTH_KEY']+'&type=proxy')
+            response = urllib2.urlopen(req)
+            if Options['DEBUG']:
+                print("DEBUG:getSheet: %s LOCKED %s (%s)" % (sheetName, lockURL, response.read()), file=sys.stderr)
+        except Exception, excp:
+            errMsg = 'ERROR:getSheet: Unable to lock sheet '+sheetName+': '+str(excp)
+            print(errMsg, file=sys.stderr)
+            raise Exception(errMsg)
         time.sleep(6)
 
     user = 'admin'
@@ -256,8 +260,7 @@ def getSheet(sheetName, optional=False):
     return Sheet_cache[sheetName]
 
 def createSheet(sheetName, headers):
-    if sheetName in Lock_cache or Global.suspended:
-        raise Exception('Sheet %s is locked!' % sheetName)
+    check_if_locked(sheetName)
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
@@ -365,8 +368,7 @@ class Sheet(object):
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
         ##if Options['DEBUG']:
         ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
-        if self.name in Lock_cache or Global.suspended:
-            raise Exception('Sheet %s is locked!' % self.name)
+        check_if_locked(self.name)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
         self.checkRange(rowMin, colMin, rowCount, colCount)
@@ -429,19 +431,63 @@ def getCacheStatus():
     out += '  Average request bytes = %d\n\n' % (Global.totalCacheRequestBytes/max(1,Global.totalCacheResponseCount) )
     out += '  Average response bytes = %d\n\n' % (Global.totalCacheResponseBytes/max(1,Global.totalCacheResponseCount) )
     curTime = sliauth.epoch_ms()
-    for sheetName, sheet in Sheet_cache.items():
-        if sheetName in Lock_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
-            sheetStr = sheetName+' (locking...)'
+    keys = list( set(Sheet_cache.keys() + Lock_cache.keys()) )
+    keys.sort()
+    for sheetName in keys:
+        sheetStr = ''
+        sheet = Sheet_cache.get(sheetName)
+        if sheetName in Lock_cache:
+            if sheet and sheet.get_updates(Global.cacheUpdateTime) is not None:
+                sheetStr = sheetName+' (locking...)'
+            else:
+                action = 'unlock'
         else:
-            action = 'unlock' if sheetName in Lock_cache else 'lock'
+            action = 'lock'
+        if not sheetStr:
             sheetStr = '<a href="/_%s/%s">%s</a> %s' % (action, sheetName, action, Lock_cache.get(sheetName,''))
-        out += 'Sheet_cache: %s: %ds %s\n' % (sheetName, (curTime-sheet.accessTime)/1000., sheetStr)
+    
+        accessTime =  str(int((curTime-sheet.accessTime)/1000.))+'s' if sheet else '(not cached)'
+        out += 'Sheet_cache: %s: %s %s\n' % (sheetName, accessTime, sheetStr)
     out += '\n'
     for sheetName in Miss_cache:
         out += 'Miss_cache: %s: %ds\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
     out += '\n'
     return out
 
+def lockSheet(sheetName, lockType='user'):
+    # Returns True if lock is immediately effective; False if it will take effect later
+    if sheetName not in Lock_cache:
+        Lock_cache[sheetName] = lockType
+    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+        return False
+    return True
+
+def unlockSheet(sheetName):
+    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+        return False
+    if sheetName in Lock_cache:
+        del Lock_cache[sheetName]
+    if sheetName in Sheet_cache:
+        del Sheet_cache[sheetName]
+    return True
+
+def check_if_locked(sheetName, get=False):
+    if Options['LOCK_PROXY_URL'] and sheetName.endswith('_slidoc') and not get:
+        raise Exception('Only get operation allowed for special sheet '+sheetName+' in locked proxy mode')
+
+    if sheetName in Lock_cache or (Global.suspended and (not get or Global.suspended != 'backup')):
+        raise Exception('Sheet %s is locked!' % sheetName)
+
+def get_locked():
+    # Return list of locked sheet name (* if updates not yet send to Google sheets)
+    locked = []
+    for sheetName in Lock_cache:
+        if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+            locked.append(sheetName+'*')
+        else:
+            locked.append(sheetName)
+    locked.sort()
+    return locked
 
 def schedule_update(waitSec=0, force=False):
     if Global.cachePendingUpdate:
@@ -468,17 +514,6 @@ def updates_complete():
     elif Global.suspended == "clear":
         initCache()
         print("Cleared cache", file=sys.stderr)
-
-def get_locked():
-    # Return list of locked sheet name (* if updates not yet send to Google sheets)
-    locked = []
-    for sheetName in Lock_cache:
-        if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
-            locked.append(sheetName+'*')
-        else:
-            locked.append(sheetName)
-    locked.sort()
-    return locked
 
 def update_remote_sheets(force=False):
     if not Options['SHEET_URL'] or Options['DRY_RUN']:
@@ -1725,7 +1760,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         q_response = 'q%d_response' % qnumber
         q_explain = 'q%d_explain' % qnumber
         if q_response in headers:
-            rowValues[headerCols[q_response]-1] = respVal
+            rowValues[headerCols[q_response]-1] = respVal or SKIP_ANSWER
             if q_explain in headers:
                 rowValues[headerCols[q_explain]-1] = answer.get('explain', '')
         else:

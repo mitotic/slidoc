@@ -2368,15 +2368,6 @@ function emailLateToken() {
     if (!displayName)
 	displayName = getPrompt('Enter name (Last, First) user '+userId, 'Name');
 
-    var numStickyRows = 1;
-    var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
-    if (!userRow) {
-	var retval = getUserRow(sessionName, userId, displayName, {'create': '1'});
-	if (retval.result != 'success')
-	    throw('Error in creating session for user '+userId+': '+retval.error);
-	userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
-    }
-
     var dateStr = getPrompt('New submission date/time', "'yyyy-mm-ddTmm:hh' (or 'yyyy-mm-dd', implying 'T23:59')");
     if (!dateStr)
 	return;
@@ -2384,7 +2375,17 @@ function emailLateToken() {
 	dateStr += 'T23:59';
 
     var token = genLateToken(AUTH_KEY, userId, sessionName, dateStr);
-    sessionSheet.getRange(userRow, indexColumns(sessionSheet)['lateToken'], 1, 1).setValue(token);
+
+    var numStickyRows = 1;
+    var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+    if (userRow) {
+	sessionSheet.getRange(userRow, indexColumns(sessionSheet)['lateToken'], 1, 1).setValue(token);
+    } else {
+	var retval = getUserRow(sessionName, userId, displayName, {'create': '1', 'late': token});
+	if (retval.result != 'success')
+	    throw('Error in creating session for user '+userId+': '+retval.error);
+	userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+    }
 
     var note = 'Late submission on '+dateStr+' authorized for user '+userId+'.';
     if (email && email.indexOf('@') > 0) {
