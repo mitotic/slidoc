@@ -1979,8 +1979,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     if config.make:
         # Process only modified input files
-        if config.toc or config.index or config.qindex or config.index_only:
-            abort('ERROR --make option incompatible with all indexing options')
+        if config.toc or config.index or config.qindex or config.all:
+            abort('ERROR --make option incompatible with indexing or "all" options')
         
     if config.dest_dir and not os.path.isdir(config.dest_dir):
         os.makedirs(config.dest_dir)
@@ -2028,7 +2028,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     if not fnumbers:
         message('All output files are newer than corresponding input files')
-        return
+        if not config.make_toc:
+            return
 
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
@@ -2158,46 +2159,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                       'top_nav': '',
                       'top_nav_hide': ''}
     toc_mid_params.update(SYMS)
-
-    if config.index_only:
-        if config.toc_header:
-            header_insert = md2md.read_file(config.toc_header)
-            if config.toc_header.endswith('.md'):
-                header_insert = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(header_insert)
-        else:
-            header_insert = ''
-        toc_html = []
-        toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
-
-        for j, outpath in enumerate(orig_outpaths):
-            if not os.path.exists(outpath):
-                abort('Output file '+outpath+' not readable for indexing')
-            fheader = ''
-            doc_str = ''
-            with open(outpath) as f:
-                while 1:
-                    line = f.readline()
-                    if not line:
-                        break
-                    if line.strip() == Index_prefix:
-                        fheader = f.readline().strip()
-                        doc_str = f.readline().strip()
-            if not fheader:
-                abort('Index header not found in '+outpath)
-            doc_link = ''
-            if doc_str:
-                doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
-            toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
-
-        toc_html.append('</ol>\n' if 'sections' in config.strip else '</ul>\n')
-        toc_html.append('<p></p><em>'+Formatted_by+'</em><p></p>')
-        toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=False)+header_insert+Toc_header+''.join(toc_html)+'</article>\n'
-        indfile = dest_dir+'index.html'
-        md2md.write_file(indfile, Html_header, head_html,
-                         mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
-        message('Created index HTML file: '+indfile)
-        
-        sys.exit(0)
 
     plugins_dir = scriptdir + '/plugins'
     plugin_paths = [plugins_dir+'/'+fname for fname in os.listdir(plugins_dir) if not fname.startswith('.') and fname.endswith('.js')]
@@ -2481,7 +2442,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 md_parser = md2nb.MDParser(nb_converter_args)
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
-
     if not config.dry_run:
         if not combined_file:
             message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
@@ -2498,7 +2458,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.notebook:
             message('Created *.ipynb files')
 
-    if config.toc:
+    if config.make_toc or config.toc:
+        tocfile = dest_dir + ('index.html' if config.make_toc else config.toc)
         if config.toc_header:
             header_insert = md2md.read_file(config.toc_header)
             if config.toc_header.endswith('.md'):
@@ -2510,48 +2471,73 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.index and (Global.primary_tags or Global.primary_qtags):
             toc_html.append(' '+nav_link('INDEX', config.site_url, config.index, hash='#'+index_chapter_id,
                                      separate=config.separate, printable=config.printable))
+
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
-        ifile = 0
-        for fname, outname, fheader, file_toc in flist:
-            ifile += 1
-            chapter_id = make_chapter_id(ifile)
-            slide_link = ''
-            if fname not in paced_files and config.slides:
-                slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.site_url, fname+"-slides.html", 'slides')
-            nb_link = ''
-            if fname not in paced_files and config.notebook and nb_site_url:
-                nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
 
-            if fname in paced_files:
-                doc_link = nav_link(paced_files[fname]['doc_str'], config.site_url, outname, target='_blank', separate=True)
-                toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
-                if test_params:
-                    for label, query, proxy_query in test_params:
-                        if config.proxy_url:
-                            doc_link += ', <a href="/_auth/login/%s&next=%s" target="_blank">%s</a>' % (proxy_query, sliauth.safe_quote('/'+outname+query), label)
-                        else:
-                            doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
-            else:
-                doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
-                                    separate=config.separate, printable=config.printable)
-                toggle_link = '''<span id="slidoc-toc-chapters-toggle" class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
+        if config.make_toc:
+            # Create ToC using header info from .html files
+            for j, outpath in enumerate(orig_outpaths):
+                if not os.path.exists(outpath):
+                    abort('Output file '+outpath+' not readable for indexing')
+                fheader = ''
+                doc_str = ''
+                with open(outpath) as f:
+                    while 1:
+                        line = f.readline()
+                        if not line:
+                            break
+                        if line.strip() == Index_prefix:
+                            fheader = f.readline().strip()
+                            doc_str = f.readline().strip()
+                if not fheader:
+                    abort('Index header not found in '+outpath)
+                doc_link = ''
+                if doc_str:
+                    doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
+                toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
+        else:
+            # Create ToC using info from rendering
+            ifile = 0
+            for fname, outname, fheader, file_toc in flist:
+                ifile += 1
+                chapter_id = make_chapter_id(ifile)
+                slide_link = ''
+                if fname not in paced_files and config.slides:
+                    slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.site_url, fname+"-slides.html", 'slides')
+                nb_link = ''
+                if fname not in paced_files and config.notebook and nb_site_url:
+                    nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
 
-            toc_html.append('<li>%s%s<span class="slidoc-nosidebar"> (%s)%s%s</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
+                if fname in paced_files:
+                    doc_link = nav_link(paced_files[fname]['doc_str'], config.site_url, outname, target='_blank', separate=True)
+                    toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
+                    if test_params:
+                        for label, query, proxy_query in test_params:
+                            if config.proxy_url:
+                                doc_link += ', <a href="/_auth/login/%s&next=%s" target="_blank">%s</a>' % (proxy_query, sliauth.safe_quote('/'+outname+query), label)
+                            else:
+                                doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
+                else:
+                    doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
+                                        separate=config.separate, printable=config.printable)
+                    toggle_link = '''<span id="slidoc-toc-chapters-toggle" class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
 
-            if fname not in paced_files:
-                f_toc_html = ('\n<div id="%s-toc-sections" class="slidoc-toc-sections" style="display: none;">' % chapter_id)+file_toc+'\n<p></p></div>'
-                toc_html.append(f_toc_html)
+                toc_html.append('<li>%s%s<span class="slidoc-nosidebar"> (%s)%s%s</span></li>\n' % (toggle_link, SPACER6, doc_link, slide_link, nb_link))
+
+                if fname not in paced_files:
+                    f_toc_html = ('\n<div id="%s-toc-sections" class="slidoc-toc-sections" style="display: none;">' % chapter_id)+file_toc+'\n<p></p></div>'
+                    toc_html.append(f_toc_html)
 
         toc_html.append('</ol>\n' if 'sections' in config.strip else '</ul>\n')
 
-        if config.slides:
+        if config.toc and config.slides:
             toc_html.append('<em>Note</em>: When viewing slides, type ? for help or click <a class="slidoc-clickable" target="_blank" href="https://github.com/hakimel/reveal.js/wiki/Keyboard-Shortcuts">here</a>.\nSome slides can be navigated vertically.')
 
         toc_html.append('<p></p><em>'+Formatted_by+'</em><p></p>')
 
         if not config.dry_run:
             toc_insert = ''
-            if fname not in paced_files:
+            if config.toc and fname not in paced_files:
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if combined_file:
@@ -2570,9 +2556,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 left_container_suffix = '</div> <!--slidoc-left-container-->\n'
                 combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
             elif not return_html:
-                md2md.write_file(dest_dir+config.toc, Html_header, head_html,
+                md2md.write_file(tocfile, Html_header, head_html,
                                   mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
-                message("Created ToC in", config.toc)
+                message("Created ToC file:", tocfile)
 
     xref_list = []
     if config.index and (Global.primary_tags or Global.primary_qtags):
@@ -2894,8 +2880,8 @@ parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due lo
 
 alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
-alt_parser.add_argument('--index_only', help='Create index.html file from *.html files', action="store_true", default=None)
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
+alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
