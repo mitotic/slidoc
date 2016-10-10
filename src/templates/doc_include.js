@@ -234,6 +234,8 @@ function setupCache(auth, callback) {
 	Slidoc.log('allCallback:', allRows, retStatus);
 	if (Sliobj.params.paceLevel >= ADMIN_PACE && retStatus.info.adminPaced)
 	    Sliobj.adminPaced = retStatus.info.adminPaced;
+	if (retStatus.info.maxLastSlide)
+	    Sliobj.maxLastSlide = retStatus.info.maxLastSlide;
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -1508,7 +1510,7 @@ Slidoc.showGrades = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     var userId = GService.gprofile.auth.id;
-    Sliobj.scoreSheet.getRow(userId, {}, showGradesCallback.bind(null, userId));
+    Sliobj.scoreSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
 }
 
 function showGradesCallback(userId, result, retStatus) {
@@ -1554,6 +1556,7 @@ Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
     Sliobj.adminState = auth && !!auth.adminKey;
     Sliobj.adminPaced = 0;
+    Sliobj.maxLastSlide = 0;
     Sliobj.userList = null;
     Sliobj.userGrades = null;
     Sliobj.gradingUser = 0;
@@ -2044,12 +2047,14 @@ function checkGradingStatus(userId, session, feedback) {
 	} else {
 	    // Unattempted
 	    need_updates += 1;
-	    // set grade to zero to avoid blank cells in computation
-	    if ('gweight' in question_attrs)
-		updates[gradeField] = 0;
+	    if (question_attrs.slide < Sliobj.maxLastSlide) {
+		// set grade to zero to avoid blank cells in computation
+		if ('gweight' in question_attrs)
+		    updates[gradeField] = 0;
 
-	    if (question_attrs.qtype.match(/^(text|Code)\//) || question_attrs.explain)
-		updates[commentsField] = 'Not attempted';
+		if (question_attrs.qtype.match(/^(text|Code)\//) || question_attrs.explain)
+		    updates[commentsField] = 'Not attempted';
+	    }
 	}
     }
     Slidoc.log('checkGradingStatus:B', need_grading, updates);
@@ -3059,7 +3064,7 @@ function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
 	    textareaElem.value = explain;
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
 	}
-    } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim()) {
+    } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim() && getUserId() != Sliobj.params.testUserId) {
 	if (force != 'controlled') {
 	    if (!force)
 		showDialog('alert', 'explainDialog', 'Please provide an explanation for the answer');

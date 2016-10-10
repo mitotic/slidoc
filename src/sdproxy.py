@@ -13,8 +13,8 @@ admin commands:
     /_lock/session           Lock session (before direct editing of Google Sheet)
     /_unlock/session         Unlock session (after direct edits are completed)
     /_lock                   List locked sessions (* => still trasmitting cache updates)
-    /_getcol/session.colname   Return column
-    /_getrow/session.rowid     Return row
+    /_getcol/session;colname   Return column
+    /_getrow/session;rowid     Return row
 """
 from __future__ import print_function
 
@@ -268,6 +268,7 @@ def createSheet(sheetName, headers):
     Sheet_cache[sheetName] = Sheet(sheetName, [headers], keyHeader=keyHeader)
     return Sheet_cache[sheetName]
 
+
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
     def __init__(self, name, rows, modTime=0, keyHeader=''):
@@ -344,6 +345,25 @@ class Sheet(object):
             self.keyMap[rowNum] = self.modTime
 
         self.xrows.insert(rowNum-1, newRow)
+
+    def appendColumns(self, headers):
+        if Options['SHEET_URL'] and not Options['DRY_RUN']:
+            # Proxy caching currently does not work with varying columns
+            raise Exception("Cannot append columns for session '"+self.name+"' via proxy; use direct URL")
+        self.modTime = sliauth.epoch_ms()
+        self.nCols += len(headers)
+        self.xrows[0] += headers
+        for j in range(1, len(self.xrows)):
+            self.xrows[j] += ['']*len(headers)
+
+    def trimColumns(self, ncols):
+        if Options['SHEET_URL'] and not Options['DRY_RUN']:
+            # Proxy caching currently does not work with varying columns
+            raise Exception("Cannot delete columns for session '"+self.name+"' via proxy; use direct URL")
+        self.modTime = sliauth.epoch_ms()
+        self.nCols -= ncols
+        for j in range(len(self.xrows)):
+            self.xrows[j] = self.xrows[j][:-ncols]
 
     def checkRange(self, rowMin, colMin, rowCount, colCount):
         if rowMin < 1 or rowMin > len(self.xrows):
@@ -456,10 +476,10 @@ def getCacheStatus():
 
 def lockSheet(sheetName, lockType='user'):
     # Returns True if lock is immediately effective; False if it will take effect later
-    if sheetName not in Lock_cache:
-        Lock_cache[sheetName] = lockType
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
         return False
+    if sheetName not in Lock_cache:
+        Lock_cache[sheetName] = lockType
     return True
 
 def unlockSheet(sheetName):
@@ -505,7 +525,7 @@ def suspend_cache(action="shutdown"):
         print("Suspended for", action, file=sys.stderr)
         schedule_update(force=True)
 
-def updates_complete():
+def updates_current():
     if not Global.suspended:
         return
     if Global.suspended == "shutdown":
@@ -516,13 +536,15 @@ def updates_complete():
         print("Cleared cache", file=sys.stderr)
 
 def update_remote_sheets(force=False):
-    if not Options['SHEET_URL'] or Options['DRY_RUN']:
-        # No updates if no sheet URL or dry run
-        updates_complete()
-        return
-
     if Options['DEBUG']:
         print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
+
+    if not Options['SHEET_URL'] or Options['DRY_RUN']:
+        # No updates if no sheet URL or dry run
+        updates_completed(sliauth.epoch_ms())
+        updates_current()
+        return
+
     if Global.cacheRequestTime:
         return
 
@@ -548,7 +570,7 @@ def update_remote_sheets(force=False):
             print("update_remote_sheets:B", modRequests is not None, file=sys.stderr)
     if not modRequests:
         # Nothing to update
-        updates_complete()
+        updates_current()
         return
 
     if Options['DEBUG']:
@@ -607,13 +629,16 @@ def handle_proxy_response(response):
         if Options['DEBUG']:
             print("handle_proxy_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
 
-        Global.cacheUpdateTime = Global.cacheRequestTime
+        updates_completed(Global.cacheRequestTime)
+        schedule_update(0 if Global.suspended else Options['MIN_WAIT_SEC'])
+
+def updates_completed(updateTime):
+        Global.cacheUpdateTime = updateTime
         Global.cacheRequestTime = 0
         Global.cacheRetryCount = 0
         Global.cacheWaitTime = 0
-        schedule_update(0 if Global.suspended else Options['MIN_WAIT_SEC'])
-
         
+
 def sheetAction(params, notrace=False):
     # Returns a JSON object
     # object.result = 'success' or 'error'
@@ -719,6 +744,17 @@ def sheetAction(params, notrace=False):
         returnInfo['timestamp'] = None
 
         # Update/access single sheet
+        headers = json.loads(params.get('headers','')) if params.get('headers','') else None
+
+        modSheet = getSheet(sheetName, optional=True)
+        if not modSheet:
+            if adminUser and headers is not None:
+                modSheet = createSheet(sheetName, headers)
+            else:
+                raise Exception("Error:NOSHEET:Sheet '"+sheetName+"' not found")
+
+        if not modSheet.getLastColumn():
+            raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
         if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
             # Indexed session
@@ -732,38 +768,69 @@ def sheetAction(params, notrace=False):
             voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
 
         # Check parameter consistency
-        headers = json.loads(params.get('headers','')) if params.get('headers','') else None
-
-        modSheet = getSheet(sheetName, optional=True)
-        if not modSheet:
-            if adminUser and headers is not None:
-                modSheet = createSheet(sheetName, headers)
-            else:
-                raise Exception("Sheet %s not found!" % sheetName)
-
-        if not modSheet.getLastColumn():
-            raise Exception("Error::No columns in sheet '"+sheetName+"'")
-
-        columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
-        columnIndex = indexColumns(modSheet)
-
-        if headers:
-            if len(headers) > len(columnHeaders):
-                raise Exception("Error::Number of headers exceeds that present in sheet '"+sheetName+"'; delete it or edit headers.")
-            for j in range(len(headers)):
-                if headers[j] != columnHeaders[j]:
-                    raise Exception("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.")
-
         getRow = params.get('get','')
-        getShare = params.get('getshare', '');
+        getShare = params.get('getshare', '')
         allRows = params.get('all','')
         createRow = params.get('create', '')
         nooverwriteRow = params.get('nooverwrite','')
         delRow = params.get('delrow','')
         importSession = params.get('import','')
 
+        columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
+        columnIndex = indexColumns(modSheet)
+
         selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
         rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
+
+        if headers:
+            modifyStartCol = int(params['modify']) if params.get('modify') else 0
+            if modifyStartCol:
+                if not sessionEntries or not rowUpdates or rowUpdates[columnIndex['id']-1] != MAXSCORE_ID:
+                    raise Exception("Error::Must be updating max scores row to modify headers in sheet "+sheetName)
+                checkCols = modifyStartCol-1
+            else:
+                if len(headers) != len(columnHeaders):
+                    raise Exception("Error::Number of headers does not match that present in sheet '"+sheetName+"'; delete it or modify headers.");
+                checkCols = len(columnHeaders)
+
+            for j in range( checkCols ):
+                if headers[j] != columnHeaders[j]:
+                    raise Exception("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or modify headers.")
+
+            if modifyStartCol:
+                # Updating maxscore row; modify headers if needed
+                if modifyStartCol <= len(columnHeaders):
+                    # Truncate columns; ensure truncated columns are empty
+                    startCol = modifyStartCol
+                    nCols = len(columnHeaders)-startCol+1
+                    startRow = 2
+                    nRows = modSheet.getLastRow()-startRow+1
+                    if nRows:
+                        idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
+                        if idValues[0][0] == MAXSCORE_ID:
+                            startRow += 1
+                            nRows -= 1
+                        if nRows:
+                            values = modSheet.getSheetValues(startRow, startCol, nRows, nCols)
+                            for j in range(nCols):
+                                for k in range(nRows):
+                                    if values[k][j] != '':
+                                        raise Exception( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+str(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName )
+
+                    modSheet.trimColumns( nCols )
+                    ##modSheet.deleteColumns(startCol, nCols)
+
+                nTemCols = modSheet.getLastColumn()
+                if len(headers) > nTemCols:
+                    # Extend columns
+                    startCol = nTemCols+1
+                    nCols = len(headers)-startCol+1
+                    modSheet.appendColumns(headers[nTemCols:])
+                    ##modSheet.insertColumns(startCol, nCols);
+                    ##modSheet.getRange(1, startCol, 1, nCols).setValues([ headers.slice(nTemCols) ]);
+
+                columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
+                columnIndex = indexColumns(modSheet)
 
         userId = None
         displayName = None
@@ -784,8 +851,14 @@ def sheetAction(params, notrace=False):
 
         numStickyRows = 1  # Headers etc.
 
-        if getRow and params.get('getheaders',''):
+        if params.get('getheaders',''):
             returnHeaders = columnHeaders
+            if sessionEntries and paramId == TESTUSER_ID:
+                returnInfo['maxRows'] = modSheet.getLastRow()
+                if columnIndex.get('lastSlide'):
+                    returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide'])
+
+        if params.get('getstats',''):
             try:
                 temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
                 if temIndexRow.get(MAXSCORE_ID):
@@ -814,6 +887,8 @@ def sheetAction(params, notrace=False):
                 returnValues = []
             if sessionEntries and adminPaced:
                 returnInfo['adminPaced'] = adminPaced
+            if sessionEntries and columnIndex.get('lastSlide'):
+                returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide'])
         elif getShare:
             # Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
             if not sessionAttributes or not sessionAttributes.get('shareAnswers'):
@@ -1916,6 +1991,15 @@ def getColumns(header, sheet, colCount=1, startRow=2):
         for val in vals:
             retvals.append(val[0])
         return retvals
+
+
+def getColumnMax(sheet, startRow, colNum):
+    lastSlideVals = sheet.getSheetValues(startRow, colNum, sheet.getLastRow()-startRow+1, 1)
+    maxLastSlide = 0
+    for j in range(len(lastSlideVals)):
+        if lastSlideVals[j][0]:
+            maxLastSlide = max(maxLastSlide, int(lastSlideVals[j][0]))
+	return maxLastSlide
 
 
 def lookupRowIndex(idValue, sheet, startRow=2):

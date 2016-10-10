@@ -19,6 +19,7 @@ from __future__ import print_function
 
 import argparse
 import base64
+import cStringIO
 import os
 import re
 import shlex
@@ -1703,15 +1704,53 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
+SLIDE_BREAK_RE = re.compile(r'^ {0,3}(--- *|##[^#].*)\n?$')
+    
 def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
     Global.chapter_ref_counter = defaultdict(int)
 
     renderer = SlidocRenderer(escape=False, filename=filename, config=config, filenumber=filenumber, plugin_defs=plugin_defs)
-
     content_html = MarkdownWithSlidoc(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
 
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
+
+    if renderer.questions:
+        # Compute question hash digest to track questions
+        sbuf = cStringIO.StringIO(source)
+        slide_hash = []
+        slide_lines = []
+        prev_blank = True
+        while True:
+            line = sbuf.readline()
+            if not line:
+                slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
+                break
+
+            if line.strip():
+                prev_blank = False
+            else:
+                if prev_blank:
+                    # Skip multiple blank lines (for digest computation)
+                    continue
+                prev_blank = True
+
+            lmatch = SLIDE_BREAK_RE.match(line)
+            if lmatch and (lmatch.group(1).startswith('---') or slide_lines):
+                slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
+                slide_lines = []
+                if not lmatch.group(1).startswith('---'):
+                    slide_lines.append(line)
+                prev_blank = True
+            else:
+                slide_lines.append(line)
+
+        if renderer.slide_number == len(slide_hash):
+            # Save question digests (for future use)
+            for question in renderer.questions:
+                question['digest'] = slide_hash[question['slide']-1]
+        else:
+            message('Mismatch in slide count for hashing: expected %d but found %d' % (renderer.slide_number, len(slide_hash)))
 
     pre_header_html = ''
     tail_html = ''
@@ -1771,9 +1810,12 @@ Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate
                 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
+
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
-                         questions, question_concepts, p_concepts, s_concepts, debug=False):
+                         questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
+                         row_count=None, modify_session=False):
+    modify_questions = False
     user = ADMINUSER_ID
     user_token = sliauth.gen_admin_token(hmac_key, user)
     admin_paced = 1 if pace_level >= ADMIN_PACE else None
@@ -1798,11 +1840,32 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             message('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
         prev_questions = json.loads(prev_row[prev_headers.index('questions')])
-        if len(prev_questions) != len(questions):
-            abort('Mismatch in question numbers for session %s: previously %d but now %d' % (session_name, len(prev_questions), len(questions)))
-        for j, question in enumerate(questions):
-            if prev_questions[j]['qtype'] != question['qtype']:
-                abort('Mismatch in question %d type for session %s: previously %s but now %s' % (j+1, session_name, prev_questions[j]['qtype'], question['qtype']))
+
+        min_count =  min(len(prev_questions), len(questions))
+        mod_question = 0
+        for j in range(min_count):
+            if prev_questions[j]['qtype'] != questions[j]['qtype']:
+                mod_question = j+1
+                break
+
+        if mod_question or len(prev_questions) != len(questions):
+            if modify_session or not row_count:
+                modify_questions = True
+                if len(prev_questions) > len(questions):
+                    # Truncating
+                    if max_last_slide is not None:
+                        for j in range(len(questions), len(prev_questions)):
+                            if prev_questions[j]['slide'] <= max_last_slide:
+                                abort('Cannot truncate previously viewed question %d for session %s' % (j+1, session_name))
+                elif len(prev_questions) < len(questions):
+                    # Extending
+                    pass
+            elif row_count == 1:
+                abort('Delete test user entry to modify questions in session '+session_name)
+            elif mod_question:
+                abort('Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
+            else:
+                abort('Mismatch in question numbers for session %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
 
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
@@ -1827,19 +1890,66 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     message('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name))
 
     # Return possibly modified due date
-    return due_date_str
+    return (due_date_str, modify_questions)
 
+
+def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=None):
+    modify_col = 0
+    user = TESTUSER_ID
+    user_token = sliauth.gen_user_token(hmac_key, user) if hmac_key else ''
+    post_params = {'id': user, 'token': user_token, 'sheet': sheet_name,
+                   'getRow': 1, 'getheaders': '1'}
+    retval = http_post(sheet_url, post_params)
+    if retval['result'] != 'success':
+        if retval['error'].startswith('Error:NOSHEET:'):
+            return (None, modify_col, 0)
+        else:
+            abort("Error in accessing sheet '%s': %s" % (sheet_name, retval['error']))
+    prev_headers = retval['headers']
+    prev_row = retval['value']
+    maxLastSlide = retval['info']['maxLastSlide']
+    maxRows = retval['info']['maxRows']
+    if maxRows == 2:
+        # No data rows; all modifications OK
+        row_count = 0
+    elif maxRows == 3 and prev_row:
+        # Test user row only
+        row_count = 1
+    else:
+        # One or more user rows
+        row_count = 2
+
+    min_count = min(len(prev_headers), len(headers))
+    for j in range(min_count):
+        if prev_headers[j] != headers[j]:
+            modify_col = j+1
+            break
+
+    if not modify_col:
+        if len(headers) != len(prev_headers):
+            modify_col = len(prev_headers) + 1
+        
+    if modify_col:
+        if row_count == 1:
+            abort('Mismatched header %d for session %s. Delete test user row to modify')
+        elif row_count and not modify_session:
+            abort('Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers[:min_count], headers[:min_count]))
+
+    return (maxLastSlide, modify_col, row_count)
                 
-def create_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None):
+def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify=None):
     user = ADMINUSER_ID
     user_token = sliauth.gen_admin_token(hmac_key, user) if hmac_key else ''
     post_params = {ADMINUSER_ID: user, 'token': user_token, 'sheet': sheet_name,
                    'headers': json.dumps(headers)}
     if row:
         post_params['row'] = json.dumps(row)
+    if modify:
+        post_params['modify'] = modify
     retval = http_post(sheet_url, post_params)
+
     if retval['result'] != 'success':
-        abort("Error in creating sheet '%s': %s, headers=%s" % (sheet_name, retval['error'], headers))
+        abort("Error in creating sheet '%s': %s\n headers=%s" % (sheet_name, retval['error'], headers))
     message('slidoc: Created remote spreadsheet:', sheet_name)
 
 def parse_plugin(text, name=None):
@@ -1977,15 +2087,23 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     # Create config object
     config = argparse.Namespace(**tem_dict)
 
+    config.modify_sessions = set(config.modify_sessions.split(',')) if config.modify_sessions else set()
+
     if config.make:
         # Process only modified input files
         if config.toc or config.index or config.qindex or config.all:
             abort('ERROR --make option incompatible with indexing or "all" options')
         
-    if config.dest_dir and not os.path.isdir(config.dest_dir):
-        os.makedirs(config.dest_dir)
-
-    dest_dir = config.dest_dir+"/" if config.dest_dir else ''
+    dest_dir = ''
+    backup_dir = ''
+    if config.dest_dir:
+        if not os.path.isdir(config.dest_dir):
+            os.makedirs(config.dest_dir)
+        dest_dir = config.dest_dir+"/"
+        if config.backup_dir:
+            if not os.path.isdir(config.backup_dir):
+                os.makedirs(config.backup_dir)
+            backup_dir = config.backup_dir + '/'
 
     orig_fnames = []
     orig_outpaths = []
@@ -2365,22 +2483,27 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         mid_params.update(SYMS)
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
-        if not config.dry_run:
-            if gd_hmac_key:
-                tem_attributes = renderer.sheet_attributes.copy()
-                tem_attributes.update(params=js_params)
-                mod_due_date = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
-                                     file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
-                                     js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
-                                     renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
-                                     debug=config.debug)
+        if not config.dry_run and gd_sheet_url:
+            tem_attributes = renderer.sheet_attributes.copy()
+            tem_attributes.update(params=js_params)
+            tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
+            modify_session = (fname in config.modify_sessions)
+            max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields,
+                                                                     modify_session=modify_session)
+            mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+                                 file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
+                                 js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
+                                 renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
+                                 max_last_slide=max_last_slide, debug=config.debug,
+                                 row_count=row_count, modify_session=modify_session)
 
-                admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
+            admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
 
-            if gd_sheet_url and (gd_hmac_key or not return_html):
-                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'],
-                                  Manage_fields+Session_fields+js_params['gradeFields'], row=max_score_fields)
-                create_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
+            if not modify_col and modify_questions:
+                # Dummy modify col to force passthru
+                modify_col = len(tem_fields) + 1
+            update_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields, row=max_score_fields, modify=modify_col)
+            update_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
 
         if js_params['paceLevel']:
             # Additional info for paced files
@@ -2426,6 +2549,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 else:
                     outfile_buffer.append([outname, dest_dir+outname, '', ''])
                     write_doc(dest_dir+outname, head, tail)
+
+            if backup_dir:
+                bakname = backup_dir+os.path.basename(input_paths[fnumber-1])[:-3]+'-bak.md'
+                md2md.write_file(bakname)
+                message('Backup copy of file written to '+bakname)
 
             if config.slides and not return_html:
                 reveal_pars['reveal_title'] = fname
@@ -2842,6 +2970,7 @@ parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQU
 parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
 parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
+parser.add_argument('--backup_dir', default='_backup', help='Directory to create backup files for last valid version in when dest_dir is specified')
 parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
@@ -2859,6 +2988,7 @@ parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to
 parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
 parser.add_argument('--media_url', metavar='URL', help='URL for media')
+parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,...', help='Sessions with questions to be modified')
 parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')

@@ -399,20 +399,6 @@ function sheetAction(params) {
 	    }
 	} else {
 	    // Update/access single sheet
-
-	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
-		// Indexed session
-		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
-		sessionAttributes = JSON.parse(sessionEntries.attributes);
-		questions = JSON.parse(sessionEntries.questions);
-		paceLevel = sessionEntries.paceLevel;
-		adminPaced = sessionEntries.adminPaced;
-		dueDate = sessionEntries.dueDate;
-		gradeDate = sessionEntries.gradeDate;
-		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
-	    }
-
-	    // Check parameter consistency
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
 
 	    var modSheet = getSheet(sheetName);
@@ -427,19 +413,20 @@ function sheetAction(params) {
 
 	    if (!modSheet.getLastColumn())
 		throw("Error::No columns in sheet '"+sheetName+"'");
-	    
-	    var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
-	    var columnIndex = indexColumns(modSheet);
-	    
-	    if (headers) {
-		if (headers.length > columnHeaders.length)
-		    throw("Error::Number of headers exceeds that present in sheet '"+sheetName+"'; delete it or edit headers.");
-		for (var j=0; j<headers.length; j++) {
-		    if (headers[j] != columnHeaders[j])
-			throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or edit headers.");
-		}
+
+	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
+		// Indexed session
+		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
+		sessionAttributes = JSON.parse(sessionEntries.attributes);
+		questions = JSON.parse(sessionEntries.questions);
+		paceLevel = sessionEntries.paceLevel;
+		adminPaced = sessionEntries.adminPaced;
+		dueDate = sessionEntries.dueDate;
+		gradeDate = sessionEntries.gradeDate;
+		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
 	    }
-	    
+
+	    // Check parameter consistency
 	    var getRow = params.get || '';
 	    var getShare = params.getshare || '';
 	    var allRows = params.all || '';
@@ -448,9 +435,72 @@ function sheetAction(params) {
 	    var delRow = params.delrow || '';
 	    var importSession = params.import || '';
 	    
+	    var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
+	    var columnIndex = indexColumns(modSheet);
+	    
 	    var selectedUpdates = params.update ? JSON.parse(params.update) : null;
 	    var rowUpdates = params.row ? JSON.parse(params.row) : null;
 
+	    if (headers) {
+		var modifyStartCol = params.modify ? parseInt(params.modify) : 0;
+		if (modifyStartCol) {
+                    if (!sessionEntries || !rowUpdates || rowUpdates[columnIndex['id']-1] != MAXSCORE_ID)
+			throw("Error::Must be updating max scores row to modify headers in sheet "+sheetName);
+                    var checkCols = modifyStartCol-1;
+		} else {
+                    if (headers.length != columnHeaders.length)
+			throw("Error::Number of headers does not match that present in sheet '"+sheetName+"'; delete it or modify headers.");
+                    var checkCols = columnHeaders.length;
+		}
+
+		for (var j=0; j< checkCols; j++) {
+                    if (headers[j] != columnHeaders[j]) {
+			throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or modify headers.")
+                    }
+		}
+		if (modifyStartCol) {
+		    // Updating maxscore row; modify headers if needed
+		    if (modifyStartCol <= columnHeaders.length) {
+                        // Truncate columns; ensure truncated columns are empty
+                        var startCol = modifyStartCol;
+                        var nCols = columnHeaders.length-startCol+1;
+                        var startRow = 2;
+                        var nRows = modSheet.getLastRow()-startRow+1;
+                        if (nRows) {
+			    var idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
+			    if (idValues[0][0] == MAXSCORE_ID) {
+                                startRow += 1;
+                                nRows -= 1;
+			    }
+			    if (nRows) {
+                                var values = modSheet.getSheetValues(startRow, startCol, nRows, nCols);
+                                for (var j=0; j < nCols; j++) {
+				    for (var k=0; k < nRows; k++) {
+                                        if (values[k][j] != '') {
+					    throw( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName );
+                                        }
+				    }
+                                }
+			    }
+                        }
+
+                        ///modSheet.trimColumns( nCols )
+                        modSheet.deleteColumns(startCol, nCols);
+		    }
+		    var nTemCols = modSheet.getLastColumn();
+		    if (headers.length > nTemCols) {
+                        // Extend columns
+                        var startCol = nTemCols+1;
+                        var nCols = headers.length-startCol+1;
+                        ///modSheet.appendColumns(headers[nTemCols:])
+                        modSheet.insertColumns(startCol, nCols);
+                        modSheet.getRange(1, startCol, 1, nCols).setValues([ headers.slice(nTemCols) ]);
+		    }
+		    columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
+		    columnIndex = indexColumns(modSheet);
+		}
+	    }
+	    
 	    var userId = null;
 	    var displayName = null;
 
@@ -471,10 +521,17 @@ function sheetAction(params) {
 
 	    var numStickyRows = 1;  // Headers etc.
 
-	    if (getRow && params.getheaders) {
+	    if (params.getheaders) {
 		returnHeaders = columnHeaders;
+		if (sessionEntries && paramId == TESTUSER_ID) {
+		    returnInfo['maxRows'] = modSheet.getLastRow();
+		    if (columnIndex.lastSlide)
+			returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide']);
+		}
+	    }
+	    if (params.getstats) {
 		try {
-		    var temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2);
+		    var temIndexRow = indexRows(modSheet, columnIndex['id'], 2);
 		    if (temIndexRow[MAXSCORE_ID])
 			returnInfo.maxScores = modSheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
 		    if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
@@ -504,6 +561,9 @@ function sheetAction(params) {
 		returnValues = [];
 	    if (sessionEntries && adminPaced)
                 returnInfo['adminPaced'] = adminPaced;
+	    if (sessionEntries && columnIndex.lastSlide) {
+                returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide']);
+	    }
 	} else if (getShare) {
 	    // Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
 	    if (!sessionAttributes || !sessionAttributes.shareAnswers)
@@ -1522,6 +1582,17 @@ function getColumns(header, sheet, colCount, startRow) {
 	    retvals.push(vals[j][0]);
 	return retvals;
     }
+}
+
+function getColumnMax(sheet, startRow, colNum) {
+    var lastSlideVals = sheet.getSheetValues(startRow, colNum, sheet.getLastRow()-startRow+1, 1);
+    var maxLastSlide = 0;
+    for (var j=0; j < lastSlideVals.length; j++) {
+        if (lastSlideVals[j][0]) {
+            maxLastSlide = Math.max(maxLastSlide, parseInt(lastSlideVals[j][0]));
+        }
+    }
+    return maxLastSlide;
 }
 
 function lookupRowIndex(idValue, sheet, startRow) {

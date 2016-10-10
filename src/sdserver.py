@@ -46,6 +46,7 @@ import urllib
 import uuid
 
 import tornado.auth
+import tornado.gen
 import tornado.escape
 import tornado.httpserver
 import tornado.options
@@ -286,7 +287,7 @@ class ActionHandler(BaseHandler):
                 locked = sdproxy.lockSheet(sessionName, lockType or 'user')
                 if not locked:
                     if lockType == 'proxy':
-                        raise Exception('Failed to lock sheet '+sessionName)
+                        raise Exception('Failed to lock sheet '+sessionName+'. Try again after a few seconds?')
                     prefix = 'Locking'
                 self.write(prefix +' sessions: %s<p></p><a href="/_status">Status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
         elif action == '_backup':
@@ -371,12 +372,15 @@ class AuthActionHandler(ActionHandler):
         raise tornado.web.HTTPError(403)
 
 class ProxyHandler(BaseHandler):
+    @tornado.gen.coroutine
     def get(self):
-        self.handleResponse()
+        yield self.handleResponse()
 
+    @tornado.gen.coroutine
     def post(self):
-        self.handleResponse()
+        yield self.handleResponse()
 
+    @tornado.gen.coroutine
     def handleResponse(self):
         jsonPrefix = ''
         jsonSuffix = ''
@@ -393,10 +397,27 @@ class ProxyHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, "DEBUG: URI", self.request.uri
 
-        retObj = sdproxy.sheetAction(args)
+        if args.get('modify') and sdproxy.Options['SHEET_URL'] and not sdproxy.Options['DRY_RUN']:
+            sessionName = args.get('sheet','')
+            if not sdproxy.lockSheet(sessionName, 'passthru'):
+                retObj = {'result': 'error', 'error': 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'}
+            else:
+                http_client = tornado.httpclient.AsyncHTTPClient()
+                body = urllib.urlencode(args)
+                response = yield http_client.fetch(sdproxy.Options['SHEET_URL'], method='POST', headers=None, body=body)
+                if response.error:
+                    retObj = {'result': 'error', 'error': 'Error in passthru: '+str(response.error) }
+                else:
+                    try:
+                        retObj = json.loads(response.body)
+                    except Exception, err:
+                        retObj = {'result': 'error', 'error': 'passthru: JSON parsing error: '+str(err) }
+        else:
+            retObj = sdproxy.sheetAction(args)
 
         self.set_header('Content-Type', mimeType)
         self.write(jsonPrefix+json.dumps(retObj, default=sliauth.json_default)+jsonSuffix)
+
 
 class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     _connections = collections.defaultdict(functools.partial(collections.defaultdict,list))
