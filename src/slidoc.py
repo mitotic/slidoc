@@ -1856,16 +1856,16 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     if max_last_slide is not None:
                         for j in range(len(questions), len(prev_questions)):
                             if prev_questions[j]['slide'] <= max_last_slide:
-                                abort('Cannot truncate previously viewed question %d for session %s' % (j+1, session_name))
+                                abort('ERROR: Cannot truncate previously viewed question %d for session %s' % (j+1, session_name))
                 elif len(prev_questions) < len(questions):
                     # Extending
                     pass
             elif row_count == 1:
-                abort('Delete test user entry to modify questions in session '+session_name)
+                abort('ERROR: Delete test user entry to modify questions in session '+session_name)
             elif mod_question:
-                abort('Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
+                abort('ERROR: Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
             else:
-                abort('Mismatch in question numbers for session %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
+                abort('ERROR: Mismatch in question numbers for session %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
 
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
@@ -1898,7 +1898,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
     user = TESTUSER_ID
     user_token = sliauth.gen_user_token(hmac_key, user) if hmac_key else ''
     post_params = {'id': user, 'token': user_token, 'sheet': sheet_name,
-                   'getRow': 1, 'getheaders': '1'}
+                   'get': 1, 'getheaders': '1'}
     retval = http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if retval['error'].startswith('Error:NOSHEET:'):
@@ -1916,7 +1916,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
         # Test user row only
         row_count = 1
     else:
-        # One or more user rows
+        # One or more regular user rows
         row_count = 2
 
     min_count = min(len(prev_headers), len(headers))
@@ -1927,13 +1927,13 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
 
     if not modify_col:
         if len(headers) != len(prev_headers):
-            modify_col = len(prev_headers) + 1
+            modify_col = min_count + 1
         
     if modify_col:
         if row_count == 1:
-            abort('Mismatched header %d for session %s. Delete test user row to modify')
-        elif row_count and not modify_session:
-            abort('Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers[:min_count], headers[:min_count]))
+            abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify')
+        elif not modify_session and row_count:
+            abort('ERROR: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
 
     return (maxLastSlide, modify_col, row_count)
                 

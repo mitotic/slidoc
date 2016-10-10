@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5b'
+VERSION = '0.96.5c'
 
 # Usually modified by importing module
 Options = {
@@ -1994,12 +1994,12 @@ def getColumns(header, sheet, colCount=1, startRow=2):
 
 
 def getColumnMax(sheet, startRow, colNum):
-    lastSlideVals = sheet.getSheetValues(startRow, colNum, sheet.getLastRow()-startRow+1, 1)
-    maxLastSlide = 0
-    for j in range(len(lastSlideVals)):
-        if lastSlideVals[j][0]:
-            maxLastSlide = max(maxLastSlide, int(lastSlideVals[j][0]))
-	return maxLastSlide
+    values = sheet.getSheetValues(startRow, colNum, sheet.getLastRow()-startRow+1, 1)
+    maxVal = 0
+    for j in range(len(values)):
+        if values[j][0]:
+            maxVal = max(maxVal, int(values[j][0]))
+    return maxVal
 
 
 def lookupRowIndex(idValue, sheet, startRow=2):

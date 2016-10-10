@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5b';
+var VERSION = '0.96.5c';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -1585,14 +1585,14 @@ function getColumns(header, sheet, colCount, startRow) {
 }
 
 function getColumnMax(sheet, startRow, colNum) {
-    var lastSlideVals = sheet.getSheetValues(startRow, colNum, sheet.getLastRow()-startRow+1, 1);
-    var maxLastSlide = 0;
-    for (var j=0; j < lastSlideVals.length; j++) {
-        if (lastSlideVals[j][0]) {
-            maxLastSlide = Math.max(maxLastSlide, parseInt(lastSlideVals[j][0]));
+    var values = sheet.getSheetValues(startRow, colNum, sheet.getLastRow()-startRow+1, 1);
+    var maxVal = 0;
+    for (var j=0; j < values.length; j++) {
+        if (values[j][0]) {
+            maxVal = Math.max(maxVal, parseInt(values[j][0]));
         }
     }
-    return maxLastSlide;
+    return maxVal;
 }
 
 function lookupRowIndex(idValue, sheet, startRow) {
