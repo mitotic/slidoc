@@ -1209,8 +1209,11 @@ class SlidocRenderer(MathRenderer):
                 else:
                     abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s' is not a valid answer option for slide %s" % (self.options["filename"], opt, self.slide_number))
 
-        if not answer_opts['share'] and (answer_opts['vote'] or 'share_all' in self.options['config'].features):
-            answer_opts['share'] = opt_values['share'][0]
+        if not answer_opts['share']:
+            if (answer_opts['vote'] or 'share_all' in self.options['config'].features):
+                answer_opts['share'] = opt_values['share'][0]
+            elif 'share_answers' in self.options['config'].features:
+                answer_opts['share'] = opt_values['share'][-1]
 
         if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
             answer_opts['share'] = opt_values['share'][2]
@@ -1508,20 +1511,21 @@ class SlidocRenderer(MathRenderer):
             self.cum_gweights.append(self.cum_gweights[-1] + (gweight or 0))
 
         ans_grade_fields = []
-        if 'grade_response' in self.options['config'].features or self.questions[-1].get('share') or self.questions[-1].get('team'):
+        share_col = self.questions[-1].get('share') and 'share_answers' not in self.options['config'].features
+        if 'grade_response' in self.options['config'].features or share_col or self.questions[-1].get('team'):
             qno = 'q%d' % len(self.questions)
             if '/' in self.qtypes[-1] and self.qtypes[-1].split('/')[0] in ('text', 'Code', 'Upload'):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
-            elif self.questions[-1].get('share') or self.questions[-1].get('team'):
+            elif share_col or self.questions[-1].get('team'):
                 ans_grade_fields += [qno+'_response']
 
             if self.questions[-1].get('team') and re.match(r'^(.*)=\s*(\w+)\.response\(\s*\)$', self.questions[-1].get('correct', '')):
                 ans_grade_fields += [qno+'_plugin']
 
             if ans_grade_fields:
-                if self.questions[-1].get('share'):
+                if share_col:
                     # Share response/explain columns
                     ans_grade_fields += [qno+'_share']
                 if self.questions[-1].get('vote'):
@@ -1849,7 +1853,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                 break
 
         if mod_question or len(prev_questions) != len(questions):
-            if modify_session or not row_count:
+            ###if modify_session or not row_count:
+            if modify_session:
                 modify_questions = True
                 if len(prev_questions) > len(questions):
                     # Truncating
@@ -1932,7 +1937,8 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
     if modify_col:
         if row_count == 1:
             abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify')
-        elif not modify_session and row_count:
+        ###elif not modify_session and row_count:
+        elif not modify_session:
             abort('ERROR: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
 
     return (maxLastSlide, modify_col, row_count)
@@ -2957,13 +2963,14 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
 #   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
-#   share_all: share answers for all questions
+#   share_all: share responses for all questions
+#   share_answers: share answers for all questions after completion (e.g., an exam)
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
+Features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)

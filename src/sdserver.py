@@ -1194,12 +1194,15 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
         csvfile.seek(0)
         reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
         headers = reader.next()
+        rows = [row for row in reader]
         idCol = 0
         nameCol = 0
+        lastNameCol = 0
+        firstNameCol = 0
         twitterCol = 0
         qresponse = {}
         for j, header in enumerate(headers):
-            hmatch = re.match(r'^(qx?)(\d+)$', header)
+            hmatch = re.match(r'^(q?x?)(\d+)$', header)
             if hmatch:
                 qnumber = int(hmatch.group(2))
                 qresponse[qnumber] = (j, (hmatch.group(1) == 'qx'))
@@ -1209,6 +1212,10 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
                 nameCol = j+1
             elif header == 'twitter':
                 twitterCol = j+1
+            elif header.lower() in ('last', 'lastname', 'last name'):
+                lastNameCol = j+1
+            elif header.lower() in ('first', 'firstname', 'first name'):
+                firstNameCol = j+1
 
         nameMap = sdproxy.lookupRoster('name')
         idMap = {}
@@ -1217,9 +1224,20 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
             if not idMap:
                 raise Exception('No twitter ids found in roster')
         elif not idCol:
-            raise Exception('No id or twitter column for importing answers from '+filepath)
+            if lastNameCol and firstNameCol:
+                idMap = sdproxy.makeRosterMap('name')
+                names = [ row[lastNameCol-1]+', '+row[firstNameCol-1] for row in rows]
+                missing = False
+                for name in names:
+                    if name not in idMap:
+                        missing = True
+                        print >> sys.stderr, 'Name', name, 'not found in roster'
+                if missing:
+                    raise Exception('One or more names not found in roster')
+            else:
+                raise Exception('No id or twitter or name columns for importing answers from '+filepath)
 
-        for row in reader:
+        for row in rows:
             answers = {}
             for qnumber, value in qresponse.items():
                 response = row[value[0]].strip()
@@ -1253,6 +1271,8 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
                     missed.append('@'+twitterId)
                     errors.append('MISSING: Twitter ID '+twitterId+' not found in roster')
                     continue
+            else:
+                userId = idMap[ row[lastNameCol-1]+', '+row[firstNameCol-1] ]
 
             displayName = row[nameCol-1] if nameCol else ''
             try:
@@ -1260,11 +1280,14 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
                     print >> sys.stderr, 'DEBUG: importAnswersAux', sessionName, userId, displayName, answers
                 sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate, source='import')
             except Exception, excp:
-                errors.append('Error in import for '+userId+': '+str(excp))
+                errors.append('Error in import for '+str(userId)+': '+str(excp))
                 missed.append(userId)
                 missed.append('... and others')
                 break
     except Exception, excp:
+        if Options['debug']:
+            import traceback
+            traceback.print_exc()
         errors = [ 'Error in importAnswersAux: '+str(excp)] + errors
 
     return missed, errors

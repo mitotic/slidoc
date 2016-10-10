@@ -1470,6 +1470,9 @@ function selectUserCallback(userId, result, retStatus) {
     Sliobj.feedback = unpacked.feedback || null;
     Sliobj.score = null;
     scoreSession(Sliobj.session);
+    Sliobj.userGrades[userId].weightedCorrect = Sliobj.scores.weightedCorrect;
+    if (Sliobj.scores.weightedCorrect)
+	updateGradingStatus(userId);
     prepGradeSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
     showSubmitted();
@@ -2102,6 +2105,8 @@ function updateGradingStatus(userId) {
 	else
 	    html += gradeCount
     }
+    if (Sliobj.userGrades[userId].weightedCorrect)
+	html += ' (' + Sliobj.userGrades[userId].weightedCorrect + ')';
 
     option.dataset.nograding = (Sliobj.userGrades[userId].allowGrading && gradeCount) ? '' : 'nograding';
     option.innerHTML = '';
