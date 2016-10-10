@@ -1904,7 +1904,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
         if retval['error'].startswith('Error:NOSHEET:'):
             return (None, modify_col, 0)
         else:
-            abort("Error in accessing sheet '%s': %s" % (sheet_name, retval['error']))
+            abort("Error in accessing sheet '%s': %s\n%s" % (sheet_name, retval['error'], retval.get('messages')))
     prev_headers = retval['headers']
     prev_row = retval['value']
     maxLastSlide = retval['info']['maxLastSlide']
@@ -1949,7 +1949,7 @@ def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify
     retval = http_post(sheet_url, post_params)
 
     if retval['result'] != 'success':
-        abort("Error in creating sheet '%s': %s\n headers=%s" % (sheet_name, retval['error'], headers))
+        abort("Error in creating sheet '%s': %s\n headers=%s\n%s" % (sheet_name, retval['error'], headers, retval.get('messages')))
     message('slidoc: Created remote spreadsheet:', sheet_name)
 
 def parse_plugin(text, name=None):

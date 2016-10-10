@@ -493,7 +493,7 @@ function sheetAction(params) {
                         var startCol = nTemCols+1;
                         var nCols = headers.length-startCol+1;
                         ///modSheet.appendColumns(headers[nTemCols:])
-                        modSheet.insertColumns(startCol, nCols);
+                        modSheet.insertColumnsAfter(startCol-1, nCols);
                         modSheet.getRange(1, startCol, 1, nCols).setValues([ headers.slice(nTemCols) ]);
 		    }
 		    columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];

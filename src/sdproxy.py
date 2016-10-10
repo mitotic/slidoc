@@ -826,7 +826,7 @@ def sheetAction(params, notrace=False):
                     startCol = nTemCols+1
                     nCols = len(headers)-startCol+1
                     modSheet.appendColumns(headers[nTemCols:])
-                    ##modSheet.insertColumns(startCol, nCols);
+                    ##modSheet.insertColumnsAfter(startCol-1, nCols);
                     ##modSheet.getRange(1, startCol, 1, nCols).setValues([ headers.slice(nTemCols) ]);
 
                 columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
