@@ -921,13 +921,17 @@ def sheetAction(params, notrace=False):
                 for j in range(len(ansColumnHeaders)):
                     if ansColumnHeaders[j][:len(getShare)] == getShare:
                         ansCol = j+1
+                        break
                 if not ansCol:
                     raise Exception('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'-answers')
                 returnHeaders = [ getShare+'_response' ]
-                values = answerSheet.getSheetValues(1+numStickyRows, ansCol, nRows, 1)
+                nRows = answerSheet.getLastRow()-1
+                names = answerSheet.getSheetValues(2, 1, nRows, 1)
+                values = answerSheet.getSheetValues(2, ansCol, nRows, 1)
                 returnValues = []
                 for j in range(len(values)):
-                    returnValues.append(values[j][0])
+                    if names[j][0] and names[j][0][0] != '#' and values[j][0]:
+                        returnValues.append(values[j][0])
                 returnValues.sort()
             else:
                 nRows = modSheet.getLastRow()-numStickyRows

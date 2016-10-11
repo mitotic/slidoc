@@ -1277,7 +1277,7 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
             displayName = row[nameCol-1] if nameCol else ''
             try:
                 if Options['debug']:
-                    print >> sys.stderr, 'DEBUG: importAnswersAux', sessionName, userId, displayName, answers
+                    print >> sys.stderr, 'DEBUG: importAnswersAux', sessionName, userId, displayName
                 sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate, source='import')
             except Exception, excp:
                 errors.append('Error in import for '+str(userId)+': '+str(excp))
