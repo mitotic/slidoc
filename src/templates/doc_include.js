@@ -1538,12 +1538,16 @@ function showGradesCallback(userId, result, retStatus) {
 	var grade = result[sessionKeys[j]];
 	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ (grade == ''?'missed':grade) +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
-	    if (retStatus.info.maxScores)
-		html += ' out of '+retStatus.info.maxScores[retStatus.info.headers.indexOf(sessionKeys[j])];
+	    var sessionIndex = retStatus.info.headers.indexOf(sessionKeys[j]);
+	    if (retStatus.info.curve && retStatus.info.curve[sessionIndex].charAt(0) == '^')
+		html += ' curved out of 100'+retStatus.info.maxScores[sessionIndex];
+	    else if (retStatus.info.maxScores)
+		html += ' out of '+retStatus.info.maxScores[sessionIndex];
+
 	    if (retStatus.info.averages) {
-		var temAvg = retStatus.info.averages[retStatus.info.headers.indexOf(sessionKeys[j])];
+		var temAvg = retStatus.info.averages[sessionIndex];
 		if (isNumber(temAvg))
-		    html += ' (average='+temAvg+')';
+		    html += ' (average='+temAvg.toFixed(2)+')';
 	    }
 	}
 	html += '<br>';

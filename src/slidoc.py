@@ -1725,6 +1725,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
         slide_hash = []
         slide_lines = []
         prev_blank = True
+        slide_header = ''
         while True:
             line = sbuf.readline()
             if not line:
@@ -1739,12 +1740,22 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
                     continue
                 prev_blank = True
 
+            new_slide = False
             lmatch = SLIDE_BREAK_RE.match(line)
-            if lmatch and (lmatch.group(1).startswith('---') or slide_lines):
+            if lmatch:
+                if lmatch.group(1).startswith('---'):
+                    new_slide = True
+                    slide_header = ''
+                else:
+                    if slide_header:
+                        new_slide = True
+                    slide_header = line
+
+            if new_slide:
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 slide_lines = []
-                if not lmatch.group(1).startswith('---'):
-                    slide_lines.append(line)
+                if slide_header:
+                    slide_lines.append(slide_header)
                 prev_blank = True
             else:
                 slide_lines.append(line)
@@ -1809,13 +1820,14 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields =  ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['team', 'lateToken', 'lastSlide', 'session_hidden']
-Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'dueDate', 'gradeDate', 'mediaURL', 'paceLevel',
-                'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'questionsMax', 'fieldsMin', 'attributes', 'questions',
+Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionCurve', 'dueDate', 'gradeDate', 'postDate',
+                'mediaURL', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight',
+                'questionsMax', 'fieldsMin', 'attributes', 'questions',
                 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, due_date_str, media_url, pace_level,
+def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_curve, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
                          questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
                          row_count=None, modify_session=False):
@@ -1879,12 +1891,15 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             if not due_date_str:
                 due_date_str = prev_row[due_date_col]
 
-    row_values = [session_name, session_name, revision, None, session_weight, due_date_str, None, media_url, pace_level, admin_paced,
+    row_values = [session_name, session_name, revision, None, session_weight, session_curve, due_date_str, None, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
                 json.dumps(sheet_attributes), json.dumps(questions), json.dumps(question_concepts),
                 '; '.join(sort_caseless(list(p_concepts))),
                 '; '.join(sort_caseless(list(s_concepts)))
                  ]
+
+    if len(Index_fields) != len(row_values):
+        abort('Error in updating index entry for session %s: number of headers != row length' % (session_name,))
 
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
@@ -2497,7 +2512,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields,
                                                                      modify_session=modify_session)
             mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
-                                 file_config.session_weight, due_date_str, file_config.media_url, js_params['paceLevel'],
+                                 file_config.session_weight, file_config.session_curve, due_date_str, file_config.media_url, js_params['paceLevel'],
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                  renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
                                  max_last_slide=max_last_slide, debug=config.debug,
@@ -2889,7 +2904,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'revision', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'revision', 'session_curve', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
     
 def read_first_line(file):
     # Read first line of file and rewind it
@@ -3005,6 +3020,7 @@ parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', 
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
+parser.add_argument('--session_curve', default='', help='Session curve parameter, e.g., ^0.5 OR +6')
 parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')

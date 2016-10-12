@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5d';
+var VERSION = '0.96.5e';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -98,6 +98,7 @@ var ALT_DOC_IDS = { };
 var ADMINUSER_ID = 'admin';
 var MAXSCORE_ID = '_max_score';
 var AVERAGE_ID = '_average';
+var CURVE_ID = '_curve';
 var TESTUSER_ID = '_test_user';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
@@ -534,6 +535,8 @@ function sheetAction(params) {
 		    var temIndexRow = indexRows(modSheet, columnIndex['id'], 2);
 		    if (temIndexRow[MAXSCORE_ID])
 			returnInfo.maxScores = modSheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
+		    if (temIndexRow[CURVE_ID])
+			returnInfo.curve = modSheet.getSheetValues(temIndexRow[CURVE_ID], 1, 1, columnHeaders.length)[0];
 		    if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
 			returnInfo.averages = modSheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
 		} catch (err) {}
@@ -2548,10 +2551,10 @@ function updateScores(sessionNames) {
 
 	var rosterStartRow = ROSTER_START_ROW;
 	var sessionStartRow = SESSION_START_ROW;
-	var scoreStartRow = 3;
-	var scoreAvgRow = (scoreStartRow > 2) ? scoreStartRow-1 : 0;
-	var nonmaxStartRow = SESSION_MAXSCORE_ROW ? scoreStartRow+1 : scoreStartRow;
-	var avgStartRow = nonmaxStartRow;
+	var scoreStartRow = 4;
+	var scoreAvgRow = (scoreStartRow > 3) ? scoreStartRow-1 : 0;
+	var userStartRow = SESSION_MAXSCORE_ROW ? scoreStartRow+1 : scoreStartRow;
+	var avgStartRow = userStartRow;
 
 	// New score sheet
 	var extraHeaders = ['weightedTotal', 'rawTotal', 'sessionCount'];
@@ -2575,9 +2578,10 @@ function updateScores(sessionNames) {
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
 
 	    var idCol = MIN_HEADERS.indexOf('id')+1;
-	    if (scoreAvgRow) {
+	    if (scoreAvgRow > 2) {
+		scoreSheet.getRange(scoreAvgRow-1, idCol, 1, 1).setValues([[CURVE_ID]]);
 		scoreSheet.getRange(scoreAvgRow, idCol, 1, 1).setValues([[AVERAGE_ID]]);
-		scoreSheet.getRange(scoreAvgRow+':'+scoreAvgRow).setFontStyle('italic');
+		scoreSheet.getRange((scoreAvgRow-1)+':'+scoreAvgRow).setFontStyle('italic');
 	    }
 
 	    if (SESSION_MAXSCORE_ROW) {
@@ -2586,7 +2590,7 @@ function updateScores(sessionNames) {
 	    }
 
 	    var nUserIds = userInfoSheet.getLastRow()-startRow+1;
-	    var nPrevIds = scoreSheet.getLastRow()-nonmaxStartRow+1;
+	    var nPrevIds = scoreSheet.getLastRow()-userStartRow+1;
 	    if (nUserIds) {
 		var temIds = userInfoSheet.getSheetValues(startRow, idCol, nUserIds, 1);
 		var temNames = userInfoSheet.getSheetValues(startRow, MIN_HEADERS.indexOf('name')+1, nUserIds, 1);
@@ -2601,16 +2605,16 @@ function updateScores(sessionNames) {
 
 		for (var j=0; j<nUserIds; j++) {
 		    // Check that prior IDs match
-		    var prevId = scoreSheet.getSheetValues(nonmaxStartRow+j, idCol, 1, 1)[0][0];
+		    var prevId = scoreSheet.getSheetValues(userStartRow+j, idCol, 1, 1)[0][0];
 		    if (prevId && prevId != temIds[j][0])
-			throw('Id mismatch in row '+(nonmaxStartRow+j)+' of score sheet: expected '+temIds[j][0]+' but found '+prevId+'; fix it or re-create score sheet');
+			throw('Id mismatch in row '+(userStartRow+j)+' of score sheet: expected '+temIds[j][0]+' but found '+prevId+'; fix it or re-create score sheet');
 		}
 
-		scoreSheet.getRange(nonmaxStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
+		scoreSheet.getRange(userStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
 
 		// Clear any 'excess' prior ID values
 		for (var j=nUserIds; j<nPrevIds; j++)
-		    scoreSheet.getRange(nonmaxStartRow+j, idCol, 1, 1).setValue('');
+		    scoreSheet.getRange(userStartRow+j, idCol, 1, 1).setValue('');
 	    }
 	}
 
@@ -2618,6 +2622,7 @@ function updateScores(sessionNames) {
 	var sessionCount = [];
 	var weightedTotal = [];
 	var updatedNames = [];
+	var curDate = new Date();
 	for (var m=0; m<validNames.length; m++) {
 	    var sessionName = validNames[m];
 	    var sessionSheet = getSheet(sessionName);
@@ -2625,11 +2630,12 @@ function updateScores(sessionNames) {
 	    var sessionRowIndex = indexRows(sessionSheet, sessionColIndex['id'], 2);
 	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
-	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
+	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'sessionCurve', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
             var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	    var questions = JSON.parse(sessionEntries.questions);
-	    var gradeDate = parseNumber(sessionEntries.gradeDate) || null;
+	    var gradeDate = sessionEntries.gradeDate || null;
 	    var sessionWeight = parseNumber(sessionEntries.sessionWeight) || 0;
+	    var sessionCurve = sessionEntries.sessionCurve || '';
 	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionEntries.gradeWeight) || 0;
 	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
@@ -2693,7 +2699,7 @@ function updateScores(sessionNames) {
 		var sessionRange = "'"+sessionName+"'!$"+sessionIdColChar+"$"+lookupStartRow+":$"+nameColChar;
 		return 'VLOOKUP($'+scoreIdColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-sessionIdCol+1)+', false)';
 	    }
-
+            Logger.log('scoreSession: '+sessionName+' '+sessionCurve);
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		var lookups = [];
@@ -2710,7 +2716,7 @@ function updateScores(sessionNames) {
 			} else {
 			    var rowValues = sessionSheet.getSheetValues(sessionRowNum, 1, 1, sessionColHeaders.length)[0];
 			    var savedSession = unpackSession(sessionColHeaders, rowValues);
-			    if (savedSession) {
+			    if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
 				var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params);
 				lookups.push( scores.weightedCorrect );
 			    }
@@ -2725,6 +2731,17 @@ function updateScores(sessionNames) {
 		if (lookups.length) {
 		    var lateToken = vlookup('lateToken', j+scoreStartRow);
 		    var cumScore = lookups.join('+');
+		    if (sessionCurve && rowId != MAXSCORE_ID) {
+			if (scoreAvgRow > 2)
+			    scoreSheet.getRange(scoreAvgRow-1, scoreSessionCol, 1, 1).setValues([[sessionCurve]]);
+			if (sessionCurve.charAt(0) == '^') {
+			    if (!SESSION_MAXSCORE_ROW)
+				throw('SESSION_MAXSCORE_ROW must be defined for power curving session '+sessionName);
+			    cumScore = '100*POWER(('+cumScore+')/'+colChar+(userStartRow-1)+','+sessionCurve.slice(1)+')';
+			}
+			if (sessionCurve.charAt(0) == '+')
+			    cumScore = '('+cumScore+sessionCurve+')';
+		    }
 		    var combinedScore = '';
 		    if (sessionAttributes.params.lateCredit) {
 			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", '+sessionAttributes.params.lateCredit+', 1)*( '+cumScore+' )';
@@ -2741,6 +2758,8 @@ function updateScores(sessionNames) {
 		scoreSheet.getRange(scoreAvgRow, scoreSessionCol, 1, 1).setValues([['=AVERAGE('+colChar+avgStartRow+':'+colChar+')']]);
 	    if (scoreFormulas.length)
 		scoreSheet.getRange(scoreStartRow, scoreSessionCol, nids, 1).setValues(scoreFormulas);
+
+	    setValue(sessionName, 'postDate', curDate, INDEX_SHEET);
 	}
 
 	var scoreRawCol = scoreColIndex['rawTotal'];
