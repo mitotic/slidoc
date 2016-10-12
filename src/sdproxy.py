@@ -1516,7 +1516,7 @@ def sheetAction(params, notrace=False):
                                 else:
                                     # Unsubmit if blank value (also clear lateToken)
                                     modValue = ''
-                                    rowValues[columnIndex['lateToken']-1] = ''
+                                    modSheet.getRange(userRow, columnIndex['lateToken']-1, 1, 1).setValues([[ '' ]])
                                 if modValue:
                                     returnInfo['submitTimestamp'] = modValue
                             elif partialSubmission:
