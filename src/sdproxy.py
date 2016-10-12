@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5c'
+VERSION = '0.96.5d'
 
 # Usually modified by importing module
 Options = {
@@ -51,13 +51,13 @@ Options = {
     }
 
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
-RETRY_MAX_COUNT = 5      # Maximum number of failed Google Sheet requests
-CACHE_HOLD_SEC = 3600   # Maximum time (sec) to hold sheet in cache
+RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
+CACHE_HOLD_SEC = 3600    # Maximum time (sec) to hold sheet in cache
 
 # Should be consistent with slidoc_sheets.js
 REQUIRE_LOGIN_TOKEN = True
 REQUIRE_LATE_TOKEN = True
-SHARE_AVERAGES = False
+SHARE_AVERAGES = True
 
 ADMINUSER_ID = 'admin'
 MAXSCORE_ID = '_max_score'
@@ -1770,10 +1770,12 @@ def exportAnswers(sessionName):
     explainSet = set(explainCols.keys())
     for j, rowValues in enumerate(allRows):
         qmaxRow = qmaxCols
+        qShuffle = None
         qAttempted = None
         session_hidden = rowValues[sessionCol-1]
         if session_hidden:
             session = json.loads(session_hidden)
+            qShuffle = session.get('questionShuffle')
             qAttempted = session['questionsAttempted']
             if qAttempted:
                 qmaxRow = max(qmaxRow, max(int(key) for key in qAttempted.keys()) ) # Because JSON serialization converts integer keys to strings
@@ -1792,6 +1794,16 @@ def exportAnswers(sessionName):
                 if qAttempted[qnumberStr].get('explain',''):
                     explainSet.add(qnumber)
                     cellValue += ' ' + sliauth.str_encode(qAttempted[qnumberStr]['explain'])
+            if cellValue == SKIP_ANSWER:
+                cellValue = ''
+            if cellValue and qShuffle:
+                shuffleStr = qShuffle.get(qnumberStr,'') or qShuffle.get(qnumber,'')
+                if shuffleStr:
+                    try:
+                        indexVal = shuffleStr.index(cellValue.upper())
+                        cellValue = chr(ord('A') + indexVal-1)
+                    except Exception, excp:
+                        raise Exception("Unable to unshuffle choice '"+cellValue+"' for user "+rowOutput[0]+"when exporting session "+sessionName)
             rowOutput.append(cellValue)
         outRows.append(rowOutput)
 

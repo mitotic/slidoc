@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5c';
+var VERSION = '0.96.5d';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -89,7 +89,7 @@ var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.co
 
 var REQUIRE_LOGIN_TOKEN = true;
 var REQUIRE_LATE_TOKEN = true;
-var SHARE_AVERAGES = false;
+var SHARE_AVERAGES = true;
 
 // Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}

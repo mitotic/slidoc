@@ -3112,18 +3112,22 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	var shuffleStr = choiceBlock.dataset.shuffle;
 	for (var j=0; j<choice_val.length; j++) {
-            var elemId = slide_id+'-choice-'+choice_val[j].toUpperCase();
-	    if (shuffleStr && shuffleStr.charAt(0) == '1')
-		elemId += '-alt';
-            var setupElem = document.getElementById(elemId);
-            if (!setupElem) {
-		Slidoc.log('Slidoc.choiceClick: Error - Setup failed for choice element '+elemId);
-		return false;
-            }
-	    setupElem.classList.add('slidoc-choice-selected');
+            var setupElem = getChoiceElem(slide_id, choice_val[j], shuffleStr);
+            if (setupElem)
+		setupElem.classList.add('slidoc-choice-selected');
 	}
     }
     return false;
+}
+
+function getChoiceElem(slideId, choiceValue, shuffleStr) {
+    var elemId = slideId+'-choice-'+choiceValue.toUpperCase();
+    var choiceElem = null;
+    if (shuffleStr && shuffleStr.charAt(0) == '1')  // Try alt element first
+	choiceElem = document.getElementById(elemId+'-alt');
+    if (!choiceElem)
+	choiceElem = document.getElementById(elemId);
+    return choiceElem;
 }
 
 function forceQuit(force, msg) {
@@ -3220,10 +3224,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	    var shuffleStr = choiceBlock.dataset.shuffle;
 	    for (var j=0; j<corr_answer.length; j++) {
-		var elemId = slide_id+'-choice-'+corr_answer[j].toUpperCase();
-		if (shuffleStr && shuffleStr.charAt(0) == '1')
-		    elemId += '-alt';
-		var corr_choice = document.getElementById(elemId);
+		var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
 		if (corr_choice) {
 		    corr_choice.style['font-weight'] = 'bold';
 		}
