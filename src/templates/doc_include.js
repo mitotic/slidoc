@@ -1470,6 +1470,7 @@ function selectUserCallback(userId, result, retStatus) {
     Sliobj.feedback = unpacked.feedback || null;
     Sliobj.score = null;
     scoreSession(Sliobj.session);
+    Slidoc.showScore();
     Sliobj.userGrades[userId].weightedCorrect = Sliobj.scores.weightedCorrect;
     if (Sliobj.scores.weightedCorrect)
 	updateGradingStatus(userId);
@@ -1536,11 +1537,13 @@ function showGradesCallback(userId, result, retStatus) {
 	html += 'Weighted total: <b>'+result.weightedTotal+'</b><br>';
     for (var j=0; j<sessionKeys.length; j++) {
 	var grade = result[sessionKeys[j]];
+	if (isNumber(grade))
+	    grade = grade.toFixed(2);
 	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ (grade == ''?'missed':grade) +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    var sessionIndex = retStatus.info.headers.indexOf(sessionKeys[j]);
 	    if (retStatus.info.curve && retStatus.info.curve[sessionIndex].charAt(0) == '^')
-		html += ' curved out of 100'+retStatus.info.maxScores[sessionIndex];
+		html += ' curved out of 100';
 	    else if (retStatus.info.maxScores)
 		html += ' out of '+retStatus.info.maxScores[sessionIndex];
 
@@ -3779,12 +3782,33 @@ Slidoc.submitStatus = function () {
 	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">View gradebook</span>';
 
     if (Sliobj.adminState) {
+	if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING')
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(false);">Unsubmit session for user (and clear late token)</span>';
+	else
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(true);">Force submit session for user</span>';
 	if (Sliobj.gradeDateStr)
 	    html += '<hr>Grades released to students at '+Sliobj.gradeDateStr;
 	else
-	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span';
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span>';
     }
     Slidoc.showPopup(html);
+}
+
+Slidoc.forceSubmit = function(submit) {
+    var userId = getUserId();
+    var name = (Sliobj.userGrades && Sliobj.userGrades[userId]) ? Sliobj.userGrades[userId].name : userId;
+    var msg = submit ? 'Force submission of session for '+name : 'Unsubmit session for '+name;
+    if (!window.confirm(msg+'?'))
+	return;
+    var gsheet = getSheet(Sliobj.sessionName);
+    var updates = {id: userId};
+    updates.submitTimestamp = submit ? null : '';
+    gsheet.updateRow(updates, {}, forceSubmitCallback);
+}
+
+function forceSubmitCallback() {
+    alert('Reloading after submit status change');
+    location.reload(true);
 }
 
 Slidoc.saveClick = function() {

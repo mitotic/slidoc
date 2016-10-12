@@ -1708,7 +1708,7 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-SLIDE_BREAK_RE = re.compile(r'^ {0,3}(--- *|##[^#].*)\n?$')
+SLIDE_BREAK_RE = re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
     
 def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
@@ -2383,6 +2383,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if 'grade_response' in file_config.features and gd_hmac_key is None:
                 # No grading without google sheet
                 file_config.features.remove('grade_response')
+            if 'slides_only' in file_config.features and config.printable:
+                file_config.features.remove('slides_only')
+                message('slides_only feature suppressed by --printable option')
 
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0

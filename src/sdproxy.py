@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5e'
+VERSION = '0.96.5f'
 
 # Usually modified by importing module
 Options = {
@@ -841,6 +841,10 @@ def sheetAction(params, notrace=False):
             qprefix = selectedUpdates[1][0].split('_')[0]
             voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
 
+        alterSubmission = False
+        if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0] == 'submitTimestamp':
+            alterSubmission = True
+
         if not adminUser and selectedUpdates and not voteSubmission:
             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
@@ -1233,7 +1237,7 @@ def sheetAction(params, notrace=False):
                     if voteDate:
                         returnInfo['voteDate'] = voteDate
 
-                    if dueDate and not prevSubmitted and not voteSubmission:
+                    if dueDate and not prevSubmitted and not voteSubmission and not alterSubmission:
                         # Check if past submission deadline
                         lateTokenCol = columnIndex.get('lateToken')
                         lateToken = None
@@ -1471,7 +1475,7 @@ def sheetAction(params, notrace=False):
                             # Admin can modify grade columns only for submitted sessions before 'effective' due date
                             # and only for non-late submissions thereafter
                             allowGrading = prevSubmitted or (pastSubmitDeadline and lateToken != LATE_SUBMIT)
-                            if not allowGrading and not importSession:
+                            if not allowGrading and not importSession and not alterSubmission:
                                 raise Exception("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteSubmission:
@@ -1504,9 +1508,20 @@ def sheetAction(params, notrace=False):
                                 modValue = curDate
 
                         elif colHeader == 'submitTimestamp':
-                            if partialSubmission:
+                            if alterSubmission:
+                                if colValue is None:
+                                    modValue = curDate
+                                elif colValue:
+                                    modValue = createDate(colValue)
+                                else:
+                                    # Unsubmit if blank value (also clear lateToken)
+                                    modValue = ''
+                                    rowValues[columnIndex['lateToken']-1] = ''
+                                if modValue:
+                                    returnInfo['submitTimestamp'] = modValue
+                            elif partialSubmission:
                                 modValue = curDate
-                                returnInfo['submitTimestamp'] = curDate
+                                returnInfo['submitTimestamp'] = modValue
                             elif adminUser and colValue:
                                 modValue = createDate(colValue)
 

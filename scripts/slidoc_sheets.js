@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5e';
+var VERSION = '0.96.5f';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -511,6 +511,11 @@ function sheetAction(params) {
 		voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
 	    }
 
+            var alterSubmission = false;
+            if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0] == 'submitTimestamp') {
+		alterSubmission = true;
+            }
+
 	    if (!adminUser && selectedUpdates && !voteSubmission)
 		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
@@ -929,7 +934,7 @@ function sheetAction(params) {
 		    if (voteDate)
 			returnInfo.voteDate = voteDate;
 
-		    if (dueDate && !prevSubmitted && !voteSubmission) {
+		    if (dueDate && !prevSubmitted && !voteSubmission && !alterSubmission) {
 			// Check if past submission deadline
 			var lateTokenCol = columnIndex['lateToken'];
 			var lateToken = null;
@@ -1183,7 +1188,7 @@ function sheetAction(params) {
 			    // Admin can modify grade columns only for submitted sessions before 'effective' due date
 			    // and only for non-late submissions thereafter
 			    var allowGrading = prevSubmitted || (pastSubmitDeadline && lateToken != LATE_SUBMIT);
-			    if (!allowGrading && !importSession)
+			    if (!allowGrading && !importSession && !alterSubmission)
 				throw("Error::Cannot selectively update non-submitted/non-late session for user "+userId+" in sheet '"+sheetName+"'");
 			}
 		    }
@@ -1219,9 +1224,22 @@ function sheetAction(params) {
 				modValue = curDate;
 			    }
 			} else if (colHeader == 'submitTimestamp') {
-			    if (partialSubmission) {
+			    if (alterSubmission) {
+                                if (colValue == null) {
+                                    modValue = curDate;
+                                } else if (colValue) {
+                                    modValue = createDate(colValue);
+                                } else {
+                                    // Unsubmit if blank value (also clear lateToken)
+                                    modValue = '';
+                                    rowValues[columnIndex['lateToken']-1] = '';
+                                }
+                                if (modValue) {
+                                    returnInfo['submitTimestamp'] = modValue;
+                                }
+                            } else if (partialSubmission) {
 				modValue = curDate;
-				returnInfo.submitTimestamp = curDate;
+				returnInfo.submitTimestamp = modValue;
 			    } else if (adminUser && colValue) {
 				modValue = createDate(colValue);
 			    }
