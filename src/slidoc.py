@@ -2032,7 +2032,36 @@ def strip_name(filepath, split_char=''):
     # Strips dir/extension from filepath, and returns last subname assuming split_char to split subnames
     name = os.path.splitext(os.path.basename(filepath))[0]
     return name.split(split_char)[-1] if split_char else name
-    
+
+N_INDEX_ENTRIES = 4
+def read_index(filepath):
+    # Read one or more index entries from comment in the header portion of HTML file
+    index_entries = []
+    if not os.path.exists(filepath):
+        return index_entries
+
+    with open(filepath) as f:
+        found_entries = False
+        while 1:
+            line = f.readline()
+            if not line:
+                break
+            if line.strip() == Index_prefix.strip():
+                found_entries = True
+                break
+
+        tem_list = []
+        while found_entries:
+            line = f.readline()
+            if not line or line.strip().startswith(Index_suffix.strip()):
+                break
+            tem_list.append(line.strip())
+            if len(tem_list) == N_INDEX_ENTRIES:
+                index_entries.append(tem_list)
+                tem_list = []
+
+    return index_entries
+
 def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_char=''):
     if opts == 'args':
         # Generate top navigation menu from argument filenames
@@ -2496,8 +2525,27 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             pagedown_load = True
         if renderer.load_python:
             skulpt_load = True
-        
-        topnav_html = gen_topnav(topnav_opts, fnames=orig_fnames, site_url=file_config.site_url, separate=config.separate) if topnav_opts else ''
+
+        topnav_html = ''
+        sessions_due_html = ''
+        if topnav_opts:
+            topnav_html = gen_topnav(topnav_opts, fnames=orig_fnames, site_url=file_config.site_url, separate=config.separate)
+            sessions_due = []
+            for opt in topnav_opts.split(','):
+                if opt != '/index.html' and opt.endswith('/index.html'):
+                    index_entries = read_index(dest_dir+opt)
+                    for ind_fname, ind_fheader, doc_str, iso_due_str in index_entries:
+                        if iso_due_str and iso_due_str != '-':
+                            sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str])
+            if sessions_due:
+                sessions_due.sort(reverse=True)
+                due_html = []
+                for ind_fpath, ind_fname, doc_str, iso_due_str in sessions_due:
+                    doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (ind_fpath, doc_str)
+                    due_html.append('<li>%s: <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (iso_due_str[:10], ind_fname, SPACER6, doc_link))
+                sessions_due_html = '<ul class="slidoc-toc-list" style="list-style-type: none;">\n' + '\n'.join(due_html) + '\n</ul>\n'
+        md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
+
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
@@ -2540,14 +2588,21 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             else:
                 file_type = 'paced'
 
+            admin_ended = bool(admin_due_date.get(fname))
+            doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
+            iso_due_str = '-'
             doc_str = file_type + ' exercise'
-            if admin_due_date.get(fname):
-                end_time = sliauth.parse_date(admin_due_date[fname]).ctime()
-                doc_str += ', ended '+(end_time[:-8]+'Z' if end_time.endswith(':00.000Z') else end_time)
-            elif time_str:
-                doc_str += ', due '+(time_str[:-8]+'Z' if time_str.endswith(':00.000Z') else time_str)
+            if doc_date_str:
+                date_time = sliauth.parse_date(doc_date_str)
+                local_time_str = date_time.ctime()
+                if admin_ended:
+                    doc_str += ', ended '
+                else:
+                    doc_str += ', due '
+                    iso_due_str = sliauth.iso_date(date_time)
 
-            paced_files[fname] = {'type': file_type, 'due_date': time_str, 'doc_str': doc_str}
+                doc_str += (local_time_str[:-8]+'Z' if local_time_str.endswith(':00.000Z') else local_time_str)
+            paced_files[fname] = {'type': file_type, 'due_date': iso_due_str, 'doc_str': doc_str}
 
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
@@ -2565,7 +2620,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment
-                head = '\n'.join([Index_prefix, fheader, paced_files[fname]['doc_str'] if js_params['paceLevel'] else 'view', Index_suffix, head])
+                if js_params['paceLevel']:
+                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date']]
+                else:
+                    index_entries = [fname, fheader, 'view', '-']
+                head = '\n'.join([Index_prefix] + index_entries + [Index_suffix, head])
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
@@ -2626,27 +2685,24 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
 
+        toc_list = []
         if config.make_toc:
             # Create ToC using header info from .html files
             for j, outpath in enumerate(orig_outpaths):
                 if not os.path.exists(outpath):
                     abort('Output file '+outpath+' not readable for indexing')
-                fheader = ''
-                doc_str = ''
-                with open(outpath) as f:
-                    while 1:
-                        line = f.readline()
-                        if not line:
-                            break
-                        if line.strip() == Index_prefix:
-                            fheader = f.readline().strip()
-                            doc_str = f.readline().strip()
-                if not fheader:
+                index_entries = read_index(outpath)
+                if not index_entries:
                     abort('Index header not found in '+outpath)
+                _, fheader, doc_str, iso_due_str = index_entries[0]
                 doc_link = ''
                 if doc_str:
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
                 toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
+                toc_list.append(orig_fnames[j])
+                toc_list.append(fheader)
+                toc_list.append(doc_str)
+                toc_list.append(iso_due_str)
         else:
             # Create ToC using info from rendering
             ifile = 0
@@ -2708,7 +2764,12 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 left_container_suffix = '</div> <!--slidoc-left-container-->\n'
                 combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
             elif not return_html:
-                md2md.write_file(tocfile, Html_header, head_html,
+                if toc_list:
+                    # Include file header info as HTML comment
+                    toc_head_html = '\n'.join([Index_prefix]+toc_list+[Index_suffix]) + head_html
+                else:
+                    toc_head_html = head_html
+                md2md.write_file(tocfile, Html_header, toc_head_html,
                                   mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
                 message("Created ToC file:", tocfile)
 
@@ -2853,8 +2914,8 @@ Html_footer = '''
 
 Formatted_by = 'Document formatted by <a href="https://github.com/mitotic/slidoc" class="slidoc-clickable">slidoc</a>.'
 
-Index_prefix = '<!--SlidocIndex'
-Index_suffix = 'SlidocIndex-->'
+Index_prefix = '\n<!--SlidocIndex'
+Index_suffix = 'SlidocIndex-->\n'
 
 Toc_header = '''
 <h3>Table of Contents</h3>
@@ -3023,7 +3084,7 @@ parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', 
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
-parser.add_argument('--session_curve', default='', help='Session curve parameter, e.g., ^0.5 OR +6')
+parser.add_argument('--session_curve', help='Session curve parameter, e.g., ^0.5 OR +6')
 parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')

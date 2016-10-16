@@ -168,8 +168,8 @@ code.slidoc-plugin-share-resp-prefix {
     position: absolute;
     top: 100px;
     left: 50%;
-    width: 500px;
-    margin-left: -250px; /*Half the value of width to center div*/
+    width: 400px;
+    margin-left: -200px; /*Half the value of width to center div*/
     /* margin-top: -100px;  Half the value of height to center div*/
     background: #fff;
     border-radius: 10px;

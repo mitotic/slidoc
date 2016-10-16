@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5f';
+var VERSION = '0.96.5g';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -2780,6 +2780,8 @@ function updateScores(sessionNames) {
 	    setValue(sessionName, 'postDate', curDate, INDEX_SHEET);
 	}
 
+	var scoreColIndex = indexColumns(scoreSheet);
+	var nids = scoreSheet.getLastRow()-scoreStartRow+1;
 	var scoreRawCol = scoreColIndex['rawTotal'];
 	var scoreSessionCountCol = scoreColIndex['sessionCount'];
 	var scoreWeightedCol = scoreColIndex['weightedTotal'];
