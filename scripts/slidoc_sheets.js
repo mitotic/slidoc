@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5g';
+var VERSION = '0.96.5h';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -104,6 +104,7 @@ var TESTUSER_ID = '_test_user';
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 var TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', ''];
 
+var SETTINGS_SHEET = 'settings_slidoc';
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
 var SCORES_SHEET = 'scores_slidoc';
@@ -247,9 +248,13 @@ function sheetAction(params) {
 	if (!proxy && !sheetName)
 	    throw('Error:SHEETNAME:No sheet name specified');
 
-	var protectedSheet = (sheetName == SCORES_SHEET);
-	var restrictedSheet = (sheetName.slice(-7) == '_slidoc') && !protectedSheet;
-	var loggingSheet = (sheetName.slice(-4) == '_log');
+	// Read-only sheets
+	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != INDEX_SHEET) || sheetName.match(/-answers$/) || sheetName.match(/-stats$/);
+	// Admin-only access sheets
+	var restrictedSheet = (sheetName.match(/_slidoc$/) && sheetName != SCORES_SHEET);
+
+	var loggingSheet = sheetName.match(/_log$/);
+
 	var sessionEntries = null;
 	var sessionAttributes = null;
 	var questions = null;
@@ -314,8 +319,8 @@ function sheetAction(params) {
 		    }
 
 		    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
-		    if (updateHeaders.length > temHeaders.length)
-			throw("Error:PROXY_HEADER_COUNT:Number of headers exceeds that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
+		    if (updateHeaders.length != temHeaders.length)
+			throw("Error:PROXY_HEADER_COUNT:Number of headers does not equal that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
 		    for (var m=0; m<updateHeaders.length; m++) {
 			if (updateHeaders[m] != temHeaders[m])
 			    throw("Error:PROXY_HEADER_NAMES:Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
@@ -343,6 +348,7 @@ function sheetAction(params) {
 			var updateColumnIndex = indexColumns(updateSheet);
 			var idCol = updateColumnIndex['id'];
 			var nameCol = updateColumnIndex['name'] || idCol;
+			var totalCol = updateColumnIndex['q_grades'];
 
 			var updateStickyRows = lastRowNum;
 			if (lastRowNum > 1) {
@@ -382,6 +388,13 @@ function sheetAction(params) {
 				    modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues, TESTUSER_ID);
 				}
 				updateSheet.insertRowBefore(modRow);
+			    } else {
+				// Pre-existing row
+				if (totalCol) {
+				    // Do not overwrite old totalCol value, if new value is not a formula
+				    if (!rowVals[totalCol-1] || (''+rowVals[totalCol-1]).charAt(0) != '=')
+				        rowVals[totalCol-1] = updateSheet.getRange(modRow, totalCol, 1, 1).getFormula();
+				}
 			    }
 			    for (var m=0; m<rowVals.length; m++)
 				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);

@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5g'
+VERSION = '0.96.5h'
 
 # Usually modified by importing module
 Options = {
@@ -68,6 +68,7 @@ TESTUSER_ID = '_test_user'   #var
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
 TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']  #var
 
+SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
@@ -708,8 +709,11 @@ def sheetAction(params, notrace=False):
             if not validateHMAC('id:'+paramId+':'+params.get('token',''), Options['AUTH_KEY']):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
 
-        protectedSheet = (sheetName == SCORES_SHEET)
-        restrictedSheet = (sheetName.endswith('_slidoc') and not protectedSheet)
+        # Read-only sheets
+        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != INDEX_SHEET) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
+        # Admin-only access sheets
+        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != SCORES_SHEET)
+
         loggingSheet = sheetName.endswith('_log')
 
         sessionEntries = None

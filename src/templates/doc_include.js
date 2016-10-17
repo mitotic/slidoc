@@ -248,8 +248,10 @@ function setupCache(auth, callback) {
 		Sliobj.userGrades = {};
 		for (var j=0; j<roster.length; j++) {
 		    var id = roster[j][1];
+		    var rowObj = allRows[id];
 		    Sliobj.userList.push(id);
-		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], team: roster[j][2], submitted:null, grading: null};
+		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], team: roster[j][2], submitted:null, grading: null,
+					     q_grades: (rowObj && isNumber(rowObj.q_grades)) ? rowObj.q_grades : ''};
 		}
 
 		var userId = auth.id;
@@ -809,7 +811,7 @@ Slidoc.viewHelp = function () {
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
 	if (Sliobj.voteDate)
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
-	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && Sliobj.feedback.q_grades != null)
+	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && isNumber(Sliobj.feedback.q_grades))
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
     } else {
 	var cookieUserInfo = getServerCookie();
@@ -1482,12 +1484,14 @@ function selectUserCallback(userId, result, retStatus) {
     var unpacked = unpackSession(result);
     Sliobj.session = unpacked.session;
     Sliobj.feedback = unpacked.feedback || null;
+    Sliobj.userGrades[userId].q_grades = Sliobj.feedback && isNumber(Sliobj.feedback.q_grades) ? Sliobj.feedback.q_grades : '';
     Sliobj.score = null;
     scoreSession(Sliobj.session);
     Slidoc.showScore();
     Sliobj.userGrades[userId].weightedCorrect = Sliobj.scores.weightedCorrect;
-    if (Sliobj.scores.weightedCorrect)
+    if (Sliobj.userGrades[userId].q_grades || Sliobj.userGrades[userId].weightedCorrect) {
 	updateGradingStatus(userId);
+    }
     prepGradeSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
     showSubmitted();
@@ -2126,8 +2130,13 @@ function updateGradingStatus(userId) {
 	else
 	    html += gradeCount
     }
+    var scores = [];
+    if (Sliobj.userGrades[userId].q_grades)
+	scores.push(''+Sliobj.userGrades[userId].q_grades);
     if (Sliobj.userGrades[userId].weightedCorrect)
-	html += ' (' + Sliobj.userGrades[userId].weightedCorrect + ')';
+	scores.push(''+Sliobj.userGrades[userId].weightedCorrect);
+    if (scores.length)
+	html += ' (' + scores.join('+') + ')';
 
     option.dataset.nograding = (Sliobj.userGrades[userId].allowGrading && gradeCount) ? '' : 'nograding';
     option.innerHTML = '';
@@ -2504,7 +2513,7 @@ var GRADE_COMMENT_RE = /^ *\(([-+]\d+.?\d*)\)(.*)$/;
 Sliobj.adaptiveComments = {};
 
 function cacheComments(qnumber, userId, comments, update) {
-    if (!('adaptive_grading' in Sliobj.params.features))
+    if (!('adaptive_rubric' in Sliobj.params.features))
 	return;
     Slidoc.log("cacheComments", qnumber, userId, update);
     if (!(qnumber in Sliobj.adaptiveComments))
@@ -2551,7 +2560,7 @@ function cacheComments(qnumber, userId, comments, update) {
 }
 
 function displayCommentSuggestions(slideId, qnumber) {
-    if (!('adaptive_grading' in Sliobj.params.features))
+    if (!('adaptive_rubric' in Sliobj.params.features))
 	return;
     Slidoc.log("displayCommentSuggestions", slideId, qnumber);
     var suggestElem = document.getElementById(slideId+'-comments-suggestions');
