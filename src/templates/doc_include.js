@@ -486,6 +486,8 @@ function onreadystateaux() {
 // Section 9: Utility functions
 //////////////////////////////////
 
+function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1; }
+
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
 function parseNumber(x) {
@@ -1443,6 +1445,18 @@ function switchUser() {
     selectUser(GService.gprofile.auth);
 }
 
+Slidoc.switchToUser = function(userId) {
+    if (!(userId in Sliobj.userGrades))
+	return;
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Sliobj.gradingUser = Sliobj.userGrades[userId].index;
+    var option = document.getElementById('slidoc-switch-user-'+Sliobj.gradingUser);
+    if (option)
+	option.selected = true;
+    selectUser(GService.gprofile.auth);
+}
+
 function selectUser(auth, callback) {
     var userId = Sliobj.userList[Sliobj.gradingUser-1];
     Slidoc.log('selectUser:', auth, userId);
@@ -1939,7 +1953,7 @@ function initSessionPlugins(session) {
     for (var j=0; j<allContent.length; j++)
 	contentElems.push(allContent[j]);
 
-    contentElems.sort(function(a,b){if (a.dataset.number == b.dataset.number) return 0; else (a.dataset.number > b.dataset.number) ? 1 : -1;});    
+    contentElems.sort( function(a,b){return cmp(a.dataset.number, b.dataset.number);} );    
 
     var slideData = null;
     for (var j=0; j<contentElems.length; j++) {
@@ -2472,6 +2486,8 @@ function unpackSession(row) {
 	    feedback[qnumber][hmatch[2]] = value;
 	    if (value != null && value != '')
 		count += 1;
+	    if (hmatch[2] == 'comments')
+		cacheComments(qnumber, row.id, value);
 	} else if (key == 'q_grades' && isNumber(value)) {
 	    // Total grade
 	    feedback.q_grades = value;
@@ -2482,6 +2498,133 @@ function unpackSession(row) {
 
     return {session: session,
 	    feedback: count ? feedback : null};
+}
+
+var GRADE_COMMENT_RE = /^ *\(([-+]\d+.?\d*)\)(.*)$/;
+Sliobj.adaptiveComments = {};
+
+function cacheComments(qnumber, userId, comments, update) {
+    if (!('adaptive_grading' in Sliobj.params.features))
+	return;
+    Slidoc.log("cacheComments", qnumber, userId, update);
+    if (!(qnumber in Sliobj.adaptiveComments))
+	Sliobj.adaptiveComments[qnumber] = {};
+    var qComments = Sliobj.adaptiveComments[qnumber];
+    if (update) {
+	// Erase all previous entries for this user in current question
+	var prevLines = Object.keys(qComments);
+	for (var j=0; j<prevLines.length; j++) {
+	    var qCommentLine = qComments[prevLines[j]];
+	    if (userId in qCommentLine.userIds) {
+		delete qCommentLine.userIds[userId];
+		if (!Object.keys(qCommentLine.userIds).length)
+		    delete qComments[prevLines[j]];
+	    }
+	}
+    }
+    var lines = comments.split(/\r?\n/);
+    for (var j=0; j<lines.length; j++) {
+	// Add entries for this user
+	var line = lines[j];
+	line = line.trim();
+	if (!line)
+	    continue;
+	var cscore = '';
+	var cmatch = GRADE_COMMENT_RE.exec(line);
+	if (cmatch) {
+	    cscore = cmatch[1];
+	    line = cmatch[2].trim();
+	}
+	if (line in qComments) {
+	    var qCommentLine = qComments[line];
+	    qCommentLine.userIds[userId] = 1;
+	    if (qCommentLine.score != null && qCommentLine.score != cscore) {
+		alert("Conflicting scores for comment on question "+qnumber+" response: previously '"+qCommentLine.score+"' but now '"+cscore+"': "+line);
+		qCommentLine.score = null;
+	    }
+	} else {
+	    var qCommentLine = {score: cscore, userIds: {}};
+	    qComments[line] = qCommentLine;
+	    qCommentLine.userIds[userId] = 1;
+	}
+    }
+}
+
+function displayCommentSuggestions(slideId, qnumber) {
+    if (!('adaptive_grading' in Sliobj.params.features))
+	return;
+    Slidoc.log("displayCommentSuggestions", slideId, qnumber);
+    var suggestElem = document.getElementById(slideId+'-comments-suggestions');
+    if (!qnumber) {
+	if (suggestElem)
+	    suggestElem.style.display = 'none';
+	return;
+    }
+    var dispComments = [];
+    var qComments = Sliobj.adaptiveComments[qnumber];
+    if (qComments) {
+	// Sort comment lines by frequency of occurrence
+	var lines = Object.keys(qComments);
+	for (var j=0; j<lines.length; j++) {
+	    var qCommentLine = qComments[lines[j]];
+	    dispComments.push( [Object.keys(qCommentLine.userIds).length, lines[j], qCommentLine.score] )
+	}
+	// Sort by negative counts
+	dispComments.sort( function(a,b){if (a[0] == b[0]) return cmp(a[1].toLowerCase(),b[1].toLowerCase());
+					 else return cmp(-a[0], -b[0]); } );
+    }
+    if (suggestElem) {
+	var html = ['Suggested comments:<br>\n'];
+	for (var j=0; j<dispComments.length; j++) {
+	    var cscore = dispComments[j][2] || 0;
+	    html.push( '<code><span><span class="slidoc-clickable" onclick="Slidoc.appendComment(this,'+cscore+",'"+slideId+"');"+'">('+(cscore||'')+')</span> <span>'+escapeHtml(dispComments[j][1])+'</span></span> [<span class="slidoc-clickable" onclick="Slidoc.trackComment(this,'+qnumber+');">'+(dispComments[j][0])+'</span>]</code><br>\n' );
+	}
+	suggestElem.innerHTML = html.join('\n');
+	suggestElem.style.display = null;
+    }
+}
+
+Slidoc.appendComment = function (elem, cscore, slideId) {
+    Slidoc.log("Slidoc.appendComment", elem, cscore, slideId);
+    var questionAttrs = getQuestionAttrs(slideId);
+    var maxScore = questionAttrs.gweight||0;
+    var gradeElement = document.getElementById(slideId+'-grade-element');
+    var gradeInput = document.getElementById(slideId+'-grade-input');
+    var commentsArea = document.getElementById(slideId+'-comments-textarea');
+    var prevComments = commentsArea.value;
+    if (prevComments && !/\n$/.exec(prevComments))
+	prevComments += '\n';
+    commentsArea.value = prevComments + (cscore ? elem.parentNode.textContent : elem.parentNode.firstElementChild.nextElementSibling.textContent);
+    if (cscore && maxScore) {
+	var scoreVal = parseFloat(cscore);
+	if (gradeInput.value) {
+	    gradeInput.value = '' + parseFloat((parseFloat(gradeInput.value) + scoreVal).toFixed(3));
+	} else if (scoreVal < 0) {
+	    gradeInput.value = '' + parseFloat((maxScore + scoreVal).toFixed(3));
+	} else {
+	    gradeInput.value = '' + scoreVal;
+	}
+    }
+}
+
+Slidoc.trackComment = function (elem, qnumber) {
+    var qComments = Sliobj.adaptiveComments[qnumber];
+    if (!qComments)
+	return;
+    var line = elem.parentNode.firstElementChild.firstElementChild.nextElementSibling.textContent.trim();
+    var qCommentLine = qComments[line];
+    if (!qCommentLine) {
+	alert('Comment not found: '+line);
+	return;
+    }
+    var userIds = Object.keys(qCommentLine.userIds);
+    var html = '<ul class="slidoc-contents-list">\n';
+    for (var j=0; j < userIds.length; j++) {
+	var userId = userIds[j];
+	html += '<li class="slidoc-clickable slidoc-contents-header" onclick="Slidoc.switchToUser('+"'"+userId+"'"+');">'+Sliobj.userGrades[userId].name+'</li>';
+    }
+    html += '</ul>\n';
+    Slidoc.showPopup(html);
 }
 
 function showPendingCalls() {
@@ -3929,7 +4072,6 @@ function conceptStats(tags, tallies) {
     for (var j=0; j<tags.length; j++) {
 	scores.push([tags[j], tallies[j][0], tallies[j][1]]);
     }
-    function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1;}
     scores.sort(function(a,b){return cmp(b[1]/Math.max(1,b[2]), a[1]/Math.max(1,a[2])) || cmp(a[0].toLowerCase(), b[0].toLowerCase());});
 
     var html = '<table class="slidoc-missed-concepts-table">';
@@ -3978,7 +4120,9 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var gradeElement = document.getElementById(slide_id+'-grade-element');
 	setTimeout(function(){if (gradeElement) gradeElement.scrollIntoView(true); gradeInput.focus();}, 200);
 	Slidoc.reportTestAction('gradeStart');
+	displayCommentSuggestions(slide_id, question_attrs.qnumber);
     } else {
+	displayCommentSuggestions(slide_id);
 	var gradeValue = gradeInput.value.trim();
 
 	if (gradeValue && gradeValue > (question_attrs.gweight||0)) {
@@ -3997,6 +4141,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	if (question_attrs.gweight)
 	    updates[gradeField] = gradeValue;
 	updates[commentsField] = commentsValue;
+	cacheComments(question_attrs.qnumber, userId, commentsValue, true);
 	var teamUpdate = '';
 	if (question_attrs.team == 'response' && Sliobj.session.team)
 	    teamUpdate = Sliobj.session.team;

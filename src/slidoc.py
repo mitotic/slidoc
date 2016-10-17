@@ -639,7 +639,8 @@ class SlidocRenderer(MathRenderer):
   </div>
 '''
     comments_template_a = '''
-  <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="5" >  </textarea>
+  <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="7" ></textarea>
+  <div id="%(sid)s-comments-suggestions" class="slidoc-comments-suggestions" style="display: none;"></div>
 '''
     render_template = '''
   <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-button slidoc-render-button" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
@@ -3033,6 +3034,7 @@ def abort(msg):
 Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
 
 # Features
+#   adaptive_grading: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents
 #   delay_answers: Correct answers and score are hidden from users until session is graded
 #   equation_number: Number equations sequentially
@@ -3049,7 +3051,7 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
+Features_all = ['adaptive_grading', 'assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)

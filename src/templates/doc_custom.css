@@ -215,6 +215,12 @@ body.slidoc-sidebar-view .slidoc-sidebar-right-wrapper {
     margin: auto;
 }
 
+/* Adaptive grading */
+.slidoc-comments-suggestions {
+    overflow: scroll;
+    max-height: 150px;
+}
+
 /* iframe */
 
 iframe {
