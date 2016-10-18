@@ -1471,18 +1471,20 @@ function selectUser(auth, callback) {
 	callback(auth);  // Usually callback slidocReadyAux1
     } else {
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.getRow(userId, {}, selectUserCallback.bind(null, userId));
+	gsheet.getRow(userId, {}, selectUserCallback.bind(null, auth, userId));
     }
 }
 
-function selectUserCallback(userId, result, retStatus) {
-    Slidoc.log('selectUserCallback:', userId, result, retStatus);
+function selectUserCallback(auth, userId, result, retStatus) {
+    Slidoc.log('selectUserCallback:', auth, userId, result, retStatus);
     if (!result) {
 	sessionAbort('ERROR in selectUserCallback: '+ retStatus.error);
     }
     Slidoc.reportTestAction('selectUser');
     var unpacked = unpackSession(result);
     Sliobj.session = unpacked.session;
+    if (Sliobj.session.displayName)
+	auth.displayName = Sliobj.session.displayName;
     Sliobj.feedback = unpacked.feedback || null;
     Sliobj.userGrades[userId].q_grades = Sliobj.feedback && isNumber(Sliobj.feedback.q_grades) ? Sliobj.feedback.q_grades : '';
     Sliobj.score = null;
@@ -2019,6 +2021,108 @@ Slidoc.pluginButtonClick = function () {
     if (slide_id in Sliobj.buttonPlugins)
 	Slidoc.PluginManager.optCall.apply(null, [Sliobj.buttonPlugins[slide_id], 'buttonClick']);
     return false;
+}
+
+
+Slidoc.fileTypeMap = {
+    'application/pdf': 'pdf'
+}
+Slidoc.makeUserFileSuffix = function(displayName) {
+    var match = /^([- #\w]+)(,\s*([A-Z]).*)$/i.exec(displayName||'');
+    if (match)
+	return '-' + match[1].trim().replace('#','').replace(' ','-').toLowerCase() + (match[3] ? '-'+match[3].toLowerCase() : '');
+    else
+	return '';
+}
+
+
+Slidoc.uploadFile = function() {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    var html = ['<b>Late file upload:</b> ',
+		'Please obtain permission from instructor before uploading files late. Otherwise, late uploads will be ignored.',
+	        '<p></p><span id="slidoc-uploadpopup-uploadlabel">Select file or drag-and-drop over button to upload:</span>',
+		'<input type="file" id="slidoc-uploadpopup-uploadbutton" class="slidoc-clickable slidoc-button slidoc-plugin-Upload-button slidoc-uploadpopup-uploadbutton" onclick="Slidoc.uploadAction();"></input>'];
+    Slidoc.showPopup(html.join(''));
+
+    var filePrefix = 'Late/Uploaded'+Slidoc.makeUserFileSuffix(Sliobj.session.displayName)+'-'+(''+Math.random()).slice(2,10);
+    var uploadElem = document.getElementById('slidoc-uploadpopup-uploadbutton');
+    uploadElem.addEventListener('change', Slidoc.uploadAction, false);
+    Sliobj.uploadHandlerActive = Slidoc.uploadHandler.bind(null, 'Upload', Sliobj.uploadFileCallback, filePrefix, '', null);
+}
+
+Sliobj.uploadFileCallback = function(value) {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    alert('Successfully uploaded file '+value.origName);
+}
+
+Sliobj.uploadHandlerActive = null;
+Slidoc.uploadAction = function(evt) {
+    if (!evt)
+	return;
+    var handler = Sliobj.uploadHandlerActive;
+    Sliobj.uploadHandlerActive = null;
+    if (handler)
+	handler(evt);
+    else
+	alert('Error in file upload; no handler');
+}
+
+Slidoc.uploadHandler = function(pluginName, uploadCallback, filePrefix, teamName, fileTypes, evt) {
+    // uploadCallback({origName:, fileType:, name:, url:, fileKey:})
+    Slidoc.log('Slidoc.uploadHandler:', pluginName, !!uploadCallback, filePrefix, teamName, fileTypes, evt);
+    if (!evt || !evt.target || !evt.target.files)
+	return;
+    var files = evt.target.files; // FileList object
+    if (files.length != 1) {
+	alert("Please select a single file");
+	return;
+    }
+    fileTypes = fileTypes || null;
+
+    var file = files[0];
+    var origName = file.name;
+    var origType = ((file.type ? Slidoc.fileTypeMap[file.type]:'') || origName.split('.').slice(-1)[0]).toLowerCase();
+    if (fileTypes && fileTypes.indexOf(origType) < 0) {
+	alert('Invalid file type '+origType+'; expecting one of '+fileTypes);
+	return;
+    }
+
+    var fileDesc = origName+', '+file.size+' bytes';
+    if (file.lastModifiedDate)
+	fileDesc += ', last modified: '+file.lastModifiedDate.toLocaleDateString();
+
+    var dataParams = {filename: origName, mimeType: file.type, filePrefix: filePrefix}
+    if (teamName)
+	dataParams.teamName = teamName;
+
+    var loadCallback = function(result) {
+	if (!result || result.error) {
+	    alert('Error in uploading file: '+( (result && result.error) ? result.error : ''));
+	    return;
+	}
+	result.value.origName = origName;
+	result.value.fileType = origType;
+	uploadCallback(result.value);
+    }
+
+    var loadHandler = function(loadEvt) {
+	var arrBuffer = loadEvt.target.result;
+	Slidoc.log('Slidoc.uploadHandler.loadHandler:', origName, origType, arrBuffer.byteLength);
+	Slidoc.PluginManager.remoteCall(pluginName, '_uploadData', loadCallback, dataParams, arrBuffer.byteLength);
+	if (!window.GService)
+	    alert('No upload service');
+	GService.rawWS(arrBuffer);
+    };
+
+    var reader = new FileReader();
+    reader.onload = loadHandler;
+    reader.onerror = function(loadEvt) {
+	alert("Failed to read file "+origName+" (code="+loadEvt.target.error.code+")");
+    };
+
+    reader.readAsArrayBuffer(file);
 }
 
 function responseAvailable(session, qnumber) { // qnumber is optional
@@ -3930,6 +4034,9 @@ Slidoc.submitStatus = function () {
 	    }
 	}
     }
+    if (Sliobj.session.submitted || Sliobj.adminState)
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.uploadFile();">Late file upload</span>';
+
     if (Sliobj.params.gd_sheet_url && getUserId() != Sliobj.params.testUserId)
 	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">View gradebook</span>';
 

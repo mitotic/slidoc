@@ -837,6 +837,17 @@ class PluginManager(object):
             except Exception:
                 pass
 
+    def dirFiles(self, dirpath, restricted=True, private=True):
+        # Returns list of [filepath, /url] in directory
+        fullpath = self.makePath(dirpath, restricted=restricted, private=private)
+        if not os.path.exists(fullpath):
+            return []
+        try:
+            fpaths = [os.path.join(fullpath, f) for f in os.listdir(fullpath) if os.path.isfile(os.path.join(fullpath, f))]
+            return [ [fpath, fpath[len(Options['plugindata_dir']):]] for fpath in fpaths]
+        except Exception, err:
+            raise Exception('sdserver.PluginManager.dirFiles: ERROR in directory listing %s: %s' % (fullpath, err))
+
     def writeFile(self, filepath, content, restricted=True, private=True):
         # Returns relative file URL
         fullpath = self.makePath(filepath, restricted=restricted, private=private)

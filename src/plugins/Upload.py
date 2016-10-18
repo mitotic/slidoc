@@ -2,7 +2,9 @@
 Upload plugin
 """
 
+import datetime
 import os
+import os.path
 import sys
 
 class Upload(object):
@@ -15,6 +17,20 @@ class Upload(object):
     def lockFile(self, fileURL):
         print >> sys.stderr, 'Upload.lockFile:', fileURL
         self.pluginManager.lockFile(fileURL)
+
+    def lateUploads(self, dirPrefix, filePrefix):
+        print >> sys.stderr, 'Upload.lateUploads:', dirPrefix, filePrefix
+        dirpath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + dirPrefix
+        path_url_list = self.pluginManager.dirFiles(dirpath, restricted=True)
+        time_path_url_list = [[os.path.getmtime(path_url[0])]+path_url for path_url in path_url_list]
+        time_path_url_list.sort(reverse=True)
+        retvals = []
+        for ftime, fpath, furl in time_path_url_list:
+            if filePrefix and not os.path.basename(fpath).startswith(filePrefix):
+                continue
+            time_str = datetime.datetime.fromtimestamp(ftime).ctime()
+            retvals.append( [time_str, furl, self.pluginManager.getFileKey(fpath)] )
+        return retvals
 
     def _uploadData(self, dataParams, contentLength, content=None):
         print >> sys.stderr, 'Upload._uploadData:', dataParams, contentLength, type(content)

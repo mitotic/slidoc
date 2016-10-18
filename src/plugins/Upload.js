@@ -6,6 +6,7 @@ Upload = {
 	//    =Upload('doc,docx')
 	// Or as upload response plugin
 	//    Answer: Upload/ipynb;...
+	this.lateElem = document.getElementById(this.pluginId+'-uploadlate');
 	this.confirmMsgElem = document.getElementById(this.pluginId+'-uploadconfirm-msg');
 	this.confirmLoadElem = document.getElementById(this.pluginId+'-uploadconfirm-load');
 	this.uploadElem = document.getElementById(this.pluginId+'-uploadbutton');
@@ -31,7 +32,7 @@ Upload = {
 	if (fileInfo && fileInfo.loadURL) {
 	    this.display();
 	    this.viewer.initURL = fileInfo.loadURL;
-	    this.viewer.fileType = fileInfo.fileType;
+	    this.viewer.fileType = fileInfo.upload.fileType;
 	}
     },
 
@@ -39,24 +40,53 @@ Upload = {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
 	if (fileInfo) {
-	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.origName+' on '+(new Date(fileInfo.uploadTime));
+	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.upload.origName+' on '+(new Date(fileInfo.uploadTime));
 	    this.confirmLoadElem.href = fileInfo.loadURL;
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
 	    this.confirmLoadElem.href = '';
 	}
+	var dirPrefix = 'Late';
+	var filePrefix = 'Uploaded'+Slidoc.makeUserFileSuffix(this.displayName);
+	this.lateElem.innerHTML = '';
+	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), dirPrefix, filePrefix);
 	if (this.viewer.displayURL) {
 	    if (fileInfo)
-		this.viewer.displayURL(fileInfo.loadURL, fileInfo.fileType);
+		this.viewer.displayURL(fileInfo.loadURL, fileInfo.upload.fileType);
 	    else
 		this.viewer.displayURL('', '');
 	}
     },
 
+    lateUploadsCallback: function(uploadList) {
+	Slidoc.log('Slidoc.Plugins.Upload.lateUploadsCallback:', uploadList);
+	if (!uploadList || !uploadList.length)
+	    return;
+	var html = [];
+	for (var j=0; j<uploadList.length; j++) {
+	    var flabel = uploadList[j][0];
+	    var furl = uploadList[j][1];
+	    var fkey = uploadList[j][2];
+	    var loadURL = location.host + furl;
+	    if (furl.match(/.ipynb$/)) {
+		// Append "query" using "%3F" as nbviewer chomps up normal queries
+		loadURL += '%3F' + fkey;
+		if (location.protocol == 'https:')
+		    loadURL = 'https://nbviewer.jupyter.org/urls/'+loadURL;
+		else
+		    loadURL = 'http://nbviewer.jupyter.org/url/'+loadURL;
+	    } else {
+		loadURL = '//'+loadURL+'?'+fkey;
+	    }
+	    html.push('<li><a href="'+loadURL+'" target="_blank">'+flabel+'</a></li>\n');
+	}
+	this.lateElem.innerHTML = 'Late uploads:<ul>\n'+html.join('\n')+'</ul>\n';
+    },
+
     uploaded: function(value) {
 	Slidoc.log('Slidoc.Plugins.Upload.uploaded:', value);
 	var loadURL = location.host + value.url;
-	if (this.fileType == 'ipynb') {
+	if (value.fileType == 'ipynb') {
 	    // Append "query" using "%3F" as nbviewer chomps up normal queries
 	    loadURL += '%3F' + value.fileKey;
 	    if (location.protocol == 'https:')
@@ -66,7 +96,7 @@ Upload = {
 	} else {
 	    loadURL = '//'+loadURL+'?'+value.fileKey;
 	}
-	this.persist[this.qattributes.qnumber] = {origName: this.origName, fileType: this.fileType, upload: value, loadURL: loadURL,
+	this.persist[this.qattributes.qnumber] = {upload: value, loadURL: loadURL,
 						  uploadTime: Date.now()};
 	this.display(value.name);
 	Slidoc.PluginManager.saveSession(); // Save upload info
@@ -79,34 +109,6 @@ Upload = {
 
     fileUpload: function (evt) {
 	Slidoc.log('Slidoc.Plugins.Upload.fileUpload:', evt);
-	if (!evt.target || !evt.target.files)
-	    return;
-	var files = evt.target.files; // FileList object
-	if (files.length != 1) {
-	    alert("Please select a single file");
-	    return;
-	}
-
-	var file = files[0];
-	this.origName = file.name;
-	this.fileType = ((file.type ? fileTypeMap[file.type]:'') || file.name.split('.').slice(-1)[0]).toLowerCase();
-	if (this.fileTypes.indexOf(this.fileType) < 0) {
-	    alert('Invalid file type '+this.fileType+'; expecting one of '+this.fileTypes);
-	    return;
-	}
-
-	var fileDesc = file.name+', '+file.size+' bytes';
-	if (file.lastModifiedDate)
-	    fileDesc += ', last modified: '+file.lastModifiedDate.toLocaleDateString();
-
-	var loadCallback = function(result) {
-	    if (!result || result.error) {
-		alert('Error in uploading file: '+( (result && result.error) ? result.error : ''));
-		return;
-	    }
-	    this.uploaded(result.value);
-	}
-
 	var filePrefix = '';
 	var qno = this.qattributes ? 'q'+this.qattributes.qnumber : '';
 	if (qno)
@@ -114,29 +116,11 @@ Upload = {
 	else
 	    filePrefix += this.sessionName;
 
-	var match = /^([- \w]+)(,\s*([A-Z]).*)$/i.exec(this.displayName||'');
-	if (match)
-	    filePrefix += '-' + match[1].trim().replace(' ','-').toLowerCase() + (match[3] ? '-'+match[3].toLowerCase() : '');	    
+	filePrefix += Slidoc.makeUserFileSuffix(this.displayName);
 
-	var dataParams = {filename: file.name, mimeType: file.type, filePrefix: filePrefix}
-	if (this.qattributes.team == 'response' && Slidoc.PluginManager.teamName())
-	    dataParams.teamName = Slidoc.PluginManager.teamName();
-	var loadHandler = function(loadEvt) {
-	    var arrBuffer = loadEvt.target.result;
-	    Slidoc.log('Slidoc.Plugins.Upload.fileUpload.loadHandler:', file.name, file.type, arrBuffer.byteLength);
-	    this.remoteCall('_uploadData', loadCallback.bind(this), dataParams, arrBuffer.byteLength);
-	    if (!window.GService)
-		alert('No upload service');
-	    GService.rawWS(arrBuffer);
-	};
+	var teamName = (this.qattributes.team == 'response') ? (Slidoc.PluginManager.teamName()||'') : '';
 
-	var reader = new FileReader();
-	reader.onload = loadHandler.bind(this);
-	reader.onerror = function(loadEvt) {
-	    alert("Failed to read file "+file.name+" (code="+loadEvt.target.error.code+")");
-	};
-
-	reader.readAsArrayBuffer(file);
+	Slidoc.uploadHandler(this.name, this.uploaded.bind(this), filePrefix, teamName, this.fileTypes, evt);
     },
     
     response: function (retry, callback) {
@@ -146,9 +130,9 @@ Upload = {
 	    return;
 
 	if (fileInfo) {
-	    var response = fileInfo.origName;
+	    var response = fileInfo.upload.origName;
 	    var pluginResp = {name: this.name, score: 1, correctAnswer: '', filename: fileInfo.upload.name,
-			      time: fileInfo.uploadTime, fileType: this.fileType, url: fileInfo.upload.url,
+			      time: fileInfo.uploadTime, fileType: fileInfo.upload.fileType, url: fileInfo.upload.url,
 			      fileKey: fileInfo.upload.fileKey};
 	    this.remoteCall('lockFile', null, fileInfo.upload.url);
 	} else {
@@ -180,5 +164,5 @@ var fileTypeMap = {
    <div id="%(pluginId)s-uploadconfirm">
      <span id="%(pluginId)s-uploadconfirm-msg"></span>
      <a id="%(pluginId)s-uploadconfirm-load" target="_blank" href="">Click here to view/download</a>
-   </div>
+   </div><div id="%(pluginId)s-uploadlate"></div>
 */
