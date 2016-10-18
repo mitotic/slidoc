@@ -683,7 +683,7 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
 
 Slidoc.resetPaced = function () {
     Slidoc.log('Slidoc.resetPaced:');
-    var userId = window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
+    var userId = getUserId();
     if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely delete all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
 	return false;
 
@@ -793,7 +793,7 @@ var Slide_help_list = [
 Slidoc.viewHelp = function () {
     var html = '';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
-    var userId = window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
+    var userId = getUserId();
     if (Sliobj.sessionName) {
 	if (userId)
 	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
@@ -2093,7 +2093,7 @@ Slidoc.uploadHandler = function(pluginName, uploadCallback, filePrefix, teamName
     if (file.lastModifiedDate)
 	fileDesc += ', last modified: '+file.lastModifiedDate.toLocaleDateString();
 
-    var dataParams = {filename: origName, mimeType: file.type, filePrefix: filePrefix}
+    var dataParams = {filename: origName, mimeType: file.type, filePrefix: filePrefix, userId: getUserId()}
     if (teamName)
 	dataParams.teamName = teamName;
 

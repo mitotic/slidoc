@@ -47,9 +47,8 @@ Upload = {
 	    this.confirmLoadElem.href = '';
 	}
 	var dirPrefix = 'Late';
-	var filePrefix = 'Uploaded'+Slidoc.makeUserFileSuffix(this.displayName);
 	this.lateElem.innerHTML = '';
-	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), dirPrefix, filePrefix);
+	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), dirPrefix, this.userId);
 	if (this.viewer.displayURL) {
 	    if (fileInfo)
 		this.viewer.displayURL(fileInfo.loadURL, fileInfo.upload.fileType);
