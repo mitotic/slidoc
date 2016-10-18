@@ -1216,7 +1216,7 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
             hmatch = re.match(r'^(q?x?)(\d+)$', header)
             if hmatch:
                 qnumber = int(hmatch.group(2))
-                qresponse[qnumber] = (j, (hmatch.group(1) == 'qx'))
+                qresponse[qnumber] = (j, hmatch.group(1))
             elif header == 'id':
                 idCol = j+1
             elif header == 'name':
@@ -1251,17 +1251,20 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
         for row in rows:
             answers = {}
             for qnumber, value in qresponse.items():
-                response = row[value[0]].strip()
-                if not response:
+                cellValue = row[value[0]].strip()
+                if not cellValue:
+                    continue
+                if value[1] == 'qg':
+                    answers[qnumber] = {'grade': cellValue}
                     continue
                 explain = ''
-                if value[1]:
-                    comps = response.split()
+                if value[1] == 'qx':
+                    comps = cellValue.split()
                     if len(comps) > 1:
-                        explain = response[len(comps[0]):].strip()
-                        response = comps[0]
-                answers[qnumber] = {'response': response}
-                if value[1]:
+                        explain = cellValue[len(comps[0]):].strip()
+                        cellValue = comps[0]
+                answers[qnumber] = {'response': cellValue}
+                if value[1] == 'qx':
                     answers[qnumber]['explain'] = explain
             userId = None
             if idCol:

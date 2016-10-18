@@ -31,10 +31,15 @@ class Upload(object):
         time_path_url_list.sort(reverse=True)
         retvals = []
         for ftime, fpath, furl in time_path_url_list:
-            fhead = os.path.splitext(os.path.basename(fpath))[0]
-            if fhead == userId or fhead.endswith('-'+userId):
-                time_str = datetime.datetime.fromtimestamp(ftime).ctime()
-                retvals.append( [time_str, furl, self.pluginManager.getFileKey(fpath)] )
+            fhead, fextn = os.path.splitext(os.path.basename(fpath))
+            if fhead == userId:
+                flabel = ''
+            elif fhead.endswith('-'+userId):
+                flabel = fhead[:-len('-'+userId)]
+            else:
+                continue
+            time_str = datetime.datetime.fromtimestamp(ftime).ctime()
+            retvals.append( [flabel+fextn+': '+time_str, furl, self.pluginManager.getFileKey(fpath)] )
         return retvals
 
     def _uploadData(self, dataParams, contentLength, content=None):
@@ -55,6 +60,7 @@ class Upload(object):
                 filename += extn
             if dataParams.get('filePrefix'):
                 filename = dataParams.get('filePrefix') + '-' +filename
+            filename = filename.replace('..', '') # For file access security
 
             # Prepend session name to file path
             filepath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + filename

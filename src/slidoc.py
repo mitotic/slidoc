@@ -1185,17 +1185,22 @@ class SlidocRenderer(MathRenderer):
         if self.options['config'].pace == ADMIN_PACE:
             # Change default share value for admin pace
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
-        answer_opts = { 'explain': '', 'share': '', 'team': '', 'vote': ''}
+        answer_opts = { 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
         for opt in opt_comps[1:]:
-            num_match = re.match(r'^(weight|retry)=([\s\d,]+)$', opt)
+            num_match = re.match(r'^(participation|weight|retry)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
             if num_match:
-                if num_match.group(1) == 'weight':
-                    weight_answer = num_match.group(2).strip()
-                else:
-                    num_comps = [int(x.strip() or '0') for x in num_match.group(2).strip().split(',')]
-                    retry_counts = [num_comps[0], 0]
-                    if len(num_comps) > 1 and num_comps[0]:
-                        retry_counts[1] = num_comps[1]
+                try:
+                    if num_match.group(1) == 'weight':
+                        weight_answer = num_match.group(2).strip()
+                    elif num_match.group(1) == 'retry':
+                        num_comps = [int(x.strip() or '0') for x in num_match.group(2).strip().split(',')]
+                        retry_counts = [num_comps[0], 0]
+                        if len(num_comps) > 1 and num_comps[0]:
+                            retry_counts[1] = num_comps[1]
+                    else:
+                        answer_opts['participation'] = float(num_match.group(2).strip())
+                except Exception, excp:
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting numeric value for slide %s" % (self.options["filename"], num_match.group(1), num_match.group(2), self.slide_number))
             elif opt == 'retry':
                 retry_counts = [1, 0]
             else:
@@ -1362,6 +1367,8 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['explain']:
             self.questions[-1].update(explain=answer_opts['explain'])
+        if answer_opts['participation']:
+            self.questions[-1].update(participation=answer_opts['participation'])
         if answer_opts['share']:
             self.questions[-1].update(share=answer_opts['share'])
         if answer_opts['team']:

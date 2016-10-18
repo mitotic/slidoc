@@ -1880,6 +1880,9 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     qnumbers = answers.keys()
     qnumbers.sort()
     for qnumber in qnumbers:
+        q_response = 'q%d_response' % qnumber
+        q_explain = 'q%d_explain' % qnumber
+        q_grade = 'q%d_grade' % qnumber
         answer = answers[qnumber]
         respVal = answer.get('response', '')
         qnumberStr = str(qnumber)  # Because JSON serialization converts integer keys to strings
@@ -1891,8 +1894,6 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
                 if indexVal < 0 or indexVal >= len(shuffleStr[1:]):
                     raise Exception('Error in creating session for user '+userId+': Invalid shuffle choice '+respVal+' ('+shuffleStr+')')
                 respVal = shuffleStr[1:][indexVal].upper()
-        q_response = 'q%d_response' % qnumber
-        q_explain = 'q%d_explain' % qnumber
         if q_response in headers:
             rowValues[headerCols[q_response]-1] = respVal or SKIP_ANSWER
             if q_explain in headers:
@@ -1901,6 +1902,8 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
             qAttempted[qnumber] = createQuestionAttempted( respVal )
             if 'explain' in answer:
                 qAttempted[qnumber]['explain'] = answer['explain']
+        if q_grade in headers and 'grade' in answer:
+            rowValues[headerCols[q_grade]-1] = answer['grade']
 
     rowValues[sessionCol-1] = json.dumps(session)
     for j, header in enumerate(headers):

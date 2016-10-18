@@ -1052,8 +1052,8 @@ Sliobj.eventReceiver = function(eventMessage) {
 	if (!(eventArgs[0] in Sliobj.liveResponses))
 	    Sliobj.liveResponses[eventArgs[0]] = [];
 	Sliobj.liveResponses[eventArgs[0]][eventSource] = eventArgs.slice(1);
-	if (eventName == Sliobj.popupEvent && Sliobj.closePopup)
-	    Sliobj.closePopup(true, eventName);
+	if (Sliobj.closePopup)
+	    Sliobj.closePopup(null, eventName);
 	    
     } else if (eventName == 'AdminPacedForceAnswer') {
 	if (controlledPace() && !Sliobj.session.questionsAttempted[eventArgs[0]]) {
@@ -1636,7 +1636,7 @@ function slidocReadyAux2(auth) {
 	throw('slidocReadyAux2: Missing/null auth');
 
     if (Sliobj.closePopup)
-	Sliobj.closePopup(true);
+	Sliobj.closePopup();
     Sliobj.closePopup = null;
     Sliobj.popupEvent = '';
     Sliobj.popupQueue = [];
@@ -2045,7 +2045,7 @@ Slidoc.uploadFile = function() {
 		'<input type="file" id="slidoc-uploadpopup-uploadbutton" class="slidoc-clickable slidoc-button slidoc-plugin-Upload-button slidoc-uploadpopup-uploadbutton" onclick="Slidoc.uploadAction();"></input>'];
     Slidoc.showPopup(html.join(''));
 
-    var filePrefix = 'Late/Uploaded'+Slidoc.makeUserFileSuffix(Sliobj.session.displayName)+'-'+(''+Math.random()).slice(2,10);
+    var filePrefix = 'Late/'+Sliobj.sessionName+'-late'+Slidoc.makeUserFileSuffix(Sliobj.session.displayName);
     var uploadElem = document.getElementById('slidoc-uploadpopup-uploadbutton');
     uploadElem.addEventListener('change', Slidoc.uploadAction, false);
     Sliobj.uploadHandlerActive = Slidoc.uploadHandler.bind(null, 'Upload', Sliobj.uploadFileCallback, filePrefix, '', null);
@@ -2083,10 +2083,19 @@ Slidoc.uploadHandler = function(pluginName, uploadCallback, filePrefix, teamName
 
     var file = files[0];
     var origName = file.name;
-    var origType = ((file.type ? Slidoc.fileTypeMap[file.type]:'') || origName.split('.').slice(-1)[0]).toLowerCase();
+    var fcomps = origName.split('.');
+    var origExtn = (fcomps.length > 1) ? fcomps[fcomps.length-1] : '';
+    var origHead = origExtn ? fcomps.slice(0,-1).join('.') : origName;
+    var origType = ((file.type ? Slidoc.fileTypeMap[file.type]:'') || origExtn || 'unknown').toLowerCase();
     if (fileTypes && fileTypes.indexOf(origType) < 0) {
 	alert('Invalid file type '+origType+'; expecting one of '+fileTypes);
 	return;
+    }
+
+    if (filePrefix.match(/^Late/)) {
+	var strippedName = origHead.replace(/\W/g,'');
+	if (strippedName)
+	    filePrefix += '-' + strippedName;
     }
 
     var fileDesc = origName+', '+file.size+' bytes';
@@ -3936,6 +3945,9 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
 		effectiveScore -= Math.abs(questionAttrs.hints[k]);
 	}
 
+	if (questionAttrs.participation)  // Minimum (normalized) score for attempting question
+	    effectiveScore = Math.max(effectiveScore, questionAttrs.participation);
+	
         if (effectiveScore > 0) {
             questionsCorrect += 1 + qSkipCount;
             weightedCorrect += effectiveScore*qWeight + qSkipWeight;
@@ -4423,7 +4435,7 @@ function showCompletionStatus() {
 	if (Sliobj.session.submitted) {
 	    if (Sliobj.closePopup) {
 		// Re-display popup
-		Sliobj.closePopup(true);
+		Sliobj.closePopup();
 		msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+parseDate(Sliobj.session.submitted)+'<br>';
 		if (!Sliobj.session.paced)
 		    msg += 'You may now exit slide view and access this document normally.<br>';
@@ -5003,7 +5015,7 @@ Slidoc.chainUpdate = function (queryStr) {
 // Popup: http://www.loginradius.com/engineering/simple-popup-tutorial/
 Slidoc.closeAllPopups = function () {
     if (Sliobj.closePopup)
-	Sliobj.closePopup(true);
+	Sliobj.closePopup();
 }
 Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popupEvent, closeCallback) {
     // Only one of innerHTML or divElemId needs to be non-null
@@ -5046,12 +5058,14 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 	divElem.style.display = 'block';
 
 	Sliobj.popupEvent = popupEvent || '';
-	Sliobj.closePopup = function (closeAll, closeArg) {
+	Sliobj.closePopup = function (evt, closeEvent, closeArg) {
+	    // closeCallback is called with closeArg, if closeEvent matches popupEvent
 	    overlayElem.style.display = 'none';
 	    divElem.style.display = 'none';
+	    var matchEvent = closeEvent && (closeEvent == Sliobj.popupEvent);
 	    Sliobj.popupEvent = '';
 	    Sliobj.closePopup = null;
-	    if (closeAll) {
+	    if (!evt) {
 		Sliobj.popupQueue = [];
 	    } else {
 		if (Sliobj.popupQueue && Sliobj.popupQueue.length) {
@@ -5059,7 +5073,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 		    Slidoc.showPopup(args[0], args[1]);
 		}
 	    }
-	    if (closeCallback) {
+	    if (closeCallback && matchEvent) {
 		try { closeCallback(closeArg || null); } catch (err) {Slidoc.log('Sliobj.closePopup: ERROR '+err);}
 	    }
 	    Slidoc.advanceStep();
@@ -5077,20 +5091,20 @@ Slidoc.showPopupOptions = function(prefixHTML, optionListHTML, suffixHTML, callb
     // Show list of options as popup, with callback(n) invoked on select.
     // n >= 1 for selection, or null if popup is closed
     if (Sliobj.closePopup)
-	Sliobj.closePopup(true);
+	Sliobj.closePopup();
     var lines = [prefixHTML || ''];
     lines.push('<p></p><ul class="slidoc-popup-option-list">');
     for (var j=0; j<optionListHTML.length; j++)
 	lines.push('<li class="slidoc-popup-option-list-element slidoc-clickable" onclick="Slidoc.selectPopupOption('+(j+1)+');">'+optionListHTML[j]+'</li><p></p>');
     lines.push('</ul>');
     lines.push(suffixHTML || '');
-    Slidoc.showPopup(lines.join('\n'), null, false, 0, '', callback||null);
+    Slidoc.showPopup(lines.join('\n'), null, false, 0, 'PopupOptions', callback||null);
 }
 
 Slidoc.selectPopupOption = function(closeArg) {
     Slidoc.log('Slidoc.selectPopupOption:', closeArg);
     if (Sliobj.closePopup)
-	Sliobj.closePopup(true, closeArg||null);
+	Sliobj.closePopup(null, 'PopupOptions', closeArg||null);
 }
 
 Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
@@ -5098,7 +5112,7 @@ Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
     // Safely populate list with plain text, or Markdown (last column only)
     //Slidoc.log('showPopupWithList:', listElems, lastMarkdown);
     if (Sliobj.closePopup)
-	Sliobj.closePopup(true);
+	Sliobj.closePopup();
     var lines = [prefixHTML || ''];
     lines.push('<ul class="slidoc-popup-with-list">');
     for (var j=0; j<listElems.length; j++)
