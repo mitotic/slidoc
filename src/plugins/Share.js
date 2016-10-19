@@ -83,22 +83,37 @@ Share = {
 	    } else {
 		html += '<ul>\n';
 		var responseLists = {};
+		var nameMap = {};
 		for (var j=0; j<respIds.length; j++) {
-		    var message = liveResponses[respIds[j]];
-		    if (!(message[0] in responseLists))
-			responseLists[message[0]] = [];
-		    responseLists[message[0]].push(message[1]);
+		    var respId = respIds[j];       // Responder ID
+		    var message = liveResponses[respId];
+		    var respVal = message[0];      // Response value
+		    nameMap[respId] = message[1];  // Responder display name
+		    if (!(respVal in responseLists))
+			responseLists[respVal] = [];
+		    responseLists[respVal].push(respId);
 		}
+		if (this.qattributes.team == 'setup')
+		    nameMap = Slidoc.makeShortNames(nameMap);
 		var responses = Object.keys(responseLists);
 		responses.sort();
 		for (var j=0; j<responses.length; j++) {
 		    var respList = responseLists[responses[j]];
-		    respList.sort();
 		    html += '<li>'+responses[j]+': ';
-		    if (this.qattributes.team == 'setup')
-			html += respList.join('; ')+'</li>\n';
-		    else
+		    if (this.qattributes.team != 'setup') {
 			html += respList.length+'</li>\n';
+		    } else {
+			var respNames = [];
+			for (var k=0; k<respList.length; k++) {
+			    var respId = respList[k];
+			    if (nameMap[respId])
+				respNames.push(nameMap[respId]);
+			    else
+				respNames.push(respId);
+			}
+			respNames.sort();
+			html += respNames.join('; ')+'</li>\n';
+		    }
 		}
 		html += '</ul>\n';
 	    }

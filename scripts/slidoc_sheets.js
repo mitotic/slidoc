@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5h';
+var VERSION = '0.96.5i';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -608,6 +608,33 @@ function sheetAction(params) {
 	    } else if (modSheet.getLastRow() <= numStickyRows) {
 		returnMessages.push("Warning:SHARE_NO_ROWS:");
 		returnValues = [];
+            } else if (sessionAttributes && sessionAttributes['params']['features'].share_answers) {
+                var answerSheet = getSheet(sheetName+'-answers');
+                if (!answerSheet) {
+                    throw('Error::Sharing not possible without answer sheet '+sheetName+'-answers');
+                }
+                var ansColumnHeaders = answerSheet.getSheetValues(1, 1, 1, answerSheet.getLastColumn())[0];
+                var ansCol = 0;
+                for (var j=0; j < ansColumnHeaders.length; j++) {
+                    if (ansColumnHeaders[j].slice(0,getShare.length+1) == getShare+'_') {
+                        ansCol = j+1;
+                        break;
+                    }
+                }
+                if (!ansCol) {
+                    throw('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'-answers');
+                }
+                returnHeaders = [ getShare+'_response' ];
+                var nRows = answerSheet.getLastRow()-1;
+                var names = answerSheet.getSheetValues(2, 1, nRows, 1);
+                var values = answerSheet.getSheetValues(2, ansCol, nRows, 1);
+                returnValues = [];
+                for (var j=0; j < values.length; j++) {
+                    if (names[j][0] && names[j][0].charAt(0) != '#' && values[j][0]) {
+                        returnValues.push(values[j][0]);
+                    }
+                }
+                returnValues.sort();
 	    } else {
 		var nRows = modSheet.getLastRow()-numStickyRows;
 		var respCol = getShare+'_response';
@@ -1139,7 +1166,7 @@ function sheetAction(params) {
                             if (teamAttr == 'setup') {
                                 if (hmatch[2] == 'response' && colValue != SKIP_ANSWER) {
                                     // Set up team name
-                                    rowValues[teamCol-1] = safeName(colValue).toLowerCase();
+                                    rowValues[teamCol-1] = safeName(colValue, true);
                                     returnInfo['team'] = rowValues[teamCol-1];
                                 }
                             } else if (teamAttr == 'response' && rowValues[teamCol-1]) {
@@ -1722,8 +1749,12 @@ function lookupRoster(field, userId) {
     return fieldDict;
 }
 
-function safeName(s) {
-    return s.replace(/[^A-Za-z0-9-]/g, '_');
+function safeName(s, capitalize) {
+    s = s.replace(/[^A-Za-z0-9-]/g, '_');
+    if (s && capitalize)
+	return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    else
+	return s;
 }
 
 function teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol) {
@@ -1748,6 +1779,7 @@ function teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol) {
 function makeShortNames(nameMap, first) {
     // Make short versions of names from dict of the form {id: 'Last, First ...', ...}
     // If first, use first name as prefix, rather than last name
+    // Returns map of id->shortName
     var prefixDict = {};
     var suffixesDict = {};
     var keys = Object.keys(nameMap);

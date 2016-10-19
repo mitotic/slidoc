@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5h'
+VERSION = '0.96.5i'
 
 # Usually modified by importing module
 Options = {
@@ -930,7 +930,7 @@ def sheetAction(params, notrace=False):
                 ansColumnHeaders = answerSheet.getSheetValues(1, 1, 1, answerSheet.getLastColumn())[0]
                 ansCol = 0
                 for j in range(len(ansColumnHeaders)):
-                    if ansColumnHeaders[j][:len(getShare)] == getShare:
+                    if ansColumnHeaders[j][:len(getShare)+1] == getShare+'_':
                         ansCol = j+1
                         break
                 if not ansCol:
@@ -1429,7 +1429,7 @@ def sheetAction(params, notrace=False):
                                 if teamAttr == 'setup':
                                     if hmatch.group(2) == 'response' and colValue != SKIP_ANSWER:
                                         # Set up team name
-                                        rowValues[teamCol-1] = safeName(colValue).lower()
+                                        rowValues[teamCol-1] = safeName(colValue, True)
                                         returnInfo['team'] = rowValues[teamCol-1]
                                 elif teamAttr == 'response' and rowValues[teamCol-1]:
                                     # Copy response/explain/plugin for team
@@ -2121,8 +2121,9 @@ def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
             return j+1
     return len(nameValues)+1
 
-def safeName(s):
-    return re.sub(r'[^A-Za-z0-9-]', '_', s)
+def safeName(s, capitalize=False):
+    s = re.sub(r'[^A-Za-z0-9-]', '_', s)
+    return s.capitalize() if capitalize else s
 
 def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
     # Copy column value from user row to entire team

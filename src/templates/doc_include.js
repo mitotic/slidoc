@@ -630,6 +630,87 @@ function exitFullscreen() {
   }
 }
 
+Slidoc.makeShortNames = function (nameMap, first) {
+    // Make short versions of names from dict of the form {id: 'Last, First ...', ...}
+    // If first, use first name as prefix, rather than last name
+    // Returns map of id->shortName
+    var prefixDict = {};
+    var suffixesDict = {};
+    var keys = Object.keys(nameMap);
+    for (var j=0; j<keys.length; j++) {
+	var idValue = keys[j];
+	var name = nameMap[idValue];
+	var ncomps = name.split(',');
+	var lastName = ncomps[0].trim();
+	var firstmiddle = (ncomps.length > 0) ? ncomps[1].trim() : '';
+        var fcomps = firstmiddle.split(/\s+/);
+        if (first) {
+            // For Firstname, try suffixes in following order: middle_initials+Lastname
+            var firstName = fcomps[0] || idValue;
+            var suffix = lastName;
+	    for (var k=1; k<fcomps.length; k++)
+                suffix = fcomps[k].slice(0,1).toUpperCase() + suffix;
+	    if (!(firstName in prefixDict))
+		prefixDict[firstName] = [];
+            prefixDict[firstName].push(idValue);
+            suffixesDict[idValue] = suffix;
+        } else {
+            // For Lastname, try suffixes in following order: initials, first/middle names
+            if (!lastName)
+                lastName = idValue;
+	    var initials = '';
+	    for (var k=0; k<fcomps.length; k++)
+                initials += fcomps[k].slice(0,1).toUpperCase() ;
+	    if (!(lastName in prefixDict))
+		prefixDict[lastName] = [];
+            prefixDict[lastName].push(idValue);
+            suffixesDict[idValue] = [initials, firstmiddle];
+        }
+    }
+
+    var shortMap = {};
+    var prefixes = Object.keys(prefixDict);
+    for (var m=0; m<prefixes.length; m++) {
+	var prefix = prefixes[m];
+	var idValues = prefixDict[prefix];
+        var unique = null;
+        for (var j=0; j < (first ? 1 : 2); j++) {
+	    var suffixes = [];
+	    var maxlen = 0;
+	    for (var k=0; k < idValues.length; k++) {
+		var suffix = suffixesDict[idValues[k]][j];
+		maxlen = Math.max(maxlen, suffix.length);
+		suffixes.push(suffix);
+	    }
+            for (var k=0; k < maxlen+1; k++) {
+		var truncObj = {};
+		for (var l=0; l < suffixes.length; l++)
+		    truncObj[suffixes[l].slice(0,k)] = 1;
+
+                if (suffixes.length == Object.keys(truncObj).length) {
+                    // Suffixes uniquely map id for this truncation
+                    unique = [j, k];
+                    break;
+                }
+            }
+            if (unique) {
+                break;
+            }
+        }
+        for (var j=0; j<idValues.length; j++) {
+	    var idValue = idValues[j];
+            if (unique) {
+                shortMap[idValue] = prefix + suffixesDict[idValue][unique[0]].slice(0,unique[1]);
+            } else {
+                shortMap[idValue] = prefix + '-' + idValue;
+            }
+        }
+    }
+
+    return shortMap;
+}
+
+
 Slidoc.docFullScreen = function (exit) {
     if (exit)
 	exitFullscreen();
@@ -2644,7 +2725,7 @@ function cacheComments(qnumber, userId, comments, update) {
 	    }
 	}
     }
-    var lines = comments.split(/\r?\n/);
+    var lines = (comments||'').split(/\r?\n/);
     for (var j=0; j<lines.length; j++) {
 	// Add entries for this user
 	var line = lines[j];

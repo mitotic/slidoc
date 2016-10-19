@@ -71,9 +71,9 @@ function checkCodeCallback(pluginResp) {
 function codeResponseCallback(retry, callback, response, pluginResp) {
     Slidoc.log('codeResponseCallback:', this, retry, !!callback, response, pluginResp)
     var outputElem = document.getElementById(this.pluginId+'-output');
+    var code_msg = '';
     if (pluginResp) {
 	var ntest = this.qattributes.test ? this.qattributes.test.length : 0;
-	var code_msg = '';
 	if (pluginResp.invalid) {
 	    code_msg = 'Error output:\n'+pluginResp.invalid;
 	} else if (pluginResp.score === 1) {
@@ -95,8 +95,8 @@ function codeResponseCallback(retry, callback, response, pluginResp) {
 	} else {
 	    code_msg = 'Output:\n'+(pluginResp.output || '');
 	}
-	outputElem.textContent = code_msg;
     }
+    outputElem.textContent = code_msg;
     if (callback)
 	callback(response, pluginResp);
 }
