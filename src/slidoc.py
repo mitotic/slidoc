@@ -3091,6 +3091,7 @@ parser.add_argument('--participation_credit', type=int, metavar='INTEGER', help=
 parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--session_curve', help='Session curve parameter, e.g., ^0.5 OR +6')
@@ -3140,7 +3141,22 @@ if __name__ == '__main__':
 
     config_dict = cmd_args2dict(cmd_args)
 
-    input_files = config_dict.pop('file')
+    fhandles = config_dict.pop('file')
+    input_files = []
+    skipped = []
+    for fhandle in fhandles:
+        first_line = read_first_line(fhandle)
+        if cmd_args_orig.publish and (not first_line.strip().startswith('<!--slidoc-defaults') or '--publish' not in first_line):
+            # Skip files without --publish option in the first line
+            skipped.append(fhandle.name)
+            continue
+        input_files.append(fhandle)
+
+    if not input_files:
+        sys.exit('No --publish files to process!')
+
+    if skipped:
+        print('******Skipped non-publish files: ', ', '.join(skipped), file=sys.stderr)
 
     if cmd_args.verbose:
         print('Effective argument list', file=sys.stderr)

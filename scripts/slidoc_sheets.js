@@ -1165,7 +1165,7 @@ function sheetAction(params) {
                             }
                             if (teamAttr == 'setup') {
                                 if (hmatch[2] == 'response' && colValue != SKIP_ANSWER) {
-                                    // Set up team name
+                                    // Set up team name (capitalized)
                                     rowValues[teamCol-1] = safeName(colValue, true);
                                     returnInfo['team'] = rowValues[teamCol-1];
                                 }

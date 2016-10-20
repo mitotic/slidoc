@@ -1428,7 +1428,7 @@ def sheetAction(params, notrace=False):
                                         teamAttr = questions[qno-1].get('team','')
                                 if teamAttr == 'setup':
                                     if hmatch.group(2) == 'response' and colValue != SKIP_ANSWER:
-                                        # Set up team name
+                                        # Set up team name (capitalized)
                                         rowValues[teamCol-1] = safeName(colValue, True)
                                         returnInfo['team'] = rowValues[teamCol-1]
                                 elif teamAttr == 'response' and rowValues[teamCol-1]:
@@ -2143,6 +2143,7 @@ def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
 def makeShortNames(nameMap, first=False):
     # Make short versions of names from dict of the form {id: 'Last, First ...', ...}
     # If first, use first name as prefix, rather than last name
+    # Returns map of id->shortName
     prefixDict = defaultdict(list)
     suffixesDict = {}
     for idValue, name in nameMap.items():
