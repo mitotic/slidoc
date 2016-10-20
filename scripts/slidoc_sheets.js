@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5j';
+var VERSION = '0.96.5k';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -390,7 +390,7 @@ function sheetAction(params) {
 				updateSheet.insertRowBefore(modRow);
 			    } else {
 				// Pre-existing row
-				if (totalCol) {
+				if (totalCol && rowId != MAXSCORE_ID) {
 				    // Do not overwrite old totalCol value, if new value is not a formula
 				    if (!rowVals[totalCol-1] || (''+rowVals[totalCol-1]).charAt(0) != '=')
 				        rowVals[totalCol-1] = updateSheet.getRange(modRow, totalCol, 1, 1).getFormula();
@@ -433,7 +433,7 @@ function sheetAction(params) {
 		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
 		questions = JSON.parse(sessionEntries.questions);
-		paceLevel = sessionEntries.paceLevel;
+		paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
 		adminPaced = sessionEntries.adminPaced;
 		dueDate = sessionEntries.dueDate;
 		gradeDate = sessionEntries.gradeDate;
@@ -1603,7 +1603,12 @@ function createSheet(sheetName, headers) {
 }
 	    
 function colIndexToChar(col) {
-    return String.fromCharCode('A'.charCodeAt(0) + (col-1) );
+    var suffix = (col - 1) % 26;
+    var prefix = (col - 1 - suffix) / 26;
+    var c = String.fromCharCode('A'.charCodeAt(0) + suffix);
+    if (prefix)
+        c = String.fromCharCode('A'.charCodeAt(0) + prefix - 1) + c;
+    return c;
 }
 
 function indexColumns(sheet) {
@@ -1943,7 +1948,7 @@ function sessionAnswerSheet() {
 	    if (sessionAttributes.hints && sessionAttributes.hints[qprefix])
 		answerHeaders.push(qprefix+'_hints');
 	}
-	Logger.log('ansHeaders: '+answerHeaders);
+	//Logger.log('ansHeaders: '+answerHeaders);
 	var ansHeaderCols = {};
 	for (var j=0; j<answerHeaders.length; j++)
 	    ansHeaderCols[answerHeaders[j]] = j+1;
@@ -2619,28 +2624,30 @@ function updateScores(sessionNames) {
 	var userStartRow = SESSION_MAXSCORE_ROW ? scoreStartRow+1 : scoreStartRow;
 	var avgStartRow = userStartRow;
 
+	// Copy user info from roster
+	var userInfoSheet = getSheet(ROSTER_SHEET);
+	var infoStartRow = rosterStartRow;
+	if (!userInfoSheet)  {              // Copy user info from last valid session
+	    userInfoSheet = validSheet;
+	    infoStartRow = sessionStartRow;
+	}
+	var nUserIds = userInfoSheet.getLastRow()-infoStartRow+1;
+	var idCol = MIN_HEADERS.indexOf('id')+1;
+
 	// New score sheet
 	var extraHeaders = ['weightedTotal', 'rawTotal', 'sessionCount'];
 	var scoreHeaders = MIN_HEADERS.concat(extraHeaders);
 	var scoreSheetName = SCORES_SHEET;
-	scoreSheet = getSheet(scoreSheetName);
+	var scoreSheet = getSheet(scoreSheetName);
 	if (!scoreSheet) {
 	    // Create session score sheet
 	    scoreSheet = getSheet(scoreSheetName, null, true);
-	    // Copy user info from roster
-	    var userInfoSheet = getSheet(ROSTER_SHEET);
-	    var startRow = rosterStartRow;
-	    if (!userInfoSheet)  {              // Copy user info from last valid session
-		userInfoSheet = validSheet;
-		startRow = sessionStartRow;
-	    }
 
 	    // Score sheet headers
 	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
 	    scoreSheet.getRange(1, MIN_HEADERS.length+1, 1, extraHeaders.length).setValues([extraHeaders]);
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
 
-	    var idCol = MIN_HEADERS.indexOf('id')+1;
 	    if (scoreAvgRow > 2) {
 		scoreSheet.getRange(scoreAvgRow-1, idCol, 1, 1).setValues([[CURVE_ID]]);
 		scoreSheet.getRange(scoreAvgRow, idCol, 1, 1).setValues([[AVERAGE_ID]]);
@@ -2652,32 +2659,38 @@ function updateScores(sessionNames) {
 		scoreSheet.getRange(scoreStartRow+':'+scoreStartRow).setFontWeight('bold');
 	    }
 
-	    var nUserIds = userInfoSheet.getLastRow()-startRow+1;
+	    // Insert user info
+	    if (nUserIds)
+		scoreSheet.getRange(userStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(infoStartRow, 1, nUserIds, MIN_HEADERS.length));
+	} else {
+	    // Update session score sheet
 	    var nPrevIds = scoreSheet.getLastRow()-userStartRow+1;
+	    if (nUserIds != nPrevIds)
+		throw('Number of ids in score sheet ('+nPrevIds+') does not that in roster/session ('+nUserIds+'); re-create score sheet');
 	    if (nUserIds) {
-		var temIds = userInfoSheet.getSheetValues(startRow, idCol, nUserIds, 1);
-		var temNames = userInfoSheet.getSheetValues(startRow, MIN_HEADERS.indexOf('name')+1, nUserIds, 1);
-		for (var j=0; j<nUserIds; j++) {
-		    // Skip any initial row(s) in the roster with test user or IDs/names starting with underscore/hash
-		    // when computing averages and other stats
-		    if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\_/) || temNames[j][0].match(/^#/))
-			avgStartRow += 1;
-		    else
-			break;
-		}
-
+		var infoIds = userInfoSheet.getSheetValues(infoStartRow, idCol, nUserIds, 1);
+		var prevIds = scoreSheet.getSheetValues(userStartRow, idCol, nUserIds, 1);
 		for (var j=0; j<nUserIds; j++) {
 		    // Check that prior IDs match
-		    var prevId = scoreSheet.getSheetValues(userStartRow+j, idCol, 1, 1)[0][0];
-		    if (prevId && prevId != temIds[j][0])
-			throw('Id mismatch in row '+(userStartRow+j)+' of score sheet: expected '+temIds[j][0]+' but found '+prevId+'; fix it or re-create score sheet');
+		    if (prevIds[j] && prevIds[j] != infoIds[j][0])
+			throw('Id mismatch in row '+(userStartRow+j)+' of score sheet: expected '+infoIds[j][0]+' but found '+prevIds[j]+'; fix it or re-create score sheet');
 		}
 
-		scoreSheet.getRange(userStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(startRow, 1, nUserIds, MIN_HEADERS.length));
+		// Update user info (other than ID)
+		scoreSheet.getRange(userStartRow, 1, nUserIds, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(infoStartRow, 1, nUserIds, MIN_HEADERS.length));
+	    }
+	}
 
-		// Clear any 'excess' prior ID values
-		for (var j=nUserIds; j<nPrevIds; j++)
-		    scoreSheet.getRange(userStartRow+j, idCol, 1, 1).setValue('');
+	if (nUserIds) {
+	    // Skip any initial row(s) in the roster with test user or IDs/names starting with underscore/hash
+	    // when computing averages and other stats
+	    var temIds = userInfoSheet.getSheetValues(infoStartRow, idCol, nUserIds, 1);
+	    var temNames = userInfoSheet.getSheetValues(infoStartRow, MIN_HEADERS.indexOf('name')+1, nUserIds, 1);
+	    for (var j=0; j<nUserIds; j++) {
+		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^\_/) || temNames[j][0].match(/^#/))
+		    avgStartRow += 1;
+		else
+		    break;
 	    }
 	}
 
@@ -2693,16 +2706,19 @@ function updateScores(sessionNames) {
 	    var sessionRowIndex = indexRows(sessionSheet, sessionColIndex['id'], 2);
 	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
-	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'sessionWeight', 'sessionCurve', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
+	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'paceLevel', 'sessionWeight', 'sessionCurve', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
             var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	    var questions = JSON.parse(sessionEntries.questions);
 	    var gradeDate = sessionEntries.gradeDate || null;
+	    var paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
 	    var sessionWeight = parseNumber(sessionEntries.sessionWeight) || 0;
 	    var sessionCurve = sessionEntries.sessionCurve || '';
 	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionEntries.gradeWeight) || 0;
 	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
 
+	    if (!paceLevel)
+		continue;
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
 		continue;
 	    updatedNames.push(sessionName);
@@ -2762,7 +2778,7 @@ function updateScores(sessionNames) {
 		var sessionRange = "'"+sessionName+"'!$"+sessionIdColChar+"$"+lookupStartRow+":$"+nameColChar;
 		return 'VLOOKUP($'+scoreIdColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-sessionIdCol+1)+', false)';
 	    }
-            Logger.log('scoreSession: '+sessionName+' '+sessionCurve);
+            //Logger.log('scoreSession: '+sessionName+' '+sessionCurve);
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		var lookups = [];

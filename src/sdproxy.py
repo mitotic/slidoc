@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5j'
+VERSION = '0.96.5k'
 
 # Usually modified by importing module
 Options = {
@@ -2017,7 +2017,12 @@ def validateHMAC(token, key):
 
 
 def colIndexToChar(col):
-    return chr(ord('A') + col - 1)
+    suffix = (col - 1) % 26
+    prefix = (col - 1 - suffix) / 26
+    c = chr(ord('A') + suffix)
+    if prefix:
+        c = chr(ord('A') + prefix - 1) + c
+    return c
 
 
 def indexColumns(sheet):
