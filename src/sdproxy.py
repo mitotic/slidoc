@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5i'
+VERSION = '0.96.5j'
 
 # Usually modified by importing module
 Options = {
@@ -1343,7 +1343,7 @@ def sheetAction(params, notrace=False):
                     if submitTimestampCol and rowUpdates[submitTimestampCol-1] and userId != TESTUSER_ID:
                         raise Exception("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'")
 
-                    if not adminUser and len(rowUpdates) > fieldsMin:
+                    if (not adminUser or params.get('import')) and len(rowUpdates) > fieldsMin:
                         # Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values:
                         nonNullExtraColumn = False
                         totalCells = []
@@ -1359,7 +1359,7 @@ def sheetAction(params, notrace=False):
                                 # Non-response/explain/plugin admin column
                                 adminColumns[columnHeaders[j]] = 1
 
-                        if nonNullExtraColumn:
+                        if nonNullExtraColumn and not adminUser:
                             # Blank out admin columns if any extra column is non-null
                             # Failsafe: ensures admin-entered grades will be blanked out if response/explain are updated
                             for j in range(fieldsMin, len(columnHeaders)):

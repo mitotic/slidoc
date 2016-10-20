@@ -1213,7 +1213,7 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
         twitterCol = 0
         qresponse = {}
         for j, header in enumerate(headers):
-            hmatch = re.match(r'^(q?x?)(\d+)$', header)
+            hmatch = re.match(r'^(q?[gx]?)(\d+)$', header)
             if hmatch:
                 qnumber = int(hmatch.group(2))
                 qresponse[qnumber] = (j, hmatch.group(1))

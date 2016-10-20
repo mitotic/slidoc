@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5i';
+var VERSION = '0.96.5j';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -1084,7 +1084,7 @@ function sheetAction(params) {
 		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1] && userId != TESTUSER_ID)
 			throw("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'");
 
-		    if (!adminUser && rowUpdates.length > fieldsMin) {
+		    if ((!adminUser || params.import) && rowUpdates.length > fieldsMin) {
 			// Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values)
 			var nonNullExtraColumn = false;
 			var totalCells = [];
@@ -1098,7 +1098,7 @@ function sheetAction(params) {
 			    if (!hmatch || (hmatch[2] != 'response' && hmatch[2] != 'explain' && hmatch[2] != 'plugin')) // Non-response/explain/plugin admin column
 				adminColumns[columnHeaders[j]] = 1;
 			}
-			if (nonNullExtraColumn) {
+			if (nonNullExtraColumn && !adminUser) {
 			    // Blank out admin columns if any extra column is non-null
 			    // Failsafe: ensures admin-entered grades will be blanked out if response/explain are updated
 			    for (var j=fieldsMin; j < columnHeaders.length; j++) {
