@@ -11,8 +11,10 @@ import base64
 import datetime
 import hashlib
 import hmac
+import json
 import time
 import urllib
+import urllib2
 
 TRUNCATE_DIGEST = 8
 
@@ -96,6 +98,43 @@ def json_default(obj):
     if isinstance(obj, datetime.datetime):
         return iso_date(obj, utc=True)
     raise TypeError("%s not serializable" % type(obj))
+
+def http_post(url, params_dict=None):
+    req = urllib2.Request(url, urllib.urlencode(params_dict)) if params_dict else urllib2.Request(url)
+    try:
+        response = urllib2.urlopen(req)
+    except Exception, excp:
+        raise Exception('ERROR in accessing URL %s: %s' % (url, excp))
+    result = response.read()
+    try:
+        result = json.loads(result)
+    except Exception, excp:
+        result = {'result': 'error', 'error': 'Error in http_post: result='+str(result)+': '+str(excp)}
+    return result
+
+def read_settings(sheet_url, hmac_key, settings_sheet):
+    user_token = gen_admin_token(hmac_key, 'admin')
+    get_params = {'sheet': settings_sheet, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
+    retval = http_post(sheet_url, get_params)
+    if retval['result'] != 'success':
+        raise Exception("Error in accessing '%s': %s" % (settings_sheet, retval['error']))
+    rows = retval.get('value')
+    if not rows:
+        raise Exception("Error: Empty sheet '%s'" % settings_sheet)
+    return get_settings(rows)
+
+def get_settings(rows):
+    settings = {}
+    for row in rows:
+        name, value = row[:2]
+        name = name.strip()
+        value = str(value).strip()
+        if value.lower() in ('on', 'true', 'yes'):
+            value = True
+        elif value.lower() in ('off', 'false', 'no'):
+            value = False
+        settings[name] = value
+    return settings
 
 if __name__ == '__main__':
     import argparse

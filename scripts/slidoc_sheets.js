@@ -1,11 +1,13 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5l';
+var VERSION = '0.96.5n';
 
-var SITE_LABEL = '';        // Site label, e.g., 'calc101'
-var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
-
+var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
+			 ['site_label', '', "Site label, e.g., calc101"],
+			 ['site_url', '', "URL of website (if any); e.g., http://example.com"],
+			 ['require_login_token', 'true', "true/false"],
+			 ['require_late_token', 'true', "true/false"],
+			 ['share_averages', 'true', "true/false"] ];
 //
 // SENDING FORM DATA TO GOOGLE SHEETS
 //     http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/
@@ -17,17 +19,18 @@ var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.co
 //  2. Click on Tools > Script Editor, creating the script Code.gs.
 //     Overwrite the template code with this code and Save, using new project name Slidoc
 //
-//  3. Edit the following parameters in this script (see below):
-//       AUTH_KEY  set to your secret key string (also used in the --auth_key=... option)
-//       REQUIRE_LOGIN_TOKEN to true, if users need a login token.
-//       REQUIRE_LATE_TOKEN to true, if users need a late submission token.
-//       (These tokens can be generated using the command sliauth.py)
-//
-//  4. Run > setup. Click on the right-pointing triangle to its left to run this function.
+//  3. Run > setup. Click on the right-pointing triangle to its left to run this function.
 //     It should show 'Running function setup’ and then put up a dialog 'Authorization Required’.
 //     Click on Continue.
 //     In the next dialog select 'Review permissions'
 //     When you see 'Slidoc would would like to manage spreadsheets ... data ...’ click on Allow.
+//
+//  4. The previous setup step will create a sheet named 'settings_slidoc'. In this sheet,
+//       set auth_key to your secret key string (also used in the --auth_key=... option)
+//       set require_login_token to true, if users need a login token.
+//       set require_late_token to true, if users need a late submission token to submit late.
+//       (These tokens can be generated using the command sliauth.py)
+//       set share_averages to true if class averages for tests should be shared.
 //
 //  5. File > Manage Versions… We must save a version of the script for it to be called.
 //     In the box labeled 'Describe what has changed’ type 'Initial version’ and click on 'Save New Version’, then on 'OK’.
@@ -87,10 +90,6 @@ var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.co
 //   - "Update scores for session" menu action will only update session columns with lookup formulas.
 //   - If you add new user rows, then you can simply copy the lookup formula from existing rows.
 
-var REQUIRE_LOGIN_TOKEN = true;
-var REQUIRE_LATE_TOKEN = true;
-var SHARE_AVERAGES = true;
-
 // Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
@@ -134,6 +133,8 @@ var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
+var Settings = {};
+
 // The onOpen function is executed automatically every time a Spreadsheet is loaded
 function onOpen() {
    var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -148,6 +149,8 @@ function onOpen() {
    menuEntries.push({name: "Email authentication tokens", functionName: "emailTokens"});
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
    menuEntries.push({name: "Insert late token", functionName: "insertLateToken"});
+   menuEntries.push(null); // line separator
+   menuEntries.push({name: "Reset settings", functionName: "resetSettings"});
 
    ss.addMenu("Slidoc", menuEntries);
 }
@@ -155,6 +158,41 @@ function onOpen() {
 function setup() {
     var doc = SpreadsheetApp.getActiveSpreadsheet();
     SCRIPT_PROP.setProperty("key", doc.getId());
+    // Create default settings sheet
+    defaultSettings();
+}
+
+function resetSettings() {
+    var response = getPrompt('Reset settings?', "");
+    if (response == null)
+	return;
+    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    defaultSettings();
+}
+
+function defaultSettings() {
+    var settingsSheet = createSheet(SETTINGS_SHEET, ['name', 'value', 'description']);
+    if (settingsSheet.getLastRow() > 1)
+	settingsSheet.deleteRows(2, settingsSheet.getLastRow()-1);
+    for (var j=0; j<DEFAULT_SETTINGS.length; j++) {
+	var defaultRow = DEFAULT_SETTINGS[j];
+	settingsSheet.insertRows(j+2);
+	settingsSheet.getRange(j+2, 1, 1, defaultRow.length).setValues([defaultRow]);
+    }
+}
+
+function initSettings() {
+    var settingsSheet = getSheet(SETTINGS_SHEET);
+    var settingsData = settingsSheet.getSheetValues(2, 1, settingsSheet.getLastRow()-1, 2);
+    for (var j=0; j<settingsData.length; j++) {
+	var settingsName = settingsData[j][0].trim();
+	var settingsVal = (''+settingsData[j][1]).trim();
+	if (settingsVal.toLowerCase().match(/^(on|true|yes)$/))
+	    settingsVal = true;
+	else if (settingsVal.toLowerCase().match(/^(off|false|no)$/))
+	    settingsVal = false;
+	Settings[settingsName] = settingsVal;
+    }
 }
 
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
@@ -226,21 +264,23 @@ function sheetAction(params) {
     var returnInfo = {version: VERSION};
     var returnMessages = [];
     try {
+	initSettings();
+
 	var adminUser = '';
 	var paramId = params.id || '';
 
 	if (params.admin) {
 	    if (!params.token)
 		throw('Error:NEED_ADMIN_TOKEN:Need token for admin authentication');
-	    if (!validateHMAC('admin:'+params.admin+':'+params.token, AUTH_KEY))
+	    if (!validateHMAC('admin:'+params.admin+':'+params.token, Settings['auth_key']))
 		throw("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.admin+"'");
 	    adminUser = params.admin;
-	} else if (REQUIRE_LOGIN_TOKEN) {
+	} else if (Settings['require_login_token']) {
 	    if (!paramId)
 		throw('Error:NEED_ID:Need id for authentication');
 	    if (!params.token)
 		throw('Error:NEED_TOKEN:Need token for id authentication');
-	    if (!validateHMAC('id:'+paramId+':'+params.token, AUTH_KEY))
+	    if (!validateHMAC('id:'+paramId+':'+params.token, Settings['auth_key']))
 		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'");
 	}
 
@@ -556,7 +596,7 @@ function sheetAction(params) {
 			returnInfo.maxScores = modSheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
 		    if (temIndexRow[CURVE_ID])
 			returnInfo.curve = modSheet.getSheetValues(temIndexRow[CURVE_ID], 1, 1, columnHeaders.length)[0];
-		    if (SHARE_AVERAGES && temIndexRow[AVERAGE_ID])
+		    if (Settings['share_averages'] && temIndexRow[AVERAGE_ID])
 			returnInfo.averages = modSheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
 		} catch (err) {}
 	    }
@@ -988,7 +1028,7 @@ function sheetAction(params) {
 				var comps = splitToken(lateToken);
 				var dateStr = comps[0];
 				var tokenStr = comps[1];
-				if (genLateToken(AUTH_KEY, userId, sheetName, dateStr) == lateToken) {
+				if (genLateToken(Settings['auth_key'], userId, sheetName, dateStr) == lateToken) {
 				    lateDueDate = true;
 				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
 				} else {
@@ -1001,7 +1041,7 @@ function sheetAction(params) {
 
 			var curTime = curDate.getTime();
 			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
-			var allowLateMods = !REQUIRE_LATE_TOKEN || adminUser;
+			var allowLateMods = !Settings['require_late_token'] || adminUser;
 			if (!allowLateMods && pastSubmitDeadline && lateToken) {
 			    if (lateToken == PARTIAL_SUBMIT) {
 				if (newRow || !rowUpdates)
@@ -1465,7 +1505,7 @@ function createSessionRow(sessionName, fieldsMin, params, userId, displayName, e
 }
     
 function getUserRow(sessionName, userId, displayName, opts) {
-    var token = genUserToken(AUTH_KEY, userId);
+    var token = genUserToken(Settings['auth_key'], userId);
     var getParams = {'id': userId, 'token': token,'sheet': sessionName,
 		     'name': displayName, 'get': '1'};
     if (opts) {
@@ -1902,6 +1942,7 @@ function sessionAnswerSheet() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
+	initSettings();
 	var sessionSheet = getSheet(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found: '+sessionName);
@@ -2044,6 +2085,7 @@ function sessionStatSheet() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
+	initSettings();
 	var sessionSheet = getSheet(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found '+sessionName);
@@ -2261,10 +2303,10 @@ function scoreAnswer(response, qtype, corrAnswer) {
         } else if (corrComps[0] == null) {
             qscore = null;
 	    if (corrAnswer)
-		throw('Slidoc.scoreAnswer: Error in correct numeric answer:'+corrAnswer);
+		throw('scoreAnswer: Error in correct numeric answer:'+corrAnswer);
         } else if (corrComps[1] == null) {
             qscore = null;
-            throw('Slidoc.scoreAnswer: Error in correct numeric error:'+corrAnswer)
+            throw('scoreAnswer: Error in correct numeric error:'+corrAnswer)
         }
     } else {
         // Check if non-numeric answer is correct (all spaces are removed before comparison)
@@ -2438,6 +2480,7 @@ function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
 function emailTokens() {
     // Send authentication tokens
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    initSettings();
     var rosterSheet = getSheet(ROSTER_SHEET);
     if (!rosterSheet)
 	throw('Roster sheet '+ROSTER_SHEET+' not found!');
@@ -2455,8 +2498,8 @@ function emailTokens() {
 	    throw("Invalid email address '"+emailList[j][1]+"' for userID '"+emailList[j][0]+"'");
 
     var subject;
-    if (SITE_LABEL)
-	subject = 'Authentication token for '+SITE_LABEL;
+    if (Settings['site_label'])
+	subject = 'Authentication token for '+Settings['site_label'];
     else
 	subject = 'Slidoc authentication token';
 
@@ -2465,11 +2508,11 @@ function emailTokens() {
 	if (!emailList[j][1].trim())
 	    continue;
 	var username = emailList[j][0];
-	var token = genUserToken(AUTH_KEY, emailList[j][0]);
+	var token = genUserToken(Settings['auth_key'], emailList[j][0]);
 
 	var message = 'Authentication token for userID '+username+' is '+token;
-	if (SITE_URL)
-	    message += "\n\nAuthenticated link to website: "+SITE_URL+"/_auth/login/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
+	if (Settings['site_url'])
+	    message += "\n\nAuthenticated link to website: "+Settings['site_url']+"/_auth/login/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
 	message += "\n\nRetain this email for future use, or save userID and token in a secure location. Do not share token with anyone else.";
 
 	MailApp.sendEmail(emailList[j][1], subject, message);
@@ -2492,6 +2535,7 @@ function insertLateToken() {
 
 function createLateToken(insert) {
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    initSettings();
     var sessionName = getSessionName();
     if (sessionName) {
 	var userId = getPrompt('Email late submission token for session '+sessionName, "userID");
@@ -2526,7 +2570,7 @@ function createLateToken(insert) {
     if (dateStr.indexOf('T') < 0)
 	dateStr += 'T23:59';
 
-    var token = genLateToken(AUTH_KEY, userId, sessionName, dateStr);
+    var token = genLateToken(Settings['auth_key'], userId, sessionName, dateStr);
 
     var subject = 'Late submission for '+sessionName;
     var message;
@@ -2542,12 +2586,12 @@ function createLateToken(insert) {
 	    userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
 	}
 
-	if (SITE_LABEL)
-	    subject = 'Late submission allowed for '+SITE_LABEL;
+	if (Settings['site_label'])
+	    subject = 'Late submission allowed for '+Settings['site_label'];
 	message = 'Late submission allowed for userID '+userId+' in session '+sessionName+'. New due date is  '+dateStr;
     } else {
-	if (SITE_LABEL)
-	    subject = 'Late submission token for '+SITE_LABEL;
+	if (Settings['site_label'])
+	    subject = 'Late submission token for '+Settings['site_label'];
 	message = 'Late submission token for userID '+userId+' and session '+sessionName+' is '+token;
     }
 
@@ -2571,6 +2615,7 @@ function updateScoreSession() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
+	initSettings();
 	var sessionSheet = getSheet(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found: '+sessionName);
@@ -2593,6 +2638,7 @@ function updateScoreAll() {
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
+	initSettings();
 	var indexSheet = getSheet(INDEX_SHEET);
 	if (!indexSheet) {
 	    SpreadsheetApp.getUi().alert('Sheet not found: '+INDEX_SHEET);

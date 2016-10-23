@@ -72,6 +72,9 @@ Options = {
     'proxy_wait': None,
     'port': 8888,
     'public': False,
+    'require_login_token': True,
+    'require_late_token': True,
+    'share_averages': True,
     'site_label': 'Slidoc',
     'site_url': '',
     'static_dir': 'static',
@@ -99,6 +102,8 @@ EXPIRES_DAYS = 30
 
 WS_TIMEOUT_SEC = 3600
 EVENT_BUFFER_SEC = 3
+
+SETTINGS_SHEET = 'settings_slidoc'
 
 class UserIdMixin(object):
     @classmethod
@@ -1400,7 +1405,7 @@ def main():
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("gsheet_url", default="", help="Google sheet URL")
-    define("lock_proxy_url", default="", help="Proxy URL to lock")
+    define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s)")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
     define("insecure_cookie", default=False, help="Insecure cookies (for printing)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
@@ -1421,17 +1426,26 @@ def main():
     if not options.auth_key and not options.public:
         sys.exit('Must specify one of --public or --auth_key=...')
 
+    settings = {}
+    if options.gsheet_url:
+        # Need to restart server if SETTINGS_SHEET is changed
+        settings = sliauth.read_settings(options.gsheet_url, options.auth_key or '', SETTINGS_SHEET)
+
     for key in Options:
         if not key.startswith('_'):
-            Options[key] = getattr(options, key)
+            if hasattr(options, key):
+                # Command line overrides settings
+                Options[key] = getattr(options, key)
+            elif key in settings:
+                Options[key] = settings[key]
 
     if not options.debug:
         logging.getLogger('tornado.access').disabled = True
 
     if options.proxy_wait is not None:
-        sdproxy.Options.update(AUTH_KEY=options.auth_key, SHEET_URL=options.gsheet_url, DEBUG=options.debug,
-                               DRY_RUN=options.dry_run, LOCK_PROXY_URL=options.lock_proxy_url,
-                               MIN_WAIT_TIME=options.proxy_wait)
+        for key in sdproxy.Options:
+            if not key.startswith('_') and key in Options:
+                sdproxy.Options[key] = Options[key]
 
     scriptdir = os.path.dirname(os.path.realpath(__file__))
     pluginsDir = scriptdir + '/plugins'

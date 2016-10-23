@@ -50,6 +50,7 @@ from xml.etree import ElementTree
 ADMINUSER_ID = 'admin'
 TESTUSER_ID = '_test_user'
 
+SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
 SCORE_SHEET = 'scores_slidoc'
 LOG_SHEET = 'slidoc_log'
@@ -1844,9 +1845,9 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     user_token = sliauth.gen_admin_token(hmac_key, user)
     admin_paced = 1 if pace_level >= ADMIN_PACE else None
 
-    get_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
+    post_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
                   'get': '1', 'headers': json.dumps(Index_fields), 'getheaders': '1'}
-    retval = http_post(sheet_url, get_params)
+    retval = sliauth.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
@@ -1912,7 +1913,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
                   }
-    retval = http_post(sheet_url, post_params)
+    retval = sliauth.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
     message('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name))
@@ -1927,7 +1928,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
     user_token = sliauth.gen_user_token(hmac_key, user) if hmac_key else ''
     post_params = {'id': user, 'token': user_token, 'sheet': sheet_name,
                    'get': 1, 'getheaders': '1'}
-    retval = http_post(sheet_url, post_params)
+    retval = sliauth.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if retval['error'].startswith('Error:NOSHEET:'):
             return (None, modify_col, 0)
@@ -1975,7 +1976,7 @@ def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify
         post_params['row'] = json.dumps(row)
     if modify:
         post_params['modify'] = modify
-    retval = http_post(sheet_url, post_params)
+    retval = sliauth.http_post(sheet_url, post_params)
 
     if retval['result'] != 'success':
         abort("Error in creating sheet '%s': %s\n headers=%s\n%s" % (sheet_name, retval['error'], headers, retval.get('messages')))
@@ -2898,20 +2899,6 @@ def sort_caseless(list):
     sorted(new_list, key=lambda s: s.lower())
     return new_list
 
-def http_post(url, params_dict):
-    data = urllib.urlencode(params_dict)
-    req = urllib2.Request(url, data)
-    try:
-        response = urllib2.urlopen(req)
-    except Exception, excp:
-        abort('ERROR in accessing URL %s: %s' % (url, excp))
-    result = response.read()
-    try:
-        result = json.loads(result)
-    except Exception, excp:
-        pass
-    return result
-
 
 Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html><head>
@@ -3141,6 +3128,10 @@ if __name__ == '__main__':
                                     exclude_args=exclude_args, first_line=True, verbose=cmd_args_orig.verbose)
 
     config_dict = cmd_args2dict(cmd_args)
+
+    settings = {}
+    if cmd_args.gsheet_url:
+        settings = sliauth.read_settings(cmd_args.gsheet_url, cmd_args.auth_key, SETTINGS_SHEET)
 
     fhandles = config_dict.pop('file')
     input_files = []

@@ -38,26 +38,29 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5l'
+VERSION = '0.96.5n'
 
 # Usually modified by importing module
 Options = {
-    'BACKUP_DIR': '_BACKUPS/', # Backup directory prefix, including slash
-    'DEBUG': None,      
-    'DRY_RUN': None,     # Dry run (read from, but do not update, Google Sheets)
-    'SHEET_URL': None,   # Google Sheet URL
-    'AUTH_KEY': None,    # Digest authentication key
-    'MIN_WAIT_SEC': 0    # Minimum time (sec) between successful Google Sheet requests
+    'backup_dir': '_BACKUPS/', # Backup directory prefix, including slash
+    'debug': None,      
+    'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
+    'gsheet_url': None,   # Google Sheet URL
+    'lock_proxy_url': '', # URL of proxy server to lock sheet
+    'auth_key': None,     # Digest authentication key
+    'min_wait_sec': 0,     # Minimum time (sec) between successful Google Sheet requests
+    'require_login_token': True,
+    'require_late_token': True,
+    'share_averages': True
     }
 
+DEFAULT_SETTINGS = [ ['require_login_token', 'true', "true/false"],
+			         ['require_late_token', 'true', "true/false"],
+			         ['share_averages', 'true', "true/false"] ]
+    
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
 CACHE_HOLD_SEC = 3600    # Maximum time (sec) to hold sheet in cache
-
-# Should be consistent with slidoc_sheets.js
-REQUIRE_LOGIN_TOKEN = True
-REQUIRE_LATE_TOKEN = True
-SHARE_AVERAGES = True
 
 ADMINUSER_ID = 'admin'
 MAXSCORE_ID = '_max_score'
@@ -85,19 +88,6 @@ PARTIAL_SUBMIT = 'partial'
 TRUNCATE_DIGEST = 8
 
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
-
-def http_post(url, params_dict=None):
-    req = urllib2.Request(url, urllib.urlencode(params_dict)) if params_dict else urllib2.Request(url)
-    try:
-        response = urllib2.urlopen(req)
-    except Exception, excp:
-        raise Exception('ERROR in accessing URL %s: %s' % (url, excp))
-    result = response.read()
-    try:
-        result = json.loads(result)
-    except Exception, excp:
-        result = {'result': 'error', 'error': 'Error in http_post: result='+str(result)+': '+str(excp)}
-    return result
 
 class Dummy():
     pass
@@ -136,11 +126,11 @@ initCache()
 
 def backupCache(dirpath=''):
     # Returns null string on success or error string
-    dirpath = dirpath or Options['BACKUP_DIR'] or '_backup'
+    dirpath = dirpath or Options['backup_dir'] or '_backup'
     if dirpath.endswith('-'):
         dirpath += sliauth.iso_date()[:16].replace(':','-')
     suspend_cache("backup")
-    if Options['DEBUG']:
+    if Options['debug']:
         print("DEBUG:backupCache: %s started %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
     errorList = []
     try:
@@ -179,7 +169,7 @@ def backupCache(dirpath=''):
         except Exception, excp:
             print("ERROR:backupCache: ", str(excp), file=sys.stderr)
 
-    if Options['DEBUG']:
+    if Options['debug']:
         if errors:
             print(errors, file=sys.stderr)
         print("DEBUG:backupCache: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
@@ -221,12 +211,12 @@ def getSheet(sheetName, optional=False):
         # Retry retrieving optional sheet
         del Miss_cache[sheetName]
 
-    if Options['LOCK_PROXY_URL'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
-        lockURL = Options['LOCK_PROXY_URL']+'/_lock/'+sheetName
+    if Options['lock_proxy_url'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
+        lockURL = Options['lock_proxy_url']+'/_lock/'+sheetName
         try:
-            req = urllib2.Request(lockURL+'?token='+Options['AUTH_KEY']+'&type=proxy')
+            req = urllib2.Request(lockURL+'?token='+Options['auth_key']+'&type=proxy')
             response = urllib2.urlopen(req)
-            if Options['DEBUG']:
+            if Options['debug']:
                 print("DEBUG:getSheet: %s LOCKED %s (%s)" % (sheetName, lockURL, response.read()), file=sys.stderr)
         except Exception, excp:
             errMsg = 'ERROR:getSheet: Unable to lock sheet '+sheetName+': '+str(excp)
@@ -235,17 +225,17 @@ def getSheet(sheetName, optional=False):
         time.sleep(6)
 
     user = 'admin'
-    userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
+    userToken = sliauth.gen_admin_token(Options['auth_key'], user)
 
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
-    if Options['DEBUG']:
+    if Options['debug']:
         print("DEBUG:getSheet", sheetName, getParams, file=sys.stderr)
 
-    if Options['DEBUG'] and not Options['SHEET_URL']:
+    if Options['debug'] and not Options['gsheet_url']:
         return None
 
-    retval = http_post(Options['SHEET_URL'], getParams) if Options['SHEET_URL'] else {'result': 'error', 'error': 'No Sheet URL'}
-    if Options['DEBUG']:
+    retval = sliauth.http_post(Options['gsheet_url'], getParams) if Options['gsheet_url'] else {'result': 'error', 'error': 'No Sheet URL'}
+    if Options['debug']:
         print("DEBUG:getSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
 
     Global.remoteVersions.add( retval.get('info',{}).get('version','') )
@@ -258,7 +248,7 @@ def getSheet(sheetName, optional=False):
     rows = retval.get('value')
     if not rows:
         raise Exception("Empty sheet '%s'" % sheetName)
-    keyHeader = '' if sheetName.endswith('_log') else 'id'
+    keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
     Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=keyHeader)
     return Sheet_cache[sheetName]
 
@@ -267,7 +257,7 @@ def createSheet(sheetName, headers):
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
-    keyHeader = '' if sheetName.endswith('_log') else 'id'
+    keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
     Sheet_cache[sheetName] = Sheet(sheetName, [headers], keyHeader=keyHeader)
     return Sheet_cache[sheetName]
 
@@ -350,7 +340,7 @@ class Sheet(object):
         self.xrows.insert(rowNum-1, newRow)
 
     def appendColumns(self, headers):
-        if Options['SHEET_URL'] and not Options['DRY_RUN']:
+        if Options['gsheet_url'] and not Options['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot append columns for session '"+self.name+"' via proxy; use direct URL")
         self.modTime = sliauth.epoch_ms()
@@ -360,7 +350,7 @@ class Sheet(object):
             self.xrows[j] += ['']*len(headers)
 
     def trimColumns(self, ncols):
-        if Options['SHEET_URL'] and not Options['DRY_RUN']:
+        if Options['gsheet_url'] and not Options['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot delete columns for session '"+self.name+"' via proxy; use direct URL")
         self.modTime = sliauth.epoch_ms()
@@ -389,7 +379,7 @@ class Sheet(object):
         return [row[colMin-1:colMin+colCount-1] for row in self.xrows[rowMin-1:rowMin+rowCount-1]]
 
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
-        ##if Options['DEBUG']:
+        ##if Options['debug']:
         ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
         check_if_locked(self.name)
         if rowMin < 2:
@@ -500,7 +490,7 @@ def unlockSheet(sheetName):
     return True
 
 def check_if_locked(sheetName, get=False):
-    if Options['LOCK_PROXY_URL'] and sheetName.endswith('_slidoc') and not get:
+    if Options['lock_proxy_url'] and sheetName.endswith('_slidoc') and not get:
         raise Exception('Only get operation allowed for special sheet '+sheetName+' in locked proxy mode')
 
     if sheetName in Lock_cache or (Global.suspended and (not get or Global.suspended != 'backup')):
@@ -544,10 +534,10 @@ def updates_current():
         print("Cleared cache", file=sys.stderr)
 
 def update_remote_sheets(force=False):
-    if Options['DEBUG']:
+    if Options['debug']:
         print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
 
-    if not Options['SHEET_URL'] or Options['DRY_RUN']:
+    if not Options['gsheet_url'] or Options['dry_run']:
         # No updates if no sheet URL or dry run
         updates_completed(sliauth.epoch_ms())
         updates_current()
@@ -557,7 +547,7 @@ def update_remote_sheets(force=False):
         return
 
     cur_time = sliauth.epoch_ms()
-    if not force and (cur_time - Global.cacheResponseTime) < 1000*Options['MIN_WAIT_SEC']:
+    if not force and (cur_time - Global.cacheResponseTime) < 1000*Options['min_wait_sec']:
         schedule_update(cur_time-Global.cacheResponseTime)
         return
 
@@ -574,18 +564,18 @@ def update_remote_sheets(force=False):
         # sheet_name, headers_list, keys_dictionary, modified_rows
         modRequests.append([sheetName, updates[0], updates[1], updates[2]])
 
-    if Options['DEBUG']:
+    if Options['debug']:
             print("update_remote_sheets:B", modRequests is not None, file=sys.stderr)
     if not modRequests:
         # Nothing to update
         updates_current()
         return
 
-    if Options['DEBUG']:
+    if Options['debug']:
         print("update_remote_sheets:C", [(x[0], [y[0] for y in x[3]]) for x in modRequests], file=sys.stderr)
 
     user = 'admin'
-    userToken = sliauth.gen_admin_token(Options['AUTH_KEY'], user)
+    userToken = sliauth.gen_admin_token(Options['auth_key'], user)
 
     http_client = tornado.httpclient.AsyncHTTPClient()
     json_data = json.dumps(modRequests, default=sliauth.json_default)
@@ -593,7 +583,7 @@ def update_remote_sheets(force=False):
                   'data':  json_data}
     post_data['create'] = 'proxy'
     body = urllib.urlencode(post_data)
-    http_client.fetch(Options['SHEET_URL'], handle_proxy_response, method='POST', headers=None, body=body)
+    http_client.fetch(Options['gsheet_url'], handle_proxy_response, method='POST', headers=None, body=body)
     Global.totalCacheRequestBytes += len(json_data)
     Global.cacheRequestTime = cur_time
 
@@ -615,7 +605,7 @@ def handle_proxy_response(response):
         schedule_update(Global.cacheWaitTime)
     else:
         Global.totalCacheResponseBytes += len(response.body)
-        if Options['DEBUG']:
+        if Options['debug']:
             print("handle_proxy_response: Update RESPONSE", response.body[:256], file=sys.stderr)
         try:
             respObj = json.loads(response.body)
@@ -634,11 +624,11 @@ def handle_proxy_response(response):
 
     if not errMsg:
         # Update succeeded
-        if Options['DEBUG']:
+        if Options['debug']:
             print("handle_proxy_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
 
         updates_completed(Global.cacheRequestTime)
-        schedule_update(0 if Global.suspended else Options['MIN_WAIT_SEC'])
+        schedule_update(0 if Global.suspended else Options['min_wait_sec'])
 
 def updates_completed(updateTime):
         Global.cacheUpdateTime = updateTime
@@ -687,7 +677,7 @@ def sheetAction(params, notrace=False):
     # [1] http://googleappsdeveloper.blogspot.co.uk/2011/10/concurrency-and-google-apps-script.html
     # we want a public lock, one that locks for all invocations
 
-    if Options['DEBUG']:
+    if Options['debug']:
         print("DEBUG: sheetAction PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
 
     returnValues = None
@@ -706,15 +696,15 @@ def sheetAction(params, notrace=False):
         if params.get('admin',''):
             if not params.get('token',''):
                 raise Exception('Error:NEED_ADMIN_TOKEN:Need token for admin authentication')
-            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), Options['AUTH_KEY']):
+            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), Options['auth_key']):
                 raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.get('admin','')+"'")
             adminUser = params.get('admin','')
-        elif REQUIRE_LOGIN_TOKEN:
+        elif Options['require_login_token']:
             if not paramId:
                 raise Exception('Error:NEED_ID:Need id for authentication')
             if not params.get('token',''):
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
-            if not validateHMAC('id:'+paramId+':'+params.get('token',''), Options['AUTH_KEY']):
+            if not validateHMAC('id:'+paramId+':'+params.get('token',''), Options['auth_key']):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
 
         # Read-only sheets
@@ -882,7 +872,7 @@ def sheetAction(params, notrace=False):
                     returnInfo['maxScores'] = modSheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
                 if temIndexRow.get(CURVE_ID):
                     returnInfo['curve'] = modSheet.getSheetValues(temIndexRow.get(CURVE_ID), 1, 1, len(columnHeaders))[0]
-                if SHARE_AVERAGES and temIndexRow.get(AVERAGE_ID):
+                if Options['share_averages'] and temIndexRow.get(AVERAGE_ID):
                     returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
             except Exception, err:
                 pass
@@ -1263,7 +1253,7 @@ def sheetAction(params, notrace=False):
                                 comps = splitToken(lateToken)
                                 dateStr = comps[0]
                                 tokenStr = comps[1]
-                                if sliauth.gen_late_token(Options['AUTH_KEY'], userId, sheetName, dateStr) == lateToken:
+                                if sliauth.gen_late_token(Options['auth_key'], userId, sheetName, dateStr) == lateToken:
                                     lateDueDate = True
                                     dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
                                 else:
@@ -1274,7 +1264,7 @@ def sheetAction(params, notrace=False):
                         curTime = sliauth.epoch_ms(curDate)
                         pastSubmitDeadline = (dueDate and curTime > sliauth.epoch_ms(dueDate))
 
-                        allowLateMods = not REQUIRE_LATE_TOKEN or adminUser
+                        allowLateMods = not Options['require_late_token'] or adminUser
                         if not allowLateMods and pastSubmitDeadline and lateToken:
                             if lateToken == PARTIAL_SUBMIT:
                                 if newRow or not rowUpdates:
@@ -1620,7 +1610,7 @@ def sheetAction(params, notrace=False):
 
     except Exception, err:
         # if error, return this
-        if Options['DEBUG'] and not notrace:
+        if Options['debug'] and not notrace:
             import traceback
             traceback.print_exc()
 
@@ -1628,7 +1618,7 @@ def sheetAction(params, notrace=False):
                   "info": returnInfo,
                   "messages": '\n'.join(returnMessages)}
 
-    if Options['DEBUG'] and not notrace:
+    if Options['debug'] and not notrace:
         print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
     
     return retObj
@@ -1710,9 +1700,9 @@ def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', ema
     
 def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     if opts.get('admin'):
-        token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+        token = sliauth.gen_admin_token(Options['auth_key'], 'admin')
     else:
-        token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
+        token = sliauth.gen_user_token(Options['auth_key'], userId)
     getParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'name': displayName, 'get': '1'}
     getParams.update(opts)
@@ -1720,7 +1710,7 @@ def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     return sheetAction(getParams, notrace=notrace)
 
 def getAllRows(sessionName, opts={}, notrace=False):
-    token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+    token = sliauth.gen_admin_token(Options['auth_key'], 'admin')
     getParams = {'admin': 'admin', 'token': token,'sheet': sessionName,
                  'get': '1', 'all': '1'}
     getParams.update(opts)
@@ -1729,9 +1719,9 @@ def getAllRows(sessionName, opts={}, notrace=False):
 
 def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
     if opts.get('admin'):
-        token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+        token = sliauth.gen_admin_token(Options['auth_key'], 'admin')
     else:
-        token = sliauth.gen_user_token(Options['AUTH_KEY'], userId)
+        token = sliauth.gen_user_token(Options['auth_key'], userId)
     putParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'row': json.dumps(rowValues, default=sliauth.json_default)}
     putParams.update(opts)
@@ -1740,10 +1730,10 @@ def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
 
 def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
     if opts.get('admin'):
-        token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+        token = sliauth.gen_admin_token(Options['auth_key'], 'admin')
     else:
-        token = sliauth.gen_user_token(Options['AUTH_KEY'], updateObj['id'])
-    token = sliauth.gen_admin_token(Options['AUTH_KEY'], 'admin')
+        token = sliauth.gen_user_token(Options['auth_key'], updateObj['id'])
+    token = sliauth.gen_admin_token(Options['auth_key'], 'admin')
     updates = []
     for j, header in enumerate(headers):
         if header in updateObj:
@@ -1793,7 +1783,7 @@ def exportAnswers(sessionName):
             elif hmatch.group(2) == 'explain':
                 explainCols[qnumber] = j+1
         
-    if Options['DEBUG']:
+    if Options['debug']:
         print("DEBUG:exportAnswers", sessionName, qmaxCols, file=sys.stderr)
     outRows = []
     qmaxAll = qmaxCols
@@ -1869,7 +1859,7 @@ def createQuestionAttempted(response):
 
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
     # answers = {1:{'response':, 'explain':},...}
-    if Options['DEBUG']:
+    if Options['debug']:
         print("DEBUG:importUserAnswers", sessionName, submitDate, userId, displayName, answers, file=sys.stderr)
     if not getSheet(sessionName, optional=True):
         raise Exception('Session '+sessionName+' not found')
@@ -1948,7 +1938,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if submitDate:
             submitTimestamp = submitDate
 
-    if Options['DEBUG']:
+    if Options['debug']:
         print("DEBUG:importUserAnswers2", sessionName, userId, adminPaced, file=sys.stderr)
             
     retval = putUserRow(sessionName, userId, rowValues, putOpts)
