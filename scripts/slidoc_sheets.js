@@ -1,7 +1,7 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
 var AUTH_KEY = 'testkey';   // Set this value for secure administrative access to session index
-var VERSION = '0.96.5k';
+var VERSION = '0.96.5l';
 
 var SITE_LABEL = '';        // Site label, e.g., 'calc101'
 var SITE_URL = '';          // URL of website (if any); e.g., 'http://example.com'
@@ -147,6 +147,7 @@ function onOpen() {
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Email authentication tokens", functionName: "emailTokens"});
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
+   menuEntries.push({name: "Insert late token", functionName: "insertLateToken"});
 
    ss.addMenu("Slidoc", menuEntries);
 }
@@ -1084,7 +1085,7 @@ function sheetAction(params) {
 		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1] && userId != TESTUSER_ID)
 			throw("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'");
 
-		    if ((!adminUser || params.import) && rowUpdates.length > fieldsMin) {
+		    if ((!adminUser || importSession) && rowUpdates.length > fieldsMin) {
 			// Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values)
 			var nonNullExtraColumn = false;
 			var totalCells = [];
@@ -1301,7 +1302,7 @@ function sheetAction(params) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (!restrictedSheet && !partialSubmission && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
+			    if (!restrictedSheet && !partialSubmission && !importSession && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
 				throw("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 			    var hmatch = QFIELD_RE.exec(colHeader);
                             if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {
@@ -2480,7 +2481,16 @@ function emailTokens() {
 
 
 function emailLateToken() {
-    // Send late token
+    // Send late token to user
+    createLateToken();
+}
+
+function insertLateToken() {
+    // Insert late token in session
+    createLateToken(true);
+}
+
+function createLateToken(insert) {
     var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
     var sessionName = getSessionName();
     if (sessionName) {
@@ -2518,29 +2528,35 @@ function emailLateToken() {
 
     var token = genLateToken(AUTH_KEY, userId, sessionName, dateStr);
 
-    var numStickyRows = 1;
-    var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
-    if (userRow) {
-	sessionSheet.getRange(userRow, indexColumns(sessionSheet)['lateToken'], 1, 1).setValue(token);
-    } else {
-	var retval = getUserRow(sessionName, userId, displayName, {'create': '1', 'late': token});
-	if (retval.result != 'success')
-	    throw('Error in creating session for user '+userId+': '+retval.error);
-	userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
-    }
+    var subject = 'Late submission for '+sessionName;
+    var message;
+    if (insert) {
+	var numStickyRows = 1;
+	var userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+	if (userRow) {
+	    sessionSheet.getRange(userRow, indexColumns(sessionSheet)['lateToken'], 1, 1).setValue(token);
+	} else {
+	    var retval = getUserRow(sessionName, userId, displayName, {'create': '1', 'late': token});
+	    if (retval.result != 'success')
+		throw('Error in creating session for user '+userId+': '+retval.error);
+	    userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
+	}
 
-    var note = 'Late submission on '+dateStr+' authorized for user '+userId+'.';
-    if (email && email.indexOf('@') > 0) {
-	var subject;
 	if (SITE_LABEL)
 	    subject = 'Late submission allowed for '+SITE_LABEL;
-	else
-	    subject = 'Late submission for '+sessionName;
+	message = 'Late submission allowed for userID '+userId+' in session '+sessionName+'. New due date is  '+dateStr;
+    } else {
+	if (SITE_LABEL)
+	    subject = 'Late submission token for '+SITE_LABEL;
+	message = 'Late submission token for userID '+userId+' and session '+sessionName+' is '+token;
+    }
 
-	var message = 'Late submission allowed for userID '+userId+' in session '+sessionName+'. New due date is  '+dateStr;
+    var	note = 'Late submission on '+dateStr+' authorized for user '+userId+'.';
+    if (email && email.indexOf('@') > 0) {
 	MailApp.sendEmail(email, subject, message);
-
 	note += ' Emailed notification to '+email;
+    } else if (insert) {
+	throw("Invalid email address '"+email+"' for userID '"+userId+"'");
     }
     notify(note);
 }

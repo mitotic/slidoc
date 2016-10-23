@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.5k'
+VERSION = '0.96.5l'
 
 # Usually modified by importing module
 Options = {
@@ -105,6 +105,7 @@ class Dummy():
 Sheet_cache = {}    # Cache of sheets
 Miss_cache = {}     # For optional sheets that are missing
 Lock_cache = {}     # Locked sheets
+Refresh_sheets = set()
 
 Global = Dummy()
 
@@ -476,12 +477,16 @@ def getCacheStatus():
     out += '\n'
     return out
 
-def lockSheet(sheetName, lockType='user'):
+def lockSheet(sheetName, lockType='user', refresh=False):
     # Returns True if lock is immediately effective; False if it will take effect later
-    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
-        return False
+    # If refresh, automatically unlock after updates
     if sheetName not in Lock_cache:
         Lock_cache[sheetName] = lockType
+    if refresh:
+        Refresh_sheets.add(sheetName)
+        return unlockSheet(sheetName)
+    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+        return False
     return True
 
 def unlockSheet(sheetName):
@@ -491,6 +496,7 @@ def unlockSheet(sheetName):
         del Lock_cache[sheetName]
     if sheetName in Sheet_cache:
         del Sheet_cache[sheetName]
+    Refresh_sheets.discard(sheetName)
     return True
 
 def check_if_locked(sheetName, get=False):
@@ -639,6 +645,8 @@ def updates_completed(updateTime):
         Global.cacheRequestTime = 0
         Global.cacheRetryCount = 0
         Global.cacheWaitTime = 0
+        for sheetName in Refresh_sheets:
+            unlockSheet(sheetName)
         
 
 def sheetAction(params, notrace=False):
@@ -1343,7 +1351,7 @@ def sheetAction(params, notrace=False):
                     if submitTimestampCol and rowUpdates[submitTimestampCol-1] and userId != TESTUSER_ID:
                         raise Exception("Error::Submitted session cannot be re-submitted for sheet '"+sheetName+"'")
 
-                    if (not adminUser or params.get('import')) and len(rowUpdates) > fieldsMin:
+                    if (not adminUser or importSession) and len(rowUpdates) > fieldsMin:
                         # Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values:
                         nonNullExtraColumn = False
                         totalCells = []
@@ -1547,7 +1555,7 @@ def sheetAction(params, notrace=False):
 
                         elif colHeader not in MIN_HEADERS and not colHeader.endswith('Timestamp'):
                             # Update row values for header (except for id, name, email, altid, *Timestamp)
-                            if not restrictedSheet and not partialSubmission and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
+                            if not restrictedSheet and not partialSubmission and not importSession and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
                                 raise Exception("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'")
 
                             if colHeader.lower().endswith('date') or colHeader.lower().endswith('time'):
@@ -1842,6 +1850,18 @@ def exportAnswers(sessionName):
     memfile.close()
     return content
 
+
+def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
+    create = source or 'import'
+    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=True)
+    if retval['result'] != 'success':
+	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
+    headers = retval['headers']
+    if lateToken:
+        updateObj = {'id': userId, 'lateToken': lateToken}
+        retval = updateUserRow(sessionName, headers, updateObj, {'admin': 'admin', 'import': '1'})
+        if retval['result'] != 'success':
+            raise Exception('Error in setting late token for user '+userId+': '+retval.get('error'))
 
 def createQuestionAttempted(response):
     return {'response': response or ''};

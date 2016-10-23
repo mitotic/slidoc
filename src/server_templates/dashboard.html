@@ -1,3 +1,8 @@
+<style>
+body {
+    font-family: sans-serif;
+}
+</style>
 <script>
 function check(label) {
 if (window.confirm('Confirm '+label+'?'))
@@ -7,6 +12,8 @@ function action(label) {
     var prompt;
     if (label == 'backup')
        prompt = 'Backup directory (end with hyphen to append date/time)';
+    else if (label == 'session')
+       prompt = 'Session';
     else
        prompt = label+' session';
     var value = window.prompt(prompt+': ');
@@ -19,29 +26,30 @@ function action(label) {
 </script>
 
 <div id="dashboarddiv">
+  <h2>Proxy server dashboard</h2>
   <a href="/">Home</a>
-  <p></p>
   <ul>
-    <li><a href="/_status">status</a></li>
+    <li><a href="/_cache">proxy status</a>: Status of proxy cache and active connections</li>
     <hr>
-    <li><a href="/_twitter">twitter</a></li>
+    <li><a href="/_twitter">twitter</a>: View twitter stream status</li>
     <hr>
-    <li><a href="javascript:check('clear')">clear</a></li>
+    <li><a href="javascript:action('session')">session status</a>: Session stats, allow late submissions etc.</li>
+    <li><a href="javascript:action('respond')">respond</a>: Award participation credit</li>
     <hr>
-    <li><a href="javascript:check('shutdown')">shutdown</a></li>
+    <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
+    <li><a href="javascript:action('refresh')">refresh</a>: Refresh single session cache</li>
     <hr>
-    <li><a href="/_import">import</a></li>
+    <li><a href="javascript:action('backup')">backup</a>: Backup all sessions</li>
+    <li><a href="javascript:check('shutdown')">shutdown</a>: Shutdown proxy server</li>
     <hr>
-    <li><a href="javascript:action('getrow')">headers</a></li>
-    <li><a href="javascript:action('getcol')">ids</a></li>
+    <li><a href="/_import">import</a>: Import responses/grades from spreadsheet.csv (for paper tests)</li>
+    <li><a href="javascript:action('export')">export</a>: Export responses to spreadsheet.csv</li>
     <hr>
-    <li><a href="javascript:action('respond')">respond</a></li>
-    <hr>
-    <li><a href="javascript:action('export')">export</a></li>
-    <hr>
-    <li><a href="javascript:action('backup')">backup</a></li>
+    <li><a href="javascript:action('getrow')">headers</a>: List session spreadsheet columns (headers)</li>
+    <li><a href="javascript:action('getcol')">ids</a>: List all rows (ids) in session spreadsheet</li>
   </ul>
-  Interactive session: <a href="/_respond/{{interactive}}">{{interactive}}</a>
+  Current interactive session: <a href="/_respond/{{interactive}}">{{interactive}}</a>
+  <p></p>
   <span id="actionstatus"></span>
   <p></p>
 </div>

@@ -1,7 +1,15 @@
+<style>
+body {
+    font-family: sans-serif;
+}
+</style>
 <div id="main-container">
   <h2><a href="/">{{site_label}}</a></h2>
+  <a href="/_dash">Dashboard</a><br>
+  <p></p>
   <div id="main">
     <div id="message-form">
+      <h2>Import session responses</h2>
       <form action="/_import" method="post" id="message_form" enctype="multipart/form-data" >
 	<fieldset>
 	  <label for="session">Session Name:</label>
@@ -9,11 +17,12 @@
           <p></p>
 	  <label for="submittest">Submit test user only:</label>
           <input  type="checkbox" class="sdserver-input" id="submittest" name="submittest" value="submittest">
+          (no CSV file read)
           <p></p>
 	  <label for="submitdate">Submit date (optional):</label>
           <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="">
           <p></p>
-          <label for="username">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, q3, qx4, ..."):</label><br>
+          <label for="username">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
           <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file">
         </fieldset>
         {% module xsrf_form_html() %}
@@ -22,7 +31,5 @@
 	</div>
       </form>
     </div>
-  <p></p>
-  <a href="/">Home</a>
   </div>
 </div>

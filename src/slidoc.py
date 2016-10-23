@@ -2107,6 +2107,7 @@ def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_c
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
+    topnav_html += '<li id="dashlink" style="display: none;"><a href="/_dash" target="_blank">dashboard</a></li>'
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html

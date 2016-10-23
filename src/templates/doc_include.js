@@ -36,7 +36,7 @@ var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
 var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;',
-	    xMark: '&#x2A2F'};
+	    xMark: '&#x2A2F', capitalLetters: '&#x1f520;'};
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
@@ -440,7 +440,13 @@ document.onreadystatechange = function(event) {
 	return;
     if (document.getElementById("slidoc-contents-button") && !document.getElementById("slidoc-topnav"))
 	document.getElementById("slidoc-contents-button").style.display = null;
-    if (!Sliobj.params.fileName)   // Just a simple web page
+    var cookie = getServerCookie();
+    if (cookie && cookie.user == 'admin') {
+	var dashElem = document.getElementById('dashlink');
+	if (dashElem)
+	    dashElem.style.display = null;
+    }
+    if (!Sliobj.params.fileName) // Just a simple web page
 	return;
     Slidoc.reportTestAction('ready');
     return abortOnError(onreadystateaux);
@@ -886,7 +892,7 @@ Slidoc.viewHelp = function () {
 	if (Sliobj.params.questionsMax)
 	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
 	if (Sliobj.params.gd_sheet_url && Sliobj.session)
-	    html += Sliobj.session.submitted ? ', Submitted '+parseDate(Sliobj.session.submitted) : ', NOT SUBMITTED';
+	    html += Sliobj.session.submitted ? '<br>Submitted '+parseDate(Sliobj.session.submitted) : '<br>NOT SUBMITTED';
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
@@ -906,7 +912,7 @@ Slidoc.viewHelp = function () {
     if (userId == Sliobj.params.testUserId || Sliobj.adminState)
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
     else if (Sliobj.params.gd_sheet_url)
-	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">View gradebook</span><p></p>';
+	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">'+SYMS.capitalLetters+' View gradebook</span><p></p>';
 
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list.length; j++)
@@ -4131,7 +4137,7 @@ Slidoc.submitStatus = function () {
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.uploadFile();">Late file upload</span>';
 
     if (Sliobj.params.gd_sheet_url && getUserId() != Sliobj.params.testUserId)
-	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">View gradebook</span>';
+	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">'+SYMS.capitalLetters+' View gradebook</span>';
 
     if (Sliobj.adminState) {
 	if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING')
