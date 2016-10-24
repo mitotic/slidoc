@@ -1,0 +1,42 @@
+<script>
+function submit(label, args) {
+    var dateElem = document.getElementById("dateinput");
+    var dateValue = dateElem.value;
+    if (!dateValue) {
+        alert('Please select date');
+        return;
+    }
+    var statusElem = document.getElementById('actionstatus');
+    if (statusElem) statusElem.textContent = 'Loading...';
+    location = '/_' + label + '/' + args+';'+dateValue;
+}
+document.onreadystatechange = function(event) {
+    var dateElem = document.getElementById("dateinput");
+if (dateElem)
+    dateElem.value = (new Date()).toISOString().slice(0,11)+'23:59';
+}
+</script>
+<style>
+body {
+    font-family: sans-serif;
+}
+</style>
+<div id="main-container">
+  <h2><a href="/">{{site_label}}</a></h2>
+  <a href="/_dash">Dashboard</a><br>
+  <p></p>
+  <div id="main">
+    <div id="message-form">
+        <fieldset>
+	  <h2>{{date_label}}:</h2>
+          <p></p>
+	  <label for="submitdate">Select date:</label>
+          <input  type="datetime-local" class="sdserver-input" id="dateinput" name="dateinput" value="">
+          <p></p>
+        </fieldset>
+    </div>
+  <div id="actionstatus"></div>
+  </div>
+</div>
+<p></p>
+{% raw date_html%}
