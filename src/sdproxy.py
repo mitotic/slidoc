@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.6'
+VERSION = '0.96.6a'
 
 # Usually modified by importing module
 Options = {
@@ -890,6 +890,8 @@ def sheetAction(params, notrace=False):
             returnValues = []
         elif getRow and allRows:
             # Get all rows and columns
+            if not adminUser:
+                raise Exception("Error::Only admin user allowed to access all rows in sheet '"+sheetName+"'")
             if modSheet.getLastRow() > numStickyRows:
                 returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
             else:

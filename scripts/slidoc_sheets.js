@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6';
+var VERSION = '0.96.6a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -135,8 +135,12 @@ var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property servi
 
 var Settings = {};
 
+function onInstall(evt) {
+    return onOpen(evt);
+}
+
 // The onOpen function is executed automatically every time a Spreadsheet is loaded
-function onOpen() {
+function onOpen(evt) {
    var ss = SpreadsheetApp.getActiveSpreadsheet();
    var menuEntries = [];
    menuEntries.push({name: "Display session answers", functionName: "sessionAnswerSheet"});
@@ -608,15 +612,17 @@ function sheetAction(params) {
             // Delete row only allowed for session sheet and admin/test user
             if (!sessionEntries || (!adminUser && paramId != TESTUSER_ID))
                 throw("Error:DELETE_ROW:userID '"+paramId+"' not allowed to delete row in sheet "+sheetName)
-            var delRowCOl = lookupRowIndex(paramId, modSheet, 2);
-            if (delRowCOl)
-                modSheet.deleteRow(delRowCOl);
+            var delRowCol = lookupRowIndex(paramId, modSheet, 2);
+            if (delRowCol)
+                modSheet.deleteRow(delRowCol);
             returnValues = [];
 	} else if (!rowUpdates && !selectedUpdates && !getRow && !getShare) {
 	    // No row updates/gets
 	    returnValues = [];
 	} else if (getRow && allRows) {
 	    // Get all rows and columns
+            if (!adminUser)
+		throw("Error::Only admin user allowed to access all rows in sheet '"+sheetName+"'")
 	    if (modSheet.getLastRow() > numStickyRows)
 		returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
 	    else
