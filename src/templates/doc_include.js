@@ -3582,10 +3582,12 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	if (corr_answer && displayCorrect(question_attrs)) {
 	    var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	    var shuffleStr = choiceBlock.dataset.shuffle;
-	    for (var j=0; j<corr_answer.length; j++) {
-		var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
-		if (corr_choice) {
-		    corr_choice.style['font-weight'] = 'bold';
+	    if (corr_answer && corr_answer.charAt(0) != '=') { // TOFIX: expect value for choice not displayed properly
+		for (var j=0; j<corr_answer.length; j++) {
+		    var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
+		    if (corr_choice) {
+			corr_choice.style['font-weight'] = 'bold';
+		    }
 		}
 	    }
 	}
@@ -3674,6 +3676,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     // Handle randomized choices
     var disp_response = response;
     var disp_corr_answer = corr_answer;
+    var disp_corr_answer_html = corr_answer_html;
     var shuffleStr = '';
     if (question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice') {
 	var choiceBlock = document.getElementById(slide_id+'-choice-block');
@@ -3681,6 +3684,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	if (shuffleStr) {
 	    disp_response = choiceShuffle(disp_response, shuffleStr);
 	    disp_corr_answer = choiceShuffle(disp_corr_answer, shuffleStr);
+	    disp_corr_answer_html = '<code>'+disp_corr_answer+'</code>';
 	}
     } else if (disp_corr_answer.match(/=\w+\.response\(\s*(\d*)\s*\)/)) {
 	disp_corr_answer = '';
@@ -3694,7 +3698,7 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 	setAnswerElement(slide_id, '-any-mark', '', !isNumber(qscore) ? '<b>'+SYMS['anyMark']+'</b>' : '');  // Not check mark
     
 	// Display correct answer
-	setAnswerElement(slide_id, "-answer-correct", disp_corr_answer||'', corr_answer_html);
+	setAnswerElement(slide_id, "-answer-correct", disp_corr_answer||'', disp_corr_answer_html);
     }
 
     var notes_id = slide_id+"-notes";
