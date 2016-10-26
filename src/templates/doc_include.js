@@ -1638,10 +1638,8 @@ function showGradesCallback(userId, result, retStatus) {
     }
     sessionKeys.sort();
     var html = 'Grades for user <b>'+userId+'</b><p></p>';
-    if (result.sessionCount)
-	html += 'Session count: <b>'+result.sessionCount+'</b><p></p>';
-    if (result.weightedTotal)
-	html += 'Weighted total: <b>'+result.weightedTotal+'</b><br>';
+    if (result.total)
+	html += 'Weighted total: <b>'+result.total+'</b><br>';
     for (var j=0; j<sessionKeys.length; j++) {
 	var grade = result[sessionKeys[j]];
 	if (isNumber(grade))
@@ -1649,9 +1647,9 @@ function showGradesCallback(userId, result, retStatus) {
 	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ (grade == ''?'missed':grade) +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    var sessionIndex = retStatus.info.headers.indexOf(sessionKeys[j]);
-	    if (retStatus.info.curve && retStatus.info.curve[sessionIndex].charAt(0) == '^')
-		html += ' curved out of 100';
-	    else if (retStatus.info.maxScores)
+	    if (retStatus.info.curve && retStatus.info.curve[sessionIndex])
+		html += ' rescaled';
+	    if (retStatus.info.maxScores && retStatus.info.maxScores[sessionIndex])
 		html += ' out of '+retStatus.info.maxScores[sessionIndex];
 
 	    if (retStatus.info.averages) {
