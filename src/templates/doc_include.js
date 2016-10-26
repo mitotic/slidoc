@@ -2401,7 +2401,7 @@ function preAnswer() {
 	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.plugin||null, qfeedback);
+	Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
     }
 
     for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
@@ -2506,7 +2506,7 @@ function showCorrectAnswersAfterSubmission() {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	Slidoc.answerClick(null, slide_id, 'submit', '', '', null, qfeedback);
+	Slidoc.answerClick(null, slide_id, 'submit', '', '', null, null, qfeedback);
     }
 }
 
@@ -3496,14 +3496,15 @@ function forceQuit(force, msg) {
     return true;
 }
 
-Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginResp, qfeedback) {
+Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect, pluginResp, qfeedback) {
     // Handle answer types: number, text
     // force: '', 'setup', 'submit, 'finalize', 'controlled'
-    Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, pluginResp, qfeedback);
+    Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
 	return;
     }
+    expect = expect || '';
     var question_attrs = getQuestionAttrs(slide_id);
 
     var setup = !elem;
@@ -3540,7 +3541,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	var pluginName = pluginMatch[2];
 	if (setup) {
 	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
-	    Slidoc.answerUpdate(setup, slide_id, response, pluginResp);
+	    Slidoc.answerUpdate(setup, slide_id, expect, response, pluginResp);
 	} else {
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries -= 1;
@@ -3548,7 +3549,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	    var responseArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
 	    Slidoc.PluginMethod(pluginName, slide_id, 'response',
 				(Sliobj.session.remainingTries > 0),
-				Slidoc.answerUpdate.bind(null, setup, slide_id),
+				Slidoc.answerUpdate.bind(null, setup, slide_id, expect),
 			        responseArg);
 	}
 	if (setup || !Sliobj.session.paced || !Sliobj.session.remainingTries)
@@ -3578,16 +3579,14 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 	}
 
 	Slidoc.log("Slidoc.answerClick:choice", response);
-	var corr_answer = question_attrs.correct;
-	if (corr_answer && displayCorrect(question_attrs)) {
+	var corr_answer = expect || question_attrs.correct || '';
+	if (corr_answer  && corr_answer.indexOf('=') < 0 && displayCorrect(question_attrs)) {
 	    var choiceBlock = document.getElementById(slide_id+'-choice-block');
 	    var shuffleStr = choiceBlock.dataset.shuffle;
-	    if (corr_answer && corr_answer.charAt(0) != '=') { // TOFIX: expect value for choice not displayed properly
-		for (var j=0; j<corr_answer.length; j++) {
-		    var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
-		    if (corr_choice) {
-			corr_choice.style['font-weight'] = 'bold';
-		    }
+	    for (var j=0; j<corr_answer.length; j++) {
+		var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
+		if (corr_choice) {
+		    corr_choice.style['font-weight'] = 'bold';
 		}
 	    }
 	}
@@ -3623,14 +3622,15 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, pluginR
 
     }
 
-    Slidoc.answerUpdate(setup, slide_id, response);
+    Slidoc.answerUpdate(setup, slide_id, expect, response);
     return false;
 }
 
-Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
+Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     // PluginResp: name:'...', score:1/0/null, correctAnswer: 'correct_ans',
     //  invalid: 'invalid_msg', output:'output', tests:0/1/2} The last three are for code execution
-    Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, response, pluginResp);
+    Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, expect, response, pluginResp);
+    expect = expect || '';
 
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
@@ -3644,7 +3644,6 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
 
     Slidoc.log('Slidoc.answerUpdate:', slide_id);
 
-    var expect = '';
     var qscore = null;
     if (pluginResp) {
 	qscore = parseNumber(pluginResp.score);
@@ -3653,16 +3652,19 @@ Slidoc.answerUpdate = function (setup, slide_id, response, pluginResp) {
     } else {
 	var pluginMatch = PLUGIN_RE.exec(corr_answer);
 	if (pluginMatch && pluginMatch[3] == 'expect') {
-	    var pluginName = pluginMatch[2];
-	    var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
-	    var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
-	    if (val != null) {
-		corr_answer = val+'';
-		corr_answer_html = '<code>'+corr_answer+'</code>';
-		expect = corr_answer;
-	    } else {
-		corr_answer = pluginMatch[1].trim();
+	    if (!expect) {
+		// Note: expect will only be set for setup
+		var pluginName = pluginMatch[2];
+		var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
+		var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
+		if (val != null) {
+		    expect = val+'';
+		} else {
+		    expect = pluginMatch[1].trim();
+		}
 	    }
+	    corr_answer = expect;
+	    corr_answer_html = '<code>'+corr_answer+'</code>';
 	}
 	// Check response against correct answer
 	qscore = scoreAnswer(response, question_attrs.qtype, corr_answer);
