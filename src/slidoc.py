@@ -289,6 +289,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
     slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
+    slidoc_extra  =   re.compile(r'^ {0,3}(Extra):\s*?((?=\S)|\n)')
     minirule =        re.compile(r'^(--) *(?:\n+|$)')
     pause =           re.compile(r'^(\.\.\.) *(?:\n+|$)')
 
@@ -297,7 +298,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_hint', 'slidoc_notes', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -369,6 +370,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_notes(self, m):
          self.tokens.append({
             'type': 'slidoc_notes',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_extra(self, m):
+         self.tokens.append({
+            'type': 'slidoc_extra',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -534,6 +542,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_notes(self):
         return self.renderer.slidoc_notes(self.token['name'], self.token['text'])
 
+    def output_slidoc_extra(self):
+        return self.renderer.slidoc_extra(self.token['name'], self.token['text'])
+
     def output_minirule(self):
         return self.renderer.minirule()
 
@@ -672,6 +683,7 @@ class SlidocRenderer(MathRenderer):
         self.hide_end = None
         self.hint_end = None
         self.notes_end = None
+        self.extra_end = None
         self.section_number = 0
         self.untitled_number = 0
         self.qtypes = []
@@ -784,6 +796,11 @@ class SlidocRenderer(MathRenderer):
         self.notes_end = None
         return s
 
+    def end_extra(self):
+        s = self.extra_end or ''
+        self.extra_end = None
+        return s
+
     def minirule(self):
         """Treat minirule as a linebreak"""
         return '<br>\n'
@@ -823,7 +840,7 @@ class SlidocRenderer(MathRenderer):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
             message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
 
-        prefix_html = self.end_hint()
+        prefix_html = self.end_extra()+self.end_hint()  # Hints/Notes will be ignored after Extra:
         if self.qtypes[-1]:
             # Question slide
             self.question_concepts.append(self.slide_concepts)
@@ -1616,6 +1633,8 @@ class SlidocRenderer(MathRenderer):
 
     
     def slidoc_hint(self, name, text):
+        if self.extra_end is not None:
+            return ''
         if not self.qtypes[-1]:
             abort("    ****HINT-ERROR: %s: Hint must appear after Answer:... in slide %s" % (self.options["filename"], self.slide_number))
 
@@ -1649,6 +1668,8 @@ class SlidocRenderer(MathRenderer):
 
 
     def slidoc_notes(self, name, text):
+        if self.extra_end is not None:
+            return ''
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
@@ -1663,6 +1684,16 @@ class SlidocRenderer(MathRenderer):
         if self.qtypes[-1]:
             classes += ' slidoc-question-notes'
         return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
+
+
+    def slidoc_extra(self, name, text):
+        prefix = self.end_hint() + self.end_notes()
+        id_str = self.get_slide_id() + '-extra'
+        disp_block = 'block' if 'keep_extras' in self.options['config'].features else 'none'
+        start_str, suffix, end_str = self.start_block('extra', id_str, display=disp_block)
+        prefix += start_str
+        self.extra_end = end_str
+        return prefix + suffix + '\n<b>Extra</b>:<br>\n'
 
 
     def table_of_contents(self, filepath='', filenumber=1):
@@ -1718,6 +1749,7 @@ def Missing_ref_num(match):
         return '(%s)??' % ref_id
 
 SLIDE_BREAK_RE = re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
+HRULE_BREAK_RE = re.compile(r'(\S\s*\n)( {0,3}----* *(\n|$))')
     
 def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
@@ -1813,6 +1845,10 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
     content_html = content_html.replace('__PRE_HEADER__', pre_header_html)
     content_html = content_html.replace('__POST_HEADER__', post_header_html)
     content_html += tail_html
+
+    if 'keep_extras' not in config.features:
+        # Strip out extra text
+        content_html = re.sub(r"<!--slidoc-extra-block-begin\[([-\w]+)\](.*?)<!--slidoc-extra-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
     if 'hidden' in config.strip:
         # Strip out hidden answer slides
@@ -2422,9 +2458,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if 'grade_response' in file_config.features and gd_hmac_key is None:
                 # No grading without google sheet
                 file_config.features.remove('grade_response')
+
             if 'slides_only' in file_config.features and config.printable:
                 file_config.features.remove('slides_only')
                 message('slides_only feature suppressed by --printable option')
+
+            if 'keep_extras' in file_config.features and config.gsheet_url:
+                abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')
 
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
@@ -2482,6 +2522,10 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         # Strip annotations
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
+
+        if 'underline_headers' not in file_config.features:
+            # Insert a blank line between hrule and any immediately preceding non-blank line (to avoid it being treated as a Markdown Setext-style header)
+            md_text = HRULE_BREAK_RE.sub(r'\1\n\2', md_text)
 
         prev_file = '' if fnumber == 1      else orig_flinks[fnumber-2]
         next_file = '' if fnumber == nfiles else orig_flinks[fnumber]
@@ -3035,6 +3079,7 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
+#   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
@@ -3044,9 +3089,10 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
+#   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)

@@ -143,6 +143,11 @@ process slides in a lecture.
   *horizontal rule*, i.e., a line with three or more horizontal dashes
   (`---`), may be used to indicate the start of a slide.
 
+- Since the horizontal rule denotes the end of the slide, by default,
+  Slidoc will not recognize the use of dashes to underline Level 2
+  headers, even though Markdown syntax
+  [allows it](https://daringfireball.net/projects/markdown/syntax#header).
+
 Notes: Any Level 1 header other than the first one will be treated
 like a Level 2 header.
 

@@ -3496,6 +3496,7 @@ function forceQuit(force, msg) {
 
 Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect, pluginResp, qfeedback) {
     // Handle answer types: number, text
+    // expect: should only be defined for setup
     // force: '', 'setup', 'submit, 'finalize', 'controlled'
     Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
@@ -3535,7 +3536,18 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
     }
 
     var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
-    if (pluginMatch && pluginMatch[3] == 'response') {
+    if (pluginMatch && pluginMatch[3] == 'expect') {
+	var pluginName = pluginMatch[2];
+	if (!setup) {
+	    var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
+	    var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
+	    if (val != null) {
+		expect = val+'';
+	    } else {
+		expect = pluginMatch[1].trim();
+	    }
+	}
+    } else if (pluginMatch && pluginMatch[3] == 'response') {
 	var pluginName = pluginMatch[2];
 	if (setup) {
 	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
@@ -3636,8 +3648,8 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     var qscore = null;
     var question_attrs = getQuestionAttrs(slide_id);
 
-    var corr_answer      = question_attrs.correct || '';
-    var corr_answer_html = question_attrs.html || '';
+    var corr_answer      = expect || question_attrs.correct || '';
+    var corr_answer_html = expect ? expect : (question_attrs.html || '');
     var dispCorrect = displayCorrect(question_attrs);
 
     Slidoc.log('Slidoc.answerUpdate:', slide_id);
@@ -3648,22 +3660,6 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	if (pluginResp.correctAnswer != null)
 	    expect = pluginResp.correctAnswer+'';
     } else {
-	var pluginMatch = PLUGIN_RE.exec(corr_answer);
-	if (pluginMatch && pluginMatch[3] == 'expect') {
-	    if (!expect) {
-		// Note: expect will only be set for setup
-		var pluginName = pluginMatch[2];
-		var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
-		var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
-		if (val != null) {
-		    expect = val+'';
-		} else {
-		    expect = pluginMatch[1].trim();
-		}
-	    }
-	    corr_answer = expect;
-	    corr_answer_html = '<code>'+corr_answer+'</code>';
-	}
 	// Check response against correct answer
 	qscore = scoreAnswer(response, question_attrs.qtype, corr_answer);
     }
@@ -3684,7 +3680,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	if (shuffleStr) {
 	    disp_response = choiceShuffle(disp_response, shuffleStr);
 	    disp_corr_answer = choiceShuffle(disp_corr_answer, shuffleStr);
-	    disp_corr_answer_html = '<code>'+disp_corr_answer+'</code>';
+	    disp_corr_answer_html = disp_corr_answer;
 	}
     } else if (disp_corr_answer.match(/=\w+\.response\(\s*(\d*)\s*\)/)) {
 	disp_corr_answer = '';
