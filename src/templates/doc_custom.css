@@ -159,6 +159,8 @@ body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 14
 .slidoc-partcorrect-answer {color: #FA0;}
 .slidoc-wrong-answer {color: red;}
 
+.slidoc-top-right-button { font-size: 85%; }
+
 /* Pending updates */
 #slidoc-pending-display {color: red;}
 

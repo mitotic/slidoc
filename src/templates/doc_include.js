@@ -36,7 +36,7 @@ var LATE_SUBMIT = 'late';
 var PARTIAL_SUBMIT = 'partial';
 
 var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;',
-	    xMark: '&#x2A2F', capitalLetters: '&#x1f520;'};
+	    xMark: '&#x2A2F', letters: '&#x1f520;'};
 
 var uagent = navigator.userAgent.toLowerCase();
 var isSafari = (/safari/.test(uagent) && !/chrome/.test(uagent));
@@ -911,8 +911,6 @@ Slidoc.viewHelp = function () {
 
     if (userId == Sliobj.params.testUserId || Sliobj.adminState)
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
-    else if (Sliobj.params.gd_sheet_url)
-	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">'+SYMS.capitalLetters+' View gradebook</span><p></p>';
 
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list.length; j++)
@@ -1618,14 +1616,18 @@ function nextUserAux(gradingUser, needGradingOnly) {
 }
 
 Slidoc.showGrades = function () {
-    if (Sliobj.closePopup)
-	Sliobj.closePopup();
+    if (!Sliobj.params.gd_sheet_url)
+	return;
+    if (!Sliobj.closePopup)
+	Slidoc.showPopup('Looking up gradebook...');
     var userId = GService.gprofile.auth.id;
     Sliobj.scoreSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
 }
 
 function showGradesCallback(userId, result, retStatus) {
     Slidoc.log('showGradesCallback:', userId, result, retStatus);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
     if (!result) {
 	alert('No grades found for user '+userId);
 	return;
@@ -1929,8 +1931,12 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');
 
-    if (Sliobj.params.gd_sheet_url)
+    if (Sliobj.params.gd_sheet_url) {
 	toggleClass(true, 'slidoc-remote-view');
+	var gradesButton = document.getElementById('slidoc-grades-button');
+	if (gradesButton)
+	    gradesButton.style.display = null;
+    }
 
     if (Sliobj.scores.questionsCount)
 	Slidoc.showScore();
@@ -4157,9 +4163,6 @@ Slidoc.submitStatus = function () {
     }
     if (Sliobj.session.submitted || Sliobj.adminState)
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.uploadFile();">Late file upload</span>';
-
-    if (Sliobj.params.gd_sheet_url && getUserId() != Sliobj.params.testUserId)
-	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.showGrades();">'+SYMS.capitalLetters+' View gradebook</span>';
 
     if (Sliobj.adminState) {
 	if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING')

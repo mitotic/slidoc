@@ -20,7 +20,8 @@
 %(plugin_tops)s
 <span id="slidoc-interact-display" class="slidoc-clickable slidoc-interactonly" onclick="Slidoc.interact();">%(lightning)s</span>
 <span id="slidoc-submit-display" class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.submitStatus();"></span>
-<span class="slidoc-adminonly">%(pencil)s</span>
+<span id="slidoc-grades-button" class="slidoc-clickable slidoc-top-right-button" onclick="Slidoc.showGrades();" style="display: none;">%(letters)s</span>
+<span class="slidoc-adminonly slidoc-top-right-button">%(pencil)s</span>
 <select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
 <span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
 <span id="slidoc-contents-button" class="slidoc-clickable-sym" onclick="Slidoc.contentsDisplay();">%(threebars)s</span>&nbsp;

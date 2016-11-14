@@ -64,7 +64,7 @@ QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
-        'lightning': '&#9889;', 'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
+        'letters': '&#x1f520;', 'lightning': '&#9889;', 'pencil': '&#9998;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
