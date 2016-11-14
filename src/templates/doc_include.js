@@ -5246,6 +5246,30 @@ Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
 	MathJax.Hub.Queue(["Typeset", MathJax.Hub, popupContent.id]);
 }
 
+Slidoc.wordCloud = function(textList, options) {
+    if (!window.WCloud) {
+	alert('WCloud module not loaded!');
+	return;
+    }
+    Slidoc.log('Slidoc.wordCloud:', textList.length);
+    Slidoc.showPopup('<div id="slidoc-wcloud-container"><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br></div>', null, true);
+    WCloud.createCloud(document.getElementById("slidoc-wcloud-container"), textList);
+}
+
+Slidoc.shareCloud = function() {
+    if (!Sliobj.closePopup)
+	return;
+    Slidoc.log('Slidoc.shareCloud:');
+    var popupElem = document.getElementById('slidoc-generic-popup-content');
+    var elems = popupElem.getElementsByClassName('slidoc-plugin-Share-li');
+    var textList = [];
+    for (var j=0; j<elems.length; j++) {
+	textList.push(elems[j].textContent);
+    }
+    Sliobj.closePopup();
+    Slidoc.wordCloud(textList);
+}
+
 //////////////////////////////////
 // Section 22: Pagedown helpers
 //////////////////////////////////

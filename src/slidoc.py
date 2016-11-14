@@ -2304,8 +2304,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         config.strip.add('chapters')
 
     templates = {}
-    for tname in ('doc_custom.css', 'doc_include.css',
-                  'doc_include.js', 'doc_google.js', 'doc_test.js',
+    for tname in ('doc_include.css', 'wcloud.css', 'doc_custom.css',
+                  'doc_include.js', 'wcloud.js', 'doc_google.js', 'doc_test.js',
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
@@ -2326,6 +2326,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     # External CSS replaces doc_custom.css, but not doc_include.css
     css_html += '<style>\n' + (templates['doc_include.css']+HtmlFormatter().get_style_defs('.highlight')) + '</style>\n'
+    css_html += '<style>\n' + templates['wcloud.css'] + '</style>\n'
 
     test_params = []
     add_scripts = ''
@@ -2359,7 +2360,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         answer_elements[suffix] = 1;
     js_params['answer_elements'] = answer_elements
 
-    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) )
+    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + ('\n<script>\n%s</script>\n' % templates['wcloud.js'])
     if combined_file:
         head_html += add_scripts
     body_prefix = templates['doc_include.html']
@@ -2670,7 +2671,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             else:
                 file_plugin_defs = base_plugin_defs.copy()
                 file_plugin_defs.update(renderer.plugin_defs)
-                file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + add_scripts
+                file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + ('\n<script>\n%s</script>\n' % templates['wcloud.js']) + add_scripts
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment

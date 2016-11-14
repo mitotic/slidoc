@@ -307,7 +307,7 @@ Share = {
 	    for (var j=0; j<nResp; j++) {
 		lines.push([(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'), result[responseHeader][j]]);
 	    }
-	    Slidoc.showPopupWithList('Responses:<p></p>\n', lines, this.qattributes.qtype == 'text/markdown');
+	    Slidoc.showPopupWithList('Responses (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, this.qattributes.qtype == 'text/markdown');
 	    return;
 	}
 
@@ -482,7 +482,7 @@ pre.slidoc-plugin-Share-responders {
    </style>
    PluginBody:
    <input type="button" id="%(pluginId)s-sharebutton" 
-   class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide"
+   class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide slidoc-noprint"
    value="View all responses"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare();"></input>
    <span id="%(pluginId)s-sharecount" class="slidoc-clickable slidoc-plugin-Share-count %(pluginId)s-sharecount slidoc-shareable-hide" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].showDetails();"></span>
