@@ -52,6 +52,9 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
     display: none;
 }
 
+/* Choice duplicates */
+.slidoc-choice-duplicate-message {color: red; font-weight: bold; background: #aaa;}
+
 /* Testing */
 span#slidoc-test-status {color: red; font-weight: bold; background: #888;}
 

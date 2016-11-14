@@ -2384,7 +2384,7 @@ function preAnswer() {
 		shuffleStr += randomLetters(choices.length, randFunc);
 		newShuffle[qnumber] = shuffleStr;
 	    }
-	    shuffleBlock(slide_id, shuffleStr)
+	    shuffleBlock(slide_id, shuffleStr, qnumber);
 	}
 	if (Object.keys(newShuffle).length) {
 	    Sliobj.session.questionShuffle = newShuffle;
@@ -2414,13 +2414,13 @@ function preAnswer() {
 	showCorrectAnswersAfterSubmission();
 }
 
-function shuffleBlock(slide_id, shuffleStr) {
+function shuffleBlock(slide_id, shuffleStr, qnumber) {
     var choiceBlock = document.getElementById(slide_id+'-choice-block');
     choiceBlock.dataset.shuffle = '';
     // Do not shuffle if adminState
     if (!shuffleStr || Sliobj.adminState)
 	return;
-    Slidoc.log('shuffleBlock: shuffleStr', slide_id, shuffleStr);
+    Slidoc.log('shuffleBlock: shuffleStr', slide_id, qnumber, ' ', shuffleStr);
     var childNodes = choiceBlock.childNodes;
     var blankKey = ' ';
     var key = blankKey;
@@ -2462,18 +2462,40 @@ function shuffleBlock(slide_id, shuffleStr) {
     var key = blankKey;
     for (var i=0; i < choiceElems[key].length; i++)
 	choiceBlock.appendChild(choiceElems[key][i]);
+    var choiceDup = {};
     for (var j=1; j < shuffleStr.length; j++) {
 	key = shuffleStr.charAt(j);
+	var choiceText = '';
+	var choiceLetter = letterFromIndex(j-1);
 	for (var i=0; i < choiceElems[key].length; i++) {
+	    var childElem = choiceElems[key][i];
+	    var elemText = childElem.textContent;
 	    if (i == 0) {
-		var spanElem = choiceElems[key][i].firstElementChild;
+		var spanElem = childElem.firstElementChild;
 		if (spanElem && spanElem.classList && spanElem.classList.contains('slidoc-chart-box'))
 		    spanElem = spanElem.nextElementSibling;
 		if (spanElem)
-		    spanElem.textContent = letterFromIndex(j-1);
+		    spanElem.textContent = choiceLetter;
 	    }
-	    choiceBlock.appendChild(choiceElems[key][i]);
+	    choiceBlock.appendChild(childElem);
+	    if (childElem.tagName == 'P')
+		choiceText += elemText;
 	}
+	choiceText = choiceText.trim().replace(/\s+/g,' ');
+	choiceText = choiceText.replace(/^ *[A-Z]\./i, '.');
+	if (choiceText in choiceDup) {
+	    var errMsg = 'Question '+qnumber+' has duplicate choices: '+choiceDup[choiceText]+','+choiceLetter+choiceText;
+	    var firstSlide = document.getElementById(slide_id.slice(0,-3)+'-01');
+	    if (firstSlide) {
+		var div = document.createElement('div');
+		div.classList.add('slidoc-choice-duplicate-message');
+		div.textContent = errMsg;
+		firstSlide.insertBefore(div, firstSlide.firstChild);
+	    } else {
+		alert(errMsg);
+	    }
+	}
+	choiceDup[choiceText] = choiceLetter;
     }
 }
 
