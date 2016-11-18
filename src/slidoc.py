@@ -622,11 +622,11 @@ class SlidocRenderer(MathRenderer):
     plugin_body_template = '''<div id="%(pluginId)s-body" class="%(pluginLabel)s-body slidoc-plugin-body slidoc-pluginonly">%(pluginBodyDef)s</div><!--%(pluginId)s-body-->'''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
-    ansprefix_template = '''<span id="%(sid)s-answer-prefix" data-qnumber="%(qno)d">Answer:</span>'''
+    ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(disabled)s" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
-  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly" data-qnumber="%(qno)d">Answer:</span>
-  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-noadmin slidoc-noanswered" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
-  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly %(disabled)s" data-qnumber="%(qno)d">Answer:</span>
+  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-noadmin slidoc-noanswered %(disabled)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin %(disabled)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
@@ -637,7 +637,7 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
   </span>
   %(explain)s
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin" cols="60" rows="5"></textarea>
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noplugin %(disabled)s" cols="60" rows="5"></textarea>
 '''                
 
     grading_template = '''
@@ -1196,14 +1196,15 @@ class SlidocRenderer(MathRenderer):
 
         weight_answer = ''
         retry_counts = [0, 0]  # Retry count, retry delay
-        opt_values = { 'explain': ('text', 'markdown'),
+        opt_values = { 'disabled': ('yes',),               # Disable answering for this question
+                       'explain': ('text', 'markdown'),    # Require text/markdown explanation
                        'share': ('after_due_date', 'after_answering', 'after_grading'),
                        'team': ('response', 'setup'),
                        'vote': ('show_completed', 'show_live') }
         if self.options['config'].pace == ADMIN_PACE:
             # Change default share value for admin pace
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
-        answer_opts = { 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
+        answer_opts = { 'disabled': '', 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
         for opt in opt_comps[1:]:
             num_match = re.match(r'^(participation|weight|retry)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
             if num_match:
@@ -1242,6 +1243,9 @@ class SlidocRenderer(MathRenderer):
         if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
             answer_opts['share'] = opt_values['share'][2]
 
+        if not answer_opts['disabled'] and 'disable_answering' in self.options['config'].features:
+            answer_opts['disabled'] = opt_values['disabled'][0]
+            
         slide_id = self.get_slide_id()
         plugin_name = ''
         plugin_action = ''
@@ -1423,7 +1427,12 @@ class SlidocRenderer(MathRenderer):
         ans_grade_fields = self.process_weights(weight_answer)
 
         id_str = self.get_slide_id()
-        ans_params = { 'sid': id_str, 'qno': len(self.questions)}
+        ans_params = { 'sid': id_str, 'qno': len(self.questions), 'disabled': ''}
+        if answer_opts['disabled']:
+            ans_params['disabled'] = 'slidoc-answer-disabled'
+            if self.options['config'].pace > BASIC_PACE:
+                abort("    ****ANSWER-ERROR: %s: 'Answer disabling incompatible with pace value: slide %s" % (self.options["filename"], self.slide_number))
+
         if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
@@ -1544,7 +1553,7 @@ class SlidocRenderer(MathRenderer):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
-            elif share_col or self.questions[-1].get('team'):
+            elif share_col or self.questions[-1].get('disabled') or self.questions[-1].get('team'):
                 ans_grade_fields += [qno+'_response']
 
             if self.questions[-1].get('team') and re.match(r'^(.*)=\s*(\w+)\.response\(\s*\)$', self.questions[-1].get('correct', '')):
@@ -1865,14 +1874,14 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields =  ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['team', 'lateToken', 'lastSlide', 'session_hidden']
-Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionCurve', 'dueDate', 'gradeDate', 'postDate',
+Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionRescale', 'releaseDate', 'dueDate', 'gradeDate', 'postDate',
                 'mediaURL', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight',
                 'questionsMax', 'fieldsMin', 'attributes', 'questions',
                 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_curve, due_date_str, media_url, pace_level,
+def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
                          questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
                          row_count=None, modify_session=False):
@@ -1936,7 +1945,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             if not due_date_str:
                 due_date_str = prev_row[due_date_col]
 
-    row_values = [session_name, session_name, revision, None, session_weight, session_curve, due_date_str, None, None, media_url, pace_level, admin_paced,
+    row_values = [session_name, session_name, revision, None, session_weight, session_rescale, release_date_str, due_date_str, None, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
                 json.dumps(sheet_attributes), json.dumps(questions), json.dumps(question_concepts),
                 '; '.join(sort_caseless(list(p_concepts))),
@@ -2444,6 +2453,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     for j, fnumber in enumerate(fnumbers):
         fhandle = input_files[fnumber-1]
         fname = orig_fnames[fnumber-1]
+        release_date_str = ''
         due_date_str = ''
         vote_date_str = ''
         if not config.separate:
@@ -2471,6 +2481,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['paceLevel'] = file_config.pace or 0
             if js_params['paceLevel']:
                 # Note: pace does not work with combined files
+                if file_config.release_date:
+                    release_date_str = sliauth.get_utc_date(file_config.release_date)
                 if file_config.due_date:
                     due_date_str = sliauth.get_utc_date(file_config.due_date)
 
@@ -2488,6 +2500,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             gd_sheet_url = file_config.gsheet_url or ''
             js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['plugin_share_voteDate'] = vote_date_str
+            js_params['releaseDate'] = release_date_str
             js_params['dueDate'] = due_date_str
             js_params['fileName'] = fname
 
@@ -2618,7 +2631,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields,
                                                                      modify_session=modify_session)
             mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
-                                 file_config.session_weight, file_config.session_curve, due_date_str, file_config.media_url, js_params['paceLevel'],
+                                 file_config.session_weight, file_config.session_rescale, release_date_str, due_date_str, file_config.media_url, js_params['paceLevel'],
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                  renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
                                  max_last_slide=max_last_slide, debug=config.debug,
@@ -2662,7 +2675,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
         else:
-            md_prefix = chapter_prefix(fnumber, 'slidoc-reg-chapter', hide=js_params['paceLevel'] and not config.printable)
+            chapter_classes = 'slidoc-reg-chapter'
+            md_prefix = chapter_prefix(fnumber, chapter_classes, hide=js_params['paceLevel'] and not config.printable)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -3009,7 +3023,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'revision', 'session_curve', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'release_date', 'revision', 'session_rescale', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
     
 def read_first_line(file):
     # Read first line of file and rewind it
@@ -3076,6 +3090,7 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents
+#   disable_answering: Hide all answer buttons/input boxes (to generate closed book question sheets that are manually graded)
 #   delay_answers: Correct answers and score are hidden from users until session is graded
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
@@ -3093,7 +3108,7 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
@@ -3127,9 +3142,10 @@ parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plu
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
+parser.add_argument('--release_date', metavar='DATE_TIME', help="Release on local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
-parser.add_argument('--session_curve', help='Session curve parameter, e.g., ^0.5 OR +6')
+parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
 parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')

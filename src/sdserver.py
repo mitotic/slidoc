@@ -93,6 +93,8 @@ PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
 
+ADMIN_PATH = 'admin'
+
 ADMINUSER_ID = 'admin'
 TESTUSER_ID = '_test_user'
     
@@ -185,6 +187,13 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
             return "noauth"
         return self.get_id_from_cookie() or None
 
+    def write_error(self, status_code, **kwargs):
+        err_cls, err, traceback = kwargs['exc_info']
+        if getattr(err, 'log_message', None) and err.log_message.startswith('CUSTOM:'):
+            self.write('<html><body><h3>%s</h3></body></html>' % err.log_message[len('CUSTOM:'):])
+        else:
+            super(BaseHandler, self).write_error(status_code, **kwargs)
+    
 
 class HomeHandler(BaseHandler):
     def get(self):
@@ -282,6 +291,27 @@ class ActionHandler(BaseHandler):
             lines.append('</ul>\n')
             self.render('date.html', site_label=Options['site_label'], date_label='Late submission',
                          date_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
+        elif action in ('_qstats'):
+            sheetName = sessionName + '-answers'
+            sheet = sdproxy.getSheet(sheetName, optional=True)
+            if not sheet:
+                self.write('Unable to retrieve sheet '+sheetName)
+                return
+            qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
+            qaverages = []
+            for j, header in enumerate(qrows[0]):
+                qmatch = re.match(r'^q(\d+)_score', header)
+                if qmatch:
+                    qaverages.append([float(qrows[1][j]), int(qmatch.group(1))])
+            qaverages.sort()
+            lines = []
+            for j, qavg in enumerate(qaverages):
+                lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
+                if j%5 == 4:
+                    lines.append('')
+            self.write('<a href="/_dash">Dashboard</a><br>')
+            self.write(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+
         elif action in ('_respond'):
             sessionName, sep, respId = sessionName.partition(';')
             if not sessionName:
@@ -472,14 +502,14 @@ class ProxyHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, "DEBUG: URI", self.request.uri
 
-        if args.get('modify') and sdproxy.Options['SHEET_URL'] and not sdproxy.Options['DRY_RUN']:
+        if args.get('modify') and sdproxy.Options['gsheet_url'] and not sdproxy.Options['dry_run']:
             sessionName = args.get('sheet','')
             if not sdproxy.lockSheet(sessionName, 'passthru'):
                 retObj = {'result': 'error', 'error': 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'}
             else:
                 http_client = tornado.httpclient.AsyncHTTPClient()
                 body = urllib.urlencode(args)
-                response = yield http_client.fetch(sdproxy.Options['SHEET_URL'], method='POST', headers=None, body=body)
+                response = yield http_client.fetch(sdproxy.Options['gsheet_url'], method='POST', headers=None, body=body)
                 if response.error:
                     retObj = {'result': 'error', 'error': 'Error in passthru: '+str(response.error) }
                 else:
@@ -949,6 +979,12 @@ class BaseStaticFileHandler(tornado.web.StaticFileHandler):
         # Disable cache
         self.set_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
     
+    def write_error(self, status_code, **kwargs):
+        err_cls, err, traceback = kwargs['exc_info']
+        if getattr(err, 'log_message', None) and err.log_message.startswith('CUSTOM:'):
+            self.write('<html><body><h3>%s</h3></body></html>' % err.log_message[len('CUSTOM:'):])
+        else:
+            super(BaseStaticFileHandler, self).write_error(status_code, **kwargs)
 
 class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
@@ -957,6 +993,10 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         if Options['debug']:
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId
 
+        if self.request.path.startswith('/'+ADMIN_PATH):
+            # Admin path accessible only to dry_run (draft/preview) or wet run using proxy_url
+            if not Options['dry_run'] and not Options['lock_proxy_url']:
+                raise tornado.web.HTTPError(404)
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
             path = self.request.path
@@ -976,6 +1016,23 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/_private' are always protected
+            errMsg = ''
+            if userId != TESTUSER_ID:
+                try:
+                    sessionName = self.get_path_base(self.request.path)
+                    sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
+                    if sessionEntries['releaseDate'] and sliauth.epoch_ms(sessionEntries['releaseDate']) > sliauth.epoch_ms():
+                        print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet released' % sessionName
+                        if userId == ADMINUSER_ID:
+                            errMsg = 'Session %s will be released %s' % (sessionName, sliauth.iso_date(sessionEntries['releaseDate']))
+                        else:
+                            errMsg = 'Session %s not yet released' % sessionName
+                except Exception, excp:
+                    print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Error in accessing entries for session %s: %s' % (sessionName, excp)
+                    raise tornado.web.HTTPError(404)
+
+            if errMsg:
+                raise tornado.web.HTTPError(404, log_message=errMsg)
             sessionPrefix = self.get_id_from_cookie(prefix=True)
             if not sessionPrefix:
                 return userId
@@ -1222,6 +1279,7 @@ class Application(tornado.web.Application):
                           (r"/(_refresh/[-\w.]+)", ActionHandler),
                           (r"/(_session)", ActionHandler),
                           (r"/(_session/[-\w.:;]+)", ActionHandler),
+                          (r"/(_qstats/[-\w.]+)", ActionHandler),
                           (r"/(_respond)", ActionHandler),
                           (r"/(_respond/[-\w.;]+)", ActionHandler),
                           (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
@@ -1287,8 +1345,8 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
     missed = []
     errors = []
     try:
-        dialect = csv.Sniffer().sniff(csvfile.read(1024))
-        csvfile.seek(0)
+        ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
+        ##csvfile.seek(0)
         reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
         headers = reader.next()
         rows = [row for row in reader]
@@ -1324,13 +1382,13 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
             if lastNameCol and firstNameCol:
                 idMap = sdproxy.makeRosterMap('name')
                 names = [ row[lastNameCol-1]+', '+row[firstNameCol-1] for row in rows]
-                missing = False
+                missing = []
                 for name in names:
                     if name not in idMap:
-                        missing = True
+                        missing.append(name)
                         print >> sys.stderr, 'Name', name, 'not found in roster'
                 if missing:
-                    raise Exception('One or more names not found in roster')
+                    raise Exception('One or more names not found in roster: '+', '.join(missing))
             else:
                 raise Exception('No id or twitter or name columns for importing answers from '+filepath)
 

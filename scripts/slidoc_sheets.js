@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6b';
+var VERSION = '0.96.6d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -1974,7 +1974,7 @@ function sessionAnswerSheet() {
 	var answerHeaders = sessionSheet.getSheetValues(1, 1, 1, copyCols)[0];
 
 	var respCols = [];
-	var extraCols = ['expect', 'temscore', 'plugin', 'hints'];
+	var extraCols = ['expect', 'score', 'plugin', 'hints'];
 	for (var j=0; j<qtypes.length; j++) {
 	    var qprefix = 'q'+(j+1);
 	    var pluginMatch = PLUGIN_RE.exec(answers[j] || '');
@@ -1991,7 +1991,7 @@ function sessionAnswerSheet() {
 	    if (pluginAction == 'expect')
 		answerHeaders.push(qprefix+'_expect');
 	    if (answers[j] || pluginAction == 'response')
-		answerHeaders.push(qprefix+'_temscore');
+		answerHeaders.push(qprefix+'_score');
 	    if (pluginAction == 'response')
 		answerHeaders.push(qprefix+'_plugin');
 	    if (sessionAttributes.hints && sessionAttributes.hints[qprefix])
@@ -2022,7 +2022,7 @@ function sessionAnswerSheet() {
 	answerSheet.getRange(2, ansHeaderCols['id'], 1, 1).setValues([[AVERAGE_ID]]);
 
 	for (var ansCol=copyCols+1; ansCol<=answerHeaders.length; ansCol++) {
-	    if (answerHeaders[ansCol-1].slice(-9) == '_temscore') {
+	    if (answerHeaders[ansCol-1].slice(-6) == '_score') {
 		var ansAvgRange = answerSheet.getRange(2, ansCol, 1, 1);
 		ansAvgRange.setNumberFormat('0.###');
 		ansAvgRange.setValues([['=AVERAGE('+colIndexToChar(ansCol)+'$'+answerStartRow+':'+colIndexToChar(ansCol)+')']]);
@@ -2044,6 +2044,7 @@ function sessionAnswerSheet() {
 	    var savedSession = unpackSession(sessionColHeaders, rowValues);
 	    var qAttempted = savedSession.questionsAttempted;
 	    var qHints = savedSession.hintsUsed;
+	    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params);
 
 	    var rowVals = [];
 	    for (var k=0; k<answerHeaders.length; k++)
@@ -2064,6 +2065,8 @@ function sessionAnswerSheet() {
 			if (qcolName in ansHeaderCols) {
 			    if (attr == 'hints') {
 				rowVals[ansHeaderCols[qcolName]-1] = qHints[qno] || '';
+			    } else if (attr == 'score') {
+				rowVals[ansHeaderCols[qcolName]-1] = scores.qscores[qno-1] || 0;
 			    } else if (attr in qAttempted[qno]) {
 				rowVals[ansHeaderCols[qcolName]-1] = (qAttempted[qno][attr]===null) ? '': qAttempted[qno][attr]
 			    }
@@ -2785,13 +2788,13 @@ function updateScores(sessionNames) {
 	    var sessionRowIndex = indexRows(sessionSheet, sessionColIndex['id'], 2);
 	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
-	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'paceLevel', 'sessionWeight', 'sessionCurve', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
+	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'paceLevel', 'sessionWeight', 'sessionRescale', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
             var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	    var questions = JSON.parse(sessionEntries.questions);
 	    var gradeDate = sessionEntries.gradeDate || null;
 	    var paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
 	    var sessionWeight = parseNumber(sessionEntries.sessionWeight) || 0;
-	    var sessionCurve = sessionEntries.sessionCurve || '';
+	    var sessionRescale = sessionEntries.sessionRescale || '';
 	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionEntries.gradeWeight) || 0;
 	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
@@ -2802,14 +2805,14 @@ function updateScores(sessionNames) {
 	    updatedNames.push(sessionName);
 
 	    var rescaleOps = [];
-	    if (sessionCurve) {
-		var comps = sessionCurve.split(',');
+	    if (sessionRescale) {
+		var comps = sessionRescale.split(',');
 		for (var j=0; j<comps.length; j++) {
 		    var rmatch = comps[j].trim().match(/([+*\/^])([-0-9.eE]+)/);
 		    if (!rmatch)
 			throw('Invalid rescaling operation: '+comps[j]);
 		    if (rmatch[1] == '^' && j < comps.length-1)
-			throw('Power rescaling ^ must be last operation: '+sessionCurve);
+			throw('Power rescaling ^ must be last operation: '+sessionRescale);
 		    rescaleOps.push([rmatch[1], rmatch[2]]);
 		}
 	    }
@@ -2866,7 +2869,7 @@ function updateScores(sessionNames) {
 		var sessionRange = "'"+sessionName+"'!$"+sessionIdColChar+"$"+lookupStartRow+":$"+nameColChar;
 		return 'VLOOKUP($'+scoreIdColChar+scoreRowIndex+', ' + sessionRange + ', '+(nameCol-sessionIdCol+1)+', false)';
 	    }
-            //Logger.log('scoreSession: '+sessionName+' '+sessionCurve+' '+nids);
+            //Logger.log('scoreSession: '+sessionName+' '+sessionRescale+' '+nids);
 	    var scoreFormulas = [];
 	    for (var j=0; j<nids; j++) {
 		var lookups = [];
@@ -2898,9 +2901,9 @@ function updateScores(sessionNames) {
 		if (lookups.length) {
 		    var lateToken = vlookup('lateToken', j+scoreStartRow);
 		    var cumScore = lookups.join('+');
-		    if (sessionCurve) {
+		    if (sessionRescale) {
 			if (scoreAvgRow > 2)
-			    scoreSheet.getRange(scoreAvgRow-1, scoreSessionCol, 1, 1).setValues([[sessionCurve]]);
+			    scoreSheet.getRange(scoreAvgRow-1, scoreSessionCol, 1, 1).setValues([[sessionRescale]]);
 			for (var iscale=0; iscale < rescaleOps.length; iscale++) {
 			    var op = rescaleOps[iscale][0];
 			    var val = rescaleOps[iscale][1];

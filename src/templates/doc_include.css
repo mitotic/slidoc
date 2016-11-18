@@ -52,6 +52,8 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
     display: none;
 }
 
+.slidoc-answer-disabled { display: none; }
+
 /* Choice duplicates */
 .slidoc-choice-duplicate-message {color: red; font-weight: bold; background: #aaa;}
 
