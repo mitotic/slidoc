@@ -2009,7 +2009,7 @@ def createDate(date=None):
     if isinstance(date, datetime.datetime):
         return date
     elif type(date) in (str, unicode):
-        return sliauth.parse_date(date)
+        return sliauth.parse_date(date) if date else ''
     else:
         # Create date from local epoch time (in ms)
         return sliauth.create_date(date)
