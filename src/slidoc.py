@@ -18,11 +18,13 @@ Usage examples:
 from __future__ import print_function
 
 import argparse
+import BaseHTTPServer
 import base64
 import cStringIO
 import os
 import re
 import shlex
+import subprocess
 import sys
 import urllib
 import urllib2
@@ -33,6 +35,7 @@ import json
 import mistune
 import md2md
 import md2nb
+import pptx2md
 import sliauth
 
 try:
@@ -2465,6 +2468,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             file_config = parse_merge_args(read_first_line(fhandle), fname, parser, vars(config), include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
 
+            if config.preview:
+                if file_config.pace:
+                    file_config.pace = BASIC_PACE
+                if file_config.gsheet_url:
+                    file_config.gsheet_url = ''
+                if file_config.images:
+                    file_config.images = ''
+
             file_config.features = file_config.features or set()
             if 'grade_response' in file_config.features and gd_hmac_key is None:
                 # No grading without google sheet
@@ -2603,8 +2614,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 if opt != '/index.html' and opt.endswith('/index.html'):
                     index_entries = read_index(dest_dir+opt)
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_entries:
-                        if iso_due_str and iso_due_str != '-' and (not iso_release_str or iso_release_str == '-'):
-                            # Session due and released
+                        if iso_release_str and iso_release_str != '-' and sliauth.epoch_ms(sliauth.parse_date(iso_release_str)) > sliauth.epoch_ms():
+                            continue # Session not yet available
+                        if iso_due_str and iso_due_str != '-':
                             sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str])
             if sessions_due:
                 sessions_due.sort(reverse=True)
@@ -2661,13 +2673,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             iso_release_str = '-'
             if release_date_str:
                 release_date = sliauth.parse_date(release_date_str)
+                iso_release_str = sliauth.iso_date(release_date)
                 if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
                     # Session not yet released
                     rel_local_time = release_date.ctime()
                     if rel_local_time.endswith(':00.000Z'):
                         rel_local_time = rel_local_time[:-8]+'Z'
                     doc_str += ', available ' + rel_local_time
-                    iso_release_str = sliauth.iso_date(release_date)
 
             admin_ended = bool(admin_due_date.get(fname))
             doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
@@ -3096,6 +3108,29 @@ def abort(msg):
     else:
         raise Exception(msg)
 
+class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    output_html = 'NO DATA'
+    mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(self.output_html)
+        elif '..' not in self.path and os.path.exists(self.path[1:]):
+            fext = os.path.splitext(os.path.basename(self.path[1:]))[1]
+            mime_type = self.mime_types.get(fext.lower())
+            if mime_type:
+                self.send_response(200)
+                self.send_header("Content-type", mime_type)
+                self.end_headers()
+                with open(self.path[1:]) as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(404)
+        else:
+            self.send_response(404)
+    
 # Strip options
 # For pure web pages, --strip=chapters,contents,navigate,sections
 Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
@@ -3173,11 +3208,12 @@ alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
+alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
-cmd_parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
+cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
 def cmd_args2dict(cmd_args):
     # Some arguments need to be set explicitly to '' by default, rather than staying as None
@@ -3230,11 +3266,38 @@ if __name__ == '__main__':
         print('Effective argument list', file=sys.stderr)
         print('    ', argparse.Namespace(**config_dict), file=sys.stderr)
 
-    process_input(input_files, [f.name for f in input_files], config_dict)
+    input_paths = [f.name for f in input_files]
+    for j, inpath in enumerate(input_paths):
+        fext = os.path.splitext(os.path.basename(inpath))[1]
+        if fext == '.pptx':
+            # Convert .pptx to .md
+            md_text = pptx2md.pptx2md(input_files[j], embed_slides=True)
+            input_files[j].close()
+            input_files[j] = cStringIO.StringIO(md_text)
+            input_paths[j] = input_paths[j][:-len('.pptx')]+'.md'
 
-    if cmd_args.printable:
-        if cmd_args.gsheet_url:
-            print("To convert .html to .pdf, use proxy to allow XMLHTTPRequest:\n  wkhtmltopdf -s Letter --print-media-type --cookie slidoc_server 'username::token:' --javascript-delay 5000 http://localhost/file.html file.pdf", file=sys.stderr)
-        else:
-            print("To convert .html to .pdf, use:\n  wkhtmltopdf -s Letter --print-media-type --javascript-delay 5000 file.html file.pdf", file=sys.stderr)
-        print("Additional options that may be useful are:\n  --debug-javascript --load-error-handling ignore --enable-local-file-access --header-right 'Page [page] of [toPage]'", file=sys.stderr)
+    if cmd_args_orig.preview:
+        if len(input_files) != 1:
+            raise Exception('ERROR: --preview only works for a singe file')
+        outname, RequestHandler.output_html, messages = process_input(input_files, input_paths, config_dict, return_html=True)
+        for msg in messages:
+            print(msg, file=sys.stderr)
+        httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args_orig.preview), RequestHandler)
+        command = "sleep 1 && open -a 'Google Chrome' http://localhost:%d" % cmd_args_orig.preview
+        print('Preview at http://localhost:'+str(cmd_args_orig.preview), file=sys.stderr)
+        print(command, file=sys.stderr)
+        subp = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, stderr=subprocess.STDOUT)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        httpd.server_close()
+    else:
+        process_input(input_files, input_paths, config_dict)
+
+        if cmd_args.printable:
+            if cmd_args.gsheet_url:
+                print("To convert .html to .pdf, use proxy to allow XMLHTTPRequest:\n  wkhtmltopdf -s Letter --print-media-type --cookie slidoc_server 'username::token:' --javascript-delay 5000 http://localhost/file.html file.pdf", file=sys.stderr)
+            else:
+                print("To convert .html to .pdf, use:\n  wkhtmltopdf -s Letter --print-media-type --javascript-delay 5000 file.html file.pdf", file=sys.stderr)
+            print("Additional options that may be useful are:\n  --debug-javascript --load-error-handling ignore --enable-local-file-access --header-right 'Page [page] of [toPage]'", file=sys.stderr)
