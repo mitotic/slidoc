@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6e';
+var VERSION = '0.96.6f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -1566,13 +1566,17 @@ function splitToken(token) {
 
 function createDate(date) {
     // Ensure that UTC date string ends in :00.000Z (needed to workaround bug in Google Apps)
-    if (typeof date === 'string' && date.slice(-1) == 'Z') {
-	if (date.length == 17)      // yyyy-mm-ddThh:mmZ
-	    date = date.slice(0,-1) + ':00.000Z';
-	else if (date.length == 20) // yyyy-mm-ddThh:mm:ssZ
-	    date = date.slice(0,-1) + '.000Z';
-	else if (date.length > 24) // yyyy-mm-ddThh:mm:ss.mmmZ
-	    date = date.slice(0,23) + 'Z';
+    if (typeof date === 'string') {
+	if (!date)
+	    return '';
+	if (date.slice(-1) == 'Z') {
+	    if (date.length == 17)      // yyyy-mm-ddThh:mmZ
+		date = date.slice(0,-1) + ':00.000Z';
+	    else if (date.length == 20) // yyyy-mm-ddThh:mm:ssZ
+		date = date.slice(0,-1) + '.000Z';
+	    else if (date.length > 24) // yyyy-mm-ddThh:mm:ss.mmmZ
+		date = date.slice(0,23) + 'Z';
+	}
     }
     return new Date(date);
 }

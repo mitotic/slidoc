@@ -997,6 +997,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Admin path accessible only to dry_run (draft/preview) or wet run using proxy_url
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
+
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
             path = self.request.path
@@ -1018,16 +1019,18 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Paths containing '/_private' are always protected
             sessionName = self.get_path_base(self.request.path)
             errMsg = ''
-            if sessionName != 'index' and userId != TESTUSER_ID and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+            if not Options['dry_run'] and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                 # Check release date for session in session index
                 try:
                     sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
-                    if sessionEntries['releaseDate'] and sliauth.epoch_ms(sessionEntries['releaseDate']) > sliauth.epoch_ms():
-                        print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet released' % sessionName
-                        if userId == ADMINUSER_ID:
-                            errMsg = 'Session %s will be released %s' % (sessionName, sliauth.iso_date(sessionEntries['releaseDate']))
-                        else:
-                            errMsg = 'Session %s not yet released' % sessionName
+                    if sessionEntries['releaseDate']:
+                        remaining_ms = sliauth.epoch_ms(sessionEntries['releaseDate']) - sliauth.epoch_ms()
+                        if remaining_ms > 0:
+                            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet available' % sessionName
+                            if userId in (ADMINUSER_ID, TESTUSER_ID):
+                                errMsg = 'Session %s will be available in %ds' % (sessionName, int(remaining_ms/1000))
+                            else:
+                                errMsg = 'Session %s not yet available' % sessionName
                 except Exception, excp:
                     pass
 

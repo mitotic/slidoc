@@ -2087,7 +2087,7 @@ def strip_name(filepath, split_char=''):
     name = os.path.splitext(os.path.basename(filepath))[0]
     return name.split(split_char)[-1] if split_char else name
 
-N_INDEX_ENTRIES = 4
+N_INDEX_ENTRIES = 5
 def read_index(filepath):
     # Read one or more index entries from comment in the header portion of HTML file
     index_entries = []
@@ -2602,8 +2602,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
                     index_entries = read_index(dest_dir+opt)
-                    for ind_fname, ind_fheader, doc_str, iso_due_str in index_entries:
-                        if iso_due_str and iso_due_str != '-':
+                    for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_entries:
+                        if iso_due_str and iso_due_str != '-' and (not iso_release_str or iso_release_str == '-'):
+                            # Session due and released
                             sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str])
             if sessions_due:
                 sessions_due.sort(reverse=True)
@@ -2647,7 +2648,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         if js_params['paceLevel']:
             # Additional info for paced files
-            time_str = sliauth.parse_date(due_date_str).ctime() if due_date_str else ''
             if gd_sheet_url:
                 if js_params['gradeWeight']:
                     file_type = 'graded'
@@ -2656,10 +2656,22 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             else:
                 file_type = 'paced'
 
+            doc_str = file_type + ' exercise'
+
+            iso_release_str = '-'
+            if release_date_str:
+                release_date = sliauth.parse_date(release_date_str)
+                if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
+                    # Session not yet released
+                    rel_local_time = release_date.ctime()
+                    if rel_local_time.endswith(':00.000Z'):
+                        rel_local_time = rel_local_time[:-8]+'Z'
+                    doc_str += ', available ' + rel_local_time
+                    iso_release_str = sliauth.iso_date(release_date)
+
             admin_ended = bool(admin_due_date.get(fname))
             doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
             iso_due_str = '-'
-            doc_str = file_type + ' exercise'
             if doc_date_str:
                 date_time = sliauth.parse_date(doc_date_str)
                 local_time_str = date_time.ctime()
@@ -2670,7 +2682,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                     iso_due_str = sliauth.iso_date(date_time)
 
                 doc_str += (local_time_str[:-8]+'Z' if local_time_str.endswith(':00.000Z') else local_time_str)
-            paced_files[fname] = {'type': file_type, 'due_date': iso_due_str, 'doc_str': doc_str}
+            paced_files[fname] = {'type': file_type, 'release_date': iso_release_str, 'due_date': iso_due_str, 'doc_str': doc_str}
 
         if config.dry_run:
             message("Indexed ", outname+":", fheader)
@@ -2690,9 +2702,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment
                 if js_params['paceLevel']:
-                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date']]
+                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
                 else:
-                    index_entries = [fname, fheader, 'view', '-']
+                    index_entries = [fname, fheader, 'view', '-', '-']
                 head = '\n'.join([Index_prefix] + index_entries + [Index_suffix, head])
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
@@ -2763,7 +2775,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 index_entries = read_index(outpath)
                 if not index_entries:
                     abort('Index header not found in '+outpath)
-                _, fheader, doc_str, iso_due_str = index_entries[0]
+                _, fheader, doc_str, iso_due_str, iso_release_str = index_entries[0]
                 doc_link = ''
                 if doc_str:
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
@@ -2772,6 +2784,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 toc_list.append(fheader)
                 toc_list.append(doc_str)
                 toc_list.append(iso_due_str)
+                toc_list.append(iso_release_str)
         else:
             # Create ToC using info from rendering
             ifile = 0
