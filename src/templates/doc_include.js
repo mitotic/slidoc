@@ -1649,7 +1649,7 @@ function showGradesCallback(userId, result, retStatus) {
 	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ (grade == ''?'missed':grade) +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    var sessionIndex = retStatus.info.headers.indexOf(sessionKeys[j]);
-	    if (retStatus.info.curve && retStatus.info.curve[sessionIndex])
+	    if (retStatus.info.rescale && retStatus.info.rescale[sessionIndex])
 		html += ' rescaled';
 	    if (retStatus.info.maxScores && retStatus.info.maxScores[sessionIndex])
 		html += ' out of '+retStatus.info.maxScores[sessionIndex];

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6d';
+var VERSION = '0.96.6e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -98,7 +98,7 @@ var ALT_DOC_IDS = { };
 var ADMINUSER_ID = 'admin';
 var MAXSCORE_ID = '_max_score';
 var AVERAGE_ID = '_average';
-var CURVE_ID = '_curve';
+var RESCALE_ID = '_rescale';
 var TESTUSER_ID = '_test_user';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
@@ -599,8 +599,8 @@ function sheetAction(params) {
 		    var temIndexRow = indexRows(modSheet, columnIndex['id'], 2);
 		    if (temIndexRow[MAXSCORE_ID])
 			returnInfo.maxScores = modSheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
-		    if (temIndexRow[CURVE_ID])
-			returnInfo.curve = modSheet.getSheetValues(temIndexRow[CURVE_ID], 1, 1, columnHeaders.length)[0];
+		    if (temIndexRow[RESCALE_ID])
+			returnInfo.rescale = modSheet.getSheetValues(temIndexRow[RESCALE_ID], 1, 1, columnHeaders.length)[0];
 		    if (Settings['share_averages'] && temIndexRow[AVERAGE_ID])
 			returnInfo.averages = modSheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
 		} catch (err) {}
@@ -2733,7 +2733,7 @@ function updateScores(sessionNames) {
 	    scoreSheet.getRange('1:1').setFontWeight('bold');
 
 	    if (scoreAvgRow > 2) {
-		scoreSheet.getRange(scoreAvgRow-1, idCol, 1, 1).setValues([[CURVE_ID]]);
+		scoreSheet.getRange(scoreAvgRow-1, idCol, 1, 1).setValues([[RESCALE_ID]]);
 		scoreSheet.getRange(scoreAvgRow, idCol, 1, 1).setValues([[AVERAGE_ID]]);
 		scoreSheet.getRange((scoreAvgRow-1)+':'+scoreAvgRow).setFontStyle('italic');
 	    }

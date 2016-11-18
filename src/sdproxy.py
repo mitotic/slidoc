@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.6d'
+VERSION = '0.96.6e'
 
 # Usually modified by importing module
 Options = {
@@ -65,7 +65,7 @@ CACHE_HOLD_SEC = 3600    # Maximum time (sec) to hold sheet in cache
 ADMINUSER_ID = 'admin'
 MAXSCORE_ID = '_max_score'
 AVERAGE_ID = '_average'
-CURVE_ID = '_curve'
+RESCALE_ID = '_rescale'
 TESTUSER_ID = '_test_user'   #var
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
@@ -870,8 +870,8 @@ def sheetAction(params, notrace=False):
                 temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
                 if temIndexRow.get(MAXSCORE_ID):
                     returnInfo['maxScores'] = modSheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
-                if temIndexRow.get(CURVE_ID):
-                    returnInfo['curve'] = modSheet.getSheetValues(temIndexRow.get(CURVE_ID), 1, 1, len(columnHeaders))[0]
+                if temIndexRow.get(RESCALE_ID):
+                    returnInfo['rescale'] = modSheet.getSheetValues(temIndexRow.get(RESCALE_ID), 1, 1, len(columnHeaders))[0]
                 if Options['share_averages'] and temIndexRow.get(AVERAGE_ID):
                     returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
             except Exception, err:

@@ -1016,10 +1016,11 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/_private' are always protected
+            sessionName = self.get_path_base(self.request.path)
             errMsg = ''
-            if userId != TESTUSER_ID:
+            if sessionName != 'index' and userId != TESTUSER_ID and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+                # Check release date for session in session index
                 try:
-                    sessionName = self.get_path_base(self.request.path)
                     sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['releaseDate'] and sliauth.epoch_ms(sessionEntries['releaseDate']) > sliauth.epoch_ms():
                         print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet released' % sessionName
@@ -1028,8 +1029,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                         else:
                             errMsg = 'Session %s not yet released' % sessionName
                 except Exception, excp:
-                    print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Error in accessing entries for session %s: %s' % (sessionName, excp)
-                    raise tornado.web.HTTPError(404)
+                    pass
 
             if errMsg:
                 raise tornado.web.HTTPError(404, log_message=errMsg)
