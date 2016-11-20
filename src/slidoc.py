@@ -1226,7 +1226,7 @@ class SlidocRenderer(MathRenderer):
             elif opt == 'retry':
                 retry_counts = [1, 0]
             else:
-                option_match = re.match(r'^(explain|share|team|vote)(=(\w+))?$', opt)
+                option_match = re.match(r'^(disabled|explain|share|team|vote)(=(\w+))?$', opt)
                 if option_match:
                     opt_name = option_match.group(1)
                     if option_match.group(3) and option_match.group(3) not in opt_values[opt_name]:
@@ -1390,6 +1390,8 @@ class SlidocRenderer(MathRenderer):
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
                                   weight=1)
 
+        if answer_opts['disabled']:
+            self.questions[-1].update(disabled=answer_opts['disabled'])
         if answer_opts['explain']:
             self.questions[-1].update(explain=answer_opts['explain'])
         if answer_opts['participation']:
@@ -2261,8 +2263,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         abort('slidoc: Error: --pace option incompatible with --all')
 
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
-                 'questionsMax': 0, 'pacedSlides': 0, 'scoreWeight': 0, 'gradeWeight': 0, 'otherWeight': 0,
+                 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
+                 'gradeFields': [],
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
+                 'plugins': [], 'plugin_share_voteDate': '',
+                 'releaseDate': '', 'dueDate': '',
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
                  'score_sheet': SCORE_SHEET, 'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
@@ -2565,13 +2570,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         max_params['q_other'] = sum(q.get('vweight',0) for q in renderer.questions) if renderer.questions else 0
         max_params['q_grades'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
         max_score_fields = [max_params.get(x,'') for x in Manage_fields+Session_fields]
-        if max_params['q_other']:
-            # Include column for total votes etc.
-            max_score_fields += [max_params['q_other']]
-        if max_params['q_grades'] and renderer.max_fields:
-            # Include column for total grades
-            max_score_fields += [max_params['q_grades']]
-        max_score_fields += renderer.max_fields if renderer.max_fields else []
+        if js_params['paceLevel']:
+            if max_params['q_other']:
+                # Include column for total votes etc.
+                max_score_fields += [max_params['q_other']]
+            if max_params['q_grades'] and renderer.max_fields:
+                # Include column for total grades
+                max_score_fields += [max_params['q_grades']]
+            max_score_fields += renderer.max_fields if renderer.max_fields else []
 
         plugin_list = list(renderer.plugin_embeds)
         plugin_list.sort()
@@ -2590,6 +2596,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if js_params['otherWeight']:
                 # Include column for total votes etc.
                 js_params['gradeFields'] = ['q_other'] + js_params['gradeFields']
+        else:
+            js_params['pacedSlides'] = 0
+            js_params['questionsMax'] = 0
+            js_params['scoreWeight'] = 0
+            js_params['otherWeight'] = 0
+            js_params['gradeWeight'] = 0
+            js_params['gradeFields'] = []
+            
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"

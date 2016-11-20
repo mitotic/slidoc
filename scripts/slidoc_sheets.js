@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6f';
+var VERSION = '0.96.6h';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -2782,7 +2782,6 @@ function updateScores(sessionNames) {
 	    }
 	}
 
-	var weightedTotal = [];
 	var updatedNames = [];
 	var curDate = new Date();
 	for (var iSession=0; iSession<validNames.length; iSession++) {
@@ -2797,12 +2796,14 @@ function updateScores(sessionNames) {
 	    var questions = JSON.parse(sessionEntries.questions);
 	    var gradeDate = sessionEntries.gradeDate || null;
 	    var paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
-	    var sessionWeight = parseNumber(sessionEntries.sessionWeight) || 0;
+	    var sessionWeight = isNumber(sessionEntries.sessionWeight) ? parseNumber(sessionEntries.sessionWeight) : null;
 	    var sessionRescale = sessionEntries.sessionRescale || '';
 	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionEntries.gradeWeight) || 0;
 	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
 	    if (!paceLevel)
+		continue;
+	    if (sessionWeight !== null && !sessionWeight) // sessionWeight is only used to decide whether to score
 		continue;
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
 		continue;
@@ -2854,8 +2855,6 @@ function updateScores(sessionNames) {
 	    }
 
 	    var colChar = colIndexToChar( scoreSessionCol );
-	    if (sessionWeight)
-		weightedTotal.push(sessionWeight+'*'+colChar+'@');
 
 	    var sessionIdCol = sessionColIndex['id'];
 	    var sessionIdColChar = colIndexToChar( sessionIdCol );
@@ -2933,7 +2932,7 @@ function updateScores(sessionNames) {
 		    } else {
 			combinedScore = 'IF('+lateToken+'="'+LATE_SUBMIT+'", 0, '+cumScore+ ' )';
 		    }
-		    scoreFormulas.push(['=IFERROR('+combinedScore+',0)']); // All scores must be numeric for dropping lowest scores etc.
+		    scoreFormulas.push(['=IFERROR('+combinedScore+')']); // For dropping lowest scores etc., use IFERROR(..,0)
 		} else {
 		    scoreFormulas.push(['']);
 		}
@@ -2950,12 +2949,9 @@ function updateScores(sessionNames) {
 	var scoreColIndex = indexColumns(scoreSheet);
 	var nids = scoreSheet.getLastRow()-scoreStartRow+1;
 	var scoreTotalCol = scoreColIndex['total'];
-	var weightedFormat = weightedTotal.length ? '='+weightedTotal.join('+') : '';
-	/// Commented out old way of weighting
-	///insertColumnFormulas(scoreSheet, weightedFormat, scoreTotalCol, scoreStartRow);
 
 	var agSumFormula = 'SUM(%range)';
-	var agDropFormula = '-SMALL(%range,%drop)';
+	var agDropFormula = '-IFERROR(SMALL(%range,%drop),0)';  // Need IFERROR in case there aren't enough numeric values to drop
 	for (var j=0; j<aggregateColumns.length; j++) {
 	    // Insert aggregate column
 	    var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
