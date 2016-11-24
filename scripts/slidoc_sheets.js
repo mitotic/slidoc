@@ -1320,7 +1320,7 @@ function sheetAction(params) {
                                 } else {
                                     // Unsubmit if blank value (also clear lateToken)
                                     modValue = '';
-                                    modSheet.getRange(userRow, columnIndex['lateToken']-1, 1, 1).setValues([[ '' ]]);
+                                    modSheet.getRange(userRow, columnIndex['lateToken'], 1, 1).setValues([[ '' ]]);
                                 }
                                 if (modValue) {
                                     returnInfo['submitTimestamp'] = modValue;
