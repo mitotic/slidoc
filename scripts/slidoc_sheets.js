@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6h';
+var VERSION = '0.96.6i';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -2949,17 +2949,15 @@ function updateScores(sessionNames) {
 	var scoreColIndex = indexColumns(scoreSheet);
 	var nids = scoreSheet.getLastRow()-scoreStartRow+1;
 	var scoreTotalCol = scoreColIndex['total'];
+	var colChar = colIndexToChar(scoreTotalCol);
+	scoreSheet.getRange(colChar+'2'+':'+colChar).setNumberFormat('0.###');
 
 	var agSumFormula = 'SUM(%range)';
 	var agDropFormula = '-IFERROR(SMALL(%range,%drop),0)';  // Need IFERROR in case there aren't enough numeric values to drop
 	for (var j=0; j<aggregateColumns.length; j++) {
 	    // Insert aggregate column
 	    var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
-	    var agMatch = aggregateColumns[j][0];
-	    var agType = aggregateColumns[j][1];
 	    var agName = aggregateColumns[j][2];
-	    var agDrop = aggregateColumns[j][3];
-	    var agCol = scoreColHeaders.length+1;
 	    for (var jcol=1; jcol<=scoreColHeaders.length; jcol++) {
 		var colHeader = scoreColHeaders[jcol-1];
 		if (scoreHeaders.indexOf(colHeader) >= 0)
@@ -2973,9 +2971,17 @@ function updateScores(sessionNames) {
 		    scoreSheet.getRange(1, jcol, 1, 1).setValues([[agName]]);
 		    scoreSheet.getRange(colChar+numFormatRow+':'+colChar).setNumberFormat('0.##');
 		}
-		agCol = jcol;
 		break;
 	    }
+	}
+	// Re-index
+	var scoreColIndex = indexColumns(scoreSheet);
+	for (var j=0; j<aggregateColumns.length; j++) {
+	    var agMatch = aggregateColumns[j][0];
+	    var agType = aggregateColumns[j][1];
+	    var agName = aggregateColumns[j][2];
+	    var agDrop = aggregateColumns[j][3];
+	    var agCol = scoreColIndex[agName];
 	    var colChar = colIndexToChar( agCol );
 	    totalFormula = totalFormula.replace(agMatch, colChar+'@');
 	    var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];

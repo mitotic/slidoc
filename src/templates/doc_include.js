@@ -438,6 +438,14 @@ document.onreadystatechange = function(event) {
     // !Sliobj.params.fileName => index file; load, but do not execute JS
     if (document.readyState != "interactive" || !document.body)
 	return;
+    pageSetup();
+    if (!Sliobj.params.fileName) // Just a simple web page
+	return;
+    Slidoc.reportTestAction('ready');
+    return abortOnError(onreadystateaux);
+}
+
+function pageSetup() {
     if (document.getElementById("slidoc-contents-button") && !document.getElementById("slidoc-topnav"))
 	document.getElementById("slidoc-contents-button").style.display = null;
     var cookie = getServerCookie();
@@ -446,10 +454,17 @@ document.onreadystatechange = function(event) {
 	if (dashElem)
 	    dashElem.style.display = null;
     }
-    if (!Sliobj.params.fileName) // Just a simple web page
-	return;
-    Slidoc.reportTestAction('ready');
-    return abortOnError(onreadystateaux);
+    var indexElems = document.getElementsByClassName('slidoc-index-entry');
+    for (var j=0; j<indexElems.length; j++) {
+	var elem = indexElems[j];
+	var releaseTime = parseNumber(elem.dataset.release || 0);
+	var dueTime = parseNumber(elem.dataset.due || 0);
+	var curTime = (new Date()).getTime() / 1000;
+	if (releaseTime && curTime < releaseTime)
+	    elem.classList.add('slidoc-index-entry-unavailable')
+	else if (dueTime && curTime < dueTime)
+	    elem.classList.add('slidoc-index-entry-due')
+    }
 }
 
 var PagedownConverter = null;
@@ -1640,8 +1655,13 @@ function showGradesCallback(userId, result, retStatus) {
     }
     sessionKeys.sort();
     var html = 'Grades for user <b>'+userId+'</b><p></p>';
-    if (result.total)
-	html += 'Weighted total: <b>'+result.total+'</b><br>';
+    if (result.total) {
+	html += 'Weighted total: <b>'+result.total.toFixed(2)+'</b>';
+	var totalIndex = retStatus.info.headers.indexOf('total');
+	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
+	    html += ' out of '+retStatus.info.maxScores[totalIndex];
+	html += '<br>';
+    }
     for (var j=0; j<sessionKeys.length; j++) {
 	var grade = result[sessionKeys[j]];
 	if (isNumber(grade))
@@ -2873,8 +2893,9 @@ function showPendingCalls() {
     pendingElem.innerHTML = hourglasses;
 }
 
-function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType, result, retStatus) {
-    Slidoc.log('Slidoc.sessionGetPutAux: ', prevSession, callType, !!callback, !!retryCall, retryType, result, retStatus);
+function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, retStatus) {
+    // retryOpts = {type: '...', call:, reload: }
+    Slidoc.log('Slidoc.sessionGetPutAux: ', prevSession, callType, !!callback, retryOpts.type, !!retryOpts.reload, !!retryOpts.call, result, retStatus);
     var session = null;
     var feedback = null;
     var nullReturn = false;
@@ -2903,6 +2924,11 @@ function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType,
     var err_type = match ? match[2] : '';
     var err_info = match ? match[3] : ''
     if (session || nullReturn) {
+	// Successful get/put
+	if (retryOpts.reload) {
+	    location.reload(true);
+	    return;
+	}
 	Sliobj.errorRetries = 0;
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.gradeDate)
@@ -2945,14 +2971,14 @@ function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType,
 		    location.reload(true);
 	    }
 	}
-	if (retryType == 'end_paced') {
+	if (retryOpts.type == 'end_paced') {
 	    if (Sliobj.session.submitted) {
 		showCompletionStatus();
 	    } else {
 		alert('Error in submitting session; no submit time');
 	    }
 	    showSubmitted();
-	} else if (retryType == 'ready' && Sliobj.params.gd_sheet_url && !Sliobj.params.gd_client_id) {
+	} else if (retryOpts.type == 'ready' && Sliobj.params.gd_sheet_url && !Sliobj.params.gd_client_id) {
 	    if (GService.gprofile.auth.remember)
 		localPut('auth', GService.gprofile.auth); // Save auth info on successful start
 	}
@@ -2982,7 +3008,7 @@ function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType,
 	}
 	return;
 
-    } else if (retryCall) {
+    } else if (retryOpts.call) {
 	if (err_msg) {
 	    if (Sliobj.errorRetries > MAX_SYS_ERROR_RETRIES) {
 		sessionAbort('Too many retries: '+err_msg);
@@ -2991,26 +3017,26 @@ function sessionGetPutAux(prevSession, callType, callback, retryCall, retryType,
 	    Sliobj.errorRetries += 1;
 	    var prefix = err_type.match(/INVALID_.*TOKEN/) ? 'Invalid token. ' : '';
 	    if (err_type == 'NEED_ROSTER_ENTRY') {
-		Slidoc.userLogin(err_info+'. Please enter a valid userID (or contact instructor).', retryCall);
+		Slidoc.userLogin(err_info+'. Please enter a valid userID (or contact instructor).', retryOpts.call);
 		return;
 	    } else if (err_type == 'INVALID_ADMIN_TOKEN') {
-		Slidoc.userLogin('Invalid admin token or key mismatch. Please re-enter', retryCall);
+		Slidoc.userLogin('Invalid admin token or key mismatch. Please re-enter', retryOpts.call);
 		return;
 
 	    } else if (err_type == 'NEED_TOKEN' || err_type == 'INVALID_TOKEN') {
-		Slidoc.userLogin('Invalid username/token or key mismatch. Please re-enter', retryCall);
+		Slidoc.userLogin('Invalid username/token or key mismatch. Please re-enter', retryOpts.call);
 		return;
 
-	    } else if ((prevSession||retryType == 'ready') && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
+	    } else if ((prevSession||retryOpts.type == 'ready') && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
 		var temToken = setLateToken(prevSession||Sliobj.session, prefix);
 		if (temToken) {
-		    retryCall(temToken);
+		    retryOpts.call(temToken);
 		    return;
 		}
-	    } else if (retryType == 'ready' || retryType == 'new' || retryType == 'end_paced') {
-		var conf_msg = 'Error in saving'+((retryType == 'end_paced') ? ' completed':'')+' session to Google Docs: '+err_msg+' Retry?';
+	    } else if (retryOpts.type == 'ready' || retryOpts.type == 'new' || retryOpts.type == 'end_paced') {
+		var conf_msg = 'Error in saving'+((retryOpts.type == 'end_paced') ? ' completed':'')+' session to Google Docs: '+err_msg+' Retry?';
 		if (window.confirm(conf_msg)) {
-		    retryCall();
+		    retryOpts.call();
 		    return;
 		}
 	    }
@@ -3067,12 +3093,13 @@ function sessionGet(userId, sessionName, opts, callback, lateToken) {
 	// Freeze userId for retry only if validated
 	if (!userId && GService.gprofile.auth.validated)
 	    userId = GService.gprofile.auth.id;
-	var retryCall = opts.retry ? sessionGet.bind(null, userId, sessionName, opts, callback) : null;
+	var retryOpts = {type: opts.retry||''};
+	retryOpts.call = opts.retry ? sessionGet.bind(null, userId, sessionName, opts, callback) : null;
 	var getOpts = {};
 	if (opts.create) getOpts.create = 1;
 	if (lateToken) getOpts.late = lateToken;
 	try {
-	    gsheet.getRow(userId, getOpts, sessionGetPutAux.bind(null, null, 'get', callback, retryCall, opts.retry||''));
+	    gsheet.getRow(userId, getOpts, sessionGetPutAux.bind(null, null, 'get', callback, retryOpts));
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
 	    return;
@@ -3095,7 +3122,8 @@ function sessionGet(userId, sessionName, opts, callback, lateToken) {
 function sessionPut(userId, session, opts, callback, lateToken) {
     // Remote saving only happens if session.paced is true or force is true
     // callback(session, feedback)
-    // opts = {nooverwrite:, get:, retry:, force: }
+    // opts = {nooverwrite:, get:, retry:, force:, reload:true/false }
+    // If opts.reload, reload on successful put
     // lateToken is not used, but is already set in session, It is provided for compatibility with sessionGet
     Slidoc.log('sessionPut:', userId, Sliobj.sessionName, session, opts, !!callback, lateToken);
     if (Sliobj.adminState) {
@@ -3119,7 +3147,10 @@ function sessionPut(userId, session, opts, callback, lateToken) {
 	// Freeze userId for retry only if validated
 	if (!userId && GService.gprofile.auth.validated)
 	    userId = GService.gprofile.auth.id;
-	var retryCall = opts.retry ? sessionPut.bind(null, userId, session, opts, callback) : null;
+	var retryOpts = {type: opts.retry||''};
+	if (opts.reload)
+	    retryOpts.reload = true;
+	retryOpts.call = opts.retry ? sessionPut.bind(null, userId, session, opts, callback) : null;
 	var putOpts = {};
 	if (userId) putOpts.id = userId;
 	if (opts.nooverwrite) putOpts.nooverwrite = 1;
@@ -3129,7 +3160,7 @@ function sessionPut(userId, session, opts, callback, lateToken) {
 	var rowObj = packSession(session);
 	var gsheet = getSheet(Sliobj.sessionName);
 	try {
-	    gsheet.authPutRow(rowObj, putOpts, sessionGetPutAux.bind(null, session, 'put', callback||null, retryCall, opts.retry||''),
+	    gsheet.authPutRow(rowObj, putOpts, sessionGetPutAux.bind(null, session, 'put', callback||null, retryOpts),
 			      false);
 	} catch(err) {
 	    sessionAbort(''+err, err.stack);
@@ -4395,11 +4426,12 @@ function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
     updateObj.Timestamp = null;  // Ensure that Timestamp is updated
 
     var gsheet = getSheet(Sliobj.sessionName);
-    var retryCall = gradeUpdate.bind(null, qnumber, updates, callback);
+    var retryOpts = {type: 'gradeUpdate'};
+    retryOpts.call = gradeUpdate.bind(null, qnumber, updates, callback);
 
     try {
 	gsheet.updateRow(updateObj, {team: !!teamUpdate}, sessionGetPutAux.bind(null, null, 'update',
-		   gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, teamUpdate, callback), retryCall, 'gradeUpdate') );
+		   gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, teamUpdate, callback), retryOpts) );
     } catch(err) {
 	sessionAbort(''+err, err.stack);
 	return;
@@ -4467,10 +4499,11 @@ Slidoc.startPaced = function () {
     var curDate = new Date();
     if (!Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
 	// Past submit deadline; force partial or late submit if not submitted
-	if (setLateToken(Sliobj.session) == PARTIAL_SUBMIT)
-	    Slidoc.endPaced();
+	var temToken = setLateToken(Sliobj.session);
+	if (temToken == PARTIAL_SUBMIT)
+	    Slidoc.endPaced(true);
 	else
-	    sessionPut();
+	    sessionPut(null, null, {reload: !!temToken});
 	return;
     }
 
@@ -4507,7 +4540,7 @@ Slidoc.startPaced = function () {
     Slidoc.slideViewStart();
 }
 
-Slidoc.endPaced = function () {
+Slidoc.endPaced = function (reload) {
     Sliobj.delaySec = null;
     Slidoc.log('Slidoc.endPaced: ');
     if (!Sliobj.params.gd_sheet_url)       // For remote sessions, successful submission will complete session
@@ -4520,7 +4553,7 @@ Slidoc.endPaced = function () {
     Slidoc.reportTestAction('endPaced');
     if (Sliobj.interactive)
 	interactAux(false);
-    sessionPut(null, null, {force: true, retry: 'end_paced', submit: true});
+    sessionPut(null, null, {force: true, retry: 'end_paced', submit: true, reload: !!reload});
     showCompletionStatus();
     var answerElems = document.getElementsByClassName('slidoc-answer-button');
     for (var j=0; j<answerElems.length; j++)

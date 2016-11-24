@@ -340,6 +340,30 @@ class ActionHandler(BaseHandler):
                     lines.append('<li>%s (<a href="/_respond/%s;%s">set responded</a>)</li>\n' % (name, sessionName, idVal))
             lines.append('</ul>\n')
             self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
+        elif action in ('_roster'):
+            sessionName, sep, respId = sessionName.partition(';')
+            if not sessionName:
+                self.write('Please specify /_roster/session name')
+                return
+            nameMap = sdproxy.lookupRoster('name', userId=None)
+            if not nameMap:
+                self.write('Roster sheet not found for session '+sessionName)
+                return
+            for idVal, name in nameMap.items():
+                if name.startswith('#'):
+                    del nameMap[idVal]
+            lastMap = sdproxy.makeShortNames(nameMap)
+            firstMap = sdproxy.makeShortNames(nameMap, first=True)
+            self.write('Roster for session %s: \n' % sessionName)
+            for nMap in [nameMap, lastMap, firstMap]:
+                vals = nMap.values()
+                vals.sort()
+                lines = ['<hr><table>\n']
+                for val in vals:
+                    lines.append('<tr><td>%s</td></tr>\n' % val)
+                lines += ['</table>\n']
+                self.write(''.join(lines))
+
         elif action in ('_getcol', '_getrow'):
             sessionName, sep, label = sessionName.partition(';')
             sheet = sdproxy.getSheet(sessionName, optional=True)
@@ -403,6 +427,8 @@ class ActionHandler(BaseHandler):
                 self.write(errors)
         elif action == '_import':
             self.render('import.html', site_label=Options['site_label'])
+        elif action == '_submit':
+            self.render('submit.html', site_label=Options['site_label'])
         elif action == '_export':
             self.set_header('Content-Type', 'text/csv')
             self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % (sessionName+'_answers'))
@@ -434,21 +460,22 @@ class ActionHandler(BaseHandler):
 
     def postAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')
-        if action == '_import':
+        if action in ('_import', '_submit'):
             sessionName = self.get_argument('session','')
             submitDate = self.get_argument('submitdate','')
             self.set_header('Content-Type', 'text/plain')
             if not sessionName:
                 self.write('Must specify session name')
                 return
-
-            if self.get_argument('submittest',''):
+            if action == '_submit':
+                # Submit test user
                 try:
-                    sdproxy.importUserAnswers(sessionName, TESTUSER_ID, '', submitDate=submitDate, source='import')
-                    self.write('Imported '+TESTUSER_ID+' row')
+                    sdproxy.importUserAnswers(sessionName, TESTUSER_ID, '', submitDate=submitDate, source='submit')
+                    self.write('Submit '+TESTUSER_ID+' row')
                 except Exception, excp:
-                    self.write('Error in import for '+TESTUSER_ID+': '+str(excp))
-            else:
+                    self.write('Error in submit for '+TESTUSER_ID+': '+str(excp))
+            elif action == '_import':
+                # Import user answers from CSV file
                 if 'upload' not in self.request.files:
                     self.write('No file to upload!')
                     return
@@ -1285,8 +1312,9 @@ class Application(tornado.web.Application):
                           (r"/(_qstats/[-\w.]+)", ActionHandler),
                           (r"/(_respond)", ActionHandler),
                           (r"/(_respond/[-\w.;]+)", ActionHandler),
+                          (r"/(_roster/[-\w.;]+)", ActionHandler),
                           (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
-                          (r"/(_(cache|clear|import|shutdown))", ActionHandler),
+                          (r"/(_(cache|clear|import|shutdown|submit))", ActionHandler),
                           (r"/(_dash)", AuthActionHandler),
                            ]
 

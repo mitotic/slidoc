@@ -108,6 +108,12 @@ body.slidoc-sidebar-view .slidoc-all-container {
     box-sizing: border-box;
 }
 
+/* Index */
+
+.slidoc-index-entry-unavailable { display: none; }
+
+.slidoc-index-entry-due { font-weight: bold; }
+
 /* Answers */
 .slidoc-answer-textarea,
   .slidoc-comments-textarea,

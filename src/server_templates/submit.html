@@ -9,21 +9,18 @@ body {
   <p></p>
   <div id="main">
     <div id="message-form">
-      <h2>Import session responses</h2>
-      <form action="/_import" method="post" id="message_form" enctype="multipart/form-data" >
+      <h2>Submit test user responses</h2>
+      <form action="/_submit" method="post" id="message_form" enctype="multipart/form-data" >
 	<fieldset>
 	  <label for="session">Session Name:</label>
           <input  type="text" autocapitalize="off" autocorrect="off" class="sdserver-input" id="session" name="session" value="">
           <p></p>
 	  <label for="submitdate">Submit date (optional):</label>
           <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="">
-          <p></p>
-          <label for="username">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
-          <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file">
         </fieldset>
         {% module xsrf_form_html() %}
         <div id="form_btn">
-	  <input id="submit-btn" type="submit" value="Import">
+	  <input id="submit-btn" type="submit" value="Submit">
 	</div>
       </form>
     </div>

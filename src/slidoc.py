@@ -2628,16 +2628,20 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 if opt != '/index.html' and opt.endswith('/index.html'):
                     index_entries = read_index(dest_dir+opt)
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_entries:
-                        if iso_release_str and iso_release_str != '-' and sliauth.epoch_ms(sliauth.parse_date(iso_release_str)) > sliauth.epoch_ms():
-                            continue # Session not yet available
                         if iso_due_str and iso_due_str != '-':
-                            sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str])
+                            sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str, iso_release_str])
             if sessions_due:
                 sessions_due.sort(reverse=True)
                 due_html = []
-                for ind_fpath, ind_fname, doc_str, iso_due_str in sessions_due:
+                for ind_fpath, ind_fname, doc_str, iso_due_str, iso_release_str in sessions_due:
+                    release_epoch = 0
+                    due_epoch = 0
+                    if iso_release_str and iso_release_str != '-':
+                        release_epoch = int(sliauth.epoch_ms(sliauth.parse_date(iso_release_str))/1000.0)
+                    if iso_due_str and iso_due_str != '-':
+                        due_epoch = int(sliauth.epoch_ms(sliauth.parse_date(iso_due_str))/1000.0)
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (ind_fpath, doc_str)
-                    due_html.append('<li>%s: <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (iso_due_str[:10], ind_fname, SPACER6, doc_link))
+                    due_html.append('<li class="slidoc-index-entry" data-release="%d" data-due="%d">%s: <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (release_epoch, due_epoch, iso_due_str[:10], ind_fname, SPACER6, doc_link))
                 sessions_due_html = '<ul class="slidoc-toc-list" style="list-style-type: none;">\n' + '\n'.join(due_html) + '\n</ul>\n'
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
 

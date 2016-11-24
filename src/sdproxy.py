@@ -38,7 +38,7 @@ from tornado.ioloop import IOLoop
 
 import sliauth
 
-VERSION = '0.96.6h'
+VERSION = '0.96.6i'
 
 # Usually modified by importing module
 Options = {
@@ -137,9 +137,10 @@ def backupCache(dirpath=''):
         if not os.path.exists(dirpath):
             os.makedirs(dirpath)
 
-        rosterSheet = getSheet(ROSTER_SHEET, optional=True)
-        if rosterSheet:
-            backupSheet(ROSTER_SHEET, rosterSheet, dirpath, errorList)
+        for sheetName in (SETTINGS_SHEET, ROSTER_SHEET):
+            sheet = getSheet(sheetName, optional=True)
+            if sheet:
+                backupSheet(sheetName, sheet, dirpath, errorList)
 
         indexSheet = getSheet(INDEX_SHEET, optional=True)
         if indexSheet:
