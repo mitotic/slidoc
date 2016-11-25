@@ -559,10 +559,11 @@ def updates_current():
     elif Global.suspended == "pull":
         try:
             if os.environ.get('SUDO_USER'):
-                subprocess.check_call(["sudo", "-u", os.environ['SUDO_USER'], "git", "pull"], cwd=scriptdir)
+                cmd = ["sudo", "-u", os.environ['SUDO_USER'], "git", "pull"]
             else:
-                subprocess.check_call(["git", "pull"], cwd=scriptdir)
-            print("Updating via git pull...", file=sys.stderr)
+                cmd = ["git", "pull"]
+            print("Updating via pull: %s" % cmd, file=sys.stderr)
+            subprocess.check_call(cmd, cwd=scriptdir)
         except Exception, excp:
             print("Update via git pull failed: "+str(excp), file=sys.stderr)
 
