@@ -558,7 +558,10 @@ def updates_current():
             print("Reload failed: "+str(excp), file=sys.stderr)
     elif Global.suspended == "pull":
         try:
-            subprocess.check_call(["git", "pull"])
+            if os.environ.get('SUDO_USER'):
+                subprocess.check_call(["sudo", "-u", os.environ['SUDO_USER'], "git", "pull"], cwd=scriptdir)
+            else:
+                subprocess.check_call(["git", "pull"], cwd=scriptdir)
             print("Updating via git pull...", file=sys.stderr)
         except Exception, excp:
             print("Update via git pull failed: "+str(excp), file=sys.stderr)
