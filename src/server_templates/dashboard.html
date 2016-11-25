@@ -4,56 +4,42 @@ body {
 }
 </style>
 <script>
-function check(label) {
-if (window.confirm('Confirm '+label+'?'))
-    location = '/_' + label;
-}
 function action(label) {
-    var prompt;
-    if (label == 'backup')
-       prompt = 'Backup directory (end with hyphen to append date/time)';
-    else if (label == 'session')
-       prompt = 'Session';
-    else
-       prompt = label+' session';
-    var value = window.prompt(prompt+': ');
-    if (value) {
-      var statusElem = document.getElementById('actionstatus');
-      if (statusElem) statusElem.textContent = 'Loading...';
-      location = '/_' + label + '/' + value;
-    }
+  var statusElem = document.getElementById('actionstatus');
+  if (statusElem) statusElem.textContent = 'Processing...';
+  window.location = '/_' + label;
+}
+function check(label) {
+  if (!window.confirm('Confirm '+label+'?'))
+    return;
+  action(label);
 }
 </script>
 
 <div id="dashboarddiv">
   <h2>Proxy server dashboard</h2>
   <a href="/">Home</a>
-  <ul>
-    <li><a href="/_cache">proxy status</a>: Status of proxy cache and active connections</li>
-    <hr>
-    <li><a href="/_twitter">twitter</a>: View twitter stream status</li>
-    <hr>
-    <li><a href="javascript:action('session')">session status</a>: Session stats, allow late submissions etc.</li>
-    <li><a href="javascript:action('respond')">respond</a>: Award participation credit</li>
-    <li><a href="javascript:action('roster')">roster</a>: List roster of students</li>
-    <hr>
-    <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
-    <li><a href="javascript:action('refresh')">refresh</a>: Refresh single session cache</li>
-    <hr>
-    <li><a href="javascript:action('backup')">backup</a>: Backup all sessions</li>
-    <li><a href="javascript:check('shutdown')">shutdown</a>: Shutdown proxy server</li>
-    <hr>
-    <li><a href="/_import">import</a>: Import responses/grades from spreadsheet.csv (for paper tests)</li>
-    <li><a href="javascript:action('export')">export</a>: Export responses to spreadsheet.csv</li>
-    <li><a href="/_submit">submit</a>: Submit test user responses (useful to end admin paced sessions)</li>
-    <hr>
-    <li><a href="javascript:action('qstats')">qstats</a>: Question response statistics</li>
-    <hr>
-    <li><a href="javascript:action('getrow')">headers</a>: List session spreadsheet columns (headers)</li>
-    <li><a href="javascript:action('getcol')">ids</a>: List all rows (ids) in session spreadsheet</li>
-  </ul>
-  Current interactive session: <a href="/_respond/{{interactive}}">{{interactive}}</a>
   <p></p>
   <span id="actionstatus"></span>
+  <ul>
+    <li><a href="javascript:action('sessions')">sessions</a>: Session info and actions</li>
+    <hr>
+    <li><a href="javascript:action('roster')">roster</a>: List roster of students</li>
+    <hr>
+    <li><a href="javascript:action('twitter')">twitter</a>: View twitter stream status</li>
+    <hr>
+    <li><a href="javascript:action('cache')">proxy status</a>: Status of proxy cache and active connections</li>
+    <hr>
+    <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
+    <hr>
+    <li><a href="javascript:check('backup')">backup</a>: Backup all sessions</li>
+    <hr>
+    <li><a href="javascript:check('reload')">reload</a>: Restart proxy server</li>
+    <hr>
+    <li><a href="javascript:check('pull')">pull</a>: Pull updated source and restart proxy server</li>
+    <hr>
+    <li><a href="javascript:check('shutdown')">shutdown</a>: Shutdown proxy server</li>
+  </ul>
+  Respond to current interactive session: <a href="/_respond/{{interactive}}">{{interactive}}</a>
   <p></p>
 </div>

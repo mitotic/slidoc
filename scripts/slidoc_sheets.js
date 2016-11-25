@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6i';
+var VERSION = '0.96.6j';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -167,11 +167,15 @@ function setup() {
     defaultSettings();
 }
 
+function getDoc() {
+    return SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+}
+
 function resetSettings() {
     var response = getPrompt('Reset settings?', "");
     if (response == null)
 	return;
-    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var doc = getDoc();
     defaultSettings();
 }
 
@@ -252,10 +256,13 @@ function sheetAction(params) {
     // getheaders: 1 to return headers as well
     // all: 1 to retrieve all rows
     // create: 1 to create and initialize non-existent rows (for get/put)
+    // delrow: 1 to delete row
     // late: lateToken (set when creating row)
     // Can add row with fewer columns than already present.
     // This allows user to add additional columns without affecting script actions.
     // (User added columns are returned on gets and selective updates, but not row updates.)
+    // delsheet: 1 to delete sheet (and any associated session index entry)
+    // copysheet: name to copy sheet to new sheet (but not session index entry)
     
     // shortly after my original solution Google announced the LockService[1]
     // this prevents concurrent access overwritting data
@@ -457,6 +464,44 @@ function sheetAction(params) {
 			///throw(errMsg);
 		}
 	    }
+        } else if (params.delsheet) {
+	    // Delete sheet (and session entry)
+	    returnValues = [];
+	    if (!adminUser)
+		throw("Error:DELSHEET:Only admin can delete sheet "+sheetName);
+	    if (sheetName.match(/_slidoc$/))
+		throw("Error:DELSHEET:Cannot delete special sheet "+sheetName);
+	    var indexSheet = getSheet(INDEX_SHEET);
+	    if (indexSheet) {
+		// Delete session entry
+		var delRowCol = lookupRowIndex(sheetName, INDEX_SHEET, 2);
+		if (delRowCol)
+                    indexSheet.deleteRow(delRowCol);
+	    }
+	    var temSheet = getSheet(sheetName);
+	    if (temSheet) {
+		var doc = getDoc();
+		doc.deleteSheet(sheetName);
+	    }
+        } else if (params.copysheet) {
+	    // Copy sheet (but not session entry)
+	    returnValues = [];
+	    if (!adminUser)
+		throw("Error:COPYSHEET:Only admin can copy sheet "+sheetName);
+	    var modSheet = getSheet(sheetName);
+	    if (!modSheet)
+		throw("Error:COPYSHEET:Source sheet "+sheetName+" not found!");
+
+	    var newName = params.copysheet;
+	    var indexSheet = getSheet(INDEX_SHEET);
+	    if (indexSheet) {
+		var newRowCol = lookupRowIndex(newName, INDEX_SHEET, 2);
+		if (newRowCol)
+		    throw("Error:COPYSHEET:Destination session entry "+newName+" already exists!");
+	    }
+	    if (getSheet(newName))
+		throw("Error:COPYSHEET:Destination sheet "+newName+" already exists!");
+	    modSheet.copy(newName);
 	} else {
 	    // Update/access single sheet
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
@@ -1626,7 +1671,7 @@ function getSheet(sheetName, docName, create) {
     var docId = ALT_DOC_IDS[docName||''] || ALT_DOC_IDS[sheetName] || null;
     var doc = docId ? SpreadsheetApp.openById(docId) : null;
     if (!doc)
-	doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+	doc = getDoc();
 
     var sheet = doc.getSheetByName(sheetName);
     if (!sheet && create)
@@ -2493,7 +2538,7 @@ function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
 
 function emailTokens() {
     // Send authentication tokens
-    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var doc = getDoc();
     initSettings();
     var rosterSheet = getSheet(ROSTER_SHEET);
     if (!rosterSheet)
@@ -2548,7 +2593,7 @@ function insertLateToken() {
 }
 
 function createLateToken(insert) {
-    var doc = SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
+    var doc = getDoc();
     initSettings();
     var sessionName = getSessionName();
     if (sessionName) {

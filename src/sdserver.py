@@ -60,6 +60,8 @@ import sdproxy
 import sliauth
 import plugins
 
+scriptdir = os.path.dirname(os.path.realpath(__file__))
+
 Options = {
     '_index_html': '',  # Non-command line option
     'auth_key': '',
@@ -219,26 +221,245 @@ class ActionHandler(BaseHandler):
 
     def getAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')
+        if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_clear', '_backup', '_pull', '_reload', '_shutdown', '_lock'):
+            if not sessionName:
+                self.write('<a href="/_dash">Dashboard</a><p></p>')
+                self.write('Please specify /%s/session name' % action)
+                return
         if action == '_dash':
             self.render('dashboard.html', interactive=WSHandler.getInteractiveSession())
+
+        elif action == '_sessions':
+            colNames = ['dueDate', 'gradeDate', 'postDate']
+            sessionParamList = sdproxy.lookupSessions(colNames)
+            self.write('<a href="/_dash">Dashboard</a><p></p>')
+            self.write('Sessions (click on session name to manage)<p></p><table><tr>\n')
+            self.write('<th>Session</th>\n')
+            for colName in colNames:
+                self.write('<th>%s</th>' % colName)
+            self.write('</tr>\n')
+            for sessionId, sessionParams in sessionParamList:
+                self.write('<td><a href="/_manage/%s">%s</a></td>' % (sessionId, sessionId))
+                for value in sessionParams:
+                    self.write('<td>%s</td>' % value)
+                self.write('</tr>\n')
+            self.write('</table>\n')
+
+        elif action in ('_roster'):
+            nameMap = sdproxy.lookupRoster('name', userId=None)
+            if not nameMap:
+                self.write('Roster sheet not found')
+                return
+            for idVal, name in nameMap.items():
+                if name.startswith('#'):
+                    del nameMap[idVal]
+            lastMap = sdproxy.makeShortNames(nameMap)
+            firstMap = sdproxy.makeShortNames(nameMap, first=True)
+            self.write('<a href="/_dash">Dashboard</a><p></p>')
+            self.write('Roster: \n')
+            for nMap in [nameMap, lastMap, firstMap]:
+                vals = nMap.values()
+                vals.sort()
+                lines = ['<hr><table>\n']
+                for val in vals:
+                    lines.append('<tr><td>%s</td></tr>\n' % val)
+                lines += ['</table>\n']
+                self.write(''.join(lines))
+
+        elif action == '_cache':
+            self.write('<h2>Proxy cache and connection status</h2>')
+            self.write('<a href="/_dash">Dashboard</a><br>')
+            self.write('<pre>')
+            self.write(sdproxy.getCacheStatus())
+            curTime = time.time()
+            wsConnections = WSHandler.get_connections()
+            sorted(wsConnections)
+            wsInfo = []
+            for path, user, connections in wsConnections:
+                wsInfo += [(path, user+('/'+ws.origId if ws.origId else ''), math.floor(curTime-ws.msgTime)) for ws in connections]
+            sorted(wsInfo)
+            self.write('\nConnections:\n')
+            for x in wsInfo:
+                self.write("  %s: %s (idle: %ds)\n" % x)
+            self.write('</pre>')
+
+        elif action == '_twitter':
+            self.set_header('Content-Type', 'text/plain')
+            if not twitterStream:
+                self.write('No twitter stream active')
+            else:
+                self.write('Twitter stream status: '+twitterStream.status+'\n\n')
+                self.write('Twitter stream log: '+'\n'.join(twitterStream.log_buffer)+'\n')
+
         elif action == '_clear':
             sdproxy.suspend_cache('clear')
             self.write('Clearing cache<br><a href="/_dash">Dashboard</a>')
+
+        elif action == '_backup':
+            errors = sdproxy.backupCache(sessionName)
+            self.set_header('Content-Type', 'text/plain')
+            self.write('Backed up cache to directory '+sessionName)
+            if errors:
+                self.write(errors)
+
+        elif action in ('_pull', '_reload'):
+            if Global.backup:
+                Global.backup.stop()
+                Global.backup = None
+            sdproxy.suspend_cache(action[1:])
+            self.write('Starting %s<p></p><a href="/_dash">Dashboard</a>' % action[1:])
+
         elif action == '_shutdown':
             self.clear_id()
             if Global.backup:
                 Global.backup.stop()
                 Global.backup = None
             sdproxy.suspend_cache('shutdown')
-            self.write('Starting shutdown (also cleared cookies)<br><a href="/_dash">Dashboard</a>')
-        elif action in ('_session'):
+            self.write('Starting shutdown (also cleared cookies)<p></p><a href="/_dash">Dashboard</a>')
+
+        elif action == '_lock':
+            lockType = self.get_argument('type','')
+            if sessionName:
+                prefix = 'Locked'
+                locked = sdproxy.lockSheet(sessionName, lockType or 'user')
+                if not locked:
+                    if lockType == 'proxy':
+                        raise Exception('Failed to lock sheet '+sessionName+'. Try again after a few seconds?')
+                    prefix = 'Locking'
+            self.write(prefix +' sessions: %s<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
+
+        elif action == '_unlock':
+            if not sdproxy.unlockSheet(sessionName):
+                raise Exception('Failed to unlock sheet '+sessionName)
+            self.write('Unlocked '+sessionName+'<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>')
+
+        elif action in ('_manage'):
+            sheet = sdproxy.getSheet(sessionName, optional=True)
+            if not sheet:
+                self.write('<a href="/_dash">Dashboard</a><p></p>')
+                self.write('No such session: '+sessionName)
+                return
+            self.render('manage.html', site_label=Options['site_label'], session=sessionName)
+
+        elif action == '_export':
+            self.set_header('Content-Type', 'text/csv')
+            self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % (sessionName+'_answers'))
+            content = sdproxy.exportAnswers(sessionName)
+            self.write(content)
+
+        elif action in ('_getcol', '_getrow'):
+            sessionName, sep, label = sessionName.partition(';')
+            sheet = sdproxy.getSheet(sessionName, optional=True)
+            if not sheet:
+                self.write('Unable to retrieve session '+sessionName)
+            else:
+                self.write('<a href="/_dash">Dashboard</a><br>')
+                if label.isdigit():
+                    labelNum = int(label)
+                elif len(label) == 1:
+                    labelNum = ord(label) - ord('A') + 1
+                else:
+                    colIndex = sdproxy.indexColumns(sheet)
+                    if action == '_getcol':
+                        labelNum = colIndex.get(label, 0) if label else colIndex['id']
+                    else:
+                        labelNum = sdproxy.indexRows(sheet, colIndex['id'], 2).get(label, 0) if label else 1
+                if action == '_getcol':
+                    if labelNum < 1 or labelNum > sheet.getLastColumn():
+                        self.write('Column '+label+' not found in cached session '+sessionName)
+                    elif not label or label == 'id':
+                        self.write('<pre>'+'\n'.join('<a href="/_getrow/%s;%s">%s</a>' % (sessionName, x[0], x[0]) for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1))+'</pre>')
+                    else:
+                        self.write('<pre>'+'\n'.join(str(x) for x in json.loads(json.dumps([x[0] for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1)], default=sliauth.json_default)))+'</pre>')
+                else:
+                    if labelNum < 1 or labelNum > sheet.getLastRow():
+                        self.write('Row '+label+' not found in cached session '+sessionName)
+                    else:
+                        headerVals = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0]
+                        if not label or labelNum == 1:
+                            self.write('<pre>'+'\n'.join(['<a href="/_getcol/%s;%s">%s</a>' % (sessionName, headerVals[j], headerVals[j]) for j in range(len(headerVals))]) +'</pre>')
+                        else:
+                            rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
+                            self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
+
+        elif action == '_delete':
+            user = 'admin'
+            userToken = sliauth.gen_admin_token(Options['auth_key'], user)
+            args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
+            retObj = sdproxy.sheetAction(args)
+            self.write('<a href="/_dash">Dashboard</a><p></p>')
+            if retobj['result'] == 'success':
+                self.write('Deleted session '+sessionName)
+            else:
+                self.write('Error in deleting session '+sessionName+': '+retObj.get('error',''))
+
+        elif action == '_import':
+            self.render('import.html', site_label=Options['site_label'], session=sessionName)
+
+        elif action in ('_qstats'):
+            sheetName = sessionName + '-answers'
+            sheet = sdproxy.getSheet(sheetName, optional=True)
+            if not sheet:
+                self.write('Unable to retrieve sheet '+sheetName)
+                return
+            qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
+            qaverages = []
+            for j, header in enumerate(qrows[0]):
+                qmatch = re.match(r'^q(\d+)_score', header)
+                if qmatch:
+                    qaverages.append([float(qrows[1][j]), int(qmatch.group(1))])
+            qaverages.sort()
+            lines = []
+            for j, qavg in enumerate(qaverages):
+                lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
+                if j%5 == 4:
+                    lines.append('')
+            self.write('<a href="/_dash">Dashboard</a><br>')
+            self.write(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+
+        elif action == '_refresh':
+            if sessionName:
+                if sdproxy.lockSheet(sessionName, 'user', refresh=True):
+                    msg = ' Refreshed session '+sessionName
+                else:
+                    msg = ' Refreshing session '+sessionName+' ...'
+                self.write(msg+'<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>')
+
+        elif action in ('_respond'):
+            sessionName, sep, respId = sessionName.partition(';')
+            if not sessionName:
+                self.write('Please specify /_respond/session name')
+                return
+            sheet = sdproxy.getSheet(sessionName, optional=True)
+            if not sheet:
+                self.write('Unable to retrieve session '+sessionName)
+                return
+            nameMap = sdproxy.lookupRoster('name')
+            if respId:
+                if respId in nameMap:
+                    sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual', submitDate='dueDate')
+                else:
+                    self.write('User ID '+respId+' not in roster')
+                    return
+            colIndex = sdproxy.indexColumns(sheet)
+            idSet = set([x[0] for x in sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)])
+            lines = ['<ul style="font-family: sans-serif;">\n']
+            count = 0
+            for idVal, name in nameMap.items():
+                if idVal in idSet:
+                    count += 1
+                    lines.append('<li>'+name+'</li>\n')
+                else:
+                    lines.append('<li>%s (<a href="/_respond/%s;%s">set responded</a>)</li>\n' % (name, sessionName, idVal))
+            lines.append('</ul>\n')
+            self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
+
+
+        elif action in ('_submissions'):
             comps = sessionName.split(';')
             sessionName = comps[0]
             userId = comps[1] if len(comps) >= 2 else ''
             dateStr = comps[2] if len(comps) >= 3 else ''
-            if not sessionName:
-                self.write('Please specify /_session/session name')
-                return
             sheet = sdproxy.getSheet(sessionName, optional=True)
             if not sheet:
                 self.write('Unable to retrieve session '+sessionName)
@@ -289,184 +510,20 @@ class ActionHandler(BaseHandler):
                 lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
 
             lines.append('</ul>\n')
-            self.render('date.html', site_label=Options['site_label'], date_label='Late submission',
-                         date_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
-        elif action in ('_qstats'):
-            sheetName = sessionName + '-answers'
-            sheet = sdproxy.getSheet(sheetName, optional=True)
-            if not sheet:
-                self.write('Unable to retrieve sheet '+sheetName)
-                return
-            qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
-            qaverages = []
-            for j, header in enumerate(qrows[0]):
-                qmatch = re.match(r'^q(\d+)_score', header)
-                if qmatch:
-                    qaverages.append([float(qrows[1][j]), int(qmatch.group(1))])
-            qaverages.sort()
-            lines = []
-            for j, qavg in enumerate(qaverages):
-                lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
-                if j%5 == 4:
-                    lines.append('')
-            self.write('<a href="/_dash">Dashboard</a><br>')
-            self.write(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+            self.render('submissions.html', site_label=Options['site_label'], submissions_label='Late submission',
+                         submissions_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
 
-        elif action in ('_respond'):
-            sessionName, sep, respId = sessionName.partition(';')
-            if not sessionName:
-                self.write('Please specify /_respond/session name')
-                return
-            sheet = sdproxy.getSheet(sessionName, optional=True)
-            if not sheet:
-                self.write('Unable to retrieve session '+sessionName)
-                return
-            nameMap = sdproxy.lookupRoster('name')
-            if respId:
-                if respId in nameMap:
-                    sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual', submitDate='dueDate')
-                else:
-                    self.write('User ID '+respId+' not in roster')
-                    return
-            colIndex = sdproxy.indexColumns(sheet)
-            idSet = set([x[0] for x in sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)])
-            lines = ['<ul style="font-family: sans-serif;">\n']
-            count = 0
-            for idVal, name in nameMap.items():
-                if idVal in idSet:
-                    count += 1
-                    lines.append('<li>'+name+'</li>\n')
-                else:
-                    lines.append('<li>%s (<a href="/_respond/%s;%s">set responded</a>)</li>\n' % (name, sessionName, idVal))
-            lines.append('</ul>\n')
-            self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
-        elif action in ('_roster'):
-            sessionName, sep, respId = sessionName.partition(';')
-            if not sessionName:
-                self.write('Please specify /_roster/session name')
-                return
-            nameMap = sdproxy.lookupRoster('name', userId=None)
-            if not nameMap:
-                self.write('Roster sheet not found for session '+sessionName)
-                return
-            for idVal, name in nameMap.items():
-                if name.startswith('#'):
-                    del nameMap[idVal]
-            lastMap = sdproxy.makeShortNames(nameMap)
-            firstMap = sdproxy.makeShortNames(nameMap, first=True)
-            self.write('Roster for session %s: \n' % sessionName)
-            for nMap in [nameMap, lastMap, firstMap]:
-                vals = nMap.values()
-                vals.sort()
-                lines = ['<hr><table>\n']
-                for val in vals:
-                    lines.append('<tr><td>%s</td></tr>\n' % val)
-                lines += ['</table>\n']
-                self.write(''.join(lines))
-
-        elif action in ('_getcol', '_getrow'):
-            sessionName, sep, label = sessionName.partition(';')
-            sheet = sdproxy.getSheet(sessionName, optional=True)
-            if not sheet:
-                self.write('Unable to retrieve session '+sessionName)
-            else:
-                self.write('<a href="/_dash">Dashboard</a><br>')
-                if label.isdigit():
-                    labelNum = int(label)
-                elif len(label) == 1:
-                    labelNum = ord(label) - ord('A') + 1
-                else:
-                    colIndex = sdproxy.indexColumns(sheet)
-                    if action == '_getcol':
-                        labelNum = colIndex.get(label, 0) if label else colIndex['id']
-                    else:
-                        labelNum = sdproxy.indexRows(sheet, colIndex['id'], 2).get(label, 0) if label else 1
-                if action == '_getcol':
-                    if labelNum < 1 or labelNum > sheet.getLastColumn():
-                        self.write('Column '+label+' not found in cached session '+sessionName)
-                    elif not label or label == 'id':
-                        self.write('<pre>'+'\n'.join('<a href="/_getrow/%s;%s">%s</a>' % (sessionName, x[0], x[0]) for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1))+'</pre>')
-                    else:
-                        self.write('<pre>'+'\n'.join(str(x) for x in json.loads(json.dumps([x[0] for x in sheet.getSheetValues(1, labelNum, sheet.getLastRow(), 1)], default=sliauth.json_default)))+'</pre>')
-                else:
-                    if labelNum < 1 or labelNum > sheet.getLastRow():
-                        self.write('Row '+label+' not found in cached session '+sessionName)
-                    else:
-                        headerVals = sheet.getSheetValues(1, 1, 1, sheet.getLastColumn())[0]
-                        if not label or labelNum == 1:
-                            self.write('<pre>'+'\n'.join(['<a href="/_getcol/%s;%s">%s</a>' % (sessionName, headerVals[j], headerVals[j]) for j in range(len(headerVals))]) +'</pre>')
-                        else:
-                            rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
-                            self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
-        elif action == '_unlock':
-            if not sdproxy.unlockSheet(sessionName):
-                raise Exception('Failed to unlock sheet '+sessionName)
-            self.write('Unlocked '+sessionName+'<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>')
-        elif action == '_lock':
-            lockType = self.get_argument('type','')
-            if sessionName:
-                prefix = 'Locked'
-                locked = sdproxy.lockSheet(sessionName, lockType or 'user')
-                if not locked:
-                    if lockType == 'proxy':
-                        raise Exception('Failed to lock sheet '+sessionName+'. Try again after a few seconds?')
-                    prefix = 'Locking'
-                self.write(prefix +' sessions: %s<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>' % (', '.join(sdproxy.get_locked())) )
-        elif action == '_refresh':
-            if sessionName:
-                if sdproxy.lockSheet(sessionName, 'user', refresh=True):
-                    msg = ' Refreshed session '+sessionName
-                else:
-                    msg = ' Refreshing session '+sessionName+' ...'
-                self.write(msg+'<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>')
-        elif action == '_backup':
-            errors = sdproxy.backupCache(sessionName)
-            self.set_header('Content-Type', 'text/plain')
-            self.write('Backed up cache to directory '+sessionName)
-            if errors:
-                self.write(errors)
-        elif action == '_import':
-            self.render('import.html', site_label=Options['site_label'])
         elif action == '_submit':
-            self.render('submit.html', site_label=Options['site_label'])
-        elif action == '_export':
-            self.set_header('Content-Type', 'text/csv')
-            self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % (sessionName+'_answers'))
-            content = sdproxy.exportAnswers(sessionName)
-            self.write(content)
-        elif action == '_cache':
-            self.write('<h2>Proxy cache and connection status</h2>')
-            self.write('<a href="/_dash">Dashboard</a><br>')
-            self.write('<pre>')
-            self.write(sdproxy.getCacheStatus())
-            curTime = time.time()
-            wsConnections = WSHandler.get_connections()
-            sorted(wsConnections)
-            wsInfo = []
-            for path, user, connections in wsConnections:
-                wsInfo += [(path, user+('/'+ws.origId if ws.origId else ''), math.floor(curTime-ws.msgTime)) for ws in connections]
-            sorted(wsInfo)
-            self.write('\nConnections:\n')
-            for x in wsInfo:
-                self.write("  %s: %s (idle: %ds)\n" % x)
-            self.write('</pre>')
-        elif action == '_twitter':
-            self.set_header('Content-Type', 'text/plain')
-            if not twitterStream:
-                self.write('No twitter stream active')
-            else:
-                self.write('Twitter stream status: '+twitterStream.status+'\n\n')
-                self.write('Twitter stream log: '+'\n'.join(twitterStream.log_buffer)+'\n')
+            self.render('submit.html', site_label=Options['site_label'], session=sessionName)
 
     def postAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')
         if action in ('_import', '_submit'):
-            sessionName = self.get_argument('session','')
-            submitDate = self.get_argument('submitdate','')
-            self.set_header('Content-Type', 'text/plain')
             if not sessionName:
                 self.write('Must specify session name')
                 return
+            submitDate = self.get_argument('submitdate','')
+            self.set_header('Content-Type', 'text/plain')
             if action == '_submit':
                 # Submit test user
                 try:
@@ -1300,22 +1357,25 @@ class Application(tornado.web.Application):
                           (r"/_websocket/(.*)", WSHandler),
                           (r"/interact", AuthMessageHandler),
                           (r"/interact/(.*)", AuthMessageHandler),
+                          (r"/(_dash)", AuthActionHandler),
+                          (r"/(_(cache|clear|pull|reload|shutdown))", ActionHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
+                          (r"/(_delete/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),
-                          (r"/(_twitter)", ActionHandler),
+                          (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
+                          (r"/(_import/[-\w.]+)", ActionHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
-                          (r"/(_unlock/[-\w.]+)", ActionHandler),
-                          (r"/(_refresh/[-\w.]+)", ActionHandler),
-                          (r"/(_session)", ActionHandler),
-                          (r"/(_session/[-\w.:;]+)", ActionHandler),
+                          (r"/(_manage/[-\w.]+)", ActionHandler),
                           (r"/(_qstats/[-\w.]+)", ActionHandler),
-                          (r"/(_respond)", ActionHandler),
+                          (r"/(_refresh/[-\w.]+)", ActionHandler),
                           (r"/(_respond/[-\w.;]+)", ActionHandler),
-                          (r"/(_roster/[-\w.;]+)", ActionHandler),
-                          (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
-                          (r"/(_(cache|clear|import|shutdown|submit))", ActionHandler),
-                          (r"/(_dash)", AuthActionHandler),
+                          (r"/(_roster)", ActionHandler),
+                          (r"/(_sessions)", ActionHandler),
+                          (r"/(_submissions/[-\w.:;]+)", ActionHandler),
+                          (r"/(_submit/[-\w.:;]+)", ActionHandler),
+                          (r"/(_twitter)", ActionHandler),
+                          (r"/(_unlock/[-\w.]+)", ActionHandler),
                            ]
 
         fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
@@ -1536,7 +1596,6 @@ def main():
             if not key.startswith('_') and key in Options:
                 sdproxy.Options[key] = Options[key]
 
-    scriptdir = os.path.dirname(os.path.realpath(__file__))
     pluginsDir = scriptdir + '/plugins'
     pluginPaths = [pluginsDir+'/'+fname for fname in os.listdir(pluginsDir) if fname[0] not in '._' and fname.endswith('.py')]
     if options.plugins:
