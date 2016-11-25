@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.6k'
+VERSION = '0.96.6l'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -801,6 +801,9 @@ def sheetAction(params, notrace=False):
                 userToken = sliauth.gen_admin_token(Options['auth_key'], user)
                 delParams = {'sheet': sheetName, 'delsheet': '1', 'admin': user, 'token': userToken}
                 retval = sliauth.http_post(Options['gsheet_url'], delParams)
+                print('sdproxy: delsheet %s: %s' % (sheetName, retval), file=sys.stderr)
+                if retval['result'] != 'success':
+                    return retval
 
         elif params.get('copysheet'):
             # Copy sheet (but not session entry)
@@ -826,6 +829,9 @@ def sheetAction(params, notrace=False):
                 userToken = sliauth.gen_admin_token(Options['auth_key'], user)
                 copyParams = {'sheet': sheetName, 'copysheet': newName, 'admin': user, 'token': userToken}
                 retval = sliauth.http_post(Options['gsheet_url'], copyParams)
+                print('sdproxy: copysheet %s: %s' % (sheetName, retval), file=sys.stderr)
+                if retval['result'] != 'success':
+                    return retval
             else:
                 keyHeader = '' if newName.startswith('settings_') or newName.endswith('_log') else 'id'
                 Sheet_cache[newName] = Sheet(newName, modSheet.getRows(), keyHeader=keyHeader)

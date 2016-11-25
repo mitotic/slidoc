@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6k';
+var VERSION = '0.96.6l';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -481,7 +481,7 @@ function sheetAction(params) {
 	    var temSheet = getSheet(sheetName);
 	    if (temSheet) {
 		var doc = getDoc();
-		doc.deleteSheet(sheetName);
+		doc.deleteSheet(temSheet);
 	    }
         } else if (params.copysheet) {
 	    // Copy sheet (but not session entry)
