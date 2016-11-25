@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.6j'
+VERSION = '0.96.6k'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -790,7 +790,7 @@ def sheetAction(params, notrace=False):
             indexSheet = getSheet(INDEX_SHEET, optional=True)
             if indexSheet:
                 # Delete session entry
-                delRowCol = lookupRowIndex(sheetName, INDEX_SHEET, 2)
+                delRowCol = lookupRowIndex(sheetName, indexSheet, 2)
                 if delRowCol:
                     indexSheet.deleteRow(delRowCol)
 
@@ -815,7 +815,7 @@ def sheetAction(params, notrace=False):
             newName = params.get('copysheet')
             indexSheet = getSheet(INDEX_SHEET, optional=True)
             if indexSheet:
-                newRowCol = lookupRowIndex(newName, INDEX_SHEET, 2)
+                newRowCol = lookupRowIndex(newName, indexSheet, 2)
                 if newRowCol:
                     raise Exception("Error:COPYSHEET:Destination session entry "+newName+" already exists!")
 

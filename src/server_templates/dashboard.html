@@ -14,10 +14,18 @@ function check(label) {
     return;
   action(label);
 }
+function sheet(label) {
+  var value = window.prompt('Sheet name:');
+  if (!value)
+    return;
+  action(label+'/'+value);
+}
 </script>
 
 <div id="dashboarddiv">
-  <h2>Proxy server dashboard</h2>
+  <h2>{{site_label}} dashboard </h2>
+  <h3>(Slidoc version {{version}})</h3>
+
   <a href="/">Home</a>
   <p></p>
   <span id="actionstatus"></span>
@@ -28,18 +36,23 @@ function check(label) {
     <hr>
     <li><a href="javascript:action('twitter')">twitter</a>: View twitter stream status</li>
     <hr>
-    <li><a href="javascript:action('cache')">proxy status</a>: Status of proxy cache and active connections</li>
-    <hr>
-    <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
-    <hr>
     <li><a href="javascript:check('backup')">backup</a>: Backup all sessions</li>
     <hr>
     <li><a href="javascript:check('reload')">reload</a>: Restart proxy server</li>
     <hr>
-    <li><a href="javascript:check('pull')">pull</a>: Pull updated source and restart proxy server</li>
-    <hr>
     <li><a href="javascript:check('shutdown')">shutdown</a>: Shutdown proxy server</li>
   </ul>
-  Respond to current interactive session: <a href="/_respond/{{interactive}}">{{interactive}}</a>
+  Current interactive session: <a href="/_manage/{{interactive}}">{{interactive}}</a>
   <p></p>
+  <a href="#" onclick="document.getElementById('advanced-options').style.display=null;this.style.display='none'">Show advanced options</a>
+  <ul id="advanced-options" style="display: none;">
+    <li><a href="javascript:action('cache')">proxy status</a>: Status of proxy cache and active connections</li>
+    <hr>
+    <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
+    <hr>
+    <li><a href="javascript:check('pull')">pull</a>: Pull updated source and restart proxy server</li>
+    <hr>
+    <li><a href="javascript:sheet('getrow')">getrow</a>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
+    <li><a href="javascript:sheet('getcol')">getcol</a>: Get columns from sheet</li>
+  </ul>
 </div>

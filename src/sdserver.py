@@ -220,6 +220,7 @@ class ActionHandler(BaseHandler):
         raise tornado.web.HTTPError(403)
 
     def getAction(self, subpath):
+        site_label = Options['site_label'] or 'Home'
         action, sep, sessionName = subpath.partition('/')
         if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_clear', '_backup', '_pull', '_reload', '_shutdown', '_lock'):
             if not sessionName:
@@ -227,7 +228,7 @@ class ActionHandler(BaseHandler):
                 self.write('Please specify /%s/session name' % action)
                 return
         if action == '_dash':
-            self.render('dashboard.html', interactive=WSHandler.getInteractiveSession())
+            self.render('dashboard.html', site_label=site_label, version=sdproxy.VERSION, interactive=WSHandler.getInteractiveSession())
 
         elif action == '_sessions':
             colNames = ['dueDate', 'gradeDate', 'postDate']
@@ -339,7 +340,7 @@ class ActionHandler(BaseHandler):
                 self.write('<a href="/_dash">Dashboard</a><p></p>')
                 self.write('No such session: '+sessionName)
                 return
-            self.render('manage.html', site_label=Options['site_label'], session=sessionName)
+            self.render('manage.html', site_label=site_label, session=sessionName)
 
         elif action == '_export':
             self.set_header('Content-Type', 'text/csv')
@@ -388,13 +389,13 @@ class ActionHandler(BaseHandler):
             args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
             retObj = sdproxy.sheetAction(args)
             self.write('<a href="/_dash">Dashboard</a><p></p>')
-            if retobj['result'] == 'success':
+            if retObj['result'] == 'success':
                 self.write('Deleted session '+sessionName)
             else:
                 self.write('Error in deleting session '+sessionName+': '+retObj.get('error',''))
 
         elif action == '_import':
-            self.render('import.html', site_label=Options['site_label'], session=sessionName)
+            self.render('import.html', site_label=site_label, session=sessionName)
 
         elif action in ('_qstats'):
             sheetName = sessionName + '-answers'
@@ -427,6 +428,7 @@ class ActionHandler(BaseHandler):
 
         elif action in ('_respond'):
             sessionName, sep, respId = sessionName.partition(';')
+            self.write('<a href="/_dash">Dashboard</a><p></p>')
             if not sessionName:
                 self.write('Please specify /_respond/session name')
                 return
@@ -453,7 +455,6 @@ class ActionHandler(BaseHandler):
                     lines.append('<li>%s (<a href="/_respond/%s;%s">set responded</a>)</li>\n' % (name, sessionName, idVal))
             lines.append('</ul>\n')
             self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
-
 
         elif action in ('_submissions'):
             comps = sessionName.split(';')
@@ -510,11 +511,11 @@ class ActionHandler(BaseHandler):
                 lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
 
             lines.append('</ul>\n')
-            self.render('submissions.html', site_label=Options['site_label'], submissions_label='Late submission',
+            self.render('submissions.html', site_label=site_label, submissions_label='Late submission',
                          submissions_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
 
         elif action == '_submit':
-            self.render('submit.html', site_label=Options['site_label'], session=sessionName)
+            self.render('submit.html', site_label=site_label, session=sessionName)
 
     def postAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')

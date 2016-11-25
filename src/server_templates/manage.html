@@ -24,8 +24,6 @@ function check(label) {
   Manage session <b>{{session}}</b>
   <div id="actionstatus"></div>
   <ul>
-    <li><a href="javascript:action('refresh')">refresh</a>: Refresh session cache</li>
-    <hr>
     <li><a href="javascript:action('respond')">respond</a>: Award participation credit</li>
     <li><a href="javascript:action('submissions')">submissions</a>: Session submission stats, allow late submissions etc.</li>
     <hr>
@@ -37,6 +35,8 @@ function check(label) {
     <hr>
     <li><a href="javascript:action('getrow')">headers</a>: List session spreadsheet columns (headers)</li>
     <li><a href="javascript:action('getcol')">ids</a>: List all rows (ids) in session spreadsheet</li>
+    <hr>
+    <li><a href="javascript:action('refresh')">refresh</a>: Refresh session cache</li>
     <hr>
     <li><a href="javascript:check('delete')">delete</a>: Delete session (irreversible)</li>
   </ul>

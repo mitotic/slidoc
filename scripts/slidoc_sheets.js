@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6j';
+var VERSION = '0.96.6k';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -474,7 +474,7 @@ function sheetAction(params) {
 	    var indexSheet = getSheet(INDEX_SHEET);
 	    if (indexSheet) {
 		// Delete session entry
-		var delRowCol = lookupRowIndex(sheetName, INDEX_SHEET, 2);
+		var delRowCol = lookupRowIndex(sheetName, indexSheet, 2);
 		if (delRowCol)
                     indexSheet.deleteRow(delRowCol);
 	    }
@@ -495,7 +495,7 @@ function sheetAction(params) {
 	    var newName = params.copysheet;
 	    var indexSheet = getSheet(INDEX_SHEET);
 	    if (indexSheet) {
-		var newRowCol = lookupRowIndex(newName, INDEX_SHEET, 2);
+		var newRowCol = lookupRowIndex(newName, indexSheet, 2);
 		if (newRowCol)
 		    throw("Error:COPYSHEET:Destination session entry "+newName+" already exists!");
 	    }
