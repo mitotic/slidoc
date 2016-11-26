@@ -556,16 +556,16 @@ def updates_current():
             print("Reloading...", file=sys.stderr)
         except Exception, excp:
             print("Reload failed: "+str(excp), file=sys.stderr)
-    elif Global.suspended == "pull":
+    elif Global.suspended == "update":
         try:
             if os.environ.get('SUDO_USER'):
                 cmd = ["sudo", "-u", os.environ['SUDO_USER'], "git", "pull"]
             else:
                 cmd = ["git", "pull"]
-            print("Updating via pull: %s" % cmd, file=sys.stderr)
+            print("Updating: %s" % cmd, file=sys.stderr)
             subprocess.check_call(cmd, cwd=scriptdir)
         except Exception, excp:
-            print("Update via git pull failed: "+str(excp), file=sys.stderr)
+            print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
 def update_remote_sheets(force=False):
     if Options['debug']:

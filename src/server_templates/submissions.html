@@ -11,9 +11,11 @@ function submit(label, args) {
     location = '/_' + label + '/' + args+';'+dateValue;
 }
 document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+	return;
     var dateElem = document.getElementById("dateinput");
-if (dateElem)
-    dateElem.value = (new Date()).toISOString().slice(0,11)+'23:59';
+    if (dateElem)
+        dateElem.value = (new Date()).toISOString().slice(0,11)+'23:59';
 }
 </script>
 <style>

@@ -1,0 +1,163 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<style>
+body
+{
+    font-family: Helvetica,Arial,sans-serif;
+    text-shadow: 0 1px 0 #fff;
+}
+.ztablecontainer {
+    width: 100%;
+    overflow: scroll;
+}
+.ztable
+{
+	font-size: 12px;
+	margin-right: 30px;
+	width: 100%;
+	text-align: right;
+	border-collapse: collapse;
+}
+.ztable th
+{
+	font-size: 12px;
+	font-weight: normal;
+	color: #039;
+	border-top-style: solid;
+        border-top-width: medium;
+        border-bottom-style: solid;
+	border-bottom-width: medium;
+	padding: 15px 6px;
+}
+
+table.ztable.narrow {
+        width: 400px;
+}
+
+.ztable td
+{
+	padding: 15px 6px;
+}
+.ztable tr
+{
+	/* color: #666699; */
+	color: black;
+        background: #fff;
+}
+.ztable tr.oddrow
+{
+	background: #e8edff; 
+}
+.ztable .fifthcol
+{
+	border-right-style: solid;
+        border-right-width: thin;
+}
+p
+.vert-text {
+    width: 5em;
+    -webkit-transform: rotate(-90deg);
+    -moz-transform: rotate(-90deg);
+    -ms-transform: rotate(-90deg);
+    -o-transform: rotate(-90deg);
+}
+
+
+/* "Blank" first column */
+.ztable.fixed .firstcol,
+.ztable.fixed .fixedcol
+{
+        font-weight: bold;
+        text-align: left;
+}
+.ztable.fixed .oddrow .firstcol
+{
+}
+
+/* Fixed column */
+.ztable:not(.fixed) .fixedcol
+{
+        display: none;
+}
+.ztable.fixed .fixedcol 
+{
+        width: 60px;
+	position: absolute;
+        background-color: rgba(255,255,255,1.0);
+	border-left-style: solid;
+        border-left-width: medium;
+	border-right-style: solid;
+        border-right-width: medium;
+}
+.ztable.fixed .firstrow td.fixedcol
+{
+	border-top-style: solid;
+        border-top-width: medium;
+}
+.ztable.fixed .oddrow .fixedcol
+{
+        background-color: rgba(232,237,255,1.0);
+}
+</style>
+<script>
+function adjustTable() {
+    var tableElem = document.getElementById("table_table");
+    if (!tableElem || !tableElem.classList.contains("fixed"))
+        return;
+	
+    var thStyle = window.getComputedStyle(tableElem.querySelector("th.firstcol"), null);
+    var firstWidth = thStyle.getPropertyValue("width");
+    tableElem.querySelector("th.fixedcol").style.width = firstWidth;
+    tableElem.querySelector("th.fixedcol").style.height = thStyle.getPropertyValue("height");
+
+    var firstColElems = tableElem.querySelectorAll("td.firstcol");
+    for (var j=0; j<firstColElems.length; j++) {
+        var trStyle = window.getComputedStyle(tableElem.querySelector("td.firstcol.elem-"+(j+1)+"-1"), null);
+        var tdElem = tableElem.querySelector("td.fixedcol.row-"+(j+1));
+	tdElem.style.height = trStyle.getPropertyValue("height");
+	tdElem.style.width = firstWidth;
+    }
+}
+document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+	return;
+    adjustTable();
+}
+</script>
+</head>
+<body>
+    <h3>{{table_name}}</h3>
+    <div id="table_data" class="ztablecontainer showScroll">
+      {% if isinstance(table_data, (list,tuple)) %}
+      <table id="table_table" class="ztable {% if table_fixed %}fixed{% end %}">
+        <thead>
+          <tr class="headerrow">
+      {% for k, col_header in enumerate(table_data[0]) %}
+	    {% if not k %}
+            <th scope="col" class="fixedcol"><span>{{ col_header }}</span></th>
+	    {% end %}
+            <th scope="col" class="col-{{ k+1 }} {% if not k %}firstcol{% elif k%5 == 4 %}fifthcol{% end %}"><span>{{ col_header }}</span></th>
+      {% end %}
+            </tr>
+         </thead>
+          <tbody>
+      {% for j, row in enumerate(table_data[1:]) %}
+            <tr {% if not j %}class="firstrow"{% elif j%2 %}class="oddrow"{% end %}>
+        {% for k, col_value in enumerate(row) %}
+	    {% if not k %}
+              <td class="fixedcol row-{{ j+1 }}"><span>{{ col_value }}</span></td>
+            {% end %}
+              <td class="elem-{{ j+1 }}-{{ k+1 }} {% if not k %}firstcol{% elif k%5 == 4 %}fifthcol{% end %}"><span>{{ col_value }}</span></td>
+        {% end %}
+             </tr>
+      {% end %}
+          </tbody>
+       </table>
+       {% else %}
+       <pre>{{ table_data }}</pre>
+       {% end %}
+    </div>
+
+</body>
+</html>

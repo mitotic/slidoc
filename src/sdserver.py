@@ -222,7 +222,7 @@ class ActionHandler(BaseHandler):
     def getAction(self, subpath):
         site_label = Options['site_label'] or 'Home'
         action, sep, sessionName = subpath.partition('/')
-        if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_clear', '_backup', '_pull', '_reload', '_shutdown', '_lock'):
+        if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_clear', '_backup', '_update', '_reload', '_shutdown', '_lock'):
             if not sessionName:
                 self.write('<a href="/_dash">Dashboard</a><p></p>')
                 self.write('Please specify /%s/session name' % action)
@@ -234,13 +234,15 @@ class ActionHandler(BaseHandler):
             colNames = ['dueDate', 'gradeDate', 'postDate']
             sessionParamList = sdproxy.lookupSessions(colNames)
             self.write('<a href="/_dash">Dashboard</a><p></p>')
-            self.write('Sessions (click on session name to manage)<p></p><table><tr>\n')
+            self.write('<h3>Sessions</h3><p></p><table><tr>\n')
+            self.write('<th>Manage</th>\n')
             self.write('<th>Session</th>\n')
             for colName in colNames:
                 self.write('<th>%s</th>' % colName)
             self.write('</tr>\n')
             for sessionId, sessionParams in sessionParamList:
-                self.write('<td><a href="/_manage/%s">%s</a></td>' % (sessionId, sessionId))
+                self.write('<td><a href="/_manage/%s" style="text-decoration: none;">&#9881;</a></td>' % sessionId)
+                self.write('<td><a href="/_sheet/%s">%s</a></td>' % (sessionId, sessionId))
                 for value in sessionParams:
                     self.write('<td>%s</td>' % value)
                 self.write('</tr>\n')
@@ -303,7 +305,7 @@ class ActionHandler(BaseHandler):
             if errors:
                 self.write(errors)
 
-        elif action in ('_pull', '_reload'):
+        elif action in ('_reload', '_update'):
             if Global.backup:
                 Global.backup.stop()
                 Global.backup = None
@@ -347,6 +349,12 @@ class ActionHandler(BaseHandler):
             self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % (sessionName+'_answers'))
             content = sdproxy.exportAnswers(sessionName)
             self.write(content)
+
+        elif action in ('_sheet'):
+            sheet = sdproxy.getSheet(sessionName, optional=True)
+            if not sheet:
+                self.write('Unable to retrieve sheet '+sessionName)
+            self.render('table.html', table_name=sessionName, table_data=sheet.getRows(), table_fixed='fixed')
 
         elif action in ('_getcol', '_getrow'):
             sessionName, sep, label = sessionName.partition(';')
@@ -1359,11 +1367,11 @@ class Application(tornado.web.Application):
                           (r"/interact", AuthMessageHandler),
                           (r"/interact/(.*)", AuthMessageHandler),
                           (r"/(_dash)", AuthActionHandler),
-                          (r"/(_(cache|clear|pull|reload|shutdown))", ActionHandler),
+                          (r"/(_(cache|clear|reload|shutdown|update))", ActionHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_delete/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),
-                          (r"/(_(getcol|getrow)/[-\w.;]+)", ActionHandler),
+                          (r"/(_(getcol|getrow|sheet)/[-\w.;]+)", ActionHandler),
                           (r"/(_import/[-\w.]+)", ActionHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
