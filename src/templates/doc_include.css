@@ -12,6 +12,7 @@ body:not(.slidoc-all-view) .slidoc-allonly,
 body:not(.slidoc-slide-view) .slidoc-slideonly,
 body:not(.slidoc-paced-view) .slidoc-pacedonly,
 body:not(.slidoc-remote-view) .slidoc-remoteonly,
+body:not(.slidoc-controller-view) .slidoc-controlleronly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
 body.slidoc-completed-view:not(.slidoc-admin-view) .slidoc-incrementalonly {
     display: none; }
@@ -53,6 +54,10 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
 }
 
 .slidoc-answer-disabled { display: none; }
+
+/* Interactivity */
+body:not(.slidoc-interact-view) #slidoc-interact-display { opacity: 0.8; }
+body.slidoc-interact-view #slidoc-interact-display { background: red; }
 
 /* Choice duplicates */
 .slidoc-choice-duplicate-message {color: red; font-weight: bold; background: #aaa;}

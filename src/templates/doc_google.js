@@ -223,7 +223,11 @@ var receiveDataCounter = 0;
 GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
 
-  if (Slidoc.websocketPath) {
+  if (data.action || data.modify) {
+      // Workaround for passthru actions; this could be done without a GSheet
+      if (url.match(/_websocket$/))
+	  url = url.replace(/_websocket$/, '_proxy');
+  } else if (Slidoc.websocketPath) {
       GService.requestWS('proxy', data, callback);
       return;
   }
@@ -509,7 +513,9 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
 
     if (GService.gprofile.auth.adminKey)
 	params.admin = 'admin';
-    params.sheet = this.sheetName;
+
+    if (callType != 'action')
+	params.sheet = this.sheetName;
 
     var userId = params.id||null;
 
@@ -643,6 +649,13 @@ GoogleSheet.prototype.obj2row = function(obj) {
        row[this.columnIndex[key]] = obj[key];
     }
     return row;
+}
+
+GoogleSheet.prototype.action = function (action, sheetName, callback) {
+    // Workaround for passthru actions; this could be done without a GSheet
+    var params = { action: action, sheet: sheetName||'' };
+    this.callbackCounter += 1;
+    this.send(params, 'action', callback);
 }
 
 GoogleSheet.prototype.createSheet = function (callback) {

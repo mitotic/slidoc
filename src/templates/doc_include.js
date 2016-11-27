@@ -896,37 +896,7 @@ Slidoc.viewHelp = function () {
     var html = '';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
-    if (Sliobj.sessionName) {
-	if (userId)
-	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
-	if (Sliobj.session && Sliobj.session.team)
-	    html += 'Team: ' + Sliobj.session.team + '<br>';
-	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
-	if (Sliobj.session && Sliobj.session.revision)
-	    html += ', ' + Sliobj.session.revision;
-	if (Sliobj.params.questionsMax)
-	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
-	if (Sliobj.params.gd_sheet_url && Sliobj.session)
-	    html += Sliobj.session.submitted ? '<br>Submitted '+parseDate(Sliobj.session.submitted) : '<br>NOT SUBMITTED';
-	html += '<br>';
-	if (Sliobj.dueDate)
-	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
-	if (Sliobj.voteDate)
-	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
-	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && isNumber(Sliobj.feedback.q_grades))
-	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
-    } else {
-	var cookieUserInfo = getServerCookie();
-	if (cookieUserInfo)
-	    html += 'User: <b>'+cookieUserInfo.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
-    }
     html += '<table class="slidoc-slide-help-table">';
-    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
-	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
-
-    if (userId == Sliobj.params.testUserId || Sliobj.adminState)
-	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
-
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list.length; j++)
 	    html += formatHelp(Slide_help_list[j]);
@@ -1685,6 +1655,88 @@ function showGradesCallback(userId, result, retStatus) {
     Slidoc.showPopup(html);
 }
 
+Slidoc.manageSession = function() {
+    var html = '<b>Settings:</b><p></p>';
+    var hr = '<tr><td colspan="3"><hr></td></tr>';
+    var userId = getUserId();
+    if (Sliobj.sessionName) {
+	if (userId)
+	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	if (Sliobj.session && Sliobj.session.team)
+	    html += 'Team: ' + Sliobj.session.team + '<br>';
+	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
+	if (Sliobj.session && Sliobj.session.revision)
+	    html += ', ' + Sliobj.session.revision;
+	if (Sliobj.params.questionsMax)
+	    html += ' (' + Sliobj.params.questionsMax + ' questions)';
+	if (Sliobj.params.gd_sheet_url && Sliobj.session)
+	    html += Sliobj.session.submitted ? '<br>Submitted '+parseDate(Sliobj.session.submitted) : '<br>NOT SUBMITTED';
+	html += '<br>';
+	if (Sliobj.dueDate)
+	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
+	if (Sliobj.voteDate)
+	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
+	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && isNumber(Sliobj.feedback.q_grades))
+	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
+    } else {
+	var cookieUserInfo = getServerCookie();
+	if (cookieUserInfo)
+	    html += 'User: <b>'+cookieUserInfo.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
+    }
+
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
+	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
+
+    if (userId == Sliobj.params.testUserId || Sliobj.adminState) {
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
+	if (Sliobj.session && !Sliobj.session.submitted && isController())
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.interact();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span><p></p>'
+    }
+
+    if (Sliobj.adminState) {
+	html += hr;
+	html += 'Session admin:<br><blockquote>\n';
+	html += '<a class="slidoc-clickable" href="/_manage/'+Sliobj.sessionName+'" target="_blank">Manage</a><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
+	html += hr;
+	html += 'Update: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">scores</span><br>';
+	html += 'View: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-scores'"+');">scores</span><hr>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Update scores for all sessions</span>';
+	html += '</blockquote>\n';
+    }
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showPopup(html);
+}
+
+Slidoc.sessionAction = function(action, sessionName) {
+    Slidoc.log('Slidoc.sessionAction: ', action, sessionName);
+    if (sessionName == 'all')
+	var sheetName = '';
+    else
+	var sheetName = sessionName || Sliobj.sessionName;
+    if (!window.confirm("Confirm action '"+action+"' for session "+(sheetName||'ALL')+'?'))
+	return;
+    Sliobj.indexSheet.action(action, sheetName, sheetActionCallback.bind(null, action, sheetName));
+}
+
+function sheetActionCallback(action, sheetName, result, retStatus) {
+    Slidoc.log('sheetActionCallback:', action, sheetName, result, retStatus);
+    var msg = 'action '+action+' for sheet '+sheetName;
+    if (!result) {
+	alert('Error in '+msg+': '+retStatus.error);
+	return;
+    } else {
+	alert('Completed '+msg);
+    }
+}
+
+Slidoc.viewSheet = function(sheetName) {
+    Slidoc.log('Slidoc.viewSheet: ', sheetName);
+    window.open("/_sheet/"+sheetName);
+}
+
+
 //////////////////////////////////////////////////////
 // Section 13: Retrieve data needed for session setup
 //////////////////////////////////////////////////////
@@ -1950,6 +2002,9 @@ function slidocSetupAux(session, feedback) {
 
     if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');
+
+    if (isController())
+    	toggleClass(true, 'slidoc-controller-view');
 
     if (Sliobj.params.gd_sheet_url) {
 	toggleClass(true, 'slidoc-remote-view');
@@ -4185,11 +4240,6 @@ Slidoc.submitStatus = function () {
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.saveClick();">Save session</span></li><p></p>'
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span>'+(incomplete ? ' (without reaching the last slide)':'')+'</li>'
 	    html += '</ul>';
-
-	    if (isController()) {
-		html += '<hr>';
-		html += '<li><span class="slidoc-clickable" onclick="Slidoc.interact();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span></li><p></p>'
-	    }
 	}
     }
     if (Sliobj.session.submitted || Sliobj.adminState)

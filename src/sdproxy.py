@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.6l'
+VERSION = '0.96.6m'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -99,6 +99,7 @@ class Dummy():
 Sheet_cache = {}    # Cache of sheets
 Miss_cache = {}     # For optional sheets that are missing
 Lock_cache = {}     # Locked sheets
+Lock_passthru = defaultdict(int)  # Count of passthru's
 Refresh_sheets = set()
 
 Global = Dummy()
@@ -106,7 +107,7 @@ Global = Dummy()
 Global.remoteVersions = set()
 
 def delSheet(sheetName):
-    for cache in (Sheet_cache, Miss_cache, Lock_cache):
+    for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
         if sheetName in cache:
             del cache[sheetName]
 
@@ -118,6 +119,7 @@ def initCache():
     Sheet_cache.clear()
     Miss_cache.clear()
     Lock_cache.clear()
+    Lock_passthru.clear()
 
     Global.cacheRequestTime = 0
     Global.cacheResponseTime = 0
@@ -213,6 +215,9 @@ def backupSheet(name, sheet, dirpath, errorList):
     except Exception, excp:
         errorList.append('Error in saving sheet %s (row %d): %s' % (name, rowNum, excp))
 
+def isReadOnly(sheetName):
+    return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET)) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
+
 def getSheet(sheetName, optional=False):
     check_if_locked(sheetName, get=True)
 
@@ -285,6 +290,7 @@ class Sheet(object):
         self.modTime = modTime
         self.keyHeader = keyHeader
 
+        self.readOnly = isReadOnly(name)
         self.accessTime = sliauth.epoch_ms()
         self.nCols = len(rows[0])
         for j, row in enumerate(rows[1:]):
@@ -324,10 +330,12 @@ class Sheet(object):
         return [ row[:] for row in self.xrows ]
 
     def deleteRow(self, rowNum):
+        if self.readOnly:
+            raise Exception('Cannot modify read only sheet '+self.name)
         if not self.keyHeader:
-            raise Exception('Cannot delete row for non-keyed spreadsheet')
+            raise Exception('Cannot delete row for non-keyed spreadsheet '+self.name)
         if rowNum < 1 or rowNum > len(self.xrows):
-            raise Exception('Invalid row number for deletion: %s' % rowNum)
+            raise Exception('Invalid row number %s for deletion in sheet %s' % (rowNum, self.name))
         self.modTime = sliauth.epoch_ms()
         self.accessTime = self.modTime
         keyValue = self.xrows[rowNum-1][self.keyCol-1]
@@ -335,9 +343,11 @@ class Sheet(object):
         del self.keyMap[keyValue]
 
     def insertRowBefore(self, rowNum, keyValue=None):
+        if self.readOnly:
+            raise Exception('Cannot modify read only sheet '+self.name)
         if self.keyHeader:
             if rowNum < 2 or rowNum > len(self.xrows)+1:
-                raise Exception('Invalid row number for insertion: %s' % rowNum)
+                raise Exception('Invalid row number %s for insertion in sheet %s' % (rowNum, self.name))
         else:
             if rowNum != len(self.xrows)+1:
                 raise Exception('Can only append row for non-keyed spreadsheet')
@@ -349,7 +359,7 @@ class Sheet(object):
             if keyValue is None:
                 raise Exception('Must specify key for row insertion in sheet '+self.name)
             if keyValue in self.keyMap:
-                raise Exception('Duplicate key %s for row insertion in sheet %s' % (self.name, keyValue))
+                raise Exception('Duplicate key %s for row insertion in sheet %s' % (keyValue, self.name))
             self.keyMap[keyValue] = self.modTime
             newRow[self.keyCol-1] = keyValue
         else:
@@ -358,6 +368,8 @@ class Sheet(object):
         self.xrows.insert(rowNum-1, newRow)
 
     def appendColumns(self, headers):
+        if self.readOnly:
+            raise Exception('Cannot modify read only sheet '+self.name)
         if Options['gsheet_url'] and not Options['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot append columns for session '"+self.name+"' via proxy; use direct URL")
@@ -368,6 +380,8 @@ class Sheet(object):
             self.xrows[j] += ['']*len(headers)
 
     def trimColumns(self, ncols):
+        if self.readOnly:
+            raise Exception('Cannot modify read only sheet '+self.name)
         if Options['gsheet_url'] and not Options['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot delete columns for session '"+self.name+"' via proxy; use direct URL")
@@ -392,13 +406,17 @@ class Sheet(object):
         return Range(self, rowMin, colMin, rowCount, colCount)
 
     def getSheetValues(self, rowMin, colMin, rowCount, colCount):
-        self.accessTime = sliauth.epoch_ms()
+        if not self.readOnly:
+            # Access time is not updated for read-only files => they will be periodically refreshed
+            self.accessTime = sliauth.epoch_ms()
         self.checkRange(rowMin, colMin, rowCount, colCount)
         return [row[colMin-1:colMin+colCount-1] for row in self.xrows[rowMin-1:rowMin+rowCount-1]]
 
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
         ##if Options['debug']:
         ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
+        if self.readOnly:
+            raise Exception('Cannot modify read only sheet '+self.name)
         check_if_locked(self.name)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
@@ -477,7 +495,7 @@ def getCacheStatus():
         if not sheetStr:
             sheetStr = '<a href="/_%s/%s">%s</a> %s' % (action, sheetName, action, Lock_cache.get(sheetName,''))
     
-        accessTime =  str(int((curTime-sheet.accessTime)/1000.))+'s' if sheet else '(not cached)'
+        accessTime = str(int((curTime-sheet.accessTime)/1000.))+'s' if sheet else '(not cached)'
         out += 'Sheet_cache: %s: %s %s\n' % (sheetName, accessTime, sheetStr)
     out += '\n'
     for sheetName in Miss_cache:
@@ -488,7 +506,7 @@ def getCacheStatus():
 def lockSheet(sheetName, lockType='user', refresh=False):
     # Returns True if lock is immediately effective; False if it will take effect later
     # If refresh, automatically unlock after updates
-    if sheetName not in Lock_cache:
+    if sheetName not in Lock_cache and not isReadOnly(sheetName):
         Lock_cache[sheetName] = lockType
     if refresh:
         Refresh_sheets.add(sheetName)
@@ -498,14 +516,28 @@ def lockSheet(sheetName, lockType='user', refresh=False):
     return True
 
 def unlockSheet(sheetName):
+    # Unlock and/or refresh sheet (if no updates pending)
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
         return False
     if sheetName in Lock_cache:
         del Lock_cache[sheetName]
+    if sheetName in Lock_passthru:
+        del Lock_passthru[sheetName]
     if sheetName in Sheet_cache:
         del Sheet_cache[sheetName]
     Refresh_sheets.discard(sheetName)
     return True
+
+def startPassthru(sheetName):
+    Lock_passthru[sheetName] += 1
+    return lockSheet(sheetName, lockType='passthru')
+
+def endPassthru(sheetName):
+    if sheetName not in Lock_passthru or not Lock_passthru[sheetName]:
+        return
+    Lock_passthru[sheetName] -= 1
+    if Lock_cache.get(sheetName) == 'passthru' and not Lock_passthru[sheetName]:
+        unlockSheet(sheetName)
 
 def check_if_locked(sheetName, get=False):
     if Options['lock_proxy_url'] and sheetName.endswith('_slidoc') and not get:
@@ -683,6 +715,7 @@ def sheetAction(params, notrace=False):
     # sheet: 'sheet name' (required)
     # admin: admin user name (optional)
     # token: authentication token
+    # action: ''|'answers'|'stats'|'scores'
     # headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     # name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     # id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -722,6 +755,8 @@ def sheetAction(params, notrace=False):
     returnMessages = []
 
     try:
+        if params.get('action'):
+            raise Exception('Error:ACTION::Actions not supported by proxy')
         sheetName = params.get('sheet','')
         if not sheetName:
             raise Exception('Error:SHEETNAME::No sheet name specified')

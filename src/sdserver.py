@@ -108,6 +108,7 @@ WS_TIMEOUT_SEC = 3600
 EVENT_BUFFER_SEC = 3
 
 SETTINGS_SHEET = 'settings_slidoc'
+SCORES_SHEET = 'scores_slidoc'
 
 class UserIdMixin(object):
     @classmethod
@@ -354,6 +355,7 @@ class ActionHandler(BaseHandler):
             sheet = sdproxy.getSheet(sessionName, optional=True)
             if not sheet:
                 self.write('Unable to retrieve sheet '+sessionName)
+                return
             self.render('table.html', table_name=sessionName, table_data=sheet.getRows(), table_fixed='fixed')
 
         elif action in ('_getcol', '_getrow'):
@@ -595,10 +597,15 @@ class ProxyHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, "DEBUG: URI", self.request.uri
 
-        if args.get('modify') and sdproxy.Options['gsheet_url'] and not sdproxy.Options['dry_run']:
+        if (args.get('action') or args.get('modify')) and sdproxy.Options['gsheet_url'] and not sdproxy.Options['dry_run']:
             sessionName = args.get('sheet','')
-            if not sdproxy.lockSheet(sessionName, 'passthru'):
-                retObj = {'result': 'error', 'error': 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'}
+            errMsg = ''
+            if args.get('modify'):
+                if not sdproxy.startPassthru(sessionName):
+                    errMsg = 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'
+
+            if errMsg:
+                retObj = {'result': 'error', 'error': errMsg}
             else:
                 http_client = tornado.httpclient.AsyncHTTPClient()
                 body = urllib.urlencode(args)
@@ -606,6 +613,19 @@ class ProxyHandler(BaseHandler):
                 if response.error:
                     retObj = {'result': 'error', 'error': 'Error in passthru: '+str(response.error) }
                 else:
+                    # Successful return
+                    if args.get('modify'):
+                        sdproxy.endPassthru(sessionName)
+                    elif args.get('action'):
+                        # Clear cached sheets
+                        if args.get('action') == 'scores':
+                            sdproxy.unlockSheet(SCORES_SHEET)
+                        elif sessionName:
+                            sdproxy.unlockSheet(sessionName+'-'+args.get('action'))
+                        else:
+                            for name in sdproxy.Sheet_cache:
+                                if name.endswith('-'+action):
+                                    sdproxy.unlockSheet(name)
                     try:
                         retObj = json.loads(response.body)
                     except Exception, err:
