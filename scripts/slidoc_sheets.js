@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7';
+var VERSION = '0.96.7b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -504,11 +504,7 @@ function sheetAction(params) {
 		if (delRowCol)
                     indexSheet.deleteRow(delRowCol);
 	    }
-	    var temSheet = getSheet(sheetName);
-	    if (temSheet) {
-		var doc = getDoc();
-		doc.deleteSheet(temSheet);
-	    }
+	    deleteSheet(sheetName);
         } else if (params.copysheet) {
 	    // Copy sheet (but not session entry)
 	    returnValues = [];
@@ -1721,6 +1717,15 @@ function getSheet(sheetName, docName, create) {
     return sheet;
 }
 
+function deleteSheet(sheetName) {
+    var temSheet = getSheet(sheetName);
+    if (!temSheet)
+	return false;
+    var doc = getDoc();
+    doc.deleteSheet(temSheet);
+    return true;
+}
+
 function createSheet(sheetName, headers) {
     var sheet = getSheet(sheetName, null, true);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -2732,7 +2737,7 @@ function updateScoreSession() {
 }
 
 function updateScoreAux(sessionName) {
-    return updateScores([sessionName]);
+    return updateScores([sessionName], true);
 }
 
 function updateScoreAll() {
@@ -2743,7 +2748,7 @@ function updateScoreAll() {
 
     try {
 	initSettings();
-	var updatedNames = updateScores(getSessionNames());
+	var updatedNames = updateScores(getSessionNames(), true);
 	notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
     } catch(err) {
 	SpreadsheetApp.getUi().alert(''+err);
@@ -2753,7 +2758,7 @@ function updateScoreAll() {
 
 }
 
-function updateScores(sessionNames) {
+function updateScores(sessionNames, interactive) {
     // Update scores sheet for sessions in list
     // Returns list of updated sessions
 
@@ -2893,6 +2898,26 @@ function updateScores(sessionNames) {
 	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
 	    if (!paceLevel)
 		continue;
+
+	    // Update answers/stats sheets
+	    var ansName = sessionName+'-answers';
+	    try {
+		deleteSheet(ansName);
+		updateAnswers(sessionName);
+	    } catch(err) {
+		if (interactive)
+		    notify('Error in creating sheet '+ansName+': '+err, 'Slidoc Answers');
+	    }
+
+	    var statsName = sessionName+'-stats';
+	    try {
+		deleteSheet(statsName);
+		updateStats(sessionName);
+	    } catch(err) {
+		if (interactive)
+		    notify('Error in creating sheet '+statsName+': '+err, 'Slidoc Stats');
+	    }
+
 	    if (sessionWeight !== null && !sessionWeight) // sessionWeight is only used to decide whether to score
 		continue;
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
