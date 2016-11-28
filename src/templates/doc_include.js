@@ -585,6 +585,7 @@ function choiceShuffle(letters, shuffle) {
 }
 
 function escapeHtml(unsafe) {
+    unsafe = unsafe || '';
     return unsafe
          .replace(/&/g, "&amp;")
          .replace(/</g, "&lt;")
@@ -1605,7 +1606,7 @@ Slidoc.showGrades = function () {
 	return;
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Looking up gradebook...');
-    var userId = GService.gprofile.auth.id;
+    var userId = getUserId();
     Sliobj.scoreSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
 }
 
@@ -1655,13 +1656,54 @@ function showGradesCallback(userId, result, retStatus) {
     Slidoc.showPopup(html);
 }
 
+Slidoc.userInfo = function() {
+    if (!Sliobj.params.gd_sheet_url)
+	return;
+    if (!Sliobj.closePopup)
+	Slidoc.showPopup('Looking up user info...');
+    var userId = getUserId();
+    Sliobj.rosterSheet.getRow(userId, {}, userInfoCallback.bind(null, userId));
+}
+
+function userInfoCallback(userId, result, retStatus) {
+    Slidoc.log('userInfoCallback:', userId, result, retStatus);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    if (!result) {
+	alert('No info found for user '+userId);
+	return;
+    }
+    var html = 'Info for user <b>'+userId+'</b><p></p>';
+    html += 'Name: '+escapeHtml(result.name)+'<br>\n';
+    html += 'Email: '+escapeHtml(result.email)+'<br>\n';
+    html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.modifyUserInfo();">modify</span>)<br>\n';
+    Slidoc.showPopup(html);
+}
+
+Slidoc.modifyUserInfo = function() {
+    var value = window.prompt('Twitter ID:');
+    if (value && value.trim()) {
+	var userId = getUserId();
+	var updates = {id: userId, twitter: value.trim()};
+	Sliobj.rosterSheet.updateRow(updates, {}, modifyUserInfoCallback.bind(null, userId));
+    }
+}
+
+function modifyUserInfoCallback(userId, result, retStatus) {
+    if (!result) {
+	alert('Error in modifying info for user '+userId+': '+retStatus.error);
+	return;
+    }
+    Slidoc.userInfo();
+}
+
 Slidoc.manageSession = function() {
     var html = '<b>Settings:</b><p></p>';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
     if (Sliobj.sessionName) {
 	if (userId)
-	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userInfo();">info</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
 	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
@@ -1750,14 +1792,18 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.userGrades = null;
     Sliobj.gradingUser = 0;
     Sliobj.indexSheet = null;
+    Sliobj.rosterSheet = null;
     Sliobj.scoreSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
     Sliobj.voteDate = null;
 
-    if (Sliobj.params.gd_sheet_url)
+    if (Sliobj.params.gd_sheet_url) {
+	Sliobj.rosterSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.roster_sheet,
+						     [], [], useJSONP);
 	Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
 						     [], [], useJSONP);
+    }
     if (Sliobj.adminState) {
 	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
 						     Sliobj.params.indexFields.slice(0,2),

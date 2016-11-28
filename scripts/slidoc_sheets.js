@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.6m';
+var VERSION = '0.96.6n';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -304,9 +304,10 @@ function sheetAction(params) {
 	    throw('Error:SHEETNAME:No sheet name specified');
 
 	// Read-only sheets
-	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != INDEX_SHEET) || sheetName.match(/-answers$/) || sheetName.match(/-stats$/);
-	// Admin-only access sheets
-	var restrictedSheet = (sheetName.match(/_slidoc$/) && sheetName != SCORES_SHEET);
+	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != INDEX_SHEET) || sheetName.match(/-answers$/) || sheetName.match(/-stats$/);
+
+	// Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
+	var restrictedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != SCORES_SHEET);
 
 	var loggingSheet = sheetName.match(/_log$/);
 
@@ -544,7 +545,7 @@ function sheetAction(params) {
 	    if (!modSheet.getLastColumn())
 		throw("Error::No columns in sheet '"+sheetName+"'");
 
-	    if (!restrictedSheet && !protectedSheet && !loggingSheet && getSheet(INDEX_SHEET)) {
+	    if (!restrictedSheet && !protectedSheet && !loggingSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET)) {
 		// Indexed session
 		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
@@ -635,21 +636,29 @@ function sheetAction(params) {
 	    var displayName = null;
 
 	    var voteSubmission = '';
-	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0].match(/_vote$/) && sessionAttributes.shareAnswers) {
-		var qprefix = selectedUpdates[1][0].split('_')[0];
-		voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
+            var alterSubmission = false;
+            var twitterSetting = false;
+	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id') {
+		if (selectedUpdates[1][0].match(/_vote$/) && sessionAttributes.shareAnswers) {
+		    var qprefix = selectedUpdates[1][0].split('_')[0];
+		    voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
+		}
+
+		if (selectedUpdates[1][0] == 'submitTimestamp')
+		    alterSubmission = true;
+
+		if (selectedUpdates[1][0] == 'twitter' && sheetName == ROSTER_SHEET)
+		    twitterSetting = true;
 	    }
 
-            var alterSubmission = false;
-            if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id' && selectedUpdates[1][0] == 'submitTimestamp') {
-		alterSubmission = true;
-            }
-
-	    if (!adminUser && selectedUpdates && !voteSubmission)
+	    if (!adminUser && selectedUpdates && !voteSubmission && !twitterSetting)
 		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
             if (importSession && !adminUser)
 		throw("Error::Only admin user allowed to import to sheet '"+sheetName+"'")
+
+	    if (sheetName == ROSTER_SHEET && rowUpdates && !adminUser)
+		throw("Error::Only admin user allowed to add/modify rows to sheet '"+sheetName+"'");
 
 	    if (protectedSheet && (rowUpdates || selectedUpdates) )
 		throw("Error::Cannot modify protected sheet '"+sheetName+"'")
@@ -1338,7 +1347,7 @@ function sheetAction(params) {
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!voteSubmission && !partialSubmission) {
+		    if (!partialSubmission && !voteSubmission && !twitterSetting) {
 			if (!adminUser)
 			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
@@ -1419,7 +1428,7 @@ function sheetAction(params) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (!restrictedSheet && !partialSubmission && !importSession && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
+			    if (!restrictedSheet && !partialSubmission && !twitterSetting && !importSession && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
 				throw("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 			    var hmatch = QFIELD_RE.exec(colHeader);
                             if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {

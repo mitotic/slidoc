@@ -757,26 +757,37 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     }
 
     var updates = [];
-    for (var j=0; j<this.headers.length; j++) {
-	var key = this.headers[j];
-	if (key in updateObj) {
-	    updates.push( [key, updateObj[key]] );
-	    if (cachedRow && key != 'id' && key != 'Timestamp' && key in cachedRow) {
-		// Update cached row
-		cachedRow[key] = updateObj[key]
-		if (opts.team && cachedRow.team && key.match(/(_grade|_comments)$/)) {
-		    // Broadcast grade/comments to all team members in cache (to mirror what happens in the spreadsheet)
-		    for (var k=0; k<userIds.length; k++) {
-			var userId = userIds[k];
-			if (userId != updateObj.id && this.cacheAll[userId].team == cachedRow.team)
-			    this.cacheAll[userId][key] = cachedRow[key];
+    if (this.headers.length) {
+	for (var j=0; j<this.headers.length; j++) {
+	    var key = this.headers[j];
+	    if (key in updateObj) {
+		updates.push( [key, updateObj[key]] );
+		if (cachedRow && key != 'id' && key != 'Timestamp' && key in cachedRow) {
+		    // Update cached row
+		    cachedRow[key] = updateObj[key]
+		    if (opts.team && cachedRow.team && key.match(/(_grade|_comments)$/)) {
+			// Broadcast grade/comments to all team members in cache (to mirror what happens in the spreadsheet)
+			for (var k=0; k<userIds.length; k++) {
+			    var userId = userIds[k];
+			    if (userId != updateObj.id && this.cacheAll[userId].team == cachedRow.team)
+				this.cacheAll[userId][key] = cachedRow[key];
+			}
 		    }
 		}
 	    }
 	}
+	if (updates.length < Object.keys(updateObj).length)
+            throw('GoogleSheet.updateRow: Invalid column header(s) found in row updates: '+Object.keys(updateObj));
+    } else {
+	var keys = Object.keys(updateObj);
+	if (keys.length != 2)
+            throw('GoogleSheet.updateRow: Only single column can be updated if no headers: '+Object.keys(updateObj));
+	updates.push( ['id', updateObj.id] );
+	for (var j=0; j<keys.length; j++) {
+	    if (keys[j] != 'id')
+		updates.push([ keys[j], updateObj[keys[j]] ]);
+	}
     }
-    if (updates.length < Object.keys(updateObj).length)
-        throw('GoogleSheet.updateRow: Invalid column header(s) found in row updates: '+Object.keys(updateObj));
 
     var params = {id: updateObj.id, update: JSON.stringify(updates)};
     if (opts.get)

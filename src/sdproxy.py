@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.6m'
+VERSION = '0.96.6n'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -779,9 +779,9 @@ def sheetAction(params, notrace=False):
                 raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
 
         # Read-only sheets
-        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != INDEX_SHEET) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
-        # Admin-only access sheets
-        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != SCORES_SHEET)
+        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
+        # Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
+        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != SCORES_SHEET)
 
         loggingSheet = sheetName.endswith('_log')
 
@@ -888,7 +888,7 @@ def sheetAction(params, notrace=False):
             if not modSheet.getLastColumn():
                 raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
-            if not restrictedSheet and not protectedSheet and not loggingSheet and getSheet(INDEX_SHEET):
+            if not restrictedSheet and not protectedSheet and not loggingSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET):
                 # Indexed session
                 sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
                 sessionAttributes = json.loads(sessionEntries['attributes'])
@@ -968,19 +968,27 @@ def sheetAction(params, notrace=False):
             displayName = None
 
             voteSubmission = ''
-            if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
-                qprefix = selectedUpdates[1][0].split('_')[0]
-                voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
-
             alterSubmission = False
-            if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id' and selectedUpdates[1][0] == 'submitTimestamp':
-                alterSubmission = True
+            twitterSetting = False
+            if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id':
+                if selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
+                    qprefix = selectedUpdates[1][0].split('_')[0]
+                    voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
 
-            if not adminUser and selectedUpdates and not voteSubmission:
+                if selectedUpdates[1][0] == 'submitTimestamp':
+                    alterSubmission = True
+
+                if selectedUpdates[1][0] == 'twitter' and sheetName == ROSTER_SHEET:
+                    twitterSetting = True
+
+            if not adminUser and selectedUpdates and not voteSubmission and not twitterSetting:
                 raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
             if importSession and not adminUser:
                 raise Exception("Error::Only admin user allowed to import to sheet '"+sheetName+"'")
+
+            if sheetName == ROSTER_SHEET and rowUpdates and not adminUser:
+                raise Exception("Error::Only admin user allowed to add/modify rows to sheet '"+sheetName+"'")
 
             if protectedSheet and (rowUpdates or selectedUpdates) :
                 raise Exception("Error::Cannot modify protected sheet '"+sheetName+"'")
@@ -1603,7 +1611,7 @@ def sheetAction(params, notrace=False):
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
-                    if not voteSubmission and not partialSubmission:
+                    if not partialSubmission and not voteSubmission and not twitterSetting:
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
@@ -1679,7 +1687,7 @@ def sheetAction(params, notrace=False):
 
                         elif colHeader not in MIN_HEADERS and not colHeader.endswith('Timestamp'):
                             # Update row values for header (except for id, name, email, altid, *Timestamp)
-                            if not restrictedSheet and not partialSubmission and not importSession and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
+                            if not restrictedSheet and not partialSubmission and not twitterSetting and not importSession and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
                                 raise Exception("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'")
 
                             if colHeader.lower().endswith('date') or colHeader.lower().endswith('time'):
