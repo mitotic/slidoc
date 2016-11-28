@@ -271,13 +271,13 @@ def getSheet(sheetName, optional=False):
     Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=keyHeader)
     return Sheet_cache[sheetName]
 
-def createSheet(sheetName, headers):
+def createSheet(sheetName, headers, rows=[]):
     check_if_locked(sheetName)
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
     keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
-    Sheet_cache[sheetName] = Sheet(sheetName, [headers], keyHeader=keyHeader)
+    Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=keyHeader, modTime=sliauth.epoch_ms())
     return Sheet_cache[sheetName]
 
 
@@ -2096,6 +2096,45 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if retval['result'] != 'success':
             raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
 
+def createRoster(headers, rows):
+    if headers[:4] != MIN_HEADERS:
+        raise Exception('Error: Invalid headers for roster_slidoc; first four should be "'+', '.join(MIN_HEADERS)+'", but found "'+', '.join(headers or [])+'"')
+
+    test_user_row = ['#User, Test', TESTUSER_ID] + ['']*(len(headers)-2)
+    idSet = set()
+    rosterRows = []
+    for row in rows:
+        row = row[:]
+        if len(row) != len(headers):
+            raise Exception('Incorrect no. of columns in imported roster row: '+str(row))
+        if not row[0] or not row[1]:
+            raise Exception('Null name or id field not allowed in imported roster row: '+str(row))
+        if row[1] in idSet:
+            raise Exception('Duplicate id found in imported roster row: '+row[1])
+        idSet.add(row[1])
+        if row[1] == TESTUSER_ID:
+            test_user_row = row
+            continue
+        if row[1][0] == '_':
+            raise Exception('Underscore not allowed at start of id in imported roster row: '+row[1])
+
+        if row[0].count(',') > 1:
+            raise Exception('Multiple commas not allowed in imported name: '+row[0])
+        if row[0][0].isalpha():
+            row[0] = row[0][0].upper() + row[0][1:]
+        elif row[0][0] == '#' and len(row[0]) > 1:
+            row[0] = row[0][0] + row[0][1].upper() + row[0][2:]
+        else:
+            raise Exception('Invalid start character in imported name '+row[0])
+        rosterRows.append(row)
+        
+    rosterRows.sort()
+    rosterRows.insert(0, test_user_row)
+    rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+    if rosterSheet:
+        raise Exception('Roster sheet already present; delete it before importing')
+    return createSheet(ROSTER_SHEET, headers, rosterRows)
+        
 def lookupRoster(field, userId=None):
     rosterSheet = getSheet(ROSTER_SHEET, optional=True)
     if not rosterSheet:

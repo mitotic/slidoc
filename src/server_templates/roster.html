@@ -1,0 +1,30 @@
+<style>
+body {
+    font-family: sans-serif;
+}
+</style>
+<div id="main-container">
+  <h2><a href="/">{{site_label}}</a></h2>
+  <a href="/_dash">Dashboard</a><br>
+  <p></p>
+  <div id="main">
+    <div id="message-form">
+      <h2>Import roster file</h2>
+      <form action="/_roster" method="post" id="message_form" enctype="multipart/form-data" >
+	<fieldset>
+          <label for="upload">Roster file (CSV spreadsheet file):</label><br>
+          <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file"><br>
+        The should contain the column headers: <code>name, id, email, altid, twitter, ...</code><br>
+        (The first four column headers are required.)<br>
+        Names should be of the form: <code>Lastname, Firstname Othernames</code><br>
+        Id's are required to be unique, and names should also
+        preferably be. All other column values may be blank.
+        </fieldset>
+        {% module xsrf_form_html() %}
+        <div id="form_btn">
+	  <input id="submit-btn" type="submit" value="Import">
+	</div>
+      </form>
+    </div>
+  </div>
+</div>

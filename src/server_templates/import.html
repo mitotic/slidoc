@@ -17,7 +17,7 @@ body {
 	  <label for="submitdate">Submit date (optional):</label>
           <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="">
           <p></p>
-          <label for="username">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
+          <label for="upload">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
           <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file">
         </fieldset>
         {% module xsrf_form_html() %}

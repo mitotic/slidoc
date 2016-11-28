@@ -1656,45 +1656,45 @@ function showGradesCallback(userId, result, retStatus) {
     Slidoc.showPopup(html);
 }
 
-Slidoc.userInfo = function() {
+Slidoc.userProfile = function() {
     if (!Sliobj.params.gd_sheet_url)
 	return;
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Looking up user info...');
     var userId = getUserId();
-    Sliobj.rosterSheet.getRow(userId, {}, userInfoCallback.bind(null, userId));
+    Sliobj.rosterSheet.getRow(userId, {}, userProfileCallback.bind(null, userId));
 }
 
-function userInfoCallback(userId, result, retStatus) {
-    Slidoc.log('userInfoCallback:', userId, result, retStatus);
+function userProfileCallback(userId, result, retStatus) {
+    Slidoc.log('userProfileCallback:', userId, result, retStatus);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     if (!result) {
 	alert('No info found for user '+userId);
 	return;
     }
-    var html = 'Info for user <b>'+userId+'</b><p></p>';
+    var html = 'Profile for user <b>'+userId+'</b><p></p>';
     html += 'Name: '+escapeHtml(result.name)+'<br>\n';
     html += 'Email: '+escapeHtml(result.email)+'<br>\n';
-    html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.modifyUserInfo();">modify</span>)<br>\n';
+    html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.modifyUserProfile();">modify</span>)<br>\n';
     Slidoc.showPopup(html);
 }
 
-Slidoc.modifyUserInfo = function() {
+Slidoc.modifyUserProfile = function() {
     var value = window.prompt('Twitter ID:');
     if (value && value.trim()) {
 	var userId = getUserId();
 	var updates = {id: userId, twitter: value.trim()};
-	Sliobj.rosterSheet.updateRow(updates, {}, modifyUserInfoCallback.bind(null, userId));
+	Sliobj.rosterSheet.updateRow(updates, {}, modifyUserProfileCallback.bind(null, userId));
     }
 }
 
-function modifyUserInfoCallback(userId, result, retStatus) {
+function modifyUserProfileCallback(userId, result, retStatus) {
     if (!result) {
 	alert('Error in modifying info for user '+userId+': '+retStatus.error);
 	return;
     }
-    Slidoc.userInfo();
+    Slidoc.userProfile();
 }
 
 Slidoc.manageSession = function() {
@@ -1703,7 +1703,7 @@ Slidoc.manageSession = function() {
     var userId = getUserId();
     if (Sliobj.sessionName) {
 	if (userId)
-	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userInfo();">info</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userProfile();">profile</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
 	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';

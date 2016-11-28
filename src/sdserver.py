@@ -262,23 +262,23 @@ class ActionHandler(BaseHandler):
         elif action in ('_roster'):
             nameMap = sdproxy.lookupRoster('name', userId=None)
             if not nameMap:
-                self.write('Roster sheet not found')
-                return
-            for idVal, name in nameMap.items():
-                if name.startswith('#'):
-                    del nameMap[idVal]
-            lastMap = sdproxy.makeShortNames(nameMap)
-            firstMap = sdproxy.makeShortNames(nameMap, first=True)
-            self.write('<a href="/_dash">Dashboard</a><p></p>')
-            self.write('Roster: \n')
-            for nMap in [nameMap, lastMap, firstMap]:
-                vals = nMap.values()
-                vals.sort()
-                lines = ['<hr><table>\n']
-                for val in vals:
-                    lines.append('<tr><td>%s</td></tr>\n' % val)
-                lines += ['</table>\n']
-                self.write(''.join(lines))
+                self.render('roster.html', site_label=site_label)
+            else:
+                for idVal, name in nameMap.items():
+                    if name.startswith('#'):
+                        del nameMap[idVal]
+                lastMap = sdproxy.makeShortNames(nameMap)
+                firstMap = sdproxy.makeShortNames(nameMap, first=True)
+                self.write('<a href="/_dash">Dashboard</a><p></p>')
+                self.write('Roster: \n')
+                for nMap in [nameMap, lastMap, firstMap]:
+                    vals = nMap.values()
+                    vals.sort()
+                    lines = ['<hr><table>\n']
+                    for val in vals:
+                        lines.append('<tr><td>%s</td></tr>\n' % val)
+                    lines += ['</table>\n']
+                    self.write(''.join(lines))
 
         elif action == '_cache':
             self.write('<h2>Proxy cache and connection status</h2>')
@@ -542,11 +542,13 @@ class ActionHandler(BaseHandler):
 
     def postAction(self, subpath):
         action, sep, sessionName = subpath.partition('/')
+        submitDate = ''
         if action in ('_import', '_submit'):
             if not sessionName:
                 self.write('Must specify session name')
                 return
             submitDate = self.get_argument('submitdate','')
+        if action in ('_roster', '_import', '_submit'):
             self.set_header('Content-Type', 'text/plain')
             if action == '_submit':
                 # Submit test user
@@ -555,8 +557,9 @@ class ActionHandler(BaseHandler):
                     self.write('Submit '+TESTUSER_ID+' row')
                 except Exception, excp:
                     self.write('Error in submit for '+TESTUSER_ID+': '+str(excp))
-            elif action == '_import':
-                # Import user answers from CSV file
+
+            elif action in ('_roster', '_import'):
+                # Import from CSV file
                 if 'upload' not in self.request.files:
                     self.write('No file to upload!')
                     return
@@ -564,16 +567,24 @@ class ActionHandler(BaseHandler):
                 fname = fileinfo['filename']
                 fbody = fileinfo['body']
                 if Options['debug']:
-                    print >> sys.stderr, 'ActionHandler:_import', sessionName, submitDate, fname, len(fbody)
+                    print >> sys.stderr, 'ActionHandler:upload', fname, len(fbody), sessionName, submitDate
                 uploadedFile = cStringIO.StringIO(fbody)
-                missed, errors = importAnswersAux(sessionName, submitDate, fname, uploadedFile)
-                if not missed and not errors:
-                    self.write('Imported answers from '+fname)
-                else:
-                    if missed:
-                        self.write('ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n')
-                    if errors:
-                        self.write('\n'.join(errors)+'\n')
+                if action == '_roster':
+                    errors = importRosterAux(fname, uploadedFile)
+                    if not errors:
+                        self.write('Imported roster from '+fname)
+                    else:
+                        if errors:
+                            self.write('\n'.join(errors)+'\n')
+                elif action == '_import':
+                    missed, errors = importAnswersAux(sessionName, submitDate, fname, uploadedFile)
+                    if not missed and not errors:
+                        self.write('Imported answers from '+fname)
+                    else:
+                        if missed:
+                            self.write('ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n')
+                        if errors:
+                            self.write('\n'.join(errors)+'\n')
         else:
             self.write('Invalid post action: '+action)
 
@@ -1582,6 +1593,24 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
         errors = [ 'Error in importAnswersAux: '+str(excp)] + errors
 
     return missed, errors
+
+def importRosterAux(filepath, csvfile):
+    errors = []
+    try:
+        ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
+        ##csvfile.seek(0)
+        reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
+        headers = reader.next()
+        rows = [row for row in reader]
+        sdproxy.createRoster(headers, rows)
+    except Exception, excp:
+        if Options['debug']:
+            import traceback
+            traceback.print_exc()
+        errors = ['Error in importRosterAux: '+str(excp)]
+
+    return errors
+
 
 twitterStream = None
 def main():

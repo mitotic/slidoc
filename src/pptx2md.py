@@ -126,12 +126,13 @@ def pptx2md(file, filename='', img_dir=None, embed_slides=False, no_titles=False
                     g.write(f.read())
         return img_copy
 
-    md_text = []
+    all_md = []
     first_header = ''
     with zipfile.ZipFile(file) as zfile:
         slides.sort()
         prev_continued = False
         for slide_num, images, text_str, notes_str in slides:
+            md_text = []
             slide_image = ('%s/Slide%02d' if len(slides) >= 10 else '%s/Slide%d') % (fileprefix, slide_num)
 
             # Replace curly quotes with straight quotes (UTF-8 encoded)
@@ -245,10 +246,18 @@ def pptx2md(file, filename='', img_dir=None, embed_slides=False, no_titles=False
             if not images_copied and images:
                 # Copy embedded images by default
                 iheight = img_height/max(1,len(images))
+                md_images = ["\n"]
                 for j, image_file in enumerate(images):
                     img_copy = copy_image(image_file)
-                    md_text.append("\n![image%d](%s 'height=%d')\n\n" % (j+1, img_copy, iheight))
-
+                    md_images.append("![image%d](%s 'height=%d')\n\n" % (j+1, img_copy, iheight))
+                offset = len(md_text)
+                for j, md_line in enumerate(md_text):
+                    if md_line.startswith('Answer:'):
+                        # Insert images before Answer:
+                        offset = j
+                        break
+                md_text = md_text[:offset] + md_images + md_text[offset:]
+ 
             elif not images_copied and not text_str:
                 # No text and no embedded images; copy slide image by default
                 iheight = img_height
@@ -267,10 +276,10 @@ def pptx2md(file, filename='', img_dir=None, embed_slides=False, no_titles=False
                     md_text.append('Extra: '+extra_str+'\n\n')
                 md_text.append('\n---\n')
             md_text.append('\n')
-
+            all_md += md_text
             prev_continued = continued
 
-    return ''.join(md_text)
+    return ''.join(all_md)
 
 if __name__ == '__main__':
     cmd_parser = argparse.ArgumentParser(description='Convert from .pptx to Markdown')
