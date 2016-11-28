@@ -74,6 +74,7 @@ Options = {
     'proxy_wait': None,
     'port': 8888,
     'public': False,
+    'reload': False,
     'require_login_token': True,
     'require_late_token': True,
     'share_averages': True,
@@ -212,7 +213,16 @@ class ActionHandler(BaseHandler):
     def get(self, subpath, inner=None):
         token = str(self.get_argument("token", ""))
         if token == Options['auth_key'] or self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
-            return self.getAction(subpath)
+            try:
+                return self.getAction(subpath)
+            except Exception, excp:
+                msg = str(excp)
+                if msg.startswith('CUSTOM:') and not Options['debug']:
+                    print >> sys.stderr, 'sdserver: '+msg
+                    self.custom_error(500, '<html><body><h3>%s</h3></body></html>' % msg[len('CUSTOM:'):])
+                    return
+                else:
+                    raise
         raise tornado.web.HTTPError(403)
 
     def post(self, subpath, inner=None):
@@ -1338,7 +1348,7 @@ class Application(tornado.web.Application):
             (r"/_auth/login/", AuthLoginHandler),
             ]
 
-        settings = {}
+        settings = {'autoreload': Options['reload']}
         Global.login_domain = ''
         Global.login_url = '/_auth/login/'
         if Options['auth_type']:
@@ -1591,6 +1601,7 @@ def main():
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
+    define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("site_label", default=Options["site_label"], help="Site label for Login page")
     define("site_url", default=Options["site_url"], help="Site URL, e.g., http://example.com")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")

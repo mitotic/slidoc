@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.6n'
+VERSION = '0.96.6p'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -325,6 +325,9 @@ class Sheet(object):
     def getLastRow(self):
         return len(self.xrows)
 
+    def getHeaders(self):
+        return self.xrows[0] if self.xrows else None
+    
     def getRows(self):
         # Return shallow copy
         return [ row[:] for row in self.xrows ]
@@ -2093,11 +2096,14 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if retval['result'] != 'success':
             raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
 
-
 def lookupRoster(field, userId=None):
     rosterSheet = getSheet(ROSTER_SHEET, optional=True)
     if not rosterSheet:
         return None
+
+    headers = rosterSheet.getHeaders()
+    if not headers or headers[:4] != MIN_HEADERS:
+        raise Exception('CUSTOM:Error: Invalid headers in roster_slidoc; first four should be "'+', '.join(MIN_HEADERS)+'", but found "'+', '.join(headers or [])+'"')
 
     colIndex = indexColumns(rosterSheet)
     if not colIndex.get(field):
