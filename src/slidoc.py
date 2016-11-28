@@ -3210,7 +3210,7 @@ parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plu
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
-parser.add_argument('--release_date', metavar='DATE_TIME', help="Release on local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
+parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on local date yyyy-mm-ddThh:mm (append 'Z' for UTC) (test user always has access)")
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')

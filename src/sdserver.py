@@ -1145,16 +1145,16 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Paths containing '/_private' are always protected
             sessionName = self.get_path_base(self.request.path)
             errMsg = ''
-            if not Options['dry_run'] and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
-                # Check release date for session in session index
+            if not Options['dry_run'] and userId != TESTUSER_ID and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+                # Check release date for session in index (test user always has access, allowing delayed release of live lectures)
                 try:
                     sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['releaseDate']:
                         remaining_ms = sliauth.epoch_ms(sessionEntries['releaseDate']) - sliauth.epoch_ms()
                         if remaining_ms > 0:
                             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet available' % sessionName
-                            if userId in (ADMINUSER_ID, TESTUSER_ID):
-                                errMsg = 'Session %s will be available in %ds' % (sessionName, int(remaining_ms/1000))
+                            if userId == ADMINUSER_ID:
+                                errMsg = 'Session %s will be available in %ds (test user always has access)' % (sessionName, int(remaining_ms/1000))
                             else:
                                 errMsg = 'Session %s not yet available' % sessionName
                 except Exception, excp:
