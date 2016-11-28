@@ -317,11 +317,14 @@ class ActionHandler(BaseHandler):
                 self.write(errors)
 
         elif action in ('_reload', '_update'):
-            if Global.backup:
-                Global.backup.stop()
-                Global.backup = None
-            sdproxy.suspend_cache(action[1:])
-            self.write('Starting %s<p></p><a href="/_dash">Dashboard</a>' % action[1:])
+            if not Options['reload']:
+                self.write('Please restart server with --reload option<p></p><a href="/_dash">Dashboard</a>')
+            else:
+                if Global.backup:
+                    Global.backup.stop()
+                    Global.backup = None
+                sdproxy.suspend_cache(action[1:])
+                self.write('Starting %s<p></p><a href="/_dash">Dashboard</a>' % action[1:])
 
         elif action == '_shutdown':
             self.clear_id()
