@@ -1744,8 +1744,8 @@ Slidoc.manageSession = function() {
 	html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
 	html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><hr>';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Update scores for this session</span><br>';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Update scores for all sessions</span>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores for this session</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores for all sessions</span>';
 	html += '</blockquote>\n';
     }
     if (Sliobj.closePopup)
