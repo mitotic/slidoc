@@ -4800,6 +4800,7 @@ Slidoc.slideViewGoLast = function () {
 Slidoc.slideViewGo = function (forward, slide_num, start) {
     var slides = getVisibleSlides();
     Slidoc.log('Slidoc.slideViewGo:', forward, slide_num, slides.length, Sliobj.session ? Sliobj.session.lastSlide : -1);
+    var prev_slide_id = Sliobj.currentSlide ? slides[Sliobj.currentSlide-1].id : null;
     if (!start) {
 	if (!Sliobj.currentSlide) {
 	    Slidoc.log('Slidoc.slideViewGo: ERROR not in slide view to go to slide '+slide_num);
@@ -4807,7 +4808,6 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	}
 	if (!slide_num)
 	    slide_num = forward ? Sliobj.currentSlide+1 : Sliobj.currentSlide-1;
-	var prev_slide_id = slides[Sliobj.currentSlide-1].id;
 	if (prev_slide_id in Sliobj.slidePlugins) {
 	    for (var j=0; j<Sliobj.slidePlugins[prev_slide_id].length; j++)
 		Slidoc.PluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
@@ -4836,12 +4836,20 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
 	if (Sliobj.questionSlide && !Sliobj.session.questionsAttempted[Sliobj.questionSlide.qnumber] && Sliobj.session.remainingTries) {
 	    // Current (not new) slide is question slide
-	    var tryCount =  (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
-	    var prompt = 'Please answer before proceeding.'
-	    if (tryCount > 1)
-		prompt += 'You have '+tryCount+' try(s)';
-	    showDialog('alert', 'requireAnswerDialog', prompt);
-	    return false;
+	    if (isController() && prev_slide_id) {
+		if (!window.confirm("Finalize question and proceed?"))
+		    return false;
+		var ansElem = document.getElementById(prev_slide_id+'-answer-click');
+		if (ansElem)
+		    Slidoc.answerClick(ansElem, prev_slide_id, 'controlled');
+	    } else {
+		var tryCount =  (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
+		var prompt = 'Please answer before proceeding.'
+		if (tryCount > 1)
+		    prompt += 'You have '+tryCount+' try(s)';
+		showDialog('alert', 'requireAnswerDialog', prompt);
+		return false;
+	    }
 	} else if (Sliobj.delaySec) {
 	    // Current (not new) slide has delay
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
