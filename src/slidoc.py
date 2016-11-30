@@ -1110,12 +1110,13 @@ class SlidocRenderer(MathRenderer):
             prefix += '</p><blockquote id="%(id)s-choice-block" data-shuffle=""><div id="%(id)s-chart-header" class="slidoc-chart-header" style="display: none;"></div><p>\n'
             self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
-        if name != 'Q' and (self.options['config'].hide or self.options['config'].pace):
+        hide_answer = self.options['config'].pace or 'show_correct' not in self.options['config'].features
+        if name != 'Q' and hide_answer:
             prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
 
         if name == 'Q':
             return (prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''') % params
-        elif self.options['config'].hide or self.options['config'].pace:
+        elif hide_answer:
             return (prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''') % params
         else:
             return (prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''') % params
@@ -1445,7 +1446,7 @@ class SlidocRenderer(MathRenderer):
             # Strip any correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
-        hide_answer = self.options['config'].hide or self.options['config'].pace
+        hide_answer = self.options['config'].pace or 'show_correct' not in self.options['config'].features 
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
             message("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
@@ -3188,13 +3189,14 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
 #   share_all: share responses for all questions
 #   share_answers: share answers for all questions after completion (e.g., an exam)
+#   show_correct: show correct answers for non-paced sessions
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
@@ -3212,7 +3214,7 @@ parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Fon
 parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
 parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
-parser.add_argument('--hide', metavar='REGEX', help='Hide sections matching header regex (e.g., "[Aa]nswer")')
+parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
 parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: _images)')
 parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
