@@ -29,6 +29,7 @@ Command arguments:
 
 """
 
+import base64
 import collections
 import cStringIO
 import csv
@@ -91,6 +92,7 @@ class Dummy():
 Global = Dummy()
 Global.rename = {}
 Global.backup = None
+Global.twitter_config = {}
 
 FUTURE_DATE = 'future'
 
@@ -122,14 +124,14 @@ class UserIdMixin(object):
             basename, sep, suffix = basename.rpartition('.')
         return basename
 
-    def set_id(self, username, origId='', token='', displayName='', email='', altid='', restrict=''):
+    def set_id(self, username, origId='', token='', displayName='', email='', altid='', restrict='', data={}):
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, restrict
+            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, restrict, data
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
             token = token + ',' + sliauth.gen_user_token(str(token), TESTUSER_ID)
-        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, restrict] );
+        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, restrict, base64.b64encode(json.dumps(data))] );
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
@@ -150,7 +152,7 @@ class UserIdMixin(object):
         else:
             return token == sliauth.gen_user_token(Options['auth_key'], username)
 
-    def get_id_from_cookie(self, orig=False, name=False, email=False, altid=False, prefix=False):
+    def get_id_from_cookie(self, orig=False, name=False, email=False, altid=False, prefix=False, data=False):
         # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
         if options.insecure_cookie:
             cookieStr = self.get_cookie(SERVER_COOKIE)
@@ -172,6 +174,8 @@ class UserIdMixin(object):
                 return comps[5] if len(comps) > 5 else ''
             if prefix:
                 return comps[6] if len(comps) > 6 else ''
+            if data:
+                return json.loads(base64.b64decode(comps[7])) if len(comps) > 7 else {}
             return origId if orig else userId
         except Exception, err:
             print >> sys.stderr, 'sdserver: COOKIE ERROR - '+str(err)
@@ -1256,7 +1260,10 @@ class AuthLoginHandler(BaseHandler):
                 token = sliauth.gen_user_token(Options['auth_key'], username)
         auth = self.check_access(username, token)
         if auth:
-            self.set_id(username, '', token, username)
+            data = {}
+            if Global.twitter_config:
+                data['site_twitter'] = Global.twitter_config['screen_name']
+            self.set_id(username, '', token, username, data=data)
             self.redirect(next)
         else:
             error_msg = "?error=" + tornado.escape.url_escape("Incorrect username or token")
@@ -1315,7 +1322,11 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
 
             username, prefix = self.get_alt_name(username)
             token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
-            self.set_id(username, user['email'], token, displayName, email=user['email'].lower(), restrict=prefix)
+            data = {}
+            if Global.twitter_config:
+                data['site_twitter'] = Global.twitter_config['screen_name']
+            self.set_id(username, user['email'], token, displayName, email=user['email'].lower(), restrict=prefix,
+                        data=data)
             self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
 

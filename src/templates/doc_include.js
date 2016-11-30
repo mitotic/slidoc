@@ -378,13 +378,22 @@ function getServerCookie() {
     var comps = slidocCookie.split(":");
     for (var j=0; j<comps.length; j++)
 	comps[j] = decodeURIComponent(comps[j]);
-    return {user:   comps[0],
-	    origid: comps.length > 1 ? comps[1] : '',
-	    token:  comps.length > 2 ? comps[2] : '',
-     	    name:   comps.length > 3 ? comps[3] : '',
-     	    email:  comps.length > 4 ? comps[4] : '',
-     	    altid:  comps.length > 5 ? comps[5] : ''
-	   };
+    var retval = {user:   comps[0],
+	      origid:    comps.length > 1 ? comps[1] : '',
+	      token:     comps.length > 2 ? comps[2] : '',
+     	      name:      comps.length > 3 ? comps[3] : '',
+     	      email:     comps.length > 4 ? comps[4] : '',
+     	      altid:     comps.length > 5 ? comps[5] : '',
+     	      restrict:  comps.length > 6 ? comps[6] : ''
+	     };
+    if (comps.length > 7 && comps[7]) {
+	try {
+	    retval.data = JSON.parse(atob(comps[7]));
+	} catch(err) {
+	    Slidoc.log('getServerCookie: ERROR '+err);
+	}
+    }
+    return retval;
 }
 
 function getParameter(name, number, queryStr) {
@@ -1151,15 +1160,37 @@ Sliobj.eventReceiver = function(eventMessage) {
 }
 
 Slidoc.interact = function() {
-    if (!isController() || Sliobj.session.submitted)
-	return;
+    var html = '';
+    if (!isController() || !Sliobj.session) {
+	html += 'Interactivity only available for admin-paced sessions';
+    } else if (Sliobj.session.submitted) {
+	html += 'Interactivity not available for submitted sessions';
+    } else {
+	var serverCookie = getServerCookie();
+	var siteTwitter = (serverCookie.data && serverCookie.data.site_twitter) ? serverCookie.data.site_twitter : '';
+	var interactURL = location.protocol+'//'+location.host+'/interact';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span><p></p>';
+	html += 'To interact:<ul>';
+	if (siteTwitter) {
+	    html += '<li>Text 40404: <code>d '+siteTwitter+' answer</code></li>';
+	    html += '<li>Twitter direct message @'+siteTwitter+': <code>answer</code></li>';
+	}
+	html += '<li>Browser: <a href="'+interactURL+'" target="_blank"><code>'+interactURL+'</code></a></li>';
+	html += '</ul>';
+    }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    interactAux(!Sliobj.interactive);
+    Slidoc.showPopup(html);
 }
 
-function interactAux(active) {
-    Slidoc.log('interactAux:', active, Sliobj.session.lastSlide);
+Slidoc.toggleInteract = function () {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    enableInteract(!Sliobj.interactive);
+}
+
+function enableInteract(active) {
+    Slidoc.log('enableInteract:', active, Sliobj.session.lastSlide);
     Sliobj.interactive = active;
     toggleClass(active, 'slidoc-interact-view');
     if (!Sliobj.interactive) {
@@ -1729,11 +1760,8 @@ Slidoc.manageSession = function() {
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
-    if (userId == Sliobj.params.testUserId || Sliobj.adminState) {
+    if (userId == Sliobj.params.testUserId || Sliobj.adminState)
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
-	if (Sliobj.session && !Sliobj.session.submitted && isController())
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.interact();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span><p></p>'
-    }
 
     if (Sliobj.adminState) {
 	html += hr;
@@ -3960,7 +3988,7 @@ function saveSessionAnswered(slide_id, qattrs) {
     Sliobj.session.lastTime = Date.now();
     if (isController()) {
 	if (Sliobj.interactive)
-	    interactAux(true);
+	    enableInteract(true);
 	Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
 
     } else if (!Sliobj.delaySec && Sliobj.params.slideDelay && MIN_ANSWER_NOTES_DELAY && allowDelay()) {
@@ -4650,7 +4678,7 @@ Slidoc.endPaced = function (reload) {
     }
     Slidoc.reportTestAction('endPaced');
     if (Sliobj.interactive)
-	interactAux(false);
+	enableInteract(false);
     sessionPut(null, null, {force: true, retry: 'end_paced', submit: true, reload: !!reload});
     showCompletionStatus();
     var answerElems = document.getElementsByClassName('slidoc-answer-button');
@@ -4939,7 +4967,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	} else if (isController()) {
 	    // Not last slide for test user in admin-paced; save lastSlide value
 	    if (Sliobj.interactive)
-		interactAux(true);
+		enableInteract(true);
 	    sessionPut();
 	    if (Sliobj.session.lastSlide > 1)
 		Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
