@@ -205,7 +205,7 @@ def pptx2md(file, filename='', img_dir=None, embed_slides=False, no_titles=False
 
                 if not no_titles and not prev_continued and (len(lines) == 1 or (len(lines) > 1 and not lines[1].strip())) and lines[0][0] not in ' #!' and lines[0].strip()[-1] not in '.?:':
                     # Automatic titles (use space in first line to suppress it)
-                    if not first_header:
+                    if slide_num == 1 and not first_header:
                         first_header = lines[0].strip()
                         md_text.append('# ')
                     else:

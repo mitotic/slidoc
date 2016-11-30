@@ -67,6 +67,8 @@ BASIC_PACE    = 1
 QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
+FUTURE_DATE = 'future'
+
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'letters': '&#x1f520;', 'lightning': '&#9889;', 'pencil': '&#9998;', 'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
@@ -999,7 +1001,7 @@ class SlidocRenderer(MathRenderer):
         post_header = ''
         hdr_prefix = ''
         clickable_secnum = False
-        if level <= 2 and not self.file_header:
+        if self.slide_number == 1 and level <= 2 and not self.file_header:
             # First (file) header
             if 'chapters' not in self.options['config'].strip:
                 hdr_prefix = '%d ' % self.options['filenumber']
@@ -1780,6 +1782,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
         sbuf = cStringIO.StringIO(source)
         slide_hash = []
         slide_lines = []
+        prev_hrule = True
         prev_blank = True
         slide_header = ''
         while True:
@@ -1791,6 +1794,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             if line.strip():
                 prev_blank = False
             else:
+                # Blank line
                 if prev_blank:
                     # Skip multiple blank lines (for digest computation)
                     continue
@@ -1800,12 +1804,16 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             lmatch = SLIDE_BREAK_RE.match(line)
             if lmatch:
                 if lmatch.group(1).startswith('---'):
+                    prev_hrule = True
                     new_slide = True
                     slide_header = ''
                 else:
-                    if slide_header:
+                    if not prev_hrule:
                         new_slide = True
                     slide_header = line
+                    prev_hrule = False
+            elif not prev_blank:
+                prev_hrule = False
 
             if new_slide:
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
@@ -2500,7 +2508,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if js_params['paceLevel']:
                 # Note: pace does not work with combined files
                 if file_config.release_date:
-                    release_date_str = sliauth.get_utc_date(file_config.release_date)
+                    release_date_str = file_config.release_date if file_config.release_date == FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
                 if file_config.due_date:
                     due_date_str = sliauth.get_utc_date(file_config.due_date)
 
@@ -2609,7 +2617,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
-        flist.append( (fname, outname, fheader, file_toc) )
+        flist.append( (fname, outname, release_date_str, fheader, file_toc) )
         
         comb_plugin_defs.update(renderer.plugin_defs)
         comb_plugin_loads.update(renderer.plugin_loads)
@@ -2636,6 +2644,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 sessions_due.sort(reverse=True)
                 due_html = []
                 for ind_fpath, ind_fname, doc_str, iso_due_str, iso_release_str in sessions_due:
+                    if iso_release_str == FUTURE_DATE:
+                        continue
                     release_epoch = 0
                     due_epoch = 0
                     if iso_release_str and iso_release_str != '-':
@@ -2689,9 +2699,12 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 file_type = 'paced'
 
             doc_str = file_type + ' exercise'
-
             iso_release_str = '-'
-            if release_date_str:
+
+            if release_date_str == FUTURE_DATE:
+                doc_str += ', not available'
+                iso_release_str = release_date_str
+            elif release_date_str:
                 release_date = sliauth.parse_date(release_date_str)
                 iso_release_str = sliauth.iso_date(release_date)
                 if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
@@ -2732,12 +2745,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + ('\n<script>\n%s</script>\n' % templates['wcloud.js']) + add_scripts
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
-                # Prefix index entry as comment
-                if js_params['paceLevel']:
-                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
-                else:
-                    index_entries = [fname, fheader, 'view', '-', '-']
-                head = '\n'.join([Index_prefix] + index_entries + [Index_suffix, head])
+                if release_date_str != FUTURE_DATE:
+                    # Prefix index entry as comment
+                    if js_params['paceLevel']:
+                        index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
+                    else:
+                        index_entries = [fname, fheader, 'view', '-', '-']
+                    head = '\n'.join([Index_prefix] + index_entries + [Index_suffix, head])
+
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
@@ -2819,10 +2834,12 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 toc_list.append(iso_release_str)
         else:
             # Create ToC using info from rendering
-            ifile = 0
-            for fname, outname, fheader, file_toc in flist:
-                ifile += 1
-                chapter_id = make_chapter_id(ifile)
+            for ifile, felem in enumerate(flist):
+                fname, outname, release_date_str, fheader, file_toc = felem
+                if release_date_str == FUTURE_DATE:
+                    # Future release files not accessible from ToC
+                    continue
+                chapter_id = make_chapter_id(ifile+1)
                 slide_link = ''
                 if fname not in paced_files and config.slides:
                     slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.site_url, fname+"-slides.html", 'slides')
@@ -2915,7 +2932,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 xref_list.append(("%-32s:" % tag)+', '.join(links)+'<br>')
 
             xref_list.append("<p></p><b>Primary concepts covered in each file:</b><br>")
-            for fname, outname, fheader, file_toc in flist:
+            for ifile, felem in enumerate(flist):
+                fname, outname, release_date_str, fheader, file_toc = felem
                 clist = covered_first[fname].keys()
                 clist.sort()
                 tlist = []
@@ -3210,7 +3228,7 @@ parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plu
 parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
-parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on local date yyyy-mm-ddThh:mm (append 'Z' for UTC) (test user always has access)")
+parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
 parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 parser.add_argument('--revision', metavar='REVISION', help='File revision')
 parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')

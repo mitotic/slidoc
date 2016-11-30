@@ -92,6 +92,8 @@ Global = Dummy()
 Global.rename = {}
 Global.backup = None
 
+FUTURE_DATE = 'future'
+
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
@@ -1156,18 +1158,18 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Paths containing '/_private' are always protected
             sessionName = self.get_path_base(self.request.path)
             errMsg = ''
-            if not Options['dry_run'] and userId != TESTUSER_ID and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
-                # Check release date for session in index (test user always has access, allowing delayed release of live lectures)
+            if not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+                # Check release date for session in index (admin/test user always has access, allowing delayed release of live lectures and exams)
                 try:
                     sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['releaseDate']:
-                        remaining_ms = sliauth.epoch_ms(sessionEntries['releaseDate']) - sliauth.epoch_ms()
-                        if remaining_ms > 0:
-                            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet available' % sessionName
-                            if userId == ADMINUSER_ID:
-                                errMsg = 'Session %s will be available in %ds (test user always has access)' % (sessionName, int(remaining_ms/1000))
-                            else:
+                        if sessionEntries['releaseDate'].strip() == FUTURE_DATE:
+                            errMsg = 'Session %s unavailable' % sessionName
+                        else:
+                            remaining_ms = sliauth.epoch_ms(sessionEntries['releaseDate']) - sliauth.epoch_ms()
+                            if remaining_ms > 0:
                                 errMsg = 'Session %s not yet available' % sessionName
+                                print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet available' % sessionName
                 except Exception, excp:
                     pass
 

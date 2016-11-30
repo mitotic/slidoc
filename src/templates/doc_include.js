@@ -457,7 +457,7 @@ function pageSetup() {
     var indexElems = document.getElementsByClassName('slidoc-index-entry');
     for (var j=0; j<indexElems.length; j++) {
 	var elem = indexElems[j];
-	var releaseTime = parseNumber(elem.dataset.release || 0);
+	var releaseTime = parseNumber(elem.dataset.release) || 0;
 	var dueTime = parseNumber(elem.dataset.due || 0);
 	var curTime = (new Date()).getTime() / 1000;
 	if (releaseTime && curTime < releaseTime)
