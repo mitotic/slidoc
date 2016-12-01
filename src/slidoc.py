@@ -2822,7 +2822,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                     abort('Output file '+outpath+' not readable for indexing')
                 index_entries = read_index(outpath)
                 if not index_entries:
-                    abort('Index header not found in '+outpath)
+                    message('Index header not found in '+outpath)
+                    continue
                 _, fheader, doc_str, iso_due_str, iso_release_str = index_entries[0]
                 doc_link = ''
                 if doc_str:

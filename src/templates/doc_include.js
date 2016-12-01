@@ -22,6 +22,8 @@ var CACHE_GRADING = true; // If true, cache all rows for grading
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
+var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide'];
+
 var BASIC_PACE    = 1;
 var QUESTION_PACE = 2;
 var ADMIN_PACE    = 3;
@@ -813,7 +815,7 @@ Slidoc.resetPaced = function () {
 	if (!Slidoc.testingActive() && !window.confirm('Re-confirm session reset for user '+userId+'?'))
 	    return false;
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.delRow(userId, resetSessionCallback); // Will reload page after delete
+	gsheet.getRow(userId, {resetrow: 1}, resetSessionCallback); // Will reload page after reset
 
     } else {
 	Sliobj.session = createSession();
@@ -825,9 +827,13 @@ Slidoc.resetPaced = function () {
 	location.reload(true);
 }
 
-function resetSessionCallback() {
-    Slidoc.log('resetSessionCallback:');
-    location.reload(true);
+function resetSessionCallback(result, retStatus) {
+    Slidoc.log('resetSessionCallback:', result, retStatus);
+    if (!result) {
+	alert('Error in resetting session: '+retStatus.error);
+    } else {
+	location.reload(true);
+    }
 }
 
 Slidoc.showConcepts = function (msg) {
@@ -1747,6 +1753,8 @@ Slidoc.manageSession = function() {
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
+	if (Sliobj.session && isNumber(Sliobj.session.retakesRemaining))
+	    html += 'Retakes remaining: <code>'+Sliobj.session.retakesRemaining+'</code><br>';
 	if (Sliobj.voteDate)
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
 	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && isNumber(Sliobj.feedback.q_grades))
@@ -2716,6 +2724,7 @@ function createSession() {
 	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
+	    'retakesRemaining': '',
 	    'randomSeed': Slidoc.Random.getRandomSeed(), // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
             'startTime': Date.now(),
@@ -2751,12 +2760,10 @@ function packSession(session) {
     // Converts session to row for transmission to sheet
     Slidoc.log('packSession:', session);
     var rowObj = {};
-    for (var j=0; j<Sliobj.params.sessionFields.length; j++) {
-	var header = Sliobj.params.sessionFields[j];
-	if (!header.match(/_hidden$/) && !header.match(/Timestamp$/)) {
-	    if (header in session)
-		rowObj[header] = session[header];
-	}
+    for (var j=0; j<COPY_HEADERS.length; j++) {
+	var header = COPY_HEADERS[j];
+	if (header in session)
+	    rowObj[header] = session[header];  // Note: displayName is not copied
     }
     // Copy session to allow deletion of fields from questionAttempted objects
     var sessionCopy = copyObj(session);
@@ -2814,10 +2821,10 @@ function unpackSession(row) {
 
     var session = JSON.parse(session_hidden);
     session.displayName = row.name || '';
-    session.source = row.source || '';
-    session.team = row.team || '';
-    session.lateToken = row.lateToken || '';
-    session.lastSlide = row.lastSlide || 0;
+    for (var j=0; j<COPY_HEADERS.length; j++) {
+	var header = COPY_HEADERS[j];
+	session[header] = (header == 'lastSlide') ? (row[header]||0) : (row[header]||'');
+    }
 
     if (row.submitTimestamp) {
 	session.submitted = row.submitTimestamp;
@@ -3085,6 +3092,9 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 
 	    if (retStatus.info.team && Sliobj.session) {
 		Sliobj.session.team = retStatus.info.team;
+	    }
+	    if (retStatus.info.retakesRemaining && Sliobj.session) {
+		Sliobj.session.retakesRemaining = retStatus.info.retakesRemaining;
 	    }
 	    if (retStatus.info.submitTimestamp) {
 		if (!Sliobj.session && window.confirm('Internal error in submit timestamp'))

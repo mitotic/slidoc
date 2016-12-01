@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7b';
+var VERSION = '0.96.7c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -102,6 +102,8 @@ var RESCALE_ID = '_rescale';
 var TESTUSER_ID = '_test_user';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
+var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide'];
+
 var TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', ''];
 
 var SETTINGS_SHEET = 'settings_slidoc';
@@ -258,6 +260,7 @@ function sheetAction(params) {
     // all: 1 to retrieve all rows
     // create: 1 to create and initialize non-existent rows (for get/put)
     // delrow: 1 to delete row
+    // resetrow: 1 to reset row (for get)
     // late: lateToken (set when creating row)
     // Can add row with fewer columns than already present.
     // This allows user to add additional columns without affecting script actions.
@@ -560,6 +563,7 @@ function sheetAction(params) {
 	    var createRow = params.create || '';
 	    var nooverwriteRow = params.nooverwrite || '';
 	    var delRow = params.delrow || '';
+	    var resetRow = params.resetrow || '';
 	    var importSession = params.import || '';
 	    
 	    var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
@@ -1047,9 +1051,41 @@ function sheetAction(params) {
 	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
 		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
 
-	    var teamCol = columnIndex.team;
+	    var retakesCol = columnIndex['retakes'];
+	    if (resetRow) {
+		// Reset row
+		if (!userRow)
+		    throw('Error:RETAKES:Cannot reset new row');
+		if (!sessionEntries)
+		    throw('Error:RETAKES:Reset only allowed for sessions');
+		newRow = true;
 
-	    if (newRow && !rowUpdates && createRow) {
+		var origVals = modSheet.getRange(userRow, 1, 1, columnHeaders.length).getValues()[0];
+		if (adminUser || paramId == TESTUSER_ID) {
+		    // For admin or test user, do not update retakes count
+		    var retakesVal = retakesCol ? origVals[retakesCol-1] : '';
+		} else {
+		    if (origVals[columnIndex['submitTimestamp']-1])
+			throw('Error:RETAKES:Retakes not allowed for submitted sessions');
+		    if (!sessionAttributes.params.maxRetakes || !retakesCol || !isNumber(origVals[retakesCol-1]))
+			throw('Error:RETAKES:Retakes not allowed');
+		    var retakesVal = parseNumber(origVals[retakesCol-1]);
+		    if (!retakesVal)
+			throw('Error:RETAKES:No more retakes available');
+		    retakesVal = retakesVal - 1;
+		}
+
+		createRow = origVals[columnIndex['source']-1];
+		rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
+					      userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1], origVals[columnIndex['altid']-1], createRow);
+
+		// Preserve name, lateToken and update retake count on reset
+		rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1];
+		rowUpdates[columnIndex['lateToken']-1] = params.late || origVals[columnIndex['lateToken']-1];
+		if (retakesCol)
+		    rowUpdates[retakesCol-1] = retakesVal;
+
+	    } else if (newRow && !rowUpdates && createRow) {
 		// Initialize new row
 		if (sessionEntries) {
 		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
@@ -1058,19 +1094,23 @@ function sheetAction(params) {
 		    if (params.late && columnIndex['lateToken'])
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
 
-                    if (teamCol && sessionAttributes.sessionTeam == 'roster') {
-			// Copy team name from roster
-			var teamName = lookupRoster('team', userId);
-			if (teamName) {
-                            rowUpdates[teamCol-1] = teamName;
-			}
-                    }
+		    if (retakesCol && sessionAttributes.params.maxRetakes)
+			rowUpdates[retakesCol-1] = sessionAttributes.params.maxRetakes;
 		} else {
 		    rowUpdates = [];
 		    for (var j=0; j<columnHeaders.length; j++)
 			rowUpdates[j] = null;
 		}
 	    }
+
+	    var teamCol = columnIndex.team;
+            if (newRow && rowUpdates && teamCol && sessionAttributes && sessionAttributes.sessionTeam == 'roster') {
+		// Copy team name from roster
+		var teamName = lookupRoster('team', userId);
+		if (teamName) {
+                    rowUpdates[teamCol-1] = teamName;
+		}
+            }
 
 	    if (newRow && getRow && !rowUpdates) {
 		// Row does not exist; return empty list
@@ -1161,7 +1201,7 @@ function sheetAction(params) {
 		    }
 		}
 
-		if (newRow) {
+		if (newRow && !resetRow) {
 		    // New user; insert row in sorted order of name (except for log files)
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
@@ -1239,7 +1279,9 @@ function sheetAction(params) {
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
-			if (colHeader == 'Timestamp') {
+			if (colHeader == 'retakes') {
+			    // Retakes are always updated separately
+			} else if (colHeader == 'Timestamp') {
 			    // Timestamp is always updated, unless it is explicitly specified by admin
 			    if (adminUser && colValue) {
 				rowValues[j] = createDate(colValue);
@@ -1472,8 +1514,13 @@ function sheetAction(params) {
                 if ((paramId != TESTUSER_ID || prevSubmitted) && sessionEntries && adminPaced)
                     returnInfo['adminPaced'] = adminPaced;
 
-		// Return updated timestamp
+		// Return updated timestamp and retakes
 		returnInfo.timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
+		if ('retakes' in columnIndex) {
+		    var retakesVal = rowValues[columnIndex['retakes']-1];
+		    if (isNumber(retakesVal))
+			returnInfo.retakesRemaining = parseNumber(retakesVal);
+		}
 		
 		returnValues = getRow ? rowValues : [];
 
@@ -1529,6 +1576,7 @@ function createSession(sessionName, params) {
 	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
+	    'retakesRemaining': '',
 	    'randomSeed': getRandomSeed(),              // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
             'startTime': Date.now(),
@@ -1554,12 +1602,10 @@ function createSessionRow(sessionName, fieldsMin, params, userId, displayName, e
     var session = createSession(sessionName, params);
     var rowVals = [];
     for (var j=0; j<headers.length; j++) {
+	rowVals[j] = '';
 	var header = headers[j];
-	rowVals[j] = null;
-	if (!header.match(/_hidden$/) && !header.match(/Timestamp$/)) {
-	    if (header in session)
-		rowVals[j] = session[header];
-	}
+	if (header in session && COPY_HEADERS.indexOf(header) >= 0)
+	    rowVals[j] = session[header];
     }
     rowVals[headers.indexOf('source')] = source || '';
     rowVals[headers.indexOf('session_hidden')] = JSON.stringify(session);
@@ -2342,14 +2388,8 @@ function unpackSession(headers, row) {
 	var header = headers[j];
 	if (header == 'name')
 	    session.displayName = row[j];
-	if (header == 'source')
-	    session.source = row[j];
-	if (header == 'team')
-	    session.team = row[j];
-	if (header == 'lateToken')
-	    session.lateToken = row[j];
-	else if (header == 'lastSlide')
-	    session.lastSlide = row[j];
+	if (COPY_HEADERS.indexOf(header) >= 0)
+	    session[header] = (header == 'lastSlide') ? (row[j]||0) : (row[j]||'');
 	else if (row[j]) {
 	    var hmatch = QFIELD_RE.exec(header);
 	    if (hmatch && (hmatch[2] == 'response' || hmatch[2] == 'explain' || hmatch[2] == 'plugin')) {
@@ -2899,23 +2939,27 @@ function updateScores(sessionNames, interactive) {
 	    if (!paceLevel)
 		continue;
 
-	    // Update answers/stats sheets
+	    // Update answers/stats sheets (if already present)
 	    var ansName = sessionName+'-answers';
-	    try {
-		deleteSheet(ansName);
-		updateAnswers(sessionName);
-	    } catch(err) {
-		if (interactive)
-		    notify('Error in creating sheet '+ansName+': '+err, 'Slidoc Answers');
+	    if (getSheet(ansName)) {
+		try {
+		    deleteSheet(ansName);
+		    updateAnswers(sessionName);
+		} catch(err) {
+		    if (interactive)
+			notify('Error in updating sheet '+ansName+': '+err, 'Slidoc Answers');
+		}
 	    }
 
 	    var statsName = sessionName+'-stats';
-	    try {
-		deleteSheet(statsName);
-		updateStats(sessionName);
-	    } catch(err) {
-		if (interactive)
-		    notify('Error in creating sheet '+statsName+': '+err, 'Slidoc Stats');
+	    if (getSheet(statsName)) {
+		try {
+		    deleteSheet(statsName);
+		    updateStats(sessionName);
+		} catch(err) {
+		    if (interactive)
+			notify('Error in updating sheet '+statsName+': '+err, 'Slidoc Stats');
+		}
 	    }
 
 	    if (sessionWeight !== null && !sessionWeight) // sessionWeight is only used to decide whether to score

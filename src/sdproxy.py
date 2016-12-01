@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7b'
+VERSION = '0.96.7c'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -73,6 +73,8 @@ RESCALE_ID = '_rescale'
 TESTUSER_ID = '_test_user'   #var
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
+COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide']
+
 TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']  #var
 
 SETTINGS_SHEET = 'settings_slidoc'
@@ -738,6 +740,7 @@ def sheetAction(params, notrace=False):
     # all: 1 to retrieve all rows
     # create: 1 to create and initialize non-existent rows (for get/put)
     # delrow: 1 to delete row
+    # resetrow: 1 to reset row (for get)
     # late: lateToken (set when creating row)
     # Can add row with fewer columns than already present.
     # This allows user to add additional columns without affecting script actions.
@@ -909,6 +912,7 @@ def sheetAction(params, notrace=False):
             createRow = params.get('create', '')
             nooverwriteRow = params.get('nooverwrite','')
             delRow = params.get('delrow','')
+            resetRow = params.get('resetrow','')
             importSession = params.get('import','')
 
             columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
@@ -961,8 +965,8 @@ def sheetAction(params, notrace=False):
                         startCol = nTemCols+1
                         nCols = len(headers)-startCol+1
                         modSheet.appendColumns(headers[nTemCols:])
-                        ##modSheet.insertColumnsAfter(startCol-1, nCols);
-                        ##modSheet.getRange(1, startCol, 1, nCols).setValues([ headers.slice(nTemCols) ]);
+                        ##modSheet.insertColumnsAfter(startCol-1, nCols)
+                        ##modSheet.getRange(1, startCol, 1, nCols).setValues([ headers.slice(nTemCols) ])
 
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
@@ -1135,7 +1139,7 @@ def sheetAction(params, notrace=False):
                 if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
 
-                votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate);
+                votingCompleted = voteDate and sliauth.epoch_ms(voteDate) < sliauth.epoch_ms(curDate)
 
                 voteParam = shareParams.get('vote')
                 tallyVotes = voteParam and (adminUser or voteParam == 'show_live' or (voteParam == 'show_completed' and votingCompleted))
@@ -1338,25 +1342,61 @@ def sheetAction(params, notrace=False):
             if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
                 raise Exception("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'")
 
-            teamCol = columnIndex.get('team')
-            if newRow and (not rowUpdates) and createRow:
+            retakesCol = columnIndex.get('retakes')
+            if resetRow:
+                # Reset row
+                if not userRow:
+                    raise Exception('Error:RETAKES:Cannot reset new row')
+                if not sessionEntries:
+                    raise Exception('Error:RETAKES:Reset only allowed for sessions')
+                newRow = True
+
+                origVals = modSheet.getRange(userRow, 1, 1, len(columnHeaders)).getValues()[0]
+                if adminUser or paramId == TESTUSER_ID:
+                    # For admin or test user, do not update retakes count
+                    retakesVal = origVals[retakesCol-1] if retakesCol else ''
+                else:
+                    if origVals[columnIndex['submitTimestamp']-1]:
+                        raise Exception('Error:RETAKES:Retakes not allowed for submitted sessions')
+                    if not sessionAttributes['params'].get('maxRetakes') or not retakesCol or not isNumber(origVals[retakesCol-1]):
+                        raise Exception('Error:RETAKES:Retakes not allowed')
+                    retakesVal = parseNumber(origVals[retakesCol-1])
+                    if not retakesVal:
+                        raise Exception('Error:RETAKES:No more retakes available')
+                    retakesVal = retakesVal - 1
+
+                createRow = origVals[columnIndex['source']-1]
+                rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
+                                              userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1], origVals[columnIndex['altid']-1], createRow)
+
+                # Preserve name, lateToken and update retake count on reset
+                rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1]
+                rowUpdates[columnIndex['lateToken']-1] = params.get('late') or origVals[columnIndex['lateToken']-1]
+                if retakesCol:
+                    rowUpdates[retakesCol-1] = retakesVal
+
+            elif newRow and (not rowUpdates) and createRow:
                 # Initialize new row
                 if sessionEntries:
                     rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
-                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''), createRow);
+                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''), createRow)
                     displayName = rowUpdates[columnIndex['name']-1] or ''
                     if params.get('late') and columnIndex.get('lateToken'):
                         rowUpdates[columnIndex['lateToken']-1] = params['late']
 
-                    if teamCol and sessionAttributes.get('sessionTeam') == 'roster':
-                        # Copy team name from roster
-                        teamName = lookupRoster('team', userId)
-                        if teamName:
-                            rowUpdates[teamCol-1] = teamName
+                    if retakesCol and sessionAttributes['params'].get('maxRetakes'):
+                        rowUpdates[retakesCol-1] = sessionAttributes['params']['maxRetakes']
                 else:
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
                         rowUpdates[j] = None
+
+            teamCol = columnIndex.get('team')
+            if newRow and rowUpdates and teamCol and sessionAttributes and sessionAttributes.get('sessionTeam') == 'roster':
+                # Copy team name from roster
+                teamName = lookupRoster('team', userId)
+                if teamName:
+                    rowUpdates[teamCol-1] = teamName
 
             if newRow and getRow and not rowUpdates:
                 # Row does not exist return empty list
@@ -1379,7 +1419,7 @@ def sheetAction(params, notrace=False):
                     fieldsMin = sessionEntries.get('fieldsMin')
 
                     if rowUpdates and not nooverwriteRow and prevSubmitted:
-                        raise Exception("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'");
+                        raise Exception("Error::Cannot re-submit session for user "+userId+" in sheet '"+sheetName+"'")
 
                     if voteDate:
                         returnInfo['voteDate'] = voteDate
@@ -1440,7 +1480,7 @@ def sheetAction(params, notrace=False):
                             elif (sliauth.epoch_ms(dueDate) - curTime) < 2*60*60*1000:
                                 returnMessages.append("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline (%s) for session '%s'." % (dueDate, sheetName))
 
-                if newRow:
+                if newRow and not resetRow:
                     # New user; insert row in sorted order of name (except for log files)
                     if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
                         raise Exception('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName)
@@ -1519,7 +1559,10 @@ def sheetAction(params, notrace=False):
                     for j in range(len(rowUpdates)):
                         colHeader = columnHeaders[j]
                         colValue = rowUpdates[j]
-                        if colHeader == 'Timestamp':
+                        if colHeader == 'retakes':
+                            # Retakes are always updated separately
+                            pass
+                        elif colHeader == 'Timestamp':
                             # Timestamp is always updated, unless it is explicitly specified by admin
                             if adminUser and colValue:
                                 rowValues[j] = createDate(colValue)
@@ -1678,7 +1721,7 @@ def sheetAction(params, notrace=False):
                                 otherCol = columnIndex.get('q_other')
                                 if not rowValues[headerColumn-1] and otherCol and sessionEntries.get('otherWeight') and sessionAttributes.get('shareAnswers'):
                                     # Tally newly added vote
-                                    qshare = sessionAttributes['shareAnswers'].get(colHeader.split('_')[0]);
+                                    qshare = sessionAttributes['shareAnswers'].get(colHeader.split('_')[0])
                                     if qshare:
                                         rowValues[otherCol-1] = str(int(rowValues[otherCol-1] or 0) + qshare.get('voteWeight',0))
                                         modSheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
@@ -1735,8 +1778,12 @@ def sheetAction(params, notrace=False):
                 if (paramId != TESTUSER_ID or prevSubmitted) and sessionEntries and adminPaced:
                     returnInfo['adminPaced'] = adminPaced
 
-                # Return updated timestamp
+                # Return updated timestamp and retakes
                 returnInfo['timestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex) else None
+                if 'retakes' in columnIndex:
+                    retakesVal = rowValues[columnIndex['retakes']-1]
+                    if isNumber(retakesVal):
+                        returnInfo['retakesRemaining'] = parseNumber(retakesVal)
 
                 returnValues = rowValues if getRow else []
 
@@ -1785,6 +1832,7 @@ def createSession(sessionName, params):
 	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
+        'retakesRemaining': '',
 	    'randomSeed': getRandomSeed(),                     # Save random seed
         'expiryTime': sliauth.epoch_ms() + 180*86400*1000, # 180 day lifetime
         'startTime': sliauth.epoch_ms(),
@@ -1807,11 +1855,11 @@ def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', ema
     altidCol = headers.index('altid') + 1
     session = createSession(sessionName, params)
     rowVals = []
-    for header in headers:
-        rowVals.append(None)
-        if not header.endswith('_hidden') and not header.endswith('Timestamp'):
-            if header in session:
-                rowVals[-1] = session[header]
+    for j in range(len(headers)):
+        rowVals.append('')
+        header = headers[j]
+        if header in session and header in COPY_HEADERS:
+            rowVals[j] = session[header]
 
     rowVals[headers.index('source')] = source
     rowVals[headers.index('session_hidden')] = json.dumps(session)
@@ -1999,7 +2047,7 @@ def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
             raise Exception('Error in setting late token for user '+userId+': '+retval.get('error'))
 
 def createQuestionAttempted(response):
-    return {'response': response or ''};
+    return {'response': response or ''}
 
 
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
