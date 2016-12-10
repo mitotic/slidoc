@@ -17,13 +17,19 @@ If notes portion of the begins with Slidoc:,
     Use ![image1](image_name 'height=200') to embed specific image from main slide (can also specify height in title)
     Note: image_name is optional in the above and may be omitted if using a default name derived from the file name.
           If specified, image_name should be unique and should not include the extension.
-    Use CONTINUED at end of notes to continue current Slidoc slide into next pptx slide (to embed multiple slide images)
+    Use SlideContinue: at end of notes to continue current Slidoc slide into next pptx slide (to embed multiple slide images)
 
 If the second line in notes portion following the Slidoc: line starts with SlideText:, insert all text in the slide there
 
 The first line of text in the slide is used as the title, if it is the only line or if its followed by a blank line.
 (To have a slide without a title, split the text into at least two lines.)
 
+--------------------------------------------------------------------------
+Inspired by the one-line bash script for extracting text from a .pptx file:
+    http://superuser.com/questions/661315/tools-to-extract-text-from-powerpoint-pptx-in-linux
+    unzip -qc "$1" ppt/slides/slide*.xml | grep -oP '(?<=\<a:t\>).*?(?=\</a:t\>)'
+(The power of the command line!)
+    
 """
 
 from __future__ import print_function
@@ -185,8 +191,8 @@ def pptx2md(file, filename='', img_dir=None, embed_slides=False, no_titles=False
                     extra_str = text_str
                 text_str = '![image0]()\n'
 
-            if text_str.endswith('CONTINUED'):
-                text_str = text_str[:-len('CONTINUED')].strip()
+            if text_str.endswith('SlideContinue:'):
+                text_str = text_str[:-len('SlideContinue:')].strip()
                 continued = True
             else:
                 continued = False
@@ -266,6 +272,7 @@ def pptx2md(file, filename='', img_dir=None, embed_slides=False, no_titles=False
 
             md_text.append('\n')
             if not continued:
+                # End slide
                 if notes_str:
                     nmatch = re.match(r'^\d+', notes_str)
                     if nmatch:

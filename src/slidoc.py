@@ -70,7 +70,7 @@ ADMIN_PACE    = 3
 FUTURE_DATE = 'future'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
-        'gear': '&#9881;', 'letters': '&#x1f520;', 'lightning': '&#9889;', 'pencil': '&#9998;', 'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
+        'gear': '&#9881;', 'letters': '&#x1f520;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;', 'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
@@ -654,6 +654,7 @@ class SlidocRenderer(MathRenderer):
     <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-adminonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
     <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded">%(gweight)s</span>
+    <button id="%(sid)s-grademax" class="slidoc-clickable slidoc-button slidoc-grademax slidoc-gradingonly" onclick="Slidoc.gradeMax(this,'%(sid)s','%(gweight)s');">&#x2714;</button>
   </div>
 '''
     comments_template_a = '''
@@ -2481,7 +2482,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             # Separate files (may also be paced)
 
             # Merge file config with command line
-            file_config = parse_merge_args(read_first_line(fhandle), fname, parser, vars(config), include_args=Select_file_args,
+            file_config = parse_merge_args(read_first_line(fhandle), fname, Conf_parser, vars(config), include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
 
             if config.preview:
@@ -2504,6 +2505,33 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             if 'keep_extras' in file_config.features and config.gsheet_url:
                 abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')
 
+            file_config_vars = vars(file_config)
+            settings_list = []
+            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'site_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
+            arg_names = file_config_vars.keys()
+            arg_names.sort()
+            for name in arg_names:
+                value = file_config_vars[name]
+                if name in exclude:
+                    continue
+                if name in Cmd_defaults:
+                    if value == Cmd_defaults[name]:
+                        continue
+                elif value == Conf_parser.get_default(name):
+                    continue
+                # Non-default conf setting
+                if isinstance(value, set):
+                    if value:
+                        temvals = list(value)
+                        temvals.sort()
+                        settings_list.append('--'+name+'='+','.join(temvals))
+                elif isinstance(value, bool):
+                    if value:
+                        settings_list.append('--'+name)
+                else:
+                    settings_list.append('--'+name+'='+str(value))
+            message(fname+' settings: '+' '.join(settings_list))
+                    
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
             if js_params['paceLevel']:
@@ -3097,6 +3125,7 @@ def read_first_line(file):
     return first_line
 
 def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
+    # Read file args and merge with command line args, with command line args being final
     if first_line:
         match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', args_text)
         if match:
@@ -3197,87 +3226,88 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
 
-parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
-parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
-parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
-parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
-parser.add_argument('--backup_dir', default='_backup', help='Directory to create backup files for last valid version in when dest_dir is specified')
-parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
-parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
-parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
-parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
-parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
-parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
-parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
-parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
-parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
-parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
-parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
-parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: _images)')
-parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
-parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
-parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
-parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
-parser.add_argument('--media_url', metavar='URL', help='URL for media')
-parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,...', help='Sessions with questions to be modified')
-parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
-parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')
-parser.add_argument('--participation_credit', type=int, metavar='INTEGER', help='Participation credit: 0 (none), 1 (per question), 2 (for whole session)')
-parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
-parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
-parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
-parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
-parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
-parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
-parser.add_argument('--revision', metavar='REVISION', help='File revision')
-parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
-parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
-parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
-parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
-parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
-parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
-parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
-parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
-parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
-parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
+Conf_parser = argparse.ArgumentParser(add_help=False)
+Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
+Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
+Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
+Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
+Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
+Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
+Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
+Conf_parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
+Conf_parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: _images)')
+Conf_parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
+Conf_parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
+Conf_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
+Conf_parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
+Conf_parser.add_argument('--media_url', metavar='URL', help='URL for media')
+Conf_parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')
+Conf_parser.add_argument('--participation_credit', type=int, metavar='INTEGER', help='Participation credit: 0 (none), 1 (per question), 2 (for whole session)')
+Conf_parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
+Conf_parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
+Conf_parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+Conf_parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
+Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
+Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
+Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
+Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
+Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
+Conf_parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
+Conf_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
+Conf_parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
+Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 
-alt_parser = argparse.ArgumentParser(parents=[parser], add_help=False)
+alt_parser = argparse.ArgumentParser(parents=[Conf_parser], add_help=False)
+alt_parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
+alt_parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
+alt_parser.add_argument('--backup_dir', default='_backup', help='Directory to create backup files for last valid version in when dest_dir is specified')
+alt_parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
+alt_parser.add_argument('--copy_source', help='Create a modified copy (only if dest_dir is specified)', action="store_true", default=None)
+alt_parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
+alt_parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
+alt_parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
+alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,...', help='Sessions with questions to be modified')
+alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
+alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
+alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
+alt_parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
+alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
+alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
+alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
 cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
-def cmd_args2dict(cmd_args):
-    # Some arguments need to be set explicitly to '' by default, rather than staying as None
-    cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', 'image_url': '',
-                    'site_url': ''}
+# Some arguments need to be set explicitly to '' by default, rather than staying as None
+Cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', 'image_url': '',
+                'site_url': ''}
     
+def cmd_args2dict(cmd_args):
     # Assign default (non-None) values to arguments not specified anywhere
-    for arg_name in cmd_defaults:
+    for arg_name in Cmd_defaults:
         if getattr(cmd_args, arg_name) == None:
-            setattr(cmd_args, arg_name, cmd_defaults[arg_name]) 
+            setattr(cmd_args, arg_name, Cmd_defaults[arg_name]) 
 
     return vars(cmd_args)
 
 if __name__ == '__main__':
     cmd_args_orig = cmd_parser.parse_args()
     if cmd_args_orig.config:
-        cmd_args = parse_merge_args(md2md.read_file(cmd_args_orig.config), cmd_args_orig.config, parser, vars(cmd_args_orig),
+        cmd_args = parse_merge_args(md2md.read_file(cmd_args_orig.config), cmd_args_orig.config, Conf_parser, vars(cmd_args_orig),
                                     verbose=cmd_args_orig.verbose)
     else:
         # Read default args from first line of first file
         # Do not exclude args if combined file
         exclude_args = Select_file_args if cmd_args_orig.all is None else None
-        cmd_args = parse_merge_args(read_first_line(cmd_args_orig.file[0]), cmd_args_orig.file[0].name, parser, vars(cmd_args_orig),
+        cmd_args = parse_merge_args(read_first_line(cmd_args_orig.file[0]), cmd_args_orig.file[0].name, Conf_parser, vars(cmd_args_orig),
                                     exclude_args=exclude_args, first_line=True, verbose=cmd_args_orig.verbose)
 
     config_dict = cmd_args2dict(cmd_args)
