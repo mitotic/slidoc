@@ -237,7 +237,7 @@ function setupCache(auth, callback) {
 	if (Sliobj.params.paceLevel >= ADMIN_PACE && retStatus.info.adminPaced)
 	    Sliobj.adminPaced = retStatus.info.adminPaced;
 	if (retStatus.info.maxLastSlide)
-	    Sliobj.maxLastSlide = retStatus.info.maxLastSlide;
+	    Sliobj.maxLastSlide = Math.min(retStatus.info.maxLastSlide, Sliobj.params.pacedSlides);
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -2847,7 +2847,10 @@ function unpackSession(row) {
     session.displayName = row.name || '';
     for (var j=0; j<COPY_HEADERS.length; j++) {
 	var header = COPY_HEADERS[j];
-	session[header] = (header == 'lastSlide') ? (row[header]||0) : (row[header]||'');
+	if (header == 'lastSlide')
+	    session[header] =  Math.min(row[header]||0, Sliobj.params.pacedSlides);
+	else
+	    session[header] = row[header] || '';
     }
 
     if (row.submitTimestamp) {

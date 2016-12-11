@@ -17,7 +17,7 @@ DO NOT specify  --proxy_url=/_websocket
 
 NOTE:
 
-1. The OS X Carbon version seems to work better
+1. The OS X Carbon (32-bit) version seems to work better
 
 2. Inserting very large figures messes up the fonts. Resize figures for better results.
 

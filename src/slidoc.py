@@ -290,7 +290,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     plugin_embed  =   re.compile(r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
-    slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w+)\s+(.*?)-->\s*?\n')
+    slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
@@ -386,6 +386,9 @@ class MathBlockLexer(mistune.BlockLexer):
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
+
+    def parse_hrule(self, m):
+        self.tokens.append({'type': 'hrule', 'text': m.group(0).strip()})
 
     def parse_minirule(self, m):
         self.tokens.append({'type': 'minirule'})
@@ -551,6 +554,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_extra(self):
         return self.renderer.slidoc_extra(self.token['name'], self.token['text'])
 
+    def output_hrule(self):
+        return self.renderer.hrule(self.token['text'])
+
     def output_minirule(self):
         return self.renderer.minirule()
 
@@ -582,7 +588,8 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
-        return self.renderer.slide_prefix(self.renderer.first_id)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_slide(last_slide=True)
+        classes =  'slidoc-single-column' if 'two_column' in self.renderer.options['config'].features else ''
+        return self.renderer.slide_prefix(self.renderer.first_id, classes)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_slide(last_slide=True)
 
     
 class MathRenderer(mistune.Renderer):
@@ -826,7 +833,7 @@ class SlidocRenderer(MathRenderer):
         # Slides need to be unhidden in Javascript
         return '\n<section id="%s" class="slidoc-slide %s-slide %s" style="display: none;"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
 
-    def hrule(self, implicit=False):
+    def hrule(self, text='---', implicit=False):
         """Rendering method for ``<hr>`` tag."""
         if self.choice_end:
             prefix = self.choice_end
@@ -841,7 +848,15 @@ class SlidocRenderer(MathRenderer):
         end_html = self.end_slide(rule_html)
         self._new_slide()
         new_slide_id = self.get_slide_id()
-        return end_html + self.slide_prefix(new_slide_id) + concept_chain(new_slide_id, self.options['config'].site_url)
+
+        classes = []
+        if text.startswith('----'):
+            if 'slide_break_page' not in self.options['config'].features:
+                classes.append('slidoc-page-break-before')
+            if 'two_column' in self.options['config'].features:
+                classes.append('slidoc-single-column')
+
+        return end_html + self.slide_prefix(new_slide_id, ' '.join(classes)) + concept_chain(new_slide_id, self.options['config'].site_url)
 
     def end_slide(self, suffix_html='', last_slide=False):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
@@ -1767,8 +1782,8 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-SLIDE_BREAK_RE = re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
-HRULE_BREAK_RE = re.compile(r'(\S\s*\n)( {0,3}----* *(\n|$))')
+SLIDE_BREAK_RE =  re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
+HRULE_BREAK_RE =  re.compile(r'(\S\s*\n)( {0,3}----* *(\n|$))')
     
 def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
     """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
@@ -1784,6 +1799,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
         sbuf = cStringIO.StringIO(source)
         slide_hash = []
         slide_lines = []
+        first_slide = True
         prev_hrule = True
         prev_blank = True
         slide_header = ''
@@ -1792,6 +1808,10 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             if not line:
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 break
+
+            if first_slide and MathBlockGrammar.slidoc_header.match(line):
+                # Skip initial slidoc comment line(s)
+                continue
 
             if line.strip():
                 prev_blank = False
@@ -1823,6 +1843,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
                 if slide_header:
                     slide_lines.append(slide_header)
                 prev_blank = True
+                first_slide = False
             else:
                 slide_lines.append(line)
 
@@ -2762,6 +2783,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             message("Indexed ", outname+":", fheader)
         else:
             chapter_classes = 'slidoc-reg-chapter'
+            if 'two_column' in file_config.features:
+                chapter_classes += ' slidoc-two-column'
+
+            if 'slide_break_avoid' in file_config.features:
+                chapter_classes += ' slidoc-page-break-avoid'
+            elif 'slide_break_page' in file_config.features:
+                chapter_classes += ' slidoc-page-break-always'
+
             md_prefix = chapter_prefix(fnumber, chapter_classes, hide=js_params['paceLevel'] and not config.printable)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
@@ -3221,12 +3250,15 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   share_answers: share answers for all questions after completion (e.g., an exam)
 #   show_correct: show correct answers for non-paced sessions
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
+#   slide_break_avoid: Avoid page breaks within slide
+#   slide_break_page: Force page breaks after each slide
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
+#   two_column: Two column output
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slides_only', 'tex_math', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
@@ -3255,7 +3287,6 @@ Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
 Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 Conf_parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
-Conf_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 Conf_parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
 Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 
@@ -3277,6 +3308,7 @@ alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_tru
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
+alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
