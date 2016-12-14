@@ -904,6 +904,8 @@ class SlidocRenderer(MathRenderer):
             if 'untitled_number' in self.options['config'].features:
                 # Number untitled slides (e.g., as in question numbering) 
                 text = ('%d. ' % self.untitled_number) + text
+                if self.questions and len(self.questions)+1 != self.untitled_number:
+                    abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
         self.first_para = False
         if not self.incremental_pause:
             return super(SlidocRenderer, self).paragraph(text)
@@ -1115,7 +1117,7 @@ class SlidocRenderer(MathRenderer):
                 self.choices[-1][0] = self.choices[-1][0] or value
                 self.choices[-1][1] = alt_choice
             else:
-                # Out of sequence choice; ignore
+                abort("    ****CHOICE-ERROR: %s: Out of sequence choice %s in slide %s" % (self.options["filename"], name, self.slide_number))
                 return name+'..'
 
         randomizing = 'randomize_choice' in self.options['config'].features
@@ -1812,18 +1814,14 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 break
 
-            if first_slide and MathBlockGrammar.slidoc_header.match(line):
-                # Skip initial slidoc comment line(s)
-                continue
-
-            if line.strip():
-                prev_blank = False
-            else:
-                # Blank line
+            if not line.strip() or MathBlockGrammar.slidoc_header.match(line):
+                # Blank line (treat slidoc comment line as blank)
                 if prev_blank:
                     # Skip multiple blank lines (for digest computation)
                     continue
                 prev_blank = True
+            else:
+                prev_blank = False
 
             new_slide = False
             lmatch = SLIDE_BREAK_RE.match(line)
