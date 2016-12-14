@@ -32,7 +32,7 @@ Upload = {
 	if (fileInfo && fileInfo.loadURL) {
 	    this.display();
 	    this.viewer.initURL = fileInfo.loadURL;
-	    this.viewer.fileType = fileInfo.upload.fileType;
+	    this.viewer.fileType = fileInfo.fileType;
 	}
     },
 
@@ -40,7 +40,7 @@ Upload = {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
 	if (fileInfo) {
-	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.upload.origName+' on '+(new Date(fileInfo.uploadTime));
+	    this.confirmMsgElem.textContent = 'Successfully uploaded '+fileInfo.origName+' on '+(new Date(fileInfo.uploadTime));
 	    this.confirmLoadElem.href = fileInfo.loadURL;
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
@@ -51,7 +51,7 @@ Upload = {
 	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), dirPrefix, this.userId);
 	if (this.viewer.displayURL) {
 	    if (fileInfo)
-		this.viewer.displayURL(fileInfo.loadURL, fileInfo.upload.fileType);
+		this.viewer.displayURL(fileInfo.loadURL, fileInfo.fileType);
 	    else
 		this.viewer.displayURL('', '');
 	}
@@ -129,9 +129,9 @@ Upload = {
 	    return;
 
 	if (fileInfo) {
-	    var response = fileInfo.upload.origName;
+	    var response = fileInfo.origName;
 	    var pluginResp = {name: this.name, score: 1, correctAnswer: '', filename: fileInfo.upload.name,
-			      time: fileInfo.uploadTime, fileType: fileInfo.upload.fileType, url: fileInfo.upload.url,
+			      time: fileInfo.uploadTime, fileType: fileInfo.fileType, url: fileInfo.upload.url,
 			      fileKey: fileInfo.upload.fileKey};
 	    this.remoteCall('lockFile', null, fileInfo.upload.url);
 	} else {

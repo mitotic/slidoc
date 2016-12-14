@@ -2159,17 +2159,11 @@ function slidocSetupAux(session, feedback) {
 	    var firstSlideId = getVisibleSlides()[0].id;
 	    Sliobj.allQuestionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
 	}
-	if (!isHeadless && Sliobj.session.paced) {
+	if (Sliobj.session.paced) {
 	    Slidoc.startPaced(); // This will call preAnswer later
 	    return false;
 	}
 	preAnswer();
-	if (isHeadless) {
-	    // WORKAROUND: seems to fix wkhtmltopdf 'infinite' looping
-	    var slideElems = document.getElementsByClassName('slidoc-slide');
-	    for (var j=0; j<slideElems.length; j++)
-		slideElems[j].classList.add('slidoc-answered-slideview');
-	}
 	if (Sliobj.adminState && Slidoc.testingActive())
 	    Slidoc.slideViewStart();
     } else {
@@ -4737,12 +4731,15 @@ Slidoc.startPaced = function () {
     startMsg += '</ul>';
     }
 
-    Slidoc.showPopup(startMsg);
+    if (!isHeadless)
+	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
-    Slidoc.slideViewStart();
+
+    if (!isHeadless)
+	Slidoc.slideViewStart();
 }
 
 Slidoc.endPaced = function (reload) {

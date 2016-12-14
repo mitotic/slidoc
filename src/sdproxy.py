@@ -233,6 +233,7 @@ def getSheet(sheetName, optional=False):
         del Miss_cache[sheetName]
 
     if Options['lock_proxy_url'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
+        # Lock sheet in upstream proxy
         lockURL = Options['lock_proxy_url']+'/_lock/'+sheetName
         try:
             req = urllib2.Request(lockURL+'?token='+Options['auth_key']+'&type=proxy')
@@ -245,6 +246,7 @@ def getSheet(sheetName, optional=False):
             raise Exception(errMsg)
         time.sleep(6)
 
+    # Retrieve sheet
     user = 'admin'
     userToken = sliauth.gen_admin_token(Options['auth_key'], user)
 

@@ -1134,12 +1134,24 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         userId = self.get_id_from_cookie() or None
         if Options['debug']:
-            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId
+            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", self.request.path, self.request.query, userId, Options['dry_run'], Options['lock_proxy_url']
 
         if self.request.path.startswith('/'+ADMIN_PATH):
             # Admin path accessible only to dry_run (draft/preview) or wet run using proxy_url
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
+            if Options['site_url'] == 'http://localhost' or Options['site_url'].startswith('http://localhost:'):
+                # Auto login for localhost through query parameter: ?auth=userId:token
+                query = self.request.query
+                if query.startswith('auth='):
+                    qauth = query[len('auth='):]
+                    userId, token = qauth.split(':')
+                    if token == Options['auth_key']:
+                        token = sliauth.gen_user_token(Options['auth_key'], userId)
+                    elif token != sliauth.gen_user_token(Options['auth_key'], userId):
+                        raise tornado.web.HTTPError(404)
+                    name = sdproxy.lookupRoster('name', userId) or ''
+                    self.set_id(userId, userId, token, name)
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
