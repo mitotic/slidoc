@@ -44,7 +44,7 @@ Upload = {
 	    this.confirmLoadElem.href = fileInfo.loadURL;
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
-	    this.confirmLoadElem.href = '';
+	    this.confirmLoadElem.href = "javascript:alert('Nothing uploaded')";
 	}
 	var dirPrefix = 'Late';
 	this.lateElem.innerHTML = '';

@@ -1680,29 +1680,43 @@ function showGradesCallback(userId, result, retStatus) {
 	    sessionKeys.push(keys[j]);
     }
     sessionKeys.sort();
-    var html = '<b>Gradebook</b><br>User:'+userId+'<p></p>';
+    var html = '<b>Gradebook</b><br><em>User</em>: '+userId+'<p></p>';
     if (result.total) {
-	html += 'Weighted total: <b>'+result.total.toFixed(2)+'</b>';
+	html += '<em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
 	var totalIndex = retStatus.info.headers.indexOf('total');
 	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
 	    html += ' out of '+retStatus.info.maxScores[totalIndex];
+	///if (retStatus.info.totalFormula)
+	///    html += '<br>&nbsp;&nbsp;&nbsp;Formula='+retStatus.info.totalFormula;
 	html += '<br>';
+    }
+    if (result.grade) {
+	html += '<em>Partial grade</em>: '+result.grade+' (this is a tentative, estimated grade based on the weighted total; the final grade may be different)<br>';
     }
     for (var j=0; j<sessionKeys.length; j++) {
 	var grade = result[sessionKeys[j]];
 	if (isNumber(grade))
-	    grade = grade.toFixed(2);
-	html += '&nbsp;&nbsp;&nbsp;' + sessionKeys[j].slice(1) + ': <b>'+ (grade == ''?'missed':grade) +'</b>'
+	    grade = grade ? grade.toFixed(2) : 'missed';
+	if (!isNumber(sessionKeys[j].slice(-1)))
+	    html += '<p></p>';
+	else
+	    html += '&nbsp;&nbsp;&nbsp;';
+	html += '<em>'+sessionKeys[j].slice(1) + '</em>: <b>'+ grade +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    var sessionIndex = retStatus.info.headers.indexOf(sessionKeys[j]);
-	    if (retStatus.info.rescale && retStatus.info.rescale[sessionIndex])
-		html += ' rescaled';
 	    if (retStatus.info.maxScores && retStatus.info.maxScores[sessionIndex])
 		html += ' out of '+retStatus.info.maxScores[sessionIndex];
+	    if (retStatus.info.rescale) {
+		var rescaleDesc = retStatus.info.rescale[sessionIndex];
+		if (rescaleDesc && rescaleDesc.match(/drop/i))
+		    html += ' ['+rescaleDesc+']';
+		else
+		    html += ' rescaled';
+	    }
 
 	    if (retStatus.info.averages) {
 		var temAvg = retStatus.info.averages[sessionIndex];
-		if (isNumber(temAvg))
+		if (isNumber(temAvg) && temAvg > 1)
 		    html += ' (average='+temAvg.toFixed(2)+')';
 	    }
 	}
@@ -3964,7 +3978,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	Slidoc.idDisplay(notes_id);
 	notes_elem.style.display = 'inline';
 	Slidoc.classDisplay(notes_id, 'block');
-	ansContainer = document.getElementById(slide_id+"-answer-container");
+	var ansContainer = document.getElementById(slide_id+"-answer-container");
 	if (ansContainer)
 	    ansContainer.scrollIntoView(true)
     }
@@ -4584,8 +4598,10 @@ Slidoc.gradeClick = function (elem, slide_id) {
     if (startGrading) {
 	if (!commentsArea.value && 'quote_response' in Sliobj.params.features)
 	    Slidoc.quoteText(null, slide_id);
+	var ansContainer = document.getElementById(slide_id+"-answer-container");
 	var gradeElement = document.getElementById(slide_id+'-grade-element');
-	setTimeout(function(){if (gradeElement) gradeElement.scrollIntoView(true); gradeInput.focus();}, 200);
+	var scrollElement = ansContainer || gradeElement;
+	setTimeout(function(){if (scrollElement) scrollElement.scrollIntoView(true); gradeInput.focus();}, 200);
 	Slidoc.reportTestAction('gradeStart');
 	displayCommentSuggestions(slide_id, question_attrs.qnumber);
     } else {

@@ -593,6 +593,9 @@ class MarkdownWithSlidoc(MarkdownWithMath):
 
     
 class MathRenderer(mistune.Renderer):
+    def hrule(self, text='---', implicit=False):
+        return super(MathRenderer, self).hrule()
+
     def forward_link(self, ref_id):
         pass
 

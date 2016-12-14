@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7c'
+VERSION = '0.96.7e'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1016,8 +1016,13 @@ def sheetAction(params, notrace=False):
                         returnInfo['maxScores'] = modSheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
                     if temIndexRow.get(RESCALE_ID):
                         returnInfo['rescale'] = modSheet.getSheetValues(temIndexRow.get(RESCALE_ID), 1, 1, len(columnHeaders))[0]
-                    if Options['share_averages'] and temIndexRow.get(AVERAGE_ID):
+                    if Options.get('share_averages') and temIndexRow.get(AVERAGE_ID):
                         returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
+
+                    # Need to implement retrieving settings from settings_slidoc
+                    if Options.get('total_formula'):
+                        returnInfo['totalFormula'] = re.sub(r'(\b_|:)', '',
+                                                            re.sub(r':-(\d+)', r'[drop \1 lowest]', Options['total_formula']) )
                 except Exception, err:
                     pass
 
