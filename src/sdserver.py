@@ -30,7 +30,6 @@ Command arguments:
 """
 
 import base64
-import collections
 import cStringIO
 import csv
 import datetime
@@ -45,6 +44,8 @@ import sys
 import time
 import urllib
 import uuid
+
+from collections import defaultdict, OrderedDict
 
 import tornado.auth
 import tornado.gen
@@ -239,13 +240,13 @@ class ActionHandler(BaseHandler):
     def getAction(self, subpath):
         site_label = Options['site_label'] or 'Home'
         action, sep, sessionName = subpath.partition('/')
-        if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_clear', '_backup', '_update', '_reload', '_shutdown', '_lock'):
+        if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_update', '_reload', '_shutdown', '_lock'):
             if not sessionName:
                 self.write('<a href="/_dash">Dashboard</a><p></p>')
                 self.write('Please specify /%s/session name' % action)
                 return
         if action == '_dash':
-            self.render('dashboard.html', site_label=site_label, version=sdproxy.VERSION, interactive=WSHandler.getInteractiveSession())
+            self.render('dashboard.html', site_label=site_label, version=sdproxy.VERSION, suspended=sdproxy.Global.suspended, interactive=WSHandler.getInteractiveSession())
 
         elif action == '_sessions':
             colNames = ['dueDate', 'gradeDate', 'postDate']
@@ -310,6 +311,10 @@ class ActionHandler(BaseHandler):
             else:
                 self.write('Twitter stream status: '+twitterStream.status+'\n\n')
                 self.write('Twitter stream log: '+'\n'.join(twitterStream.log_buffer)+'\n')
+
+        elif action == '_freeze':
+            sdproxy.suspend_cache('freeze')
+            self.write('Freezing cache<br><a href="/_dash">Dashboard</a>')
 
         elif action == '_clear':
             sdproxy.suspend_cache('clear')
@@ -668,7 +673,7 @@ class ProxyHandler(BaseHandler):
 
 
 class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
-    _connections = collections.defaultdict(functools.partial(collections.defaultdict,list))
+    _connections = defaultdict(functools.partial(defaultdict,list))
     _interactiveSession = (None, None, None)
     _interactiveErrors = {}
     @classmethod
@@ -1436,7 +1441,7 @@ class Application(tornado.web.Application):
                           (r"/interact", AuthMessageHandler),
                           (r"/interact/(.*)", AuthMessageHandler),
                           (r"/(_dash)", AuthActionHandler),
-                          (r"/(_(cache|clear|reload|shutdown|update))", ActionHandler),
+                          (r"/(_(cache|clear|freeze|reload|shutdown|update))", ActionHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_delete/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),
@@ -1524,6 +1529,7 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
         lastNameCol = 0
         firstNameCol = 0
         twitterCol = 0
+        formCol = 0
         qresponse = {}
         for j, header in enumerate(headers):
             hmatch = re.match(r'^(q?[gx]?)(\d+)$', header)
@@ -1536,11 +1542,34 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
                 nameCol = j+1
             elif header == 'twitter':
                 twitterCol = j+1
+            elif header.lower() == 'form':
+                formCol = j+1
             elif header.lower() in ('last', 'lastname', 'last name'):
                 lastNameCol = j+1
             elif header.lower() in ('first', 'firstname', 'first name'):
                 firstNameCol = j+1
 
+        qnumbers = qresponse.keys()
+        qnumbers.sort()
+        qnumberMap = [[]]
+        if formCol:
+            qnumberMap.append([])
+        if qnumbers:
+            if qnumbers[0] != 1 or qnumbers[-1] != len(qnumbers):
+                raise Exception('Invalid sequence of question numbers: '+','.join(qnumbers))
+            midoffset = len(qnumbers) % 2
+            midnumber = (len(qnumbers)-midoffset) / 2
+            for qnumber in qnumbers:
+                qnumberMap[0].append(qnumber)
+                if not formCol:
+                    continue
+                # Mid-point swap
+                if qnumber > midnumber:
+                    qnumberMap[1].append(qnumber - midnumber)
+                else:
+                    qnumberMap[1].append(qnumber + midnumber + midoffset)
+        print >> sys.stderr, 'qnumberMap=', qnumberMap
+                
         nameMap = sdproxy.lookupRoster('name')
         idMap = {}
         if twitterCol:
@@ -1563,7 +1592,12 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
 
         for row in rows:
             answers = {}
-            for qnumber, value in qresponse.items():
+            formSwitch = 0
+            if formCol and row[formCol-1] and row[formCol-1].upper() != 'A':
+                formSwitch = 1
+            for qnumber in qnumbers:
+                qnumberMapped = qnumberMap[formSwitch][qnumber-1]
+                value = qresponse[qnumberMapped]
                 cellValue = row[value[0]].strip()
                 if not cellValue:
                     continue

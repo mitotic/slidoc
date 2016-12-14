@@ -155,11 +155,11 @@ def backupCache(dirpath=''):
             os.makedirs(dirpath)
 
         for sheetName in (SETTINGS_SHEET, ROSTER_SHEET):
-            sheet = getSheet(sheetName, optional=True)
+            sheet = getSheet(sheetName, optional=True, backup=True)
             if sheet:
                 backupSheet(sheetName, sheet, dirpath, errorList)
 
-        indexSheet = getSheet(INDEX_SHEET, optional=True)
+        indexSheet = getSheet(INDEX_SHEET, optional=True, backup=True)
         if indexSheet:
             sessionNames = getColumns('id', indexSheet)
             backupSheet(INDEX_SHEET, indexSheet, dirpath, errorList)
@@ -169,7 +169,7 @@ def backupCache(dirpath=''):
 
         for sheetName in sessionNames:
             alreadyCached = sheetName in Sheet_cache
-            sessionSheet = getSheet(sheetName, optional=True)
+            sessionSheet = getSheet(sheetName, optional=True, backup=True)
             if not sessionSheet:
                 errorList.append('Error: Session sheet %s not found' % sheetName)
                 continue
@@ -220,14 +220,16 @@ def backupSheet(name, sheet, dirpath, errorList):
 def isReadOnly(sheetName):
     return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET)) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
 
-def getSheet(sheetName, optional=False):
-    check_if_locked(sheetName, get=True)
+def getSheet(sheetName, optional=False, backup=False):
+    cached = sheetName in Sheet_cache
 
-    if sheetName in Sheet_cache:
+    check_if_locked(sheetName, get=True, backup=backup, cached=cached)
+
+    if cached:
         return Sheet_cache[sheetName]
     elif optional and sheetName in Miss_cache:
         # If optional sheets are later created, will need to clear cache
-        if (sliauth.epoch_ms() - Miss_cache[sheetName]) < 0.5*1000*CACHE_HOLD_SEC:
+        if not backup and (sliauth.epoch_ms() - Miss_cache[sheetName]) < 0.5*1000*CACHE_HOLD_SEC:
             return None
         # Retry retrieving optional sheet
         del Miss_cache[sheetName]
@@ -482,6 +484,7 @@ class Range(object):
 
 def getCacheStatus():
     out = 'Cache: version %s (%s)\n' % (VERSION, list(Global.remoteVersions))
+    out += '  Suspend status: <b>%s</b>\n' % Global.suspended
     out += '  No. of updates (retries): %d (%d)\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount)
     out += '  Average update time = %.2fs\n\n' % (Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheResponseCount)) )
     out += '  Average request bytes = %d\n\n' % (Global.totalCacheRequestBytes/max(1,Global.totalCacheResponseCount) )
@@ -546,12 +549,23 @@ def endPassthru(sheetName):
     if Lock_cache.get(sheetName) == 'passthru' and not Lock_passthru[sheetName]:
         unlockSheet(sheetName)
 
-def check_if_locked(sheetName, get=False):
+def check_if_locked(sheetName, get=False, backup=False, cached=False):
     if Options['lock_proxy_url'] and sheetName.endswith('_slidoc') and not get:
         raise Exception('Only get operation allowed for special sheet '+sheetName+' in locked proxy mode')
 
-    if sheetName in Lock_cache or (Global.suspended and (not get or Global.suspended != 'backup')):
+    if sheetName in Lock_cache:
         raise Exception('Sheet %s is locked!' % sheetName)
+
+    if backup and Global.suspended == "backup":
+        return True
+
+    if cached and Global.suspended == "freeze":
+        return True
+
+    if Global.suspended:
+        raise Exception('Cannot access sheet %s when suspended (%s)' % (sheetName, Global.suspended))
+
+    return True
 
 def get_locked():
     # Return list of locked sheet name (* if updates not yet send to Google sheets)
@@ -575,6 +589,9 @@ def schedule_update(waitSec=0, force=False):
         update_remote_sheets(force=force)
 
 def suspend_cache(action="shutdown"):
+    if Global.suspended == "freeze" and action != "clear":
+        raise Exception("Must clear after freeze")
+
     Global.suspended = action
     if action:
         print("Suspended for", action, file=sys.stderr)
@@ -583,12 +600,16 @@ def suspend_cache(action="shutdown"):
 def updates_current():
     if not Global.suspended:
         return
-    if Global.suspended == "shutdown":
-        print("Completing shutdown", file=sys.stderr)
-        IOLoop.current().stop()
-    elif Global.suspended == "clear":
+
+    if Global.suspended == "freeze":
+        return
+
+    if Global.suspended == "clear":
         initCache()
         print("Cleared cache", file=sys.stderr)
+    elif Global.suspended == "shutdown":
+        print("Completing shutdown", file=sys.stderr)
+        IOLoop.current().stop()
     elif Global.suspended == "reload":
         try:
             os.utime(scriptdir+'/reload.py', None)

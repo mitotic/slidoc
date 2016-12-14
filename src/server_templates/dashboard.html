@@ -42,12 +42,14 @@ function sheet(label) {
     <hr>
     <li><a href="javascript:check('shutdown')">shutdown</a>: Shutdown proxy server</li>
   </ul>
-  Current interactive session: <a href="/_manage/{{interactive}}">{{interactive}}</a>
+  Suspend status: <b>{{suspended}}</b><br>
+  Current interactive session: <a href="/_manage/{{interactive}}">{{interactive}}</a><br>
   <p></p>
   <a href="#" onclick="document.getElementById('advanced-options').style.display=null;this.style.display='none'">Show advanced options</a>
   <ul id="advanced-options" style="display: none;">
     <li><a href="javascript:action('cache')">proxy status</a>: Status of proxy cache and active connections</li>
     <hr>
+    <li><a href="javascript:check('freeze')">freeze</a>: Freeze all cached sessions (clear to cancel freeze)</li>
     <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
     <hr>
     <li><a href="javascript:check('update')">update</a>: Update code and restart proxy server</li>
