@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7e'
+VERSION = '0.96.7f'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -81,6 +81,8 @@ SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
+
+BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, SCORES_SHEET]
 
 BASIC_PACE    = 1
 QUESTION_PACE = 2
@@ -141,6 +143,23 @@ def initCache():
 
 initCache()
 
+def freezeCache(fill=False):
+    # Freeze cache (clear when done)
+    if Global.suspended == "freeze":
+        return
+    if fill:
+        # Fill cache
+        sessionNames = []
+        for sheetName in BACKUP_SHEETS:
+            sheet = getSheet(sheetName, optional=True)
+            if sheet and sheetName == INDEX_SHEET:
+                sessionNames = getColumns('id', sheet)
+
+        for sheetName in sessionNames:
+            sessionSheet = getSheet(sheetName, optional=True)
+    suspend_cache('freeze')
+
+
 def backupCache(dirpath=''):
     # Returns null string on success or error string
     dirpath = dirpath or Options['backup_dir'] or '_backup'
@@ -154,20 +173,18 @@ def backupCache(dirpath=''):
         if not os.path.exists(dirpath):
             os.makedirs(dirpath)
 
-        for sheetName in (SETTINGS_SHEET, ROSTER_SHEET):
+        sessionNames = None
+        for sheetName in BACKUP_SHEETS:
             sheet = getSheet(sheetName, optional=True, backup=True)
             if sheet:
                 backupSheet(sheetName, sheet, dirpath, errorList)
+                if sheetName == INDEX_SHEET:
+                    sessionNames = getColumns('id', sheet)
 
-        indexSheet = getSheet(INDEX_SHEET, optional=True, backup=True)
-        if indexSheet:
-            sessionNames = getColumns('id', indexSheet)
-            backupSheet(INDEX_SHEET, indexSheet, dirpath, errorList)
-        else:
-            sessionNames = []
+        if sessionNames is None:
             errorList.append('Error: Index sheet %s not found' % INDEX_SHEET)
 
-        for sheetName in sessionNames:
+        for sheetName in (sessionNames or []):
             alreadyCached = sheetName in Sheet_cache
             sessionSheet = getSheet(sheetName, optional=True, backup=True)
             if not sessionSheet:
@@ -556,10 +573,10 @@ def check_if_locked(sheetName, get=False, backup=False, cached=False):
     if sheetName in Lock_cache:
         raise Exception('Sheet %s is locked!' % sheetName)
 
-    if backup and Global.suspended == "backup":
+    if get and backup and Global.suspended == 'backup':
         return True
 
-    if cached and Global.suspended == "freeze":
+    if get and cached and Global.suspended == 'freeze':
         return True
 
     if Global.suspended:
@@ -1041,11 +1058,7 @@ def sheetAction(params, notrace=False):
                         returnInfo['rescale'] = modSheet.getSheetValues(temIndexRow.get(RESCALE_ID), 1, 1, len(columnHeaders))[0]
                     if Options.get('share_averages') and temIndexRow.get(AVERAGE_ID):
                         returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
-
-                    # Need to implement retrieving settings from settings_slidoc
-                    if Options.get('total_formula'):
-                        returnInfo['totalFormula'] = re.sub(r'(\b_|:)', '',
-                                                            re.sub(r':-(\d+)', r'[drop \1 lowest]', Options['total_formula']) )
+                    # TODO: Need to implement retrieving settings from settings_slidoc
                 except Exception, err:
                     pass
 

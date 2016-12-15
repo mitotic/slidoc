@@ -321,7 +321,7 @@ function sessionAbort(err_msg, err_trace) {
     if (!Sliobj.params.debug)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
 
-    if (getServerCookie()) {
+    if (Sliobj.serverCookie) {
 	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
@@ -411,10 +411,17 @@ function getParameter(name, number, queryStr) {
    return value;
 }
 
+Sliobj.serverData = {};
+Sliobj.serverCookie = getServerCookie();
+if (Sliobj.serverCookie)
+    Sliobj.serverData = Sliobj.serverCookie.data || {};
+
+Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
+
 Slidoc.websocketPath = '';
 if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
     // Proxy URL
-    if (getServerCookie())
+    if (Sliobj.serverCookie)
 	Slidoc.websocketPath = Sliobj.params.gd_sheet_url+location.pathname;
     else
 	sessionAbort('Error: File must be served from proxy server for websocket authentication');
@@ -459,8 +466,7 @@ document.onreadystatechange = function(event) {
 function pageSetup() {
     if (document.getElementById("slidoc-contents-button") && !document.getElementById("slidoc-topnav"))
 	document.getElementById("slidoc-contents-button").style.display = null;
-    var cookie = getServerCookie();
-    if (cookie && cookie.user == 'admin') {
+    if (Sliobj.serverCookie && Sliobj.serverCookie.user == 'admin') {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem)
 	    dashElem.style.display = null;
@@ -502,12 +508,12 @@ function onreadystateaux() {
 	// Google client load will authenticate
     } else if (Sliobj.params.gd_sheet_url) {
 	var localAuth = localGet('auth');
-	if (localAuth && !getServerCookie()) {
+	if (localAuth && !Sliobj.serverCookie) {
 	    Slidoc.showPopup('Accessing Google Docs ...', null, null, 1000);
 	    GService.gprofile.auth = localAuth;
 	    Slidoc.slidocReady(localAuth);
 	} else {
-	    if (!getServerCookie())
+	    if (!Sliobj.serverCookie)
 		Slidoc.reportTestAction('loginPrompt');
 	    GService.gprofile.promptUserInfo(Sliobj.params.authType);
 	}
@@ -769,7 +775,7 @@ Slidoc.userLogout = function () {
 
 Slidoc.userLogin = function (msg, retryCall) {
     Slidoc.log('Slidoc.userLogin:', msg, retryCall);
-    if (getServerCookie())
+    if (Sliobj.serverCookie)
 	sessionAbort(msg || 'Error in authentication');
     else
 	GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
@@ -1190,8 +1196,7 @@ Slidoc.interact = function() {
     } else if (Sliobj.session.submitted) {
 	html += 'Interactivity not available for submitted sessions';
     } else {
-	var serverCookie = getServerCookie();
-	var siteTwitter = (serverCookie.data && serverCookie.data.site_twitter) ? serverCookie.data.site_twitter : '';
+	var siteTwitter = Sliobj.serverData.site_twitter || '';
 	var interactURL = location.protocol+'//'+location.host+'/interact';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span><p></p>';
 	html += 'To interact:<ul>';
@@ -1686,8 +1691,8 @@ function showGradesCallback(userId, result, retStatus) {
 	var totalIndex = retStatus.info.headers.indexOf('total');
 	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
 	    html += ' out of '+retStatus.info.maxScores[totalIndex];
-	///if (retStatus.info.totalFormula)
-	///    html += '<br>&nbsp;&nbsp;&nbsp;Formula='+retStatus.info.totalFormula;
+	if (retStatus.info.rescale && retStatus.info.rescale[totalIndex])
+	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting='+retStatus.info.rescale[totalIndex];
 	html += '<br>';
     }
     if (result.grade) {
@@ -1792,9 +1797,8 @@ Slidoc.manageSession = function() {
 	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && isNumber(Sliobj.feedback.q_grades))
 	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
     } else {
-	var cookieUserInfo = getServerCookie();
-	if (cookieUserInfo)
-	    html += 'User: <b>'+cookieUserInfo.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
+	if (Sliobj.serverCookie)
+	    html += 'User: <b>'+Sliobj.serverCookie.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
@@ -2125,7 +2129,7 @@ function slidocSetupAux(session, feedback) {
     if (location.protocol == 'http:' || location.protocol == 'https:')
     	toggleClass(true, 'slidoc-server-view');
 
-    if (getServerCookie())
+    if (Sliobj.serverCookie)
     	toggleClass(true, 'slidoc-proxy-view');
 
     if (Sliobj.params.gd_sheet_url) {
@@ -4731,14 +4735,14 @@ Slidoc.startPaced = function () {
     startMsg += '</ul>';
     }
 
-    if (!isHeadless)
+    if (!Sliobj.batchMode)
 	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
 
-    if (!isHeadless)
+    if (!Sliobj.batchMode)
 	Slidoc.slideViewStart();
 }
 

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7e';
+var VERSION = '0.96.7f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -684,8 +684,6 @@ function sheetAction(params) {
 			returnInfo.rescale = modSheet.getSheetValues(temIndexRow[RESCALE_ID], 1, 1, columnHeaders.length)[0];
 		    if (Settings['share_averages'] && temIndexRow[AVERAGE_ID])
 			returnInfo.averages = modSheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
-		    if (Settings['total_formula'])
-			returnInfo.totalFormula =Settings['total_formula'].replace(/:-(\d+)/g,'[drop $1]').replace(/'(\b_|:)/g,'')
 		} catch (err) {}
 	    }
 	}
@@ -2816,7 +2814,9 @@ function updateScores(sessionNames, interactive) {
 	var totalFormula = Settings['total_formula'] || '';
 	var gradingScale = Settings['grading_scale'] || '';
 	var aggregateColumns = [];
+	var totalFormulaStr = '';
 	if (totalFormula) {
+	    totalFormulaStr = totalFormula.replace(/:-(\d+)/g,'[drop $1]').replace(/'(\b_|:)/g,'');
 	    var comps = totalFormula.split('+');
 	    for (var j=0; j<comps.length; j++) {
 		/// Example: 0.4*average(_Assignment:-1)+0.5*sum(_Quiz:)+0.1*_Extra01
@@ -3158,6 +3158,8 @@ function updateScores(sessionNames, interactive) {
 	var scoreGradeCol = scoreColIndex['grade'];
 	var colChar = colIndexToChar(scoreTotalCol);
 	scoreSheet.getRange(colChar+'2'+':'+colChar).setNumberFormat('0.###');
+	if (rescaleRow)
+	    scoreSheet.getRange(rescaleRow, scoreTotalCol, 1, 1).setValues([[totalFormulaStr]]);
 
 	var agSumFormula = 'SUM(%range)';
 	var agDropFormula = '-IFERROR(SMALL(%range,%drop),0)';  // Need IFERROR in case there aren't enough numeric values to drop

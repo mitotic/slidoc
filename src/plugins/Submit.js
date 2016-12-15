@@ -11,6 +11,6 @@ Submit = {
 
 /* PluginHead:
    PluginBody:
-   <input type="button" id="%(pluginId)s-submitbutton"  class="slidoc-clickable slidoc-button slidoc-plugin-Submit-button slidoc-noadmin slidoc-nograded" value="Submit"
+   <input type="button" id="%(pluginId)s-submitbutton"  class="slidoc-clickable slidoc-button slidoc-plugin-Submit-button slidoc-noadmin slidoc-noprint slidoc-nograded" value="Submit"
    onclick="Slidoc.submitClick(this);"></input>
 */

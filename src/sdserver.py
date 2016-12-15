@@ -313,7 +313,7 @@ class ActionHandler(BaseHandler):
                 self.write('Twitter stream log: '+'\n'.join(twitterStream.log_buffer)+'\n')
 
         elif action == '_freeze':
-            sdproxy.suspend_cache('freeze')
+            sdproxy.freezeCache(fill=True)
             self.write('Freezing cache<br><a href="/_dash">Dashboard</a>')
 
         elif action == '_clear':
@@ -1145,18 +1145,23 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Admin path accessible only to dry_run (draft/preview) or wet run using proxy_url
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
+
             if Options['site_url'] == 'http://localhost' or Options['site_url'].startswith('http://localhost:'):
-                # Auto login for localhost through query parameter: ?auth=userId:token
+                # Batch auto login for localhost through query parameter: ?auth=userId:token
                 query = self.request.query
                 if query.startswith('auth='):
                     qauth = query[len('auth='):]
                     userId, token = qauth.split(':')
+                    userToken = sliauth.gen_user_token(Options['auth_key'], userId)
                     if token == Options['auth_key']:
-                        token = sliauth.gen_user_token(Options['auth_key'], userId)
-                    elif token != sliauth.gen_user_token(Options['auth_key'], userId):
+                        token = userToken
+                        data = {'batch':1}
+                    elif token == userToken:
+                        data = {}
+                    else:
                         raise tornado.web.HTTPError(404)
                     name = sdproxy.lookupRoster('name', userId) or ''
-                    self.set_id(userId, userId, token, name)
+                    self.set_id(userId, userId, token, name, data=data)
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
@@ -1441,7 +1446,7 @@ class Application(tornado.web.Application):
                           (r"/interact", AuthMessageHandler),
                           (r"/interact/(.*)", AuthMessageHandler),
                           (r"/(_dash)", AuthActionHandler),
-                          (r"/(_(cache|clear|freeze|reload|shutdown|update))", ActionHandler),
+                          (r"/(_(backup|cache|clear|freeze|reload|shutdown|update))", ActionHandler),
                           (r"/(_backup/[-\w.]+)", ActionHandler),
                           (r"/(_delete/[-\w.]+)", ActionHandler),
                           (r"/(_export/[-\w.]+)", ActionHandler),

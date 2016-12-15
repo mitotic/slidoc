@@ -5,14 +5,20 @@ body {
 </style>
 <script>
 function action(label) {
-  var statusElem = document.getElementById('actionstatus');
-  if (statusElem) statusElem.textContent = 'Processing...';
+  status(label);
   window.location = '/_' + label;
 }
 function check(label) {
-  if (!window.confirm('Confirm '+label+'?'))
+  status(label);
+  if (!window.confirm('Confirm '+label+'?')) {
+    status('');
     return;
+  }
   action(label);
+}
+function status(label) {
+  var statusElem = document.getElementById('actionstatus');
+  if (statusElem) statusElem.textContent = label ? 'Processing '+label+'...' : '';
 }
 function sheet(label) {
   var value = window.prompt('Sheet name:');
@@ -28,7 +34,7 @@ function sheet(label) {
 
   <a href="/">Home</a>
   <p></p>
-  <span id="actionstatus"></span>
+  <h3><span id="actionstatus"></span></h3>
   <ul>
     <li><a href="javascript:action('sessions')">sessions</a>: Session info and actions</li>
     <hr>
