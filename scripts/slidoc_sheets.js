@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7f';
+var VERSION = '0.96.7g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -593,22 +593,25 @@ function sheetAction(params) {
 		}
 		if (modifyStartCol) {
 		    // Updating maxscore row; modify headers if needed
+                    var startRow = 2;
+                    var nRows = modSheet.getLastRow()-startRow+1;
+		    var idValues = null;
+                    if (nRows)
+			idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
 		    if (modifyStartCol <= columnHeaders.length) {
                         // Truncate columns; ensure truncated columns are empty
                         var startCol = modifyStartCol;
                         var nCols = columnHeaders.length-startCol+1;
-                        var startRow = 2;
-                        var nRows = modSheet.getLastRow()-startRow+1;
                         if (nRows) {
-			    var idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
+			    var modRows = nRows;
 			    if (idValues[0][0] == MAXSCORE_ID) {
                                 startRow += 1;
-                                nRows -= 1;
+                                modRows -= 1;
 			    }
-			    if (nRows) {
-                                var values = modSheet.getSheetValues(startRow, startCol, nRows, nCols);
+			    if (modRows) {
+                                var values = modSheet.getSheetValues(startRow, startCol, modRows, nCols);
                                 for (var j=0; j < nCols; j++) {
-				    for (var k=0; k < nRows; k++) {
+				    for (var k=0; k < modRows; k++) {
                                         if (values[k][j] != '') {
 					    throw( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName );
                                         }
@@ -632,6 +635,18 @@ function sheetAction(params) {
 		    columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
 		    columnIndex = indexColumns(modSheet);
 		}
+                var totalGradesFormula = gradesFormula(columnHeaders, sessionEntries['fieldsMin']+1);
+                if (nRows && totalGradesFormula) {
+                    // Update formula for total grades (if present)
+                    var gradesRange = modSheet.getRange(startRow, columnIndex['q_grades'], nRows, 1);
+                    var totValues = gradesRange.getValues();
+                    for (var k=0; k < nRows; k++) {
+                        if (idValues[k][0] != MAXSCORE_ID && totValues[k][0] != '') {
+                            totValues[k][0] = totalGradesFormula.replace(/@/g,''+(k+startRow));
+                        }
+                    }
+                    gradesRange.setValues(totValues);
+                }
 	    }
 	    
 	    var userId = null;
@@ -1231,7 +1246,7 @@ function sheetAction(params) {
 		}
 
 		var maxCol = rowUpdates ? rowUpdates.length : columnHeaders.length;
-		var totalCol = (columnHeaders.length > fieldsMin && columnHeaders[fieldsMin] == 'q_grades') ? fieldsMin+1 : 0;
+		var totalCol = columnIndex['q_grades'] || 0;
 		var userRange = modSheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 
@@ -1252,14 +1267,11 @@ function sheetAction(params) {
 		    if ((!adminUser || importSession) && rowUpdates.length > fieldsMin) {
 			// Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values)
 			var nonNullExtraColumn = false;
-			var totalCells = [];
 			var adminColumns = {};
 			for (var j=fieldsMin; j < columnHeaders.length; j++) {
 			    if (rowUpdates[j] != null)
 				nonNullExtraColumn = true;
 			    var hmatch = QFIELD_RE.exec(columnHeaders[j]);
-			    if (hmatch && hmatch[2] == 'grade') // Grade value to summed
-				totalCells.push(colIndexToChar(j+1) + userRow);
 			    if (!hmatch || (hmatch[2] != 'response' && hmatch[2] != 'explain' && hmatch[2] != 'plugin')) // Non-response/explain/plugin admin column
 				adminColumns[columnHeaders[j]] = 1;
 			}
@@ -1271,11 +1283,12 @@ function sheetAction(params) {
 				    rowUpdates[j] = '';
 			    }
 			}
-			if (totalCol && totalCells.length) {
-			    // Computed admin column to hold sum of all grades
-			    rowUpdates[totalCol-1] = ( '=' + totalCells.join('+') );
-			}
-			//returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+'=' + totalCells.join('+'));
+			var totalGradesFormula = gradesFormula(columnHeaders, fieldsMin+1);
+                        if (totalCol && totalGradesFormula) {
+                            // Computed admin column to hold sum of all grades
+                            rowUpdates[totalCol-1] = totalGradesFormula.replace(/@/g,''+userRow);
+                        }
+			//returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+totalGradesFormula);
 		    }
 		    //returnMessages.push("Debug:ROW_UPDATES:"+rowUpdates);
 		    for (var j=0; j<rowUpdates.length; j++) {
@@ -1944,6 +1957,27 @@ function lookupRoster(field, userId) {
         fieldDict[idVals[j]] = fieldVals[j];
     }
     return fieldDict;
+}
+
+function gradesFormula(columnHeaders, startCol) {
+    // Return total grades formula (with @ for row number) || null string
+    if (columnHeaders.indexOf('q_grades') < 0)
+        return '';
+
+    var totalCells = [];
+    for (var j=startCol-1; j < columnHeaders.length; j++) {
+        var hmatch = QFIELD_RE.exec(columnHeaders[j]);
+        if (hmatch && hmatch[2] == 'grade') {
+            // Grade value to summed
+            totalCells.push(colIndexToChar(j+1) + '@');
+        }
+    }
+
+    if (totalCells.length)
+        // Computed admin column to hold sum of all grades
+        return '=' + totalCells.join('+');
+    else
+        return '';
 }
 
 function safeName(s, capitalize) {
@@ -2816,7 +2850,7 @@ function updateScores(sessionNames, interactive) {
 	var aggregateColumns = [];
 	var totalFormulaStr = '';
 	if (totalFormula) {
-	    totalFormulaStr = totalFormula.replace(/:-(\d+)/g,'[drop $1]').replace(/'(\b_|:)/g,'');
+	    totalFormulaStr = totalFormula.replace(/:-(\d+)/g,'[drop $1]').replace(/(\b_|:)/g,'');
 	    var comps = totalFormula.split('+');
 	    for (var j=0; j<comps.length; j++) {
 		/// Example: 0.4*average(_Assignment:-1)+0.5*sum(_Quiz:)+0.1*_Extra01

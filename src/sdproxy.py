@@ -40,7 +40,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7f'
+VERSION = '0.96.7g'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -978,21 +978,24 @@ def sheetAction(params, notrace=False):
 
                 if modifyStartCol:
                     # Updating maxscore row; modify headers if needed
+                    startRow = 2
+                    nRows = modSheet.getLastRow()-startRow+1
+                    idValues = None
+                    if nRows:
+                        idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
                     if modifyStartCol <= len(columnHeaders):
                         # Truncate columns; ensure truncated columns are empty
                         startCol = modifyStartCol
                         nCols = len(columnHeaders)-startCol+1
-                        startRow = 2
-                        nRows = modSheet.getLastRow()-startRow+1
                         if nRows:
-                            idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
+                            modRows = nRows
                             if idValues[0][0] == MAXSCORE_ID:
                                 startRow += 1
-                                nRows -= 1
-                            if nRows:
-                                values = modSheet.getSheetValues(startRow, startCol, nRows, nCols)
+                                modRows -= 1
+                            if modRows:
+                                values = modSheet.getSheetValues(startRow, startCol, modRows, nCols)
                                 for j in range(nCols):
-                                    for k in range(nRows):
+                                    for k in range(modRows):
                                         if values[k][j] != '':
                                             raise Exception( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+str(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName )
 
@@ -1010,6 +1013,16 @@ def sheetAction(params, notrace=False):
 
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
+
+                    totalGradesFormula = gradesFormula(columnHeaders, sessionEntries['fieldsMin']+1)
+                    if nRows and totalGradesFormula:
+                        # Update formula for total grades (if present)
+                        gradesRange = modSheet.getRange(startRow, columnIndex['q_grades'], nRows, 1)
+                        totValues = gradesRange.getValues()
+                        for k in range(nRows):
+                            if idValues[k][0] != MAXSCORE_ID and totValues[k][0] != '':
+                                totValues[k][0] = totalGradesFormula.replace('@',str(k+startRow))
+                        gradesRange.setValues(totValues)
 
             userId = None
             displayName = None
@@ -1548,7 +1561,7 @@ def sheetAction(params, notrace=False):
                         raise Exception('Error::Do not specify nooverwrite=1 to overwrite existing rows')
 
                 maxCol = len(rowUpdates) if rowUpdates else len(columnHeaders)
-                totalCol = fieldsMin+1 if (len(columnHeaders) > fieldsMin and columnHeaders[fieldsMin] == 'q_grades') else 0
+                totalCol = columnIndex.get('q_grades', 0)
                 userRange = modSheet.getRange(userRow, 1, 1, maxCol)
                 rowValues = userRange.getValues()[0]
 
@@ -1570,15 +1583,11 @@ def sheetAction(params, notrace=False):
                     if (not adminUser or importSession) and len(rowUpdates) > fieldsMin:
                         # Check if there are any user provided non-null values for "extra" columns (i.e., response/explain values:
                         nonNullExtraColumn = False
-                        totalCells = []
                         adminColumns = {}
                         for j in range(fieldsMin, len(columnHeaders)):
                             if rowUpdates[j] is not None:
                                 nonNullExtraColumn = True
                             hmatch = QFIELD_RE.match(columnHeaders[j])
-                            if hmatch and hmatch.group(2) == 'grade':
-                                # Grade value to summed
-                                totalCells.append(colIndexToChar(j+1) + str(userRow))
                             if not hmatch or (hmatch.group(2) != 'response' and hmatch.group(2) != 'explain' and hmatch.group(2) != 'plugin'):
                                 # Non-response/explain/plugin admin column
                                 adminColumns[columnHeaders[j]] = 1
@@ -1590,11 +1599,12 @@ def sheetAction(params, notrace=False):
                                 if columnHeaders[j] in adminColumns:
                                     rowUpdates[j] = ''
 
-                        if totalCol and len(totalCells):
+                        totalGradesFormula = gradesFormula(columnHeaders, fieldsMin+1)
+                        if totalCol and totalGradesFormula:
                             # Computed admin column to hold sum of all grades
-                            rowUpdates[totalCol-1] = ( '=' + '+'.join(totalCells) )
+                            rowUpdates[totalCol-1] = totalGradesFormula.replace('@',str(userRow))
 
-                        ##returnMessages.append("Debug::"+str(nonNullExtraColumn)+str(adminColumns.keys())+'=' + '+'.join(totalCells))
+                        ##returnMessages.append("Debug::"+str(nonNullExtraColumn)+str(adminColumns.keys())+totalGradesFormula)
 
                     ##returnMessages.append("Debug:ROW_UPDATES:"+str(rowUpdates))
                     for j in range(len(rowUpdates)):
@@ -2424,6 +2434,23 @@ def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
             # Sort by name and then by id
             return j+1
     return len(nameValues)+1
+
+def gradesFormula(columnHeaders, startCol):
+    # Return total grades formula (with @ for row number) or null string
+    if 'q_grades' not in columnHeaders:
+        return ''
+    totalCells = []
+    for j in range(startCol-1, len(columnHeaders)):
+        hmatch = QFIELD_RE.match(columnHeaders[j])
+        if hmatch and hmatch.group(2) == 'grade':
+            # Grade value to summed
+            totalCells.append(colIndexToChar(j+1) + '@')
+
+    if len(totalCells):
+        # Computed admin column to hold sum of all grades
+        return '=' + '+'.join(totalCells)
+    else:
+        return ''
 
 def safeName(s, capitalize=False):
     s = re.sub(r'[^A-Za-z0-9-]', '_', s)

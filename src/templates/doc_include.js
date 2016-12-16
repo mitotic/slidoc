@@ -1696,27 +1696,34 @@ function showGradesCallback(userId, result, retStatus) {
 	html += '<br>';
     }
     if (result.grade) {
-	html += '<em>Partial grade</em>: '+result.grade+' (this is a tentative, estimated grade based on the weighted total; the final grade may be different)<br>';
+	html += '<em>Potential grade</em>: '+result.grade+' (this is a tentative, estimated grade based on the total/curving so far; the final grade may be different, depending upon any additional credits/corrrections/curving)<br>';
     }
+    var prefix = '';
     for (var j=0; j<sessionKeys.length; j++) {
-	var grade = result[sessionKeys[j]];
+	var sessionName = sessionKeys[j];
+	var grade = result[sessionName];
 	if (isNumber(grade))
 	    grade = grade ? grade.toFixed(2) : 'missed';
-	if (!isNumber(sessionKeys[j].slice(-1)))
-	    html += '<p></p>';
-	else
+	var pmatch = /(_\w*[a-z])(\d+)$/i.exec(sessionName);
+	if (pmatch && pmatch[1] == prefix) {
 	    html += '&nbsp;&nbsp;&nbsp;';
-	html += '<em>'+sessionKeys[j].slice(1) + '</em>: <b>'+ grade +'</b>'
+	} else {
+	    html += '<p></p>';
+	    prefix = sessionName;
+	}
+	html += '<em>'+sessionName.slice(1) + '</em>: <b>'+ grade +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
-	    var sessionIndex = retStatus.info.headers.indexOf(sessionKeys[j]);
+	    var sessionIndex = retStatus.info.headers.indexOf(sessionName);
 	    if (retStatus.info.maxScores && retStatus.info.maxScores[sessionIndex])
 		html += ' out of '+retStatus.info.maxScores[sessionIndex];
 	    if (retStatus.info.rescale) {
 		var rescaleDesc = retStatus.info.rescale[sessionIndex];
-		if (rescaleDesc && rescaleDesc.match(/drop/i))
-		    html += ' ['+rescaleDesc+']';
-		else
-		    html += ' rescaled';
+		if (rescaleDesc) {
+		    if (rescaleDesc.match(/drop/i))
+			html += ' ['+rescaleDesc+']';
+		    else
+			html += ' rescaled';
+		}
 	    }
 
 	    if (retStatus.info.averages) {

@@ -1965,7 +1965,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     if max_last_slide is not None:
                         for j in range(len(questions), len(prev_questions)):
                             if prev_questions[j]['slide'] <= max_last_slide:
-                                abort('ERROR: Cannot truncate previously viewed question %d for session %s' % (j+1, session_name))
+                                abort('ERROR: Cannot truncate previously viewed question %d for session %s (max_last_slide=%d)' % (j+1, session_name, max_last_slide))
                 elif len(prev_questions) < len(questions):
                     # Extending
                     pass
