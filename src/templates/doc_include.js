@@ -100,6 +100,8 @@ Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
 Sliobj.scores = null;
 Sliobj.liveResponses = {};
+Sliobj.choiceBlockHTML = {};
+Sliobj.printExamView = false;
 
 Sliobj.errorRetries = 0;
 
@@ -573,9 +575,9 @@ function letterFromIndex(n) {
 }
 
 function shuffleArray(array, randFunc) {
-    randFunc = randFunc || Math.random;
+    // Durstenfeld shuffle
     for (var i = array.length - 1; i > 0; i--) {
-        var j = Math.floor(randFunc() * (i + 1));
+        var j = randFunc ? randFunc(0, i) : Math.floor(Math.random() * (i + 1));
         var temp = array[i];
         array[i] = array[j];
         array[j] = temp;
@@ -586,7 +588,8 @@ function shuffleArray(array, randFunc) {
 function randomLetters(n, randFunc) {
     var letters = [];
     for (var i=0; i < n; i++)
-	letters[i] = letterFromIndex(i);
+	letters.push( letterFromIndex(i) );
+
     shuffleArray(letters, randFunc);
     return letters.join('');
 }
@@ -1033,6 +1036,9 @@ Slidoc.handleKey = function (keyName) {
 	if (keyName == 'esc')   { Sliobj.chainActive[1](); return false; }
 	if (keyName == 'right') { Sliobj.chainActive[2](); return false; }
 
+    } else if (Sliobj.printExamView && keyName == 'down') {
+	window.print();
+	Slidoc.nextUser(true);
     } else {
 	if (keyName == 'esc' || keyName == 'unesc')   { Slidoc.slideViewStart(); return false; }
 
@@ -1629,6 +1635,21 @@ function selectUserCallback(auth, userId, result, retStatus) {
     initSessionPlugins(Sliobj.session);
     showSubmitted();
     preAnswer();
+    var nameElem = document.getElementById('slidoc-user-name');
+    if (Sliobj.printExamView) {
+	if (nameElem)
+	    nameElem.textContent = (Sliobj.userGrades[userId].name || userId)+' ('+Sliobj.session.randomSeed+')';
+
+	var ncomps = Sliobj.userGrades[userId].name.split(',');
+	var username = ncomps[0].trim();
+	if (ncomps.length > 1)
+	    username += '-'+ncomps[1].trim();
+	username = username.replace(/ /g,'-').toLowerCase();
+	document.title = (username || userId)+'-'+Sliobj.sessionName;
+    } else {
+	if (nameElem)
+	    nameElem.textContent = '';
+    }
 }
 
 Slidoc.nextUser = function (forward, first, needGradingOnly) {
@@ -1819,6 +1840,8 @@ Slidoc.manageSession = function() {
 	html += 'Session admin:<br><blockquote>\n';
 	html += '<a class="slidoc-clickable" href="/_manage/'+Sliobj.sessionName+'" target="_blank">Manage</a><br>';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
+	html += hr;
+	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print exam view</span><br>';
 	html += hr;
 	html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
 	html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
@@ -2558,6 +2581,18 @@ function scoreSession(session) {
 				Sliobj.params);
 }
 
+Slidoc.toggleExam = function () {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Sliobj.printExamView = !Sliobj.printExamView;
+    if (Sliobj.printExamView) {
+	if (Sliobj.currentSlide)
+	    Slidoc.slideViewEnd();
+	selectUser(GService.gprofile.auth);
+	alert('Use Down Arrow to print and advance');
+    }
+}
+
 function preAnswer() {
     // Pre-answer questions (and display notes for those)
     Slidoc.log('preAnswer:');
@@ -2566,40 +2601,29 @@ function preAnswer() {
     var chapter_id = parseSlideId(firstSlideId)[0];
     clearAnswerElements();
 
-    if ('randomize_choice' in Sliobj.params.features && Sliobj.session) {
+    if ('randomize_choice' in Sliobj.params.features && Sliobj.session && Sliobj.session.questionShuffle) {
 	// Handle choice randomization
-	var newShuffle = {};
-	var qShuffle = Sliobj.session.questionShuffle || null;
-	var randFunc = makeRandomFunction(getRandomSeed(Sliobj.seedOffset.randomChoice));
 	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	    var question_attrs = attr_vals[qnumber-1];
 	    if (!(question_attrs.qtype == 'choice' || question_attrs.qtype == 'multichoice'))
 		continue
 	    // Choice question
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	    var shuffleStr = qShuffle ? (qShuffle[qnumber]||'') : '';
-	    if (Sliobj.adminState) {
-		if (shuffleStr) {
-		    var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
-		    if (shuffleDiv)
-			shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
-		}
-		
-	    } else if (!qShuffle) {
-		// Randomize choice
-		var choices = document.getElementsByClassName(slide_id+"-choice-elem");
-		shuffleStr = Math.floor(2*randFunc());
-		shuffleStr += randomLetters(choices.length, randFunc);
-		newShuffle[qnumber] = shuffleStr;
+	    var shuffleStr = Sliobj.session.questionShuffle[qnumber] || '';
+	    if (shuffleStr && Sliobj.adminState && !Sliobj.printExamView) {
+		// Do not display shuffled choices for grading; simply display shuffle string
+		var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
+		if (shuffleDiv)
+		    shuffleDiv.innerHTML = '<code>(Shuffled: '+shuffleStr+')</code>';
+		shuffleStr = '';
 	    }
 	    shuffleBlock(slide_id, shuffleStr, qnumber);
 	}
-	if (Object.keys(newShuffle).length) {
-	    Sliobj.session.questionShuffle = newShuffle;
-	    Slidoc.PluginManager.saveSession();
-	}
     }
 
+    if (Sliobj.printExamView)
+	return;
+    
     var keys = Object.keys(Sliobj.session.questionsAttempted);
     for (var j=0; j<keys.length; j++) {
 	var qnumber = keys[j];
@@ -2624,9 +2648,13 @@ function preAnswer() {
 
 function shuffleBlock(slide_id, shuffleStr, qnumber) {
     var choiceBlock = document.getElementById(slide_id+'-choice-block');
+    if (qnumber in Sliobj.choiceBlockHTML)
+	choiceBlock.innerHTML = Sliobj.choiceBlockHTML[qnumber]; // Restore original choices
+    else
+	Sliobj.choiceBlockHTML[qnumber] = choiceBlock.innerHTML; // Save original choices
+	
     choiceBlock.dataset.shuffle = '';
-    // Do not shuffle if adminState
-    if (!shuffleStr || Sliobj.adminState)
+    if (!shuffleStr)
 	return;
     Slidoc.log('shuffleBlock: shuffleStr', slide_id, qnumber, ' ', shuffleStr);
     var childNodes = choiceBlock.childNodes;
@@ -2743,7 +2771,7 @@ function showCorrectAnswersAfterSubmission() {
 /////////////////////////////////////////////
 
 function getRandomSeed(offset) {
-    return (Sliobj.session.randomSeed+offset) % Math.pow(2,4*8);
+    return Slidoc.Random.makeSeed(offset+Sliobj.session.randomSeed);
 }
 
 function makeRandomFunction(seed) {
@@ -2751,11 +2779,29 @@ function makeRandomFunction(seed) {
     return Slidoc.Random.randomNumber.bind(null, seed);
 }
 
-function createSession() {
+function createSession(sessionName, randomSeed) {
+    var firstSlideId = getVisibleSlides()[0].id;
+    var questions = getChapterAttrs(firstSlideId);
+
     var persistPlugins = {};
     if (Sliobj.params.plugins) {
 	for (var j=0; j<Sliobj.params.plugins.length; j++)
 	    persistPlugins[Sliobj.params.plugins[j]] = {};
+    }
+
+    if (!randomSeed)
+        randomSeed = Slidoc.Random.makeSeed();
+
+    var qshuffle = null;
+    if (questions && Sliobj.params['features'].randomize_choice) {
+        var randFunc = makeRandomFunction(getRandomSeed(Sliobj.seedOffset.randomChoice));
+        qshuffle = {};
+        for (var qno=1; qno < questions.length+1; qno++) {
+            var choices = questions[qno-1].choices || 0;
+            if (choices) {
+                qshuffle[qno] = randFunc(0,1) + randomLetters(choices, randFunc);
+            }
+        }
     }
 
     return {'version': Sliobj.params.sessionVersion,
@@ -2768,7 +2814,7 @@ function createSession() {
 	    'lateToken': '',
 	    'lastSlide': 0,
 	    'retakesRemaining': '',
-	    'randomSeed': Slidoc.Random.getRandomSeed(), // Save random seed
+	    'randomSeed': randomSeed, // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
             'startTime': Date.now(),
             'lastTime': 0,
@@ -2776,7 +2822,7 @@ function createSession() {
             'remainingTries': 0,
             'tryDelay': 0,
 	    'showTime': null,
-            'questionShuffle': null,
+            'questionShuffle': qshuffle,
             'questionsAttempted': {},
 	    'hintsUsed': {},
 	    'plugins': persistPlugins
@@ -5599,33 +5645,34 @@ var LCRandom = (function() {
       a = 1664525,
       // c and m should be co-prime
       c = 1013904223;
-  function initSequence(seedValue) {
+  function makeSeed(val) {
+      return val ? (val % m) : Math.round(Math.random() * m);
+  }
+  function setSeed(seedValue) {
       // Start new random number sequence using seed value as the label
+      // or a new random seed, if seed value is null
       var label = seedValue || '';
-      sequences[label] = seedValue || Math.round(Math.random() * m);
+      sequences[label] = makeSeed(seedValue);
       return label;
   }
   function uniform(seedValue) {
       // define the recurrence relationship
       var label = seedValue || '';
       if (!(label in sequences))
-	  throw('Random number generator not initialized properly');
+	  throw('Random number generator not initialized properly:'+label);
       sequences[label] = (a * sequences[label] + c) % m;
       // return a float in [0, 1) 
       // if sequences[label] = m then sequences[label] / m = 0 therefore (sequences[label] % m) / m < 1 always
       return sequences[label] / m;
   }
   return {
-    getRandomSeed: function() {
-	return Math.round(Math.random() * m);
-    },
-    setSeed: function(val) {
-	// Set seed to val, or a random number if val is null
-	return initSequence(val);
-    },
-    setSeedMD5: function(seedKey, labelStr) {  // NOTE USED YET
+    makeSeed: makeSeed,
+
+    setSeed: setSeed,
+
+    setSeedMD5: function(seedKey, labelStr) {  // NOT USED YET
 	// Set seed to HMAC of labelStr and seedKey
-	return initSequence( parseInt(md5(labelStr, ''+seedKey).slice(0,nbytes*2), 16) );
+	return setSeed( parseInt(md5(labelStr, ''+seedKey).slice(0,nbytes*2), 16) );
     },
     randomNumber: function(seedValue, min, max) {
 	// Equally probable integer values between min and max (inclusive)
@@ -5633,13 +5680,11 @@ var LCRandom = (function() {
 	// If both omitted, value uniformly distributed between 0.0 and 1.0 (<1.0)
 	if (!isNumber(min))
 	    return uniform(seedValue);
-	else {
-	    if (!isNumber(max)) {
-		max = min;
-		min = 1;
-	    }
-	    return Math.min(max, Math.floor( min + (max-min+1)*uniform(seedValue) ));
+	if (!isNumber(max)) {
+	    max = min;
+	    min = 1;
 	}
+	return Math.min(max, Math.floor( min + (max-min+1)*uniform(seedValue) ));
     }
   };
 }());

@@ -55,7 +55,9 @@ def get_utc_date(date_time_str):
     return date_time_str
 
 def parse_date(date_time_str):
-    """Parse ISO format date, with or without Z suffix denoting UTC, to return datetime object (containing local time)"""
+    """Parse ISO format date, with or without Z suffix denoting UTC, to return datetime object (containing local time)
+       Return None on error
+    """
     if date_time_str.endswith('Z'):
         # UTC time step (add local time offset)
         offset_sec = time.mktime(datetime.datetime.now().timetuple()) - time.mktime(datetime.datetime.utcnow().timetuple())
@@ -72,7 +74,10 @@ def parse_date(date_time_str):
     else:
         format = "%Y-%m-%dT%H:%M:%S.%f"
 
-    return datetime.datetime.fromtimestamp(time.mktime(time.strptime(date_time_str, format)) + offset_sec)
+    try:
+        return datetime.datetime.fromtimestamp(time.mktime(time.strptime(date_time_str, format)) + offset_sec)
+    except Exception:
+        return None
 
 def create_date(epoch_ms=None):
     """Create datetime object from epoch milliseconds (i.e., milliseconds since Jan. 1, 1970)"""

@@ -116,6 +116,9 @@ EVENT_BUFFER_SEC = 3
 SETTINGS_SHEET = 'settings_slidoc'
 SCORES_SHEET = 'scores_slidoc'
 
+LATE_SUBMIT = 'late'
+PARTIAL_SUBMIT = 'partial'
+
 class UserIdMixin(object):
     @classmethod
     def get_path_base(cls, path):
@@ -430,6 +433,16 @@ class ActionHandler(BaseHandler):
 
         elif action == '_import':
             self.render('import.html', site_label=site_label, session=sessionName)
+
+        elif action == '_prefill':
+            nameMap = sdproxy.lookupRoster('name')
+            count = 0
+            for userId, name in nameMap.items():
+                if not name or name.startswith('#'):
+                    continue
+                count += 1
+                sdproxy.importUserAnswers(sessionName, userId, name, source='prefill')
+            self.write('Prefilled session '+sessionName+' with '+str(count)+' users')
 
         elif action in ('_qstats'):
             sheetName = sessionName + '-answers'
@@ -1009,6 +1022,18 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 pluginName, pluginMethodName = args[:2]
                 pluginMethod = self.getPluginMethod(pluginName, pluginMethodName)
 
+                params = {'pastDue': ''}
+                sessionName = self.get_path_base(self.pathUser[0])
+                if sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+                    sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
+                    if sessionEntries['dueDate']:
+                        userEntries = sdproxy.lookupValues(self.pathUser[1], ['lateToken'], sessionName)
+                        effectiveDueDate = userEntries['lateToken'] or sessionEntries['dueDate']
+                        if effectiveDueDate and effectiveDueDate.strip() not in (LATE_SUBMIT, PARTIAL_SUBMIT):
+                            dueDateObj = sliauth.parse_date(effectiveDueDate)
+                            if dueDateObj is None or sliauth.epoch_ms() > sliauth.epoch_ms(dueDateObj):
+                                params['pastDue'] = effectiveDueDate
+                
                 if pluginMethodName.startswith('_upload'):
                     # plugin._upload*(arg1, ..., content=None)
                     print >> sys.stderr, 'sdserver: %s._upload...' % pluginName, args, not binaryContent
@@ -1020,7 +1045,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     args.append(binaryContent)
                     binaryContent = None
                 try:
-                    retObj = pluginMethod(*args[2:])
+                    retObj = pluginMethod(*([params] + args[2:]))
                 except Exception, err:
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
@@ -1141,27 +1166,26 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         if Options['debug']:
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", self.request.path, self.request.query, userId, Options['dry_run'], Options['lock_proxy_url']
 
+        if Options['site_url'] == 'http://localhost' or Options['site_url'].startswith('http://localhost:'):
+            # Batch auto login for localhost through query parameter: ?auth=userId:token
+            query = self.request.query
+            if query.startswith('auth='):
+                qauth = query[len('auth='):]
+                userId, token = qauth.split(':')
+                if token == Options['auth_key']:
+                    data = {'batch':1}
+                elif token == sliauth.gen_user_token(Options['auth_key'], userId):
+                    data = {}
+                else:
+                    raise tornado.web.HTTPError(404)
+                name = sdproxy.lookupRoster('name', userId) or ''
+                print >> sys.stderr, "AuthStaticFileHandler.get_current_user: BATCH ACCESS", self.request.path, userId, name
+                self.set_id(userId, userId, token, name, data=data)
+
         if self.request.path.startswith('/'+ADMIN_PATH):
             # Admin path accessible only to dry_run (draft/preview) or wet run using proxy_url
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
-
-            if Options['site_url'] == 'http://localhost' or Options['site_url'].startswith('http://localhost:'):
-                # Batch auto login for localhost through query parameter: ?auth=userId:token
-                query = self.request.query
-                if query.startswith('auth='):
-                    qauth = query[len('auth='):]
-                    userId, token = qauth.split(':')
-                    userToken = sliauth.gen_user_token(Options['auth_key'], userId)
-                    if token == Options['auth_key']:
-                        token = userToken
-                        data = {'batch':1}
-                    elif token == userToken:
-                        data = {}
-                    else:
-                        raise tornado.web.HTTPError(404)
-                    name = sdproxy.lookupRoster('name', userId) or ''
-                    self.set_id(userId, userId, token, name, data=data)
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
@@ -1186,20 +1210,16 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             errMsg = ''
             if not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                 # Check release date for session in index (admin/test user always has access, allowing delayed release of live lectures and exams)
-                try:
-                    sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
-                    if sessionEntries['releaseDate']:
-                        if sessionEntries['releaseDate'].strip() == FUTURE_DATE:
-                            errMsg = 'Session %s unavailable' % sessionName
-                        else:
-                            remaining_ms = sliauth.epoch_ms(sessionEntries['releaseDate']) - sliauth.epoch_ms()
-                            if remaining_ms > 0:
-                                errMsg = 'Session %s not yet available' % sessionName
-                                print >> sys.stderr, "AuthStaticFileHandler.get_current_user", 'ERROR: Session %s not yet available' % sessionName
-                except Exception, excp:
-                    pass
-
+                sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
+                if sessionEntries['releaseDate']:
+                    if sessionEntries['releaseDate'].strip() == FUTURE_DATE:
+                        errMsg = 'Session %s unavailable' % sessionName
+                    else:
+                         dateObj = sliauth.parse_date(sessionEntries['releaseDate'])
+                         if dateObj is None or sliauth.epoch_ms() < sliauth.epoch_ms(dateObj):
+                            errMsg = 'Session %s not yet available' % sessionName
             if errMsg:
+                print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message=errMsg)
             sessionPrefix = self.get_id_from_cookie(prefix=True)
             if not sessionPrefix:
@@ -1455,6 +1475,7 @@ class Application(tornado.web.Application):
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
                           (r"/(_manage/[-\w.]+)", ActionHandler),
+                          (r"/(_prefill/[-\w.]+)", ActionHandler),
                           (r"/(_qstats/[-\w.]+)", ActionHandler),
                           (r"/(_refresh/[-\w.]+)", ActionHandler),
                           (r"/(_respond/[-\w.;]+)", ActionHandler),

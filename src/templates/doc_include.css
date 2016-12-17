@@ -67,19 +67,22 @@ body.slidoc-interact-view #slidoc-interact-display { background: red; }
 /* Testing */
 span#slidoc-test-status {color: red; font-weight: bold; background: #888;}
 
+/* Printing */
+#slidoc-user-name {font-weight: bold; margin: 0; padding: 0;}
+
 /* Body */
 body {
   padding-top: 25px;
 }
 
 /* Multi-column (use ---- to force single column) */
-body:not(.slidoc-slide-view):not(.slidoc-admin-view) article.slidoc-two-column {
+body:not(.slidoc-slide-view) article.slidoc-two-column {
     -webkit-column-count: 2;
     -moz-column-count: 2;
     column-count: 2;
 }
 
-body:not(.slidoc-slide-view):not(.slidoc-admin-view) article.slidoc-two-column section.slidoc-single-column {
+body:not(.slidoc-slide-view) article.slidoc-two-column section.slidoc-single-column {
     column-span: all;
 }
 

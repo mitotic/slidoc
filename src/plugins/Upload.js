@@ -133,7 +133,7 @@ Upload = {
 	    var pluginResp = {name: this.name, score: 1, correctAnswer: '', filename: fileInfo.upload.name,
 			      time: fileInfo.uploadTime, fileType: fileInfo.upload.fileType, url: fileInfo.upload.url,
 			      fileKey: fileInfo.upload.fileKey};
-	    this.remoteCall('lockFile', null, fileInfo.upload.url);
+	    ///this.remoteCall('lockFile', null, fileInfo.upload.url); //Disabled to allow unsubmission etc.
 	} else {
 	    var response = '';
 	    var pluginResp = {name: this.name, score: null, correctAnswer: ''};

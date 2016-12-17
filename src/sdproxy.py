@@ -21,6 +21,7 @@ from __future__ import print_function
 import cStringIO
 import csv
 import datetime
+import functools
 import json
 import math
 import os
@@ -40,7 +41,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7g'
+VERSION = '0.96.7h'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -52,7 +53,7 @@ Options = {
     'gsheet_url': None,   # Google Sheet URL
     'lock_proxy_url': '', # URL of proxy server to lock sheet
     'auth_key': None,     # Digest authentication key
-    'min_wait_sec': 0,     # Minimum time (sec) between successful Google Sheet requests
+    'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
     'require_login_token': True,
     'require_late_token': True,
     'share_averages': True
@@ -779,6 +780,7 @@ def sheetAction(params, notrace=False):
     # getheaders: 1 to return headers as well
     # all: 1 to retrieve all rows
     # create: 1 to create and initialize non-existent rows (for get/put)
+    # seed: optional random seed to re-create session (admin use only)
     # delrow: 1 to delete row
     # resetrow: 1 to reset row (for get)
     # late: lateToken (set when creating row)
@@ -950,6 +952,7 @@ def sheetAction(params, notrace=False):
             getShare = params.get('getshare', '')
             allRows = params.get('all','')
             createRow = params.get('create', '')
+            seedRow = params.get('seed', None) if adminUser else None
             nooverwriteRow = params.get('nooverwrite','')
             delRow = params.get('delrow','')
             resetRow = params.get('resetrow','')
@@ -1420,8 +1423,9 @@ def sheetAction(params, notrace=False):
                     retakesVal = retakesVal - 1
 
                 createRow = origVals[columnIndex['source']-1]
-                rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
-                                              userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1], origVals[columnIndex['altid']-1], createRow)
+                rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'], questions,
+                                              userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1],
+                                              origVals[columnIndex['altid']-1], createRow, seedRow)
 
                 # Preserve name, lateToken and update retake count on reset
                 rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1]
@@ -1432,8 +1436,9 @@ def sheetAction(params, notrace=False):
             elif newRow and (not rowUpdates) and createRow:
                 # Initialize new row
                 if sessionEntries:
-                    rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'],
-                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''), createRow)
+                    rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'], questions,
+                                                  userId, params.get('name', ''), params.get('email', ''), params.get('altid', ''),
+                                                  createRow, seedRow)
                     displayName = rowUpdates[columnIndex['name']-1] or ''
                     if params.get('late') and columnIndex.get('lateToken'):
                         rowUpdates[columnIndex['lateToken']-1] = params['late']
@@ -1866,13 +1871,98 @@ def sheetAction(params, notrace=False):
     
     return retObj
 
-def getRandomSeed():
-    return int(random.random() * (2**32))
+class LCRandomClass(object):
+    # Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
+    # m is basically chosen to be large (as it is the max period)
+    # and for its relationships to a and c
+    nbytes = 4
+    m = 2**(nbytes*8)
+    # a - 1 should be divisible by m's prime factors
+    a = 1664525
+    # c and m should be co-prime
+    c = 1013904223
+    @classmethod
+    def makeSeed(cls, val=None):
+        return (val % cls.m) if val else random.randint(0,cls.m)
 
-def createSession(sessionName, params):
+    def __init__(self):
+        self.sequences = {}
+
+    def setSeed(self, seedValue=None):
+        # Start new random number sequence using seed value as the label
+        label = seedValue or ''
+        self.sequences[label] = self.makeSeed(seedValue)
+        return label
+
+    def uniform(self, seedValue=None):
+        # define the recurrence relationship
+        label = seedValue or ''
+        if label not in self.sequences:
+            raise Exception('Random number generator not initialized properly:'+str(label))
+        self.sequences[label] = (self.a * self.sequences[label] + self.c) % self.m
+        # return a float in [0, 1) 
+        # if sequences[label] = m then sequences[label] / m = 0 therefore (sequences[label] % m) / m < 1 always
+        return self.sequences[label] / float(self.m)
+
+    def randomNumber(self, *args):
+        # randomNumber(seedValue, min, max)
+	    # Equally probable integer values between min and max (inclusive)
+        # If min is omitted, equally probable integer values between 1 and max
+        # If both omitted, value uniformly distributed between 0.0 and 1.0 (<1.0)
+        if len(args) <= 1:
+            return self.uniform(*args);
+        if len(args) == 2:
+            maxVal = args[1]
+            minVal = 1
+        else:
+            maxVal = args[2]
+            minVal = args[1]
+	    return min(maxVal, int(math.floor( minVal + (maxVal-minVal+1)*self.uniform(args[0]) )))
+
+LCRandom = LCRandomClass()
+
+RandomChoiceOffset = 1
+def makeRandomChoiceSeed(randomSeed):
+    return LCRandom.makeSeed(RandomChoiceOffset+randomSeed)
+
+def makeRandomFunction(seed):
+    LCRandom.setSeed(seed);
+    return functools.partial(LCRandom.randomNumber, seed)
+
+def shuffleArray(array, randFunc=None):
+    # Durstenfeld shuffle
+    randFunc = randFunc or random.randint;
+    for i in reversed(range(1,len(array))):
+        j = randFunc(0, i)
+        temp = array[i]
+        array[i] = array[j]
+        array[j] = temp
+    return array
+
+def randomLetters(n, randFunc=None):
+    letters = []
+    for i in range(n):
+        letters.append(chr(ord('A')+i))
+
+    shuffleArray(letters, randFunc)
+    return ''.join(letters)
+
+def createSession(sessionName, params, questions=None, randomSeed=None):
     persistPlugins = {}
     for pluginName in params['plugins']:
         persistPlugins[pluginName] = {}
+
+    if not randomSeed:
+        randomSeed = LCRandom.makeSeed()
+
+    qshuffle = None
+    if questions is not None and params['features'].get('randomize_choice'):
+        randFunc = makeRandomFunction(makeRandomChoiceSeed(randomSeed))
+        qshuffle = {}
+        for qno in range(1,len(questions)+1):
+            choices = questions[qno-1].get('choices',0)
+            if choices:
+                qshuffle[qno] = str(randFunc(0,1)) + randomLetters(choices, randFunc)
 
     return {'version': params.get('sessionVersion'),
 	    'revision': params.get('sessionRevision'),
@@ -1884,27 +1974,27 @@ def createSession(sessionName, params):
 	    'lateToken': '',
 	    'lastSlide': 0,
         'retakesRemaining': '',
-	    'randomSeed': getRandomSeed(),                     # Save random seed
-        'expiryTime': sliauth.epoch_ms() + 180*86400*1000, # 180 day lifetime
+	    'randomSeed': randomSeed,        # Save random seed
+        'expiryTime': sliauth.epoch_ms() + 180*86400*1000,  # 180 day lifetime
         'startTime': sliauth.epoch_ms(),
         'lastTime': 0,
         'lastTries': 0,
         'remainingTries': 0,
         'tryDelay': 0,
 	    'showTime': None,
-        'questionShuffle': None,
+        'questionShuffle': qshuffle,
         'questionsAttempted': {},
 	    'hintsUsed': {},
 	    'plugins': persistPlugins
 	   }
 
-def createSessionRow(sessionName, fieldsMin, params, userId, displayName='', email='', altid='', source=''):
+def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayName='', email='', altid='', source='', randomSeed=None):
     headers = params['sessionFields'] + params['gradeFields']
     idCol = headers.index('id') + 1
     nameCol = headers.index('name') + 1
     emailCol = headers.index('email') + 1
     altidCol = headers.index('altid') + 1
-    session = createSession(sessionName, params)
+    session = createSession(sessionName, params, questions, randomSeed)
     rowVals = []
     for j in range(len(headers)):
         rowVals.append('')
@@ -2087,7 +2177,7 @@ def exportAnswers(sessionName):
 
 def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
     create = source or 'import'
-    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=True)
+    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
     headers = retval['headers']
@@ -2103,6 +2193,7 @@ def createQuestionAttempted(response):
 
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
     # answers = {1:{'response':, 'explain':},...}
+    # If source == "prefill", only row creation occurs
     if Options['debug']:
         print("DEBUG:importUserAnswers", sessionName, submitDate, userId, displayName, answers, file=sys.stderr)
     if not getSheet(sessionName, optional=True):
@@ -2121,9 +2212,11 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         createDate(submitDate)
 
     create = source or 'import'
-    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=True)
+    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
+    if source == "prefill":
+        return
     headers = retval['headers']
     rowValues = retval['value']
     headerCols = dict((hdr, j+1) for j, hdr in enumerate(headers))

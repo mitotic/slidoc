@@ -424,6 +424,7 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	    // Use user/token from cookie
 	    var cookieUserName = cookieUserInfo.user;
 	    var cookieUserToken = cookieUserInfo.token;
+	    var cookieUserData = cookieUserInfo.data || {};
 	    var gprofile = this;
 
 	    function optCallback(altUser) {
@@ -442,7 +443,7 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 					    email: cookieUserInfo.email||'',
 					    altid: cookieUserInfo.altid||''}, false, callback);
 	    }
-	    if (cookieUserName == 'admin')
+	    if (cookieUserName == 'admin' && !cookieUserData.batch)
 		Slidoc.showPopupOptions('Admin user options:', ['Grade responses', 'Test user'],
 					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
 	    else

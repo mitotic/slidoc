@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7g';
+var VERSION = '0.96.7h';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -261,6 +261,7 @@ function sheetAction(params) {
     // getheaders: 1 to return headers as well
     // all: 1 to retrieve all rows
     // create: 1 to create and initialize non-existent rows (for get/put)
+    // seed: optional random seed to re-create session (admin use only)
     // delrow: 1 to delete row
     // resetrow: 1 to reset row (for get)
     // late: lateToken (set when creating row)
@@ -563,6 +564,7 @@ function sheetAction(params) {
 	    var getShare = params.getshare || '';
 	    var allRows = params.all || '';
 	    var createRow = params.create || '';
+	    var seedRow = adminUser ? (params.seed || null) : null;
 	    var nooverwriteRow = params.nooverwrite || '';
 	    var delRow = params.delrow || '';
 	    var resetRow = params.resetrow || '';
@@ -1093,8 +1095,9 @@ function sheetAction(params) {
 		}
 
 		createRow = origVals[columnIndex['source']-1];
-		rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
-					      userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1], origVals[columnIndex['altid']-1], createRow);
+		rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params, questions,
+					      userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1],
+					      origVals[columnIndex['altid']-1], createRow, seedRow);
 
 		// Preserve name, lateToken and update retake count on reset
 		rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1];
@@ -1105,8 +1108,9 @@ function sheetAction(params) {
 	    } else if (newRow && !rowUpdates && createRow) {
 		// Initialize new row
 		if (sessionEntries) {
-		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params,
-						  userId, params.name, params.email, params.altid, createRow);
+		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params, questions,
+						  userId, params.name, params.email, params.altid,
+						  createRow, seedRow);
 		    displayName = rowUpdates[columnIndex['name']-1] || '';
 		    if (params.late && columnIndex['lateToken'])
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
@@ -1573,14 +1577,115 @@ function getSessionNames() {
     return getColumns('id', indexSheet);
 }
 
-function getRandomSeed() {
-    return Math.round(Math.random() * Math.pow(2,32));
+var LCRandom = (function() {
+  // Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
+      // m is basically chosen to be large (as it is the max period)
+      // and for its relationships to a and c
+  var nbytes = 4;
+  var sequences = {};
+  var m = Math.pow(2,nbytes*8),
+      // a - 1 should be divisible by m's prime factors
+      a = 1664525,
+      // c and m should be co-prime
+      c = 1013904223;
+  function makeSeed(val) {
+      return val ? (val % m) : Math.round(Math.random() * m);
+  }
+  function setSeed(seedValue) {
+      // Start new random number sequence using seed value as the label
+      // or a new random seed, if seed value is null
+      var label = seedValue || '';
+      sequences[label] = makeSeed(seedValue);
+      return label;
+  }
+  function uniform(seedValue) {
+      // define the recurrence relationship
+      var label = seedValue || '';
+      if (!(label in sequences))
+	  throw('Random number generator not initialized properly:'+label);
+      sequences[label] = (a * sequences[label] + c) % m;
+      // return a float in [0, 1) 
+      // if sequences[label] = m then sequences[label] / m = 0 therefore (sequences[label] % m) / m < 1 always
+      return sequences[label] / m;
+  }
+  return {
+    makeSeed: makeSeed,
+
+    setSeed: setSeed,
+
+    setSeedMD5: function(seedKey, labelStr) {  // NOT USED YET
+	// Set seed to HMAC of labelStr and seedKey
+	return setSeed( parseInt(md5(labelStr, ''+seedKey).slice(0,nbytes*2), 16) );
+    },
+    randomNumber: function(seedValue, min, max) {
+	// Equally probable integer values between min and max (inclusive)
+	// If min is omitted, equally probable integer values between 1 and max
+	// If both omitted, value uniformly distributed between 0.0 and 1.0 (<1.0)
+	if (!isNumber(min))
+	    return uniform(seedValue);
+	if (!isNumber(max)) {
+	    max = min;
+	    min = 1;
+	}
+	return Math.min(max, Math.floor( min + (max-min+1)*uniform(seedValue) ));
+    }
+  };
+}());
+
+
+var RandomChoiceOffset = 1;
+function makeRandomChoiceSeed(randomSeed) {
+    return LCRandom.makeSeed(RandomChoiceOffset+randomSeed);
 }
 
-function createSession(sessionName, params) {
+function makeRandomFunction(seed) {
+    LCRandom.setSeed(seed);
+    return LCRandom.randomNumber.bind(null, seed);
+}
+
+function letterFromIndex(n) {
+    return String.fromCharCode('A'.charCodeAt(0) + n);
+}
+
+function shuffleArray(array, randFunc) {
+    // Durstenfeld shuffle
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = randFunc ? randFunc(0, i) : Math.floor(Math.random() * (i + 1));
+        var temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+    return array;
+}
+
+function randomLetters(n, randFunc) {
+    var letters = [];
+    for (var i=0; i < n; i++)
+	letters.push( letterFromIndex(i) );
+
+    shuffleArray(letters, randFunc);
+    return letters.join('');
+}
+
+function createSession(sessionName, params, questions, randomSeed) {
     var persistPlugins = {};
     for (var j=0; j<params.plugins.length; j++)
 	persistPlugins[params.plugins[j]] = {};
+
+    if (!randomSeed)
+        randomSeed = LCRandom.makeSeed();
+
+    var qshuffle = null;
+    if (questions && params['features'].randomize_choice) {
+        var randFunc = makeRandomFunction(makeRandomChoiceSeed(randomSeed));
+        qshuffle = {};
+        for (var qno=1; qno < questions.length+1; qno++) {
+            var choices = questions[qno-1].choices || 0;
+            if (choices) {
+                qshuffle[qno] = randFunc(0,1) + randomLetters(choices, randFunc);
+            }
+        }
+    }
 
     return {'version': params.sessionVersion,
 	    'revision': params.sessionRevision,
@@ -1592,15 +1697,15 @@ function createSession(sessionName, params) {
 	    'lateToken': '',
 	    'lastSlide': 0,
 	    'retakesRemaining': '',
-	    'randomSeed': getRandomSeed(),              // Save random seed
-            'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
+	    'randomSeed': randomSeed, // Save random seed
+            'expiryTime': Date.now() + 180*86400*1000,   // 180 day lifetime
             'startTime': Date.now(),
             'lastTime': 0,
             'lastTries': 0,
             'remainingTries': 0,
             'tryDelay': 0,
 	    'showTime': null,
-            'questionShuffle': null,
+            'questionShuffle': qshuffle,
             'questionsAttempted': {},
 	    'hintsUsed': {},
 	    'plugins': persistPlugins
@@ -1608,13 +1713,13 @@ function createSession(sessionName, params) {
 
 }
 
-function createSessionRow(sessionName, fieldsMin, params, userId, displayName, email, altid, source) {
+function createSessionRow(sessionName, fieldsMin, params, questions, userId, displayName, email, altid, source, randomSeed) {
     var headers = params.sessionFields.concat(params.gradeFields);
     var idCol = headers.indexOf('id') + 1;
     var nameCol = headers.indexOf('name') + 1;
     var emailCol = headers.indexOf('email') + 1;
     var altidCol = headers.indexOf('altid') + 1;
-    var session = createSession(sessionName, params);
+    var session = createSession(sessionName, params, questions, randomSeed);
     var rowVals = [];
     for (var j=0; j<headers.length; j++) {
 	rowVals[j] = '';

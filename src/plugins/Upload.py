@@ -16,12 +16,12 @@ class Upload(object):
         self.path = path
         self.userId = userId
 
-    def lockFile(self, fileURL):
-        print >> sys.stderr, 'Upload.lockFile:', fileURL
+    def lockFile(self, serverParams, fileURL):
+        print >> sys.stderr, 'Upload.lockFile:', serverParams, fileURL
         self.pluginManager.lockFile(fileURL)
 
-    def lateUploads(self, dirPrefix, userId=''):
-        print >> sys.stderr, 'Upload.lateUploads:', dirPrefix, userId
+    def lateUploads(self, serverParams, dirPrefix, userId=''):
+        print >> sys.stderr, 'Upload.lateUploads:', serverParams, dirPrefix, userId
         if not userId or self.userId != ADMINUSER_ID:
             userId = self.userId
 
@@ -42,8 +42,10 @@ class Upload(object):
             retvals.append( [flabel+fextn+': '+time_str, furl, self.pluginManager.getFileKey(fpath)] )
         return retvals
 
-    def _uploadData(self, dataParams, contentLength, content=None):
-        print >> sys.stderr, 'Upload._uploadData:', dataParams, contentLength, type(content)
+    def _uploadData(self, serverParams, dataParams, contentLength, content=None):
+        print >> sys.stderr, 'Upload._uploadData:', serverParams, dataParams, contentLength, type(content)
+        if serverParams.get('pastDue'):
+            raise Exception('Upload._uploadData: ERROR uploads not allowed past due date - '+serverParams['pastDue'])
         if content is None:
             raise Exception('Upload._uploadData: ERROR no content')
         if len(content) != contentLength:
