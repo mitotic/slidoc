@@ -134,7 +134,10 @@ class UserIdMixin(object):
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
-            token = token + ',' + sliauth.gen_user_token(str(token), TESTUSER_ID)
+            tokenList = [token, sliauth.gen_user_token(str(token), TESTUSER_ID)]
+            if origId and origId != username:
+                tokenList.append(sliauth.gen_user_token(str(token), origId))
+            token = ','.join(tokenList)
         cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, restrict, base64.b64encode(json.dumps(data))] );
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)

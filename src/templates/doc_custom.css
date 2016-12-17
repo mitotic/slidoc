@@ -283,7 +283,13 @@ ul.slidoc-topnav li a,
   font-size: 20px;
 }
 
-ul.slidoc-topnav li a:hover {background-color: #555;}
+ul.slidoc-topnav li span { cursor: pointer; }
+
+ul.slidoc-topnav li a:hover,
+ul.slidoc-topnav li span:hover
+    { background-color: #555; }
+
+ul.slidoc-topnav li .slidoc-topnav-selected {color: #ffa500;}
 
 ul.slidoc-topnav li.slidoc-nav-icon {display: none;}
 

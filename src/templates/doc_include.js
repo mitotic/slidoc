@@ -458,16 +458,19 @@ document.onreadystatechange = function(event) {
     // !Sliobj.params.fileName => index file; load, but do not execute JS
     if (document.readyState != "interactive" || !document.body)
 	return;
-    pageSetup();
+    Slidoc.pageSetup();
     if (!Sliobj.params.fileName) // Just a simple web page
 	return;
     Slidoc.reportTestAction('ready');
     return abortOnError(onreadystateaux);
 }
 
-function pageSetup() {
-    if (document.getElementById("slidoc-contents-button") && !document.getElementById("slidoc-topnav"))
-	document.getElementById("slidoc-contents-button").style.display = null;
+Slidoc.pageSetup = function() {
+    Slidoc.log("pageSetup:");
+    var topnavElem = document.getElementById("slidoc-topnav");
+    var contentsButton = document.getElementById("slidoc-contents-button");
+    if (contentsButton && !topnavElem)
+	contentsButton.style.display = null;
     if (Sliobj.serverCookie && Sliobj.serverCookie.user == 'admin') {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem)
@@ -2099,8 +2102,10 @@ function slidocSetupAux(session, feedback) {
 
     // Remove all global views
     var bodyClasses = document.body.classList;
-    for (var j=0; j<bodyClasses.length; j++)
-	document.body.classList.remove(bodyClasses[j]);
+    for (var j=0; j<bodyClasses.length; j++) {
+	if (!bodyClasses[j].match(/-page$/))
+	    document.body.classList.remove(bodyClasses[j]);
+    }
 
     var chapters = document.getElementsByClassName('slidoc-reg-chapter');
     for (var j=0; j<chapters.length; j++) {
@@ -3549,10 +3554,26 @@ Slidoc.hide = function (elem, className, action) {
     return false;
 }
 
-Slidoc.foldersDisplay = function() {
-    Slidoc.log('Slidoc.foldersDisplay:');
-    var prefix = '<b>Folders</b><p></p><a href="/">Home</a>\n';
-    Slidoc.showPopup(prefix);
+Slidoc.pagesDisplay = function() {
+    Slidoc.log('Slidoc.pagesDisplay:');
+    var html = '<b>Pages</b><p></p>';
+    if (Sliobj.adminState || getUserId() == Sliobj.params.testUserId)
+	html += '<a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><p></p>';
+    if (Sliobj.params.topnavList && Sliobj.params.topnavList.length) {
+	html += '<ul>\n';
+	for (var j=0; j<Sliobj.params.topnavList.length; j++) {
+	    var link = Sliobj.params.topnavList[j][0];
+	    var pagename = Sliobj.params.topnavList[j][1];
+            if (link.match(/^#/))
+		html += '<li><span onclick="Slidoc.go('+link+');">'+pagename+'</span></li>';
+	    else
+		html += '<li><a href="'+link+'" %s>'+pagename+'</a></li>';
+	}
+	html += '</ul>\n'
+    } else {
+	html += '<br><a href="/">Home</a>\n';
+    }
+    Slidoc.showPopup(html);
 }
 
 Slidoc.contentsDisplay = function() {

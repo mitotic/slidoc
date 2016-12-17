@@ -9,7 +9,7 @@
 %(skulpt_js)s
 
 </head>
-<body>
+<body class="%(body_class)s">
 %(top_nav)s
 <button id="slidoc-google-login-button" style="display: none;">Google Login</button>
 
@@ -22,11 +22,11 @@
 <span id="slidoc-submit-display" class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.submitStatus();"></span>
 <span id="slidoc-grades-button" class="slidoc-clickable slidoc-top-right-button" onclick="Slidoc.showGrades();" style="display: none;">%(letters)s</span>
 <select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
-<span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>
-<span class="slidoc-clickable slidoc-top-right-button" onclick="Slidoc.manageSession();">%(gear)s</span>
-<span id="slidoc-folders-button" class="slidoc-clickable slidoc-top-right-button slidoc-serveronly" onclick="Slidoc.foldersDisplay();">%(folder)s</span>&nbsp;
-<span id="slidoc-contents-button" class="slidoc-clickable-sym" onclick="Slidoc.contentsDisplay();">%(threebars)s</span>&nbsp;
-<span class="slidoc-clickable" onclick="Slidoc.viewHelp();"><b>?</b></span>
+<span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>&nbsp;
+<span class="slidoc-clickable slidoc-top-right-button" onclick="Slidoc.manageSession();">%(gear)s</span>&nbsp;
+<span class="slidoc-clickable" onclick="Slidoc.viewHelp();"><b>?</b></span>&nbsp;
+<span id="slidoc-contents-button" class="slidoc-clickable-sym" onclick="Slidoc.contentsDisplay();">&#x2637;</span>&nbsp;
+<span id="slidoc-pages-button" class="slidoc-clickable-sym slidoc-serveronly" onclick="Slidoc.pagesDisplay();">%(threebars)s</span>
 </div>
 
 <table class="slidoc-slide-nav slidoc-slideonly slidoc-nav-overlay">

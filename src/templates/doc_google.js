@@ -423,28 +423,26 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 	} else {
 	    // Use user/token from cookie
 	    var cookieUserName = cookieUserInfo.user;
+	    var cookieUserOrig = cookieUserInfo.origid;
 	    var cookieUserToken = cookieUserInfo.token;
 	    var cookieUserData = cookieUserInfo.data || {};
 	    var gprofile = this;
 
+	    var userIds = [cookieUserName, '_test_user', cookieUserOrig];
+	    var userTokens = cookieUserToken.split(',');
+	    var userRoles = ['Admin user (grading)', 'Test user (pacing)', 'Normal user ('+cookieUserOrig+')'];
 	    function optCallback(altUser) {
 		Slidoc.log('GoogleProfile.promptUserInfo.optCallback:', altUser);
-		if (altUser && altUser > 1) {
-		    var optId = '_test_user';
-		    var userToken = cookieUserToken.split(',')[1];
-		} else {
-		    var optId = cookieUserName;
-		    var userToken = cookieUserToken.split(',')[0];
-		}
-		gprofile.receiveUserInfo(authType, {user: optId,
-					    origid: cookieUserInfo.origid,
-					    token: userToken,
-					    name: cookieUserInfo.name||'',
-					    email: cookieUserInfo.email||'',
-					    altid: cookieUserInfo.altid||''}, false, callback);
+		var indx = Math.min(userTokens.length, Math.max(1, altUser||0));
+		gprofile.receiveUserInfo(authType, {user: userIds[indx-1],
+						    origid: cookieUserInfo.origid,
+						    token: userTokens[indx-1],
+						    name: cookieUserInfo.name||'',
+						    email: cookieUserInfo.email||'',
+						    altid: cookieUserInfo.altid||''}, false, callback);
 	    }
 	    if (cookieUserName == 'admin' && !cookieUserData.batch)
-		Slidoc.showPopupOptions('Admin user options:', ['Grade responses', 'Test user'],
+		Slidoc.showPopupOptions('Select role:', userRoles.slice(0,userTokens.length),
 					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
 	    else
 		optCallback();

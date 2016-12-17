@@ -75,6 +75,10 @@ body {
   padding-top: 25px;
 }
 
+body.slidoc-plain-page {
+  padding-top: 0px;
+}
+
 /* Multi-column (use ---- to force single column) */
 body:not(.slidoc-slide-view) article.slidoc-two-column {
     -webkit-column-count: 2;
@@ -106,7 +110,10 @@ body:not(.slidoc-slide-view) section.slidoc-page-break-before {
 .slidoc-top-left     { z-index: 3300; position: fixed; left:  10px; top: 5px; font-size: 1.2em; opacity: 0.9; }
 
 .slidoc-top-right.slidoc-topnav-hide { display: none; }
-#slidoc-contents-button {font-size: 80%;}
+
+#slidoc-contents-button,
+ #slidoc-pages-button
+     {font-size: 80%;}
 
 body:not(.slidoc-admin-view):not(.slidoc-incremental-view) .slidoc-slide-nav-down { display: none; }
 

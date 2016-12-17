@@ -2154,7 +2154,7 @@ def read_index(filepath):
 
     return index_entries
 
-def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_char=''):
+def get_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_char=''):
     if opts == 'args':
         # Generate top navigation menu from argument filenames
         label_list = [ ('Home', '/') ] + [ (strip_name(x, split_char), site_url+x+'.html') for x in fnames if x != 'index' ]
@@ -2180,13 +2180,32 @@ def gen_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_c
             else:
                 label_list.append( (strip_name(opt, split_char), opt) )
                             
-    elems = []
+    topnav_list = []
     for j, names in enumerate(label_list):
         basename, href = names
+        linkid = re.sub(r'\W', '', basename)
         if j and opts == 'args' and not separate:
-            elem = '''<span onclick="Slidoc.go('%s');">%s</span>'''  % ('#'+make_chapter_id(j+1), basename)
+            link = '#'+make_chapter_id(j+1)
         else:
-            elem = '<a href="%s">%s</a>' % (href, basename)
+            link = href
+        topnav_list.append([link, basename, linkid])
+    return topnav_list
+
+def render_topnav(topnav_list, filepath=''):
+    fname = ''
+    if filepath:
+        fname = strip_name(filepath)
+        if fname == 'index':
+           fname = strip_name(os.path.dirname(filepath))
+    elems = []
+    for link, basename, linkid in topnav_list:
+        classes = ''
+        if basename.lower() == fname.lower():
+            classes = ' class="slidoc-topnav-selected"'
+        if link.startswith('#'):
+            elem = '''<span onclick="Slidoc.go('%s');" %s>%s</span>'''  % (link, classes, basename)
+        else:
+            elem = '<a href="%s" %s>%s</a>' % (link, classes, basename)
 
         elems.append('<li>'+elem+'</li>')
 
@@ -2297,7 +2316,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
-                 'gradeFields': [],
+                 'gradeFields': [], 'topnavList': [],
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '',
@@ -2416,15 +2435,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         head_html += add_scripts
     body_prefix = templates['doc_include.html']
     mid_template = templates['doc_template.html']
-
-    toc_mid_params = {'session_name': '',
-                      'math_js': '',
-                      'pagedown_js': '',
-                      'skulpt_js': '',
-                      'plugin_tops': '',
-                      'top_nav': '',
-                      'top_nav_hide': ''}
-    toc_mid_params.update(SYMS)
 
     plugins_dir = scriptdir + '/plugins'
     plugin_paths = [plugins_dir+'/'+fname for fname in os.listdir(plugins_dir) if not fname.startswith('.') and fname.endswith('.js')]
@@ -2664,7 +2674,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['otherWeight'] = 0
             js_params['gradeWeight'] = 0
             js_params['gradeFields'] = []
-            
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"
@@ -2680,10 +2689,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if renderer.load_python:
             skulpt_load = True
 
+        js_params['topnavList'] = []
         topnav_html = ''
         sessions_due_html = ''
         if topnav_opts:
-            topnav_html = gen_topnav(topnav_opts, fnames=orig_fnames, site_url=file_config.site_url, separate=config.separate)
+            top_fname = 'home' if fname == 'index' else fname
+            js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_url=file_config.site_url, separate=config.separate)
+            topnav_html = '' if config.make_toc or config.toc else render_topnav(js_params['topnavList'], top_fname)
             sessions_due = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
@@ -2712,8 +2724,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                       'math_js': math_inc if math_in_file else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
-                      'top_nav': topnav_html,
-                      'top_nav_hide': ' slidoc-topnav-hide' if topnav_opts else ''}
+                      'body_class': 'slidoc-plain-page' if topnav_html else '',
+                      'top_nav':  topnav_html,
+                      'top_nav_hide': ' slidoc-topnav-hide' if topnav_html else ''}
         mid_params.update(SYMS)
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
@@ -2856,8 +2869,22 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.notebook:
             message('Created *.ipynb files')
 
+    topnav_list = []
+    if config.topnav:
+        topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_url=config.site_url, separate=config.separate)
+    js_params['topnavList'] = topnav_list
+
     if config.make_toc or config.toc:
         tocfile = dest_dir + ('index.html' if config.make_toc else config.toc)
+        toc_mid_params = {'session_name': '',
+                          'math_js': '',
+                          'pagedown_js': '',
+                          'skulpt_js': '',
+                          'plugin_tops': '',
+                          'body_class': 'slidoc-plain-page',
+                          'top_nav': render_topnav(topnav_list, tocfile) if topnav_list else '',
+                          'top_nav_hide': ' slidoc-topnav-hide' if topnav_list else ''}
+        toc_mid_params.update(SYMS)
         if config.toc_header:
             header_insert = md2md.read_file(config.toc_header)
             if config.toc_header.endswith('.md'):
@@ -2946,6 +2973,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
+
             if toc_insert:
                 toc_insert += '<br>'
             toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=False)+header_insert+Toc_header+toc_insert+''.join(toc_html)+'</article>\n'
@@ -3057,13 +3085,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
-        topnav_html = gen_topnav(config.topnav, fnames=orig_fnames, site_url=config.site_url, separate=config.separate) if config.topnav else ''
         comb_params = {'session_name': combined_name,
                        'math_js': math_inc if math_found else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
-                        'plugin_tops': '', 'top_nav': topnav_html,
-                        'top_nav_hide': ' slidoc-topnav-hide' if config.topnav else ''}
+                       'plugin_tops': '',
+                       'body_class': 'slidoc-topnav-page' if topnav_ else '',
+                       'top_nav': render_topnav(topnav_list, combined_file) if topnav_list else '',
+                       'top_nav_hide': ' slidoc-topnav-hide' if config.topnav else ''}
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
