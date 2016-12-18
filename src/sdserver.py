@@ -128,9 +128,9 @@ class UserIdMixin(object):
             basename, sep, suffix = basename.rpartition('.')
         return basename
 
-    def set_id(self, username, origId='', token='', displayName='', email='', altid='', restrict='', data={}):
+    def set_id(self, username, origId='', token='', displayName='', email='', altid='', prefix='', data={}):
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, restrict, data
+            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, prefix, data
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
@@ -138,7 +138,7 @@ class UserIdMixin(object):
             if origId and origId != username:
                 tokenList.append(sliauth.gen_user_token(str(token), origId))
             token = ','.join(tokenList)
-        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, restrict, base64.b64encode(json.dumps(data))] );
+        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, prefix, base64.b64encode(json.dumps(data))] )
         self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
         self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
@@ -224,8 +224,12 @@ class HomeHandler(BaseHandler):
 
 class ActionHandler(BaseHandler):
     def get(self, subpath, inner=None):
+        if subpath == '_logout':
+            self.clear_id()
+            self.render('logout.html')
+            return
         token = str(self.get_argument("token", ""))
-        if token == Options['auth_key'] or self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
+        if token == Options['auth_key'] or (self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID) and not self.get_id_from_cookie(prefix=True)):
             try:
                 return self.getAction(subpath)
             except Exception, excp:
@@ -239,7 +243,7 @@ class ActionHandler(BaseHandler):
         raise tornado.web.HTTPError(403)
 
     def post(self, subpath, inner=None):
-        if self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
+        if self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID) and not self.get_id_from_cookie(prefix=True):
             return self.postAction(subpath)
         raise tornado.web.HTTPError(403)
 
@@ -1225,12 +1229,26 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message=errMsg)
             sessionPrefix = self.get_id_from_cookie(prefix=True)
-            if not sessionPrefix:
+            if not sessionPrefix or not userId:
                 return userId
+
+            # Handle restricted admin access for domain example.com:
+            # --auth_type='@example.com,...,owner=admin,grader@gmail.com=grader:assignments|tests,tester@gmail.com=dummy'
+            # owner@example.com has complete admin access, grader@gmail.com has admin access to _private/(assignments|tests)/*, tester has no admin access
+            # owner can test as special user _test_user
+            # grader and dummy should be added to roster, with last names starting with hash (#) to exclude from stats
             head, _, tail = self.request.path.partition('/'+PRIVATE_PATH+'/')
-            if tail.startswith(sessionPrefix):
-                return userId
-            raise tornado.web.HTTPError(404)
+            if re.match(r'^('+sessionPrefix+')', tail):
+                # Admin access allowed for this session prefix
+                if userId != ADMINUSER_ID:
+                    # Switch to admin user
+                    userId = ADMINUSER_ID
+                    self.set_id(ADMINUSER_ID, self.get_id_from_cookie(orig=True), Options['auth_key'], self.get_id_from_cookie(name=True), email=self.get_id_from_cookie(email=True), prefix=sessionPrefix)
+            elif userId == ADMINUSER_ID:
+                # Switch to regular user
+                userId = self.get_id_from_cookie(orig=True)
+                self.set_id(userId, userId, sliauth.gen_user_token(Options['auth_key'], userId), self.get_id_from_cookie(name=True), email=self.get_id_from_cookie(email=True), prefix=sessionPrefix)
+            return userId
 
         if not Options['auth_key']:
             self.clear_id()   # Clear any cookies
@@ -1318,7 +1336,7 @@ class AuthLoginHandler(BaseHandler):
 class AuthLogoutHandler(BaseHandler):
     def get(self):
         self.clear_id()
-        self.write('Logged out.<p></p><a href="/">Home</a>')
+        self.render('logout.html')
 
 class GoogleLoginHandler(tornado.web.RequestHandler,
                          tornado.auth.GoogleOAuth2Mixin, UserIdMixin):
@@ -1365,12 +1383,12 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             if not displayName:
                 displayName = username
 
-            username, prefix = self.get_alt_name(username)
-            token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
+            mapname, prefix = self.get_alt_name(username)
+            token = Options['auth_key'] if mapname == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], mapname)
             data = {}
             if Global.twitter_config:
                 data['site_twitter'] = Global.twitter_config['screen_name']
-            self.set_id(username, user['email'], token, displayName, email=user['email'].lower(), restrict=prefix,
+            self.set_id(mapname, mapname if prefix else username, token, displayName, email=user['email'].lower(), prefix=prefix,
                         data=data)
             self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
@@ -1396,10 +1414,10 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             username = user['username']
             if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
-            username, prefix = self.get_alt_name(username)
+            mapname, prefix = self.get_alt_name(username)
             displayName = user['name']
-            token = Options['auth_key'] if username == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], username)
-            self.set_id(username, user['username'], token, displayName, restrict=prefix)
+            token = Options['auth_key'] if mapname == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], mapname)
+            self.set_id(mapname, mapname if prefix else username, token, displayName, prefix=prefix)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()
@@ -1477,6 +1495,7 @@ class Application(tornado.web.Application):
                           (r"/(_import/[-\w.]+)", ActionHandler),
                           (r"/(_lock)", ActionHandler),
                           (r"/(_lock/[-\w.]+)", ActionHandler),
+                          (r"/(_logout)", ActionHandler),
                           (r"/(_manage/[-\w.]+)", ActionHandler),
                           (r"/(_prefill/[-\w.]+)", ActionHandler),
                           (r"/(_qstats/[-\w.]+)", ActionHandler),

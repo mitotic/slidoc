@@ -347,12 +347,12 @@ function abortOnError(boundFunc) {
 
 
 function localPut(key, obj) {
-    if (!isHeadless)
+    if (window.localStorage)
 	window.localStorage['slidoc_'+key] = JSON.stringify(obj);
 }
 
 function localDel(key) {
-    if (!isHeadless)
+    if (window.localStorage)
 	delete window.localStorage['slidoc_'+key];
 }
 
@@ -383,12 +383,12 @@ function getServerCookie() {
     for (var j=0; j<comps.length; j++)
 	comps[j] = decodeURIComponent(comps[j]);
     var retval = {user:   comps[0],
-	      origid:    comps.length > 1 ? comps[1] : '',
-	      token:     comps.length > 2 ? comps[2] : '',
-     	      name:      comps.length > 3 ? comps[3] : '',
-     	      email:     comps.length > 4 ? comps[4] : '',
-     	      altid:     comps.length > 5 ? comps[5] : '',
-     	      restrict:  comps.length > 6 ? comps[6] : ''
+		  origid: comps.length > 1 ? comps[1] : '',
+		  token:  comps.length > 2 ? comps[2] : '',
+     		  name:   comps.length > 3 ? comps[3] : '',
+     		  email:  comps.length > 4 ? comps[4] : '',
+     		  altid:  comps.length > 5 ? comps[5] : '',
+     		  prefix: comps.length > 6 ? comps[6] : ''
 	     };
     if (comps.length > 7 && comps[7]) {
 	try {
@@ -1832,25 +1832,30 @@ Slidoc.manageSession = function() {
 	    html += 'User: <b>'+Sliobj.serverCookie.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
 
-    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || userId == Sliobj.params.testUserId || Sliobj.adminState))
+    var fullAdmin = !Sliobj.adminPrefix && (Sliobj.adminState || userId == Sliobj.params.testUserId);
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || fullAdmin))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
-    if (userId == Sliobj.params.testUserId || Sliobj.adminState)
+    if (fullAdmin)
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
 
     if (Sliobj.adminState) {
 	html += hr;
 	html += 'Session admin:<br><blockquote>\n';
-	html += '<a class="slidoc-clickable" href="/_manage/'+Sliobj.sessionName+'" target="_blank">Manage</a><br>';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
 	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print exam view</span><br>';
 	html += hr;
-	html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
-	html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><hr>';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores for this session</span><br>';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores for all sessions</span>';
+	if (!Sliobj.adminPrefix) {
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores for all sessions</span>';
+	    html += hr;
+	    html += '<a class="slidoc-clickable" href="/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
+	    html += hr;
+	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
+	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><hr>';
+	}
 	html += '</blockquote>\n';
     }
     if (Sliobj.closePopup)
@@ -1893,6 +1898,7 @@ Slidoc.viewSheet = function(sheetName) {
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
     Sliobj.adminState = auth && !!auth.adminKey;
+    Sliobj.adminPrefix = (Sliobj.serverCookie && Sliobj.serverCookie.prefix) || '';
     Sliobj.adminPaced = 0;
     Sliobj.maxLastSlide = 0;
     Sliobj.userList = null;
@@ -3557,8 +3563,9 @@ Slidoc.hide = function (elem, className, action) {
 Slidoc.pagesDisplay = function() {
     Slidoc.log('Slidoc.pagesDisplay:');
     var html = '<b>Pages</b><p></p>';
-    if (Sliobj.adminState || getUserId() == Sliobj.params.testUserId)
+    if (!Sliobj.adminPrefix && (Sliobj.adminState || getUserId() == Sliobj.params.testUserId))
 	html += '<a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><p></p>';
+
     if (Sliobj.params.topnavList && Sliobj.params.topnavList.length) {
 	html += '<ul>\n';
 	for (var j=0; j<Sliobj.params.topnavList.length; j++) {
