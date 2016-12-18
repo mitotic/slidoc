@@ -3090,7 +3090,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
                        'plugin_tops': '',
-                       'body_class': 'slidoc-topnav-page' if topnav_ else '',
+                       'body_class': 'slidoc-topnav-page' if topnav_list else '',
                        'top_nav': render_topnav(topnav_list, combined_file) if topnav_list else '',
                        'top_nav_hide': ' slidoc-topnav-hide' if config.topnav else ''}
         comb_params.update(SYMS)

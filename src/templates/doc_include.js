@@ -4466,16 +4466,57 @@ Slidoc.submitStatus = function () {
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.uploadFile();">Late file upload</span>';
 
     if (Sliobj.adminState) {
-	if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING')
+	if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
 	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(false);">Unsubmit session for user (and clear late token)</span>';
-	else
-	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(true);">Force submit session for user</span>';
+	} else {
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(true);">Force submit session for user</span><br>';
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll();">Force submit session for ALL users</span>';
+	}
 	if (Sliobj.gradeDateStr)
 	    html += '<hr>Grades released to students at '+Sliobj.gradeDateStr;
 	else
 	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span>';
     }
     Slidoc.showPopup(html);
+}
+
+Slidoc.forceSubmitAll = function() {
+    var submitIds = [];
+    for (var j=0; j<Sliobj.userList.length; j++) {
+	var userId = Sliobj.userList[j];
+	if (!Sliobj.userGrades[userId].submitted)
+	    submitIds.push(userId);
+    }
+    if (!submitIds.length) {
+	alert('No unsubmitted users!');
+	return;
+    }
+	
+    if (!window.confirm('Force submit for '+submitIds.length+' users: '+submitIds.join(',')))
+	return;
+    var remainingCount = submitIds.length;
+    var errorCount = 0;
+    var pendingElem = document.getElementById("slidoc-pending-display");
+    if (pendingElem)
+	pendingElem.textContent = 'Remaining '+remainingCount;
+    function forceSubmitAllCallback(result, retStatus) {
+	remainingCount -= 1;
+	var msg = 'Remaining '+remainingCount;
+	if (!result)
+	    errorCount += 1;
+	if (!errorCount)
+	    msg += ' ('+errorCount+' errors)';
+	if (pendingElem)
+	    pendingElem.textContent = msg;
+	if (!remainingCount) {
+	    if (!window.confirm('Reload after completing force submit'+(errorCount ? ' ('+errorCount+' errors)': '')+'?'))
+		return;
+	    location.reload(true);
+	}
+    }
+    var gsheet = getSheet(Sliobj.sessionName);
+    for (var j=0; j<submitIds.length; j++)
+	gsheet.updateRow({id: submitIds[j], submitTimestamp: null}, {}, forceSubmitAllCallback);
 }
 
 Slidoc.forceSubmit = function(submit) {
