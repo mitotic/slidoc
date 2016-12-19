@@ -1223,7 +1223,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Paths containing '/_private' are always protected
             sessionName = self.get_path_base(self.request.path)
             errMsg = ''
-            if not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+            if 0 and not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True): # ABC
                 # Check release date for session in index (admin/test user always has access, allowing delayed release of live lectures and exams)
                 sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
                 if isinstance(sessionEntries['releaseDate'], datetime.datetime):
