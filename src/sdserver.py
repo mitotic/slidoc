@@ -1045,6 +1045,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                         if isinstance(effectiveDueDate, datetime.datetime):
                             if sliauth.epoch_ms() > sliauth.epoch_ms(effectiveDueDate):
                                 params['pastDue'] = sliauth.iso_date(effectiveDueDate)
+                        elif effectiveDueDate:
+                            # late/partial; use late submission option
+                            params['pastDue'] = str(effectiveDueDate)
                 
                 if pluginMethodName.startswith('_upload'):
                     # plugin._upload*(arg1, ..., content=None)
@@ -1223,13 +1226,12 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             if not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                 # Check release date for session in index (admin/test user always has access, allowing delayed release of live lectures and exams)
                 sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
-                if sessionEntries['releaseDate']:
-                    if sessionEntries['releaseDate'].strip() == FUTURE_DATE:
-                        errMsg = 'Session %s unavailable' % sessionName
-                    else:
-                         dateObj = sliauth.parse_date(sessionEntries['releaseDate'])
-                         if dateObj is None or sliauth.epoch_ms() < sliauth.epoch_ms(dateObj):
-                            errMsg = 'Session %s not yet available' % sessionName
+                if isinstance(sessionEntries['releaseDate'], datetime.datetime):
+                    if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
+                        errMsg = 'Session %s not yet available' % sessionName
+                elif sessionEntries['releaseDate']:
+                    # Future release date
+                    errMsg = 'Session %s unavailable' % sessionName
             if errMsg:
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message=errMsg)

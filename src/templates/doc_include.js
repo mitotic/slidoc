@@ -5240,7 +5240,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     location.href = '#'+slides[Sliobj.currentSlide-1].id;
 
     var inputElem = document.getElementById(slides[Sliobj.currentSlide-1].id+'-answer-input');
-    if (inputElem) setTimeout(function(){inputElem.focus();}, 200);
+    window.scrollTo(0,1);
+    if (inputElem) setTimeout(function(){inputElem.focus();}, 50);
     return false;
 }
 
@@ -5279,6 +5280,8 @@ function singleChapterView(newChapterId) {
 }
 
 Slidoc.go = function (slideHash, chained) {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
     return goSlide(slideHash, chained);
 }
 
@@ -5295,7 +5298,7 @@ function goSlide(slideHash, chained, singleChapter) {
 	    Slidoc.slideViewGo(false, 1);
 	} else {
 	    location.hash = Sliobj.curChapterId ? '#'+Sliobj.curChapterId+'-01' : '#slidoc01-01';
-	    window.scrollTo(0,0);
+	    window.scrollTo(0,1);
         }
 	return false;
     }
@@ -5570,7 +5573,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 	if (autoCloseMillisec)
 	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }
-    window.scrollTo(0,0);
+    window.scrollTo(0,1);
     return contentElem;
 }
 
