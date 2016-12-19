@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7h';
+var VERSION = '0.96.7i';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -2923,7 +2923,7 @@ function updateScoreAux(sessionName) {
     if (updatedNames && updatedNames.length)
 	notify('Updated scores for session '+sessionName, 'Slidoc Scores');
     else
-	notify('Failed to update scores for session '+sessionName, 'Slidoc Scores');
+	notify('Failed to update scores for session '+sessionName+'. Ensure that grades are released and session weight is not zero', 'Slidoc Scores');
     return updatedNames;
 }
 

@@ -46,9 +46,8 @@ Upload = {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
 	    this.confirmLoadElem.href = "javascript:alert('Nothing uploaded')";
 	}
-	var dirPrefix = 'Late';
 	this.lateElem.innerHTML = '';
-	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), dirPrefix, this.userId);
+	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), this.userId);
 	if (this.viewer.displayURL) {
 	    if (fileInfo)
 		this.viewer.displayURL(fileInfo.loadURL, fileInfo.upload.fileType|| fileInfo.fileType); // fileInfo.fileType for backward compatibility

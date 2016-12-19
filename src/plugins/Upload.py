@@ -10,6 +10,7 @@ import sys
 ADMINUSER_ID = 'admin'
 
 class Upload(object):
+    lateDir = 'Late'
     def __init__(self, pluginManager, path, userId):
         print >> sys.stderr, 'Upload.__init__:', path, userId
         self.pluginManager = pluginManager
@@ -20,12 +21,12 @@ class Upload(object):
         print >> sys.stderr, 'Upload.lockFile:', serverParams, fileURL
         self.pluginManager.lockFile(fileURL)
 
-    def lateUploads(self, serverParams, dirPrefix, userId=''):
-        print >> sys.stderr, 'Upload.lateUploads:', serverParams, dirPrefix, userId
+    def lateUploads(self, serverParams, userId=''):
+        print >> sys.stderr, 'Upload.lateUploads:', serverParams, userId
         if not userId or self.userId != ADMINUSER_ID:
             userId = self.userId
 
-        dirpath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + dirPrefix
+        dirpath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + self.lateDir
         path_url_list = self.pluginManager.dirFiles(dirpath, restricted=True)
         time_path_url_list = [[os.path.getmtime(path_url[0])]+path_url for path_url in path_url_list]
         time_path_url_list.sort(reverse=True)
@@ -44,8 +45,9 @@ class Upload(object):
 
     def _uploadData(self, serverParams, dataParams, contentLength, content=None):
         print >> sys.stderr, 'Upload._uploadData:', serverParams, dataParams, contentLength, type(content)
-        if serverParams.get('pastDue'):
-            raise Exception('Upload._uploadData: ERROR uploads not allowed past due date - '+serverParams['pastDue'])
+        filePrefix = dataParams.get('filePrefix')
+        if serverParams.get('pastDue') and not filePrefix.startswith(self.lateDir+'/'):
+            raise Exception('Upload._uploadData: ERROR use late upload option past due date - '+serverParams['pastDue'])
         if content is None:
             raise Exception('Upload._uploadData: ERROR no content')
         if len(content) != contentLength:
@@ -60,8 +62,8 @@ class Upload(object):
             extn = os.path.splitext(dataParams.get('filename',''))[1]
             if extn:
                 filename += extn
-            if dataParams.get('filePrefix'):
-                filename = dataParams.get('filePrefix') + '-' +filename
+            if filePrefix:
+                filename = filePrefix + '-' +filename
             filename = filename.replace('..', '') # For file access security
 
             # Prepend session name to file path

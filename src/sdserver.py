@@ -149,7 +149,7 @@ class UserIdMixin(object):
     def get_alt_name(self, username):
         if username in Global.rename:
             alt_name, _, session_prefix = Global.rename[username].partition(':')
-            # Alt name may be followed by an option session name prefix for which the altname is valid, e.g., admin:assignments
+            # Alt name may be followed by an option session name prefix for which the altname is admin, e.g., dummy:assignments
             return alt_name, session_prefix
         return username, ''
 
@@ -1031,15 +1031,20 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
                 params = {'pastDue': ''}
                 sessionName = self.get_path_base(self.pathUser[0])
+                userId = self.pathUser[1]
                 if sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                     sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['dueDate']:
-                        userEntries = sdproxy.lookupValues(self.pathUser[1], ['lateToken'], sessionName)
-                        effectiveDueDate = userEntries['lateToken'] or sessionEntries['dueDate']
-                        if effectiveDueDate and effectiveDueDate.strip() not in (LATE_SUBMIT, PARTIAL_SUBMIT):
-                            dueDateObj = sliauth.parse_date(effectiveDueDate)
-                            if dueDateObj is None or sliauth.epoch_ms() > sliauth.epoch_ms(dueDateObj):
-                                params['pastDue'] = effectiveDueDate
+                        # Check if past due date
+                        try:
+                            userEntries = sdproxy.lookupValues(userId, ['lateToken'], sessionName)
+                            effectiveDueDate = userEntries['lateToken'] or sessionEntries['dueDate']
+                        except Exception, excp:
+                            print >> sys.stderr, 'sdserver.on_message_aux', str(excp)
+                            effectiveDueDate = sessionEntries['dueDate']
+                        if isinstance(effectiveDueDate, datetime.datetime):
+                            if sliauth.epoch_ms() > sliauth.epoch_ms(effectiveDueDate):
+                                params['pastDue'] = sliauth.iso_date(effectiveDueDate)
                 
                 if pluginMethodName.startswith('_upload'):
                     # plugin._upload*(arg1, ..., content=None)

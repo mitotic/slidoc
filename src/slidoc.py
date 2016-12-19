@@ -679,7 +679,7 @@ class SlidocRenderer(MathRenderer):
 '''
     comments_template_b = '''              
 <div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
-  <span id="%(sid)s-comments-content" class="slidoc-comments-content"></span>
+  <div id="%(sid)s-comments-content" class="slidoc-comments-content"></div>
 </div>
 '''
     response_div_template = '''  <div id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></div>\n'''

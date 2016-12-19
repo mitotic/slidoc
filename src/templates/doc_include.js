@@ -467,6 +467,9 @@ document.onreadystatechange = function(event) {
 
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:");
+    var loadElem = document.getElementById("slidoc-init-load");
+    if (loadElem)
+	loadElem.style.display = 'none';
     var topnavElem = document.getElementById("slidoc-topnav");
     var contentsButton = document.getElementById("slidoc-contents-button");
     if (contentsButton && !topnavElem)
@@ -883,7 +886,7 @@ Slidoc.showConcepts = function (submitMsg) {
     } else {
 	if (!html)
 	    html += Sliobj.session.lastSlide ? '(Not tracking question concepts!)' : '(Question concepts tracked only in paced mode!)';
-	html = '<b>Answer stats</b><p></p>' + html;
+	html = '<b>Answer scores</b><p></p>' + html;
     }
     
     Slidoc.showPopup(html);
@@ -939,7 +942,7 @@ var Slide_help_list = [
     ]
 
 Slidoc.viewHelp = function () {
-    var html = '<b>Help</b><p></p>\n';
+    var html = '<b>Slide commands</b><p></p>\n';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
     html += '<table class="slidoc-slide-help-table">';
@@ -3023,7 +3026,7 @@ function cacheComments(qnumber, userId, comments, update) {
 	// Add entries for this user
 	var line = lines[j];
 	line = line.trim();
-	if (!line)
+	if (!line || line.charAt(0) == '>') // Skip blank and quoted lines
 	    continue;
 	var cscore = '';
 	var cmatch = GRADE_COMMENT_RE.exec(line);
@@ -3585,11 +3588,14 @@ Slidoc.pagesDisplay = function() {
 
 Slidoc.contentsDisplay = function() {
     Slidoc.log('Slidoc.contentsDisplay:');
-    var prefix = '<b>Contents</b><p></p>\n';
+    var prefix = '<b>Contents</b><br>\n';
     if (!Sliobj.params.fileName) {
 	Slidoc.showPopup(prefix);
 	return;
     }
+
+    if (Sliobj.sessionName)
+	prefix += '<b><em>'+Sliobj.sessionName+'</em></b>';
 
     if (!Sliobj.currentSlide && document.getElementById("slidoc00")) {
 	Slidoc.sidebarDisplay();
@@ -4459,7 +4465,7 @@ Slidoc.submitStatus = function () {
 	else if (Sliobj.session.lateToken)
 	    html += ' EXCUSED LATE';
     } else {
-	var html = 'Session not submitted.'
+	html += 'Session not submitted.'
 	if (!Sliobj.adminState) {
 	    var incomplete = Sliobj.session.lastSlide < getVisibleSlides().length;
 	    html += '<ul>';
