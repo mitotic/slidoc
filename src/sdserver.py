@@ -109,6 +109,7 @@ TESTUSER_ID = '_test_user'
 USER_COOKIE_SECURE = "slidoc_user_secure"
 SERVER_COOKIE = "slidoc_server"
 EXPIRES_DAYS = 30
+BATCH_AGE = 60      # Age of batch cookies (sec)
 
 WS_TIMEOUT_SEC = 3600
 EVENT_BUFFER_SEC = 3
@@ -121,11 +122,16 @@ PARTIAL_SUBMIT = 'partial'
 
 class UserIdMixin(object):
     @classmethod
-    def get_path_base(cls, path):
+    def get_path_base(cls, path, sessions_only=True):
         # Extract basename, without file extension, from URL path
+        # If sessions_only, return None if not html file or is index.html
+        if sessions_only and not path.endswith('.html'):
+            return None
         basename = path.split('/')[-1]
         if '.' in basename:
             basename, sep, suffix = basename.rpartition('.')
+        if sessions_only and basename == 'index':
+            return None
         return basename
 
     def set_id(self, username, origId='', token='', displayName='', email='', altid='', prefix='', data={}):
@@ -139,8 +145,12 @@ class UserIdMixin(object):
                 tokenList.append(sliauth.gen_user_token(str(token), origId))
             token = ','.join(tokenList)
         cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, prefix, base64.b64encode(json.dumps(data))] )
-        self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
-        self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
+        if data.get('batch'):
+            self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, max_age=BATCH_AGE)
+            self.set_cookie(SERVER_COOKIE, cookieStr, max_age=BATCH_AGE)
+        else:
+            self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
+            self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
     def clear_id(self):
         self.clear_cookie(USER_COOKIE_SECURE)
@@ -1030,9 +1040,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 pluginMethod = self.getPluginMethod(pluginName, pluginMethodName)
 
                 params = {'pastDue': ''}
-                sessionName = self.get_path_base(self.pathUser[0])
+                sessionName = self.get_path_base(self.pathUser[0], sessions_only=True)
                 userId = self.pathUser[1]
-                if sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+                if sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                     sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['dueDate']:
                         # Check if past due date
@@ -1221,9 +1231,9 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/_private' are always protected
-            sessionName = self.get_path_base(self.request.path)
+            sessionName = self.get_path_base(self.request.path, sessions_only=True)
             errMsg = ''
-            if 0 and not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True): # ABC
+            if sessionName and not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                 # Check release date for session in index (admin/test user always has access, allowing delayed release of live lectures and exams)
                 sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
                 if isinstance(sessionEntries['releaseDate'], datetime.datetime):

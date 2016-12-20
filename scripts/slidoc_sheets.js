@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7i';
+var VERSION = '0.96.7j';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -2955,7 +2955,7 @@ function updateScores(sessionNames, interactive) {
 	var aggregateColumns = [];
 	var totalFormulaStr = '';
 	if (totalFormula) {
-	    totalFormulaStr = totalFormula.replace(/:-(\d+)/g,'[drop $1]').replace(/(\b_|:)/g,'');
+	    totalFormulaStr = totalFormula.replace(/:-(\d+)/g,'').replace(/(\b_|:)/g,'');
 	    var comps = totalFormula.split('+');
 	    for (var j=0; j<comps.length; j++) {
 		/// Example: 0.4*average(_Assignment:-1)+0.5*sum(_Quiz:)+0.1*_Extra01

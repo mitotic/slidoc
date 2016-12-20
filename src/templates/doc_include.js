@@ -1719,7 +1719,7 @@ function showGradesCallback(userId, result, retStatus) {
 	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
 	    html += ' out of '+retStatus.info.maxScores[totalIndex];
 	if (retStatus.info.rescale && retStatus.info.rescale[totalIndex])
-	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting='+retStatus.info.rescale[totalIndex];
+	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting='+retStatus.info.rescale[totalIndex].replace(/\+/g,' + ');
 	html += '<br>';
     }
     if (result.grade) {
@@ -2090,7 +2090,7 @@ function slidocSetupAux(session, feedback) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
 	    slides[j].style.display = 'block';
-    } else if (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) {
+    } else if (!Sliobj.batchMode && (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) ) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slides[j].style.display = 'block';
