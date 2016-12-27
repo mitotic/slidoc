@@ -326,7 +326,7 @@ class Parser(object):
             try:
                 self.write_content(newpath, content)
 
-                print('Copied link %s to %s' % (link, newpath), file=sys.stderr)
+                ##print('Copied link %s to %s' % (link, newpath), file=sys.stderr)
                 if new_link:
                     # Convert URL to local file link
                     return new_link, title

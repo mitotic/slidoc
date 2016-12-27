@@ -415,18 +415,20 @@ function getParameter(name, number, queryStr) {
 
 Sliobj.serverData = {};
 Sliobj.serverCookie = getServerCookie();
-if (Sliobj.serverCookie)
+if (Sliobj.serverCookie) {
     Sliobj.serverData = Sliobj.serverCookie.data || {};
+}
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
 
 Slidoc.websocketPath = '';
 if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
     // Proxy URL
-    if (Sliobj.serverCookie)
+    if (Sliobj.serverCookie) {
 	Slidoc.websocketPath = Sliobj.params.gd_sheet_url+location.pathname;
-    else
+    } else {
 	sessionAbort('Error: File must be served from proxy server for websocket authentication');
+    }
 }
 
 Slidoc.logoutURL = "/_auth/logout/";
@@ -3581,7 +3583,7 @@ Slidoc.pagesDisplay = function() {
 	}
 	html += '</ul>\n'
     } else {
-	html += '<br><a href="/">Home</a>\n';
+	html += '<br><a href="/'+Sliobj.params.siteName+'">'+(Sliobj.params.siteName || 'Home')+'</a>\n';
     }
     Slidoc.showPopup(html);
 }

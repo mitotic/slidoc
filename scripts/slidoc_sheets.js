@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7j';
+var VERSION = '0.96.7k';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -260,6 +260,7 @@ function sheetAction(params) {
     // get: 1 to retrieve row (id must be specified)
     // getheaders: 1 to return headers as well
     // all: 1 to retrieve all rows
+    // formula: 1 retrieve formulas (proxy only)
     // create: 1 to create and initialize non-existent rows (for get/put)
     // seed: optional random seed to re-create session (admin use only)
     // delrow: 1 to delete row
@@ -380,7 +381,18 @@ function sheetAction(params) {
 	    var modSheet = getSheet(sheetName);
 	    if (!modSheet)
 		throw("Error:NOSHEET:Sheet '"+sheetName+"' not found");
-	    returnValues = modSheet.getSheetValues(1, 1, modSheet.getLastRow(), modSheet.getLastColumn());
+	    var allRange = modSheet.getRange(1, 1, modSheet.getLastRow(), modSheet.getLastColumn());
+	    returnValues = allRange.getValues();
+	    if (params.formula) {
+		var formulaValues = allRange.getFormula();
+		for (var j=0; j<formulaValues.length; j++) {
+		    var temFormulas = formulaValues[j];
+		    for (var k=0; k<temFormulas.length; k++) {
+			if (temFormulas[k])
+			    returnValues[j][k] = temFormulas[k];
+		    }
+		}
+	    }
 
 	} else if (proxy && params.allupdates) {
 	    // Update multiple sheets from proxy

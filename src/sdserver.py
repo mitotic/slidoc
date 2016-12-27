@@ -19,9 +19,11 @@ Command arguments:
     gsheet_url: Google sheet URL (required if proxy and not debugging)
     auth_key: Digest authentication key for admin user (enables login protection for website)
     port: Web server port number to listen on (default=8888)
+    private_port: Base port number for private servers
     public: Public web site (no login required, except for paths containing _private/_restricted)
     proxy: Enable proxy mode (cache copies of Google Sheets)
-    site_label: Site label, e.g., 'calc101'
+    sites: Site names, e.g., 'chem101,math101,...'
+    site_label: Site label, e.g., 'MATH101'
     static_dir: path to static files directory containing Slidoc html files (default='static')
     xsrf: Enable XSRF cookies for security
 
@@ -38,8 +40,10 @@ import importlib
 import json
 import logging
 import math
+import random
 import os.path
 import re
+import socket
 import sys
 import time
 import urllib
@@ -48,9 +52,11 @@ import uuid
 from collections import defaultdict, OrderedDict
 
 import tornado.auth
+import tornado.autoreload
 import tornado.gen
 import tornado.escape
 import tornado.httpserver
+import tornado.netutil
 import tornado.options
 import tornado.web
 import tornado.websocket
@@ -73,17 +79,23 @@ Options = {
     'gsheet_url': '',
     'lock_proxy_url': '',
     'no_auth': False,
-    'proxy_wait': None,
+    'plugindata_dir': '',
     'port': 8888,
+    'private_port': 8900,
+    'proxy_wait': None,
     'public': False,
     'reload': False,
     'require_login_token': True,
     'require_late_token': True,
+    'root_key': None,
     'share_averages': True,
     'site_label': 'Slidoc',
+    'site_name': '',
+    'site_number': 0,
     'site_url': '',
+    'sites': [],
     'static_dir': 'static',
-    'plugindata_dir': '',
+    'twitter_stream': '',
     'xsrf': False,
     }
 
@@ -94,6 +106,7 @@ Global = Dummy()
 Global.rename = {}
 Global.backup = None
 Global.twitter_config = {}
+Global.relay_list = []
 
 FUTURE_DATE = 'future'
 
@@ -137,6 +150,7 @@ class UserIdMixin(object):
     def set_id(self, username, origId='', token='', displayName='', email='', altid='', prefix='', data={}):
         if Options['debug']:
             print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, prefix, data
+
         if ':' in username or ':' in origId or ':' in token or ':' in displayName:
             raise Exception('Colon character not allowed in username/origId/token/name')
         if username == ADMINUSER_ID:
@@ -224,22 +238,32 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
 
 class HomeHandler(BaseHandler):
     def get(self):
-        if Options.get('_index_html'):
+        if Options['sites'] and not Options['site_number']:
+            html = '<div style="font-family: sans-serif;"><h3>Select site:</h3><ul>\n'
+            for site in Options['sites']:
+                html += '''<li><a href="/%s"><b>%s</b></a></li>\n''' % (site, site)
+            html += '</ul></div>\n'
+            self.write(html)
+            return
+        elif Options.get('_index_html'):
             # Not authenticated
             self.write(Options['_index_html'])
         else:
             # Authenticated by static file handler, if need be
-            self.redirect("/index.html")
+            self.redirect("/"+Options['site_name']+"/index.html" if Options['site_number'] else "/index.html")
 
 
 class ActionHandler(BaseHandler):
     def get(self, subpath, inner=None):
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: getAction', self.get_current_user(), Options['site_number'], subpath
         if subpath == '_logout':
             self.clear_id()
             self.render('logout.html')
             return
+        root = str(self.get_argument("root", ""))
         token = str(self.get_argument("token", ""))
-        if token == Options['auth_key'] or (self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID) and not self.get_id_from_cookie(prefix=True)):
+        if root == Options['root_key'] or token == Options['auth_key'] or (self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID) and not self.get_id_from_cookie(prefix=True)):
             try:
                 return self.getAction(subpath)
             except Exception, excp:
@@ -258,8 +282,20 @@ class ActionHandler(BaseHandler):
         raise tornado.web.HTTPError(403)
 
     def getAction(self, subpath):
-        site_label = Options['site_label'] or 'Home'
         action, sep, sessionName = subpath.partition('/')
+        site_label = Options['site_label'] or 'Home'
+        if Options['site_number']:
+            # Secondary server
+            root = str(self.get_argument("root", ""))
+            if action in ('_update', '_reload'):
+                raise tornado.web.HTTPError(403)
+            elif action == '_shutdown' and root != Options['root_key']:
+                raise tornado.web.HTTPError(403)
+        elif Options['sites']:
+            # Primary server
+            if action not in ('_backup', '_update', '_reload', '_shutdown'):
+                raise tornado.web.HTTPError(403)
+            
         if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_update', '_reload', '_shutdown', '_lock'):
             if not sessionName:
                 self.write('<a href="/_dash">Dashboard</a><p></p>')
@@ -341,11 +377,7 @@ class ActionHandler(BaseHandler):
             self.write('Clearing cache<br><a href="/_dash">Dashboard</a>')
 
         elif action == '_backup':
-            errors = sdproxy.backupCache(sessionName)
-            self.set_header('Content-Type', 'text/plain')
-            self.write('Backed up cache to directory '+sessionName)
-            if errors:
-                self.write(errors)
+            backupSite(sessionName) # sessionName is actually directory name
 
         elif action in ('_reload', '_update'):
             if not Options['reload']:
@@ -359,11 +391,15 @@ class ActionHandler(BaseHandler):
 
         elif action == '_shutdown':
             self.clear_id()
-            if Global.backup:
-                Global.backup.stop()
-                Global.backup = None
-            sdproxy.suspend_cache('shutdown')
             self.write('Starting shutdown (also cleared cookies)<p></p><a href="/_dash">Dashboard</a>')
+            if Options['sites'] and not Options['site_number']:
+                # Primary server
+                shutdown_all()
+            else:
+                if Global.backup:
+                    Global.backup.stop()
+                    Global.backup = None
+                sdproxy.suspend_cache('shutdown')
 
         elif action == '_lock':
             lockType = self.get_argument('type','')
@@ -1189,7 +1225,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         userId = self.get_id_from_cookie() or None
         if Options['debug']:
-            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", self.request.path, self.request.query, userId, Options['dry_run'], Options['lock_proxy_url']
+            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", Options['site_number'], self.request.path, self.request.query, userId, Options['dry_run'], Options['lock_proxy_url']
 
         if Options['site_url'] == 'http://localhost' or Options['site_url'].startswith('http://localhost:'):
             # Batch auto login for localhost through query parameter: ?auth=userId:token
@@ -1447,96 +1483,127 @@ class PlainHTTPHandler(tornado.web.RequestHandler):
     def get(self):
         self.write("Hello, world")
 
-class Application(tornado.web.Application):
-    def __init__(self):
-        handlers = [
-            (r"/", HomeHandler),
-            (r"/_auth/logout/", AuthLogoutHandler),
-            (r"/_auth/login/", AuthLoginHandler),
-            ]
+def createApplication():
+    pathPrefix = '/'+Options['site_name'] if Options['site_number'] else ''
+        
+    home_handlers = [
+                     (pathPrefix+r"/", HomeHandler),
+                    ]
+    if Options['sites']:
+        if not Options['site_number']:
+            home_handlers += [ (pathPrefix+r"/index.html", HomeHandler) ]
+        else:
+            home_handlers += [ (pathPrefix+r"$", HomeHandler) ]
 
-        settings = {'autoreload': Options['reload']}
-        Global.login_domain = ''
-        Global.login_url = '/_auth/login/'
-        if Options['auth_type']:
-            Global.login_url = '/_oauth/login'
-            comps = Options['auth_type'].split(',')
+    auth_handlers = [
+                     (r"/_auth/logout/", AuthLogoutHandler),
+                     (r"/_auth/login/", AuthLoginHandler),
+                    ]
 
-            if Options['site_url']:
-                redirect_uri = Options['site_url'] + Global.login_url
-            else:
-                redirect_uri = 'http://localhost'+ ('' if Options['port'] == 80 else ':'+str(Options['port'])) + Global.login_url
+    # Only root can auto reload
+    settings = {'autoreload': False if Options['site_number'] else Options['reload'] }
+    if settings['autoreload']:
+        tornado.autoreload.add_reload_hook(shutdown_all)
 
-            Global.login_domain = comps[0] if comps[0][0] == '@' else ''
+    Global.login_domain = ''
+    Global.login_url = '/_auth/login/'
+    if Options['auth_type']:
+        Global.login_url = '/_oauth/login'
+        comps = Options['auth_type'].split(',')
 
-            if comps[0] == 'google' or Global.login_domain:
-                settings.update(google_oauth={'key': comps[1],
-                                            'secret': comps[2],
-                                            'redirect_uri': redirect_uri})
-                handlers += [ (Global.login_url, GoogleLoginHandler) ]
+        if Options['site_url']:
+            redirect_uri = Options['site_url'] + Global.login_url
+        else:
+            redirect_uri = 'http://localhost'+ ('' if Options['port'] == 80 else ':'+str(Options['port'])) + Global.login_url
 
-            elif comps[0] == 'twitter':
-                settings.update(twitter_consumer_key=comps[1],
-                                twitter_consumer_secret=comps[2])
-                handlers += [ (Global.login_url, TwitterLoginHandler) ]
+        Global.login_domain = comps[0] if comps[0][0] == '@' else ''
 
-            else:
-                raise Exception('sdserver: Invalid auth_type: '+comps[0])
+        if comps[0] == 'google' or Global.login_domain:
+            settings.update(google_oauth={'key': comps[1],
+                                        'secret': comps[2],
+                                        'redirect_uri': redirect_uri})
+            auth_handlers += [ (Global.login_url, GoogleLoginHandler) ]
 
-            Global.rename = {}
-            for name_map in comps[3:]:
-                auth_name, slidoc_name = name_map.split('=')
-                Global.rename[auth_name] = slidoc_name
-                print >> sys.stderr, 'RENAME %s user %s -> %s' % (comps[0], auth_name, slidoc_name)
+        elif comps[0] == 'twitter':
+            settings.update(twitter_consumer_key=comps[1],
+                            twitter_consumer_secret=comps[2])
+            auth_handlers += [ (Global.login_url, TwitterLoginHandler) ]
 
+        else:
+            raise Exception('sdserver: Invalid auth_type: '+comps[0])
 
-        settings.update(
-            template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
-            xsrf_cookies=Options['xsrf'],
-            cookie_secret=Options['auth_key'],
-            login_url=Global.login_url,
-            debug=Options['debug'],
-        )
+        Global.rename = {}
+        for name_map in comps[3:]:
+            auth_name, slidoc_name = name_map.split('=')
+            Global.rename[auth_name] = slidoc_name
+            print >> sys.stderr, 'RENAME %s user %s -> %s' % (comps[0], auth_name, slidoc_name)
 
-        if Options['proxy_wait'] is not None:
-            handlers += [ (r"/_proxy", ProxyHandler),
-                          (r"/_websocket/(.*)", WSHandler),
-                          (r"/interact", AuthMessageHandler),
-                          (r"/interact/(.*)", AuthMessageHandler),
-                          (r"/(_dash)", AuthActionHandler),
-                          (r"/(_(backup|cache|clear|freeze|reload|shutdown|update))", ActionHandler),
-                          (r"/(_backup/[-\w.]+)", ActionHandler),
-                          (r"/(_delete/[-\w.]+)", ActionHandler),
-                          (r"/(_export/[-\w.]+)", ActionHandler),
-                          (r"/(_(getcol|getrow|sheet)/[-\w.;]+)", ActionHandler),
-                          (r"/(_import/[-\w.]+)", ActionHandler),
-                          (r"/(_lock)", ActionHandler),
-                          (r"/(_lock/[-\w.]+)", ActionHandler),
-                          (r"/(_logout)", ActionHandler),
-                          (r"/(_manage/[-\w.]+)", ActionHandler),
-                          (r"/(_prefill/[-\w.]+)", ActionHandler),
-                          (r"/(_qstats/[-\w.]+)", ActionHandler),
-                          (r"/(_refresh/[-\w.]+)", ActionHandler),
-                          (r"/(_respond/[-\w.;]+)", ActionHandler),
-                          (r"/(_roster)", ActionHandler),
-                          (r"/(_sessions)", ActionHandler),
-                          (r"/(_submissions/[-\w.:;]+)", ActionHandler),
-                          (r"/(_submit/[-\w.:;]+)", ActionHandler),
-                          (r"/(_twitter)", ActionHandler),
-                          (r"/(_unlock/[-\w.]+)", ActionHandler),
-                           ]
+    settings.update(
+        template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
+        xsrf_cookies=Options['xsrf'],
+        cookie_secret=Options['auth_key'],
+        login_url=Global.login_url,
+        debug=Options['debug'],
+    )
 
-        fileHandler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
+    if Options['proxy_wait'] is not None:
+        site_handlers = [
+                      (pathPrefix+r"/_proxy", ProxyHandler),
+                      (pathPrefix+r"/_websocket/(.*)", WSHandler),
+                      (pathPrefix+r"/interact", AuthMessageHandler),
+                      (pathPrefix+r"/interact/(.*)", AuthMessageHandler),
+                      (pathPrefix+r"/(_dash)", AuthActionHandler)
+                      ]
 
-        if Options['static_dir']:
-            handlers += [ (r'/([^_].*)', fileHandler, {"path": Options['static_dir']}) ]
+        patterns= [   r"/(_(reload|shutdown|update))",
+                      r"/(_(backup|cache|clear|freeze))",
+                      r"/(_backup/[-\w.]+)",
+                      r"/(_delete/[-\w.]+)",
+                      r"/(_export/[-\w.]+)",
+                      r"/(_(getcol|getrow|sheet)/[-\w.;]+)",
+                      r"/(_import/[-\w.]+)",
+                      r"/(_lock)",
+                      r"/(_lock/[-\w.]+)",
+                      r"/(_logout)",
+                      r"/(_manage/[-\w.]+)",
+                      r"/(_prefill/[-\w.]+)",
+                      r"/(_qstats/[-\w.]+)",
+                      r"/(_refresh/[-\w.]+)",
+                      r"/(_respond/[-\w.;]+)",
+                      r"/(_roster)",
+                      r"/(_sessions)",
+                      r"/(_submissions/[-\w.:;]+)",
+                      r"/(_submit/[-\w.:;]+)",
+                      r"/(_twitter)",
+                      r"/(_unlock/[-\w.]+)",
+                       ]
+        action_handlers = [(pathPrefix+pattern, ActionHandler) for pattern in patterns]
+    else:
+        site_handlers = []
+        action_handlers = []
 
-        for path in [PLUGINDATA_PATH, PRIVATE_PATH, RESTRICTED_PATH]:
-            dir = Options['plugindata_dir'] if path == PLUGINDATA_PATH else Options['static_dir']
-            if dir:
-                handlers += [ (r'/(%s/.*)' % path, fileHandler, {"path": dir}) ]
-            
-        super(Application, self).__init__(handlers, **settings)
+    file_handler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
+
+    for path in [PLUGINDATA_PATH, PRIVATE_PATH, RESTRICTED_PATH]:
+        dir = (Options['plugindata_dir'] if path == PLUGINDATA_PATH else Options['static_dir']) + pathPrefix
+        if dir:
+            site_handlers += [ (r'/(%s/.*)' % path+pathPrefix, file_handler, {"path": dir}) ]
+
+    if Options['static_dir']:
+        site_handlers += [ (r'/([^_].*)', file_handler, {"path": Options['static_dir']}) ]
+
+    if Options['sites']:
+        if not Options['site_number']:
+            handlers = home_handlers + auth_handlers + action_handlers
+        else:
+            handlers = home_handlers + action_handlers + site_handlers
+    else:
+        handlers = home_handlers + auth_handlers + action_handlers + site_handlers
+
+    ##if Options['debug']:
+    ##    print >> sys.stderr, 'createApplication', Options['site_number'], [x[0] for x in handlers]
+    return tornado.web.Application(handlers, **settings)
+
 
 def processTwitterMessage(msg):
     # Return null string on success or error message
@@ -1559,26 +1626,6 @@ def processTwitterMessage(msg):
                 status = 'Error - twitter ID '+fromUser+' not found in roster'
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
-
-def importAnswers():
-    comps = options.import_answers.split(',')
-    sessionName = comps[0]
-    filepath = comps[1] if len(comps) > 1 else ''
-    submitDate = comps[2] if len(comps) > 2 else ''
-    if not filepath:
-        filepath = sessionName+'.csv'
-    print >> sys.stderr, "Importing answers from", filepath
-
-    with open(filepath, 'rb') as csvfile:
-        missed, errors = importAnswersAux(sessionName, submitDate, filepath, csvfile)
-
-    if not missed and not errors:
-        print >> sys.stderr, 'Imported answers from', filepath
-    else:
-        if errors:
-            print >> sys.stderr, '\n'.join(errors)
-        if missed:
-            print >> sys.stderr, "ERROR: Missed uploading IDs: ", ' '.join(missed)
 
 def importAnswersAux(sessionName, submitDate, filepath, csvfile):
     missed = []
@@ -1735,7 +1782,51 @@ def importRosterAux(filepath, csvfile):
 
     return errors
 
+def makePrivateRequest(relay_address, path='/', proto='http'):
+    if Options['debug']:
+        print >> sys.stderr, 'DEBUG: sdserver.makePrivateRequest:', relay_address, path
+    if isinstance(relay_address, tuple):
+        http_client = tornado.httpclient.HTTPClient()
+        url = proto+('://%s:%d' % relay_address)
+        return http_client.fetch(url+path)
+    else:
+        import multiproxy
+        sock = multiproxy.create_unix_client_socket(relay_address)
+        retval = sock.sendall('''GET %s HTTP/1.1\r\nHost: localhost\r\n\r\n''' % path)
+        sock.close()
+        return retval
 
+def backupSite(dirpath=''):
+    if Options['debug']:
+        print >> sys.stderr, 'sdserver.backupSite:', dirpath
+    if Options['sites'] and not Options['site_number']:
+        # Primary server
+        for j, site in enumerate(Options['sites']):
+            relay_addr = Global.relay_list[j+1]
+            retval = makePrivateRequest(relay_addr, path='/'+site+'/_backup?root='+Options['root_key'])
+    else:
+        errors = sdproxy.backupSheets(dirpath)
+        self.set_header('Content-Type', 'text/plain')
+        self.write('Backed up site %s to directory %s' % (Options['site_name'], sessionName))
+        if errors:
+            self.write(errors)
+
+def shutdown_all():
+    if Options['debug']:
+        print >> sys.stderr, 'sdserver.shutdown_all:'
+    for j, site in enumerate(Options['sites']):
+        # Shutdown child servers
+        relay_addr = Global.relay_list[j+1]
+        retval = makePrivateRequest(relay_addr, path='/'+site+'/_shutdown?root='+Options['root_key'])
+
+    # Shutdown parent
+    IOLoop.current().add_callback(shutdown_loop)
+
+def shutdown_loop():
+    if Options['debug']:
+        print >> sys.stderr, 'sdserver.shutdown_loop:'
+    IOLoop.current().stop()
+    
 twitterStream = None
 def main():
     global twitterStream
@@ -1748,21 +1839,25 @@ def main():
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
-    define("gsheet_url", default="", help="Google sheet URL")
-    define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s)")
+    define("forward_port", default=0, help="Forward port for default web server with multiproxy)")
+    define("gsheet_url", default="", help="Google sheet URL1;...")
+    define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
     define("insecure_cookie", default=False, help="Insecure cookies (for printing)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
+    define("private_port", Options["private_port"], help="Base private port for multiproxy)")
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
-    define("site_label", default=Options["site_label"], help="Site label for Login page")
+    define("sites", default="", help="Site names for multi-site server (comma-separated)")
+    define("site_label", default=Options["site_label"], help="Site label")
     define("site_url", default=Options["site_url"], help="Site URL, e.g., http://example.com")
+    define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
-    define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret")
+    define("twitter_stream", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret;...")
     define("xsrf", default=False, help="XSRF cookies for security")
 
     define("port", default=Options['port'], help="Web server port", type=int)
@@ -1784,13 +1879,20 @@ def main():
             elif key in settings:
                 Options[key] = settings[key]
 
+    Split_opts = {}
+    if Options['sites']:
+        Options['sites'] = [x.strip() for x in Options['sites'].split(',')]
+        for key in ('gsheet_url', 'twitter_stream'):
+            if Options[key]:
+                Split_opts[key] = [x.strip() for x in Options[key].split(';')]
+                if len(Split_opts[key]) != len(Options['sites']):
+                    raise Exception('No. of values for --'+key+'=...;... should match number of sites')
+                Options[key] = ''
+            else:
+                Split_opts[key] = ['']*len(Options['sites'])
+
     if not options.debug:
         logging.getLogger('tornado.access').disabled = True
-
-    if options.proxy_wait is not None:
-        for key in sdproxy.Options:
-            if not key.startswith('_') and key in Options:
-                sdproxy.Options[key] = Options[key]
 
     pluginsDir = scriptdir + '/plugins'
     pluginPaths = [pluginsDir+'/'+fname for fname in os.listdir(pluginsDir) if fname[0] not in '._' and fname.endswith('.py')]
@@ -1804,12 +1906,67 @@ def main():
         plugins.append(pluginName)
         importlib.import_module('plugins.'+pluginName)
 
+    print >> sys.stderr, ''
+    print >> sys.stderr, 'sdserver: Starting **********************************************'
+
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
 
-    if options.backup:
+    ssl_options = None
+    if options.port == 443:
+        if not options.ssl:
+            sys.exit('SSL options must be specified for port 443')
+        certfile, keyfile = options.ssl.split(',')
+        ssl_options = {"certfile": certfile, "keyfile": keyfile}
+
+    Options['root_key'] = str(random.randrange(0,2**60))
+    if Options['debug']:
+        print >> sys.stderr, 'sdserver: ROOT_KEY', Options['root_key']
+    child_pids = []
+    Global.relay_list = []
+    socket_name_fmt = options.socket_dir + '/uds_socket'
+    if Options['sites']:
+        if options.forward_port:
+            Global.relay_list.append( ('localhost', options.forward_port) )
+        elif options.socket_dir:
+            Global.relay_list = [ options.socket_dir+'/uds_socket'+str(Options['private_port']) ]
+        else:
+            Global.relay_list.append( ('localhost', Options['private_port'] ) )
+            
+
+        for j, site_name in enumerate(Options['sites']):
+            port = Options['private_port']+j+1
+            if options.socket_dir:
+                Global.relay_list.append(options.socket_dir+'/uds_socket'+str(port))
+            else:
+                Global.relay_list.append( ("localhost", port) )
+
+            pid = os.fork()
+            if Options['debug']:
+                print >> sys.stderr, 'DEBUG: sdserver.fork:', pid
+
+            if pid:
+                # Primary server
+                child_pids.append(pid)
+            else:
+                # Secondary server
+                Options['site_number'] = j+1
+                Options['site_name'] = site_name
+                Options['site_label'] = site_name
+                for key in Split_opts:
+                    Options[key] = Split_opts[key][j]
+                break
+
+    if options.proxy_wait is not None:
+        # Copy options to proxy
+        for key in sdproxy.Options:
+            if not key.startswith('_') and key in Options:
+                sdproxy.Options[key] = Options[key]
+
+    if options.backup and not Options['site_name']:
+        # Sole or primary server
         comps = options.backup.split(',')
-        sdproxy.Options['BACKUP_DIR'] = comps[0]
+        sdproxy.Options['backup_dir'] = comps[0]
         hhmm = comps[1] if len(comps) > 1 else '03:00'
         curTimeSec = sliauth.epoch_ms()/1000.0
         curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
@@ -1824,14 +1981,14 @@ def main():
         def start_backup():
             if Options['debug']:
                 print >> sys.stderr, "Starting periodic backup"
-            sdproxy.backupCache()
-            Global.backup = PeriodicCallback(sdproxy.backupCache, backupInterval*1000.0)
+            backupSite()
+            Global.backup = PeriodicCallback(backupSite, backupInterval*1000.0)
             Global.backup.start()
         
         IOLoop.current().call_at(backupTimeSec, start_backup)
 
-    if options.twitter_stream:
-        comps = options.twitter_stream.split(',')
+    if Options['twitter_stream']:
+        comps = Options['twitter_stream'].split(',')
         Global.twitter_config = {
             'screen_name': comps[0],
             'consumer_token': {'consumer_key': comps[1], 'consumer_secret': comps[2]},
@@ -1843,12 +2000,40 @@ def main():
                                                      allow_replies=options.allow_replies)
         twitterStream.start_stream()
 
-    if options.port != 443:
-        http_server = tornado.httpserver.HTTPServer(Application())
-    elif options.ssl:
-        certfile, keyfile = options.ssl.split(',')
-        ssl_options = {"certfile": certfile, "keyfile": keyfile}
-        http_server = tornado.httpserver.HTTPServer(Application(), ssl_options=ssl_options)
+    if Options['debug']:
+        print >> sys.stderr, 'DEBUG: sdserver.main:', Options['site_number'], Options['site_name'], Options['sites']
+
+    if Options['sites']:
+        listen_port = Options['private_port'] + Options['site_number']
+        if not Options['site_number']:
+            # Primary server
+            import multiproxy
+            class ProxyRequestHandler(multiproxy.RequestHandler):
+                def get_relay_addr_uri(self, pipeline, header_list):
+                    """ Returns relay host, port.
+                    May modify self.request_uri or header list (excluding the first element)
+                    Raises exception if connection not allowed.
+                    """
+                    comps = self.request_uri.split('/')
+                    if len(comps) > 1 and comps[1] and comps[1] in Options['sites']:
+                        site_number = 1+Options['sites'].index(comps[1])
+                    else:
+                        site_number = 0
+                    retval = Global.relay_list[site_number]
+                    print >> sys.stderr, 'ABC: get_relay_addr_uri: ', self.request_uri, site_number, retval
+                    return retval
+
+            Proxy_server = multiproxy.ProxyServer("localhost", options.port, ProxyRequestHandler, log_interval=0,
+                              io_loop=IOLoop.current(), xheaders=True, masquerade="server/1.2345", ssl_options=ssl_options, debug=True)
+    else:
+        # Sole server
+        listen_port = options.port
+
+    if Options['debug']:
+        print >> sys.stderr, 'DEBUG: sdserver.main2:', Options['site_number']
+
+    if ssl_options and not Options['sites']:
+        http_server = tornado.httpserver.HTTPServer(createApplication(), ssl_options=ssl_options)
 
         # Redirect plain HTTP to HTTPS
         handlers = [ (r'/', PlainHTTPHandler) ]
@@ -1856,11 +2041,26 @@ def main():
         plain_http_app.listen(80)
         print >> sys.stderr, "Listening on HTTP port"
     else:
-        sys.exit('SSL options must be specified for port 443')
-    http_server.listen(options.port)
-    print >> sys.stderr, "Listening on port", options.port
-    if options.import_answers:
-        IOLoop.current().add_callback(importAnswers)
+        http_server = tornado.httpserver.HTTPServer(createApplication())
+
+    if Options['debug']:
+        print >> sys.stderr, 'DEBUG: sdserver.main3:', Global.relay_list, Options['site_number']
+    if Options['sites']:
+        relay_addr = Global.relay_list[Options['site_number']]
+        if not Options['site_number'] and options.forward_port:
+            print >> sys.stderr, "Forward by default to port", relay_addr[1]
+        else:
+            if isinstance(relay_addr, tuple):
+                http_server.listen(relay_addr[1])
+            else:
+                import multiproxy
+                sock = multiproxy.make_unix_server_socket(relay_addr)
+                http_server.add_socket(sock)
+            print >> sys.stderr, "Listening to socket %s: %s" % (relay_addr, Options['site_name'])
+    else:
+        http_server.listen(listen_port)
+        print >> sys.stderr, "Listening on port", listen_port, Options['site_name']
+
     IOLoop.current().start()
 
 

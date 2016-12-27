@@ -106,7 +106,7 @@ GService.openWebsocket = function (wsPath) {
     wsock.connection.onerror = function (error) {
 	Slidoc.log('GService.ws.onerror: Error', error);
 	alert('Failed to open websocket: '+error);
-	document.body.textContent = 'Connection error. Reload page to restart';
+	document.body.textContent = 'Connection error for websocket URL '+wsUrl+'. Reload page to restart';
     }
 
     wsock.connection.onclose = function (evt) {

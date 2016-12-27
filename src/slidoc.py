@@ -71,7 +71,7 @@ FUTURE_DATE = 'future'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'letters': '&#x1f520;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;', 'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
+        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -1865,7 +1865,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
             nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
             nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
-        ###sidebar_html = click_span(SYMS['threebars'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
+        ###sidebar_html = click_span(SYMS['trigram'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
         ###slide_html = SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])
         sidebar_html = ''
         slide_html = ''
@@ -1935,8 +1935,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
 
-    if debug:
-        print('slidoc.update_session_index: slidoc_sheets VERSION =', retval.get('info',{}).get('version'), file=sys.stderr)
+    ##if debug:
+    ##    print('slidoc.update_session_index: slidoc_sheets VERSION =', retval.get('info',{}).get('version'), file=sys.stderr)
     prev_headers = retval.get('headers')
     prev_row = retval.get('value')
     prev_questions = None
@@ -2063,7 +2063,8 @@ def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify
 
     if retval['result'] != 'success':
         abort("Error in creating sheet '%s': %s\n headers=%s\n%s" % (sheet_name, retval['error'], headers, retval.get('messages')))
-    message('slidoc: Created remote spreadsheet:', sheet_name)
+    if sheet_name != LOG_SHEET:
+        message('slidoc: Created remote spreadsheet:', sheet_name)
 
 def parse_plugin(text, name=None):
     nmatch = re.match(r'^\s*([a-zA-Z]\w*)\s*=\s*{', text)
@@ -2154,32 +2155,40 @@ def read_index(filepath):
 
     return index_entries
 
-def get_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_char=''):
+def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_char=''):
+    site_prefix = '/'
+    if site_name:
+        site_prefix += site_name + '/'
     if opts == 'args':
         # Generate top navigation menu from argument filenames
-        label_list = [ ('Home', '/') ] + [ (strip_name(x, split_char), site_url+x+'.html') for x in fnames if x != 'index' ]
+        label_list = [ (site_name or 'Home', site_prefix) ] + [ (strip_name(x, split_char), site_prefix+x+'.html') for x in fnames if x != 'index' ]
 
     elif opts in ('dirs', 'files'):
         # Generate top navigation menu from list of subdirectories, or list of HTML files
         _, subdirs, subfiles = next(os.walk(cur_dir or '.'))
         if opts == 'dirs':
-            label_list = [(strip_name(x, split_char), x+'/index.html') for x in subdirs if x[0] not in '._']
+            label_list = [(strip_name(x, split_char), site_prefix+x+'/index.html') for x in subdirs if x[0] not in '._']
         else:
-            label_list = [(strip_name(x, split_char), x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
+            label_list = [(strip_name(x, split_char), site_prefix+x.replace('.md','.html')) for x in subfiles if x[0] not in '._' and not x.startswith('index.') and x.endswith('.md')]
         label_list.sort()
-        label_list = [ ('Home', '/') ] + label_list
+        label_list = [ (site_name or 'Home', site_prefix) ] + label_list
 
     else:
         # Generate menu using basenames of provided paths
         label_list = []
         for opt in opts.split(','):
-            if opt == '/' or opt == '/index.html':
-                label_list.append( ('Home', '/') )
+            if opt == '/' or opt == 'index.html':
+                label_list.append( (site_name or 'Home', site_prefix) )
+            elif opt.endswith('/'):
+                label_list.append( (strip_name(opt[:-1], split_char), site_prefix+opt+'index.html') )
             elif opt.endswith('/index.html'):
-                label_list.append( (strip_name(opt[:-len('/index.html')], split_char), opt) )
+                label_list.append( (strip_name(opt[:-len('/index.html')], split_char), site_prefix+opt) )
             else:
-                label_list.append( (strip_name(opt, split_char), opt) )
-                            
+                label_list.append( (strip_name(opt, split_char), site_prefix+opt) )
+
+    if site_name:
+        label_list = [ (SYMS['house'], '/') ] + label_list
+
     topnav_list = []
     for j, names in enumerate(label_list):
         basename, href = names
@@ -2191,7 +2200,7 @@ def get_topnav(opts, fnames=[], site_url='', separate=False, cur_dir='', split_c
         topnav_list.append([link, basename, linkid])
     return topnav_list
 
-def render_topnav(topnav_list, filepath=''):
+def render_topnav(topnav_list, filepath='', site_name=''):
     fname = ''
     if filepath:
         fname = strip_name(filepath)
@@ -2200,7 +2209,7 @@ def render_topnav(topnav_list, filepath=''):
     elems = []
     for link, basename, linkid in topnav_list:
         classes = ''
-        if basename.lower() == fname.lower():
+        if basename.lower() == fname.lower() or (basename == site_name and fname.lower() == 'home'):
             classes = ' class="slidoc-topnav-selected"'
         if link.startswith('#'):
             elem = '''<span onclick="Slidoc.go('%s');" %s>%s</span>'''  % (link, classes, basename)
@@ -2261,7 +2270,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if config.dest_dir:
         if not os.path.isdir(config.dest_dir):
             os.makedirs(config.dest_dir)
-        dest_dir = config.dest_dir+"/"
+        dest_dir = config.dest_dir+'/'
         if config.backup_dir:
             if not os.path.isdir(config.backup_dir):
                 os.makedirs(config.backup_dir)
@@ -2314,7 +2323,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
-    js_params = {'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
+    js_params = {'siteName': '', 'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'gradeFields': [], 'topnavList': [],
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
@@ -2327,6 +2336,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
                  'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
+    js_params['siteName'] = config.site_name
     js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
@@ -2429,6 +2439,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     for suffix in SlidocRenderer.input_suffixes:
         answer_elements[suffix] = 1;
     js_params['answer_elements'] = answer_elements
+
+    topnav_list = []
+    if config.topnav:
+        topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
+    js_params['topnavList'] = topnav_list
 
     head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + ('\n<script>\n%s</script>\n' % templates['wcloud.js'])
     if combined_file:
@@ -2694,8 +2709,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         sessions_due_html = ''
         if topnav_opts:
             top_fname = 'home' if fname == 'index' else fname
-            js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_url=file_config.site_url, separate=config.separate)
-            topnav_html = '' if config.make_toc or config.toc else render_topnav(js_params['topnavList'], top_fname)
+            js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
+            topnav_html = '' if config.make_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
             sessions_due = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
@@ -2869,11 +2884,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.notebook:
             message('Created *.ipynb files')
 
-    topnav_list = []
-    if config.topnav:
-        topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_url=config.site_url, separate=config.separate)
-    js_params['topnavList'] = topnav_list
-
     if config.make_toc or config.toc:
         tocfile = dest_dir + ('index.html' if config.make_toc else config.toc)
         toc_mid_params = {'session_name': '',
@@ -2882,7 +2892,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                           'skulpt_js': '',
                           'plugin_tops': '',
                           'body_class': 'slidoc-plain-page',
-                          'top_nav': render_topnav(topnav_list, tocfile) if topnav_list else '',
+                          'top_nav': render_topnav(topnav_list, tocfile, site_name=config.site_name) if topnav_list else '',
                           'top_nav_hide': ' slidoc-topnav-hide' if topnav_list else ''}
         toc_mid_params.update(SYMS)
         if config.toc_header:
@@ -2967,9 +2977,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if combined_file:
-                toc_insert = click_span(SYMS['threebars'], "Slidoc.sidebarDisplay();",
+                toc_insert = click_span(SYMS['trigram'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
-                toc_insert = click_span(SYMS['threebars'], "Slidoc.sidebarDisplay();",
+                toc_insert = click_span(SYMS['trigram'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
@@ -3090,9 +3100,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
                        'plugin_tops': '',
-                       'body_class': 'slidoc-topnav-page' if topnav_list else '',
-                       'top_nav': render_topnav(topnav_list, combined_file) if topnav_list else '',
-                       'top_nav_hide': ' slidoc-topnav-hide' if config.topnav else ''}
+                       'body_class': '',
+                       'top_nav': '',
+                       'top_nav_hide': ''}
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
@@ -3337,6 +3347,7 @@ alt_parser.add_argument('--notebook', help='Create notebook files', action="stor
 alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
+alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
@@ -3350,7 +3361,7 @@ cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.Fil
 
 # Some arguments need to be set explicitly to '' by default, rather than staying as None
 Cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', 'image_url': '',
-                'site_url': ''}
+                'site_name': '', 'site_url': ''}
     
 def cmd_args2dict(cmd_args):
     # Assign default (non-None) values to arguments not specified anywhere
@@ -3376,7 +3387,10 @@ if __name__ == '__main__':
 
     settings = {}
     if cmd_args.gsheet_url:
-        settings = sliauth.read_settings(cmd_args.gsheet_url, cmd_args.auth_key, SETTINGS_SHEET)
+        try:
+            settings = sliauth.read_settings(cmd_args.gsheet_url, cmd_args.auth_key, SETTINGS_SHEET)
+        except Exception, excp:
+            print('Error in reading settings: %s', str(excp), file=sys.stderr)
 
     fhandles = config_dict.pop('file')
     input_files = []
@@ -3393,7 +3407,7 @@ if __name__ == '__main__':
         sys.exit('No --publish files to process!')
 
     if skipped:
-        print('******Skipped non-publish files: ', ', '.join(skipped), file=sys.stderr)
+        print('\n******Skipped non-publish files: %s\n' % ', '.join(skipped), file=sys.stderr)
 
     if cmd_args.verbose:
         print('Effective argument list', file=sys.stderr)

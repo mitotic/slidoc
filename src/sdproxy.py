@@ -41,7 +41,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7j'
+VERSION = '0.96.7k'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -56,6 +56,7 @@ Options = {
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
     'require_login_token': True,
     'require_late_token': True,
+    'site_name': '',
     'share_averages': True
     }
 
@@ -110,6 +111,7 @@ Refresh_sheets = set()
 Global = Dummy()
 
 Global.remoteVersions = set()
+Global.shuttingDown = False
 
 def delSheet(sheetName):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
@@ -161,14 +163,17 @@ def freezeCache(fill=False):
     suspend_cache('freeze')
 
 
-def backupCache(dirpath=''):
+def backupSheets(dirpath=''):
     # Returns null string on success or error string
+    # (synchronous)
     dirpath = dirpath or Options['backup_dir'] or '_backup'
     if dirpath.endswith('-'):
         dirpath += sliauth.iso_date()[:16].replace(':','-')
+    if Options['site_name']:
+        dirpath += '/' + Options['site_name']
     suspend_cache("backup")
     if Options['debug']:
-        print("DEBUG:backupCache: %s started %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
+        print("DEBUG:backupSheets: %s started %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
     errorList = []
     try:
         if not os.path.exists(dirpath):
@@ -176,24 +181,16 @@ def backupCache(dirpath=''):
 
         sessionNames = None
         for sheetName in BACKUP_SHEETS:
-            sheet = getSheet(sheetName, optional=True, backup=True)
-            if sheet:
-                backupSheet(sheetName, sheet, dirpath, errorList)
-                if sheetName == INDEX_SHEET:
-                    sessionNames = getColumns('id', sheet)
+            rows = backupSheet(sheetName, dirpath, errorList, optional=True)
+            if sheetName == INDEX_SHEET and rows and 'id' in rows[0]:
+                j = rows[0].index('id')
+                sessionNames = [row[j] for row in rows[1:]]
 
         if sessionNames is None:
             errorList.append('Error: Index sheet %s not found' % INDEX_SHEET)
 
         for sheetName in (sessionNames or []):
-            alreadyCached = sheetName in Sheet_cache
-            sessionSheet = getSheet(sheetName, optional=True, backup=True)
-            if not sessionSheet:
-                errorList.append('Error: Session sheet %s not found' % sheetName)
-                continue
-            backupSheet(sheetName, sessionSheet, dirpath, errorList)
-            if not alreadyCached:
-                del Sheet_cache[sheetName]
+            backupSheet(sheetName, dirpath, errorList)
     except Exception, excp:
         errorList.append('Error in backup: '+str(excp))
 
@@ -203,12 +200,12 @@ def backupCache(dirpath=''):
             with  open(dirpath+'/ERRORS_IN_BACKUP.txt', 'w') as errfile:
                 errfile.write(errors)
         except Exception, excp:
-            print("ERROR:backupCache: ", str(excp), file=sys.stderr)
+            print("ERROR:backupSheets: ", str(excp), file=sys.stderr)
 
     if Options['debug']:
         if errors:
             print(errors, file=sys.stderr)
-        print("DEBUG:backupCache: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
+        print("DEBUG:backupSheets: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
     suspend_cache("")
     return errors
 
@@ -223,17 +220,30 @@ def backupCell(value):
     return str(value)
 
 
-def backupSheet(name, sheet, dirpath, errorList):
+def backupSheet(name, dirpath, errorList, optional=False):
+    retval = downloadSheet(name, backup=True)
+
+    if retval['result'] != 'success':
+        if optional and retval['error'].startswith('Error:NOSHEET:'):
+            pass
+        else:
+            errorList.append('Error in downloading sheet %s: %s' % (name, retval['error']))
+        return None
+
+    rows = retval.get('value')
     try:
         rowNum = 0
         with open(dirpath+'/'+name+'.csv', 'wb') as csvfile:
             writer = csv.writer(csvfile)
-            for rowNum in range(1,sheet.getLastRow()+1):
-                row = sheet.getSheetValues(rowNum, 1, 1, sheet.getLastColumn())[0]
+            for j, row in enumerate(rows):
                 rowStr = [backupCell(x) for x in row]
                 writer.writerow(rowStr)
     except Exception, excp:
-        errorList.append('Error in saving sheet %s (row %d): %s' % (name, rowNum, excp))
+        errorList.append('Error in saving sheet %s (row %d): %s' % (name, j+1, excp))
+        return None
+
+    return rows
+
 
 def isReadOnly(sheetName):
     return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET)) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
@@ -254,7 +264,10 @@ def getSheet(sheetName, optional=False, backup=False):
 
     if Options['lock_proxy_url'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
         # Lock sheet in upstream proxy
-        lockURL = Options['lock_proxy_url']+'/_lock/'+sheetName
+        lockURL = Options['lock_proxy_url']
+        if Options['site_name']:
+            lockURL += '/' + Options['site_name']
+        lockURL += '/_proxy/_lock/'+sheetName
         try:
             req = urllib2.Request(lockURL+'?token='+Options['auth_key']+'&type=proxy')
             response = urllib2.urlopen(req)
@@ -267,21 +280,11 @@ def getSheet(sheetName, optional=False, backup=False):
         time.sleep(6)
 
     # Retrieve sheet
-    user = 'admin'
-    userToken = sliauth.gen_admin_token(Options['auth_key'], user)
-
-    getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
-    if Options['debug']:
-        print("DEBUG:getSheet", sheetName, getParams, file=sys.stderr)
-
     if Options['debug'] and not Options['gsheet_url']:
         return None
 
-    retval = sliauth.http_post(Options['gsheet_url'], getParams) if Options['gsheet_url'] else {'result': 'error', 'error': 'No Sheet URL'}
-    if Options['debug']:
-        print("DEBUG:getSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
+    retval = downloadSheet(sheetName)
 
-    Global.remoteVersions.add( retval.get('info',{}).get('version','') )
     if retval['result'] != 'success':
         if optional and retval['error'].startswith('Error:NOSHEET:'):
             Miss_cache[sheetName] = sliauth.epoch_ms()
@@ -294,6 +297,26 @@ def getSheet(sheetName, optional=False, backup=False):
     keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
     Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=keyHeader)
     return Sheet_cache[sheetName]
+
+def downloadSheet(sheetName, backup=False):
+    # Download sheet synchronously
+    # If backup, retrieve formulas rather than values
+    user = 'admin'
+    userToken = sliauth.gen_admin_token(Options['auth_key'], user)
+
+    getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
+    if backup:
+        getParams['formula'] = 1
+    if Options['debug']:
+        print("DEBUG:downloadSheet", sheetName, getParams, file=sys.stderr)
+
+    retval = sliauth.http_post(Options['gsheet_url'], getParams) if Options['gsheet_url'] else {'result': 'error', 'error': 'No Sheet URL'}
+    if Options['debug']:
+        print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
+
+    Global.remoteVersions.add( retval.get('info',{}).get('version','') )
+
+    return retval
 
 def createSheet(sheetName, headers, rows=[]):
     check_if_locked(sheetName)
@@ -596,25 +619,31 @@ def get_locked():
     locked.sort()
     return locked
 
-def schedule_update(waitSec=0, force=False):
+def schedule_update(waitSec=0, force=False, synchronous=False):
     if Global.cachePendingUpdate:
         IOLoop.current().remove_timeout(Global.cachePendingUpdate)
         Global.cachePendingUpdate = None
 
-    if waitSec:
+    if waitSec and not force:
         Global.cachePendingUpdate = IOLoop.current().call_later(waitSec, update_remote_sheets)
     else:
-        update_remote_sheets(force=force)
+        update_remote_sheets(force=True, synchronous=synchronous)
 
 def suspend_cache(action="shutdown"):
     if Global.suspended == "freeze" and action != "clear":
         raise Exception("Must clear after freeze")
 
     Global.suspended = action
-    if action:
+    if action == "shutdown":
+        schedule_update(force=True, synchronous=True)
+    elif action:
         print("Suspended for", action, file=sys.stderr)
         schedule_update(force=True)
 
+def shutdown_loop():
+    print("Completed shutdown", file=sys.stderr)
+    IOLoop.current().stop()
+        
 def updates_current():
     if not Global.suspended:
         return
@@ -626,8 +655,9 @@ def updates_current():
         initCache()
         print("Cleared cache", file=sys.stderr)
     elif Global.suspended == "shutdown":
-        print("Completing shutdown", file=sys.stderr)
-        IOLoop.current().stop()
+        if not Global.shuttingDown:
+            Global.shuttingDown = True
+            IOLoop.current().add_callback(shutdown_loop)
     elif Global.suspended == "reload":
         try:
             os.utime(scriptdir+'/reload.py', None)
@@ -645,7 +675,7 @@ def updates_current():
         except Exception, excp:
             print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
-def update_remote_sheets(force=False):
+def update_remote_sheets(force=False, synchronous=False):
     if Options['debug']:
         print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
 
@@ -689,15 +719,20 @@ def update_remote_sheets(force=False):
     user = 'admin'
     userToken = sliauth.gen_admin_token(Options['auth_key'], user)
 
-    http_client = tornado.httpclient.AsyncHTTPClient()
+    http_client = tornado.httpclient.HTTPClient() if synchronous else tornado.httpclient.AsyncHTTPClient()
     json_data = json.dumps(modRequests, default=sliauth.json_default)
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
                   'data':  json_data}
     post_data['create'] = 'proxy'
     body = urllib.urlencode(post_data)
-    http_client.fetch(Options['gsheet_url'], handle_proxy_response, method='POST', headers=None, body=body)
     Global.totalCacheRequestBytes += len(json_data)
     Global.cacheRequestTime = cur_time
+    if synchronous:
+        # Updates completed synchronously
+        handle_proxy_response(http_client.fetch(Options['gsheet_url'], method='POST', headers=None, body=body))
+        updates_current()
+        return
+    http_client.fetch(Options['gsheet_url'], handle_proxy_response, method='POST', headers=None, body=body)
 
 def handle_proxy_response(response):
     Global.cacheResponseTime = sliauth.epoch_ms()
@@ -779,6 +814,7 @@ def sheetAction(params, notrace=False):
     # get: 1 to retrieve row (id must be specified)
     # getheaders: 1 to return headers as well
     # all: 1 to retrieve all rows
+    # formula: 1 retrieve formulas (proxy only)
     # create: 1 to create and initialize non-existent rows (for get/put)
     # seed: optional random seed to re-create session (admin use only)
     # delrow: 1 to delete row
