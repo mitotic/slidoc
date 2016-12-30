@@ -84,6 +84,7 @@ Options = {
     'private_port': 8900,
     'proxy_wait': None,
     'public': False,
+    'release_required': r'(exam|quiz|test)',
     'reload': False,
     'require_login_token': True,
     'require_late_token': True,
@@ -241,7 +242,7 @@ class HomeHandler(BaseHandler):
         if Options['sites'] and not Options['site_number']:
             html = '<div style="font-family: sans-serif;"><h3>Select site:</h3><ul>\n'
             for site in Options['sites']:
-                html += '''<li><a href="/%s"><b>%s</b></a></li>\n''' % (site, site)
+                html += '''<li><a href="/%s" style="text-decoration: none;"><b>%s</b></a></li>\n''' % (site, site)
             html += '</ul></div>\n'
             self.write(html)
             return
@@ -1267,17 +1268,28 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/_private' are always protected
-            sessionName = self.get_path_base(self.request.path, sessions_only=True)
             errMsg = ''
-            if sessionName and not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID) and sessionName != 'index' and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
-                # Check release date for session in index (admin/test user always has access, allowing delayed release of live lectures and exams)
-                sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
-                if isinstance(sessionEntries['releaseDate'], datetime.datetime):
-                    if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
-                        errMsg = 'Session %s not yet available' % sessionName
-                elif sessionEntries['releaseDate']:
-                    # Future release date
-                    errMsg = 'Session %s unavailable' % sessionName
+            sessionName = self.get_path_base(self.request.path, sessions_only=True)
+            if sessionName and sessionName != 'index':
+                releaseDate = None
+                indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True)
+                if indexSheet:
+                    sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
+                    releaseDate = sessionEntries['releaseDate']
+                if Options['release_required']:
+                    # Failsafe: ensure assessment sessions always have a release date specified
+                    match = re.search(Options['release_required'], sessionName, re.IGNORECASE)
+                    if match and not releaseDate:
+                        errMsg = '--release_date must be specified for assessment session '+sessionName
+                
+                if releaseDate and not errMsg and not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID):
+                    # Check release date for session (admin/test user always has access, allowing delayed release of live lectures and exams)
+                    if isinstance(releaseDate, datetime.datetime):
+                        if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
+                            errMsg = 'Session %s not yet available' % sessionName
+                    else:
+                        # Future release date
+                        errMsg = 'Session %s unavailable' % sessionName
             if errMsg:
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message=errMsg)

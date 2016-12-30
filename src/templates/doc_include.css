@@ -2,13 +2,15 @@
 
 /* View control*/
 body.slidoc-all-view .slidoc-noall, 
-body.slidoc-slide-view .slidoc-noslide, 
+body.slidoc-fullscreen-view .slidoc-nofullscreen,
 body.slidoc-paced-view .slidoc-nopaced,
 body.slidoc-remote-view .slidoc-noremote,
+body.slidoc-slide-view .slidoc-noslide,
 .slidoc-hidden {
     display: none; }
 
 body:not(.slidoc-all-view) .slidoc-allonly, 
+body:not(.slidoc-fullscreen-view) .slidoc-fullscreenonly,
 body:not(.slidoc-slide-view) .slidoc-slideonly,
 body:not(.slidoc-paced-view) .slidoc-pacedonly,
 body:not(.slidoc-proxy-view) .slidoc-proxyonly,
@@ -67,8 +69,8 @@ body.slidoc-interact-view #slidoc-interact-display { background: red; }
 /* Testing */
 span#slidoc-test-status {color: red; font-weight: bold; background: #888;}
 
-/* Printing */
-#slidoc-user-name {font-weight: bold; margin: 0; padding: 0;}
+/* Printing user name/release date etc. */
+#slidoc-session-info {font-weight: bold; margin: 0; padding: 0;}
 
 /* Body */
 body {
@@ -106,10 +108,17 @@ body:not(.slidoc-slide-view) section.slidoc-page-break-before {
 /* Navigation */
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }
 .slidoc-bottom-right { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; opacity: 0.5; }
-.slidoc-top-right    { z-index: 1000; position: fixed; right: 20px; top: 5px; font-size: 1.2em; opacity: 0.8; }
-.slidoc-top-left     { z-index: 3300; position: fixed; left:  10px; top: 5px; font-size: 1.2em; opacity: 0.9; }
+.slidoc-top-right    { z-index: 1000; position: fixed; right: 20px; top: 5px; font-size: 1.2em; padding-left: 7px; padding-right: 7px; }
+.slidoc-top-left     { z-index: 3300; position: fixed; left:  10px; top: 5px; font-size: 1.2em; padding-left: 7px;; padding-right: 7px;}
 
 .slidoc-top-right.slidoc-topnav-hide { display: none; }
+
+.slidoc-top-left, .slidoc-top-right
+		   { font-family: sans-serif;
+		     border-radius: 7px;
+		     background: -webkit-gradient( linear, center bottom, center top, color-stop(0.0, rgba(242,242,242,0.0)), color-stop(0.2, rgba(242,242,242,1.0)) );
+                     background: -moz-linear-gradient( 90deg, rgba(242,242,242,0.0) 0%, rgba(242,242,242,1.0) 20% );
+		   }
 
 #slidoc-contents-button,
  #slidoc-pages-button

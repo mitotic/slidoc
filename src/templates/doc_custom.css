@@ -151,8 +151,14 @@ body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 14
 }
 
 /* Score tally */
-#slidoc-submit-display {color: #2980B9; font-size: 0.8em; padding-right: 5px;}
-#slidoc-score-display {color: #2980B9; font-size: 0.8em; padding-right: 5px;}
+#slidoc-session-display,
+ #slidoc-submit-display,
+ #slidoc-score-display {font-size: 0.8em;}
+
+#slidoc-session-display a,
+ #slidoc-submit-display,
+ #slidoc-score-display {color: #2980B9;}
+
 .slidoc-incorrect-answer-state #slidoc-score-display {color: red;}
 
 .slidoc-correct-answer {color: green;}
@@ -160,6 +166,7 @@ body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 14
 .slidoc-wrong-answer {color: red;}
 
 .slidoc-top-right-button { font-size: 85%; }
+.slidoc-top-spaced { margin-left: 2px; margin-right: 2px; }
 
 /* Pending updates */
 #slidoc-pending-display {color: red;}

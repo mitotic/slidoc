@@ -492,6 +492,9 @@ Slidoc.pageSetup = function() {
 	else if (dueTime && curTime < dueTime)
 	    elem.classList.add('slidoc-index-entry-due')
     }
+    document.addEventListener('webkitfullscreenchange', fullscreenHandler, false);
+    document.addEventListener('mozfullscreenchange', fullscreenHandler, false);
+    document.addEventListener('fullscreenchange', fullscreenHandler, false);
 }
 
 var PagedownConverter = null;
@@ -563,10 +566,12 @@ function parseDate(dateStr) {
     if (dateStr == 'GRADING')
 	return '(NOT YET)';
     try {
-	return new Date(dateStr);
+	var obj = new Date(dateStr);
+	if (!isNaN(obj.getTime()))
+	    return obj;
     } catch(err) {
-	return null;
     }
+    return null;
 }
 
 function zeroPad(num, pad) {
@@ -656,7 +661,26 @@ function toggleClassAll(add, className, allClassName) {
 	toggleClass(add, className, elems[j]);
 }
 
+function getFullsScreenElement() {
+    return document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement;
+}
+function fullscreenHandler() {
+    var fullscreenElement = getFullsScreenElement();
+    //Slidoc.log("fullscreenHandler:", !!fullscreenElement);
+    toggleClass(fullscreenElement, 'slidoc-fullscreen-view');
+}
+
+Slidoc.docFullScreen = function (exit) {
+    if (exit)
+	Slidoc.exitFullscreen();
+    else if (getFullsScreenElement())
+	Slidoc.exitFullscreen();
+    else
+	requestFullscreen(document.documentElement);
+}
+
 function requestFullscreen(element) {
+  Slidoc.log("requestFullscreen:");
   if (element.requestFullscreen) {
     element.requestFullscreen();
   } else if (element.mozRequestFullScreen) {
@@ -668,7 +692,8 @@ function requestFullscreen(element) {
   }
 }
 
-function exitFullscreen() {
+Slidoc.exitFullscreen = function() {
+  Slidoc.log("exitFullscreen:");
   if (document.exitFullscreen) {
     document.exitFullscreen();
   } else if (document.mozCancelFullScreen) {
@@ -760,13 +785,6 @@ Slidoc.makeShortNames = function (nameMap, first) {
     return shortMap;
 }
 
-
-Slidoc.docFullScreen = function (exit) {
-    if (exit)
-	exitFullscreen();
-    else
-	requestFullscreen(document.documentElement);
-}
 
 Slidoc.switchNav = function () {
     var elem = document.getElementById("slidoc-topnav");
@@ -1009,8 +1027,8 @@ var Key_codes = {
 
 document.onkeydown = function(evt) {
     //Slidoc.log('document.onkeydown:', evt);
-    if ((!Sliobj.currentSlide || Sliobj.questionSlide) && (evt.keyCode == 32 || evt.keyCode > 44))
-	return;  // Handle printable input normally (non-slide view or question slide)
+    if (!Sliobj.currentSlide && (evt.keyCode == 32 || evt.keyCode > 44))
+	return;  // Handle printable input normally (for non-slide view)
 
     var nodeName = evt.target.nodeName.toLowerCase();
     if ((nodeName == 'input' || nodeName == 'textarea') && evt.keyCode >= 32)
@@ -1643,10 +1661,10 @@ function selectUserCallback(auth, userId, result, retStatus) {
     initSessionPlugins(Sliobj.session);
     showSubmitted();
     preAnswer();
-    var nameElem = document.getElementById('slidoc-user-name');
+    var infoElem = document.getElementById('slidoc-session-info');
     if (Sliobj.printExamView) {
-	if (nameElem)
-	    nameElem.textContent = (Sliobj.userGrades[userId].name || userId)+' ('+Sliobj.session.randomSeed+')';
+	if (infoElem)
+	    infoElem.textContent = (Sliobj.userGrades[userId].name || userId)+' ('+Sliobj.session.randomSeed+')';
 
 	var ncomps = Sliobj.userGrades[userId].name.split(',');
 	var username = ncomps[0].trim();
@@ -1655,8 +1673,8 @@ function selectUserCallback(auth, userId, result, retStatus) {
 	username = username.replace(/ /g,'-').toLowerCase();
 	document.title = (username || userId)+'-'+Sliobj.sessionName;
     } else {
-	if (nameElem)
-	    nameElem.textContent = '';
+	if (infoElem)
+	    infoElem.textContent = '';
     }
 }
 
@@ -1841,8 +1859,16 @@ Slidoc.manageSession = function() {
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || fullAdmin))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
-    if (fullAdmin)
+    if (fullAdmin) {
+	if (Sliobj.params.releaseDate) {
+	    var dateVal = parseDate(Sliobj.params.releaseDate);
+	    if (dateVal)
+		html += '<br>Release date: '+dateVal.toLocaleString()
+	    else
+		html += '<br>Release date: '+Sliobj.params.releaseDate;
+	}
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
+    }
 
     if (Sliobj.adminState) {
 	html += hr;
@@ -2106,6 +2132,24 @@ function slidocSetupAux(session, feedback) {
 	Sliobj.session = createSession();
 	Sliobj.feedback = null;
 	sessionPut(null, null, {retry: 'new'});
+    }
+
+    var sessionElem = document.getElementById("slidoc-session-display");
+    if (sessionElem && Sliobj.params.fileName && Sliobj.params.fileName != 'index' && (Sliobj.session.submitted || !isController()) ) {
+	if (Sliobj.params.tocFile) {
+	    var prefix = Sliobj.params.fileName;
+	    var suffix = '';
+	    var nmatch = Sliobj.params.fileName.match(/(\d+)$/);
+	    if (nmatch) {
+		suffix = nmatch[1];
+		prefix = prefix.slice(0,-suffix.length);
+	    }
+	    sessionElem.innerHTML = '<a href="'+Sliobj.params.tocFile+'">'+prefix+'</a>'+suffix;
+	} else {
+	    sessionElem.textContent = Sliobj.params.fileName;
+	}
+    } else {
+	sessionElem.textContent = '';
     }
 
     // DOM set-up and clean-up
@@ -4447,9 +4491,9 @@ function showSubmitted() {
     if (!submitElem || !Sliobj.params.gd_sheet_url)
 	return;
     if (Sliobj.session && Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
-	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? 'Late submission' : 'Submitted';
+	submitElem.innerHTML = (Sliobj.session.lateToken == LATE_SUBMIT) ? 'Submitted late' : 'Submitted';
     } else if (Sliobj.session && (Sliobj.session.paced || Sliobj.session.submitted == 'GRADING')) {
-	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : ((Sliobj.session.lateToken == LATE_SUBMIT) ? 'SUBMIT LATE' : 'SUBMIT');
+	submitElem.innerHTML = Sliobj.adminState ? 'Unsubmitted' : ((Sliobj.session.lateToken == LATE_SUBMIT) ? 'Submit late' : 'Submit');
     } else {
 	submitElem.innerHTML = '';
     }

@@ -17,17 +17,19 @@
 <div id="slidoc-top-left" class="slidoc-top-left slidoc-noprint"><span id="slidoc-pending-display"></span><span id="slidoc-test-resume" class="slidoc-clickable" onclick="Slidoc.reportTestAction('resumeEvent');" style="display: none;">%(play)s</span><span id="slidoc-test-status" style="display: none;"></span></div>
 
 <div id="slidoc-top-right" class="slidoc-top-right slidoc-noprint slidoc-nav-overlay %(top_nav_hide)s">
-<span id="slidoc-button-plugin" class="slidoc-button-plugin slidoc-clickable-sym slidoc-slideonly" onclick="Slidoc.pluginButtonClick();" style="display: none;"></span>
+  <span id="slidoc-button-plugin" class="slidoc-button-plugin slidoc-clickable-sym slidoc-slideonly slidoc-top-spaced" onclick="Slidoc.pluginButtonClick();" style="display: none;"></span>
 %(plugin_tops)s
-<span id="slidoc-interact-display" class="slidoc-clickable slidoc-controlleronly" onclick="Slidoc.interact();">%(phone)s</span>
-<span id="slidoc-submit-display" class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.submitStatus();"></span>
-<span id="slidoc-grades-button" class="slidoc-clickable slidoc-top-right-button" onclick="Slidoc.showGrades();" style="display: none;">%(letters)s</span>
-<select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
-<span id="slidoc-score-display" class="slidoc-clickable" onclick="Slidoc.showConcepts();"></span>&nbsp;
-<span class="slidoc-clickable slidoc-top-right-button" onclick="Slidoc.manageSession();">%(gear)s</span>&nbsp;
-<span class="slidoc-clickable" onclick="Slidoc.viewHelp();"><b>?</b></span>&nbsp;
-<span id="slidoc-contents-button" class="slidoc-clickable-sym" onclick="Slidoc.contentsDisplay();">%(trigram)s</span>&nbsp;
-<span id="slidoc-pages-button" class="slidoc-clickable-sym slidoc-serveronly" onclick="Slidoc.pagesDisplay();">%(threebars)s</span>
+  <span id="slidoc-interact-display" class="slidoc-clickable slidoc-controlleronly slidoc-top-spaced" onclick="Slidoc.interact();">%(phone)s</span>
+  <span id="slidoc-fullscreen-display" class="slidoc-clickable slidoc-fullscreenonly slidoc-top-spaced" onclick="Slidoc.exitFullscreen();">&#9635;</span>
+  <span id="slidoc-session-display" class="slidoc-nofullscreen slidoc-top-spaced"></span>
+  <span id="slidoc-submit-display" class="slidoc-clickable slidoc-nofullscreen slidoc-top-spaced slidoc-remoteonly" onclick="Slidoc.submitStatus();"></span>
+  <span id="slidoc-grades-button" class="slidoc-clickable slidoc-nofullscreen slidoc-top-spaced slidoc-top-right-button" onclick="Slidoc.showGrades();" style="display: none;">%(letters)s</span>
+  <select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
+  <span id="slidoc-score-display" class="slidoc-clickable slidoc-top-spaced slidoc-nofullscreen" onclick="Slidoc.showConcepts();"></span>
+  <span class="slidoc-clickable slidoc-top-spaced slidoc-top-right-button" onclick="Slidoc.manageSession();">%(gear)s</span>
+  <span class="slidoc-clickable slidoc-top-spaced" onclick="Slidoc.viewHelp();"><b>?</b></span>
+  <span id="slidoc-contents-button" class="slidoc-clickable-sym slidoc-top-spaced" onclick="Slidoc.contentsDisplay();">%(trigram)s</span>
+  <span id="slidoc-pages-button" class="slidoc-clickable-sym slidoc-top-spaced slidoc-serveronly" onclick="Slidoc.pagesDisplay();">%(threebars)s</span>
 </div>
 
 <table class="slidoc-slide-nav slidoc-slideonly slidoc-nav-overlay">
@@ -67,4 +69,4 @@ Token: <input id="gdoc-login-token" type="password" class="gdoc-login-token"></i
 <p></p>
 <button id="gdoc-login-button" class="gdoc-login-button">Login</button>
 </div>
-<div id="slidoc-user-name"></div>
+<div id="slidoc-session-info" class="slidoc-noslide"></div>

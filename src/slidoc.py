@@ -2177,10 +2177,12 @@ def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_
         # Generate menu using basenames of provided paths
         label_list = []
         for opt in opts.split(','):
+            base = os.path.basename(opt)
             if opt == '/' or opt == 'index.html':
                 label_list.append( (site_name or 'Home', site_prefix) )
-            elif opt.endswith('/'):
-                label_list.append( (strip_name(opt[:-1], split_char), site_prefix+opt+'index.html') )
+            elif '.' not in base:
+                # No extension in basename; assume directory
+                label_list.append( (strip_name(opt, split_char), site_prefix+opt+'/index.html') )
             elif opt.endswith('/index.html'):
                 label_list.append( (strip_name(opt[:-len('/index.html')], split_char), site_prefix+opt) )
             else:
@@ -2325,7 +2327,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     js_params = {'siteName': '', 'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
-                 'gradeFields': [], 'topnavList': [],
+                 'gradeFields': [], 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '',
@@ -2439,6 +2441,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     for suffix in SlidocRenderer.input_suffixes:
         answer_elements[suffix] = 1;
     js_params['answer_elements'] = answer_elements
+
+    toc_file = ''
+    if config.make_toc or config.toc:
+        toc_file = 'index.html' if config.make_toc else config.toc
+        js_params['tocFile'] = toc_file
 
     topnav_list = []
     if config.topnav:
@@ -2884,15 +2891,15 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.notebook:
             message('Created *.ipynb files')
 
-    if config.make_toc or config.toc:
-        tocfile = dest_dir + ('index.html' if config.make_toc else config.toc)
+    if toc_file:
+        toc_path = dest_dir + toc_file
         toc_mid_params = {'session_name': '',
                           'math_js': '',
                           'pagedown_js': '',
                           'skulpt_js': '',
                           'plugin_tops': '',
                           'body_class': 'slidoc-plain-page',
-                          'top_nav': render_topnav(topnav_list, tocfile, site_name=config.site_name) if topnav_list else '',
+                          'top_nav': render_topnav(topnav_list, toc_path, site_name=config.site_name) if topnav_list else '',
                           'top_nav_hide': ' slidoc-topnav-hide' if topnav_list else ''}
         toc_mid_params.update(SYMS)
         if config.toc_header:
@@ -2998,9 +3005,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                     toc_head_html = '\n'.join([Index_prefix]+toc_list+[Index_suffix]) + head_html
                 else:
                     toc_head_html = head_html
-                md2md.write_file(tocfile, Html_header, toc_head_html,
+                md2md.write_file(toc_path, Html_header, toc_head_html,
                                   mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
-                message("Created ToC file:", tocfile)
+                message("Created ToC file:", toc_path)
 
     xref_list = []
     if config.index and (Global.primary_tags or Global.primary_qtags):

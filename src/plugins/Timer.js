@@ -67,6 +67,13 @@ Timer = {
 	    if (!value)
 		this.stop();
 	}
+    },
+
+    init: function() {
+	if (Slidoc.PluginManager.submitted()) {
+	    this.global.timerButton.style.display = 'none';
+	    this.global.timerValue.style.display = 'none';
+	}
     }
 };
 
