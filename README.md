@@ -106,7 +106,7 @@ hosting services like [Site44](https://www.site44.com) and
 [NearlyFreeSpeech.net](https://www.nearlyfreespeech.net) are also
 worth considering.
 
-Concepts: lecture management; index, concepts
+Concepts: lecture management: index, concepts
 
 Notes: The `--indexed=,ind,` option can be used with null arguments
 to control generation of index files.
@@ -151,7 +151,7 @@ process slides in a lecture.
 Notes: Any Level 1 header other than the first one will be treated
 like a Level 2 header.
 
-Concepts: ; Slidoc, document structure
+Concepts: :Slidoc, document structure
 
 ---
 
@@ -164,7 +164,7 @@ very end of the slide.
 
 Example:
 
-    Concepts: topic1, subtopic1; topic2; another topic, sub topic
+    Concepts: primary topic1; primary topic2, subtopic2: secondary topic3, subtopic3; secondary topic4; ...
  
     Notes: Additional material
 
@@ -174,20 +174,18 @@ supports concept chain navigation. Starting from the index, you can
 easily navigate between all places in the document where a particular
 concept is discussed.
 
-Concepts: concepts, list; concepts, multiple;; concepts, tracking
+Concepts: concepts, list; concepts, multiple: concepts, tracking
 
-Notes:
-Concept lists are semicolon-separated and use the syntax `topic,
-subtopic` where `topic/subtopic` is a space-separated phrase and
-`subtopic` is optional. Concepts are not visible during a slideshow, but are
-displayed in the printed version of the lecture.
+Notes: Concept lists have two parts: primary concept list and
+secondary concept list, separated by a colon. Either part may be
+omitted. (If there are no primary concepts, then a colon should
+precede the secondary concept list.)
 
-The first concept in the list is assumed to be the primary concept
-relevant to the slide. Additional concepts are treated as secondary
-concepts. If there is no primary concept, then the concept list should
-start with a semicolon (see previous slide). If there are multiple
-primary concepts, then a double semicolon should be used to separate
-them from secondary concepts (as in this slide).
+Concept lists are semicolon-separated. Each concept
+uses the syntax `topic, subtopic` where `topic` or `subtopic` is a
+space-separated phrase, with `subtopic` being optional. Concepts are not
+visible during a slideshow, but are displayed in the printed version
+of the lecture.
 
 Notes are additional material that appear below the main content. In
 slideshow mode (see below), notes are normally shown collapsed (or
@@ -213,7 +211,7 @@ The slideshow mode can be used for quick navigation around the document:
 
 - Press Escape to exit slideshow
 
-Concepts: slideshow; navigation
+Concepts: slideshow: navigation
 
 Notes: Unlike a true slideshow, vertical scrolling is permitted in each
 slide, allowing essentially unlimited supporting material such as
@@ -246,7 +244,7 @@ incremental display (see [Another slide with images](#)).
 
 Final paragraph.
 
-Concepts: incremental display; lists, incremental 
+Concepts: incremental display: lists, incremental 
 
 ---
 
@@ -329,7 +327,7 @@ The `qind.html` file has a map analyzing each question for all the
 concepts it covers, and relating it to other questions which cover a
 subset of these concepts.
 
-Concepts: concept dependency analysis; index, questions
+Concepts: concept dependency analysis: index, questions
 
 ---
 
@@ -425,7 +423,7 @@ containing the word `answer`.
 The optional concepts list for questions is analyzed by Slidoc
 for dependencies.
 
-Concepts: questions; concept list 
+Concepts: questions: concept list 
 
 
 ---
@@ -488,7 +486,7 @@ accomplished using `nb2md.py`. Another script, `md2md.py`, can be used to
 transform Markdown documents by removing concept lists,
 embedding/exporting images etc.
 
-Concepts: jupyter notebook; code, fenced; code, indented
+Concepts: jupyter notebook: code, fenced; code, indented
 
 ---
 
@@ -579,7 +577,7 @@ useful:
 
 - `?` to display keyboard shortcuts
 
-Concepts: reveal.js, keyboard shortcuts; slideshow, reveal.js
+Concepts: reveal.js, keyboard shortcuts: slideshow, reveal.js
 
 ---
 
@@ -662,7 +660,7 @@ The above line appears as the first line of this README file. (These
 options can be overridden by explicity specifying options in the
 command line.)
 
-Concepts: command line, options; options, default
+Concepts: command line, options: options, default
 
 ---
 
@@ -832,7 +830,7 @@ The next slide contains a multiple choice question that uses the `A.. `
 notation allowing interactive response. (The space after the `..` is
 required.) Click on a choice to view the correct answer.
 
-Concepts: questions, interactive; questions, multiple-choice; questions, numeric response; questions, formulas; questions, text response
+Concepts: questions, interactive: questions, multiple-choice; questions, numeric response; questions, formulas; questions, text response
 
 ---
 
@@ -850,7 +848,7 @@ D.. Letter D
 
 Answer: B
 
-Concepts: questions, interactive; questions, multiple-choice
+Concepts: questions, interactive: questions, multiple-choice
 
 Notes:
 
@@ -902,7 +900,7 @@ PluginEndDef: SqrtTest
 
 Answer: 2.5 +/- 0.1 = SqrtTest.expect()
 
-Concepts: questions, numeric response; questions, formulas; questions, randomized
+Concepts: questions, numeric response: questions, formulas; questions, randomized
 
 Notes: An optional error range may be provided after `+/-`. The error
 range may be a number or a percent value, i.e. `+/- 5%`
@@ -1092,7 +1090,7 @@ protocol and domain. In return, Google generates a client ID. Your
 application submits this to the Google Auth server to get an OAuth 2.0
 access token.
 
-Concepts: google docs; due date; login token; late submission token
+Concepts: google docs: due date; login token; late submission token
 
 ---
 

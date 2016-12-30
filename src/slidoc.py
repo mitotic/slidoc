@@ -128,30 +128,20 @@ def html2text(element):
     text += (element.tail or "")
     return text
 
-def add_to_index(primary_tags, sec_tags, tags, filename, slide_id, header='', qconcepts=None):
-    if not tags:
+def add_to_index(primary_tags, sec_tags, p_tags, s_tags, filename, slide_id, header='', qconcepts=None):
+    all_tags = p_tags + s_tags
+    if not all_tags:
         return
 
-    # Save tags in proper case and then lowercase tags
-    for tag in tags:
+    # Save tags in proper case (for index display)
+    for tag in all_tags:
         if tag and tag not in Global.all_tags:
             Global.all_tags[tag.lower()] = tag
-        
-    tags = [x.lower() for x in tags]
 
-    # By default assume only first tag is primary
-    primary_tags_offset = 1
-    sec_tags_offset = 1
-    for j, tag in enumerate(tags):
-        if not tag:
-            # Null tag (if present) demarcates primary and secondary tags
-            primary_tags_offset = j
-            sec_tags_offset = j+1
-            break
+    # Convert all tags to lower case
+    p_tags = [x.lower() for x in p_tags]
+    s_tags = [x.lower() for x in s_tags]
 
-    p_tags = [x for x in tags[:primary_tags_offset] if x]
-    s_tags = [x for x in tags[sec_tags_offset:] if x]
-        
     for tag in p_tags:
         # Primary tags
         if qconcepts:
@@ -1617,31 +1607,36 @@ class SlidocRenderer(MathRenderer):
             message("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)))
             return ''
 
-        tags = [x.strip() for x in text.split(";")]
-        nn_tags = [x for x in tags if x]   # Non-null tags
+        primary, _, secondary = text.partition(':')
+        primary = primary.strip()
+        secondary = secondary.strip()
+        p_tags = [x.strip() for x in primary.split(";") if x.strip()]
+        s_tags = [x.strip() for x in secondary.split(";") if x.strip()]
+        all_tags = p_tags + s_tags # Preserve case for now
 
-        self.slide_concepts = tags
+        self.slide_concepts = [[x.lower() for x in p_tags], [x.lower() for x in s_tags]] # Lowercase the tags
 
-        if nn_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
+        if all_tags and (self.options['config'].index or self.options['config'].qindex or self.options['config'].pace):
             # Track/check tags
             if self.qtypes[-1] in ("choice", "multichoice", "number", "text", "point", "line"):
                 # Question
-                nn_tags.sort()
+                qtags = [x.lower() for x in all_tags] # Lowercase the tags
+                qtags.sort()
                 q_id = make_file_id(self.options["filename"], self.get_slide_id())
-                q_concept_id = ';'.join(nn_tags)
+                q_concept_id = ';'.join(qtags)
                 q_pars = (self.options["filename"], self.get_slide_id(), self.cur_header, len(self.questions), q_concept_id)
                 Global.questions[q_id] = q_pars
                 Global.concept_questions[q_concept_id].append( q_pars )
-                for tag in nn_tags:
+                for tag in qtags:
                     # If assessment document, do not warn about lack of concept coverage
                     if tag not in Global.primary_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
                         self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         message("        "+self.concept_warnings[-1])
 
-                add_to_index(Global.primary_qtags, Global.sec_qtags, tags, self.options["filename"], self.get_slide_id(), self.cur_header, qconcepts=self.qconcepts)
+                add_to_index(Global.primary_qtags, Global.sec_qtags, p_tags, s_tags, self.options["filename"], self.get_slide_id(), self.cur_header, qconcepts=self.qconcepts)
             else:
                 # Not question
-                add_to_index(Global.primary_tags, Global.sec_tags, tags, self.options["filename"], self.get_slide_id(), self.cur_header)
+                add_to_index(Global.primary_tags, Global.sec_tags, p_tags, s_tags, self.options["filename"], self.get_slide_id(), self.cur_header)
 
         if 'concepts' in self.options['config'].strip:
             # Strip concepts
@@ -1652,13 +1647,11 @@ class SlidocRenderer(MathRenderer):
         tag_html = '''<div class="slidoc-concepts-container slidoc-noslide slidoc-nopaced"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
         if self.options['config'].index:
-            first = True
-            for tag in tags:
-                if not first:
+            for j, tag in enumerate(all_tags):
+                if j == len(p_tags):
+                    tag_html += ': '
+                elif j:
                     tag_html += '; '
-                first = False
-                if not tag:
-                    continue
                 tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
                 tag_html += nav_link(tag, self.options['config'].site_url, self.options['config'].index,
                                      hash=tag_hash, separate=self.options['config'].separate, target='_blank',
@@ -2350,7 +2343,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     combined_file = '' if config.separate else combined_name+'.html'
 
     # Reset config properties that will be overridden for separate files
-    if config.features is not None:
+    if config.features is not None and not isinstance(config.features, set):
         config.features = md2md.make_arg_set(config.features, Features_all)
 
     topnav_opts = ''

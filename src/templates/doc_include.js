@@ -880,7 +880,20 @@ Slidoc.showConcepts = function (submitMsg) {
 	var question_attrs = attr_vals[j];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var concept_elem = document.getElementById(slide_id+"-concepts");
-	questionConcepts.push( concept_elem ? concept_elem.textContent.trim().split('; ') : [] );
+	var qConcepts = [[], []];
+	if (concept_elem) {
+	    var comps = concept_elem.textContent.trim().split(':');
+	    for (var m=0; m<Math.min(2,comps.length); m++) {
+		if (comps[m].trim()) {
+		    var subcomps = comps[m].trim().split(';');
+		    for (var k=0; k<subcomps.length; k++) {
+			if (subcomps[k].trim())
+			    qConcepts[m].push(subcomps[k].trim().toLowerCase());
+		    }
+		}
+	    }
+	}
+	questionConcepts.push(qConcepts);
     }
     var missedConcepts = trackConcepts(Sliobj.scores.qscores, questionConcepts, Sliobj.allQuestionConcepts)
 
@@ -1521,19 +1534,19 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	defCopy.persist = Sliobj.session.plugins[pluginName];
 	defCopy.paced = Sliobj.session.paced;
 
-	var pluginNumber = Sliobj.activePlugins[pluginName].number;
+	var randomOffset = Sliobj.session.randomSeed + Sliobj.seedOffset.plugins + Sliobj.activePlugins[pluginName].number;
 	if (!slide_id) {
 	    // Global seed for all instances of the plugin
 	    defCopy.global = null;
 	    defCopy.slideId = '';
-	    defCopy.randomSeed = getRandomSeed(Sliobj.seedOffset.plugins + pluginNumber);
+	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset);
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	} else {
 	    // Seed for each slide instance of the plugin
 	    defCopy.global = Slidoc.Plugins[pluginName][''];
 	    defCopy.slideId = slide_id;
 	    var comps = parseSlideId(slide_id);
-	    defCopy.randomSeed = getRandomSeed(Sliobj.seedOffset.plugins + pluginNumber + 256*((1+comps[1])*256 + comps[2]));
+	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset + 256*((1+comps[1])*256 + comps[2]));
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
@@ -2830,8 +2843,8 @@ function showCorrectAnswersAfterSubmission() {
 // Section 15: Session data getting/putting
 /////////////////////////////////////////////
 
-function getRandomSeed(offset) {
-    return Slidoc.Random.makeSeed(offset+Sliobj.session.randomSeed);
+function makeRandomChoiceSeed(randomSeed) {
+    return Slidoc.Random.makeSeed(Sliobj.seedOffset.randomChoice+randomSeed);
 }
 
 function makeRandomFunction(seed) {
@@ -2854,7 +2867,7 @@ function createSession(sessionName, randomSeed) {
 
     var qshuffle = null;
     if (questions && Sliobj.params['features'].randomize_choice) {
-        var randFunc = makeRandomFunction(getRandomSeed(Sliobj.seedOffset.randomChoice));
+        var randFunc = makeRandomFunction(makeRandomChoiceSeed(randomSeed));
         qshuffle = {};
         for (var qno=1; qno < questions.length+1; qno++) {
             var choices = questions[qno-1].choices || 0;
@@ -4453,28 +4466,19 @@ function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
 
     for (var qnumber=1; qnumber<=qscores.length; qnumber++) {
 	var qConcepts = questionConcepts[qnumber-1];
-	if (qscores[qnumber-1] === null || !qConcepts.length)
+	if (qscores[qnumber-1] === null || !qConcepts.length || (!qConcepts[0].length && !qConcepts[1].length))
 	    continue;
 	var missed = qscores[qnumber-1] < 1;
 
-	var primaryOffset = 1;
-	for (var j=0;j<qConcepts.length;j++) {
-            if (!qConcepts[j].trim()) {
-		primaryOffset = j;
-		break;
-            }
-	}
-
-	for (var j=0;j<qConcepts.length;j++) {
-            if (!qConcepts[j].trim()) {
-		continue;
-            }
-            var m = (j < primaryOffset) ? 0 : 1;   // Primary/secondary concept
-            for (var k=0; k < allQuestionConcepts[m].length; k++) {
-		if (qConcepts[j] == allQuestionConcepts[m][k]) {
-                    if (missed)
-			missedConcepts[m][k][0] += 1;    // Missed count
-                    missedConcepts[m][k][1] += 1;        // Attempted count
+	for (var m=0; m<2; m++) {
+            // Primary/secondary concept
+	    for (var j=0; j<qConcepts[m].length; j++) {
+		for (var k=0; k < allQuestionConcepts[m].length; k++) {
+		    if (qConcepts[m][j] == allQuestionConcepts[m][k]) {
+			if (missed)
+			    missedConcepts[m][k][0] += 1;    // Missed count
+			missedConcepts[m][k][1] += 1;        // Attempted count
+		    }
 		}
 	    }
 	}

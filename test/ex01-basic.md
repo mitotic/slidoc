@@ -13,7 +13,7 @@ The next slide contains a multiple choice question that uses the `A.. `
 notation allowing interactive response. (The space after the `..` is
 required.) Click on a choice to view the correct answer.
 
-Concepts: questions, interactive; questions, multiple-choice;
+Concepts: questions, interactive: questions, multiple-choice;
 questions, numeric response; questions, formulas; questions, text
 response
 
@@ -58,7 +58,7 @@ D.. Letter D
 
 Answer: ;explain
 
-Concepts: questions, interactive; questions, multiple-choice
+Concepts: questions, interactive: questions, multiple-choice
 
 Notes:
 
@@ -130,7 +130,7 @@ PluginEndDef: SqrtTest
 
 Answer: 2.5 +/- 0.1=SqrtTest.expect()
 
-Concepts: questions, numeric response; questions, formulas; questions, randomized
+Concepts: questions, numeric response: questions, formulas; questions, randomized
 
 Notes: An optional error range may be provided after `+/-`.
 

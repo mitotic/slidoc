@@ -151,6 +151,7 @@ TestScript.prototype.reportTestAction = function (eventName) {
 }
 
 TestScript.prototype.terminate = function(lastAction) {
+    Slidoc.log('TestScript.terminate:', lastAction);
     this.activeScript = '';
     this.showStatus('done');
     Slidoc.showPopup('<pre>TestScript terminated with action '+lastAction+' after '+this.curstep+' steps</pre>');

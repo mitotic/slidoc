@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.7k';
+var VERSION = '0.96.7l';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -196,6 +196,8 @@ function defaultSettings() {
 
 function initSettings() {
     var settingsSheet = getSheet(SETTINGS_SHEET);
+    if (!settingsSheet)
+	throw('initSettings: Sheet '+SETTINGS_SHEET+' not found!');
     var settingsData = settingsSheet.getSheetValues(2, 1, settingsSheet.getLastRow()-1, 2);
     for (var j=0; j<settingsData.length; j++) {
 	var settingsName = settingsData[j][0].trim();
@@ -2767,28 +2769,19 @@ function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
 
     for (var qnumber=1; qnumber<=qscores.length; qnumber++) {
 	var qConcepts = questionConcepts[qnumber-1];
-	if (qscores[qnumber-1] === null || !qConcepts.length)
+	if (qscores[qnumber-1] === null || !qConcepts.length || (!qConcepts[0].length && !qConcepts[1].length))
 	    continue;
 	var missed = qscores[qnumber-1] < 1;
 
-	var primaryOffset = 1;
-	for (var j=0;j<qConcepts.length;j++) {
-            if (!qConcepts[j].trim()) {
-		primaryOffset = j;
-		break;
-            }
-	}
-
-	for (var j=0;j<qConcepts.length;j++) {
-            if (!qConcepts[j].trim()) {
-		continue;
-            }
-            var m = (j < primaryOffset) ? 0 : 1;   // Primary/secondary concept
-            for (var k=0; k < allQuestionConcepts[m].length; k++) {
-		if (qConcepts[j] == allQuestionConcepts[m][k]) {
-                    if (missed)
-			missedConcepts[m][k][0] += 1;    // Missed count
-                    missedConcepts[m][k][1] += 1;        // Attempted count
+	for (var m=0; m<2; m++) {
+            // Primary/secondary concept
+	    for (var j=0; j<qConcepts[m].length; j++) {
+		for (var k=0; k < allQuestionConcepts[m].length; k++) {
+		    if (qConcepts[m][j] == allQuestionConcepts[m][k]) {
+			if (missed)
+			    missedConcepts[m][k][0] += 1;    // Missed count
+			missedConcepts[m][k][1] += 1;        // Attempted count
+		    }
 		}
 	    }
 	}
