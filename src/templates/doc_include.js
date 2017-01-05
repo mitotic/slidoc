@@ -255,7 +255,7 @@ function setupCache(auth, callback) {
 		    var rowObj = allRows[id];
 		    Sliobj.userList.push(id);
 		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], team: roster[j][2], submitted:null, grading: null,
-					     q_grades: (rowObj && isNumber(rowObj.q_grades)) ? rowObj.q_grades : ''};
+					     gradeDisp: computeGrade(id, true)};
 		}
 
 		var userId = auth.id;
@@ -1662,12 +1662,12 @@ function selectUserCallback(auth, userId, result, retStatus) {
     if (Sliobj.session.displayName)
 	auth.displayName = Sliobj.session.displayName;
     Sliobj.feedback = unpacked.feedback || null;
-    Sliobj.userGrades[userId].q_grades = Sliobj.feedback && isNumber(Sliobj.feedback.q_grades) ? Sliobj.feedback.q_grades : '';
+    Sliobj.userGrades[userId].gradeDisp = computeGrade(userId, true);
     Sliobj.score = null;
     scoreSession(Sliobj.session);
     Slidoc.showScore();
     Sliobj.userGrades[userId].weightedCorrect = Sliobj.scores.weightedCorrect;
-    if (Sliobj.userGrades[userId].q_grades || Sliobj.userGrades[userId].weightedCorrect) {
+    if (Sliobj.userGrades[userId].gradeDisp) {
 	updateGradingStatus(userId);
     }
     prepGradeSession(Sliobj.session);
@@ -1861,8 +1861,16 @@ Slidoc.manageSession = function() {
 	    html += 'Retakes remaining: <code>'+Sliobj.session.retakesRemaining+'</code><br>';
 	if (Sliobj.voteDate)
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
-	if (Sliobj.params.gradeWeight && Sliobj.feedback && 'q_grades' in Sliobj.feedback && isNumber(Sliobj.feedback.q_grades))
-	    html += 'Grades: '+Sliobj.feedback.q_grades+'/'+Sliobj.params.gradeWeight+'<br>';
+
+	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight && Sliobj.feedback) {
+	    var totGrade = computeGrade(userid);
+	    if (Sliobj.adminState && isNumber(Sliobj.feedback.q_total) && Math.abs(parseNumber(Sliobj.feedback.q_total)-parseNumber(totGrade)) > 0.01) {
+		alert('Warning: Inconsistent total grade: q_total='+Sliobj.feedback.q_total)
+	    }
+	    html += 'Total grade: '+totGrade+'/'+Sliobj.params.totalWeight+'<br>';
+	} else if (Sliobj.params.scoreWeight && Sliobj.feedback && 'q_scores' in Sliobj.feedback && isNumber(Sliobj.feedback.q_scores)) {
+	    html += 'Score: '+Sliobj.feedback.q_scores+'/'+Sliobj.params.scoreWeight+'<br>';
+	}
     } else {
 	if (Sliobj.serverCookie)
 	    html += 'User: <b>'+Sliobj.serverCookie.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
@@ -2579,11 +2587,10 @@ function checkGradingStatus(userId, session, feedback) {
 	    need_updates += 1;
 	    if (question_attrs.slide < Sliobj.maxLastSlide) {
 		// set grade to zero to avoid blank cells in computation
-		if ('gweight' in question_attrs)
+		if ('gweight' in question_attrs) {
 		    updates[gradeField] = 0;
-
-		if (question_attrs.qtype.match(/^(text|Code)\//) || question_attrs.explain)
 		    updates[commentsField] = 'Not attempted';
+		}
 	    }
 	}
     }
@@ -2619,6 +2626,7 @@ function updateGradingStatus(userId) {
     var option = document.getElementById('slidoc-switch-user-'+Sliobj.userGrades[userId].index);
     if (!option)
 	return;
+    Sliobj.userGrades[userId].gradeDisp = computeGrade(userId, true);
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
     if (Sliobj.userGrades[userId].team)
 	text += '('+Sliobj.userGrades[userId].team+') ';
@@ -2632,13 +2640,8 @@ function updateGradingStatus(userId) {
 	else
 	    html += gradeCount
     }
-    var scores = [];
-    if (Sliobj.userGrades[userId].q_grades)
-	scores.push(''+Sliobj.userGrades[userId].q_grades);
-    if (Sliobj.userGrades[userId].weightedCorrect)
-	scores.push(''+Sliobj.userGrades[userId].weightedCorrect);
-    if (scores.length)
-	html += ' (' + scores.join('+') + ')';
+    if (Sliobj.userGrades[userId].gradeDisp)
+	html += Sliobj.userGrades[userId].gradeDisp;
 
     option.dataset.nograding = (Sliobj.userGrades[userId].allowGrading && gradeCount) ? '' : 'nograding';
     option.innerHTML = '';
@@ -2904,7 +2907,7 @@ function createSession(sessionName, randomSeed) {
 
 function createQuestionAttempted(response) {
     Slidoc.log('createQuestionAttempted:', response);
-    return {'response': response||''};
+    return {'response': response || ''};
 }
 
 function copyObj(oldObj, excludeAttrs) {
@@ -2916,6 +2919,32 @@ function copyObj(oldObj, excludeAttrs) {
 	newObj[keys[j]] = oldObj[keys[j]];
     }
     return newObj;
+}
+
+function computeGrade(userId, breakup) {
+    var gsheet = getSheet(Sliobj.sessionName);
+    var rowObj = gsheet.getCachedRow(userId);
+    var gradeStr = '';
+    var q_grades = 0;
+    if (rowObj) {
+	for (var j=0; j<Sliobj.params.gradeFields.length; j++) {
+	    var header = Sliobj.params.gradeFields[j];
+	    var hmatch = QFIELD_RE.exec(header);
+	    if (hmatch && hmatch[2] == 'grade') {
+		q_grades += (parseNumber(rowObj[header]) || 0);
+	    }
+	}
+	var q_scores = rowObj.q_scores||0;
+	var q_other = rowObj.q_other||0;
+	var tot = q_grades + q_scores + q_other;
+	gradeStr += tot;
+	if (breakup) {
+	    gradeStr += '('+q_scores+')';
+	    if (q_other)
+		gradeStr += q_other;
+	}
+    }
+    return gradeStr;
 }
 
 function packSession(session) {
@@ -2986,7 +3015,7 @@ function unpackSession(row) {
     for (var j=0; j<COPY_HEADERS.length; j++) {
 	var header = COPY_HEADERS[j];
 	if (header == 'lastSlide')
-	    session[header] =  Math.min(row[header]||0, Sliobj.params.pacedSlides);
+	    session[header] =  Math.min(row[header] || 0, Sliobj.params.pacedSlides);
 	else
 	    session[header] = row[header] || '';
     }
@@ -3046,11 +3075,14 @@ function unpackSession(row) {
 		count += 1;
 	    if (hmatch[2] == 'comments')
 		cacheComments(qnumber, row.id, value);
-	} else if (key == 'q_grades' && isNumber(value)) {
-	    // Total grade
-	    feedback.q_grades = value;
+	} else if (isNumber(value) && (key == 'q_total' || key == 'q_scores' || key == 'q_other')) {
+	    // Total grade/score/other
+	    feedback[key] = value;
 	    if (value)
 		count += 1;
+	} else if (value && key == 'q_comments') {
+	    feedback[key] = value;
+	    count += 1;
 	}
     }
 
@@ -4051,7 +4083,6 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     if (!setup && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
 
-    var qscore = null;
     var question_attrs = getQuestionAttrs(slide_id);
 
     var corr_answer      = expect || question_attrs.correct || '';
@@ -4304,7 +4335,6 @@ function scoreAnswer(response, qtype, corrAnswer) {
 	return 0;
 
     var respValue = null;
-    var qscore = null;
 
     // Check response against correct answer
     var qscore = 0;
@@ -4321,13 +4351,13 @@ function scoreAnswer(response, qtype, corrAnswer) {
 		Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric answer:'+corrAnswer);
         } else if (corrComps[1] == null) {
             qscore = null;
-            Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric error:'+corrAnswer)
+            Slidoc.log('Slidoc.scoreAnswer: Error in correct numeric error:'+corrAnswer);
         }
     } else {
         // Check if non-numeric answer is correct (all spaces are removed before comparison)
         var normResp = response.trim().toLowerCase();
 	// For choice, allow multiple correct answers (to fix grading problems)
-        var correctOptions = corrAnswer.split( (qtype == 'choice') ? '' : ' OR ');
+	var correctOptions = (qtype == 'choice') ? corrAnswer.split('') : corrAnswer.split(' OR ');
         for (var j=0; j<correctOptions.length; j++) {
             var normCorr = correctOptions[j].trim().toLowerCase().replace(/\s+/g,' ');
             if (normCorr.indexOf(' ') > 0) {
@@ -4371,9 +4401,9 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
         }
 
         var questionAttrs = questions[j];
-        var slideNum = questionAttrs['slide'];
+        var slideNum = questionAttrs.slide;
         if (!qAttempted || slideNum < skipToSlide) {
-            // Unattempted || skipped
+            // Unattempted or skipped
             qscores.push(null);
             continue;
         }
@@ -4405,9 +4435,9 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
 
         prevQuestionSlide = slideNum;
 
-        lastSkipRef = ''
+        lastSkipRef = '';
         if (correctSequence && params.paceLevel == QUESTION_PACE) {
-            skip = questionAttrs.skip;
+            var skip = questionAttrs.skip;
             if (skip && skip[0] > slideNum) {
                 // Skip ahead
                 skipToSlide = skip[0];
@@ -4421,9 +4451,9 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
 
         // Keep score for this question
         var qWeight = questionAttrs.weight || 0;
-        questionsSkipped += qSkipCount
-        questionsCount += 1 + qSkipCount
-        weightedCount += qWeight + qSkipWeight
+        questionsSkipped += qSkipCount;
+        questionsCount += 1 + qSkipCount;
+        weightedCount += qWeight + qSkipWeight;
 
         var effectiveScore = (parseNumber(qscore) != null) ? qscore : 1;   // Give full credit to unscored answers
 
@@ -4447,10 +4477,10 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
         }
     }
 
-    return { questionsCount: questionsCount, weightedCount: weightedCount,
-             questionsCorrect: questionsCorrect, weightedCorrect: weightedCorrect,
-             questionsSkipped: questionsSkipped, correctSequence: correctSequence, skipToSlide: skipToSlide,
-             correctSequence: correctSequence, lastSkipRef: lastSkipRef, qscores: qscores};
+    return { 'questionsCount': questionsCount, 'weightedCount': weightedCount,
+             'questionsCorrect': questionsCorrect, 'weightedCorrect': weightedCorrect,
+             'questionsSkipped': questionsSkipped, 'correctSequence': correctSequence, 'skipToSlide': skipToSlide,
+             'correctSequence': correctSequence, 'lastSkipRef': lastSkipRef, 'qscores': qscores};
 }
 
 function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
@@ -4706,7 +4736,9 @@ function releaseGradesCallback(gradeDateStr, result, retStatus){
     Slidoc.log('releaseGradesCallback:', result, retStatus);
     if (result) {
 	Sliobj.gradeDateStr = gradeDateStr;
-	alert('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students');
+	if (window.confirm('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students. Also copy to gradebook?'))
+	Slidoc.sessionAction('scores');
+
     } else {
 	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');
     }

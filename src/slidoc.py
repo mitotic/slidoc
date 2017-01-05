@@ -1566,32 +1566,26 @@ class SlidocRenderer(MathRenderer):
             self.cum_gweights.append(self.cum_gweights[-1] + (gweight or 0))
 
         ans_grade_fields = []
-        share_col = self.questions[-1].get('share') and 'share_answers' not in self.options['config'].features
-        if 'grade_response' in self.options['config'].features or share_col or self.questions[-1].get('team'):
+        if 'grade_response' in self.options['config'].features or 'share_all' in self.options['config'].features or self.questions[-1].get('vote') or self.questions[-1].get('team'):
             qno = 'q%d' % len(self.questions)
             if '/' in self.qtypes[-1] and self.qtypes[-1].split('/')[0] in ('text', 'Code', 'Upload'):
                 ans_grade_fields += [qno+'_response']
             elif self.questions[-1].get('explain'):
                 ans_grade_fields += [qno+'_response', qno+'_explain']
-            elif share_col or self.questions[-1].get('disabled') or self.questions[-1].get('team'):
+            elif self.questions[-1].get('vote') or self.questions[-1].get('disabled') or self.questions[-1].get('team') or 'share_all' in self.options['config'].features:
                 ans_grade_fields += [qno+'_response']
 
             if self.questions[-1].get('team') and re.match(r'^(.*)=\s*(\w+)\.response\(\s*\)$', self.questions[-1].get('correct', '')):
                 ans_grade_fields += [qno+'_plugin']
 
             if ans_grade_fields:
-                if share_col:
-                    # Share response/explain columns
-                    ans_grade_fields += [qno+'_share']
                 if self.questions[-1].get('vote'):
-                    ans_grade_fields += [qno+'_vote']
+                    ans_grade_fields += [qno+'_share', qno+'_vote']
                 self.grade_fields += ans_grade_fields
                 self.max_fields += ['' for field in ans_grade_fields]
                 if gweight is not None:
-                    self.grade_fields += [qno+'_grade']
-                    self.max_fields += [gweight]
-                self.grade_fields += [qno+'_comments']
-                self.max_fields += ['']
+                    self.grade_fields += [qno+'_grade', qno+'_comments']
+                    self.max_fields += [gweight, '']
 
         return ans_grade_fields
 
@@ -1903,13 +1897,14 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Manage_fields =  ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
-Session_fields = ['team', 'lateToken', 'lastSlide', 'session_hidden']
-Index_fields = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionRescale', 'releaseDate', 'dueDate', 'gradeDate', 'postDate',
-                'mediaURL', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight',
-                'questionsMax', 'fieldsMin', 'attributes', 'questions',
-                'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
-Log_fields = ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
+Manage_fields  = ['name', 'id', 'email', 'altid', 'source', 'accessCount', 'Timestamp', 'initTimestamp', 'submitTimestamp']
+Session_fields = ['team', 'lateToken', 'lastSlide', 'retakes', 'session_hidden']
+Score_fields   = ['q_total', 'q_scores', 'q_other', 'q_comments']
+Index_fields   = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionRescale', 'releaseDate', 'dueDate', 'gradeDate',
+                  'mediaURL', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight',
+                  'questionsMax', 'fieldsMin', 'attributes', 'questions',
+                  'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
+Log_fields =     ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
@@ -1976,7 +1971,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             if not due_date_str:
                 due_date_str = prev_row[due_date_col]
 
-    row_values = [session_name, session_name, revision, None, session_weight, session_rescale, release_date_str, due_date_str, None, None, media_url, pace_level, admin_paced,
+    row_values = [session_name, session_name, revision, None, session_weight, session_rescale, release_date_str, due_date_str, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
                 json.dumps(sheet_attributes), json.dumps(questions), json.dumps(question_concepts),
                 '; '.join(sort_caseless(list(p_concepts))),
@@ -2649,22 +2644,6 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
-        max_params = {}
-        max_params['id'] = '_max_score'
-        max_params['source'] = 'slidoc'
-        max_params['initTimestamp'] = None
-        max_params['q_other'] = sum(q.get('vweight',0) for q in renderer.questions) if renderer.questions else 0
-        max_params['q_grades'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
-        max_score_fields = [max_params.get(x,'') for x in Manage_fields+Session_fields]
-        if js_params['paceLevel']:
-            if max_params['q_other']:
-                # Include column for total votes etc.
-                max_score_fields += [max_params['q_other']]
-            if max_params['q_grades'] and renderer.max_fields:
-                # Include column for total grades
-                max_score_fields += [max_params['q_grades']]
-            max_score_fields += renderer.max_fields if renderer.max_fields else []
-
         plugin_list = list(renderer.plugin_embeds)
         plugin_list.sort()
         js_params['plugins'] = plugin_list
@@ -2673,15 +2652,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['pacedSlides'] = renderer.slide_number
             js_params['questionsMax'] = len(renderer.questions)
             js_params['scoreWeight'] = renderer.cum_weights[-1] if renderer.cum_weights else 0
-            js_params['otherWeight'] = max_params['q_other']
-            js_params['gradeWeight'] = max_params['q_grades']
-            js_params['gradeFields'] = renderer.grade_fields[:] if renderer.grade_fields else []
-            if js_params['gradeWeight'] and js_params['gradeFields']:
-                # Include column for total grades
-                js_params['gradeFields'] = ['q_grades'] + js_params['gradeFields']
-            if js_params['otherWeight']:
-                # Include column for total votes etc.
-                js_params['gradeFields'] = ['q_other'] + js_params['gradeFields']
+            js_params['otherWeight'] = sum(q.get('vweight',0) for q in renderer.questions) if renderer.questions else 0
+            js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
+            js_params['gradeFields'] = Score_fields[:] + (renderer.grade_fields[:] if renderer.grade_fields else [])
         else:
             js_params['pacedSlides'] = 0
             js_params['questionsMax'] = 0
@@ -2689,6 +2662,17 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['otherWeight'] = 0
             js_params['gradeWeight'] = 0
             js_params['gradeFields'] = []
+
+        js_params['totalWeight'] = js_params['scoreWeight'] + js_params['gradeWeight'] + js_params['otherWeight']
+            
+        max_params = {}
+        max_params['id'] = '_max_score'
+        max_params['source'] = 'slidoc'
+        max_params['initTimestamp'] = None
+        max_score_fields = [max_params.get(x,'') for x in Manage_fields+Session_fields]
+        if js_params['paceLevel']:
+            max_score_fields += ['', js_params['scoreWeight'], js_params['otherWeight'], '']
+            max_score_fields += renderer.max_fields if renderer.max_fields else []
 
         all_concept_warnings += renderer.concept_warnings
         outname = fname+".html"

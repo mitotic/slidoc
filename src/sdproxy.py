@@ -18,6 +18,7 @@ admin commands:
 """
 from __future__ import print_function
 
+import base64
 import cStringIO
 import csv
 import datetime
@@ -41,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.7l'
+VERSION = '0.96.8a'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -338,6 +339,7 @@ class Sheet(object):
         self.keyHeader = keyHeader
 
         self.readOnly = isReadOnly(name)
+        self.holdSec = CACHE_HOLD_SEC
         self.accessTime = sliauth.epoch_ms()
         self.nCols = len(rows[0])
         for j, row in enumerate(rows[1:]):
@@ -365,6 +367,10 @@ class Sheet(object):
         else:
             self.keyCol= 0
             self.keyMap = dict( (j+2, modTime) for j in range(len(self.xrows)-1) )
+
+    def expire(self):
+        # Delete after any updates are processed
+        self.holdSec = 0
 
     def getLastColumn(self):
         return self.nCols
@@ -579,6 +585,12 @@ def unlockSheet(sheetName):
     Refresh_sheets.discard(sheetName)
     return True
 
+def expireSheet(sheetName):
+    # Expire sheet from cache (delete after any updates are processed)
+    sheet = Sheet_cache.get(sheetName)
+    if sheet:
+        sheet.expire()
+
 def startPassthru(sheetName):
     Lock_passthru[sheetName] += 1
     return lockSheet(sheetName, lockType='passthru')
@@ -699,7 +711,7 @@ def update_remote_sheets(force=False, synchronous=False):
         # Check each cached sheet for updates
         updates = sheet.get_updates(Global.cacheUpdateTime)
         if updates is None:
-            if curTime-sheet.accessTime > 1000*CACHE_HOLD_SEC:
+            if curTime-sheet.accessTime > 1000*self.holdSec:
                 # Cache entry has expired
                 del Sheet_cache[sheetName]
             continue
@@ -974,7 +986,7 @@ def sheetAction(params, notrace=False):
 
             if not restrictedSheet and not protectedSheet and not loggingSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET):
                 # Indexed session
-                sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
+                sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
                 sessionAttributes = json.loads(sessionEntries['attributes'])
                 questions = json.loads(sessionEntries['questions'])
                 paceLevel = sessionEntries.get('paceLevel')
@@ -1053,15 +1065,7 @@ def sheetAction(params, notrace=False):
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
 
-                    totalGradesFormula = gradesFormula(columnHeaders, sessionEntries['fieldsMin']+1)
-                    if nRows and totalGradesFormula:
-                        # Update formula for total grades (if present)
-                        gradesRange = modSheet.getRange(startRow, columnIndex['q_grades'], nRows, 1)
-                        totValues = gradesRange.getValues()
-                        for k in range(nRows):
-                            if idValues[k][0] != MAXSCORE_ID and totValues[k][0] != '':
-                                totValues[k][0] = totalGradesFormula.replace('@',str(k+startRow))
-                        gradesRange.setValues(totValues)
+                    updateTotalScores(modSheet, startRow, sessionAttributes, questions, True)
 
             userId = None
             displayName = None
@@ -1069,6 +1073,7 @@ def sheetAction(params, notrace=False):
             voteSubmission = ''
             alterSubmission = False
             twitterSetting = False
+            releaseGrades = ''
             if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id':
                 if selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
                     qprefix = selectedUpdates[1][0].split('_')[0]
@@ -1079,6 +1084,9 @@ def sheetAction(params, notrace=False):
 
                 if selectedUpdates[1][0] == 'twitter' and sheetName == ROSTER_SHEET:
                     twitterSetting = True
+
+                if selectedUpdates[1][0] == 'gradeDate' and sheetName == INDEX_SHEET:
+                    releaseGrades = selectedUpdates[0][1]
 
             if not adminUser and selectedUpdates and not voteSubmission and not twitterSetting:
                 raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
@@ -1405,8 +1413,8 @@ def sheetAction(params, notrace=False):
             if rowUpdates and selectedUpdates:
                 raise Exception('Error::Cannot specify both rowUpdates and selectedUpdates')
             elif rowUpdates:
-                if len(rowUpdates) > len(columnHeaders):
-                    raise Exception("Error::row_headers length exceeds no. of columns in sheet '"+sheetName+"'; delete it or edit headers.")
+                if len(rowUpdates) != len(columnHeaders):
+                    raise Exception("Error::row_headers length (%s) differs from no. of columns (%s) in sheet %s; delete sheet or edit headers." % (len(rowUpdates), len(columnHeaders), sheetName) )
 
                 userId = rowUpdates[columnIndex['id']-1] or ''
                 displayName = rowUpdates[columnIndex['name']-1] or ''
@@ -1594,6 +1602,8 @@ def sheetAction(params, notrace=False):
                         userRow = modSheet.getLastRow()+1
 
                     modSheet.insertRowBefore(userRow, keyValue=userId)
+                    # (q_total formula will be updated by proxy handler in script)
+
                 elif rowUpdates and nooverwriteRow:
                     if getRow:
                         # Simply return existing row
@@ -1602,7 +1612,8 @@ def sheetAction(params, notrace=False):
                         raise Exception('Error::Do not specify nooverwrite=1 to overwrite existing rows')
 
                 maxCol = len(rowUpdates) if rowUpdates else len(columnHeaders)
-                totalCol = columnIndex.get('q_grades', 0)
+                totalCol = columnIndex.get('q_total', 0)
+                scoresCol = columnIndex.get('q_scores', 0)
                 userRange = modSheet.getRange(userRow, 1, 1, maxCol)
                 rowValues = userRange.getValues()[0]
 
@@ -1640,10 +1651,9 @@ def sheetAction(params, notrace=False):
                                 if columnHeaders[j] in adminColumns:
                                     rowUpdates[j] = ''
 
-                        totalGradesFormula = gradesFormula(columnHeaders, fieldsMin+1)
-                        if totalCol and totalGradesFormula:
-                            # Computed admin column to hold sum of all grades
-                            rowUpdates[totalCol-1] = totalGradesFormula.replace('@',str(userRow))
+                        if totalCol:
+                            # Filled by array formula
+                            rowUpdates[totalCol-1] = ''
 
                         ##returnMessages.append("Debug::"+str(nonNullExtraColumn)+str(adminColumns.keys())+totalGradesFormula)
 
@@ -1722,6 +1732,14 @@ def sheetAction(params, notrace=False):
                         else:
                             if rowValues[j] != colValue:
                                 raise Exception("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'")
+
+                    if scoresCol and sessionEntries and parseNumber(sessionEntries.get('scoreWeight')):
+                        if userId != MAXSCORE_ID:
+                            # Tally user scores
+                            savedSession = unpackSession(columnHeaders, rowValues)
+                            if savedSession and len(savedSession.get('questionsAttempted').keys()):
+                                scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'))
+                                rowValues[scoresCol-1] = scores.get('weightedCorrect', '')
 
                     # Copy user info from roster (if available)
                     for j in range(len(rosterValues)):
@@ -1880,12 +1898,13 @@ def sheetAction(params, notrace=False):
                 returnValues = rowValues if getRow else []
 
                 if not adminUser and not gradeDate and len(returnValues) > fieldsMin:
-                    # If session not graded, Nullify columns to be graded
-                    for j in range(fieldsMin, len(columnHeaders)):
+                    # If session not graded, blank out grade-related columns
+                    for j in range(fieldsMin, len(returnValues)):
                         if not columnHeaders[j].endswith('_response') and not columnHeaders[j].endswith('_explain') and not columnHeaders[j].endswith('_plugin'):
                             returnValues[j] = None
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
+
 
         # return json success results
         retObj = {"result": "success", "value": returnValues, "headers": returnHeaders,
@@ -2164,7 +2183,7 @@ def exportAnswers(sessionName):
         qAttempted = None
         session_hidden = rowValues[sessionCol-1]
         if session_hidden:
-            session = json.loads(session_hidden)
+            session = loadSession(session_hidden)
             qShuffle = session.get('questionShuffle')
             qAttempted = session['questionsAttempted']
             if qAttempted:
@@ -2173,21 +2192,20 @@ def exportAnswers(sessionName):
 
         rowOutput = [sliauth.str_encode(rowValues[headerCols[hdr]-1]) for hdr in MIN_HEADERS]
         for qnumber in range(1,qmaxRow+1):
-            qnumberStr = str(qnumber)  # Because JSON serialization converts integer keys to strings
             cellValue = ''
             if qnumber in responseCols:
                 cellValue = rowValues[responseCols[qnumber]-1]
                 if qnumber in explainCols:
                     cellValue += ' ' + rowValues[explainCols[qnumber]-1]
-            elif qAttempted and qnumberStr in qAttempted:
-                cellValue = qAttempted[qnumberStr].get('response','')
-                if qAttempted[qnumberStr].get('explain',''):
+            elif qAttempted and qnumber in qAttempted:
+                cellValue = qAttempted[qnumber].get('response','')
+                if qAttempted[qnumber].get('explain',''):
                     explainSet.add(qnumber)
-                    cellValue += ' ' + sliauth.str_encode(qAttempted[qnumberStr]['explain'])
+                    cellValue += ' ' + sliauth.str_encode(qAttempted[qnumber]['explain'])
             if cellValue == SKIP_ANSWER:
                 cellValue = ''
             if cellValue and qShuffle:
-                shuffleStr = qShuffle.get(qnumberStr,'') or qShuffle.get(qnumber,'')
+                shuffleStr = qShuffle.get(qnumber,'')
                 if shuffleStr:
                     try:
                         indexVal = shuffleStr.index(cellValue.upper())
@@ -2223,9 +2241,26 @@ def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
         if retval['result'] != 'success':
             raise Exception('Error in setting late token for user '+userId+': '+retval.get('error'))
 
-def createQuestionAttempted(response):
-    return {'response': response or ''}
-
+def updateTotalScores(modSheet, startRow, sessionAttributes, questions, force=False):
+    # If not force, only update non-blank entries
+    nRows = modSheet.getLastRow()-startRow+1
+    columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
+    columnIndex = indexColumns(modSheet)
+    if nRows:
+        # Update total scores
+        idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
+        scoreRange = modSheet.getRange(startRow, columnIndex['q_scores'], nRows, 1)
+        scoreValues = scoreRange.getValues()
+        for k in range(nRows):
+            if idVals[k][0] != MAXSCORE_ID and questions and (force or scoreValues[k][0] != ''):
+                temRowVals = modSheet.getSheetValues(startRow+k, 1, 1, len(columnHeaders))[0]
+                savedSession = unpackSession(columnHeaders, temRowVals)
+                if savedSession and savedSession.get('questionsAttempted'):
+                    scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'])
+                    scoreValues[k][0] = scores.get('weightedCorrect', '')
+                else:
+                    scoreValues[k][0] = ''
+        scoreRange.setValues(scoreValues)
 
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
     # answers = {1:{'response':, 'explain':},...}
@@ -2257,7 +2292,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     rowValues = retval['value']
     headerCols = dict((hdr, j+1) for j, hdr in enumerate(headers))
     sessionCol = headerCols['session_hidden']
-    session = json.loads(rowValues[sessionCol-1])
+    session = loadSession(rowValues[sessionCol-1])
     qShuffle = session.get('questionShuffle')
     qAttempted = session['questionsAttempted']
     qnumbers = answers.keys()
@@ -2268,9 +2303,8 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         q_grade = 'q%d_grade' % qnumber
         answer = answers[qnumber]
         respVal = answer.get('response', '')
-        qnumberStr = str(qnumber)  # Because JSON serialization converts integer keys to strings
         if qShuffle:
-            shuffleStr = qShuffle.get(qnumberStr,'') or qShuffle.get(qnumber,'')
+            shuffleStr = qShuffle.get(qnumber,'') or qShuffle.get(qnumber,'')
             if shuffleStr and respVal:
                 # Import shuffled response value
                 indexVal = ord(respVal.upper()) - ord('A')
@@ -2415,6 +2449,8 @@ def normalizeText(s):
     s = str(s)
     return MSPACE_RE.sub(' ', WUSCORE_RE.sub(' ', ARTICLE_RE.sub(' ', s.lower().replace("'",'').replace('"','') ))).strip()
 
+def isNumber(x):
+    return parseNumber(x) is not None
 
 def parseNumber(x):
     try:
@@ -2564,23 +2600,6 @@ def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
             return j+1
     return len(nameValues)+1
 
-def gradesFormula(columnHeaders, startCol):
-    # Return total grades formula (with @ for row number) or null string
-    if 'q_grades' not in columnHeaders:
-        return ''
-    totalCells = []
-    for j in range(startCol-1, len(columnHeaders)):
-        hmatch = QFIELD_RE.match(columnHeaders[j])
-        if hmatch and hmatch.group(2) == 'grade':
-            # Grade value to summed
-            totalCells.append(colIndexToChar(j+1) + '@')
-
-    if len(totalCells):
-        # Computed admin column to hold sum of all grades
-        return '=' + '+'.join(totalCells)
-    else:
-        return ''
-
 def safeName(s, capitalize=False):
     s = re.sub(r'[^A-Za-z0-9-]', '_', s)
     return s.capitalize() if capitalize else s
@@ -2649,4 +2668,228 @@ def makeShortNames(nameMap, first=False):
                 
     return shortMap
         
-        
+
+def createQuestionAttempted(response=''):
+    return {'response': response or ''}
+
+def loadSession(session_json):
+    # Needed because JSON serialization converts integer keys to strings
+    try:
+        ustr = session_json.decode('utf8')
+    except Exception:
+        try:
+            ustr = session_json.decode('latin1')
+        except Exception:
+            ustr = session_json.decode('utf8', 'ignore')
+
+    session = json.loads(ustr)
+    for attr in ('questionShuffle', 'questionsAttempted', 'hintsUsed'):
+        if attr in session:
+            dct = {}
+            for k, v in session[attr].items():
+                dct[int(k)] = v
+            session[attr] = dct
+    return session
+
+def unpackSession(headers, row):
+    # Unpacks hidden session object and adds response/explain fields from sheet row, as needed
+    session_hidden = row[headers.index('session_hidden')]
+    if not session_hidden:
+        return None
+    if session_hidden[0] != '{':
+        session_hidden = base64.b64decode(session_hidden)
+    session = loadSession(session_hidden)
+
+    for j in range(len(headers)):
+        header = headers[j]
+        if header == 'name':
+            session['displayName'] = row[j]
+        if header in COPY_HEADERS:
+            session[header] = (row[j] or 0) if  (header == 'lastSlide')  else (row[j] or '')
+        elif row[j]:
+            hmatch = QFIELD_RE.match(header)
+            if hmatch and (hmatch.group(2) == 'response' or hmatch.group(2)  == 'explain' or hmatch.group(2)  == 'plugin'):
+                # Copy only response/explain/plugin field to session
+                qnumber = int(hmatch.group(1))
+                if hmatch.group(2) == 'response':
+                    if not row[j]:
+                        # Null row entry deletes attempt
+                        if qnumber in session.get('questionsAttempted'):
+                            del session.get('questionsAttempted')[qnumber]
+                    else:
+                        if not (qnumber in session.get('questionsAttempted',{})):
+                            session.get('questionsAttempted')[qnumber] = createQuestionAttempted()
+                        # SKIP_ANSWER implies null answer attempt
+                        session.get('questionsAttempted')[qnumber][hmatch.group(2)] = ''  if (row[j] == SKIP_ANSWER) else row[j]
+
+                elif qnumber in session.get('questionsAttempted'):
+                    # Explanation/plugin (ignored if no attempt)
+                    if hmatch.group(2) == 'plugin':
+                        if row[j]:
+                            session.get('questionsAttempted')[qnumber][hmatch.group(2)] = json.loads(row[j])
+                    else:
+                        session.get('questionsAttempted')[qnumber][hmatch.group(2)] = row[j]
+    return session
+
+
+def splitNumericAnswer(corrAnswer):
+    # Return [answer|null, error|null]
+    if not corrAnswer:
+        return [None, 0.0]
+    comps = corrAnswer.split('+/-')
+    corrValue = parseNumber(comps[0])
+    corrError = 0.0
+    if corrValue != None and len(comps) > 1:
+        comps[1] = comps[1].strip()
+        if comps[1][-1:] == '%':
+            corrError = parseNumber(comps[1][:-1])
+            if corrError and corrError > 0:
+                corrError = (corrError/100.0)*corrValue
+        else:
+            corrError = parseNumber(comps[1])
+
+    if corrError:
+        corrError = abs(corrError)
+    return [corrValue, corrError]
+
+
+def scoreAnswer(response, qtype, corrAnswer):
+    # Handle answer types: choice, number, text
+    if not corrAnswer:
+        return None
+
+    if not response:
+        return 0
+
+    respValue = None
+
+    # Check response against correct answer
+    qscore = 0
+    if qtype == 'number':
+        # Check if numeric answer is correct
+        respValue = parseNumber(response)
+        corrComps = splitNumericAnswer(corrAnswer)
+
+        if respValue != None and corrComps[0] != None and corrComps[1] != None:
+            qscore = 1 if (abs(respValue-corrComps[0]) <= 1.001*corrComps[1]) else 0
+        elif corrComps[0] == None:
+            qscore = None
+            if corrAnswer:
+                raise Exception('scoreAnswer: Error in correct numeric answer:'+corrAnswer)
+        elif corrComps[1] == None:
+            qscore = None
+            raise Exception('scoreAnswer: Error in correct numeric error:'+corrAnswer)
+
+    else:
+        # Check if non-numeric answer is correct (all spaces are removed before comparison)
+        response = '' + response
+        normResp = response.strip().lower()
+        # For choice, allow multiple correct answers (to fix grading problems)
+        correctOptions = list(corrAnswer) if (qtype == 'choice')  else corrAnswer.split(' OR ')
+        for j in range(len(correctOptions)):
+            normCorr = re.sub(r'\s+', ' ', correctOptions[j].strip().lower())
+            if ' ' in normCorr[1:]:
+                # Correct answer has space(s); compare using normalized spaces
+                qscore = 1 if (re.sub(r'\s+', ' ', normResp) == normCorr) else 0
+            else:
+                # Strip all spaces from response
+                qscore = 1 if (re.sub(r'\s+', '', normResp) == normCorr) else 0
+
+            if qscore:
+                break
+
+    return qscore
+
+
+def tallyScores(questions, questionsAttempted, hintsUsed, params):
+    skipAhead = 'skip_ahead' in params.get('features')
+
+    questionsCount = 0
+    weightedCount = 0
+    questionsCorrect = 0
+    weightedCorrect = 0
+    questionsSkipped = 0
+
+    correctSequence = 0
+    lastSkipRef = ''
+
+    skipToSlide = 0
+    prevQuestionSlide = -1
+
+    qscores = []
+    for j in range(len(questions)):
+        qnumber = j+1
+        qAttempted = questionsAttempted.get(qnumber)
+        if not qAttempted and params.get('paceLevel') >= QUESTION_PACE:
+            # Process answers only in sequence
+            break
+
+        questionAttrs = questions[j]
+        slideNum = questionAttrs.get('slide')
+        if not qAttempted or slideNum < skipToSlide:
+            # Unattempted or skipped
+            qscores.append(None)
+            continue
+
+        if qAttempted.get('plugin'):
+            qscore = parseNumber(qAttempted.get('plugin').get('score'))
+        else:
+            qscore = scoreAnswer(qAttempted.get('response'), questionAttrs.get('qtype'),(qAttempted.get('expect') or questionAttrs.get('correct','')))
+
+        qscores.append(qscore)
+        qSkipCount = 0
+        qSkipWeight = 0
+
+        # Check for skipped questions
+        if skipAhead and qscore == 1 and not hintsUsed.get(qnumber) and not qAttempted.get('retries'):
+            # Correct answer (without hints and retries)
+            if slideNum > prevQuestionSlide+1:
+                # Question  not part of sequence
+                correctSequence = 1
+            elif correctSequence > 0:
+                # Question part of correct sequence
+                correctSequence += 1
+        else:
+            # Wrong/partially correct answer or no skipAhead
+            correctSequence = 0
+
+        prevQuestionSlide = slideNum
+
+        lastSkipRef = ''
+        if correctSequence and params.get('paceLevel') == QUESTION_PACE:
+            skip = questionAttrs.get('skip')
+            if skip and skip[0] > slideNum:
+                # Skip ahead
+                skipToSlide = skip[0]
+
+                # Give credit for all skipped questions
+                qSkipCount = skip[1]
+                qSkipWeight = skip[2]
+                lastSkipRef = skip[3]
+
+        # Keep score for this question
+        qWeight = questionAttrs.get('weight', 0)
+        questionsSkipped += qSkipCount
+        questionsCount += 1 + qSkipCount
+        weightedCount += qWeight + qSkipWeight
+
+        effectiveScore = qscore if (parseNumber(qscore) != None) else 1   # Give full credit to unscored answers
+
+        if params.get('participationCredit'):
+            # Full participation credit simply for attempting question (lateCredit applied in sheet)
+            effectiveScore = 1
+
+        elif hintsUsed.get(qnumber) and questionAttrs.get('hints') and len(questionAttrs.get('hints')):
+            if hintsUsed[qnumber] > len(questionAttrs.get('hints')):
+                raise Exception('Internal Error: Inconsistent hint count')
+            for j in range(hintsUsed[qnumber]):
+                effectiveScore -= abs(questionAttrs.get('hints')[j])
+
+        if effectiveScore > 0:
+            questionsCorrect += 1 + qSkipCount
+            weightedCorrect += effectiveScore*qWeight + qSkipWeight
+
+    return { 'questionsCount': questionsCount, 'weightedCount': weightedCount,
+                'questionsCorrect': questionsCorrect, 'weightedCorrect': weightedCorrect,
+                'questionsSkipped': questionsSkipped, 'correctSequence': correctSequence, 'skipToSlide': skipToSlide,
+                'correctSequence': correctSequence, 'lastSkipRef': lastSkipRef, 'qscores': qscores}

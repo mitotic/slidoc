@@ -306,7 +306,7 @@ class ActionHandler(BaseHandler):
             self.render('dashboard.html', site_label=site_label, version=sdproxy.VERSION, suspended=sdproxy.Global.suspended, interactive=WSHandler.getInteractiveSession())
 
         elif action == '_sessions':
-            colNames = ['dueDate', 'gradeDate', 'postDate']
+            colNames = ['dueDate', 'gradeDate']
             sessionParamList = sdproxy.lookupSessions(colNames)
             self.write('<a href="/_dash">Dashboard</a><p></p>')
             self.write('<h3>Sessions</h3><p></p><table><tr>\n')

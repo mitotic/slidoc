@@ -919,6 +919,10 @@ GoogleSheet.prototype.initCache = function(allRows) {
     Slidoc.log('GoogleSheet.initCache:', this.roster);
 }
 
+GoogleSheet.prototype.getCachedRow = function(userId) {
+    return this.cacheAll[userId] || null;
+}
+    
 GService.sheetIsLocked = function () {
     if (Slidoc.websocketPath)
 	return wsock.locked;
