@@ -1213,6 +1213,7 @@ class SlidocRenderer(MathRenderer):
              return
 
         weight_answer = ''
+        noshuffle = 0          # If n > 0, do not randomlly shuffle last n choices
         retry_counts = [0, 0]  # Retry count, retry delay
         opt_values = { 'disabled': ('yes',),               # Disable answering for this question
                        'explain': ('text', 'markdown'),    # Require text/markdown explanation
@@ -1224,11 +1225,13 @@ class SlidocRenderer(MathRenderer):
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
         answer_opts = { 'disabled': '', 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
         for opt in opt_comps[1:]:
-            num_match = re.match(r'^(participation|weight|retry)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
+            num_match = re.match(r'^(noshuffle|participation|retry|weight)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
             if num_match:
                 try:
                     if num_match.group(1) == 'weight':
                         weight_answer = num_match.group(2).strip()
+                    elif num_match.group(1) == 'noshuffle':
+                        noshuffle = abs(int(num_match.group(2).strip()))
                     elif num_match.group(1) == 'retry':
                         num_comps = [int(x.strip() or '0') for x in num_match.group(2).strip().split(',')]
                         retry_counts = [num_comps[0], 0]
@@ -1420,6 +1423,8 @@ class SlidocRenderer(MathRenderer):
 
         if self.cur_qtype in ('choice', 'multichoice'):
             self.questions[-1].update(choices=len(self.choices))
+        if noshuffle:
+            self.questions[-1].update(noshuffle=noshuffle)
         if retry_counts[0]:
             self.questions[-1].update(retry=retry_counts)
         if correct_html and correct_html != correct_text:

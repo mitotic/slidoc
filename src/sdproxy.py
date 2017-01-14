@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8b'
+VERSION = '0.96.8c'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1999,12 +1999,16 @@ def shuffleArray(array, randFunc=None):
         array[j] = temp
     return array
 
-def randomLetters(n, randFunc=None):
+def randomLetters(n, noshuffle, randFunc=None):
     letters = []
     for i in range(n):
         letters.append(chr(ord('A')+i))
 
-    shuffleArray(letters, randFunc)
+    nmix = max(0, n - noshuffle)
+    if nmix > 1:
+        cmix = letters[:nmix]
+        shuffleArray(cmix, randFunc)
+        letters = cmix + letters[nmix:]
     return ''.join(letters)
 
 def createSession(sessionName, params, questions=None, randomSeed=None):
@@ -2021,8 +2025,9 @@ def createSession(sessionName, params, questions=None, randomSeed=None):
         qshuffle = {}
         for qno in range(1,len(questions)+1):
             choices = questions[qno-1].get('choices',0)
+            noshuffle = questions[qno-1].get('noshuffle',0)
             if choices:
-                qshuffle[qno] = str(randFunc(0,1)) + randomLetters(choices, randFunc)
+                qshuffle[qno] = str(randFunc(0,1)) + randomLetters(choices, noshuffle, randFunc)
 
     return {'version': params.get('sessionVersion'),
 	    'revision': params.get('sessionRevision'),

@@ -114,7 +114,7 @@ body:not(.slidoc-slide-view) section.slidoc-page-break-before {
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }
 .slidoc-bottom-right { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; opacity: 0.5; }
 .slidoc-top-right    { z-index: 1000; position: fixed; right: 20px; top: 5px; font-size: 1.2em; padding-left: 7px; padding-right: 7px; }
-.slidoc-top-left     { z-index: 3300; position: fixed; left:  10px; top: 5px; font-size: 1.2em; padding-left: 7px;; padding-right: 7px;}
+.slidoc-top-left     { z-index: 3300; position: fixed; left:  10px; top: 5px; font-size: 1.2em; padding-left: 7px; padding-right: 7px;}
 
 .slidoc-top-right.slidoc-topnav-hide { display: none; }
 

@@ -598,12 +598,18 @@ function shuffleArray(array, randFunc) {
     return array;
 }
 
-function randomLetters(n, randFunc) {
+function randomLetters(n, noshuffle, randFunc) {
     var letters = [];
     for (var i=0; i < n; i++)
 	letters.push( letterFromIndex(i) );
 
-    shuffleArray(letters, randFunc);
+    var nmix = Math.max(0, n - noshuffle);
+    if (nmix > 1) {
+        var cmix = letters.slice(0,nmix);
+	shuffleArray(cmix, randFunc);
+        letters = cmix.concat(letters.slice(nmix));
+    }
+
     return letters.join('');
 }
 
@@ -2893,8 +2899,9 @@ function createSession(sessionName, randomSeed) {
         qshuffle = {};
         for (var qno=1; qno < questions.length+1; qno++) {
             var choices = questions[qno-1].choices || 0;
+	    var noshuffle = questions[qno-1].noshuffle || 0;
             if (choices) {
-                qshuffle[qno] = randFunc(0,1) + randomLetters(choices, randFunc);
+                qshuffle[qno] = randFunc(0,1) + randomLetters(choices, noshuffle, randFunc);
             }
         }
     }
