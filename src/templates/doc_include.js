@@ -1898,9 +1898,9 @@ Slidoc.manageSession = function() {
 	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print exam view</span><br>';
 	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores for this session</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
 	if (!Sliobj.adminPrefix) {
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores for all sessions</span>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	    html += hr;
 	    html += '<a class="slidoc-clickable" href="/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
 	    html += hr;
@@ -2796,16 +2796,16 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 	choiceText = choiceText.trim().replace(/\s+/g,' ');
 	choiceText = choiceText.replace(/^ *[A-Z]\./i, '.');
 	if (choiceText in choiceDup) {
-	    var errMsg = 'Question '+qnumber+' has duplicate choices: '+choiceDup[choiceText]+','+choiceLetter+choiceText;
+	    var errMsg = 'Please reset session. Question '+qnumber+' has duplicate choices: '+choiceDup[choiceText]+','+choiceLetter+choiceText;
 	    var firstSlide = document.getElementById(slide_id.slice(0,-3)+'-01');
 	    if (firstSlide) {
 		var div = document.createElement('div');
 		div.classList.add('slidoc-choice-duplicate-message');
 		div.textContent = errMsg;
 		firstSlide.insertBefore(div, firstSlide.firstChild);
-	    } else {
-		alert(errMsg);
 	    }
+	    if (!Sliobj.batchMode)
+		alert(errMsg);
 	}
 	choiceDup[choiceText] = choiceLetter;
     }

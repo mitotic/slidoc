@@ -35,6 +35,14 @@ Nb_metadata_format = '''
 
 Cell_formats = {}
 
+Cell_formats['raw'] = '''
+{
+  "cell_type" : "raw",
+  "metadata" : {},
+  "source" : %(source)s
+}
+'''
+
 Cell_formats['markdown'] = '''
 {
   "cell_type" : "markdown",
@@ -82,7 +90,7 @@ class MDParser(object):
                                                    re.DOTALL)),
                  ('plugin_embed',      re.compile( r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
                                                    re.DOTALL)),
-                 ('external_link',     re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?([\s\S]*?)(?(3)>)(?:\s+['"]([\s\S]*?)['"])?\s*\) *(\n|$)''') ),
+                 ('external_link',     re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?(.*?)(?(3)>)(?:\s+['"](.*?)['"])?\s*\) *(\n|$)''') ),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ) ]
 
     def __init__(self, cmd_args):
@@ -255,6 +263,8 @@ class MDParser(object):
                                            'outputs': json.dumps(cell['outputs'])}
         if cell['cell_type'] == 'markdown':
             return Cell_formats['markdown'] % {'source': json.dumps(cell['source'])}
+
+        return Cell_formats['raw'] % {'source': json.dumps(cell['source'])}
 
 
 Nb_convert_url_prefix = 'http://nbviewer.jupyter.org/url/'

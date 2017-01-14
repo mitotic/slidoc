@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8a';
+var VERSION = '0.96.8b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -664,7 +664,7 @@ function sheetAction(params) {
 		    columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
 		    columnIndex = indexColumns(modSheet);
 
-		    updateTotalScores(modSheet, startRow, sessionAttributes, questions, true);
+		    updateTotalScores(modSheet, sessionAttributes, questions, true);
 		    updateTotalFormula(modSheet);
 		}
 
@@ -1313,7 +1313,7 @@ function sheetAction(params) {
                             // Filled by array formula
                             rowUpdates[totalCol-1] = '';
                         }
-			//returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns)+totalGradesFormula);
+			//returnMessages.push("Debug::"+nonNullExtraColumn+Object.keys(adminColumns));
 		    }
 
 		    //returnMessages.push("Debug:ROW_UPDATES:"+rowUpdates);
@@ -2571,8 +2571,9 @@ function updateTotalFormula(modSheet) {
 	maxTotalRange.setValue(totalGradesFormula);
 }
 
-function updateTotalScores(modSheet, startRow, sessionAttributes, questions, force) {
+function updateTotalScores(modSheet, sessionAttributes, questions, force) {
     // If not force, only update non-blank entries
+    var startRow = 2;
     var nRows = modSheet.getLastRow()-startRow+1;
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
@@ -3009,7 +3010,7 @@ function updateTotalAux(sheetName) {
 	var sessionAttributes = JSON.parse(sessionEntries.attributes)
 	var questions = JSON.parse(sessionEntries.questions);
 	var sessionSheet = getSheet(sessionName);
-	updateTotalScores(sessionSheet, 2, sessionAttributes, questions, true);
+	updateTotalScores(sessionSheet, sessionAttributes, questions, true);
 	updateTotalFormula(sessionSheet);
     }
     notify('Updated totals for sessions: '+sessionNames.join(', '), 'Slidoc Totals');
@@ -3209,6 +3210,9 @@ function updateScores(sessionNames, interactive) {
 	    if (!paceLevel)
 		continue;
 
+	    // Update total scores
+	    updateTotalScores(sessionSheet, sessionAttributes, questions, true);
+
 	    // Update answers/stats sheets (if already present)
 	    var ansName = sessionName+'-answers';
 	    if (getSheet(ansName)) {
@@ -3320,7 +3324,7 @@ function updateScores(sessionNames, interactive) {
 		    } else if (op == '/') {
 			formula = '('+formula+'/'+val+')';
 		    } else if (op == '<') {
-			formula = 'MIN('+formula+','+val+')';
+			formula = 'MIN('+val+','+formula+')';
 		    }
 		}
 		return formula;

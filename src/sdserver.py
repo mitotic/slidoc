@@ -521,10 +521,10 @@ class ActionHandler(BaseHandler):
 
         elif action == '_refresh':
             if sessionName:
-                if sdproxy.lockSheet(sessionName, 'user', refresh=True):
+                if sdproxy.refreshSheet(sessionName):
                     msg = ' Refreshed session '+sessionName
                 else:
-                    msg = ' Refreshing session '+sessionName+' ...'
+                    msg = ' Cannot refresh locked session '+sessionName+' ...'
                 self.write(msg+'<p></p><a href="/_cache">Cache status</a><p></p><a href="/_dash">Dashboard</a>')
 
         elif action in ('_respond'):
@@ -721,13 +721,13 @@ class ProxyHandler(BaseHandler):
                     elif args.get('action'):
                         # Clear cached sheets
                         if args.get('action') == 'scores':
-                            sdproxy.unlockSheet(SCORES_SHEET)
+                            sdproxy.refreshSheet(SCORES_SHEET)
                         elif sessionName:
-                            sdproxy.unlockSheet(sessionName+'-'+args.get('action'))
+                            sdproxy.refreshSheet(sessionName+'-'+args.get('action'))
                         else:
                             for name in sdproxy.Sheet_cache:
                                 if name.endswith('-'+action):
-                                    sdproxy.unlockSheet(name)
+                                    sdproxy.refreshSheet(name)
                     try:
                         retObj = json.loads(response.body)
                     except Exception, err:

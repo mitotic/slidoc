@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8a'
+VERSION = '0.96.8b'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -107,7 +107,6 @@ Sheet_cache = {}    # Cache of sheets
 Miss_cache = {}     # For optional sheets that are missing
 Lock_cache = {}     # Locked sheets
 Lock_passthru = defaultdict(int)  # Count of passthru's
-Refresh_sheets = set()
 
 Global = Dummy()
 
@@ -118,9 +117,6 @@ def delSheet(sheetName):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
         if sheetName in cache:
             del cache[sheetName]
-
-    if sheetName in Refresh_sheets:
-        Refresh_sheets.discard(sheetName)
 
 
 def initCache():
@@ -392,11 +388,10 @@ class Sheet(object):
             raise Exception('Cannot delete row for non-keyed spreadsheet '+self.name)
         if rowNum < 1 or rowNum > len(self.xrows):
             raise Exception('Invalid row number %s for deletion in sheet %s' % (rowNum, self.name))
-        self.modTime = sliauth.epoch_ms()
-        self.accessTime = self.modTime
         keyValue = self.xrows[rowNum-1][self.keyCol-1]
         del self.xrows[rowNum-1]
         del self.keyMap[keyValue]
+        self.modifiedSheet()
 
     def insertRowBefore(self, rowNum, keyValue=None):
         if self.readOnly:
@@ -408,20 +403,20 @@ class Sheet(object):
             if rowNum != len(self.xrows)+1:
                 raise Exception('Can only append row for non-keyed spreadsheet')
 
-        self.modTime = sliauth.epoch_ms()
-        self.accessTime = self.modTime
+        modTime = sliauth.epoch_ms()
         newRow = ['']*self.nCols
         if self.keyHeader:
             if keyValue is None:
                 raise Exception('Must specify key for row insertion in sheet '+self.name)
             if keyValue in self.keyMap:
                 raise Exception('Duplicate key %s for row insertion in sheet %s' % (keyValue, self.name))
-            self.keyMap[keyValue] = self.modTime
+            self.keyMap[keyValue] = modTime
             newRow[self.keyCol-1] = keyValue
         else:
-            self.keyMap[rowNum] = self.modTime
+            self.keyMap[rowNum] = modTime
 
         self.xrows.insert(rowNum-1, newRow)
+        self.modifiedSheet(modTime)
 
     def appendColumns(self, headers):
         if self.readOnly:
@@ -429,11 +424,11 @@ class Sheet(object):
         if Options['gsheet_url'] and not Options['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot append columns for session '"+self.name+"' via proxy; use direct URL")
-        self.modTime = sliauth.epoch_ms()
         self.nCols += len(headers)
         self.xrows[0] += headers
         for j in range(1, len(self.xrows)):
             self.xrows[j] += ['']*len(headers)
+        self.modifiedSheet()
 
     def trimColumns(self, ncols):
         if self.readOnly:
@@ -441,10 +436,10 @@ class Sheet(object):
         if Options['gsheet_url'] and not Options['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot delete columns for session '"+self.name+"' via proxy; use direct URL")
-        self.modTime = sliauth.epoch_ms()
         self.nCols -= ncols
         for j in range(len(self.xrows)):
             self.xrows[j] = self.xrows[j][:-ncols]
+        self.modifiedSheet()
 
     def checkRange(self, rowMin, colMin, rowCount, colCount):
         if rowMin < 1 or rowMin > len(self.xrows):
@@ -484,8 +479,7 @@ class Sheet(object):
             if colCount != len(rowValues):
                 raise Exception('Col count mismatch for setSheetValues %s in row %d: expected %d but found %d' % (self.name, j+rowMin, colCount, len(rowValues)) )
 
-        self.modTime = sliauth.epoch_ms()
-        self.accessTime = self.modTime
+        modTime = sliauth.epoch_ms()
         for j, rowValues in enumerate(values):
             if self.keyCol:
                 oldKeyValue = self.xrows[j+rowMin-1][self.keyCol-1]
@@ -493,11 +487,16 @@ class Sheet(object):
                     newKeyValue = rowValues[self.keyCol-colMin]
                     if newKeyValue != oldKeyValue:
                         raise Exception('Cannot alter key value %s to %s in sheet %s' % (oldKeyValue, newKeyValue, self.name))
-                self.keyMap[oldKeyValue] = self.modTime
+                self.keyMap[oldKeyValue] = modTime
 
             self.xrows[j+rowMin-1][colMin-1:colMin+colCount-1] = rowValues
 
-        update_remote_sheets()
+        self.modifiedSheet(modTime)
+
+    def modifiedSheet(self, modTime=None):
+        self.modTime = sliauth.epoch_ms() if modTime is None else modTime
+        self.accessTime = self.modTime
+        IOLoop.current().add_callback(update_remote_sheets)
 
     def get_updates(self, lastUpdateTime):
         if self.modTime < lastUpdateTime:
@@ -560,29 +559,19 @@ def getCacheStatus():
     out += '\n'
     return out
 
-def lockSheet(sheetName, lockType='user', refresh=False):
+def lockSheet(sheetName, lockType='user'):
     # Returns True if lock is immediately effective; False if it will take effect later
-    # If refresh, automatically unlock after updates
     if sheetName not in Lock_cache and not isReadOnly(sheetName):
         Lock_cache[sheetName] = lockType
-    if refresh:
-        Refresh_sheets.add(sheetName)
-        return unlockSheet(sheetName)
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
         return False
     return True
 
 def unlockSheet(sheetName):
-    # Unlock and/or refresh sheet (if no updates pending)
+    # Unlock and refresh sheet (if no updates pending)
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
         return False
-    if sheetName in Lock_cache:
-        del Lock_cache[sheetName]
-    if sheetName in Lock_passthru:
-        del Lock_passthru[sheetName]
-    if sheetName in Sheet_cache:
-        del Sheet_cache[sheetName]
-    Refresh_sheets.discard(sheetName)
+    delSheet(sheetName)
     return True
 
 def expireSheet(sheetName):
@@ -590,6 +579,19 @@ def expireSheet(sheetName):
     sheet = Sheet_cache.get(sheetName)
     if sheet:
         sheet.expire()
+
+def refreshSheet(sheetName):
+    # Refresh sheet, if unlocked (after any updates)
+    if sheetName in Lock_cache or sheetName in Lock_passthru:
+        return False
+    sheet = Sheet_cache.get(sheetName)
+    if not sheet:
+        return True
+    if sheet.get_updates(Global.cacheUpdateTime) is None:
+        delSheet(sheetName)
+    else:
+        sheet.expire()
+    return True
 
 def startPassthru(sheetName):
     Lock_passthru[sheetName] += 1
@@ -794,8 +796,6 @@ def updates_completed(updateTime):
         Global.cacheRequestTime = 0
         Global.cacheRetryCount = 0
         Global.cacheWaitTime = 0
-        for sheetName in Refresh_sheets:
-            unlockSheet(sheetName)
         
 
 def sheetAction(params, notrace=False):
@@ -1065,7 +1065,7 @@ def sheetAction(params, notrace=False):
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
 
-                    updateTotalScores(modSheet, startRow, sessionAttributes, questions, True)
+                    updateTotalScores(modSheet, sessionAttributes, questions, True)
 
             userId = None
             displayName = None
@@ -1748,6 +1748,11 @@ def sheetAction(params, notrace=False):
                     # Save updated row
                     userRange.setValues([rowValues])
 
+                    if userId == MAXSCORE_ID:
+                        # Refresh sheet cache if max score row is updated
+                        modSheet.expire()
+                        expireSheet(SCORES_SHEET)
+
                     if paramId == TESTUSER_ID and sessionEntries and adminPaced:
                         lastSlideCol = columnIndex.get('lastSlide')
                         if lastSlideCol and rowValues[lastSlideCol-1]:
@@ -2241,8 +2246,9 @@ def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
         if retval['result'] != 'success':
             raise Exception('Error in setting late token for user '+userId+': '+retval.get('error'))
 
-def updateTotalScores(modSheet, startRow, sessionAttributes, questions, force=False):
+def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
     # If not force, only update non-blank entries
+    startRow = 2
     nRows = modSheet.getLastRow()-startRow+1
     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
     columnIndex = indexColumns(modSheet)
@@ -2676,10 +2682,10 @@ def loadSession(session_json):
     # Needed because JSON serialization converts integer keys to strings
     try:
         ustr = session_json.decode('utf8')
-    except Exception:
+    except UnicodeError:
         try:
             ustr = session_json.decode('latin1')
-        except Exception:
+        except UnicodeError:
             ustr = session_json.decode('utf8', 'ignore')
 
     session = json.loads(ustr)

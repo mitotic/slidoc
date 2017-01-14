@@ -75,7 +75,7 @@ class Parser(object):
     inline_js2 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\)`")
     plugin_re =        re.compile( r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     ref_re =           re.compile(r'''^ {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *$''')
-    ref_def_re =  re.compile(r'''(^|\n) {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *(\n+|$)''')
+    ref_def_re =  re.compile(r'''(^|\n) {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *(?=\n|$)''')
 
     rules_re = [ ('fenced',            re.compile( r'^ *(`{3,}|~{3,}) *(\S+)? *\n'
                                                    r'([\s\S]+?)\s*'
