@@ -125,7 +125,7 @@ Share = {
 
     getResponses: function (display) {
 	Slidoc.log('Slidoc.Plugins.Share.getResponses:', display);
-	if (!this.qattributes.share)
+	if (!this.qattributes.share || !window.GService)
 	    return;
 	this.nCols = 1;
 	if (this.qattributes.explain)

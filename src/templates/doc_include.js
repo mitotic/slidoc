@@ -101,7 +101,7 @@ Sliobj.delaySec = null;
 Sliobj.scores = null;
 Sliobj.liveResponses = {};
 Sliobj.choiceBlockHTML = {};
-Sliobj.printExamView = false;
+Sliobj.printExamView = !Sliobj.params.gd_sheet_url && getParameter('print');
 
 Sliobj.errorRetries = 0;
 
@@ -1077,7 +1077,8 @@ Slidoc.handleKey = function (keyName) {
 
     } else if (Sliobj.printExamView && keyName == 'down') {
 	window.print();
-	Slidoc.nextUser(true);
+	if (Sliobj.adminState)
+	    Slidoc.nextUser(true);
     } else {
 	if (keyName == 'esc' || keyName == 'unesc')   { Slidoc.slideViewStart(); return false; }
 
@@ -1891,12 +1892,15 @@ Slidoc.manageSession = function() {
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
     }
 
+    if (Sliobj.adminState || !Sliobj.params.gd_sheet_url) {
+	html += hr;
+	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span><br>';
+    }
+
     if (Sliobj.adminState) {
 	html += hr;
 	html += 'Session admin:<br><blockquote>\n';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
-	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print exam view</span><br>';
 	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
 	if (!Sliobj.adminPrefix) {
@@ -2139,7 +2143,7 @@ function slidocSetupAux(session, feedback) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
 	    slides[j].style.display = 'block';
-    } else if (!Sliobj.batchMode && (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) ) {
+    } else if (!Sliobj.batchMode && !Sliobj.printExamView && (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) ) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slides[j].style.display = 'block';
@@ -2266,6 +2270,13 @@ function slidocSetupAux(session, feedback) {
 
     showSubmitted();
 
+    if (Sliobj.printExamView) {
+	var infoElem = document.getElementById('slidoc-session-info');
+	if (infoElem)
+	    infoElem.textContent = 'user ('+Sliobj.session.randomSeed+')';
+	document.title = 'user-'+Sliobj.sessionName;
+    }
+
     // Setup completed; branch out
     Sliobj.firstTime = false;
     var toc_elem = document.getElementById("slidoc00");
@@ -2318,7 +2329,7 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
-    if ('slides_only' in Sliobj.params.features)
+    if ('slides_only' in Sliobj.params.features && !Sliobj.printExamView)
 	Slidoc.slideViewStart();
 
     ///if (Slidoc.testingActive())
@@ -2658,13 +2669,21 @@ function scoreSession(session) {
 }
 
 Slidoc.toggleExam = function () {
+    if (!Sliobj.params.gd_sheet_url) {
+	var href = location.protocol+'//'+location.host+location.pathname;
+	if (!Sliobj.printExamView)
+	    href += '?print=1';
+	location.href = href;
+	return;
+    }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Sliobj.printExamView = !Sliobj.printExamView;
     if (Sliobj.printExamView) {
 	if (Sliobj.currentSlide)
 	    Slidoc.slideViewEnd();
-	selectUser(GService.gprofile.auth);
+	if (Sliobj.adminState)
+	    selectUser(GService.gprofile.auth);
 	alert('Use Down Arrow to print and advance');
     }
 }
@@ -4952,7 +4971,7 @@ Slidoc.startPaced = function () {
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
 
-    if (!Sliobj.batchMode)
+    if (!Sliobj.batchMode && !Sliobj.printExamView)
 	Slidoc.slideViewStart();
 }
 

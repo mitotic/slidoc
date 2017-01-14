@@ -834,9 +834,9 @@ class SlidocRenderer(MathRenderer):
         if implicit or 'rule' in self.options['config'].strip or (self.hide_end and 'hidden' in self.options['config'].strip):
             rule_html = ''
         elif self.options.get('use_xhtml'):
-            rule_html = '<hr class="slidoc-noslide slidoc-noprint"/>\n'
+            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly"/>\n'
         else:
-            rule_html = '<hr class="slidoc-noslide slidoc-noprint">\n'
+            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly">\n'
 
         end_html = self.end_slide(rule_html)
         self._new_slide()
@@ -3234,7 +3234,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     output_html = 'NO DATA'
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
     def do_GET(self):
-        if self.path == '/':
+        if self.path == '/' or self.path.startswith('/?'):
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()

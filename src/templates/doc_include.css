@@ -92,6 +92,11 @@ body:not(.slidoc-slide-view) article.slidoc-two-column section.slidoc-single-col
     column-span: all;
 }
 
+article.slidoc-two-column .slidoc-single-columnonly {
+    display: none;
+}
+    
+
 /* Slide page breaks (use ---- to force slide break) */
 body:not(.slidoc-slide-view) article.slidoc-page-break-always section {
   page-break-after: always;    

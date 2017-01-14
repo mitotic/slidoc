@@ -51,8 +51,8 @@ class PPTXParser(object):
     choice_re   = re.compile(r'^([A-P]\.\.)', re.IGNORECASE)
     image_re    = re.compile(r'''^ {0,3}!\[image(\d+)\]\(\s*([^'"]*?)(?:\s*(['"].*?['"]))?\s*\) *$''')
     notes_re    = re.compile(r'^Notes: *(.*)$')
-    word_start_re = re.compile(r'^\w')
-    word_end_re   = re.compile(r'^.*\w$')
+    break_start_re = re.compile(r'''^[\w`'"]''')
+    break_end_re   = re.compile(r'''^.*[\w`'"]$''')
     default_img_height = 540
 
     rules_re = [ ('external_link', re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?([\s\S]*?)(?(3)>)(?:\s+['"]([\s\S]*?)['"])?\s*\) *(\n|$)''') )
@@ -116,7 +116,7 @@ class PPTXParser(object):
                             if para_text and run_text:
                                 if fenced or run_text.startswith('```') or self.args_dict.get('line_breaks'):
                                     para_text += '\n'
-                                elif self.word_end_re.match(para_text) and self.word_start_re.match(run_text):
+                                elif self.break_end_re.match(para_text) and self.break_start_re.match(run_text):
                                     para_text += ' '
                             para_text += run_text
 

@@ -24,6 +24,7 @@ class MDParser(object):
     newline_norm_re =  re.compile(r'\r\n|\r')
     defaults_re =      re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*$')
     header_re =        re.compile(r'^##[^#]')
+    split_re =         re.compile(r'^(Concepts|Extra|Notes|PluginDef):')
     notes_re =         re.compile(r'^Notes: *(.*)$')
     data_url_re =      re.compile(r'^data:([^;]+/[^;]+);base64,(.*)$')
     ref_def_re =       re.compile(r'''(^|\n) {0,3}\[([^\]]+)\]: +(\S+)( *\(.*\)| *'.*'| *".*")? *(?=\n|$)''')
@@ -186,8 +187,8 @@ class MDParser(object):
 
             offset = len(lines)
             for j, line in enumerate(lines):
-                if line.startswith('<script>') or line.startswith('Concepts:') or line.startswith('PluginDef:'):
-                    # Split scripts/concepts/plugin definition off into notes portion (for readability)
+                if line.startswith('<script>') or self.split_re.match(line):
+                    # Split scripts/Concepts/Extra/Notes/PluginDef off into notes portion (for readability)
                     offset = j
                     break
             
