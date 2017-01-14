@@ -3330,6 +3330,7 @@ alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,...', he
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
+alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
@@ -3397,14 +3398,20 @@ if __name__ == '__main__':
         print('Effective argument list', file=sys.stderr)
         print('    ', argparse.Namespace(**config_dict), file=sys.stderr)
 
+    pptx_opts = {}
+    if cmd_args.pptx_options:
+        for opt in cmd_args.pptx_options.split(','):
+            pptx_opts[opt] = True
+
     input_paths = [f.name for f in input_files]
     for j, inpath in enumerate(input_paths):
         fext = os.path.splitext(os.path.basename(inpath))[1]
         if fext == '.pptx':
             # Convert .pptx to .md
-            md_text = pptx2md.pptx2md(input_files[j], embed_slides=True)
+            ppt_parser = pptx2md.PPTXParser(pptx_opts)
+            md_text = ppt_parser.parse_pptx(input_files[j], input_files[j].name)
             input_files[j].close()
-            input_files[j] = cStringIO.StringIO(md_text)
+            input_files[j] = cStringIO.StringIO(md_text.encode('utf8'))
             input_paths[j] = input_paths[j][:-len('.pptx')]+'.md'
 
     if cmd_args_orig.preview:
