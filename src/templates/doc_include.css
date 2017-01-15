@@ -59,6 +59,9 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
 
 .slidoc-answer-disabled { display: none; }
 
+/* Headers */
+p.slidoc-header { font-weight: bold; }
+
 /* Interactivity */
 body:not(.slidoc-interact-view) #slidoc-interact-display { opacity: 0.8; }
 body.slidoc-interact-view #slidoc-interact-display { background: red; }

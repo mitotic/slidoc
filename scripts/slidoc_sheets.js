@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8c';
+var VERSION = '0.96.8d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -105,7 +105,7 @@ var RESCALE_ID = '_rescale';
 var TESTUSER_ID = '_test_user';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
-var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide'];
+var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
 
 var TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', ''];
 
@@ -455,8 +455,8 @@ function sheetAction(params) {
 			var idCol = updateColumnIndex['id'];
 			var nameCol = updateColumnIndex['name'] || idCol;
 			var totalCol = updateColumnIndex['q_total'];
-			var deletedRows = false;
-			var insertedRows = false;
+			var deletedRows = 0;
+			var insertedRows = 0;
 
 			var updateStickyRows = lastRowNum;
 			if (lastRowNum > 1) {
@@ -474,7 +474,7 @@ function sheetAction(params) {
 				// Delete rows for which keys are not found (backwards)
 				if (!(keys[rowNum-2][0] in updateKeys)) {
 				    updateSheet.deleteRow(rowNum);
-				    deletedRows = true;
+				    deletedRows += 1;
 				}
 			    }
 			}
@@ -498,7 +498,7 @@ function sheetAction(params) {
 				    modRow = updateStickyRows + locateNewRow(rowVals[nameCol-1], rowId, nameValues, idValues, TESTUSER_ID);
 				}
 				updateSheet.insertRowBefore(modRow);
-				insertedRows = true;
+				insertedRows += 1;
 			    } else {
 				// Pre-existing row
 				if (totalCol) {
@@ -513,7 +513,7 @@ function sheetAction(params) {
 			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowId+', '+rowVals);
 			}
 			if (totalCol && (deletedRows || insertedRows))
-			    updateTotalFormula(updateSheet);
+			    updateTotalFormula(updateSheet, lastRowNum+insertedRows-deletedRows);
 		    }
 		} catch(err) {
 		    var errMsg = ''+err;
@@ -665,7 +665,7 @@ function sheetAction(params) {
 		    columnIndex = indexColumns(modSheet);
 
 		    updateTotalScores(modSheet, sessionAttributes, questions, true);
-		    updateTotalFormula(modSheet);
+		    updateTotalFormula(modSheet, modSheet.getLastRow());
 		}
 
 	    }
@@ -1092,50 +1092,52 @@ function sheetAction(params) {
 	    var retakesCol = columnIndex['retakes'];
 	    if (resetRow) {
 		// Reset row
-		if (!userRow)
+		if (newRow)
 		    throw('Error:RETAKES:Cannot reset new row');
 		if (!sessionEntries)
 		    throw('Error:RETAKES:Reset only allowed for sessions');
+		var fieldsMin = sessionEntries['fieldsMin'];
 		newRow = true;
 
 		var origVals = modSheet.getRange(userRow, 1, 1, columnHeaders.length).getValues()[0];
 		if (adminUser || paramId == TESTUSER_ID) {
-		    // For admin or test user, do not update retakes count
-		    var retakesVal = retakesCol ? origVals[retakesCol-1] : '';
+		    // For admin or test user, also reset retakes count
+		    var retakesVal = ''
 		} else {
 		    if (origVals[columnIndex['submitTimestamp']-1])
 			throw('Error:RETAKES:Retakes not allowed for submitted sessions');
-		    if (!sessionAttributes.params.maxRetakes || !retakesCol || !isNumber(origVals[retakesCol-1]))
+
+		    var maxRetakes = sessionAttributes.params.maxRetakes;
+		    if (!maxRetakes)
 			throw('Error:RETAKES:Retakes not allowed');
-		    var retakesVal = parseNumber(origVals[retakesCol-1]);
-		    if (!retakesVal)
+
+		    var retakesVal = parseNumber(origVals[retakesCol-1] || 0);
+		    if (retakesVal >= maxRetakes)
 			throw('Error:RETAKES:No more retakes available');
-		    retakesVal = retakesVal - 1;
+
+		    // Update retakes count
+		    retakesVal = retakesVal + 1;
 		}
 
 		createRow = origVals[columnIndex['source']-1];
 		rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params, questions,
 					      userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1],
-					      origVals[columnIndex['altid']-1], createRow, seedRow);
+					      origVals[columnIndex['altid']-1], createRow, retakesVal, seedRow);
 
-		// Preserve name, lateToken and update retake count on reset
+
+		// Preserve name and lateToken on reset
 		rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1];
 		rowUpdates[columnIndex['lateToken']-1] = params.late || origVals[columnIndex['lateToken']-1];
-		if (retakesCol)
-		    rowUpdates[retakesCol-1] = retakesVal;
 
 	    } else if (newRow && !rowUpdates && createRow) {
 		// Initialize new row
 		if (sessionEntries) {
 		    rowUpdates = createSessionRow(sheetName, sessionEntries.fieldsMin, sessionAttributes.params, questions,
 						  userId, params.name, params.email, params.altid,
-						  createRow, seedRow);
+						  createRow, '', seedRow);
 		    displayName = rowUpdates[columnIndex['name']-1] || '';
 		    if (params.late && columnIndex['lateToken'])
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
-
-		    if (retakesCol && sessionAttributes.params.maxRetakes)
-			rowUpdates[retakesCol-1] = sessionAttributes.params.maxRetakes;
 		} else {
 		    rowUpdates = [];
 		    for (var j=0; j<columnHeaders.length; j++)
@@ -1241,6 +1243,7 @@ function sheetAction(params) {
 		    }
 		}
 
+		var numRows = modSheet.getLastRow();
 		if (newRow && !resetRow) {
 		    // New user; insert row in sorted order of name (except for log files)
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
@@ -1251,16 +1254,18 @@ function sheetAction(params) {
                         // Test user always appears after max score
 			var maxScoreRow = lookupRowIndex(MAXSCORE_ID, modSheet, numStickyRows+1);
                         userRow = maxScoreRow ? maxScoreRow+1 : numStickyRows+1
-		    } else if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
-			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1);
-			var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1);
+		    } else if (numRows > numStickyRows && !loggingSheet) {
+			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], numRows-numStickyRows, 1);
+			var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], numRows-numStickyRows, 1);
 			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID);
 		    } else {
-			userRow = modSheet.getLastRow()+1;
+			userRow = numRows+1;
 		    }
+		    // NOTE: modSheet.getLastRow() is not updated immediately after row insertion!
 		    modSheet.insertRowBefore(userRow);
+		    numRows += 1;
 		    if (columnIndex['q_total'] && userId != MAXSCORE_ID)
-			updateTotalFormula(modSheet);
+			updateTotalFormula(modSheet, numRows);
 		} else if (rowUpdates && nooverwriteRow) {
 		    if (getRow) {
 			// Simply return existing row
@@ -1320,12 +1325,12 @@ function sheetAction(params) {
 		    for (var j=0; j<rowUpdates.length; j++) {
 			var colHeader = columnHeaders[j];
 			var colValue = rowUpdates[j];
-			if (colHeader == 'retakes') {
+			if (colHeader == 'retakes' && !newRow) {
 			    // Retakes are always updated separately
 			} else if (colHeader == 'q_total') {
 			    // Modify only for max score; otherwise leave blank (to be overwritten by array formula)
 			    if (userId == MAXSCORE_ID && totalCol)
-				rowValues[j] = gradesFormula(columnHeaders, totalCol+1, modSheet.getLastRow());
+				rowValues[j] = gradesFormula(columnHeaders, totalCol+1, numRows);
 			    else
 				rowValues[j] = '';
 			} else if (colHeader == 'Timestamp') {
@@ -1548,9 +1553,9 @@ function sheetAction(params) {
 		}
 
                 if (teamCopyCols.length) {
-		    var nRows = modSheet.getLastRow()-numStickyRows;
-		    var idValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1);
-                    var teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1);
+		    var nCopyRows = numRows-numStickyRows;
+		    var idValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nCopyRows, 1);
+                    var teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nCopyRows, 1);
                     var userOffset = userRow-numStickyRows-1;
                     var teamName = teamValues[userOffset][0];
                     if (teamName) {
@@ -1571,13 +1576,8 @@ function sheetAction(params) {
                 if ((paramId != TESTUSER_ID || prevSubmitted) && sessionEntries && adminPaced)
                     returnInfo['adminPaced'] = adminPaced;
 
-		// Return updated timestamp and retakes
+		// Return updated timestamp
 		returnInfo.timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
-		if ('retakes' in columnIndex) {
-		    var retakesVal = rowValues[columnIndex['retakes']-1];
-		    if (isNumber(retakesVal))
-			returnInfo.retakesRemaining = parseNumber(retakesVal);
-		}
 		
 		returnValues = getRow ? rowValues : [];
 
@@ -1711,7 +1711,7 @@ function randomLetters(n, noshuffle, randFunc) {
     return letters.join('');
 }
 
-function createSession(sessionName, params, questions, randomSeed) {
+function createSession(sessionName, params, questions, retakes, randomSeed) {
     var persistPlugins = {};
     for (var j=0; j<params.plugins.length; j++)
 	persistPlugins[params.plugins[j]] = {};
@@ -1741,7 +1741,7 @@ function createSession(sessionName, params, questions, randomSeed) {
 	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
-	    'retakesRemaining': '',
+	    'retakes': retakes || '',
 	    'randomSeed': randomSeed, // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,   // 180 day lifetime
             'startTime': Date.now(),
@@ -1758,13 +1758,13 @@ function createSession(sessionName, params, questions, randomSeed) {
 
 }
 
-function createSessionRow(sessionName, fieldsMin, params, questions, userId, displayName, email, altid, source, randomSeed) {
+function createSessionRow(sessionName, fieldsMin, params, questions, userId, displayName, email, altid, source, retakes, randomSeed) {
     var headers = params.sessionFields.concat(params.gradeFields);
     var idCol = headers.indexOf('id') + 1;
     var nameCol = headers.indexOf('name') + 1;
     var emailCol = headers.indexOf('email') + 1;
     var altidCol = headers.indexOf('altid') + 1;
-    var session = createSession(sessionName, params, questions, randomSeed);
+    var session = createSession(sessionName, params, questions, retakes, randomSeed);
     var rowVals = [];
     for (var j=0; j<headers.length; j++) {
 	rowVals[j] = '';
@@ -2564,14 +2564,13 @@ function gradesFormula(columnHeaders, startCol, lastRow) {
 	return '=' + totalCells.join('+');
 }
 
-function updateTotalFormula(modSheet) {
+function updateTotalFormula(modSheet, nRows) {
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
     var totalCol = columnIndex['q_total'];
-    var lastRow = modSheet.getLastRow();
-    if (!totalCol || lastRow < 2)
+    if (!totalCol || nRows < 2)
 	return;
-    var totalGradesFormula = gradesFormula(columnHeaders, totalCol+1, lastRow);
+    var totalGradesFormula = gradesFormula(columnHeaders, totalCol+1, nRows);
     var maxTotalRange = modSheet.getRange(2, totalCol, 1, 1);
     var oldVal = maxTotalRange.getFormula();
     if (oldVal != totalGradesFormula)
@@ -3018,7 +3017,7 @@ function updateTotalAux(sheetName) {
 	var questions = JSON.parse(sessionEntries.questions);
 	var sessionSheet = getSheet(sessionName);
 	updateTotalScores(sessionSheet, sessionAttributes, questions, true);
-	updateTotalFormula(sessionSheet);
+	updateTotalFormula(sessionSheet, sessionSheet.getLastRow());
     }
     notify('Updated totals for sessions: '+sessionNames.join(', '), 'Slidoc Totals');
 }
@@ -3569,7 +3568,7 @@ function MigrateAll() {
 		    var indexSheet = newSheet;
 	    }
 	}
-	var newFields = [ [11, 'retakes'], [5, 'accessCount'] ]; // (insertAfterCol, header) Must be listed right to left
+	var newFields = [ [11, 'retakes'] ]; // (insertAfterCol, header) Must be listed right to left
 	var pacedCols = ['q_total', 'q_scores', 'q_other', 'q_comments'];
 	var indexColIndex = indexColumns(indexSheet);
 	var indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2);

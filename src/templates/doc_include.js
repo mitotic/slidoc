@@ -22,7 +22,7 @@ var CACHE_GRADING = true; // If true, cache all rows for grading
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 
-var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide'];
+var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
 
 var BASIC_PACE    = 1;
 var QUESTION_PACE = 2;
@@ -836,18 +836,27 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
     }
 }
 
+function retakesRemaining() {
+    if (!Sliobj.params.maxRetakes || !Sliobj.session || Sliobj.session.submitted)
+	return 0;
+    return Sliobj.params.maxRetakes - (Sliobj.session.retakes || 0);
+}
+
 Slidoc.resetPaced = function () {
     Slidoc.log('Slidoc.resetPaced:');
     var userId = getUserId();
-    if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely delete all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
-	return false;
 
-    if (Sliobj.params.gd_sheet_url) {
+    if (!retakesRemaining() && Sliobj.params.gd_sheet_url) {
 	if (!Sliobj.adminState && userId != Sliobj.params.testUserId) {
 	    alert('Unable to reset session linked to Google Docs');
 	    return false;
 	}
+    }
 
+    if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely delete all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
+	return false;
+    
+    if (Sliobj.params.gd_sheet_url) {
 	if (Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session.submitted) {
 	    alert('Cannot reset submitted instructor-paced session');
 	    return false;
@@ -1864,8 +1873,8 @@ Slidoc.manageSession = function() {
 	html += '<br>';
 	if (Sliobj.dueDate)
 	    html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
-	if (Sliobj.session && isNumber(Sliobj.session.retakesRemaining))
-	    html += 'Retakes remaining: <code>'+Sliobj.session.retakesRemaining+'</code><br>';
+	if (Sliobj.session && Sliobj.params.maxRetakes)
+	    html += 'Retakes remaining: <code>'+retakesRemaining()+'</code><br>';
 	if (Sliobj.voteDate)
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
 
@@ -1884,7 +1893,7 @@ Slidoc.manageSession = function() {
     }
 
     var fullAdmin = !Sliobj.adminPrefix && (Sliobj.adminState || userId == Sliobj.params.testUserId);
-    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || fullAdmin))
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || retakesRemaining() || fullAdmin))
 	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
 
     if (fullAdmin) {
@@ -2880,7 +2889,7 @@ function makeRandomFunction(seed) {
     return Slidoc.Random.randomNumber.bind(null, seed);
 }
 
-function createSession(sessionName, randomSeed) {
+function createSession(sessionName, retakes, randomSeed) {
     var firstSlideId = getVisibleSlides()[0].id;
     var questions = getChapterAttrs(firstSlideId);
 
@@ -2915,7 +2924,7 @@ function createSession(sessionName, randomSeed) {
 	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
-	    'retakesRemaining': '',
+	    'retakes': retakes || '',
 	    'randomSeed': randomSeed, // Save random seed
             'expiryTime': Date.now() + 180*86400*1000,  // 180 day lifetime
             'startTime': Date.now(),
@@ -3329,9 +3338,6 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 
 	    if (retStatus.info.team && Sliobj.session) {
 		Sliobj.session.team = retStatus.info.team;
-	    }
-	    if (retStatus.info.retakesRemaining && Sliobj.session) {
-		Sliobj.session.retakesRemaining = retStatus.info.retakesRemaining;
 	    }
 	    if (retStatus.info.submitTimestamp) {
 		if (!Sliobj.session && window.confirm('Internal error in submit timestamp'))
@@ -4579,6 +4585,10 @@ Slidoc.submitStatus = function () {
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.saveClick();">Save session</span></li><p></p>'
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.submitClick();">Submit session</span>'+(incomplete ? ' (without reaching the last slide)':'')+'</li>'
 	    html += '</ul>';
+	    if (Sliobj.dueDate)
+		html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
+	    if (Sliobj.session && Sliobj.params.maxRetakes)
+		html += 'Retakes remaining: <code>'+retakesRemaining()+'</code><br>';
 	}
     }
     if (Sliobj.session.submitted || Sliobj.adminState)
@@ -4964,6 +4974,9 @@ Slidoc.startPaced = function () {
 	startMsg += '&nbsp;&nbsp;<em>Answers will be automatically saved after each answered question.</em><br>';
 	if (Sliobj.params.slideDelay)
 	    startMsg += '&nbsp;&nbsp;<em>If you plan to continue on a different computer, remember to explicitly save the session before leaving this computer (to avoid delays on previously viewed slides).</em><br>';
+	if (retakesRemaining()) {
+	    startMsg += '&nbsp;&nbsp;<b>You may re-take this '+retakesRemaining()+' more time(s).</b><br>';
+	}
     }
     startMsg += '<ul>';
     if (Sliobj.params.slideDelay && allowDelay())

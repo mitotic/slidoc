@@ -1919,7 +1919,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
-Manage_fields  = ['name', 'id', 'email', 'altid', 'source', 'accessCount', 'Timestamp', 'initTimestamp', 'submitTimestamp']
+Manage_fields  = ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
 Session_fields = ['team', 'lateToken', 'lastSlide', 'retakes', 'session_hidden']
 Score_fields   = ['q_total', 'q_scores', 'q_other', 'q_comments']
 Index_fields   = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionRescale', 'releaseDate', 'dueDate', 'gradeDate',
@@ -3330,7 +3330,7 @@ Conf_parser.add_argument('--printable', help='Printer-friendly output', action="
 Conf_parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
 Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
 Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
-Conf_parser.add_argument('--retakes', type=int, default=0, help='Max. number of retakes allowed (default: 0)')
+Conf_parser.add_argument('--retakes', type=int, help='Max. number of retakes allowed (default: 0)')
 Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
 Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')

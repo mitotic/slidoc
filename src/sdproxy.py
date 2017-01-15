@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8c'
+VERSION = '0.96.8d'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -76,7 +76,7 @@ RESCALE_ID = '_rescale'
 TESTUSER_ID = '_test_user'   #var
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
-COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide']
+COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
 
 TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']  #var
 
@@ -713,7 +713,7 @@ def update_remote_sheets(force=False, synchronous=False):
         # Check each cached sheet for updates
         updates = sheet.get_updates(Global.cacheUpdateTime)
         if updates is None:
-            if curTime-sheet.accessTime > 1000*self.holdSec:
+            if curTime-sheet.accessTime > 1000*sheet.holdSec:
                 # Cache entry has expired
                 del Sheet_cache[sheetName]
             continue
@@ -1446,36 +1446,40 @@ def sheetAction(params, notrace=False):
             retakesCol = columnIndex.get('retakes')
             if resetRow:
                 # Reset row
-                if not userRow:
+                if newRow:
                     raise Exception('Error:RETAKES:Cannot reset new row')
                 if not sessionEntries:
                     raise Exception('Error:RETAKES:Reset only allowed for sessions')
+                fieldsMin = sessionEntries['fieldsMin']
                 newRow = True
 
                 origVals = modSheet.getRange(userRow, 1, 1, len(columnHeaders)).getValues()[0]
                 if adminUser or paramId == TESTUSER_ID:
-                    # For admin or test user, do not update retakes count
-                    retakesVal = origVals[retakesCol-1] if retakesCol else ''
+                    # For admin or test user, also reset retakes count
+                    retakesVal = ''
                 else:
                     if origVals[columnIndex['submitTimestamp']-1]:
                         raise Exception('Error:RETAKES:Retakes not allowed for submitted sessions')
-                    if not sessionAttributes['params'].get('maxRetakes') or not retakesCol or not isNumber(origVals[retakesCol-1]):
+
+                    maxRetakes = sessionAttributes['params'].get('maxRetakes')
+                    if not maxRetakes:
                         raise Exception('Error:RETAKES:Retakes not allowed')
-                    retakesVal = parseNumber(origVals[retakesCol-1])
-                    if not retakesVal:
+
+                    retakesVal = parseNumber(origVals[retakesCol-1] or 0)
+                    if retakesVal >= maxRetakes:
                         raise Exception('Error:RETAKES:No more retakes available')
-                    retakesVal = retakesVal - 1
+
+                    # Update retakes count
+                    retakesVal = retakesVal + 1
 
                 createRow = origVals[columnIndex['source']-1]
                 rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'], questions,
                                               userId, origVals[columnIndex['name']-1], origVals[columnIndex['email']-1],
-                                              origVals[columnIndex['altid']-1], createRow, seedRow)
+                                              origVals[columnIndex['altid']-1], createRow, retakesVal, seedRow)
 
-                # Preserve name, lateToken and update retake count on reset
+                # Preserve name and lateToken on reset
                 rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1]
                 rowUpdates[columnIndex['lateToken']-1] = params.get('late') or origVals[columnIndex['lateToken']-1]
-                if retakesCol:
-                    rowUpdates[retakesCol-1] = retakesVal
 
             elif newRow and (not rowUpdates) and createRow:
                 # Initialize new row
@@ -1486,9 +1490,6 @@ def sheetAction(params, notrace=False):
                     displayName = rowUpdates[columnIndex['name']-1] or ''
                     if params.get('late') and columnIndex.get('lateToken'):
                         rowUpdates[columnIndex['lateToken']-1] = params['late']
-
-                    if retakesCol and sessionAttributes['params'].get('maxRetakes'):
-                        rowUpdates[retakesCol-1] = sessionAttributes['params']['maxRetakes']
                 else:
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
@@ -1583,6 +1584,7 @@ def sheetAction(params, notrace=False):
                             elif (sliauth.epoch_ms(dueDate) - curTime) < 2*60*60*1000:
                                 returnMessages.append("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline (%s) for session '%s'." % (dueDate, sheetName))
 
+                numRows = modSheet.getLastRow()
                 if newRow and not resetRow:
                     # New user; insert row in sorted order of name (except for log files)
                     if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
@@ -1594,14 +1596,15 @@ def sheetAction(params, notrace=False):
                         # Test user always appears after max score
                         maxScoreRow = lookupRowIndex(MAXSCORE_ID, modSheet, numStickyRows+1)
                         userRow = maxScoreRow+1 if maxScoreRow else numStickyRows+1
-                    elif modSheet.getLastRow() > numStickyRows and not loggingSheet:
-                        displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], modSheet.getLastRow()-numStickyRows, 1)
-                        userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], modSheet.getLastRow()-numStickyRows, 1)
+                    elif numRows > numStickyRows and not loggingSheet:
+                        displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], numRows-numStickyRows, 1)
+                        userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], numRows-numStickyRows, 1)
                         userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID)
                     else:
-                        userRow = modSheet.getLastRow()+1
+                        userRow = numRows+1
 
                     modSheet.insertRowBefore(userRow, keyValue=userId)
+                    numRows += 1
                     # (q_total formula will be updated by proxy handler in script)
 
                 elif rowUpdates and nooverwriteRow:
@@ -1661,7 +1664,7 @@ def sheetAction(params, notrace=False):
                     for j in range(len(rowUpdates)):
                         colHeader = columnHeaders[j]
                         colValue = rowUpdates[j]
-                        if colHeader == 'retakes':
+                        if colHeader == 'retakes' and not newRow:
                             # Retakes are always updated separately
                             pass
                         elif colHeader == 'Timestamp':
@@ -1875,9 +1878,9 @@ def sheetAction(params, notrace=False):
 
 
                 if len(teamCopyCols):
-                    nRows = modSheet.getLastRow()-numStickyRows
-                    idValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nRows, 1)
-                    teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nRows, 1)
+                    nCopyRows = numRows-numStickyRows
+                    idValues = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], nCopyRows, 1)
+                    teamValues = modSheet.getSheetValues(1+numStickyRows, teamCol, nCopyRows, 1)
                     userOffset = userRow-numStickyRows-1
                     teamName = teamValues[userOffset][0]
                     if teamName:
@@ -1893,13 +1896,8 @@ def sheetAction(params, notrace=False):
                 if (paramId != TESTUSER_ID or prevSubmitted) and sessionEntries and adminPaced:
                     returnInfo['adminPaced'] = adminPaced
 
-                # Return updated timestamp and retakes
+                # Return updated timestamp
                 returnInfo['timestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex) else None
-                if 'retakes' in columnIndex:
-                    retakesVal = rowValues[columnIndex['retakes']-1]
-                    if isNumber(retakesVal):
-                        returnInfo['retakesRemaining'] = parseNumber(retakesVal)
-
                 returnValues = rowValues if getRow else []
 
                 if not adminUser and not gradeDate and len(returnValues) > fieldsMin:
@@ -2011,7 +2009,7 @@ def randomLetters(n, noshuffle, randFunc=None):
         letters = cmix + letters[nmix:]
     return ''.join(letters)
 
-def createSession(sessionName, params, questions=None, randomSeed=None):
+def createSession(sessionName, params, questions=None, retakes='', randomSeed=None):
     persistPlugins = {}
     for pluginName in params['plugins']:
         persistPlugins[pluginName] = {}
@@ -2038,7 +2036,7 @@ def createSession(sessionName, params, questions=None, randomSeed=None):
 	    'team': '',
 	    'lateToken': '',
 	    'lastSlide': 0,
-        'retakesRemaining': '',
+        'retakes': retakes,
 	    'randomSeed': randomSeed,        # Save random seed
         'expiryTime': sliauth.epoch_ms() + 180*86400*1000,  # 180 day lifetime
         'startTime': sliauth.epoch_ms(),
@@ -2053,13 +2051,13 @@ def createSession(sessionName, params, questions=None, randomSeed=None):
 	    'plugins': persistPlugins
 	   }
 
-def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayName='', email='', altid='', source='', randomSeed=None):
+def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayName='', email='', altid='', source='', retakes='', randomSeed=None):
     headers = params['sessionFields'] + params['gradeFields']
     idCol = headers.index('id') + 1
     nameCol = headers.index('name') + 1
     emailCol = headers.index('email') + 1
     altidCol = headers.index('altid') + 1
-    session = createSession(sessionName, params, questions, randomSeed)
+    session = createSession(sessionName, params, questions, retakes, randomSeed)
     rowVals = []
     for j in range(len(headers)):
         rowVals.append('')
@@ -2695,7 +2693,7 @@ def loadSession(session_json):
 
     session = json.loads(ustr)
     for attr in ('questionShuffle', 'questionsAttempted', 'hintsUsed'):
-        if attr in session:
+        if session.get(attr):
             dct = {}
             for k, v in session[attr].items():
                 dct[int(k)] = v
