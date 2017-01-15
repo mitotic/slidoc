@@ -728,6 +728,7 @@ class SlidocRenderer(MathRenderer):
         self.choice_questions = 0
         self.cur_qtype = ''
         self.cur_header = ''
+        self.untitled_header = ''
         self.slide_concepts = []
         self.first_para = True
         self.incremental_level = 0
@@ -893,7 +894,8 @@ class SlidocRenderer(MathRenderer):
             self.untitled_number += 1
             if 'untitled_number' in self.options['config'].features:
                 # Number untitled slides (e.g., as in question numbering) 
-                text = ('%d. ' % self.untitled_number) + text
+                self.untitled_header = '%d. ' % self.untitled_number
+                text = self.untitled_header + text
                 if self.questions and len(self.questions)+1 != self.untitled_number:
                     abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
         self.first_para = False
@@ -951,15 +953,32 @@ class SlidocRenderer(MathRenderer):
         
         return ('\n<div %s class="%s">\n' % (id_str, classes))+html+'</div>\n'
 
+    def get_header_prefix(self):
+        if 'untitled_number' in self.options['config'].features:
+            return self.untitled_header
+
+        if 'sections' in self.options['config'].strip:
+            return ''
+
+        if 'chapters' in self.options['config'].strip:
+            return '%d ' % self.section_number
+        else:
+            return  '%d.%d ' % (self.options['filenumber'], self.section_number)
+                    
     def header(self, text, level, raw=None):
         """Handle markdown headings
         """
-        html = super(SlidocRenderer, self).header(text, level, raw=raw)
-        try:
-            hdr = ElementTree.fromstring(html)
-        except Exception:
-            # failed to parse, just return it unmodified
-            return html
+        if self.notes_end is None:
+            html = super(SlidocRenderer, self).header(text.strip('#'), level, raw=raw)
+            try:
+                hdr = ElementTree.fromstring(html)
+            except Exception:
+                # failed to parse, just return it unmodified
+                return html
+        else:
+            # Header in Notes
+            hdr = ElementTree.Element('p', {})
+            hdr.text = text.strip('#')
 
         prev_slide_end = ''
         if self.cur_header and level <= 2:
@@ -1028,14 +1047,12 @@ class SlidocRenderer(MathRenderer):
             if level <= 2:
                 # New section
                 self.section_number += 1
+                hdr_prefix = self.get_header_prefix()
+                self.cur_header = (hdr_prefix + text.strip('#')).strip()
+                if self.cur_header:
+                    self.header_list.append( (self.get_slide_id(), self.cur_header) )
                 if 'sections' not in self.options['config'].strip:
-                    if 'chapters' not in self.options['config'].strip:
-                        hdr_prefix =  '%d.%d ' % (self.options['filenumber'], self.section_number)
-                    else:
-                        hdr_prefix =  '%d ' % self.section_number
                     clickable_secnum = True
-                self.cur_header = hdr_prefix + text
-                self.header_list.append( (self.get_slide_id(), self.cur_header) )
 
             # Record header occurrence (preventing hiding of any more level 3 headers in the same slide)
             self.hide_end = ''
@@ -2321,7 +2338,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     js_params = {'siteName': '', 'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'gradeFields': [], 'topnavList': [], 'tocFile': '',
-                 'slideDelay': 0, 'lateCredit': None, 'participationCredit': None,
+                 'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '',
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
@@ -2597,6 +2614,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
             js_params['lateCredit'] = file_config.late_credit or 0
             js_params['participationCredit'] = file_config.participation_credit or 0
+            js_params['maxRetakes'] = file_config.retakes or 0
                 
             topnav_opts = file_config.topnav or ''
             gd_sheet_url = file_config.gsheet_url or ''
@@ -3174,7 +3192,7 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'release_date', 'revision', 'session_rescale', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
+Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'release_date', 'retakes', 'revision', 'session_rescale', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
     
 def read_first_line(file):
     # Read first line of file and rewind it
@@ -3312,6 +3330,7 @@ Conf_parser.add_argument('--printable', help='Printer-friendly output', action="
 Conf_parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
 Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
 Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
+Conf_parser.add_argument('--retakes', type=int, default=0, help='Max. number of retakes allowed (default: 0)')
 Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
 Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
