@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8d';
+var VERSION = '0.96.8e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -128,7 +128,6 @@ var ADMIN_PACE    = 3;
 var SKIP_ANSWER = 'skip';
 
 var LATE_SUBMIT = 'late';
-var PARTIAL_SUBMIT = 'partial';
 
 var TRUNCATE_DIGEST = 8;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
@@ -741,10 +740,38 @@ function sheetAction(params) {
 	    // Get all rows and columns
             if (!adminUser)
 		throw("Error::Only admin user allowed to access all rows in sheet '"+sheetName+"'")
-	    if (modSheet.getLastRow() > numStickyRows)
-		returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
-	    else
-		returnValues = [];
+	    if (modSheet.getLastRow() <= numStickyRows) {
+                returnValues = [];
+            } else {
+                if (sessionEntries && dueDate) {
+                    // Force submit all non-sticky rows past effective due date
+                    var idCol = columnIndex.id;
+                    var submitCol = columnIndex.submitTimestamp;
+                    var lateTokenCol = columnIndex.lateToken;
+                    var allValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
+                    for (var j=0; j<allValues.length; j++) {
+                        if (allValues[j][submitCol-1] || allValues[j][idCol-1] == MAXSCORE_ID) {
+                            continue;
+                        }
+                        var lateToken = allValues[j][lateTokenCol-1];
+                        if (lateToken == LATE_SUBMIT) {
+                            continue;
+                        }
+                        if (lateToken && lateToken.indexOf(':') > 0) {
+                            var effectiveDueDate = getNewDueDate(allValues[j][idCol-1], sheetName, lateToken) || dueDate;
+                        } else {
+                            var effectiveDueDate = dueDate;
+                        }
+                        var pastSubmitDeadline = curDate.getTime() > effectiveDueDate.getTime();
+                        if (pastSubmitDeadline) {
+                            // Force submit
+                            modSheet.setSheetValues(j+1+numStickyRows, submitCol, 1, 1, [[curDate]]);
+                        }
+                    }
+                }
+
+                returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
+            }
 	    if (sessionEntries && adminPaced)
                 returnInfo['adminPaced'] = adminPaced;
 	    if (sessionEntries && columnIndex.lastSlide) {
@@ -952,8 +979,8 @@ function sheetAction(params) {
                         continue;
                     }
 
-                    // If voting, skip incomplete/late submissions (but allow partials)
-                    if (voteParam && (lateValues[j][0] && lateValues[j][0] != PARTIAL_SUBMIT)) {
+                    // If voting, skip incomplete/late submissions
+                    if (voteParam && lateValues[j][0]) {
                         continue;
                     }
 
@@ -1162,7 +1189,7 @@ function sheetAction(params) {
 		throw('Error::Selected updates cannot be applied to new row');
 	    } else {
 		var pastSubmitDeadline = false;
-		var partialSubmission = false;
+		var forceSubmission = false;
 		var fieldsMin = columnHeaders.length;
 		var submitTimestampCol = columnIndex['submitTimestamp'];
 		var prevSubmitted = null;
@@ -1179,67 +1206,49 @@ function sheetAction(params) {
 		    if (voteDate)
 			returnInfo.voteDate = voteDate;
 
-		    if (dueDate && !prevSubmitted && !voteSubmission && !alterSubmission) {
-			// Check if past submission deadline
-			var lateTokenCol = columnIndex['lateToken'];
-			var lateToken = null;
-			var lateDueDate = null;
-			if (lateTokenCol) {
+                    if (dueDate && !prevSubmitted && !voteSubmission && !alterSubmission && userId != MAXSCORE_ID) {
+                        // Check if past submission deadline
+                        var lateToken = '';
+			var curTime = curDate.getTime();
+			var pastSubmitDeadline = curTime > dueDate.getTime();
+                        if (pastSubmitDeadline) {
+                            var lateTokenCol = columnIndex.lateToken;
 			    lateToken = (rowUpdates && rowUpdates.length >= lateTokenCol) ? (rowUpdates[lateTokenCol-1] || null) : null;
-			    if (!lateToken && !newRow)
-				lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] || null;
-			    if (lateToken && lateToken.indexOf(':') > 0) {
-				var comps = splitToken(lateToken);
-				var dateStr = comps[0];
-				var tokenStr = comps[1];
-				if (genLateToken(Settings['auth_key'], userId, sheetName, dateStr) == lateToken) {
-				    lateDueDate = true;
-				    dueDate = createDate(dateStr); // Date format: '1995-12-17T03:24Z'
-				} else {
-				    returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-				}
-			    }
-			}
+                            if (!lateToken && !newRow) {
+                                lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] || '';
+                            }
 
+                            if (lateToken && lateToken.indexOf(':') > 0) {
+                                // Check against new due date
+                                var newDueDate = getNewDueDate(userId, sheetName, lateToken);
+                                if (!newDueDate) {
+                                    throw("Error:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user "+(displayName || "")+" to session '"+sheetName+"'");
+                                }
+
+                                dueDate = newDueDate;
+                                pastSubmitDeadline = curTime > dueDate.getTime();
+                            }
+                        }
+			
 			returnInfo.dueDate = dueDate; // May have been updated
 
-			var curTime = curDate.getTime();
-			pastSubmitDeadline = (dueDate && curTime > dueDate.getTime())
-			var allowLateMods = !Settings['require_late_token'] || adminUser;
-			if (!allowLateMods && pastSubmitDeadline && lateToken) {
-			    if (lateToken == PARTIAL_SUBMIT) {
-				if (newRow || !rowUpdates)
-				    throw("Error::Partial submission only works for pre-existing rows");
-                                if (sessionAttributes.params.participationCredit)
-                                    throw("Error::Partial submission not allowed for participation credit")
+			var allowLateMods = adminUser || importSession || !Settings['require_late_token'] || lateToken == LATE_SUBMIT;
+                        if (!allowLateMods) {
+                            if (pastSubmitDeadline) {
+                                if (getRow && !(newRow || rowUpdates || selectedUpdates)) {
+                                    // Reading existing row; force submit
+                                    forceSubmission = true;
+                                    selectedUpdates = [ ['id', userId], ['Timestamp', null], ['submitTimestamp', null] ];
+                                    returnMessages.push("Warning:FORCED_SUBMISSION:Forced submission for user '"+(displayName || "")+"' to session '"+sheetName+"'");
+                                } else {
+                                    // Creating/modifying row
+                                    throw("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session "+sheetName);
+                                }
+                            } else if ((dueDate.getTime() - curTime) < 2*60*60*1000) {
+                                returnMessages.push("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline ("+dueDate+") for session "+sheetName);
+                            }
+                        }
 
-				partialSubmission = true;
-				rowUpdates = null;
-				selectedUpdates = [ ['Timestamp', null], ['submitTimestamp', null], ['lateToken', lateToken] ];
-				returnMessages.push("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-			    } else if (lateToken == LATE_SUBMIT) {
-				// Late submission for reduced/no credit
-				allowLateMods = true;
-			    } else if (!lateDueDate) {
-                                // Invalid token
-                                returnMessages.push("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName||"")+"' to session '"+sheetName+"'");
-			    }
-			}
-			if (!allowLateMods && !partialSubmission) {
-			    if (pastSubmitDeadline) {
-				if (!importSession && (newRow || selectedUpdates || (rowUpdates && !nooverwriteRow))) {
-					// Creating/modifying row; require valid lateToken
-					if (!lateToken)
-					    throw("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'.")
-					else
-					    throw("Error:INVALID_LATE_TOKEN:Invalid token for late submission to session '"+sheetName+"'");
-				    } else {
-					returnMessages.push("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline ("+dueDate+") for session '"+sheetName+"'. ");
-				    }
-			    } else if ( (dueDate.getTime() - curTime) < 2*60*60*1000) {
-				returnMessages.push("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline ("+dueDate+") for session '"+sheetName+"'.");
-			    }
-			}
 		    }
 		}
 
@@ -1289,7 +1298,7 @@ function sheetAction(params) {
 		if (rowUpdates) {
 		    // Update all non-null and non-id row values
 		    // Timestamp is always updated, unless it is specified by admin
-		    if (adminUser && sessionEntries && userId != MAXSCORE_ID && !importSession)
+		    if (adminUser && sessionEntries && userId != MAXSCORE_ID && !importSession && !resetRow)
 			throw("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'");
 
 		    if (submitTimestampCol && rowUpdates[submitTimestampCol-1] && userId != TESTUSER_ID)
@@ -1447,7 +1456,7 @@ function sheetAction(params) {
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!partialSubmission && !voteSubmission && !twitterSetting) {
+		    if (!forceSubmission && !voteSubmission && !twitterSetting) {
 			if (!adminUser)
 			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
@@ -1491,7 +1500,9 @@ function sheetAction(params) {
 				modValue = curDate;
 			    }
 			} else if (colHeader == 'submitTimestamp') {
-			    if (alterSubmission) {
+                            if (forceSubmission) {
+				modValue = curDate;
+			    } else if (alterSubmission) {
                                 if (colValue == null) {
                                     modValue = curDate;
                                 } else if (colValue) {
@@ -1504,12 +1515,14 @@ function sheetAction(params) {
                                 if (modValue) {
                                     returnInfo['submitTimestamp'] = modValue;
                                 }
-                            } else if (partialSubmission) {
-				modValue = curDate;
-				returnInfo.submitTimestamp = modValue;
 			    } else if (adminUser && colValue) {
 				modValue = createDate(colValue);
 			    }
+
+                            if (rowValues[teamCol-1]) {
+                                // Broadcast submission to all team members
+                                teamCopyCols.push(headerColumn);
+                            }
 			} else if (colHeader.match(/_vote$/)) {
 			    if (voteSubmission && colValue) {
 				// Cannot un-vote, vote can be transferred
@@ -1528,7 +1541,7 @@ function sheetAction(params) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (!restrictedSheet && !partialSubmission && !twitterSetting && !importSession && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
+			    if (!restrictedSheet && !twitterSetting && !importSession && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
 				throw("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 			    var hmatch = QFIELD_RE.exec(colHeader);
                             if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {
@@ -1875,6 +1888,17 @@ function createDate(date) {
     return new Date(date);
 }
 
+function getNewDueDate(userId, sessionName, lateToken) {
+    var comps = splitToken(lateToken);
+    var dateStr = comps[0];
+    var tokenStr = comps[1];
+    if (genLateToken(Settings['auth_key'], userId, sessionName, dateStr) == lateToken) {
+        return createDate(dateStr);  // Date format: '1995-12-17T03:24Z'
+    } else {
+        return null;
+    }
+}
+    
 function parseInput(value, headerName) {
     // Parse input date strings
     if (value && (headerName.slice(-4).toLowerCase() == 'date' || headerName.slice(-4).toLowerCase() == 'time' || headerName.slice(-9) == 'Timestamp')) {

@@ -79,7 +79,7 @@ Options = {
     'gsheet_url': '',
     'lock_proxy_url': '',
     'no_auth': False,
-    'plugindata_dir': '',
+    'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
     'proxy_wait': None,
@@ -1147,6 +1147,8 @@ class PluginManager(object):
 
     @classmethod
     def validFileKey(cls, filepath, key):
+        if ':' not in key and '%' in key:
+            key = sliauth.safe_unquote(key)
         salt, _, oldpath = key.partition(':')
         return sliauth.safe_quote(key) == cls.getFileKey(filepath, salt=salt)
 
@@ -1262,7 +1264,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 return "noauth"
             elif not userId:
                 return None
-            elif self.get_path_base(self.request.path).endswith('-'+userId) or userId == ADMINUSER_ID:
+            elif self.get_path_base(self.request.path, sessions_only=False).endswith('-'+userId) or userId == ADMINUSER_ID:
                 return userId
             raise tornado.web.HTTPError(404)
 

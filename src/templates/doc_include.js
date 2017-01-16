@@ -35,7 +35,6 @@ Slidoc.PluginManager.ADMIN_PACE    = 3;
 var SKIP_ANSWER = 'skip';
 
 var LATE_SUBMIT = 'late';
-var PARTIAL_SUBMIT = 'partial';
 
 var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;',
 	    xMark: '&#x2A2F', letters: '&#x1f520;'};
@@ -329,6 +328,13 @@ function sessionAbort(err_msg, err_trace) {
     }
 
     throw(err_msg);
+}
+
+function sessionReload(msg) {
+    if (window.GService)
+	GService.closeWS(msg);
+    if (window.confirm(msg))
+	location.reload(true);
 }
 
 function abortOnError(boundFunc) {
@@ -873,8 +879,8 @@ Slidoc.resetPaced = function () {
 	sessionPut();
     }
 
-    if (!Slidoc.testingActive())
-	location.reload(true);
+    ///if (!Slidoc.testingActive())
+	///location.reload(true);
 }
 
 function resetSessionCallback(result, retStatus) {
@@ -882,7 +888,7 @@ function resetSessionCallback(result, retStatus) {
     if (!result) {
 	alert('Error in resetting session: '+retStatus.error);
     } else {
-	location.reload(true);
+	sessionReload('Session has been reset. Reload page to restart?');
     }
 }
 
@@ -1434,7 +1440,7 @@ Slidoc.PluginManager.answered = function(qnumber) {
 }
 
 Slidoc.PluginManager.lateSession = function() {
-    return Sliobj.session.lateToken == LATE_SUBMIT || Sliobj.session.lateToken == PARTIAL_SUBMIT;
+    return Sliobj.session.lateToken == LATE_SUBMIT;
 }
 
 Slidoc.PluginManager.teamName = function() {
@@ -1879,7 +1885,7 @@ Slidoc.manageSession = function() {
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
 
 	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight && Sliobj.feedback) {
-	    var totGrade = computeGrade(userid);
+	    var totGrade = computeGrade(userId);
 	    if (Sliobj.adminState && isNumber(Sliobj.feedback.q_total) && Math.abs(parseNumber(Sliobj.feedback.q_total)-parseNumber(totGrade)) > 0.01) {
 		alert('Warning: Inconsistent total grade: q_total='+Sliobj.feedback.q_total)
 	    }
@@ -2583,6 +2589,11 @@ function checkGradingStatus(userId, session, feedback) {
 	Sliobj.userGrades[userId].submitted = session.submitted;
     else
 	Sliobj.userGrades[userId].submitted = null;
+    Sliobj.userGrades[userId].late = (session.lateToken == LATE_SUBMIT);
+
+    // Admin can modify grade columns only for submitted sessions
+    var allowGrading = Sliobj.userGrades[userId].submitted;
+    Sliobj.userGrades[userId].allowGrading = allowGrading;
 
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
@@ -2612,7 +2623,7 @@ function checkGradingStatus(userId, session, feedback) {
 	    // Unattempted
 	    need_updates += 1;
 	    if (question_attrs.slide < Sliobj.maxLastSlide) {
-		// set grade to zero to avoid blank cells in computation
+		// set grade to zero to avoid blank cells in computation (not currently used)
 		if ('gweight' in question_attrs) {
 		    updates[gradeField] = 0;
 		    updates[commentsField] = 'Not attempted';
@@ -2627,15 +2638,10 @@ function checkGradingStatus(userId, session, feedback) {
     else
 	Sliobj.userGrades[userId].needGrading = need_grading;
 
-    // Admin can modify grade columns only for submitted sessions before 'effective' due date
-    // and only for non-late submissions thereafter
-    var allowGrading = Sliobj.userGrades[userId].submitted || (Slidoc.PluginManager.pastDueDate() && Sliobj.session.lateToken != LATE_SUBMIT);
-
-    Sliobj.userGrades[userId].allowGrading = allowGrading;
-
     updateGradingStatus(userId);
 
-    if (need_updates && allowGrading) {
+    if (0 && need_updates && allowGrading) {
+	// DISABLED: Not needed anymore with arrayformula sum for q_total?
 	// Set unattempted grades to zero (to avoid 'undefined' spreadsheet cells)
 	// These will be blanked out if user later submits using a late submission token
 	var gsheet = getSheet(Sliobj.sessionName);
@@ -2656,20 +2662,16 @@ function updateGradingStatus(userId) {
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
     if (Sliobj.userGrades[userId].team)
 	text += '('+Sliobj.userGrades[userId].team+') ';
-    var html = ''
+    var html = Sliobj.userGrades[userId].gradeDisp;
     var gradeCount = Sliobj.userGrades[userId].needGrading ? Object.keys(Sliobj.userGrades[userId].needGrading).length : 0;
-    if (Sliobj.userGrades[userId].needGrading) {
-	if (Sliobj.userGrades[userId].submitted)
-	    html += gradeCount ? (gradeCount+' '+SYMS.anyMark) : SYMS.correctMark;
-	else if (Sliobj.userGrades[userId].allowGrading)
-	    html += gradeCount ? (gradeCount+' '+SYMS.xMark) : SYMS.correctMark;
+    if (Sliobj.userGrades[userId].allowGrading && Sliobj.userGrades[userId].needGrading) {
+	if (gradeCount)
+	    html += SYMS.anyMark + ' ' + gradeCount;
 	else
-	    html += gradeCount
+	    html += SYMS.correctMark;
     }
-    if (Sliobj.userGrades[userId].gradeDisp)
-	html += Sliobj.userGrades[userId].gradeDisp;
 
-    option.dataset.nograding = (Sliobj.userGrades[userId].allowGrading && gradeCount) ? '' : 'nograding';
+    option.dataset.nograding = (gradeCount && Sliobj.userGrades[userId].allowGrading && !Sliobj.userGrades[userId].late) ? '' : 'nograding';
     option.innerHTML = '';
     option.appendChild(document.createTextNode(text));
     option.innerHTML += html;
@@ -3340,8 +3342,8 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		Sliobj.session.team = retStatus.info.team;
 	    }
 	    if (retStatus.info.submitTimestamp) {
-		if (!Sliobj.session && window.confirm('Internal error in submit timestamp'))
-		    sessionAbort('Internal error in submit timestamp')
+		if (!Sliobj.session)
+		    sessionAbort('Internal error: submit timestamp without session')
 		Sliobj.session.submitted = retStatus.info.submitTimestamp;
 		if (Sliobj.params.paceLevel >= ADMIN_PACE) {
 		    if (retStatus.info.adminPaced)
@@ -3351,8 +3353,6 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		    Sliobj.session.lastSlide = Sliobj.params.pacedSlides;
 		}
 		showCorrectAnswersAfterSubmission();
-		if (Sliobj.session.lateToken == PARTIAL_SUBMIT && window.confirm('Partial submission; reload page for accurate scores'))
-		    location.reload(true);
 	    }
 	}
 	if (retryOpts.type == 'end_paced') {
@@ -3372,10 +3372,7 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	    for (var j=0; j < retStatus.messages.length; j++) {
 		var match = parse_msg_re.exec(retStatus.messages[j]);
 		var msg_type = match ? match[2] : '';
-		if (msg_type == 'PARTIAL_SUBMISSION') {
-		    alerts.push('<em>Warning:</em><br>'+match[3]+'. Reloading page');
-		    location.reload(true);
-		} else if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
+		if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
 		    if (session && !session.submitted)
 			alerts.push('<em>Warning:</em><br>'+match[3]);
 		} else if (msg_type == 'INVALID_LATE_TOKEN') {
@@ -3432,14 +3429,10 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 
 function setLateToken(session, prefix) {
     Slidoc.log('setLateToken', session, prefix);
-    var prompt = (prefix||'The submission deadline has passed.')+" If you have a valid excuse, please request late submission authorization for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+" from your instructor. Otherwise ";
-    if (Sliobj.params.paceLevel && session && (Object.keys(session.questionsAttempted).length || responseAvailable(session)))
-	prompt += "enter '"+PARTIAL_SUBMIT+"' to submit and view correct answers.";
-    else
-	prompt += "enter '"+LATE_SUBMIT+"' to submit late (with reduced or no credit).";
+    var prompt = (prefix||'The submission deadline has passed.')+" If you have a valid excuse, please request a late submission token from your instructor for user "+GService.gprofile.auth.id+" and session "+Sliobj.sessionName+". Otherwise enter '"+LATE_SUBMIT+"' to proceed with "+(Sliobj.params.lateCredit?'reduced credit.':'no credit.');
     var token = showDialog('prompt', 'lateTokenDialog', prompt);
     token = (token || '').trim();
-    if (token == PARTIAL_SUBMIT || token == LATE_SUBMIT || token.indexOf(':') > 0) {
+    if (token == LATE_SUBMIT || token.indexOf(':') > 0) {
 	if (session)
 	    session.lateToken = token;
 	return token;
@@ -4570,12 +4563,8 @@ Slidoc.submitStatus = function () {
     var html = '<b>Submit status</b><p></p>\n';
     if (Sliobj.session.submitted) {
 	html += 'User '+GService.gprofile.auth.id+' submitted session to Google Docs on '+ parseDate(Sliobj.session.submitted);
-	if (Sliobj.session.lateToken == PARTIAL_SUBMIT)
-	    html += ' (PARTIAL)';
-	else if (Sliobj.session.lateToken == LATE_SUBMIT)
-	    html += ' (UNEXCUSED LATE)';
-	else if (Sliobj.session.lateToken)
-	    html += ' EXCUSED LATE';
+	if (Sliobj.session.lateToken == LATE_SUBMIT)
+	    html += ' (LATE)';
     } else {
 	html += 'Session not submitted.'
 	if (!Sliobj.adminState) {
@@ -4638,9 +4627,7 @@ Slidoc.forceSubmitAll = function() {
 	if (pendingElem)
 	    pendingElem.textContent = msg;
 	if (!remainingCount) {
-	    if (!window.confirm('Reload after completing force submit'+(errorCount ? ' ('+errorCount+' errors)': '')+'?'))
-		return;
-	    location.reload(true);
+	    sessionReload('Reload after completing force submit'+(errorCount ? ' ('+errorCount+' errors)': '')+'?');
 	}
     }
     var gsheet = getSheet(Sliobj.sessionName);
@@ -4661,8 +4648,7 @@ Slidoc.forceSubmit = function(submit) {
 }
 
 function forceSubmitCallback() {
-    alert('Reloading after submit status change');
-    location.reload(true);
+    sessionReload('Submit status changed. Reload page to restart?');
 }
 
 Slidoc.saveClick = function() {
@@ -4813,8 +4799,11 @@ Slidoc.gradeClick = function (elem, slide_id) {
 
     var userId = GService.gprofile.auth.id;
     if (!Sliobj.userGrades[userId].allowGrading) {
-	alert('ERROR: Grading currently not permitted for user '+userId);
+	alert('User '+userId+' must submit before session can be graded');
 	return;
+    } else if (Sliobj.userGrades[userId].late) {
+	if (!window.confirm('Late submission. Do you still want to grade it?'))
+	    return;
     }
 
     var question_attrs = getQuestionAttrs(slide_id);
@@ -4947,12 +4936,7 @@ Slidoc.startPaced = function () {
 
     var curDate = new Date();
     if (!Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
-	// Past submit deadline; force partial or late submit if not submitted
-	var temToken = setLateToken(Sliobj.session);
-	if (temToken == PARTIAL_SUBMIT)
-	    Slidoc.endPaced(true);
-	else
-	    sessionPut(null, null, {reload: !!temToken});
+	sessionAbort('ERROR: Unsubmitted session past submit deadline '+Sliobj.sessionName);
 	return;
     }
 
@@ -5216,8 +5200,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    }
 	}
 
-	if (!controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
-	    // To last slide
+	if (0 && !controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel == BASIC_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
+	    // To last slide (DISABLED CHECK: no auto submit for BASIC PACE)
 	    var prompt = 'You have only answered '+Sliobj.scores.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
 	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
 		return false;
@@ -5285,8 +5269,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	}
 
 	Slidoc.log('Slidoc.slideViewGo:C', Sliobj.session.lastSlide, slides.length, controlledPace());
-	if (Sliobj.session.lastSlide == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE) {
-	    // Last slide (with question-pacing); if admin-paced, save only if test user
+	if (Sliobj.session.lastSlide == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && !retakesRemaining() && !Sliobj.session.submitted) {
+	    // Auto-submit on last slide (with question-pacing and no retakes); if admin-paced, submit only if test user
 	    if (!controlledPace())
 		Slidoc.endPaced();
 
@@ -5298,6 +5282,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	    if (Sliobj.interactive)
 		enableInteract(true);
 	    sessionPut();
+	}
+
+	if (isController()) {
 	    if (Sliobj.session.lastSlide > 1)
 		Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
 	}

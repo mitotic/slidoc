@@ -144,26 +144,26 @@ class PPTXParser(object):
             # Slidoc
             defaults_text = ''
             extra_text = ''
-            if not slide_text.strip():
+            continued = False
+            embed_slide = False
+
+            if slide_text.rstrip().endswith('SlideContinue:'):
+                slide_text = slide_text.rstrip()[:-len('SlideContinue:')].rstrip()
+                continued = True
+
+            elif self.args_dict.get('embed_slides') and '\nAnswer:' not in slide_text:
+                # Insert entire slide as image by default
+                embed_slide = True
+
+            elif not slide_text.strip():
                 # No text 
                 if not slide_images:
                     # No images
                     if not continued and slide_num != nslides:
                         slide_buffer.append('\n---\n\n')
                     continue
-            elif self.args_dict.get('embed_slides') and '\nAnswer:' not in slide_text:
-                # Insert entire slide as image by default
-                if '\nExtra:' not in slide_text:
-                    # Retain text as extra info
-                    extra_text = slide_text
-                slide_text = '![image0]()\n'
 
-            if slide_text.rstrip().endswith('SlideContinue:'):
-                slide_text = slide_text.rstrip()[:-len('SlideContinue:')].rstrip()
-                continued = True
-            else:
-                continued = False
-
+            has_notes = '\nNotes:' in slide_text
             slide_lines = slide_text.strip().split('\n')
 
             if self.args_dict.get('auto_titles') and not prev_continued and (len(slide_lines) == 1 or (len(slide_lines) > 1 and not slide_lines[1].strip())) and slide_lines[0][0] not in ' #!' and slide_lines[0].strip()[-1] not in '.?:':
@@ -177,7 +177,19 @@ class PPTXParser(object):
                 else:
                     title = '## ' + title
                 slide_lines = [title, ''] + slide_lines
-                    
+
+            if embed_slide:
+                # Embedding slide; save slide text as Extra:
+                if slide_lines[0].startswith('##') and not has_notes:
+                    # Save slide title in Notes:
+                    extra_text = '\n'.join(slide_lines[1:])
+                    slide_lines = ['', 'Notes:'] + slide_lines[0:1]
+                else:
+                    extra_text = '\n'.join(slide_lines)
+                    slide_lines = []
+                # Insert entire slide as image
+                slide_lines = [ '![image0]()' ] + slide_lines
+
             images_copied = set()
             md_lines = []
             for line in slide_lines:

@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8d'
+VERSION = '0.96.8e'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -94,7 +94,6 @@ ADMIN_PACE    = 3
 SKIP_ANSWER = 'skip'
 
 LATE_SUBMIT = 'late'
-PARTIAL_SUBMIT = 'partial'
 
 TRUNCATE_DIGEST = 8
 
@@ -1140,10 +1139,31 @@ def sheetAction(params, notrace=False):
             # Get all rows and columns
             if not adminUser:
                 raise Exception("Error::Only admin user allowed to access all rows in sheet '"+sheetName+"'")
-            if modSheet.getLastRow() > numStickyRows:
-                returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
-            else:
+            if modSheet.getLastRow() <= numStickyRows:
                 returnValues = []
+            else:
+                if sessionEntries and dueDate:
+                    # Force submit all non-sticky rows past effective due date
+                    idCol = columnIndex.get('id')
+                    submitCol = columnIndex.get('submitTimestamp')
+                    lateTokenCol = columnIndex.get('lateToken')
+                    allValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
+                    for j in range(len(allValues)):
+                        if allValues[j][submitCol-1] or allValues[j][idCol-1] == MAXSCORE_ID:
+                            continue
+                        lateToken = allValues[j][lateTokenCol-1]
+                        if lateToken == LATE_SUBMIT:
+                            continue
+                        if lateToken and ':' in lateToken:
+                            effectiveDueDate = getNewDueDate(allValues[j][idCol-1], sheetName, lateToken) or dueDate
+                        else:
+                            effectiveDueDate = dueDate
+                        pastSubmitDeadline = sliauth.epoch_ms(curDate) > sliauth.epoch_ms(effectiveDueDate)
+                        if pastSubmitDeadline:
+                            # Force submit
+                            modSheet.setSheetValues(j+1+numStickyRows, submitCol, 1, 1, [[curDate]])
+
+                returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
             if sessionEntries and adminPaced:
                 returnInfo['adminPaced'] = adminPaced
             if sessionEntries and columnIndex.get('lastSlide'):
@@ -1325,8 +1345,8 @@ def sheetAction(params, notrace=False):
                     if not shareSubrow[j][0] or lateValues[j][0] == LATE_SUBMIT:
                         continue
 
-                    # If voting, skip incomplete/late submissions (but allow partials)
-                    if voteParam and (lateValues[j][0] and lateValues[j][0] != PARTIAL_SUBMIT):
+                    # If voting, skip incomplete/late submissions
+                    if voteParam and lateValues[j][0]:
                         continue
 
                     # If voting, skip if explanations expected and not provided
@@ -1510,7 +1530,7 @@ def sheetAction(params, notrace=False):
                 raise Exception('Error::Selected updates cannot be applied to new row')
             else:
                 pastSubmitDeadline = False
-                partialSubmission = False
+                forceSubmission = False
                 fieldsMin = len(columnHeaders)
                 submitTimestampCol = columnIndex.get('submitTimestamp')
 
@@ -1528,61 +1548,41 @@ def sheetAction(params, notrace=False):
                     if voteDate:
                         returnInfo['voteDate'] = voteDate
 
-                    if dueDate and not prevSubmitted and not voteSubmission and not alterSubmission:
+                    if dueDate and not prevSubmitted and not voteSubmission and not alterSubmission and userId != MAXSCORE_ID:
                         # Check if past submission deadline
-                        lateTokenCol = columnIndex.get('lateToken')
-                        lateToken = None
-                        lateDueDate = None
-                        if lateTokenCol:
+                        lateToken = ''
+                        curTime = sliauth.epoch_ms(curDate)
+                        pastSubmitDeadline = curTime > sliauth.epoch_ms(dueDate)
+                        if pastSubmitDeadline:
+                            lateTokenCol = columnIndex.get('lateToken')
                             lateToken = (rowUpdates[lateTokenCol-1] or None)  if (rowUpdates and len(rowUpdates) >= lateTokenCol) else None
                             if not lateToken and not newRow:
-                                lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] or None
+                                lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] or ''
 
                             if lateToken and ':' in lateToken:
-                                comps = splitToken(lateToken)
-                                dateStr = comps[0]
-                                tokenStr = comps[1]
-                                if sliauth.gen_late_token(Options['auth_key'], userId, sheetName, dateStr) == lateToken:
-                                    lateDueDate = True
-                                    dueDate = createDate(dateStr) # Date format: '1995-12-17T03:24Z'
-                                else:
-                                    returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token "+lateToken+" for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
+                                # Check against new due date
+                                newDueDate = getNewDueDate(userId, sheetName, lateToken)
+                                if not newDueDate:
+                                    raise Exception("Error:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user "+(displayName or "")+" to session '"+sheetName+"'")
+
+                                dueDate = newDueDate
+                                pastSubmitDeadline = curTime > sliauth.epoch_ms(dueDate)
 
                         returnInfo['dueDate'] = dueDate # May have been updated
 
-                        curTime = sliauth.epoch_ms(curDate)
-                        pastSubmitDeadline = (dueDate and curTime > sliauth.epoch_ms(dueDate))
-
-                        allowLateMods = not Options['require_late_token'] or adminUser
-                        if not allowLateMods and pastSubmitDeadline and lateToken:
-                            if lateToken == PARTIAL_SUBMIT:
-                                if newRow or not rowUpdates:
-                                    raise Exception("Error::Partial submission only works for pre-existing rows")
-                                if sessionAttributes['params'].get('participationCredit'):
-                                    raise Exception("Error::Partial submission not allowed for participation credit")
-                                partialSubmission = True
-                                rowUpdates = None
-                                selectedUpdates = [ ['Timestamp', None], ['submitTimestamp', None], ['lateToken', lateToken] ]
-                                returnMessages.append("Warning:PARTIAL_SUBMISSION:Partial submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
-                            elif lateToken == LATE_SUBMIT:
-                                # Late submission for reduced/no credit
-                                allowLateMods = True
-                            elif not lateDueDate:
-                                # Invalid token
-                                returnMessages.append("Warning:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user '"+(displayName or "")+"' to session '"+sheetName+"'")
-
-                        if not allowLateMods and not partialSubmission:
+                        allowLateMods = adminUser or importSession or not Options['require_late_token'] or lateToken == LATE_SUBMIT
+                        if not allowLateMods:
                             if pastSubmitDeadline:
-                                if not importSession and (newRow  or selectedUpdates or (rowUpdates and not nooverwriteRow)):
-                                    # Creating/modifying row; require valid lateToken
-                                    if not lateToken:
-                                        raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'." % (dueDate, sheetName))
-                                    else:
-                                        raise Exception("Error:INVALID_LATE_TOKEN:Invalid token for late submission to session '"+sheetName+"'")
+                                if getRow and not (newRow or rowUpdates or selectedUpdates):
+                                    # Reading existing row; force submit
+                                    forceSubmission = True
+                                    selectedUpdates = [ ['id', userId], ['Timestamp', None], ['submitTimestamp', None] ]
+                                    returnMessages.append("Warning:FORCED_SUBMISSION:Forced submission for user '"+(displayName or "")+"' to session '"+sheetName+"'")
                                 else:
-                                    returnMessages.append("Warning:PAST_SUBMIT_DEADLINE:Past submit deadline (%s) for session '%s'." % (dueDate, sheetName))
+                                    # Creating/modifying row
+                                    raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+str(dueDate)+") for session "+sheetName)
                             elif (sliauth.epoch_ms(dueDate) - curTime) < 2*60*60*1000:
-                                returnMessages.append("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline (%s) for session '%s'." % (dueDate, sheetName))
+                                returnMessages.append("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline ("+str(dueDate)+") for session "+sheetName)
 
                 numRows = modSheet.getLastRow()
                 if newRow and not resetRow:
@@ -1629,7 +1629,7 @@ def sheetAction(params, notrace=False):
                 if rowUpdates:
                     # Update all non-null and non-id row values
                     # Timestamp is always updated, unless it is specified by admin
-                    if adminUser and sessionEntries and userId != MAXSCORE_ID and not importSession:
+                    if adminUser and sessionEntries and userId != MAXSCORE_ID and not importSession and not resetRow:
                         raise Exception("Error::Admin user not allowed to update full rows in sheet '"+sheetName+"'")
 
                     if submitTimestampCol and rowUpdates[submitTimestampCol-1] and userId != TESTUSER_ID:
@@ -1775,7 +1775,7 @@ def sheetAction(params, notrace=False):
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
-                    if not partialSubmission and not voteSubmission and not twitterSetting:
+                    if not forceSubmission and not voteSubmission and not twitterSetting:
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
@@ -1816,7 +1816,9 @@ def sheetAction(params, notrace=False):
                                 modValue = curDate
 
                         elif colHeader == 'submitTimestamp':
-                            if alterSubmission:
+                            if forceSubmission:
+                                modValue = curDate
+                            elif alterSubmission:
                                 if colValue is None:
                                     modValue = curDate
                                 elif colValue:
@@ -1827,11 +1829,12 @@ def sheetAction(params, notrace=False):
                                     modSheet.getRange(userRow, columnIndex['lateToken'], 1, 1).setValues([[ '' ]])
                                 if modValue:
                                     returnInfo['submitTimestamp'] = modValue
-                            elif partialSubmission:
-                                modValue = curDate
-                                returnInfo['submitTimestamp'] = modValue
                             elif adminUser and colValue:
                                 modValue = createDate(colValue)
+
+                            if rowValues[teamCol-1]:
+                                # Broadcast submission to all team members
+                                teamCopyCols.append(headerColumn)
 
                         elif colHeader.endswith('_vote'):
                             if voteSubmission and colValue:
@@ -1851,7 +1854,7 @@ def sheetAction(params, notrace=False):
 
                         elif colHeader not in MIN_HEADERS and not colHeader.endswith('Timestamp'):
                             # Update row values for header (except for id, name, email, altid, *Timestamp)
-                            if not restrictedSheet and not partialSubmission and not twitterSetting and not importSession and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
+                            if not restrictedSheet and not twitterSetting and not importSession and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
                                 raise Exception("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'")
 
                             if colHeader.lower().endswith('date') or colHeader.lower().endswith('time'):
@@ -2485,6 +2488,14 @@ def createDate(date=None):
         # Create date from local epoch time (in ms)
         return sliauth.create_date(date)
 
+def getNewDueDate(userId, sessionName, lateToken):
+    comps = splitToken(lateToken)
+    dateStr = comps[0]
+    tokenStr = comps[1]
+    if sliauth.gen_late_token(Options['auth_key'], userId, sessionName, dateStr) == lateToken:
+        return createDate(dateStr) # Date format: '1995-12-17T03:24Z'
+    else:
+        return None
 
 def splitToken(token):
     if ':' not in token:

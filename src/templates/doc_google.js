@@ -133,7 +133,7 @@ GService.openWebsocket = function (wsPath) {
 		    if (!wsock.locked)
 			wsock.locked = callback_args[0] || 'Locked for writing';
 		} else if (callback_method == 'close') {
-		    closeWs(callback_args[0]);
+		    GService.closeWS(callback_args[0]);
 		} else if (callback_method == 'event') {
 		    if (wsock.eventReceiver)
 			wsock.eventReceiver(callback_args);
@@ -159,7 +159,7 @@ GService.openWebsocket = function (wsPath) {
     }
 }
 
-function closeWS(msg) {
+GService.closeWS = function (msg) {
     if (wsock.closed)
 	return;
     wsock.closed = msg || 'Connection closed. Reload page to restart.';
@@ -747,7 +747,10 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
 
     var userIds = [];
     var cachedRow = null;
-    if (this.cacheAll) {
+    if ('submitTimestamp' in updateObj) {
+	// Note: If submit status is changed, cache becomes invalid
+	this.cacheAll = null;
+    } else if (this.cacheAll) {
 	// Update headers in cached copy
 	userIds = Object.keys(this.cacheAll);
 	cachedRow = this.cacheAll[updateObj.id];
@@ -844,7 +847,10 @@ GoogleSheet.prototype.getRow = function (id, opts, callback) {
     if (!callback)
         throw('GoogleSheet.getRow: Must specify callback for getRow');
 
-    if (this.cacheAll) {
+    if (opts.resetrow) {
+	// Note: If resetting row, cache becomes invalid
+	this.cacheAll = null;
+    } else if (this.cacheAll) {
 	if (id in this.cacheAll)
 	    callback(this.cacheAll[id], {error: '', messages: ['Info:FROM_CACHE:']});
 	else

@@ -44,6 +44,9 @@ def str_encode(value):
 def safe_quote(value):
     return urllib.quote(str_encode(value), safe='')
 
+def safe_unquote(value):
+    return urllib.unquote(value)
+
 def get_utc_date(date_time_str):
     """Convert local date string of the form yyyy-mm-ddThh:mm to UTC (unless it already ends with 'Z')"""
     if date_time_str and not date_time_str.endswith('Z'):
