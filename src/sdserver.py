@@ -76,6 +76,7 @@ Options = {
     'auth_type': '',
     'debug': False,
     'dry_run': False,
+    'freeze_date': '',    # Date when all user mods are disabled
     'gsheet_url': '',
     'lock_proxy_url': '',
     'no_auth': False,
@@ -1854,6 +1855,7 @@ def main():
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("forward_port", default=0, help="Forward port for default web server with multiproxy)")
+    define("freeze_date", default="", help="Date when all user mods are disabled")
     define("gsheet_url", default="", help="Google sheet URL1;...")
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")

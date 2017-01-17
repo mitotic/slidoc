@@ -1,15 +1,16 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8f';
+var VERSION = '0.96.8g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
-			 ['site_url', '', "URL of website (if any); e.g., http://example.com"],
+			 ['server_url', '', "URL of server (if any); e.g., http://example.com"],
+			 ['freeze_date', '', "Date when all user mods are disabled"],
 			 ['require_login_token', 'true', "true/false"],
 			 ['require_late_token', 'true', "true/false"],
 			 ['share_averages', 'true', "true/false"],
 		         ['total_formula', '', "Formula for total column, e.g., 0.4*average(_Assignment:-1)+0.5*sum(_Quiz:)+10*normaverage(_Test:)+0.1*_Extra01"],
-			 ['grading_scale', '', "A:90,B:80,C:70,D:60,F:0"]
+			 ['grading_scale', '', "A:90%,B:80%,C:70%,D:60%,F:0%"] // Or A:180,B:160,...
 		       ];
 //
 // SENDING FORM DATA TO GOOGLE SHEETS
@@ -294,6 +295,7 @@ function sheetAction(params) {
     try {
 	loadSettings();
 
+	var freezeDate = createDate(Settings['freeze_date']) || null;
 	var adminUser = '';
 	var paramId = params.id || '';
 
@@ -1168,10 +1170,13 @@ function sheetAction(params) {
 		} else {
 		    rowUpdates = [];
 		    for (var j=0; j<columnHeaders.length; j++)
-			rowUpdates[j] = null;
+			rowUpdates.push(null);
 		}
 	    }
 
+	    if (!adminUser && freezeDate && curDate.getTime() > freezeDate.getTime() && (newRow || rowUpdates || selectedUpdates))
+		throw('Error::All sessions are frozen. No user modifications permitted');
+	    
 	    var teamCol = columnIndex.team;
             if (newRow && rowUpdates && teamCol && sessionAttributes && sessionAttributes.sessionTeam == 'roster') {
 		// Copy team name from roster
@@ -1885,7 +1890,11 @@ function createDate(date) {
 		date = date.slice(0,23) + 'Z';
 	}
     }
-    return new Date(date);
+    var d = new Date(date);
+    if (!d || !d.getTime || isNaN(d.getTime()))
+	return '';
+    else
+	return d;
 }
 
 function getNewDueDate(userId, sessionName, lateToken) {
@@ -2929,8 +2938,8 @@ function emailTokens() {
 	var token = genUserToken(Settings['auth_key'], emailList[j][0]);
 
 	var message = 'Authentication token for userID '+username+' is '+token;
-	if (Settings['site_url'])
-	    message += "\n\nAuthenticated link to website: "+Settings['site_url']+"/_auth/login/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
+	if (Settings['server_url'])
+	    message += "\n\nAuthenticated link to website: "+Settings['server_url']+"/_auth/login/?username="+encodeURIComponent(username)+"&token="+encodeURIComponent(token);
 	message += "\n\nRetain this email for future use, or save userID and token in a secure location. Do not share token with anyone else.";
 
 	MailApp.sendEmail(emailList[j][1], subject, message);
@@ -3111,13 +3120,23 @@ function updateScores(sessionNames, interactive) {
 	    }
 	}
 	var gradeCutoffs = [];
+	var gradePercent = false;
 	if (gradingScale) {
 	    var comps = gradingScale.split(',');
 	    for (var j=0; j<comps.length; j++) {
 		var gComps = comps[j].trim().split(':');
-		if (gComps.length < 2 || !gComps[0] || !isNumber(gComps[1].trim()))
-		    throw('Invalid grading scale: '+gradingScale);
-		gradeCutoffs.push([parseNumber(gComps[1].trim()), gComps[0].trim().toUpperCase()]);
+		if (gComps.length < 2)
+		    throw('Invalid grading scale (expect A:90, ...): '+gradingScale);
+		var letter = gComps[0].trim().toUpperCase();
+		var cutoffStr = gComps[1].trim();
+		if (cutoffStr.slice(-1) == '%') {
+		    cutoffStr = cutoffStr.slice(0,-1).trim();
+		    gradePercent = true;
+		}
+		if (!letter || !isNumber(cutoffStr))
+		    throw('Invalid grading scale (expect A:90, ...): '+gradingScale);
+
+		gradeCutoffs.push([parseNumber(cutoffStr), letter]);
 	    }
 	    gradeCutoffs.sort();
 	    gradeCutoffs.reverse();
@@ -3523,7 +3542,9 @@ function updateScores(sessionNames, interactive) {
 	    for (var j=0; j<nids; j++) {
 		var gradeVal = '';
 		if (maxTotal && isNumber(totalVals[j][0])) {
-		    var totalVal = 100*(parseNumber(totalVals[j][0])/maxTotal);
+		    var totalVal = parseNumber(totalVals[j][0]);
+		    if (gradePercent)
+			totalVal = 100*(totalVal/maxTotal);
 		    for (var k=0; k<gradeCutoffs.length; k++) {
 			if (totalVal >= gradeCutoffs[k][0]) {
 			    gradeVal = gradeCutoffs[k][1];

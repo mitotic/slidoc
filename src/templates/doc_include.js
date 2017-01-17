@@ -1900,7 +1900,7 @@ Slidoc.manageSession = function() {
 
     var fullAdmin = !Sliobj.adminPrefix && (Sliobj.adminState || userId == Sliobj.params.testUserId);
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || retakesRemaining() || fullAdmin))
-	html += formatHelp(['', 'reset', 'Reset paced session']) + hr;
+	html += formatHelp(['', 'reset', 'Reset paced session' + (retakesRemaining()?' for re-takes':'')]) + hr;
 
     if (fullAdmin) {
 	if (Sliobj.params.releaseDate) {
@@ -3281,6 +3281,7 @@ function showPendingCalls() {
 
 function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, retStatus) {
     // retryOpts = {type: '...', call:, reload: }
+    // callback(session, feedback)
     Slidoc.log('Slidoc.sessionGetPutAux: ', prevSession, callType, !!callback, retryOpts.type, !!retryOpts.reload, !!retryOpts.call, result, retStatus);
     var session = null;
     var feedback = null;
@@ -4275,8 +4276,8 @@ function saveSessionAnswered(slide_id, qattrs) {
     sessionPut(null, null, {}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
 }
 
-function saveCallback(slide_id, qattrs, result, retStatus) {
-    Slidoc.log('saveCallback:', slide_id, qattrs, result, retStatus);
+function saveCallback(slide_id, qattrs, session, feedback) {
+    Slidoc.log('saveCallback:', slide_id, qattrs, session, feedback);
     if (slide_id in Sliobj.answerPlugins)
 	Slidoc.PluginManager.invoke(Sliobj.answerPlugins[slide_id], 'answerSave');
 }
@@ -4576,8 +4577,11 @@ Slidoc.submitStatus = function () {
 	    html += '</ul>';
 	    if (Sliobj.dueDate)
 		html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
-	    if (Sliobj.session && Sliobj.params.maxRetakes)
+	    if (Sliobj.session && Sliobj.params.maxRetakes) {
 		html += 'Retakes remaining: <code>'+retakesRemaining()+'</code><br>';
+		if (retakesRemaining())
+		    html += '<span class="slidoc-clickable" onclick="Slidoc.resetPaced();">Reset paced session for re-takes</span><br>'
+	    }
 	}
     }
     if (Sliobj.session.submitted || Sliobj.adminState)
@@ -4656,9 +4660,8 @@ Slidoc.saveClick = function() {
     sessionPut(null, null, {}, saveClickCallback);
 }
 
-function saveClickCallback(result, retStatus) {
-    if (!result)
-	alert('Error in saving session: '+retStatus.error);
+function saveClickCallback(session, feedback) {
+    Slidoc.log('Slidoc.saveClickCallback:', session, feedback);
 }
 	
 Slidoc.submitClick = function(elem, noFinalize) {
@@ -4958,9 +4961,10 @@ Slidoc.startPaced = function () {
 	startMsg += '&nbsp;&nbsp;<em>Answers will be automatically saved after each answered question.</em><br>';
 	if (Sliobj.params.slideDelay)
 	    startMsg += '&nbsp;&nbsp;<em>If you plan to continue on a different computer, remember to explicitly save the session before leaving this computer (to avoid delays on previously viewed slides).</em><br>';
-	if (retakesRemaining()) {
+	if (retakesRemaining())
 	    startMsg += '&nbsp;&nbsp;<b>You may re-take this '+retakesRemaining()+' more time(s).</b><br>';
-	}
+	else if (Sliobj.params.maxRetakes)
+	    startMsg += '&nbsp;&nbsp;<b>No more re-takes available.</b><br>';
     }
     startMsg += '<ul>';
     if (Sliobj.params.slideDelay && allowDelay())

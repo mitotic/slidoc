@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8e'
+VERSION = '0.96.8f'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -55,6 +55,7 @@ Settings = {
     'lock_proxy_url': '', # URL of proxy server to lock sheet
     'auth_key': None,     # Digest authentication key
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
+    'freeze_date': '',    # Date when all user mods are disabled
     'require_login_token': True,
     'require_late_token': True,
     'site_name': '',
@@ -856,6 +857,8 @@ def sheetAction(params, notrace=False):
         if not sheetName:
             raise Exception('Error:SHEETNAME::No sheet name specified')
 
+        freezeDate = createDate(Settings['freeze_date']) or None
+        
         adminUser = ''
         paramId = params.get('id','') #var
 
@@ -1513,8 +1516,12 @@ def sheetAction(params, notrace=False):
                 else:
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
-                        rowUpdates[j] = None
+                        rowUpdates.append(None)
 
+            if not adminUser and freezeDate and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(freezeDate) and (newRow or rowUpdates or selectedUpdates):
+                raise Exception('Error::All sessions are frozen. No user modifications permitted');
+
+                        
             teamCol = columnIndex.get('team')
             if newRow and rowUpdates and teamCol and sessionAttributes and sessionAttributes.get('sessionTeam') == 'roster':
                 # Copy team name from roster
