@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8e';
+var VERSION = '0.96.8f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['site_label', '', "Site label, e.g., calc101"],
@@ -152,10 +152,10 @@ function onOpen(evt) {
    menuEntries.push({name: "Display session answers", functionName: "sessionAnswerSheet"});
    menuEntries.push({name: "Display session statistics", functionName: "sessionStatSheet"});
    menuEntries.push(null); // line separator
-   menuEntries.push({name: "Update scores for session", functionName: "updateScoreSession"});
-   menuEntries.push({name: "Update totals for session", functionName: "updateTotalSession"});
+   menuEntries.push({name: "Post/refresh session in gradebook", functionName: "updateScoreSession"});
+   menuEntries.push({name: "Refresh session total scores", functionName: "updateTotalSession"});
    menuEntries.push(null); // line separator
-   menuEntries.push({name: "Update scores for all sessions", functionName: "updateScoreAll"});
+   menuEntries.push({name: "Refresh all posted sessions in gradebook", functionName: "updateScoreAll"});
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Email authentication tokens", functionName: "emailTokens"});
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
@@ -3068,7 +3068,20 @@ function updateScoreAll() {
 
     try {
 	loadSettings();
-	var updatedNames = updateScores(getSessionNames(), true);
+	var sessionNames = getSessionNames();
+	var scoreSheet = getSheet(SCORES_SHEET);
+	if (scoreSheet) {
+	    // Refresh only posted sessions
+	    var scoreColIndex = indexColumns(scoreSheet);
+	    var curSessions = [];
+	    for (var j=0; j<sessionNames.length; j++) {
+		if (scoreColIndex['_'+sessionNames[j]])
+		    curSessions.push(sessionNames[j]);
+	    }
+	    sessionNames = curSessions;
+	}
+
+	var updatedNames = updateScores(sessionNames, true);
 	notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
     } catch(err) {
 	SpreadsheetApp.getUi().alert(''+err);

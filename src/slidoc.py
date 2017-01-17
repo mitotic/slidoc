@@ -97,8 +97,8 @@ def chapter_prefix(num, classes='', hide=False):
     attrs = ' style="display: none;"' if hide else ''
     return '\n<article id="%s" class="slidoc-container %s" %s> <!--chapter start-->\n' % (make_chapter_id(num), classes, attrs)
 
-def concept_chain(slide_id, site_url):
-    params = {'sid': slide_id, 'ixfilepfx': site_url+'/'}
+def concept_chain(slide_id, server_url):
+    params = {'sid': slide_id, 'ixfilepfx': server_url+'/'}
     params.update(SYMS)
     return '\n<div id="%(sid)s-ichain" style="display: none;">CONCEPT CHAIN: <a id="%(sid)s-ichain-prev" class="slidoc-clickable-sym">%(prev)s</a>&nbsp;&nbsp;&nbsp;<b><a id="%(sid)s-ichain-concept" class="slidoc-clickable"></a></b>&nbsp;&nbsp;&nbsp;<a id="%(sid)s-ichain-next" class="slidoc-clickable-sym">%(next)s</a></div><p></p>\n\n' % params
 
@@ -163,7 +163,7 @@ def add_to_index(primary_tags, sec_tags, p_tags, s_tags, filename, slide_id, hea
         sec_tags[tag][filename].append( (slide_id, header) )
 
 
-def make_index(primary_tags, sec_tags, site_url, question=False, fprefix='', index_id='', index_file=''):
+def make_index(primary_tags, sec_tags, server_url, question=False, fprefix='', index_id='', index_file=''):
     # index_file would be null string for combined file
     id_prefix = 'slidoc-qindex-' if question else 'slidoc-index-'
     covered_first = defaultdict(dict)
@@ -228,7 +228,7 @@ def make_index(primary_tags, sec_tags, site_url, question=False, fprefix='', ind
             header = header or 'slide'
             header_html = '<b>%s</b>' % header if reftype == 1 else header
             if index_file:
-                out_list.append('<a href="%s#%s" class="slidoc-clickable" target="_blank">%s</a>' % (site_url+fname+'.html'+query_str, slide_id, header_html))            
+                out_list.append('<a href="%s#%s" class="slidoc-clickable" target="_blank">%s</a>' % (server_url+fname+'.html'+query_str, slide_id, header_html))            
             else:
                 out_list.append('''<a href="#%s" class="slidoc-clickable" onclick="Slidoc.chainStart('%s', '#%s');">%s</a>''' % (slide_id, query_str, slide_id, header_html))            
 
@@ -439,7 +439,7 @@ class MathInlineLexer(mistune.InlineLexer):
                     # Link to index entry
                     tag = link[2:] or text
                     tag_hash = '#%s-concept-%s' % (self.renderer.index_id, md2md.make_id_from_text(tag))
-                    tag_html = nav_link(text, self.renderer.options['config'].site_url, self.renderer.options['config'].index,
+                    tag_html = nav_link(text, self.renderer.options['config'].server_url, self.renderer.options['config'].index,
                                         hash=tag_hash, separate=self.renderer.options['config'].separate, target='_blank',
                                         keep_hash=True, printable=self.renderer.options['config'].printable)
                     return tag_html
@@ -579,7 +579,7 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
         classes =  'slidoc-single-column' if 'two_column' in self.renderer.options['config'].features else ''
-        return self.renderer.slide_prefix(self.renderer.first_id, classes)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].site_url)+html+self.renderer.end_slide(last_slide=True)
+        return self.renderer.slide_prefix(self.renderer.first_id, classes)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)+html+self.renderer.end_slide(last_slide=True)
 
     
 class MathRenderer(mistune.Renderer):
@@ -850,7 +850,7 @@ class SlidocRenderer(MathRenderer):
             if 'two_column' in self.options['config'].features:
                 classes.append('slidoc-single-column')
 
-        return end_html + self.slide_prefix(new_slide_id, ' '.join(classes)) + concept_chain(new_slide_id, self.options['config'].site_url)
+        return end_html + self.slide_prefix(new_slide_id, ' '.join(classes)) + concept_chain(new_slide_id, self.options['config'].server_url)
 
     def end_slide(self, suffix_html='', last_slide=False):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
@@ -1669,7 +1669,7 @@ class SlidocRenderer(MathRenderer):
                 elif j:
                     tag_html += '; '
                 tag_hash = '#%s-concept-%s' % (self.index_id, md2md.make_id_from_text(tag))
-                tag_html += nav_link(tag, self.options['config'].site_url, self.options['config'].index,
+                tag_html += nav_link(tag, self.options['config'].server_url, self.options['config'].index,
                                      hash=tag_hash, separate=self.options['config'].separate, target='_blank',
                                      keep_hash=True, printable=self.options['config'].printable)
         else:
@@ -1769,7 +1769,7 @@ def click_span(text, onclick, id='', classes=['slidoc-clickable'], href=''):
     else:
         return '''<span %s class="%s" onclick="%s">%s</span>''' % (id_str, ' '.join(classes), onclick, text)
 
-def nav_link(text, site_url, href, hash='', separate=False, keep_hash=False, printable=False, target='', classes=[]):
+def nav_link(text, server_url, href, hash='', separate=False, keep_hash=False, printable=False, target='', classes=[]):
     extras = ' target="%s"' % target if target else ''
     class_list = classes[:]
     if text.startswith('&'):
@@ -1780,11 +1780,11 @@ def nav_link(text, site_url, href, hash='', separate=False, keep_hash=False, pri
         class_list.append("slidoc-clickable")
     class_str = ' '.join(class_list)
     if printable:
-        return '''<a class="%s" href="%s%s" onclick="Slidoc.go('%s');" %s>%s</a>'''  % (class_str, site_url, hash or href, hash or href, extras, text)
+        return '''<a class="%s" href="%s%s" onclick="Slidoc.go('%s');" %s>%s</a>'''  % (class_str, server_url, hash or href, hash or href, extras, text)
     elif not separate:
         return '''<span class="%s" onclick="Slidoc.go('%s');" %s>%s</span>'''  % (class_str, hash or href, extras, text)
     elif href or text.startswith('&'):
-        return '''<a class="%s" href="%s%s" %s>%s</a>'''  % (class_str, site_url, href+hash if hash and keep_hash else href, extras, text)
+        return '''<a class="%s" href="%s%s" %s>%s</a>'''  % (class_str, server_url, href+hash if hash and keep_hash else href, extras, text)
     else:
         return '<span class="%s">%s</span>' % (class_str, text)
 
@@ -1870,9 +1870,9 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
     if 'navigate' not in config.strip:
         nav_html = ''
         if config.toc:
-            nav_html += nav_link(SYMS['return'], config.site_url, config.toc, hash='#'+make_chapter_id(0), separate=config.separate, classes=['slidoc-noprint'], printable=config.printable) + SPACER6
-            nav_html += nav_link(SYMS['prev'], config.site_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
-            nav_html += nav_link(SYMS['next'], config.site_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
+            nav_html += nav_link(SYMS['return'], config.server_url, config.toc, hash='#'+make_chapter_id(0), separate=config.separate, classes=['slidoc-noprint'], printable=config.printable) + SPACER6
+            nav_html += nav_link(SYMS['prev'], config.server_url, prev_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
+            nav_html += nav_link(SYMS['next'], config.server_url, next_file, separate=config.separate, classes=['slidoc-noall'], printable=config.printable) + SPACER6
 
         ###sidebar_html = click_span(SYMS['trigram'], "Slidoc.sidebarDisplay();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar']) if config.toc and not config.separate else ''
         ###slide_html = SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])
@@ -1914,7 +1914,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
         # Strip out notes
         content_html = re.sub(r"<!--slidoc-notes-block-begin\[([-\w]+)\](.*?)<!--slidoc-notes-block-end\[\1\]-->", '', content_html, flags=re.DOTALL)
 
-    file_toc = renderer.table_of_contents('' if not config.separate else config.site_url+filename+'.html', filenumber=filenumber)
+    file_toc = renderer.table_of_contents('' if not config.separate else config.server_url+filename+'.html', filenumber=filenumber)
 
     return (renderer.file_header or filename, file_toc, renderer, content_html)
 
@@ -2381,11 +2381,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if gd_hmac_key and not config.anonymous:
         js_params['authType'] = 'digest'
 
-    nb_site_url = config.site_url
+    nb_server_url = config.server_url
     if combined_file:
-        config.site_url = ''
-    if config.site_url and not config.site_url.endswith('/'):
-        config.site_url += '/'
+        config.server_url = ''
+    if config.server_url and not config.server_url.endswith('/'):
+        config.server_url += '/'
     if config.image_url and not config.image_url.endswith('/'):
         config.image_url += '/'
 
@@ -2510,7 +2510,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         slide_mods_dict['strip'] += ',notes'
     slide_mods_args = md2md.Args_obj.create_args(base_mods_args, **slide_mods_dict)
 
-    nb_mods_dict = {'strip': 'concepts,extensions', 'site_url': config.site_url}
+    nb_mods_dict = {'strip': 'concepts,extensions', 'server_url': config.server_url}
     if 'rule' in config.strip:
         nb_mods_dict['strip'] += ',rule'
     nb_converter_args = md2nb.Args_obj.create_args(None, **nb_mods_dict)
@@ -2518,7 +2518,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     qindex_id = 'slidoc-qindex'
     index_chapter_id = make_chapter_id(nfiles+1)
     qindex_chapter_id = make_chapter_id(nfiles+2)
-    back_to_contents = nav_link('BACK TO CONTENTS', config.site_url, config.toc, hash='#'+make_chapter_id(0),
+    back_to_contents = nav_link('BACK TO CONTENTS', config.server_url, config.toc, hash='#'+make_chapter_id(0),
                                 separate=config.separate, classes=['slidoc-nosidebar'], printable=config.printable)+'<p></p>\n'
 
     all_concept_warnings = []
@@ -2571,7 +2571,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
             file_config_vars = vars(file_config)
             settings_list = []
-            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'site_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
+            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
             arg_names = file_config_vars.keys()
             arg_names.sort()
             for name in arg_names:
@@ -2911,7 +2911,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         toc_html = []
         if config.index and (Global.primary_tags or Global.primary_qtags):
-            toc_html.append(' '+nav_link('INDEX', config.site_url, config.index, hash='#'+index_chapter_id,
+            toc_html.append(' '+nav_link('INDEX', config.server_url, config.index, hash='#'+index_chapter_id,
                                      separate=config.separate, printable=config.printable))
 
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
@@ -2946,13 +2946,13 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 chapter_id = make_chapter_id(ifile+1)
                 slide_link = ''
                 if fname not in paced_files and config.slides:
-                    slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.site_url, fname+"-slides.html", 'slides')
+                    slide_link = ' (<a href="%s%s" class="slidoc-clickable" target="_blank">%s</a>)' % (config.server_url, fname+"-slides.html", 'slides')
                 nb_link = ''
-                if fname not in paced_files and config.notebook and nb_site_url:
-                    nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_site_url[len('http://'):], fname, 'notebook')
+                if fname not in paced_files and config.notebook and nb_server_url:
+                    nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_server_url[len('http://'):], fname, 'notebook')
 
                 if fname in paced_files:
-                    doc_link = nav_link(paced_files[fname]['doc_str'], config.site_url, outname, target='_blank', separate=True)
+                    doc_link = nav_link(paced_files[fname]['doc_str'], config.server_url, outname, target='_blank', separate=True)
                     toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
                     if test_params:
                         for label, query, proxy_query in test_params:
@@ -2961,7 +2961,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                             else:
                                 doc_link += ', <a href="%s%s" target="_blank">%s</a>' % (outname, query, label)
                 else:
-                    doc_link = nav_link('view', config.site_url, outname, hash='#'+chapter_id,
+                    doc_link = nav_link('view', config.server_url, outname, hash='#'+chapter_id,
                                         separate=config.separate, printable=config.printable)
                     toggle_link = '''<span id="slidoc-toc-chapters-toggle" class="slidoc-clickable slidoc-toc-chapters" onclick="Slidoc.idDisplay('%s-toc-sections');">%s</span>''' % (chapter_id, fheader)
 
@@ -3011,14 +3011,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     xref_list = []
     if config.index and (Global.primary_tags or Global.primary_qtags):
-        first_references, covered_first, index_html = make_index(Global.primary_tags, Global.sec_tags, config.site_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
+        first_references, covered_first, index_html = make_index(Global.primary_tags, Global.sec_tags, config.server_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
         if not config.dry_run:
             index_html= ' <b>CONCEPT</b>\n' + index_html
             if config.qindex:
-                index_html = nav_link('QUESTION INDEX', config.site_url, config.qindex, hash='#'+qindex_chapter_id,
+                index_html = nav_link('QUESTION INDEX', config.server_url, config.qindex, hash='#'+qindex_chapter_id,
                                       separate=config.separate, printable=config.printable) + '<p></p>\n' + index_html
             if config.crossref:
-                index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.site_url, config.crossref, 'CROSS-REFERENCING')) + index_html
+                index_html = ('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.server_url, config.crossref, 'CROSS-REFERENCING')) + index_html
 
             index_output = chapter_prefix(nfiles+1, 'slidoc-index-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + index_html + '</article>\n'
             if combined_file:
@@ -3029,11 +3029,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         if config.crossref:
             if config.toc:
-                xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.site_url, combined_file or config.toc, 'BACK TO CONTENTS'))
+                xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.server_url, combined_file or config.toc, 'BACK TO CONTENTS'))
             xref_list.append("<h3>Concepts cross-reference (file prefix: "+fprefix+")</h3><p></p>")
             xref_list.append("\n<b>Concepts -> files mapping:</b><br>")
             for tag in first_references:
-                links = ['<a href="%s%s.html#%s" class="slidoc-clickable" target="_blank">%s</a>' % (config.site_url, slide_file, slide_id, slide_file[len(fprefix):] or slide_file) for slide_file, slide_id, slide_header in first_references[tag]]
+                links = ['<a href="%s%s.html#%s" class="slidoc-clickable" target="_blank">%s</a>' % (config.server_url, slide_file, slide_id, slide_file[len(fprefix):] or slide_file) for slide_file, slide_id, slide_header in first_references[tag]]
                 xref_list.append(("%-32s:" % tag)+', '.join(links)+'<br>')
 
             xref_list.append("<p></p><b>Primary concepts covered in each file:</b><br>")
@@ -3044,7 +3044,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 tlist = []
                 for ctag in clist:
                     slide_id, slide_header = covered_first[fname][ctag]
-                    tlist.append( '<a href="%s%s.html#%s" class="slidoc-clickable" target="_blank">%s</a>' % (config.site_url, fname, slide_id, ctag) )
+                    tlist.append( '<a href="%s%s.html#%s" class="slidoc-clickable" target="_blank">%s</a>' % (config.server_url, fname, slide_id, ctag) )
                 xref_list.append(('%-24s:' % fname[len(fprefix):])+'; '.join(tlist)+'<br>')
             if all_concept_warnings:
                 xref_list.append('<pre>\n'+'\n'.join(all_concept_warnings)+'\n</pre>')
@@ -3053,7 +3053,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         import itertools
         qout_list = []
         qout_list.append('<b>QUESTION CONCEPT</b>\n')
-        first_references, covered_first, qindex_html = make_index(Global.primary_qtags, Global.sec_qtags, config.site_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
+        first_references, covered_first, qindex_html = make_index(Global.primary_qtags, Global.sec_qtags, config.server_url, question=True, fprefix=fprefix, index_id=qindex_id, index_file='' if combined_file else config.qindex)
         qout_list.append(qindex_html)
 
         qindex_output = chapter_prefix(nfiles+2, 'slidoc-qindex-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
@@ -3071,7 +3071,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             for fname, slide_id, header, qnumber, concept_id in Global.questions.values():
                 q_id = make_file_id(fname, slide_id)
                 xref_list.append('<li><b>'+nav_link(make_q_label(fname, qnumber, fprefix)+': '+header,
-                                               config.site_url, fname+'.html', hash='#'+slide_id,
+                                               config.server_url, fname+'.html', hash='#'+slide_id,
                                                separate=config.separate, keep_hash=True, printable=config.printable)+'</b>: ')
                 ctags = concept_id.split(';')
                 n = len(ctags)
@@ -3085,7 +3085,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                             sub_q_id = make_file_id(sub_fname, sub_slide_id)
                             if sub_q_id != q_id:
                                 xref_list.append(nav_link(make_q_label(sub_fname, sub_qnumber, fprefix)+': '+header,
-                                                        config.site_url, sub_fname+'.html', hash='#'+sub_slide_id,
+                                                        config.server_url, sub_fname+'.html', hash='#'+sub_slide_id,
                                                         separate=config.separate, keep_hash=True, printable=config.printable)
                                                         + ('<sup>%s</sup>, ' % sub_num) )
 
@@ -3357,7 +3357,7 @@ alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
-alt_parser.add_argument('--site_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
+alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
@@ -3370,7 +3370,7 @@ cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.Fil
 
 # Some arguments need to be set explicitly to '' by default, rather than staying as None
 Cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', 'image_url': '',
-                'site_name': '', 'site_url': ''}
+                'site_name': '', 'server_url': ''}
     
 def cmd_args2dict(cmd_args):
     # Assign default (non-None) values to arguments not specified anywhere

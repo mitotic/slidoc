@@ -89,11 +89,11 @@ Options = {
     'require_login_token': True,
     'require_late_token': True,
     'root_key': None,
+    'server_url': '',
     'share_averages': True,
     'site_label': 'Slidoc',
     'site_name': '',
     'site_number': 0,
-    'site_url': '',
     'sites': [],
     'static_dir': 'static',
     'twitter_stream': '',
@@ -699,7 +699,7 @@ class ProxyHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, "DEBUG: URI", self.request.uri
 
-        if (args.get('action') or args.get('modify')) and sdproxy.Options['gsheet_url'] and not sdproxy.Options['dry_run']:
+        if (args.get('action') or args.get('modify')) and sdproxy.Settings['gsheet_url'] and not sdproxy.Settings['dry_run']:
             sessionName = args.get('sheet','')
             errMsg = ''
             if args.get('modify'):
@@ -711,7 +711,7 @@ class ProxyHandler(BaseHandler):
             else:
                 http_client = tornado.httpclient.AsyncHTTPClient()
                 body = urllib.urlencode(args)
-                response = yield http_client.fetch(sdproxy.Options['gsheet_url'], method='POST', headers=None, body=body)
+                response = yield http_client.fetch(sdproxy.Settings['gsheet_url'], method='POST', headers=None, body=body)
                 if response.error:
                     retObj = {'result': 'error', 'error': 'Error in passthru: '+str(response.error) }
                 else:
@@ -1230,7 +1230,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         if Options['debug']:
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", Options['site_number'], self.request.path, self.request.query, userId, Options['dry_run'], Options['lock_proxy_url']
 
-        if Options['site_url'] == 'http://localhost' or Options['site_url'].startswith('http://localhost:'):
+        if Options['server_url'] == 'http://localhost' or Options['server_url'].startswith('http://localhost:'):
             # Batch auto login for localhost through query parameter: ?auth=userId:token
             query = self.request.query
             if query.startswith('auth='):
@@ -1525,8 +1525,8 @@ def createApplication():
         Global.login_url = '/_oauth/login'
         comps = Options['auth_type'].split(',')
 
-        if Options['site_url']:
-            redirect_uri = Options['site_url'] + Global.login_url
+        if Options['server_url']:
+            redirect_uri = Options['server_url'] + Global.login_url
         else:
             redirect_uri = 'http://localhost'+ ('' if Options['port'] == 80 else ':'+str(Options['port'])) + Global.login_url
 
@@ -1867,7 +1867,7 @@ def main():
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default=Options["site_label"], help="Site label")
-    define("site_url", default=Options["site_url"], help="Site URL, e.g., http://example.com")
+    define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
@@ -1973,14 +1973,14 @@ def main():
 
     if options.proxy_wait is not None:
         # Copy options to proxy
-        for key in sdproxy.Options:
+        for key in sdproxy.Settings:
             if not key.startswith('_') and key in Options:
-                sdproxy.Options[key] = Options[key]
+                sdproxy.Settings[key] = Options[key]
 
     if options.backup and not Options['site_name']:
         # Sole or primary server
         comps = options.backup.split(',')
-        sdproxy.Options['backup_dir'] = comps[0]
+        sdproxy.Settings['backup_dir'] = comps[0]
         hhmm = comps[1] if len(comps) > 1 else '03:00'
         curTimeSec = sliauth.epoch_ms()/1000.0
         curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
