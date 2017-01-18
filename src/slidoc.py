@@ -702,7 +702,7 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'shareAnswers': {}, 'hints': defaultdict(list)}
+        self.sheet_attributes = {'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
         self.slide_number = 0
 
         self._new_slide()
@@ -713,6 +713,7 @@ class SlidocRenderer(MathRenderer):
         self.block_test_counter = 0
         self.block_output_counter = 0
         self.render_markdown = False
+        self.render_mathjax = False
         self.plugin_number = 0
         self.plugin_defs = {}
         self.plugin_tops = []
@@ -902,6 +903,18 @@ class SlidocRenderer(MathRenderer):
         if not self.incremental_pause:
             return super(SlidocRenderer, self).paragraph(text)
         return '<p class="%s-incremental slidoc-incremental%d">%s</p>\n' % (self.get_slide_id(), self.incremental_level, text.strip(' '))
+
+    def block_math(self, text):
+        self.render_mathjax = True
+        super(SlidocRenderer, self).block_math(text)
+
+    def latex_environment(self, name, text):
+        self.render_mathjax = True
+        super(SlidocRenderer, self).latex_environment(name, text)
+
+    def inline_math(self, text):
+        self.render_mathjax = True
+        super(SlidocRenderer, self).inline_math(text)
 
     def block_code(self, code, lang=None):
         """Rendering block level code. ``pre > code``.
@@ -1422,6 +1435,10 @@ class SlidocRenderer(MathRenderer):
         else:
             correct_val = correct_text
 
+        if 'remote_answers' in self.options['config'].features:
+            self.sheet_attributes['remoteAnswers'].append(correct_val)
+            correct_val = ''
+
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
                                   weight=1)
 
@@ -1445,7 +1462,7 @@ class SlidocRenderer(MathRenderer):
         if retry_counts[0]:
             self.questions[-1].update(retry=retry_counts)
         if correct_html and correct_html != correct_text:
-            self.questions[-1].update(html=correct_html)
+            self.questions[-1].update(correct_html=correct_html)
         if self.block_input_counter:
             self.questions[-1].update(input=self.block_input_counter)
         if self.slide_block_test:
@@ -2397,7 +2414,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     templates = {}
     for tname in ('doc_include.css', 'wcloud.css', 'doc_custom.css',
-                  'doc_include.js', 'wcloud.js', 'doc_google.js', 'doc_test.js',
+                  'doc_include.js', 'wcloud.js', 'doc_google.js', 'md5.js', 'doc_test.js',
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
@@ -2444,7 +2461,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.google_login:
             add_scripts += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
-            add_scripts += '<script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.3.0/js/md5.js"></script>\n'
+            add_scripts += ('\n<script>\n%s</script>\n' % templates['md5.js'])
     answer_elements = {}
     for suffix in SlidocRenderer.content_suffixes:
         answer_elements[suffix] = 0;
@@ -2528,7 +2545,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         combined_html.append( '<div id="slidoc-sidebar-right-container" class="slidoc-sidebar-right-container">\n' )
         combined_html.append( '<div id="slidoc-sidebar-right-wrapper" class="slidoc-sidebar-right-wrapper">\n' )
 
-    math_found = False
+    math_load = False
     pagedown_load = False
     skulpt_load = False
     flist = []
@@ -2703,9 +2720,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         
         comb_plugin_defs.update(renderer.plugin_defs)
         comb_plugin_loads.update(renderer.plugin_loads)
-        math_in_file = renderer.render_markdown or (r'\[' in md_text and r'\]' in md_text) or (r'\(' in md_text and r'\)' in md_text)
-        if math_in_file:
-            math_found = True
+        if renderer.render_mathjax:
+            math_load = True
         if renderer.render_markdown:
             pagedown_load = True
         if renderer.load_python:
@@ -2743,7 +2759,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
 
         mid_params = {'session_name': fname,
-                      'math_js': math_inc if math_in_file else '',
+                      'math_js': math_inc if renderer.render_mathjax else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
                       'body_class': 'slidoc-plain-page' if topnav_html else '',
@@ -3013,7 +3029,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if config.index and (Global.primary_tags or Global.primary_qtags):
         first_references, covered_first, index_html = make_index(Global.primary_tags, Global.sec_tags, config.server_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
         if not config.dry_run:
-            index_html= ' <b>CONCEPT</b>\n' + index_html
+            index_html = ' <b>CONCEPT</b>\n' + index_html
             if config.qindex:
                 index_html = nav_link('QUESTION INDEX', config.server_url, config.qindex, hash='#'+qindex_chapter_id,
                                       separate=config.separate, printable=config.printable) + '<p></p>\n' + index_html
@@ -3103,7 +3119,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
         comb_params = {'session_name': combined_name,
-                       'math_js': math_inc if math_found else '',
+                       'math_js': math_inc if math_load else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
                        'skulpt_js': Skulpt_js if skulpt_load else '',
                        'plugin_tops': '',
@@ -3293,6 +3309,7 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
 #   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
+#   remote_answers: Correct answers and score are stored remotely until session is graded
 #   share_all: share responses for all questions
 #   share_answers: share answers for all questions after completion (e.g., an exam)
 #   show_correct: show correct answers for non-paced sessions
@@ -3305,7 +3322,7 @@ Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

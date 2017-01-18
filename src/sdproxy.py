@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8f'
+VERSION = '0.96.8g'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -106,7 +106,7 @@ class Dummy():
 Sheet_cache = {}    # Cache of sheets
 Miss_cache = {}     # For optional sheets that are missing
 Lock_cache = {}     # Locked sheets
-Lock_passthru = defaultdict(int)  # Count of passthru's
+Lock_passthru = defaultdict(int)  # Count of passthru
 
 Global = Dummy()
 
@@ -891,6 +891,7 @@ def sheetAction(params, notrace=False):
         dueDate = None
         gradeDate = None
         voteDate = None
+        computeTotalScore = False
         curDate = createDate()
 
         if restrictedSheet:
@@ -997,6 +998,12 @@ def sheetAction(params, notrace=False):
                 gradeDate = sessionEntries.get('gradeDate')
                 voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
 
+                if sessionAttributes['params']['features'].get('delay_answers') or sessionAttributes['params']['features'].get('remote_answers'):
+                    # Delayed or remote answers; compute total score only after grading
+                    computeTotalScore = gradeDate
+                else:
+                    computeTotalScore = True
+
             # Check parameter consistency
             getRow = params.get('get','')
             getShare = params.get('getshare', '')
@@ -1067,7 +1074,8 @@ def sheetAction(params, notrace=False):
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
 
-                    updateTotalScores(modSheet, sessionAttributes, questions, True)
+                    if computeTotalScore:
+                        updateTotalScores(modSheet, sessionAttributes, questions, True)
 
             userId = None
             displayName = None
@@ -1167,10 +1175,13 @@ def sheetAction(params, notrace=False):
                             modSheet.setSheetValues(j+1+numStickyRows, submitCol, 1, 1, [[curDate]])
 
                 returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
-            if sessionEntries and adminPaced:
-                returnInfo['adminPaced'] = adminPaced
-            if sessionEntries and columnIndex.get('lastSlide'):
-                returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide'])
+            if sessionEntries:
+                if adminPaced:
+                    returnInfo['adminPaced'] = adminPaced
+                if columnIndex.get('lastSlide'):
+                    returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide'])
+                if computeTotalScore:
+                    returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
         elif getShare:
             # Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
             if not sessionAttributes or not sessionAttributes.get('shareAnswers'):
@@ -1287,7 +1298,7 @@ def sheetAction(params, notrace=False):
                     disableVoting = True
 
                 if voteOffset:
-                    # Return user's vote codes
+                    # Return user vote codes
                     if curUserVals:
                         returnInfo['vote'] = curUserVals[voteOffset]
                     if tallyVotes:
@@ -1744,11 +1755,11 @@ def sheetAction(params, notrace=False):
                                 raise Exception("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'")
 
                     if scoresCol and sessionEntries and parseNumber(sessionEntries.get('scoreWeight')):
-                        if userId != MAXSCORE_ID:
+                        if userId != MAXSCORE_ID and computeTotalScore:
                             # Tally user scores
                             savedSession = unpackSession(columnHeaders, rowValues)
                             if savedSession and len(savedSession.get('questionsAttempted').keys()):
-                                scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'))
+                                scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
                                 rowValues[scoresCol-1] = scores.get('weightedCorrect', '')
 
                     # Copy user info from roster (if available)
@@ -1918,6 +1929,8 @@ def sheetAction(params, notrace=False):
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
 
+                if computeTotalScore and getRow:
+                    returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
 
         # return json success results
         retObj = {"result": "success", "value": returnValues, "headers": returnHeaders,
@@ -1945,7 +1958,7 @@ class LCRandomClass(object):
     # and for its relationships to a and c
     nbytes = 4
     m = 2**(nbytes*8)
-    # a - 1 should be divisible by m's prime factors
+    # a - 1 should be divisible by prime factors of m
     a = 1664525
     # c and m should be co-prime
     c = 1013904223
@@ -2275,7 +2288,7 @@ def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
                 temRowVals = modSheet.getSheetValues(startRow+k, 1, 1, len(columnHeaders))[0]
                 savedSession = unpackSession(columnHeaders, temRowVals)
                 if savedSession and savedSession.get('questionsAttempted'):
-                    scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'])
+                    scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers'])
                     scoreValues[k][0] = scores.get('weightedCorrect', '')
                 else:
                     scoreValues[k][0] = ''
@@ -2461,7 +2474,7 @@ ARTICLE_RE = re.compile(r'\b(a|an|the) ')
 MSPACE_RE  = re.compile(r'\s+')
 
 def normalizeText(s):
-    # Lowercase, replace '" with null, all other non-alphanumerics with spaces,
+    # Lowercase, replace single/double quotes with null, all other non-alphanumerics with spaces,
     # replace 'a', 'an', 'the' with space, and then normalize spaces
     if isinstance(s, unicode):
         s = s.encode('utf-8')
@@ -2828,7 +2841,7 @@ def scoreAnswer(response, qtype, corrAnswer):
     return qscore
 
 
-def tallyScores(questions, questionsAttempted, hintsUsed, params):
+def tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAnswers):
     skipAhead = 'skip_ahead' in params.get('features')
 
     questionsCount = 0
@@ -2861,7 +2874,10 @@ def tallyScores(questions, questionsAttempted, hintsUsed, params):
         if qAttempted.get('plugin'):
             qscore = parseNumber(qAttempted.get('plugin').get('score'))
         else:
-            qscore = scoreAnswer(qAttempted.get('response'), questionAttrs.get('qtype'),(qAttempted.get('expect') or questionAttrs.get('correct','')))
+            correctAns = qAttempted.get('expect') or questionAttrs.get('correct','')
+            if not correctAns and remoteAnswers and len(remoteAnswers):
+                correctAns = remoteAnswers[qnumber-1]
+            qscore = scoreAnswer(qAttempted.get('response'), questionAttrs.get('qtype'), correctAns)
 
         qscores.append(qscore)
         qSkipCount = 0

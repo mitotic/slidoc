@@ -239,6 +239,8 @@ function setupCache(auth, callback) {
 	    Sliobj.adminPaced = retStatus.info.adminPaced;
 	if (retStatus.info.maxLastSlide)
 	    Sliobj.maxLastSlide = Math.min(retStatus.info.maxLastSlide, Sliobj.params.pacedSlides);
+	if (retStatus.info.remoteAnswers)
+	    Sliobj.remoteAnswers = retStatus.info.remoteAnswers;
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -1752,6 +1754,8 @@ Slidoc.showGrades = function () {
     Sliobj.scoreSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
 }
 
+var AGGREGATE_COL_RE = /\b(_\w+)_(avg|normavg|sum)(_(\d+))?$/i
+
 function showGradesCallback(userId, result, retStatus) {
     Slidoc.log('showGradesCallback:', userId, result, retStatus);
     if (Sliobj.closePopup)
@@ -1786,14 +1790,26 @@ function showGradesCallback(userId, result, retStatus) {
 	var grade = result[sessionName];
 	if (isNumber(grade))
 	    grade = grade ? grade.toFixed(2) : 'missed';
-	var pmatch = /(_\w*[a-z])(\d+)$/i.exec(sessionName);
-	if (pmatch && pmatch[1] == prefix) {
-	    html += '&nbsp;&nbsp;&nbsp;';
-	} else {
+
+	var dispSession = sessionName;
+	var amatch = AGGREGATE_COL_RE.exec(sessionName);
+	if (amatch) {
+	    // Aggregate column
+	    prefix = amatch[1];
+	    dispSession = prefix+'_'+amatch[2];
 	    html += '<p></p>';
-	    prefix = sessionName;
+	} else {
+	    var pmatch = /(_\w*[a-z])(\d+)$/i.exec(sessionName);
+	    if (pmatch && pmatch[1] == prefix) {
+		// Same session family
+		html += '&nbsp;&nbsp;&nbsp;';
+	    } else {
+		// New session family
+		prefix = pmatch ? pmatch[1] : sessionName;
+		html += '<p></p>';
+	    }
 	}
-	html += '<em>'+sessionName.slice(1) + '</em>: <b>'+ grade +'</b>'
+	html += '<em>'+dispSession.slice(1) + '</em>: <b>'+ grade +'</b>'
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    var sessionIndex = retStatus.info.headers.indexOf(sessionName);
 	    if (retStatus.info.maxScores && retStatus.info.maxScores[sessionIndex])
@@ -1986,6 +2002,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.scoreSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
+    Sliobj.remoteAnswers = '';
     Sliobj.voteDate = null;
 
     if (Sliobj.params.gd_sheet_url) {
@@ -2682,7 +2699,7 @@ function scoreSession(session) {
     Slidoc.log('scoreSession:');
     var firstSlideId = getVisibleSlides()[0].id;
     Sliobj.scores = tallyScores(getChapterAttrs(firstSlideId), session.questionsAttempted, session.hintsUsed,
-				Sliobj.params);
+				Sliobj.params, Sliobj.remoteAnswers);
 }
 
 Slidoc.toggleExam = function () {
@@ -2849,7 +2866,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 
 function delayAnswers() {
     // Always display correct answers for submitted and graded sessions
-    return ('delay_answers' in Sliobj.params.features) && !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr);
+    return ('delay_answers' in Sliobj.params.features || 'remote_answers' in Sliobj.params.features) && !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr);
 }
 
 function displayCorrect(qattrs) {
@@ -3320,6 +3337,9 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.gradeDate)
 		Sliobj.gradeDateStr = retStatus.info.gradeDate;
+
+	    if (retStatus.info.remoteAnswers)
+		Sliobj.remoteAnswers = retStatus.info.remoteAnswers;
 
 	    if (retStatus.info.voteDate)
 		try { Sliobj.voteDate = new Date(retStatus.info.voteDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error VOTE_DATE: '+retStatus.info.voteDate, err); }
@@ -4112,7 +4132,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     var question_attrs = getQuestionAttrs(slide_id);
 
     var corr_answer      = expect || question_attrs.correct || '';
-    var corr_answer_html = expect ? expect : (question_attrs.html || '');
+    var corr_answer_html = expect ? expect : (question_attrs.correct_html || '');
     var dispCorrect = displayCorrect(question_attrs);
 
     Slidoc.log('Slidoc.answerUpdate:', slide_id);
@@ -4402,7 +4422,7 @@ function scoreAnswer(response, qtype, corrAnswer) {
     return qscore;
 }
 
-function tallyScores(questions, questionsAttempted, hintsUsed, params) {
+function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAnswers) {
     var skipAhead = 'skip_ahead' in params.features;
 
     var questionsCount = 0;
@@ -4434,11 +4454,15 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params) {
             continue;
         }
 
-	if (qAttempted.plugin)
+	if (qAttempted.plugin) {
 	    var qscore = parseNumber(qAttempted.plugin.score);
-	else
-            var qscore = scoreAnswer(qAttempted.response, questionAttrs.qtype,
-			 	     (qAttempted.expect || questionAttrs.correct || ''));
+	} else {
+	    var correctAns = qAttempted.expect || questionAttrs.correct || '';
+            if (!correctAns && remoteAnswers && remoteAnswers.length)
+		correctAns = remoteAnswers[qnumber-1];
+
+            var qscore = scoreAnswer(qAttempted.response, questionAttrs.qtype, correctAns);
+	}
 
         qscores.push(qscore);
         var qSkipCount = 0;
