@@ -35,7 +35,6 @@ import json
 import mistune
 import md2md
 import md2nb
-import pptx2md
 import sliauth
 
 try:
@@ -939,7 +938,7 @@ class SlidocRenderer(MathRenderer):
             self.block_test_counter += 1
             self.slide_block_test.append(self.block_test_counter)
             id_str = 'id="slidoc-block-test-%d"' % self.block_test_counter
-            if len(self.slide_block_test) > 1:
+            if len(self.slide_block_test) > 1 and self.options['config'].pace:
                 classes += ' slidoc-block-multi'
 
         elif lang == 'nb_output':
@@ -948,11 +947,15 @@ class SlidocRenderer(MathRenderer):
             self.block_output_counter += 1
             self.slide_block_output.append(self.block_output_counter)
             id_str = 'id="slidoc-block-output-%d"' % self.block_output_counter
-            if len(self.slide_block_output) > 1:
+            if len(self.slide_block_output) > 1 and self.options['config'].pace:
                 classes += ' slidoc-block-multi'
 
+        elif lang == 'nb_error':
+            lang = lang[3:]
+            classes += ' slidoc-block-error'
+
         lexer = None
-        if lang and lang not in ('output',):
+        if lang and lang not in ('output','error'):
             classes += ' slidoc-block-lang-'+lang
             try:
                 lexer = get_lexer_by_name(lang, stripall=True)
@@ -2720,7 +2723,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         
         comb_plugin_defs.update(renderer.plugin_defs)
         comb_plugin_loads.update(renderer.plugin_loads)
-        if renderer.render_mathjax:
+        if renderer.render_markdown or renderer.render_mathjax:
             math_load = True
         if renderer.render_markdown:
             pagedown_load = True
@@ -2759,7 +2762,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
 
         mid_params = {'session_name': fname,
-                      'math_js': math_inc if renderer.render_mathjax else '',
+                      'math_js': math_inc if renderer.render_markdown or renderer.render_mathjax else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
                       'body_class': 'slidoc-plain-page' if topnav_html else '',
@@ -3449,6 +3452,7 @@ if __name__ == '__main__':
         fext = os.path.splitext(os.path.basename(inpath))[1]
         if fext == '.pptx':
             # Convert .pptx to .md
+            import pptx2md
             ppt_parser = pptx2md.PPTXParser(pptx_opts)
             md_text = ppt_parser.parse_pptx(input_files[j], input_files[j].name)
             input_files[j].close()

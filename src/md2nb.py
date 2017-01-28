@@ -170,7 +170,7 @@ class MDParser(object):
                     self.skipping_notes = True
                 elif self.plugin_re.match(line) and 'plugin' in self.cmd_args.strip:
                     pass
-                elif not line.strip() and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
+                elif not line.strip() and not self.buffered_lines and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
                     # Skip blank lines immediately following a code block
                     pass
                 else:

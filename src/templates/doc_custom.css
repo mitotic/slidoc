@@ -107,6 +107,9 @@ h1, h2, h3, h4, h5, h6 { font-family: "Dosis", "Helvetica Neue", Helvetica, "Seg
 code { font-family: Consolas,"Andale Mono WT","Andale Mono","Lucida Console","Lucida Sans Typewriter","DejaVu Sans Mono","Bitstream Vera Sans Mono","Liberation Mono","Nimbus Mono L",Monaco,"Courier New",Courier,monospace; }
 
 .slidoc-block-output { opacity: 0.7; }
+.slidoc-block-error { background: #fdd; }
+
+.slidoc-block-output code, .slidoc-block-error code { white-space: pre-wrap; }
 
 pre { padding: 0px 2em;}
 

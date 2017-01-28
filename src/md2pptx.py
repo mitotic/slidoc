@@ -14,7 +14,11 @@ import os
 import re
 import sys
 
-from pptx import Presentation
+try:
+    import pptx
+except ImportError:
+    raise Exception('To read/write Powerpoint files, please install python package "pptx" using "pip install python-pptx"')
+
 from pptx.util import Inches, Pt
 
 import md2md
@@ -122,7 +126,7 @@ class MDParser(object):
 
                 self.append_line(line, sep=sep)
 
-        self.prs = Presentation()
+        self.prs = pptx.Presentation()
 
         for slide in self.slide_buffer:
             self.dump_slide(slide)

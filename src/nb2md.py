@@ -59,15 +59,24 @@ class NBParser(object):
                 self.outbuffer.append( '\n```\n' + source + '```\n\n' )
 
                 outputs = cell.get('outputs', [])
+                if outputs and self.cmd_args.output_notes:
+                    self.outbuffer.append( 'Notes:\n' )
                 for output in outputs:
                     output_type = output.get('output_type', '')
 
                     if output_type == 'stream':
-                        if output.get('name') in ('stdout', 'stderr'):
+                        if output.get('name') == 'stdout':
                             self.outbuffer.append( '\n```nb_output\n' + self.normalize(output.get('text', '')) + '```\n\n')
+                        if output.get('name') == 'stderr':
+                            self.outbuffer.append( '\n```nb_error\n' + self.normalize(output.get('text', '')) + '```\n\n')
 
-                    elif output_type == 'display_data':
+                    elif output_type in ('display_data', 'execute_result'):
                         data = output['data']
+                        data_text = data.get('text/plain', '')
+                        alt_text = 'image'
+                        if re.match(r'^\s*<matplotlib.figure.Figure .*>\s*$', self.normalize(data_text, nonewline=True)):
+                            alt_text = self.normalize(data_text, nonewline=True)
+                            data_text = ''
                         if 'image/png' in data:
                             basename = 'nb_output-%s.png' % md2md.generate_random_label()
                             if self.cmd_args.image_dir:
@@ -77,10 +86,11 @@ class NBParser(object):
                             img_file = open(img_filename, 'w')
                             img_file.write( base64.b64decode(data['image/png'].strip()) )
                             img_file.close()
-                            alt_text = self.normalize(data.get('text/plain','image'), nonewline=True)
-                            print('Created', img_filename, alt_text)
+                            print('Created', img_filename, file=sys.stderr)
                             title = 'nb_output file="%s"' % basename
                             self.outbuffer.append("![%s](%s '%s')\n\n" % (alt_text, img_filename, title) )
+                        if data_text:
+                            self.outbuffer.append( '\n```nb_output\n' + self.normalize(data_text) + '```\n\n')
 
         out_str = ''.join(self.outbuffer)
         if self.defbuffer:
@@ -94,6 +104,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert from Jupyter Notebook format to Markdown')
     parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
     parser.add_argument('--href', help='URL prefix to link image files (default: "./")', default='./')
+    parser.add_argument('--output_notes', help='Treat cell output as notes', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Notebook filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()

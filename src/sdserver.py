@@ -487,7 +487,7 @@ class ActionHandler(BaseHandler):
                 self.write('Error in deleting session '+sessionName+': '+retObj.get('error',''))
 
         elif action == '_import':
-            self.render('import.html', site_label=site_label, session=sessionName)
+            self.render('import.html', site_label=site_label, session=sessionName, submit_date=sliauth.iso_date())
 
         elif action == '_prefill':
             nameMap = sdproxy.lookupRoster('name')

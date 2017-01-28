@@ -33,7 +33,10 @@ import os
 import re
 import sys
 
-import pptx
+try:
+    import pptx
+except ImportError:
+    raise Exception('To read/write Powerpoint files, please install python package "pptx" using "pip install python-pptx"')
 
 import md2md
 
