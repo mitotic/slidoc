@@ -5,7 +5,7 @@
 
     The fastest markdown parser in pure Python with renderer feature.
 
-    :copyright: (c) 2014 - 2015 by Hsiaoming Yang.
+    :copyright: (c) 2014 - 2016 by Hsiaoming Yang.
 
 All rights reserved.
 
@@ -25,7 +25,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 import re
 import inspect
 
-__version__ = '0.7.2'
+__version__ = '0.7.3'
 __author__ = 'Hsiaoming Yang <me@lepture.com>'
 __all__ = [
     'BlockGrammar', 'BlockLexer',
@@ -49,9 +49,9 @@ _inline_tags = [
 ]
 _pre_tags = ['pre', 'script', 'style']
 _valid_end = r'(?!:/|[^\w\s@]*@)\b'
-_valid_attr = r'''"[^"]*"|'[^']*'|[^'">]'''
+_valid_attr = r'''\s*[a-zA-Z\-](?:\=(?:"[^"]*"|'[^']*'|[^\s'">]+))?'''
 _block_tag = r'(?!(?:%s)\b)\w+%s' % ('|'.join(_inline_tags), _valid_end)
-_scheme_blacklist = ('javascript', 'data', 'vbscript')
+_scheme_blacklist = ('javascript:', 'vbscript:')
 
 
 def _pure_pattern(regex):
@@ -86,22 +86,18 @@ def escape(text, quote=False, smart_amp=True):
     return text
 
 
-def escape_link(url, **kwargs):
+def escape_link(url):
     """Remove dangerous URL schemes like javascript: and escape afterwards."""
-    if ':' in url:
-        scheme, _ = url.split(':', 1)
-        scheme = _nonalpha_pattern.sub('', scheme)
-        # whitelist would be better but mistune's use case is too general
-        if scheme.lower() in _scheme_blacklist:
+    lower_url = url.lower().strip('\x00\x1a \n\r\t')
+    for scheme in _scheme_blacklist:
+        if lower_url.startswith(scheme):
             return ''
-    # escape &entities; to &amp;entities;
-    kwargs['smart_amp'] = False
-    return escape(url, **kwargs)
+    return escape(url, quote=True, smart_amp=False)
 
 
 def preprocessing(text, tab=4):
     text = _newline_pattern.sub('\n', text)
-    text = text.replace('\t', ' ' * tab)
+    text = text.expandtabs(tab)
     text = text.replace('\u00a0', ' ')
     text = text.replace('\u2424', '\n')
     pattern = re.compile(r'^ +$', re.M)
@@ -173,8 +169,8 @@ class BlockGrammar(object):
     block_html = re.compile(
         r'^ *(?:%s|%s|%s) *(?:\n{2,}|\s*$)' % (
             r'<!--[\s\S]*?-->',
-            r'<(%s)((?:%s)*?)>([\s\S]+?)<\/\1>' % (_block_tag, _valid_attr),
-            r'<%s(?:%s)*?>' % (_block_tag, _valid_attr),
+            r'<(%s)((?:%s)*?)>([\s\S]*?)<\/\1>' % (_block_tag, _valid_attr),
+            r'<%s(?:%s)*?\s*\/?>' % (_block_tag, _valid_attr),
         )
     )
     table = re.compile(
@@ -463,8 +459,8 @@ class InlineGrammar(object):
     inline_html = re.compile(
         r'^(?:%s|%s|%s)' % (
             r'<!--[\s\S]*?-->',
-            r'<(\w+%s)((?:%s)*?)>([\s\S]*?)<\/\1>' % (_valid_end, _valid_attr),
-            r'<\w+%s(?:%s)*?>' % (_valid_end, _valid_attr),
+            r'<(\w+%s)((?:%s)*?)\s*>([\s\S]*?)<\/\1>' % (_valid_end, _valid_attr),
+            r'<\w+%s(?:%s)*?\s*\/?>' % (_valid_end, _valid_attr),
         )
     )
     autolink = re.compile(r'^<([^ >]+(@|:)[^ >]+)>')
@@ -494,7 +490,7 @@ class InlineGrammar(object):
     )
     code = re.compile(r'^(`+)\s*([\s\S]*?[^`])\s*\1(?!`)')  # `code`
     linebreak = re.compile(r'^ {2,}\n(?!\s*$)')
-    strikethrough = re.compile(r'^~~(?=\S)([\s\S]+?\S)~~')  # ~~word~~
+    strikethrough = re.compile(r'^~~(?=\S)([\s\S]*?\S)~~')  # ~~word~~
     footnote = re.compile(r'^\[\^([^\]]+)\]')
     text = re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~]|https?://| {2,}\n|$)')
 
@@ -573,10 +569,8 @@ class InlineLexer(object):
                     return m, out
             return False  # pragma: no cover
 
-        self.line_started = False
         while text:
             ret = manipulate(text)
-            self.line_started = True
             if ret is not False:
                 m, out = ret
                 output += out
@@ -588,7 +582,8 @@ class InlineLexer(object):
         return output
 
     def output_escape(self, m):
-        return m.group(1)
+        text = m.group(1)
+        return self.renderer.escape(text)
 
     def output_autolink(self, m):
         link = m.group(1)
@@ -847,6 +842,15 @@ class Renderer(object):
 
         :param text: text content.
         """
+        if self.options.get('parse_block_html'):
+            return text
+        return escape(text)
+
+    def escape(self, text):
+        """Rendering escape sequence.
+
+        :param text: text content.
+        """
         return escape(text)
 
     def autolink(self, link, is_email=False):
@@ -867,7 +871,7 @@ class Renderer(object):
         :param title: title content for `title` attribute.
         :param text: text content for description.
         """
-        link = escape_link(link, quote=True)
+        link = escape_link(link)
         if not title:
             return '<a href="%s">%s</a>' % (link, text)
         title = escape(title, quote=True)
@@ -880,7 +884,7 @@ class Renderer(object):
         :param title: title text of the image.
         :param text: alt text of the image.
         """
-        src = escape_link(src, quote=True)
+        src = escape_link(src)
         text = escape(text, quote=True)
         if title:
             title = escape(title, quote=True)
