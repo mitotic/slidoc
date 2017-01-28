@@ -641,8 +641,8 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
     <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
   </span>
-  %(explain)s
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" cols="60" rows="5"></textarea>
+  %(explain)s %(boxlabel)s
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" %(boxsize)s ></textarea>
 '''                
 
     grading_template = '''
@@ -1246,7 +1246,8 @@ class SlidocRenderer(MathRenderer):
              return
 
         weight_answer = ''
-        noshuffle = 0          # If n > 0, do not randomlly shuffle last n choices
+        maxchars = 0           # Max. length (in characters) for textarea
+        noshuffle = 0          # If n > 0, do not randomly shuffle last n choices
         retry_counts = [0, 0]  # Retry count, retry delay
         opt_values = { 'disabled': ('yes',),               # Disable answering for this question
                        'explain': ('text', 'markdown'),    # Require text/markdown explanation
@@ -1258,11 +1259,13 @@ class SlidocRenderer(MathRenderer):
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
         answer_opts = { 'disabled': '', 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
         for opt in opt_comps[1:]:
-            num_match = re.match(r'^(noshuffle|participation|retry|weight)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
+            num_match = re.match(r'^(maxchars|noshuffle|participation|retry|weight)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
             if num_match:
                 try:
                     if num_match.group(1) == 'weight':
                         weight_answer = num_match.group(2).strip()
+                    elif num_match.group(1) == 'maxchars':
+                        maxchars = abs(int(num_match.group(2).strip()))
                     elif num_match.group(1) == 'noshuffle':
                         noshuffle = abs(int(num_match.group(2).strip()))
                     elif num_match.group(1) == 'retry':
@@ -1532,6 +1535,15 @@ class SlidocRenderer(MathRenderer):
                         gweight=gweight_str,
                         zero_gwt=zero_gwt,
                         explain=('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if answer_opts['explain'] else '')
+
+        if maxchars:
+            ncols = 60
+            nrows = 1 + int((maxchars-1)/ncols)
+            ans_params['boxsize'] = 'maxlength="%d" cols="%d" rows="%d"' % (maxchars, ncols, nrows)
+            ans_params['boxlabel'] = '<em>(%d characters)</em>' % maxchars
+        else:
+            ans_params['boxsize'] = 'cols="60" rows="5"'
+            ans_params['boxlabel'] = ''
 
         html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s">\n'''+self.answer_template
 
