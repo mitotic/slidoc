@@ -1,16 +1,21 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8g';
+var VERSION = '0.96.8h';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
-			 ['site_label', '', "Site label, e.g., calc101"],
-			 ['server_url', '', "URL of server (if any); e.g., http://example.com"],
-			 ['freeze_date', '', "Date when all user mods are disabled"],
-			 ['require_login_token', 'true', "true/false"],
-			 ['require_late_token', 'true', "true/false"],
-			 ['share_averages', 'true', "true/false"],
-		         ['total_formula', '', "Formula for total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01"],
-			 ['grading_scale', '', "A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0"] // Or A:180:4,B:160:3,...
+			 ['server_url', '', 'URL of server (if any); e.g., http://example.com'],
+			 ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
+			 ['site_name', '', 'Site label, e.g., calc101'],
+			 ['admin_emails', '', 'Google mail addresses of users with admin access (comma-separated)'],
+			 ['late_credit', 0, 'Default late credit fraction for assignments/lectures, a value like 0.25'],
+			 ['participation_credit', 0, 'Default participation credit value (0/1/2) for lectures'],
+			 ['retakes', 0, 'Default number of retakes for assignments (>=0)'],
+			 ['freeze_date', '', 'Date when all user modifications are disabled'],
+			 ['require_login_token', 'true', 'true/false'],
+			 ['require_late_token', 'true', 'true/false'],
+			 ['share_averages', 'true', 'true/false'],
+		         ['total_formula', '', 'Formula for total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
+			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'] // Or A:180:4,B:160:3,...
 		       ];
 //
 // SENDING FORM DATA TO GOOGLE SHEETS
@@ -770,7 +775,7 @@ function sheetAction(params) {
                             continue;
                         }
                         if (lateToken && lateToken.indexOf(':') > 0) {
-                            var effectiveDueDate = getNewDueDate(allValues[j][idCol-1], sheetName, lateToken) || dueDate;
+                            var effectiveDueDate = getNewDueDate(allValues[j][idCol-1], Settings['site_name'], sheetName, lateToken) || dueDate;
                         } else {
                             var effectiveDueDate = dueDate;
                         }
@@ -1242,7 +1247,7 @@ function sheetAction(params) {
 
                             if (lateToken && lateToken.indexOf(':') > 0) {
                                 // Check against new due date
-                                var newDueDate = getNewDueDate(userId, sheetName, lateToken);
+                                var newDueDate = getNewDueDate(userId, Settings['site_name'], sheetName, lateToken);
                                 if (!newDueDate) {
                                     throw("Error:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user "+(displayName || "")+" to session '"+sheetName+"'");
                                 }
@@ -1918,11 +1923,11 @@ function createDate(date) {
 	return d;
 }
 
-function getNewDueDate(userId, sessionName, lateToken) {
+function getNewDueDate(userId, siteName, sessionName, lateToken) {
     var comps = splitToken(lateToken);
     var dateStr = comps[0];
     var tokenStr = comps[1];
-    if (genLateToken(Settings['auth_key'], userId, sessionName, dateStr) == lateToken) {
+    if (genLateToken(Settings['auth_key'], userId, siteName, sessionName, dateStr) == lateToken) {
         return createDate(dateStr);  // Date format: '1995-12-17T03:24Z'
     } else {
         return null;
@@ -1950,7 +1955,7 @@ function genUserToken(key, userId) {
     return genHmacToken(key, 'id:'+userId);
 }
 
-function genLateToken(key, userId, sessionName, dateStr) {
+function genLateToken(key, userId, siteName, sessionName, dateStr) {
     // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
     if (dateStr.slice(-1) != 'Z') {  // Convert local time to UTC
 	var date = createDate(dateStr+'Z');
@@ -1958,7 +1963,7 @@ function genLateToken(key, userId, sessionName, dateStr) {
 	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
 	dateStr = date.toISOString().slice(0,16)+'Z';
     }
-    return dateStr+':'+genHmacToken(key, 'late:'+userId+':'+sessionName+':'+dateStr);
+    return dateStr+':'+genHmacToken(key, 'late:'+userId+':'+siteName+':'+sessionName+':'+dateStr);
 }
 
 function validateHMAC(token, key) {
@@ -2950,8 +2955,8 @@ function emailTokens() {
 	    throw("Invalid email address '"+emailList[j][1]+"' for userID '"+emailList[j][0]+"'");
 
     var subject;
-    if (Settings['site_label'])
-	subject = 'Authentication token for '+Settings['site_label'];
+    if (Settings['site_name'])
+	subject = 'Authentication token for '+Settings['site_name'];
     else
 	subject = 'Slidoc authentication token';
 
@@ -3022,7 +3027,7 @@ function createLateToken(insert) {
     if (dateStr.indexOf('T') < 0)
 	dateStr += 'T23:59';
 
-    var token = genLateToken(Settings['auth_key'], userId, sessionName, dateStr);
+    var token = genLateToken(Settings['auth_key'], userId, Settings['site_name'], sessionName, dateStr);
 
     var subject = 'Late submission for '+sessionName;
     var message;
@@ -3038,12 +3043,12 @@ function createLateToken(insert) {
 	    userRow = lookupRowIndex(userId, sessionSheet, numStickyRows+1);
 	}
 
-	if (Settings['site_label'])
-	    subject = 'Late submission allowed for '+Settings['site_label'];
+	if (Settings['site_name'])
+	    subject = 'Late submission allowed for '+Settings['site_name'];
 	message = 'Late submission allowed for userID '+userId+' in session '+sessionName+'. New due date is  '+dateStr;
     } else {
-	if (Settings['site_label'])
-	    subject = 'Late submission token for '+Settings['site_label'];
+	if (Settings['site_name'])
+	    subject = 'Late submission token for '+Settings['site_name'];
 	message = 'Late submission token for userID '+userId+' and session '+sessionName+' is '+token;
     }
 

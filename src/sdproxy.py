@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8g'
+VERSION = '0.96.8h'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1166,7 +1166,7 @@ def sheetAction(params, notrace=False):
                         if lateToken == LATE_SUBMIT:
                             continue
                         if lateToken and ':' in lateToken:
-                            effectiveDueDate = getNewDueDate(allValues[j][idCol-1], sheetName, lateToken) or dueDate
+                            effectiveDueDate = getNewDueDate(allValues[j][idCol-1], Settings['site_name'], sheetName, lateToken) or dueDate
                         else:
                             effectiveDueDate = dueDate
                         pastSubmitDeadline = sliauth.epoch_ms(curDate) > sliauth.epoch_ms(effectiveDueDate)
@@ -1579,7 +1579,7 @@ def sheetAction(params, notrace=False):
 
                             if lateToken and ':' in lateToken:
                                 # Check against new due date
-                                newDueDate = getNewDueDate(userId, sheetName, lateToken)
+                                newDueDate = getNewDueDate(userId, Settings['site_name'], sheetName, lateToken)
                                 if not newDueDate:
                                     raise Exception("Error:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user "+(displayName or "")+" to session '"+sheetName+"'")
 
@@ -2165,8 +2165,9 @@ def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
 
     return sheetAction(updateParams, notrace=notrace)
 
-def makeRosterMap(colName, lowercase=False):
+def makeRosterMap(colName, lowercase=False, unique=False):
     # Return map of other IDs from colName to roster ID
+    # If unique, raise exception for duplicated values in colName
     colValues = lookupRoster(colName) or {}
     rosterMap = OrderedDict()
     for userId, otherIds in colValues.items():
@@ -2179,6 +2180,8 @@ def makeRosterMap(colName, lowercase=False):
             if lowercase:
                 otherId = otherId.lower()
             if otherId:
+                if unique and otherId in rosterMap:
+                    raise Exception('Duplicate occurrence of %s value %s' % (colName, otherId))
                 rosterMap[otherId] = userId
     return rosterMap
 
@@ -2401,8 +2404,10 @@ def createRoster(headers, rows):
         row = row[:]
         if len(row) != len(headers):
             raise Exception('Incorrect no. of columns in imported roster row: '+str(row))
-        if not row[0] or not row[1]:
-            raise Exception('Null name or id field not allowed in imported roster row: '+str(row))
+        if not row[0] :
+            raise Exception('Null name field not allowed in imported roster row: '+str(row))
+        if not row[1]:
+            raise Exception('Null ID field not allowed in imported roster row: '+str(row))
         if row[1] in idSet:
             raise Exception('Duplicate id found in imported roster row: '+row[1])
         idSet.add(row[1])
@@ -2508,11 +2513,11 @@ def createDate(date=None):
         # Create date from local epoch time (in ms)
         return sliauth.create_date(date)
 
-def getNewDueDate(userId, sessionName, lateToken):
+def getNewDueDate(userId, siteName, sessionName, lateToken):
     comps = splitToken(lateToken)
     dateStr = comps[0]
     tokenStr = comps[1]
-    if sliauth.gen_late_token(Settings['auth_key'], userId, sessionName, dateStr) == lateToken:
+    if sliauth.gen_late_token(Settings['auth_key'], userId, siteName, sessionName, dateStr) == lateToken:
         return createDate(dateStr) # Date format: '1995-12-17T03:24Z'
     else:
         return None

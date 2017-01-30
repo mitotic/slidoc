@@ -92,8 +92,8 @@ Options = {
     'root_key': None,
     'server_url': '',
     'share_averages': True,
-    'site_label': 'Slidoc',
-    'site_name': '',
+    'site_label': 'Slidoc',  # E.g., Calculus 101
+    'site_name': '',         # E.g., calc101
     'site_number': 0,
     'sites': [],
     'static_dir': 'static',
@@ -579,7 +579,7 @@ class ActionHandler(BaseHandler):
                     # Close any active connections associated with user for session
                     for connection in sessionConnections.get(userId, []):
                         connection.close()
-                    newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, sessionName, dateStr)
+                    newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, Options['site_name'], sessionName, dateStr)
                     sdproxy.createUserRow(sessionName, userId, lateToken=newLatetoken, source='allow')
                 else:
                     self.write('User ID '+userId+' not in roster')
@@ -649,14 +649,14 @@ class ActionHandler(BaseHandler):
                     print >> sys.stderr, 'ActionHandler:upload', fname, len(fbody), sessionName, submitDate
                 uploadedFile = cStringIO.StringIO(fbody)
                 if action == '_roster':
-                    errors = importRosterAux(fname, uploadedFile)
-                    if not errors:
+                    errMsg = importRoster(fname, uploadedFile)
+                    if not errMsg:
                         self.write('Imported roster from '+fname)
                     else:
-                        if errors:
-                            self.write('\n'.join(errors)+'\n')
+                        self.write(errMsg+'\n')
                 elif action == '_import':
-                    missed, errors = importAnswersAux(sessionName, submitDate, fname, uploadedFile)
+                    importKey = self.get_argument("importkey", "name")
+                    missed, errors = importAnswers(sessionName, importKey, submitDate, fname, uploadedFile)
                     if not missed and not errors:
                         self.write('Imported answers from '+fname)
                     else:
@@ -1642,40 +1642,166 @@ def processTwitterMessage(msg):
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
 
-def importAnswersAux(sessionName, submitDate, filepath, csvfile):
+def makeName(lastName, firstName, middleName=''):
+    name = lastName.strip()
+    if firstName.strip():
+        name += ', ' + firstName.strip()
+        if middleName:
+            name += ' ' +middleName
+    return name
+
+def importRoster(filepath, csvfile):
+    middleName = False
+    try:
+        ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
+        ##csvfile.seek(0)
+        reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
+
+        rows = []
+        for row in reader:
+            if not rows and len(row) < 3:
+                # Skip initial rows with fewer than 3 columns
+                continue
+            rows.append(row)
+
+        if not rows:
+            raise Exception('No rows with more than 3 columns in CSV file')
+
+        headers = rows[0]
+        rows = rows[1:]
+
+        if not rows:
+            raise Exception('No data rows in roster file')
+
+        idCol = 0
+        altidCol = 0
+        emailCol = 0
+        twitterCol = 0
+        lastNameCol = 0
+        firstNameCol = 0
+        midNameCol = 0
+        for j, header in enumerate(headers):
+            lheader = header.lower()
+            if lheader == 'id':
+                idCol = j+1
+            elif lheader == 'altid':
+                altidCol = j+1
+            elif lheader == 'email':
+                emailCol = j+1
+            elif lheader == 'twitter':
+                twitterCol = j+1
+            elif lheader in ('last', 'lastname', 'last name', 'surname'):
+                lastNameCol = j+1
+            elif lheader in ('first', 'firstname', 'first name', 'given name', 'given names'):
+                firstNameCol = j+1
+            elif middleName and lheader in ('middle', 'middlename', 'middlenames', 'middle name', 'middle names', 'mid name'):
+                midNameCol = j+1
+
+        if not idCol and not emailCol:
+            raise Exception('ID column %s not found in CSV file %s' % filepath)
+
+        rosterHeaders = ['name', 'id', 'email', 'altid']
+        if twitterCol:
+            rosterHeaders.append('twitter')
+        rosterRows = []
+        singleDomain = None
+
+        for row in rows:
+            altid = row[altidCol-1].lower() if altidCol else ''
+            email = row[emailCol-1].lower() if emailCol else ''
+            if email:
+                emailid, _, domain = email.partition('@')
+                if domain:
+                    if singleDomain is None:
+                        singleDomain = domain
+                    elif singleDomain != domain:
+                        singleDomain = ''
+                
+            if idCol:
+                userId = row[idCol-1].strip().lower()
+            else:
+                userId = email
+
+            name = makeName(row[lastNameCol-1], row[firstNameCol-1], row[midNameCol-1] if midNameCol else '')
+
+            rosterRow = [name, userId, email, altid]
+            if twitterCol:
+                rosterRow.append(row[twitterCol-1] if twitterCol else '')
+            rosterRows.append(rosterRow)
+
+        if not idCol and singleDomain:
+            # Strip out common domain from email used as ID
+            endStr = '@'+singleDomain
+            endLen = len(endStr)
+            for j in range(len(rosterRows)):
+                if rosterRows[j][1].endswith(endStr):
+                    rosterRows[j][1] = rosterRows[j][1][:-endLen]
+
+        sdproxy.createRoster(rosterHeaders, rosterRows)
+        return ''
+
+    except Exception, excp:
+        if Options['debug']:
+            import traceback
+            traceback.print_exc()
+        return 'Error in importRoster: '+str(excp)
+
+def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
     missed = []
     errors = []
     try:
         ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
         ##csvfile.seek(0)
         reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
-        headers = reader.next()
-        rows = [row for row in reader]
-        idCol = 0
-        nameCol = 0
+
+        rows = []
+        for row in reader:
+            if not rows and len(row) < 3:
+                # Skip initial rows with fewer than 3 columns
+                continue
+            rows.append(row)
+
+        if not rows:
+            raise Exception('No rows with more than 3 columns in CSV file')
+
+        headers = rows[0]
+        rows = rows[1:]
+
+        if not rows:
+            raise Exception('No data rows in CSV file')
+
+        keyCol = 0
+        formCol = 0
         lastNameCol = 0
         firstNameCol = 0
-        twitterCol = 0
-        formCol = 0
+        midNameCol = 0
         qresponse = {}
         for j, header in enumerate(headers):
+            lheader = header.lower()
             hmatch = re.match(r'^(q?[gx]?)(\d+)$', header)
             if hmatch:
                 qnumber = int(hmatch.group(2))
                 qresponse[qnumber] = (j, hmatch.group(1))
-            elif header == 'id':
-                idCol = j+1
-            elif header == 'name':
-                nameCol = j+1
-            elif header == 'twitter':
-                twitterCol = j+1
-            elif header.lower() == 'form':
+            elif lheader == importKey.lower():
+                keyCol = j+1
+            elif lheader == 'form':
                 formCol = j+1
-            elif header.lower() in ('last', 'lastname', 'last name'):
+            elif lheader in ('last', 'lastname', 'last name', 'surname'):
                 lastNameCol = j+1
-            elif header.lower() in ('first', 'firstname', 'first name'):
+            elif lheader in ('first', 'firstname', 'first name', 'given name', 'given names'):
                 firstNameCol = j+1
+            elif lheader in ('middle', 'middlename', 'middlenames', 'middle name', 'middle names', 'mid name'):
+                midNameCol = j+1
 
+        nameKey = False
+        if not keyCol:
+            if importKey != 'name':
+                raise Exception('Import key column %s not found in CSV file %s' % (importKey, filepath))
+            if lastNameCol and firstNameCol:
+                nameKey = True
+            else:
+                raise Exception('Name column(s) not found in imported CSV file %s' % filepath)
+        
         qnumbers = qresponse.keys()
         qnumbers.sort()
         qnumberMap = [[]]
@@ -1690,85 +1816,84 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
                 qnumberMap[0].append(qnumber)
                 if not formCol:
                     continue
-                # Mid-point swap
+                # Mid-point swap (Form B)
                 if qnumber > midnumber:
                     qnumberMap[1].append(qnumber - midnumber)
                 else:
                     qnumberMap[1].append(qnumber + midnumber + midoffset)
         print >> sys.stderr, 'qnumberMap=', qnumberMap
-                
-        nameMap = sdproxy.lookupRoster('name')
-        idMap = {}
-        if twitterCol:
-            idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
-            if not idMap:
-                raise Exception('No twitter ids found in roster')
-        elif not idCol:
-            if lastNameCol and firstNameCol:
-                idMap = sdproxy.makeRosterMap('name')
-                names = [ row[lastNameCol-1]+', '+row[firstNameCol-1] for row in rows]
-                missing = []
-                for name in names:
-                    if name not in idMap:
-                        missing.append(name)
-                        print >> sys.stderr, 'Name', name, 'not found in roster'
-                if missing:
-                    raise Exception('One or more names not found in roster: '+', '.join(missing))
-            else:
-                raise Exception('No id or twitter or name columns for importing answers from '+filepath)
 
+        keyMap = sdproxy.makeRosterMap(importKey, lowercase=True, unique=True)
+        if not keyMap:
+            raise Exception('Key column %s not found in roster for import' % importKey)
+        if importKey == 'twitter':
+            # Special case of test user; not really Twitter ID
+            keyMap[TESTUSER_ID] = TESTUSER_ID
+
+        nameMap = sdproxy.lookupRoster('name')
+
+        missingKeys = []
+        userKeys = set()
+        idRows = []
         for row in rows:
+            if nameKey:
+                userKey = makeName(row[lastNameCol-1], row[firstNameCol-1], row[midNameCol-1] if midNameCol else '').lower()
+            else:
+                userKey = row[keyCol-1].strip().lower()
+
+            if not userKey:
+                continue
+                
+            if userKey in userKeys:
+                raise Exception('Duplicate occurrence of user key %s in CSV file' % userKey)
+            userKeys.add(userKey)
+
+            userId = keyMap.get(userKey)
+            if userId:
+                idRows.append( (userId, row) )
+            else:
+                missingKeys.append(userKey)
+                errors.append('MISSING: User key '+userKey+' not found in roster')
+                print >> sys.stderr, 'Key', userKey, 'not found in roster'
+
+        if missingKeys:
+            raise Exception('One or more keys not found in roster: '+', '.join(missingKeys))
+
+        if not idRows:
+            raise Exception('No valid import keys in CSV file')
+
+        for userId, row in idRows:
             answers = {}
             formSwitch = 0
             if formCol and row[formCol-1] and row[formCol-1].upper() != 'A':
                 formSwitch = 1
+
             for qnumber in qnumbers:
                 qnumberMapped = qnumberMap[formSwitch][qnumber-1]
-                value = qresponse[qnumberMapped]
-                cellValue = row[value[0]].strip()
+                offset, prefix = qresponse[qnumberMapped]
+                cellValue = row[offset].strip() if offset < len(row) else ''
                 if not cellValue:
                     continue
-                if value[1] == 'qg':
+                if prefix == 'qg':
                     answers[qnumber] = {'grade': cellValue}
                     continue
                 explain = ''
-                if value[1] == 'qx':
+                if prefix == 'qx':
                     comps = cellValue.split()
                     if len(comps) > 1:
                         explain = cellValue[len(comps[0]):].strip()
                         cellValue = comps[0]
                 answers[qnumber] = {'response': cellValue}
-                if value[1] == 'qx':
+                if prefix == 'qx':
                     answers[qnumber]['explain'] = explain
-            userId = None
-            if idCol:
-                userId = row[idCol-1]
-                if nameMap and userId not in nameMap:
-                    missed.append(userId)
-                    errors.append('MISSING: User ID '+userId+' not found in roster')
-                    continue
-            elif twitterCol:
-                twitterId = row[twitterCol-1]
-                if twitterId == TESTUSER_ID:
-                    # Special case of test user; not really Twitter ID
-                    userId = twitterId
-                else:
-                    # Map Twitter ID to user ID
-                    userId = idMap.get(twitterId.lower())
-                if not userId:
-                    missed.append('@'+twitterId)
-                    errors.append('MISSING: Twitter ID '+twitterId+' not found in roster')
-                    continue
-            else:
-                userId = idMap[ row[lastNameCol-1]+', '+row[firstNameCol-1] ]
 
-            displayName = row[nameCol-1] if nameCol else ''
+            displayName = nameMap[userId] or 'Unknown, Name'
             try:
                 if Options['debug']:
-                    print >> sys.stderr, 'DEBUG: importAnswersAux', sessionName, userId, displayName
+                    print >> sys.stderr, 'DEBUG: importAnswers', sessionName, userId, displayName
                 sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate, source='import')
             except Exception, excp:
-                errors.append('Error in import for '+str(userId)+': '+str(excp))
+                errors.append('Error in import for user '+str(userId)+': '+str(excp))
                 missed.append(userId)
                 missed.append('... and others')
                 break
@@ -1776,26 +1901,9 @@ def importAnswersAux(sessionName, submitDate, filepath, csvfile):
         if Options['debug']:
             import traceback
             traceback.print_exc()
-        errors = [ 'Error in importAnswersAux: '+str(excp)] + errors
+        errors = [ 'Error in importAnswers: '+str(excp)] + errors
 
     return missed, errors
-
-def importRosterAux(filepath, csvfile):
-    errors = []
-    try:
-        ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
-        ##csvfile.seek(0)
-        reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
-        headers = reader.next()
-        rows = [row for row in reader]
-        sdproxy.createRoster(headers, rows)
-    except Exception, excp:
-        if Options['debug']:
-            import traceback
-            traceback.print_exc()
-        errors = ['Error in importRosterAux: '+str(excp)]
-
-    return errors
 
 def makePrivateRequest(relay_address, path='/', proto='http'):
     if Options['debug']:

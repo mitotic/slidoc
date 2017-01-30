@@ -14,11 +14,16 @@ body {
 	<fieldset>
           <label for="upload">Roster file (CSV spreadsheet file):</label><br>
           <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file"><br>
-        The should contain the column headers: <code>name, id, email, altid, twitter, ...</code><br>
-        (The first four column headers are required.)<br>
-        Names should be of the form: <code>Lastname, Firstname Othernames</code><br>
-        Id's are required to be unique, and names should also
-        preferably be. All other column values may be blank.
+        The file should contain the column headers
+        <code>id</code>, <code>lastname</code>, and
+        <code>firstname</code>. Additional headers that are
+        recognized are: <code>email, altid, twitter</code>.<br>
+
+        (If <code>id</code> column is not present but <code>email</code> column is, then the
+        email addresses (with any common domain dropped) are used as unique ids.<br>
+        <p></p>
+        Id's are required to be unique, but names are not required to
+        be unique (unless they are to be used for importing answers etc.)
         </fieldset>
         {% module xsrf_form_html() %}
         <div id="form_btn">

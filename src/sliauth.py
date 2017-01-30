@@ -33,9 +33,9 @@ def gen_user_token(key, user_id):
 def gen_admin_token(key, admin_user_id):
     return gen_hmac_token(key, 'admin:'+admin_user_id)
 
-def gen_late_token(key, user_id, session_name, date_str):
+def gen_late_token(key, user_id, site_name, session_name, date_str):
     # Use date string of the form '1995-12-17T03:24'
-    token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s' % (user_id, session_name, date_str) )
+    token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s:%s' % (user_id, site_name, session_name, date_str) )
     return token
 
 def str_encode(value):
@@ -150,6 +150,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate slidoc HMAC authentication tokens')
     parser.add_argument('-a', '--auth_key', help='Digest authentication key (required)')
     parser.add_argument('-s', '--session', help='Session name')
+    parser.add_argument('-t', '--site', help='Site name')
     parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
     parser.add_argument('user', help='user name(s)', nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
@@ -159,7 +160,7 @@ if __name__ == '__main__':
 
     for user in cmd_args.user:
         if cmd_args.due_date:
-            token = gen_late_token(cmd_args.auth_key, user, cmd_args.session, get_utc_date(cmd_args.due_date))
+            token = gen_late_token(cmd_args.auth_key, user, cmd_args.site or '', cmd_args.session, get_utc_date(cmd_args.due_date))
         else:
             token = gen_user_token(cmd_args.auth_key, user)
         print(user+':',  token)

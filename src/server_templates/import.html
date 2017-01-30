@@ -14,8 +14,16 @@ body {
       <h2>Import responses for session {{session}}</h2>
       <form action="/_import/{{session}}" method="post" id="message_form" enctype="multipart/form-data" >
 	<fieldset>
+          <label for="importkey">Import key:</label>
+          <select name="importkey">
+	    <option value="name" selected>name</option>
+	    <option value="id">id</option> 
+	    <option value="altid" >altid</option>
+	    <option value="twitter">twitter</option>
+	  </select>
+          <p></p>
 	  <label for="submitdate">Submit date (optional):</label>
-          <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="{{submit_date}}">
+          <input type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="{{submit_date}}">
           <p></p>
           <label for="upload">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
           <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file">
