@@ -131,7 +131,11 @@ GService.openWebsocket = function (wsPath) {
 	    try {
 		if (callback_method == 'lock') {
 		    if (!wsock.locked)
-			wsock.locked = callback_args[0] || 'Locked for writing';
+			wsock.locked = callback_args[1] || 'Locked for writing';
+		    if (callback_args[0]) {
+			if (window.confirm(callback_args[1] || 'Reload page?'))
+			    location.reload(true);
+		    }
 		} else if (callback_method == 'close') {
 		    GService.closeWS(callback_args[0]);
 		} else if (callback_method == 'event') {
@@ -523,7 +527,8 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
 
     // Pretend voting is not 'writing'
     if ( (callType == 'putRow' && !params.nooverwrite) ||
-	 (callType == 'updateRow' && !params.vote) )
+	 (callType == 'updateRow' && !params.vote) ||
+	 (callType == 'getRow' && params.resetrow) )
 	params.write = 1;
 
     if (params.create) {

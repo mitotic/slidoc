@@ -8,11 +8,12 @@ Convert lecture/slides from Slidoc Markdown to pptx format.
 from __future__ import print_function
 
 import base64
-import cStringIO
+import io
 import json
 import os
 import re
 import sys
+import zipfile
 
 try:
     import pptx
@@ -44,11 +45,17 @@ class MDParser(object):
 
     def __init__(self, args_dict={}):
         self.args_dict = args_dict
+        self.images_zipfile = None
+        self.images_map = {}
         self.slide_buffer = []
         self.filedir = ''
         self.new_slide()
 
-    def parse_md(self, content, filehandle, filepath=''):
+    def parse_md(self, content, filehandle, filepath='', images_zip_handle=None):
+        if images_zip_handle:
+            self.images_zipfile = zipfile.ZipFile(images_zip_handle)
+            self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
+
         self.slide_start = True
         if filepath:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
@@ -163,12 +170,18 @@ class MDParser(object):
         if slide['image']:
             # Image slide
             img_path = slide['image']
+            img_name = os.path.basename(img_path)
             if img_path.startswith('#'):
                 key = img_path[1:]
                 if key not in self.ref_defs:
                     raise Exception('Invalid internal image reference: '+key)
                 title, content_type, data = self.ref_defs[key]
-                img_handle = cStringIO.StringIO(data)
+                img_handle = io.BytesIO(data)
+            elif self.images_zipfile:
+                if img_name in self.images_map:
+                    img_handle = io.BytesIO(self.images_zipfile.read(self.images_map[img_name]))
+                else:
+                    raise Exception('Image %s not found in zip archive' % img_name)
             else:
                 img_handle = img_path
 

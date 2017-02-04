@@ -70,6 +70,19 @@ if (!Function.prototype.bind) {
   };
 }
 
+function getParameter(name, number, queryStr) {
+   // Set number to true, if expecting an integer value. Returns null if valid parameter is not present.
+   // If queryStr is specified, it is used instead of location.search
+   var match = RegExp('[?&]'+name+'=([^&]*)').exec(queryStr || window.location.search);
+   if (!match)
+      return null;
+   var value = decodeURIComponent(match[1].replace(/\+/g, ' '));
+   if (number) {
+       try { value = parseInt(value); } catch (err) { value = null };
+   }
+   return value;
+}
+
 /////////////////////////////////////
 // Section 2: Global initialization
 /////////////////////////////////////
@@ -78,6 +91,8 @@ var Sliobj = {}; // Internal object
 Sliobj.logSheet = null;
 
 Sliobj.params = JS_PARAMS_OBJ;
+
+Sliobj.sitePrefix = Sliobj.params.siteName ? '/'+Sliobj.params.siteName : '';
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.fileName : '';
 
 Sliobj.gradeFieldsObj = {};
@@ -406,19 +421,6 @@ function getServerCookie() {
 	}
     }
     return retval;
-}
-
-function getParameter(name, number, queryStr) {
-   // Set number to true, if expecting an integer value. Returns null if valid parameter is not present.
-   // If queryStr is specified, it is used instead of location.search
-   var match = RegExp('[?&]'+name+'=([^&]*)').exec(queryStr || window.location.search);
-   if (!match)
-      return null;
-   var value = decodeURIComponent(match[1].replace(/\+/g, ' '));
-   if (number) {
-       try { value = parseInt(value); } catch (err) { value = null };
-   }
-   return value;
 }
 
 Sliobj.serverData = {};
@@ -1926,7 +1928,7 @@ Slidoc.manageSession = function() {
 	    else
 		html += '<br>Release date: '+Sliobj.params.releaseDate;
 	}
-	html += '<p></p><a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><br>';
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
     }
 
     if (Sliobj.adminState || !Sliobj.params.gd_sheet_url) {
@@ -1943,7 +1945,7 @@ Slidoc.manageSession = function() {
 	if (!Sliobj.adminPrefix) {
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	    html += hr;
-	    html += '<a class="slidoc-clickable" href="/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
+	    html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
 	    html += hr;
 	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
 	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
@@ -1980,13 +1982,30 @@ function sheetActionCallback(action, sheetName, result, retStatus) {
 
 Slidoc.viewSheet = function(sheetName) {
     Slidoc.log('Slidoc.viewSheet: ', sheetName);
-    window.open("/_sheet/"+sheetName);
+    window.open(Sliobj.sitePrefix+'/_sheet/'+sheetName);
 }
 
 
 //////////////////////////////////////////////////////
 // Section 13: Retrieve data needed for session setup
 //////////////////////////////////////////////////////
+
+if (location.pathname.match(/^_preview/)) {
+    toggleClass(true, 'slidoc-preview-view');
+    if (Sliobj.params.draft) {
+	var previewLabel = document.getElementById('slidoc-preview-label');
+	if (previewLabel)
+	    previewLabel.textContent = Sliobj.params.draft;
+    }
+}
+
+Slidoc.previewAction = function (action) {
+    if (action == 'discard') {
+	if (!window.confirm('Discard all changes?'))
+	    return;
+    }
+    window.location = Sliobj.sitePrefix + '/_' + action;
+}
 
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
@@ -3590,7 +3609,7 @@ function make_id_from_text(text) {
 }
 
 function getBaseURL() {
-   return (location.pathname.slice(-1)=='/') ? location.pathname : location.pathname.split('/').slice(0,-1).join('/');
+   return location.pathname.split('/').slice(0,-1).join('/');
 }
 
 function progressBar(delaySec) {
@@ -3704,7 +3723,7 @@ Slidoc.pagesDisplay = function() {
     Slidoc.log('Slidoc.pagesDisplay:');
     var html = '<b>Pages</b><p></p>';
     if (!Sliobj.adminPrefix && (Sliobj.adminState || getUserId() == Sliobj.params.testUserId))
-	html += '<a class="slidoc-clickable" target="_blank" href="/_dash">Dashboard</a><p></p>';
+	html += '<a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><p></p>';
 
     if (Sliobj.params.topnavList && Sliobj.params.topnavList.length) {
 	html += '<ul>\n';

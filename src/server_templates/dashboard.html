@@ -1,67 +1,54 @@
-<style>
-body {
-    font-family: sans-serif;
-}
-</style>
-<script>
-function action(label) {
-  status(label);
-  window.location = '/_' + label;
-}
-function check(label) {
-  status(label);
-  if (!window.confirm('Confirm '+label+'?')) {
-    status('');
-    return;
-  }
-  action(label);
-}
-function status(label) {
-  var statusElem = document.getElementById('actionstatus');
-  if (statusElem) statusElem.textContent = label ? 'Processing '+label+'...' : '';
-}
-function sheet(label) {
-  var value = window.prompt('Sheet name:');
-  if (!value)
-    return;
-  action(label+'/'+value);
-}
-</script>
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
 
-<div id="dashboarddiv">
-  <h2>{{site_label}} dashboard </h2>
+<!-- dashboard template for slidoc server --->
+<!-- dash parameters: site_name, site_label, session_name, version, suspended, interactive -->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+  <h2>{{site_label}} Dashboard </h2>
   <h3>(Slidoc version {{version}})</h3>
 
-  <a href="/">Home</a>
+  <b><a href="/{{site_name}}">Home</a></b>
   <p></p>
-  <h3><span id="actionstatus"></span></h3>
+  <h3><span id="slidoc-action-status"></span></h3>
+
   <ul>
-    <li><a href="javascript:action('sessions')">sessions</a>: Session info and actions</li>
+    <li><a href="javascript:slidocAction('sessions')">sessions</a>: Session info and actions</li>
     <hr>
-    <li><a href="javascript:action('roster')">roster</a>: List roster of students</li>
+    <li><a href="javascript:slidocAction('roster')">roster</a>: List roster of students</li>
     <hr>
-    <li><a href="javascript:action('twitter')">twitter</a>: View twitter stream status</li>
+    <li><a href="javascript:slidocAction('twitter')">twitter</a>: View twitter stream status</li>
     <hr>
-    <li><a href="javascript:check('backup')">backup</a>: Backup all sessions</li>
+    <li><a href="javascript:slidocAction('upload')">upload</a>: Upload Markdown/Powerpoint/Zip file</li>
     <hr>
-    <li><a href="javascript:check('reload')">reload</a>: Restart proxy server</li>
+    <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
     <hr>
-    <li><a href="javascript:check('shutdown')">shutdown</a>: Shutdown proxy server</li>
+    <li><a href="javascript:slidocConfirmAction('reload')">reload</a>: Restart proxy server</li>
+    <hr>
+    <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
   </ul>
   Suspend status: <b>{{suspended}}</b><br>
   Current interactive session: <a href="/_manage/{{interactive}}">{{interactive}}</a><br>
   <p></p>
-  <a href="#" onclick="document.getElementById('advanced-options').style.display=null;this.style.display='none'">Show advanced options</a>
-  <ul id="advanced-options" style="display: none;">
-    <li><a href="javascript:action('cache')">proxy status</a>: Status of proxy cache and active connections</li>
+
+  <a href="#" onclick="document.getElementById('slidoc-dash-advanced').style.display=null;this.style.display='none'">Show advanced options</a>
+  <ul id="slidoc-dash-advanced" style="display: none;">
+    <li><a href="javascript:slidocAction('cache')">proxy status</a>: Status of proxy cache and active connections</li>
     <hr>
-    <li><a href="javascript:check('freeze')">freeze</a>: Freeze all cached sessions (clear to cancel freeze)</li>
-    <li><a href="javascript:check('clear')">clear</a>: Clear all cached sessions</li>
+    <li><a href="javascript:slidocConfirmAction('freeze')">freeze</a>: Freeze all cached sessions (clear to cancel freeze)</li>
+    <li><a href="javascript:slidocConfirmAction('clear')">clear</a>: Clear all cached sessions</li>
     <hr>
-    <li><a href="javascript:check('update')">update</a>: Update code and restart proxy server</li>
+    <li><a href="javascript:slidocConfirmAction('update')">update</a>: Update code and restart proxy server</li>
     <hr>
-    <li><a href="javascript:sheet('sheet')">sheet</a>: Display sheet</li>
-    <li><a href="javascript:sheet('getrow')">getrow</a>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
-    <li><a href="javascript:sheet('getcol')">getcol</a>: Get columns from sheet</li>
+    <li><a href="javascript:slidocSheetAction('sheet')">sheet</a>: Display sheet</li>
+    <li><a href="javascript:slidocSheetAction('getrow')">getrow</a>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
+    <li><a href="javascript:slidocSheetAction('getcol')">getcol</a>: Get columns from sheet</li>
   </ul>
-</div>
+
+</body>
+</html>

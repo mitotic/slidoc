@@ -1,0 +1,23 @@
+<html>
+<head>
+<!-- message template for slidoc server --->
+<!-- message parameters: site_name, site_label, session_name, message -->
+
+{% include "base.html" %}
+<style>
+  textarea { font-size: 14px; }
+</style>
+
+</head>
+<body>
+
+<h2>
+{% include "linkback.html" %}
+</h2>
+
+<div  id="message">
+{{message}}
+</div>
+
+</body>
+</html>

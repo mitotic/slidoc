@@ -1,0 +1,51 @@
+<html>
+<head>
+<!-- upload template for slidoc server --->
+<!-- upload parameters: site_name, site_label, session_name, err_msg -->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+<h2>{{site_name}}</h2>
+<h2>Upload session/data files</h2>
+
+<b>
+{% include "linkback.html" %}
+</b>
+
+<div id="slidoc-upload-form">
+  <form action="/_upload" method="post" enctype="multipart/form-data" >
+    <fieldset>
+      <label for="sessiontype">Upload type:</label>
+      <select name="sessiontype">
+       <option value="assignment" selected>assignment (.md/.pptx/.zip)</option>
+       <option value="exam">exam (.md/.pptx/.zip)</option>
+       <option value="top">top level document (.md/.zip)</option>
+       <option value="raw">raw web files (.zip)</option>
+     </select>
+     <br>
+     <label for="sessionnumber">Session number:</label>
+     <input type="number" id="sessionnumber" name="sessionnumber" value="">
+     <p></p>
+     <label for="upload">Session file, markdown (.md) or powerpoint (.pptx):</label><br>
+     <input type="file" id="upload1" name="upload1"  accept=".md,.pptx" value="file1">
+     <p></p>
+     <label for="upload">Zip archive with Markdown, images, HTML or data (.zip):</label><br>
+     <input type="file" id="upload2" name="upload2"  accept=".zip" value="file2">
+     <p></p>
+     Images in the zip archive should have names of the form
+     <code>sessionName/*.jpg</code> for <code>.pptx</code> files and of the
+     form <code>sessionName_img/*.jpg</code> for <code>.md</code> files
+   </fieldset>
+   {% module xsrf_form_html() %}
+   <div>
+     <input id="slidoc-upload-submit" type="submit" value="Upload">
+    </div>
+  </form>
+  {{err_msg}}
+</div>
+
+</body>
+</html>

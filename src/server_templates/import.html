@@ -1,38 +1,43 @@
-<style>
-body {
-    font-family: sans-serif;
-}
-</style>
-<div id="main-container">
-  <h2><a href="/">{{site_label}}</a></h2>
-  <a href="/_dash">Dashboard</a><br>
-  <p></p>
-  <a href="/_manage/{{session}}">Manage session</a><br>
-  <p></p>
-  <div id="main">
-    <div id="message-form">
-      <h2>Import responses for session {{session}}</h2>
-      <form action="/_import/{{session}}" method="post" id="message_form" enctype="multipart/form-data" >
-	<fieldset>
-          <label for="importkey">Import key:</label>
-          <select name="importkey">
-	    <option value="name" selected>name</option>
-	    <option value="id">id</option> 
-	    <option value="altid" >altid</option>
-	    <option value="twitter">twitter</option>
-	  </select>
-          <p></p>
-	  <label for="submitdate">Submit date (optional):</label>
-          <input type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="{{submit_date}}">
-          <p></p>
-          <label for="upload">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
-          <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file">
-        </fieldset>
-        {% module xsrf_form_html() %}
-        <div id="form_btn">
-	  <input id="submit-btn" type="submit" value="Import">
-	</div>
-      </form>
+<html>
+<head>
+<!-- import template for slidoc server --->
+<!-- import parameters: site_name, site_label, session_name, submit_date -->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+<h2>{{site_name}}</h2>
+<h2>Import responses for session {{session_name}}</h2>
+
+<b>
+{% include "linkback.html" %}
+</b>
+
+<div id="slidoc-import-form">
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_import/{{session_name}}" method="post" enctype="multipart/form-data" >
+    <fieldset>
+      <label for="importkey">Import key:</label>
+      <select name="importkey">
+        <option value="name" selected>name</option>
+        <option value="id">id</option> 
+        <option value="altid" >altid</option>
+        <option value="twitter">twitter</option>
+      </select>
+      <p></p>
+      <label for="submitdate">Submit date (optional):</label>
+      <input type="datetime-local" id="submitdate" name="submitdate" value="{{submit_date}}">
+      <p></p>
+      <label for="upload">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
+      <input type="file" id="upload" name="upload"  accept=".csv" value="file">
+    </fieldset>
+    {% module xsrf_form_html() %}
+    <div>
+      <input id="slidoc-import-submit" type="submit" value="Import">
     </div>
-  </div>
+  </form>
 </div>
+
+</body>
+</html>

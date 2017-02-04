@@ -15,7 +15,8 @@
 <div id="slidoc-init-load"><p></p><b>&#x29D7; Loading page ... (<a href="/_logout">reset</a>)</b></div>
 <button id="slidoc-google-login-button" style="display: none;">Google Login</button>
 
-<div id="slidoc-top-left" class="slidoc-top-left slidoc-noprint"><span id="slidoc-pending-display"></span><span id="slidoc-test-resume" class="slidoc-clickable" onclick="Slidoc.reportTestAction('resumeEvent');" style="display: none;">%(play)s</span><span id="slidoc-test-status" style="display: none;"></span></div>
+<div id="slidoc-top-left" class="slidoc-top-left slidoc-noprint"><span id="slidoc-preview-label" class="slidoc-previewonly">Final preview</span><button id="slidoc-preview-accept" class="slidoc-previewonly" onclick="Slidoc.previewAction('accept');">Accept</button><button id="slidoc-preview-edit" class="slidoc-previewonly" onclick="Slidoc.previewAction('edit');">Edit</button><button id="slidoc-preview-discard" class="slidoc-previewonly" onclick="Slidoc.previewAction('discard');">Discard</button><span id="slidoc-pending-display"></span><span id="slidoc-test-resume" class="slidoc-clickable" onclick="Slidoc.reportTestAction('resumeEvent');" style="display: none;">%(play)s</span><span id="slidoc-test-status" style="display: none;"></span></div>
+
 
 <div id="slidoc-top-right" class="slidoc-top-right slidoc-noprint slidoc-nav-overlay %(top_nav_hide)s">
   <span id="slidoc-button-plugin" class="slidoc-button-plugin slidoc-clickable-sym slidoc-slideonly slidoc-top-spaced" onclick="Slidoc.pluginButtonClick();" style="display: none;"></span>

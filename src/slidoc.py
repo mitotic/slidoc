@@ -20,7 +20,7 @@ from __future__ import print_function
 import argparse
 import BaseHTTPServer
 import base64
-import cStringIO
+import io
 import os
 import re
 import shlex
@@ -28,6 +28,7 @@ import subprocess
 import sys
 import urllib
 import urllib2
+import zipfile
 
 from collections import defaultdict, OrderedDict
 
@@ -905,15 +906,15 @@ class SlidocRenderer(MathRenderer):
 
     def block_math(self, text):
         self.render_mathjax = True
-        super(SlidocRenderer, self).block_math(text)
+        return super(SlidocRenderer, self).block_math(text)
 
     def latex_environment(self, name, text):
         self.render_mathjax = True
-        super(SlidocRenderer, self).latex_environment(name, text)
+        return super(SlidocRenderer, self).latex_environment(name, text)
 
     def inline_math(self, text):
         self.render_mathjax = True
-        super(SlidocRenderer, self).inline_math(text)
+        return super(SlidocRenderer, self).inline_math(text)
 
     def block_code(self, code, lang=None):
         """Rendering block level code. ``pre > code``.
@@ -1842,7 +1843,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 
     if renderer.questions:
         # Compute question hash digest to track questions
-        sbuf = cStringIO.StringIO(source)
+        sbuf = io.BytesIO(source)
         slide_hash = []
         slide_lines = []
         first_slide = True
@@ -2219,6 +2220,8 @@ def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_
         # Generate menu using basenames of provided paths
         label_list = []
         for opt in opts.split(','):
+            if not opt:
+                continue
             base = os.path.basename(opt)
             if opt == '/' or opt == 'index.html':
                 label_list.append( (site_name or 'Home', site_prefix) )
@@ -2245,6 +2248,9 @@ def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_
     return topnav_list
 
 def render_topnav(topnav_list, filepath='', site_name=''):
+    site_prefix = '/'
+    if site_name:
+        site_prefix += site_name + '/'
     fname = ''
     if filepath:
         fname = strip_name(filepath)
@@ -2263,7 +2269,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
-    topnav_html += '<li id="dashlink" style="display: none;"><a href="/_dash" target="_blank">dashboard</a></li>'
+    topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">dashboard</a></li>' % site_prefix
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html
@@ -2274,10 +2280,13 @@ scriptdir = os.path.dirname(os.path.realpath(__file__))
 def message(*args):
     print(*args, file=sys.stderr)
 
-def process_input(input_files, input_paths, config_dict, return_html=False):
+def process_input(input_files, input_paths, config_dict, images_zipdict={}, return_html=False, return_messages=False):
     global message
-    messages = []
     if return_html:
+        return_messages = True
+
+    messages = []
+    if return_messages:
         def append_message(*args):
             messages.append(''.join(str(x) for x in args))
         message = append_message
@@ -2320,6 +2329,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 os.makedirs(config.backup_dir)
             backup_dir = config.backup_dir + '/'
 
+    def insert_resource(filename):
+        if filename.endswith('.js'):
+            return ('<script src="%s/%s"></script>\n' % (config.resource_dir, filename)) if config.resource_dir else ('\n<script>\n%s</script>\n' % templates[filename])
+
+        if filename.endswith('.css'):
+            return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % (config.resource_dir, filename)) if config.resource_dir else ('\n<style>\n%s</style>\n' % templates[filename])
+        raise Exception('Invalid filename for insert_resource: '+filename)
+
     orig_fnames = []
     orig_outpaths = []
     orig_flinks = []
@@ -2343,8 +2360,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
         if not config.make:
             fnumbers.append(fnumber)
-        elif not os.path.exists(outpath) or os.path.getmtime(outpath) <= os.path.getmtime(inpath):
-            # Process only modified input files
+        elif not input_files[j] or not os.path.exists(outpath) or os.path.getmtime(outpath) <= os.path.getmtime(inpath):
+            # Process only accessible and modified input files
             fnumbers.append(fnumber)
 
         if config.notebook and os.path.exists(dest_dir+fname+'.ipynb') and not config.overwrite and not config.dry_run:
@@ -2362,13 +2379,15 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     if not fnumbers:
         message('All output files are newer than corresponding input files')
         if not config.make_toc:
-            return
+            return {'messages':messages}
+    elif return_html and len(fnumbers) != 1 and config.separate:
+        raise Exception('Cannot return html for multiple input files')
 
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
     js_params = {'siteName': '', 'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
-                 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
+                 'draft': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'gradeFields': [], 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
@@ -2381,12 +2400,16 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                  'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
     js_params['siteName'] = config.site_name
+    js_params['draft'] = config.draft or ''
     js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
     js_params['printable'] = config.printable
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
+
+    js_params_fmt = '\n<script>\nvar JS_PARAMS_OBJ=%s;\n</script>\n'
+    toc_js_params = js_params_fmt % json.dumps(js_params)
 
     combined_name = config.all or orig_fnames[0]
     combined_file = '' if config.separate else combined_name+'.html'
@@ -2438,24 +2461,23 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     elif config.css:
         css_html = '<style>\n' + md2md.read_file(config.css) + '</style>\n'
     else:
-        tem_css = templates['doc_custom.css']
+        css_html = insert_resource('doc_custom.css')
         if config.fontsize:
             comps = config.fontsize.split(',')
-            if len(comps) == 1:
-                tem_css = tem_css.replace('/*SUBSTITUTE_FONTSIZE*/', 'font-size: %s;' % config.fontsize)
-            else:
-                for fsize in comps:
-                    tem_css = tem_css.replace('/*SUBSTITUTE_FONTSIZE*/', 'font-size: %s;' % fsize, 1)
-        css_html = '<style>\n'+tem_css+'</style>\n'
+            tem_css = '@media not print { body { font-size: %s; }  }\n' % comps[0]
+            if len(comps) > 1:
+                tem_css += '@media print { body { font-size: %s; }  }\n' % comps[1]
+            css_html += '<style>\n'+tem_css+'</style>\n'
 
     # External CSS replaces doc_custom.css, but not doc_include.css
-    css_html += '<style>\n' + (templates['doc_include.css']+HtmlFormatter().get_style_defs('.highlight')) + '</style>\n'
-    css_html += '<style>\n' + templates['wcloud.css'] + '</style>\n'
-
+    css_html += insert_resource('doc_include.css')
+    css_html += '\n<style>\n' + HtmlFormatter().get_style_defs('.highlight') + '\n</style>\n'
+    css_html += insert_resource('wcloud.css')
     test_params = []
     add_scripts = ''
+
     if config.test_script:
-        add_scripts += '\n<script>\n%s</script>\n' % templates['doc_test.js']
+        add_scripts += insert_resource('doc_test.js')
         if not config.test_script.isdigit():
             for comp in config.test_script.split(','):
                 script, _, user_id = comp.partition('/')
@@ -2472,11 +2494,11 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 test_params.append([label, query, proxy_query])
 
     if gd_hmac_key is not None:
-        add_scripts += (Google_docs_js % js_params) + ('\n<script>\n%s</script>\n' % templates['doc_google.js'])
+        add_scripts += (Google_docs_js % js_params) + insert_resource('doc_google.js')
         if config.google_login:
             add_scripts += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
-            add_scripts += ('\n<script>\n%s</script>\n' % templates['md5.js'])
+            add_scripts += insert_resource('md5.js')
     answer_elements = {}
     for suffix in SlidocRenderer.content_suffixes:
         answer_elements[suffix] = 0;
@@ -2494,7 +2516,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
     js_params['topnavList'] = topnav_list
 
-    head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + ('\n<script>\n%s</script>\n' % templates['wcloud.js'])
+    head_html = css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js')
     if combined_file:
         head_html += add_scripts
     body_prefix = templates['doc_include.html']
@@ -2512,6 +2534,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
 
     comb_plugin_defs = {}
     comb_plugin_loads = set()
+    comb_plugin_embeds = set()
 
     if config.slides:
         reveal_themes = config.slides.split(',')
@@ -2527,14 +2550,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
     else:
         reveal_pars = ''
 
-    slidoc_opts = set(['embed', '_slidoc'])
+    slidoc_images_opts = set(['embed', '_slidoc'])
     if combined_file:
-        slidoc_opts.add('_slidoc_combine')
+        slidoc_images_opts.add('_slidoc_combine')
 
     base_mods_args = md2md.Args_obj.create_args(None, dest_dir=config.dest_dir,
                                                       image_dir=config.image_dir,
                                                       image_url=config.image_url,
-                                                      images=config.images | slidoc_opts)
+                                                      images=config.images | slidoc_images_opts)
     slide_mods_dict = {'strip': 'concepts,extensions'}
     if 'answers' in config.strip:
         slide_mods_dict['strip'] += ',answers'
@@ -2678,8 +2701,8 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         md_text = fhandle.read()
         fhandle.close()
 
-        base_parser = md2md.Parser(base_mods_args)
-        slide_parser = md2md.Parser(slide_mods_args)
+        base_parser = md2md.Parser(base_mods_args, images_zipdata=images_zipdict.get(fname))
+        slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname))
         md_text_modified = slide_parser.parse(md_text, filepath)
         md_text = base_parser.parse(md_text, filepath)
 
@@ -2699,9 +2722,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
-        plugin_list = list(renderer.plugin_embeds)
-        plugin_list.sort()
-        js_params['plugins'] = plugin_list
+
         if js_params['paceLevel']:
             # File-specific js_params
             js_params['pacedSlides'] = renderer.slide_number
@@ -2710,6 +2731,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['otherWeight'] = sum(q.get('vweight',0) for q in renderer.questions) if renderer.questions else 0
             js_params['gradeWeight'] = renderer.cum_gweights[-1] if renderer.cum_gweights else 0
             js_params['gradeFields'] = Score_fields[:] + (renderer.grade_fields[:] if renderer.grade_fields else [])
+            js_params['totalWeight'] = js_params['scoreWeight'] + js_params['gradeWeight'] + js_params['otherWeight']
         else:
             js_params['pacedSlides'] = 0
             js_params['questionsMax'] = 0
@@ -2717,8 +2739,12 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             js_params['otherWeight'] = 0
             js_params['gradeWeight'] = 0
             js_params['gradeFields'] = []
+            js_params['totalWeight'] = 0
 
-        js_params['totalWeight'] = js_params['scoreWeight'] + js_params['gradeWeight'] + js_params['otherWeight']
+        if config.separate:
+            plugin_list = list(renderer.plugin_embeds)
+            plugin_list.sort()
+            js_params['plugins'] = plugin_list
             
         max_params = {}
         max_params['id'] = '_max_score'
@@ -2735,6 +2761,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         
         comb_plugin_defs.update(renderer.plugin_defs)
         comb_plugin_loads.update(renderer.plugin_loads)
+        comb_plugin_embeds.update(renderer.plugin_embeds)
         if renderer.render_markdown or renderer.render_mathjax:
             math_load = True
         if renderer.render_markdown:
@@ -2745,7 +2772,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         js_params['topnavList'] = []
         topnav_html = ''
         sessions_due_html = ''
-        if topnav_opts:
+        if topnav_opts and config.separate:
             top_fname = 'home' if fname == 'index' else fname
             js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
             topnav_html = '' if config.make_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
@@ -2867,7 +2894,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
             else:
                 file_plugin_defs = base_plugin_defs.copy()
                 file_plugin_defs.update(renderer.plugin_defs)
-                file_head_html = css_html + ('\n<script>\n%s</script>\n' % templates['doc_include.js'].replace('JS_PARAMS_OBJ', json.dumps(js_params)) ) + ('\n<script>\n%s</script>\n' % templates['wcloud.js']) + add_scripts
+                file_head_html = (js_params_fmt % json.dumps(js_params)) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
                 head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 if release_date_str != FUTURE_DATE:
@@ -2906,22 +2933,7 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 md_parser = md2nb.MDParser(nb_converter_args)
                 md2md.write_file(dest_dir+fname+".ipynb", md_parser.parse_cells(md_text_modified))
 
-    if not config.dry_run:
-        if not combined_file:
-            message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
-            for outname, outpath, head, tail in outfile_buffer:
-                if tail:
-                    # Update "missing" reference numbers and write output file
-                    tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
-                    if return_html:
-                        return outpath, Html_header+head+tail+Html_footer, messages
-                    else:
-                        write_doc(outpath, head, tail)
-        if config.slides:
-            message('Created *-slides.html files')
-        if config.notebook:
-            message('Created *.ipynb files')
-
+    toc_all_html = ''
     if toc_file:
         toc_path = dest_dir + toc_file
         toc_mid_params = {'session_name': '',
@@ -3030,16 +3042,34 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
                 left_container_suffix = '</div> <!--slidoc-left-container-->\n'
                 combined_html = [all_container_prefix, left_container_prefix, toc_output, left_container_suffix] + combined_html
-            elif not return_html:
+            else:
                 if toc_list:
                     # Include file header info as HTML comment
                     toc_head_html = '\n'.join([Index_prefix]+toc_list+[Index_suffix]) + head_html
                 else:
                     toc_head_html = head_html
-                md2md.write_file(toc_path, Html_header, toc_head_html,
-                                  mid_template % toc_mid_params, body_prefix, toc_output, Html_footer)
-                message("Created ToC file:", toc_path)
+                toc_all_html = ''.join( [Html_header, toc_js_params+toc_head_html, mid_template % toc_mid_params, body_prefix, toc_output, Html_footer] )
+                if not return_html:
+                    md2md.write_file(toc_path, toc_all_html)
+                    message("Created ToC file:", toc_path)
 
+    if not config.dry_run:
+        if not combined_file:
+            message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
+            for outname, outpath, head, tail in outfile_buffer:
+                if tail:
+                    # Update "missing" reference numbers and write output file
+                    tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
+                    if return_html:
+                        return {'outpath': outpath, 'out_html':Html_header+head+tail+Html_footer, 'toc_html':toc_all_html, 'messages': messages}
+                    else:
+                        write_doc(outpath, head, tail)
+        if config.slides:
+            message('Created *-slides.html files')
+        if config.notebook:
+            message('Created *.ipynb files')
+
+    # Index and X-reference
     xref_list = []
     if config.index and (Global.primary_tags or Global.primary_qtags):
         first_references, covered_first, index_html = make_index(Global.primary_tags, Global.sec_tags, config.server_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
@@ -3133,6 +3163,9 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         if config.toc:
             combined_html.append( '</div><!--slidoc-sidebar-all-container-->\n' )
 
+        plugin_list = list(comb_plugin_embeds)
+        plugin_list.sort()
+        js_params['plugins'] = plugin_list
         comb_params = {'session_name': combined_name,
                        'math_js': math_inc if math_load else '',
                        'pagedown_js': Pagedown_js if pagedown_load else '',
@@ -3144,13 +3177,14 @@ def process_input(input_files, input_paths, config_dict, return_html=False):
         comb_params.update(SYMS)
         all_plugin_defs = base_plugin_defs.copy()
         all_plugin_defs.update(comb_plugin_defs)
-        output_data = [Html_header, head_html+plugin_heads(all_plugin_defs, comb_plugin_loads),
+        output_data = [Html_header, (js_params_fmt % json.dumps(js_params))+head_html+plugin_heads(all_plugin_defs, comb_plugin_loads),
                        mid_template % comb_params, body_prefix,
                        '\n'.join(combined_html), Html_footer]
         message('Created combined HTML file in '+combined_file)
         if return_html:
-            return dest_dir+combined_file, ''.join(output_data), messages
+            return {'outpath':dest_dir+combined_file, 'out_html':''.join(output_data), 'toc_html':toc_all_html, 'messages':messages}
         md2md.write_file(dest_dir+combined_file, *output_data)
+        return {'messages':messages}
 
 
 def sort_caseless(list):
@@ -3285,27 +3319,47 @@ def abort(msg):
         raise Exception(msg)
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
-    output_html = 'NO DATA'
+    outname = ''
+    out_html = 'NO DATA'
+    toc_html = 'NO DATA'
+    images_zipfile = None
+    images_map = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
+        
     def do_GET(self):
-        if self.path == '/' or self.path.startswith('/?'):
+        if self.path == '/' or self.path.startswith('/?') or self.path == '/'+self.outname:
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            self.wfile.write(self.output_html)
-        elif '..' not in self.path and os.path.exists(self.path[1:]):
-            fext = os.path.splitext(os.path.basename(self.path[1:]))[1]
-            mime_type = self.mime_types.get(fext.lower())
-            if mime_type:
+            if not self.toc_html or self.path == '/'+self.outname:
+                self.wfile.write(self.out_html)
+            else:
+                self.wfile.write(self.toc_html)
+            return
+
+        # Image file?
+        filename = os.path.basename(self.path[1:])
+        fext = os.path.splitext(filename)[1]
+        mime_type = self.mime_types.get(fext.lower())
+        if mime_type:
+            content = None
+            if self.images_zipfile:
+                if filename in self.images_map:
+                    content = self.images_zipfile.read(self.images_map[filename])
+                else:
+                    self.send_response(404)
+            elif '..' not in self.path and os.path.exists(self.path[1:]):
+                with open(self.path[1:]) as f:
+                    content = f.read()
+
+            if content is not None:
                 self.send_response(200)
                 self.send_header("Content-type", mime_type)
                 self.end_headers()
-                with open(self.path[1:]) as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_response(404)
-        else:
-            self.send_response(404)
+                self.wfile.write(content)
+                return
+        
+        self.send_response(404)
     
 # Strip options
 # For pure web pages, --strip=chapters,contents,navigate,sections
@@ -3344,13 +3398,14 @@ Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combine
 Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
+Conf_parser.add_argument('--draft', help='Draft label ("Draft view"/"Draft overwrite view")')
 Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
 Conf_parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
 Conf_parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: _images)')
 Conf_parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
-Conf_parser.add_argument('--images', help='images=(check|copy|export|import)[_all] to process images')
+Conf_parser.add_argument('--images', help='images=(check|copy|export|import) to process images')
 Conf_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 Conf_parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
 Conf_parser.add_argument('--media_url', metavar='URL', help='URL for media')
@@ -3388,6 +3443,7 @@ alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_tru
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
+alt_parser.add_argument('--resource_dir', help='Absolute web path to load .js and .css files from')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
@@ -3460,22 +3516,35 @@ if __name__ == '__main__':
             pptx_opts[opt] = True
 
     input_paths = [f.name for f in input_files]
+    images_zipdict = {}
     for j, inpath in enumerate(input_paths):
-        fext = os.path.splitext(os.path.basename(inpath))[1]
+        fname, fext = os.path.splitext(os.path.basename(inpath))
         if fext == '.pptx':
             # Convert .pptx to .md
             import pptx2md
+            if cmd_args_orig.preview:
+                pptx_opts['img_dir'] = fname + '_images.zip'
             ppt_parser = pptx2md.PPTXParser(pptx_opts)
-            md_text = ppt_parser.parse_pptx(input_files[j], input_files[j].name)
+            md_text, images_zipdata = ppt_parser.parse_pptx(input_files[j], input_files[j].name)
+            images_zipdict[fname] = images_zipdata
             input_files[j].close()
-            input_files[j] = cStringIO.StringIO(md_text.encode('utf8'))
+            input_files[j] = io.BytesIO(md_text.encode('utf8'))
             input_paths[j] = input_paths[j][:-len('.pptx')]+'.md'
 
     if cmd_args_orig.preview:
         if len(input_files) != 1:
             raise Exception('ERROR: --preview only works for a singe file')
-        outname, RequestHandler.output_html, messages = process_input(input_files, input_paths, config_dict, return_html=True)
-        for msg in messages:
+        fname, fext = os.path.splitext(os.path.basename(input_paths[0]))
+        images_zipdata = images_zipdict.get(fname)
+        if images_zipdata:
+            RequestHandler.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata))
+            RequestHandler.images_map = dict( (os.path.basename(fpath), fpath) for fpath in RequestHandler.images_zipfile.namelist() if os.path.basename(fpath))
+
+        retval = process_input(input_files, input_paths, config_dict, return_html=True, images_zipdict=images_zipdict)
+        RequestHandler.outname = os.path.basename(retval['outpath'])
+        RequestHandler.out_html = retval['out_html']
+        RequestHandler.toc_html = retval['toc_html']
+        for msg in retval['messages']:
             print(msg, file=sys.stderr)
         httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args_orig.preview), RequestHandler)
         command = "sleep 1 && open -a 'Google Chrome' http://localhost:%d" % cmd_args_orig.preview
@@ -3488,7 +3557,7 @@ if __name__ == '__main__':
             pass
         httpd.server_close()
     else:
-        process_input(input_files, input_paths, config_dict)
+        process_input(input_files, input_paths, config_dict, images_zipdict=images_zipdict)
 
         if cmd_args.printable:
             if cmd_args.gsheet_url:

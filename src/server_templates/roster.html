@@ -1,35 +1,42 @@
-<style>
-body {
-    font-family: sans-serif;
-}
-</style>
-<div id="main-container">
-  <h2><a href="/">{{site_label}}</a></h2>
-  <a href="/_dash">Dashboard</a><br>
-  <p></p>
-  <div id="main">
-    <div id="message-form">
-      <h2>Import roster file</h2>
-      <form action="/_roster" method="post" id="message_form" enctype="multipart/form-data" >
-	<fieldset>
-          <label for="upload">Roster file (CSV spreadsheet file):</label><br>
-          <input class="sdserver-file" type="file" id="upload" name="upload"  accept=".csv" value="file"><br>
-        The file should contain the column headers
-        <code>id</code>, <code>lastname</code>, and
-        <code>firstname</code>. Additional headers that are
-        recognized are: <code>email, altid, twitter</code>.<br>
+<html>
+<head>
+<!-- roster template for slidoc server --->
+<!-- roster parameters: site_name, site_label, session_name -->
 
-        (If <code>id</code> column is not present but <code>email</code> column is, then the
-        email addresses (with any common domain dropped) are used as unique ids.<br>
-        <p></p>
-        Id's are required to be unique, but names are not required to
-        be unique (unless they are to be used for importing answers etc.)
-        </fieldset>
-        {% module xsrf_form_html() %}
-        <div id="form_btn">
-	  <input id="submit-btn" type="submit" value="Import">
-	</div>
-      </form>
+{% include "base.html" %}
+
+</head>
+<body>
+
+<h2>{{site_name}}</h2>
+<h2>Import roster file</h2>
+
+<b>
+{% include "linkback.html" %}
+</b>
+
+<div id="slidoc-roster-form">
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_roster" method="post" enctype="multipart/form-data" >
+    <fieldset>
+      <label for="upload">Roster file (CSV spreadsheet file):</label><br>
+      <input type="file" id="upload" name="upload"  accept=".csv" value="file"><br>
+      The file should contain the column headers
+      <code>id</code>, <code>lastname</code>, and
+      <code>firstname</code>. Additional headers that are
+      recognized are: <code>email, altid, twitter</code>.<br>
+
+      (If <code>id</code> column is not present but <code>email</code> column is, then the
+      email addresses (with any common domain dropped) are used as unique ids.<br>
+      <p></p>
+      Id's are required to be unique, but names are not required to
+      be unique (unless they are to be used for importing answers etc.)
+    </fieldset>
+    {% module xsrf_form_html() %}
+    <div>
+      <input id="slidoc-roster-submit" type="submit" value="Import">
     </div>
-  </div>
+  </form>
 </div>
+
+</body>
+</html>

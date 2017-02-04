@@ -1,0 +1,51 @@
+<!-- base head template for slidoc server -->
+
+<!-- base parameters: site_name, site_label, session_name -->
+
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+
+<style>
+body {
+    font-family: sans-serif;
+}
+</style>
+
+<script>
+var slidocSiteName = '{{site_name}}'; 
+var slidocSiteLabel = '{{site_label}}'; 
+var slidocSessionName = '{{session_name}}';
+
+function slidocAction(actionName, sessionName) {
+  slidocStatus(actionName);
+
+  var url = '/_' + actionName;
+  if (slidocSiteName)
+    url = '/' + slidocSiteName + url
+  if (sessionName || slidocSessionName)
+    url += '/' + sessionName || slidocSessionName;
+  window.location = url;
+}
+
+function slidocConfirmAction(actionName) {
+  if (window.confirm('Confirm '+actionName+'?')) {
+    slidocAction(actionName);
+    return;
+  }
+  slidocStatus('');
+}
+
+
+function slidocSheetAction(actionName) {
+  var sessionName = window.prompt('Sheet name:');
+  if (!sessionName)
+    return;
+  slidocAction(actionName, sessionName);
+}
+
+function slidocStatus(label) {
+  var statusElem = document.getElementById('slidoc-action-status');
+  if (statusElem)
+    statusElem.textContent = label ? 'Processing '+label+'...' : '';
+}
+</script>

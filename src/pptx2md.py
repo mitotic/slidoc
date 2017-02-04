@@ -32,9 +32,11 @@ import json
 import os
 import re
 import sys
+import zipfile
 
 try:
     import pptx
+    import PIL
 except ImportError:
     raise Exception('To read/write Powerpoint files, please install python package "pptx" using "pip install python-pptx"')
 
@@ -64,14 +66,22 @@ class PPTXParser(object):
     def __init__(self, args_dict={}):
         self.args_dict = args_dict
         self.img_height = self.args_dict.get('img_height', self.default_img_height)
+        self.nofile = False
+        self.slide_zip_file = None
         self.prs = None
         self.image_keys = set()
         self.image_defs = []
 
-    def parse_pptx(self, filehandle, filepath=''):
+    def parse_pptx(self, filehandle, filepath='', slides_zip_handle=None, nofile=False):
+        # Returns (md_text, images_zip or None)
+        # nofile if not actualy reading a file from disk
+        self.nofile = nofile
+        if slides_zip_handle:
+            self.slide_zip_file = zipfile.ZipFile(slides_zip_handle)
+
         self.prs = pptx.Presentation(filehandle)
 
-        if filepath:
+        if filepath and not self.nofile:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
             self.fileprefix = os.path.splitext(os.path.basename(filepath))[0]
             self.file_mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0
@@ -80,8 +90,13 @@ class PPTXParser(object):
             self.fileprefix = ''
             self.file_mtime = 0
         self.img_dir = self.args_dict.get('img_dir','')
+        self.img_bytes = None
+        self.img_zip = None
         if self.img_dir is None:
-            self.img_dir = self.fileprefix+'_img' if self.fileprefix else '_images'
+            self.img_dir = self.fileprefix+'_images' if self.fileprefix else '_images'
+        elif self.img_dir.endswith('.zip'):
+            self.img_bytes = io.BytesIO()
+            self.img_zip = zipfile.ZipFile(self.img_bytes, 'w')
 
         # text_runs will be populated with a list of strings,
         # one for each text run in presentation
@@ -92,7 +107,7 @@ class PPTXParser(object):
         self.img_count = 0
         for j, slide in enumerate(self.prs.slides):
             slide_num = j+1
-            slide_image = ('%s/Slide%02d' if nslides >= 10 else '%s/Slide%d') % (self.fileprefix, slide_num)
+            full_slide = ('%s/Slide%02d' if nslides >= 10 else '%s/Slide%d') % (self.fileprefix, slide_num)
             slide_images = []
             slide_text = ''
             shape_list = [(shape.top, shape) for shape in slide.shapes]
@@ -101,7 +116,28 @@ class PPTXParser(object):
                 if isinstance(shape, pptx.shapes.picture.Picture):
                     # Image
                     image_obj = shape.image
-                    slide_images.append( image_obj )
+                    image_blob = image_obj.blob
+                    img_width, img_height = image_obj.size
+
+                    if shape.crop_left or shape.crop_right or shape.crop_top or shape.crop_bottom:
+                        # Crop image (pixel coordinate system origin top-left: refers to pixel corners, not centers)
+                        c_left   = int(round(img_width*shape.crop_left))
+                        c_right  = int(round(img_width*(1.0-shape.crop_right)))
+                        c_top    = int(round(img_height*shape.crop_top))
+                        c_bottom = int(round(img_height*(1.0-shape.crop_bottom)))
+                        in_stream = io.BytesIO(image_blob)
+                        pil_image = PIL.Image.open(in_stream)
+                        format = pil_image.format
+                        pil_image = pil_image.crop( (c_left, c_top, c_right, c_bottom) )
+                        in_stream.close()
+                        out_stream = io.BytesIO()
+                        pil_image.save(out_stream, format=format)
+                        image_blob = out_stream.getvalue()
+                        img_width, img_height = pil_image.size
+                        out_stream.close()
+
+                    slide_images.append( {'ext': image_obj.ext, 'width': img_width, 'height': img_height, 'blob': image_blob} )
+                    
                     if self.args_dict.get('img_inline'):
                         slide_text += "\n![image%d]()\n\n" % len(slide_images)
                 elif shape.has_text_frame:
@@ -221,17 +257,15 @@ class PPTXParser(object):
                         iheight = self.img_height
                         if not img_params:
                             img_params = "'height=%d'" % iheight
-                        img_path = self.slide_image_path(slide_image)
+                        img_path = self.slide_image_path(full_slide)
                         img_ref = self.copy_image(image_num, self.read_file(img_path), img_params=img_params, img_name=img_name, img_path=img_path)
                     else:
                         # Embedded image: ![image1]()
-                        image_obj = slide_images[image_num-1]
-                        img_width, img_height = image_obj.size
-                        iheight = min(img_height, self.img_height/max(1,len(slide_images)))
+                        slide_image = slide_images[image_num-1]
+                        iheight = self.compute_img_height(slide_image['width'], slide_image['height'], self.img_height/max(1,len(slide_images)))
                         if not img_params:
                             img_params = "'height=%d'" % iheight
-                        img_ref = self.copy_image(image_num, image_obj.blob, img_params=img_params, img_name=img_name, img_ext=image_obj.ext)
-
+                        img_ref = self.copy_image(image_num, slide_image['blob'], img_params=img_params, img_name=img_name, img_ext=slide_image['ext'])
 
                     md_lines.append('\n'+img_ref+'\n\n')
                 else:
@@ -241,11 +275,10 @@ class PPTXParser(object):
             if not images_copied and slide_images:
                 # Copy embedded images by default
                 md_images = ["\n"]
-                for j, image_obj in enumerate(slide_images):
-                    img_width, img_height = image_obj.size
-                    iheight = min(img_height, self.img_height/max(1,len(slide_images)))
+                for j, slide_image in enumerate(slide_images):
+                    iheight = self.compute_img_height(slide_image['width'], slide_image['height'], self.img_height/max(1,len(slide_images)))
                     img_params = "'height=%d'" % iheight
-                    img_ref = self.copy_image(j+1, image_obj.blob, img_params=img_params, img_ext=image_obj.ext)
+                    img_ref = self.copy_image(j+1, slide_image['blob'], img_params=img_params, img_ext=slide_image['ext'])
                     md_images.append('\n'+img_ref+'\n\n')
                 offset = len(md_lines)
                 for j, md_line in enumerate(md_lines):
@@ -272,7 +305,20 @@ class PPTXParser(object):
         if self.image_defs:
             all_text += '\n\n' + '\n\n'.join(self.image_defs) + '\n\n'
 
-        return all_text
+        images_zip = None
+        if self.img_zip:
+            self.img_zip.close()
+            images_zip = self.img_bytes.getvalue()
+        return all_text, images_zip
+
+    def compute_img_height(self, width, height, max_height):
+        max_width = int(max_height * (4.0/3.0))
+        tem_height = int(height*max_width/(1.0*width))
+        if width/(1.0*height) > 4.0/3.0:
+            # Elongated
+            return tem_height if self.args_dict.get('expand_images') else min(tem_height, max_height)
+        else:
+            return max_height if self.args_dict.get('expand_images') else min(height, max_height)
 
     def force_para_break(self, text):
         if not text.endswith('\n'):
@@ -300,7 +346,11 @@ class PPTXParser(object):
         extensions = ('.png', '.jpg', '.jpeg')
         for extn in extensions:
             ipath = ''
-            if os.path.exists(image_file+extn):
+            if self.slide_zip_file:
+                if image_file+extn in self.slide_zip_file.namelist():
+                    ipath = image_file+extn
+                    break
+            elif not self.nofile and os.path.exists(image_file+extn):
                 ipath = image_file+extn
                 break
         if not ipath:
@@ -312,14 +362,17 @@ class PPTXParser(object):
         return ipath
 
     def read_file(self, filepath):
+        if self.slide_zip_file:
+            return self.slide_zip_file.read(filepath)
         with open(filepath) as f:
             return f.read()
 
     def copy_image(self, image_num, img_data, img_params='', img_path='', img_ext='', img_name=''):
+        # Return image reference
         if not img_ext and img_path:
             img_ext = os.path.splitext(os.path.basename(img_path))[1][1:].lower()
 
-        if not self.args_dict.get('extract_images'):
+        if not self.args_dict.get('img_dir'):
             # Embed images within Markdown
             if img_name:
                 key = img_name
@@ -332,7 +385,6 @@ class PPTXParser(object):
             self.image_defs.append('[%s]: data:image/%s;base64,%s %s' % (key, ctype, base64.b64encode(img_data), img_params) )
             return '![image%d][%s]' % (image_num, key)
 
-        # Extract image to file
         if img_name:
             img_copy = img_name + '.' + img_ext
         else:
@@ -343,13 +395,21 @@ class PPTXParser(object):
                 self.img_count += 1
                 img_copy = prefix + ('image%02d.%s' % (self.img_count, img_ext))
 
-        if self.img_dir:
-            img_copy = self.img_dir + '/' + img_copy
-            if not os.path.exists(self.img_dir):
-                os.makedirs(self.img_dir)
+        if self.img_zip:
+            # Write image file to zip archive
+            zprefix = os.path.splitext(os.path.basename(self.img_dir))[0]
+            if zprefix:
+                img_copy = zprefix + '/' + img_copy
+            self.img_zip.writestr(img_copy, img_data)
+        elif not self.nofile:
+            # Write image file to disk
+            if self.img_dir:
+                img_copy = self.img_dir + '/' + img_copy
+                if not os.path.exists(self.img_dir):
+                    os.makedirs(self.img_dir)
 
-        with open(img_copy, 'w') as f:
-            f.write(img_data)
+            with open(img_copy, 'w') as f:
+                f.write(img_data)
 
         return '![image%d](%s %s)' % (image_num, img_copy, img_params)
 
@@ -360,9 +420,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert from Powerpoint (pptx) to Markdown format')
     parser.add_argument('-a', '--auto_titles', help='Automatically generate titles', action="store_true")
     parser.add_argument('-e', '--embed_slides', help='Embed image of whole slide by default (unless Answer: is present)', action="store_true")
-    parser.add_argument('-x', '--extract_images', help='Extract images from pptx file', action="store_true")
+    parser.add_argument('-x', '--expand_images', help='Expand images to fill slide', action="store_true")
     parser.add_argument('-i', '--img_inline', help='Insert images inline', action="store_true")
-    parser.add_argument('--img_dir', help='Image directory', default=None)
+    parser.add_argument('--img_dir', help='Image directory: omit to embed images; name.zip to create zip archive', default=None)
     parser.add_argument('--img_height', help='Image height', default=540)
     parser.add_argument('-l', '--line_breaks', help='Break lines within text box paragraphs', action="store_true")
     parser.add_argument('-n', '--notes', help='Treat slide notes as Notes: (instead of as text)', action="store_true")
@@ -385,9 +445,14 @@ if __name__ == '__main__':
     for j, f in enumerate(cmd_args.file):
         fname = fnames[j]
         outname = fname+".md"
-        md_text = ppt_parser.parse_pptx(f, f.name)
-        with io.open(outname,'w',encoding='utf8') as f:
+        md_text, images_zip = ppt_parser.parse_pptx(f, f.name)
+        with io.open(outname, 'w', encoding='utf8') as f:
             f.write(md_text)
-
         print("Created ", outname, file=sys.stderr)
+
+        if images_zip:
+            with io.open(cmd_args.img_dir, 'wb') as f:
+                f.write(images_zip)
+            print("Created ", cmd_args.img_dir, "with images", file=sys.stderr)
+
             

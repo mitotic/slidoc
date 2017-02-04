@@ -1,11 +1,11 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.8h';
+var VERSION = '0.96.9';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['server_url', '', 'URL of server (if any); e.g., http://example.com'],
 			 ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
-			 ['site_name', '', 'Site label, e.g., calc101'],
+			 ['site_name', '', 'Site name, e.g., calc101'],
 			 ['admin_emails', '', 'Google mail addresses of users with admin access (comma-separated)'],
 			 ['late_credit', 0, 'Default late credit fraction for assignments/lectures, a value like 0.25'],
 			 ['participation_credit', 0, 'Default participation credit value (0/1/2) for lectures'],
@@ -3371,7 +3371,9 @@ function updateScores(sessionNames, interactive) {
 		    var colHeader = scoreColHeaders[jcol-1];
 		    if (scoreHeaders.indexOf(colHeader) == -1 && colHeader.slice(0,1) == '_') {
 			// Session header column
-			if (sessionName < colHeader.slice(1)) {
+			var cmatch = AGGREGATE_COL_RE.exec(colHeader);
+			var cprefix = cmatch ? cmatch[1] : colHeader;
+			if (sessionName < cprefix.slice(1)) {
 			    // Insert new session column in sorted order
 			    scoreSheet.insertColumnBefore(jcol);
 			    scoreSessionCol = jcol;
@@ -3737,6 +3739,8 @@ function MigrateSession0968a(sessionName, newFields, pacedCols, newDoc, altRoste
 	var idCol = 2;
 	var origIdVals = newSheet.getSheetValues(startRow, idCol, nRows, 1);
 	for (var j=origIdVals.length-1; j>=0; j--) {
+	    if (origIdVals[j] == MAXSCORE_ID)
+		continue;
 	    var altRow = altIndex[origIdVals[j][0]];
 	    if (altRow) {
 		newSheet.getRange(startRow+j, 1, 1, nCopy).setValues([altVals[altRow-1].slice(1,1+nCopy)]);

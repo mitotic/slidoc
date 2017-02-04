@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.8h'
+VERSION = '0.96.9'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -139,12 +139,63 @@ def initCache():
     Global.totalCacheResponseBytes = 0
 
     Global.cachePendingUpdate = None
-    Global.suspended = ""
+    Global.suspended = ''
+    Global.previewSession = ''
 
 initCache()
 
+def previewStatus():
+    return Global.previewSession
+
+def previewSession(sessionName=''):
+    # Initiate/end preview of session
+    # (Delay upstream updates to session sheet and index sheet; also lock all index sheet rows except for this session)
+    # Return error message or null string
+    if not sessionName:
+        # End preview; enable upstream updates
+        Global.previewSession = ''
+        schedule_update(force=True)
+        return ''
+
+    if Global.suspended:
+        return 'Cannot preview when cache is suspended'
+
+    if Lock_passthru or Lock_cache:
+        return 'Cannot preview when lock_passthru session or locked sessions'
+
+    if sessionName in Miss_cache:
+        del Miss_cache[sessionName]
+
+    sessionSheet = Sheet_cache.get(sessionName)
+    if sessionSheet:
+        if sessionSheet.get_updates(Global.cacheUpdateTime) is not None:
+            return 'Pending updates for session '+sessionName+'; retry preview after 10-20 seconds'
+    else:
+        sessionSheet = getSheet(sessionName, optional=True)
+
+    indexSheet = Sheet_cache.get(INDEX_SHEET)
+    if indexSheet:
+        if indexSheet.get_updates(Global.cacheUpdateTime) is not None:
+            return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
+    else:
+        indexSheet = getSheet(INDEX_SHEET)
+
+    Global.previewSession = sessionName
+    return ''
+
+def revertPreview():
+    # Discard all changes to session sheet and session index sheet
+    if not Global.previewSession:
+        return ''
+    delSheet(Global.previewSession)
+    delSheet(INDEX_SHEET)
+    Global.previewSession = ''
+    return ''
+
 def freezeCache(fill=False):
     # Freeze cache (clear when done)
+    if Global.previewSession:
+        raise Exception('Cannot freeze when previewing session '+Global.previewSession)
     if Global.suspended == "freeze":
         return
     if fill:
@@ -161,8 +212,10 @@ def freezeCache(fill=False):
 
 
 def backupSheets(dirpath=''):
-    # Returns null string on success or error string
+    # Returns null string on success or error string list
     # (synchronous)
+    if Global.previewSession:
+        return [ 'Cannot freeze when previewing session '+Global.previewSession ]
     dirpath = dirpath or Settings['backup_dir'] or '_backup'
     if dirpath.endswith('-'):
         dirpath += sliauth.iso_date()[:16].replace(':','-')
@@ -298,6 +351,8 @@ def getSheet(sheetName, optional=False, backup=False):
 def downloadSheet(sheetName, backup=False):
     # Download sheet synchronously
     # If backup, retrieve formulas rather than values
+    if Global.previewSession == sheetName:
+        raise Exception('Cannot download when previewing session '+Global.previewSession)
     user = 'admin'
     userToken = sliauth.gen_admin_token(Settings['auth_key'], user)
 
@@ -359,7 +414,7 @@ class Sheet(object):
             self.keyCol= 1 + headers.index(keyHeader)
             self.keyMap = dict( (row[self.keyCol-1], modTime) for row in self.xrows[1:] )
             if 1+len(self.keyMap) != len(self.xrows):
-                raise Exception('Duplicate key in initial rows for sheet '+self.name)
+                raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
         else:
             self.keyCol= 0
             self.keyMap = dict( (j+2, modTime) for j in range(len(self.xrows)-1) )
@@ -382,20 +437,18 @@ class Sheet(object):
         return [ row[:] for row in self.xrows ]
 
     def deleteRow(self, rowNum):
-        if self.readOnly:
-            raise Exception('Cannot modify read only sheet '+self.name)
         if not self.keyHeader:
             raise Exception('Cannot delete row for non-keyed spreadsheet '+self.name)
         if rowNum < 1 or rowNum > len(self.xrows):
             raise Exception('Invalid row number %s for deletion in sheet %s' % (rowNum, self.name))
         keyValue = self.xrows[rowNum-1][self.keyCol-1]
+        self.check_lock_status(keyValue)
         del self.xrows[rowNum-1]
         del self.keyMap[keyValue]
         self.modifiedSheet()
 
     def insertRowBefore(self, rowNum, keyValue=None):
-        if self.readOnly:
-            raise Exception('Cannot modify read only sheet '+self.name)
+        self.check_lock_status(keyValue)
         if self.keyHeader:
             if rowNum < 2 or rowNum > len(self.xrows)+1:
                 raise Exception('Invalid row number %s for insertion in sheet %s' % (rowNum, self.name))
@@ -419,8 +472,7 @@ class Sheet(object):
         self.modifiedSheet(modTime)
 
     def appendColumns(self, headers):
-        if self.readOnly:
-            raise Exception('Cannot modify read only sheet '+self.name)
+        self.check_lock_status()
         if Settings['gsheet_url'] and not Settings['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot append columns for session '"+self.name+"' via proxy; use direct URL")
@@ -431,8 +483,7 @@ class Sheet(object):
         self.modifiedSheet()
 
     def trimColumns(self, ncols):
-        if self.readOnly:
-            raise Exception('Cannot modify read only sheet '+self.name)
+        self.check_lock_status()
         if Settings['gsheet_url'] and not Settings['dry_run']:
             # Proxy caching currently does not work with varying columns
             raise Exception("Cannot delete columns for session '"+self.name+"' via proxy; use direct URL")
@@ -463,14 +514,19 @@ class Sheet(object):
         self.checkRange(rowMin, colMin, rowCount, colCount)
         return [row[colMin-1:colMin+colCount-1] for row in self.xrows[rowMin-1:rowMin+rowCount-1]]
 
+    def check_lock_status(self, keyValue=None):
+        if self.readOnly:
+            raise Exception('Cannot modify read only sheet '+self.name)
+        if self.name == INDEX_SHEET and keyValue and Global.previewSession and keyValue != Global.previewSession:
+            raise Exception('Cannot modify index values for non-previewed session '+keyValue+' when previewing session '+Global.previewSession)
+        check_if_locked(self.name)
+
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
         ##if Settings['debug']:
         ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
-        if self.readOnly:
-            raise Exception('Cannot modify read only sheet '+self.name)
-        check_if_locked(self.name)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
+
         self.checkRange(rowMin, colMin, rowCount, colCount)
         if rowCount != len(values):
             raise Exception('Row count mismatch for setSheetValues %s: expected %d but found %d' % (self.name, rowCount, len(values)) )
@@ -478,6 +534,8 @@ class Sheet(object):
         for j, rowValues in enumerate(values):
             if colCount != len(rowValues):
                 raise Exception('Col count mismatch for setSheetValues %s in row %d: expected %d but found %d' % (self.name, j+rowMin, colCount, len(rowValues)) )
+
+        self.check_lock_status(self.xrows[rowMin-1][self.keyCol-1] if self.keyCol and rowCount==1 else '')
 
         modTime = sliauth.epoch_ms()
         for j, rowValues in enumerate(values):
@@ -502,6 +560,10 @@ class Sheet(object):
         if self.modTime < lastUpdateTime:
             return None
 
+        if Global.previewSession and self.name in (Global.previewSession, INDEX_SHEET):
+            # Delay updates for preview session and index sheet
+            return None
+        
         rows = []
         if self.keyCol:
             keys = dict( (key, 1) for key in self.keyMap )
@@ -561,6 +623,8 @@ def getCacheStatus():
 
 def lockSheet(sheetName, lockType='user'):
     # Returns True if lock is immediately effective; False if it will take effect later
+    if sheetName == Global.previewSession:
+        return False
     if sheetName not in Lock_cache and not isReadOnly(sheetName):
         Lock_cache[sheetName] = lockType
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
@@ -569,6 +633,8 @@ def lockSheet(sheetName, lockType='user'):
 
 def unlockSheet(sheetName):
     # Unlock and refresh sheet (if no updates pending)
+    if sheetName == Global.previewSession:
+        return False
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
         return False
     delSheet(sheetName)
@@ -576,12 +642,16 @@ def unlockSheet(sheetName):
 
 def expireSheet(sheetName):
     # Expire sheet from cache (delete after any updates are processed)
+    if sheetName == Global.previewSession:
+        return
     sheet = Sheet_cache.get(sheetName)
     if sheet:
         sheet.expire()
 
 def refreshSheet(sheetName):
     # Refresh sheet, if unlocked (after any updates)
+    if sheetName == Global.previewSession:
+        return False
     if sheetName in Lock_cache or sheetName in Lock_passthru:
         return False
     sheet = Sheet_cache.get(sheetName)

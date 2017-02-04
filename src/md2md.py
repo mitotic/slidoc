@@ -9,6 +9,7 @@ from __future__ import print_function
 
 import argparse
 import base64
+import io
 import os
 import random
 import re
@@ -17,6 +18,7 @@ import sys
 import urllib
 import urllib2
 import urlparse
+import zipfile
 
 from collections import defaultdict, namedtuple, OrderedDict
 
@@ -123,9 +125,15 @@ class Parser(object):
         r')\]\s*\{\s*#([^^\}]*)\}'
     )
     
-    def __init__(self, cmd_args):
+    def __init__(self, cmd_args, images_zipdata=None):
         self.cmd_args = cmd_args
         self.arg_check(cmd_args)
+        if images_zipdata:
+            self.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata), 'r')
+            self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
+        else:
+            self.images_zipfile = None
+            self.images_map = {}
         self.skipping_notes = False
         self.cells_buffer = []
         self.buffered_markdown = []
@@ -197,21 +205,27 @@ class Parser(object):
             elif url_type == 'rel_path':
                 # Relative file "URL"
                 filename = os.path.basename(link)
-                filepath = self.filedir+'/'+link
-                if not os.path.exists(filepath):
-                    raise Exception('File %s does not exist' % filepath)
+                _, extn = os.path.splitext(filename)
+                extn = extn.lower()
+                if extn in ('.gif', '.jpg', '.jpeg', '.png', '.svg'):
+                    content_type = 'image/jpeg' if extn == '.jpg' else 'image/'+extn[1:]
+                if self.images_zipfile:
+                    if filename in self.images_map:
+                        if not check_only:
+                            content = self.images_zipfile.read(self.images_map[filename])
+                    else:
+                        raise Exception('File %s not found in zip archive' % filename)
+                else:
+                    filepath = self.filedir+'/'+link
+                    if not os.path.exists(filepath):
+                        raise Exception('File %s does not exist' % filepath)
 
-                if not check_only:
-                    _, extn = os.path.splitext(os.path.basename(filepath))
-                    extn = extn.lower()
-                    if extn in ('.gif', '.jpg', '.jpeg', '.png', '.svg'):
-                        content_type = 'image/jpeg' if extn == '.jpg' else 'image/'+extn[1:]
-
-                    content = read_file(filepath)
-                    if data_url:
-                        if not content_type:
-                            raise Exception('Unknown content type for file %s' % filename)
-                        content = ('data:%s;base64,' % content_type) +  base64.b64encode(content)
+                    if not check_only:
+                        content = read_file(filepath)
+                        if data_url:
+                            if not content_type:
+                                raise Exception('Unknown content type for file %s' % filename)
+                            content = ('data:%s;base64,' % content_type) +  base64.b64encode(content)
             else:
                 # Other URL type
                 pass
@@ -260,14 +274,14 @@ class Parser(object):
         if url_type == 'rel_path' or (url_type.startswith('http') and 'web' in self.cmd_args.images):
             if 'import' in self.cmd_args.images:
                 # Check if link has already been imported (with the same title)
-                    if 'embed' in self.cmd_args.images:
-                        filename, new_title, new_link = self.import_link(link, title)
-                        if filename is not None:
-                            return self.make_img_tag(new_link, text, new_title)
-                    else:
-                        key, new_title, new_link = self.import_ref(link, title)
-                        if key:
-                            return '![%s][%s]' % (text, key)
+                if 'embed' in self.cmd_args.images:
+                    filename, new_title, new_link = self.import_link(link, title)
+                    if filename is not None:
+                        return self.make_img_tag(new_link, text, new_title)
+                else:
+                    key, new_title, new_link = self.import_ref(link, title)
+                    if key:
+                        return '![%s][%s]' % (text, key)
 
             elif 'check' in self.cmd_args.images:
                 self.copy_image(text, link, title, check_only=True)
@@ -398,9 +412,14 @@ class Parser(object):
             if title.strip():
                 attrs += ' title="' + mistune.escape(title.strip(), quote=True) + '"'
 
-        if get_url_scheme(src) == 'rel_path' and self.cmd_args.image_url:
-            src = self.cmd_args.image_url + src
-            
+        if get_url_scheme(src) == 'rel_path':
+            if self.cmd_args.image_url:
+                src = self.cmd_args.image_url + src
+
+            elif self.cmd_args.image_dir and not src.startswith(self.cmd_args.image_dir+'/'):
+                # Ensure relative paths point to image dir
+                src = self.cmd_args.image_dir + '/' + os.path.basename(src)
+
         return '<img src="%s" alt="%s" %s>' % (src, alt, attrs)
 
     def get_html_tag_attr(self, attr_name, tag_text):
@@ -781,7 +800,7 @@ if __name__ == '__main__':
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
     parser.add_argument('--image_dir', help='image subdirectory (default: "images")', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web,pandoc] to process images', default='')
+    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags; )', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--latex_math', help='Use \\(..\\) and \\[...\\] notation for math', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")

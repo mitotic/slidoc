@@ -492,13 +492,21 @@ Concepts: jupyter notebook: code, fenced; code, indented
 
 ## Managing images
 
-Handling images is a bit hard when using Markdown. For Slidoc,
+Handling images is a bit tricky when using Markdown. For Slidoc,
 the convention is to use web URLs or to store images in a local
-subdirectory named `images` and include references of the form
+folder and include references of the form
 
-    ![alt text](images/figure1.png)
+    ![alt text](_images/figure1.png)
 
-The script `md2md.py` can be used to apply several Markdown
+The local image folder is usually named `session_images`, if the
+Markdown file is named `session.md`. Using Slidoc with
+`--image_dir=session_images` will substitute `_images` with
+`session_images` in the image reference during HTML conversion. (This
+convention allows images associated with each Markdown file to be
+stored in a separate folder, while still allowing it to be renamed as
+needed.)
+
+Notes: The script `md2md.py` can be used to apply several Markdown
 tranformations as follows:
 
     md2md.py --strip=concepts,notes doc.md
@@ -506,7 +514,7 @@ tranformations as follows:
 The above example creates a new file `doc-modified.md` with concept lists and
 notes stripped out.
 
-Notes: Other supported operations include:
+Other supported operations include:
 
 - `--fence|--unfence`: Convert fenced code to indented code and vice versa
 

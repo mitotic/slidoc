@@ -1,0 +1,38 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- dashboard template for slidoc server --->
+<!-- edit parameters: site_name, site_label, session_name, session_text, discard_url -->
+
+{% include "base.html" %}
+
+<script>
+function slidocDiscard() {
+  if (!window.confirm('Discard changes?')) {
+    return;
+  }
+  window.location = '/{{site_name}}{% if site_name %}/{% end %}{{discard_url}}';
+}
+</script>
+
+</head>
+<body>
+
+<b><a href="javascript:slidocDiscard()">Discard changes</a></b>
+<p></p>
+
+<form action="/{{site_name}}{% if site_name %}/{% end %}_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
+  {% module xsrf_form_html() %}
+  <div>
+    <input id="slidoc-edit-submit" type="submit" value="Preview">
+  </div>
+  <fieldset>
+    <label for="sessionname">Session:</label>
+    <input type="text" disabled id="sessionname" name="sessionname" value={{session_name}}></input>
+    <p></p>
+    <textarea id="sessiontext" name="sessiontext">{{session_text}}</textarea>
+  </fieldset>
+</form>
+
+</body>
+</html>
