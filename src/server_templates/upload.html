@@ -16,7 +16,7 @@
 </b>
 
 <div id="slidoc-upload-form">
-  <form action="/_upload" method="post" enctype="multipart/form-data" >
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_upload/index.html" method="post" enctype="multipart/form-data" >
     <fieldset>
       <label for="sessiontype">Upload type:</label>
       <select name="sessiontype">

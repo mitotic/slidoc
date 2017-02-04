@@ -477,8 +477,23 @@ document.onreadystatechange = function(event) {
     return abortOnError(onreadystateaux);
 }
 
+Sliobj.previewState = '';
+
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:");
+
+    var match = location.pathname.match(/\b\/_(preview|upload)\b/);
+    if (match) {
+	Sliobj.previewState = match[1];
+	var previewLabel = document.getElementById('slidoc-preview-label');
+	if (previewLabel)
+	    previewLabel.textContent = (Sliobj.previewState == 'upload') ? 'Draft' : 'Preview';
+	var previewAccept = document.getElementById('slidoc-preview-accept');
+	if (previewAccept)
+	    previewAccept.textContent = (Sliobj.previewState == 'upload') ? 'Preview' : 'Finalize';
+	previewMessages();
+    }
+
     var loadElem = document.getElementById("slidoc-init-load");
     if (loadElem)
 	loadElem.style.display = 'none';
@@ -543,6 +558,44 @@ function onreadystateaux() {
     } else {
 	Slidoc.slidocReady(null);
     }
+}
+
+//////////////////////////////////
+// Section 8b: Preview functions
+//////////////////////////////////
+
+Slidoc.previewAction = function (action) {
+    if (action == 'discard') {
+	if (!window.confirm('Discard all changes?'))
+	    return;
+    } else if (action == 'accept') {
+	if (Sliobj.previewState == 'preview') {
+	    if (Sliobj.params.overwrite) {
+		if (!window.confirm('Accepting changes will overwrite previous version. Proceed?'))
+		    return;
+	    }
+	    action = 'accept';
+	} else {
+	    action = 'preview/index.html';
+	}
+    } else if (action == 'messages') {
+	action = Sliobj.previewState + '/_messages';
+    }
+
+    window.location = Sliobj.sitePrefix + '/_' + action;
+}
+
+function previewMessages() {
+    var XHR = new XMLHttpRequest();
+    XHR.onload = function (evt) {
+	var messageText = this.responseText.trim();
+	if (!messageText)
+	    return;
+	var messageHtml = '<pre>'+messageText+'\n</pre>\n';
+	Slidoc.showPopup(messageHtml, null, true);
+    }
+    XHR.open('GET', Sliobj.sitePrefix + '/_'+Sliobj.previewState+'/_messages');
+    XHR.send();
 }
 
 //////////////////////////////////
@@ -1990,23 +2043,6 @@ Slidoc.viewSheet = function(sheetName) {
 // Section 13: Retrieve data needed for session setup
 //////////////////////////////////////////////////////
 
-if (location.pathname.match(/^_preview/)) {
-    toggleClass(true, 'slidoc-preview-view');
-    if (Sliobj.params.draft) {
-	var previewLabel = document.getElementById('slidoc-preview-label');
-	if (previewLabel)
-	    previewLabel.textContent = Sliobj.params.draft;
-    }
-}
-
-Slidoc.previewAction = function (action) {
-    if (action == 'discard') {
-	if (!window.confirm('Discard all changes?'))
-	    return;
-    }
-    window.location = Sliobj.sitePrefix + '/_' + action;
-}
-
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
     Sliobj.adminState = auth && !!auth.adminKey;
@@ -2291,6 +2327,9 @@ function slidocSetupAux(session, feedback) {
 
     scoreSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
+
+    if (Sliobj.previewState)
+    	toggleClass(true, 'slidoc-preview-view');
 
     if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');

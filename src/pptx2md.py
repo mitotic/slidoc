@@ -388,7 +388,7 @@ class PPTXParser(object):
         if img_name:
             img_copy = img_name + '.' + img_ext
         else:
-            prefix = self.fileprefix + '-'
+            prefix = self.fileprefix + '-' if self.fileprefix else ''
             if img_path:
                 img_copy = prefix + os.path.basename(img_path)
             else:

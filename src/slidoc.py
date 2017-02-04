@@ -1843,7 +1843,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 
     if renderer.questions:
         # Compute question hash digest to track questions
-        sbuf = io.BytesIO(source)
+        sbuf = io.BytesIO(source.encode('utf-8'))
         slide_hash = []
         slide_lines = []
         first_slide = True
@@ -2170,31 +2170,27 @@ def strip_name(filepath, split_char=''):
     return name.split(split_char)[-1] if split_char else name
 
 N_INDEX_ENTRIES = 5
-def read_index(filepath):
+def read_index(fhandle):
     # Read one or more index entries from comment in the header portion of HTML file
     index_entries = []
-    if not os.path.exists(filepath):
-        return index_entries
+    found_entries = False
+    while 1:
+        line = fhandle.readline()
+        if not line:
+            break
+        if line.strip() == Index_prefix.strip():
+            found_entries = True
+            break
 
-    with open(filepath) as f:
-        found_entries = False
-        while 1:
-            line = f.readline()
-            if not line:
-                break
-            if line.strip() == Index_prefix.strip():
-                found_entries = True
-                break
-
-        tem_list = []
-        while found_entries:
-            line = f.readline()
-            if not line or line.strip().startswith(Index_suffix.strip()):
-                break
-            tem_list.append(line.strip())
-            if len(tem_list) == N_INDEX_ENTRIES:
-                index_entries.append(tem_list)
-                tem_list = []
+    tem_list = []
+    while found_entries:
+        line = fhandle.readline()
+        if not line or line.strip().startswith(Index_suffix.strip()):
+            break
+        tem_list.append(line.strip())
+        if len(tem_list) == N_INDEX_ENTRIES:
+            index_entries.append(tem_list)
+            tem_list = []
 
     return index_entries
 
@@ -2360,7 +2356,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
 
         if not config.make:
             fnumbers.append(fnumber)
-        elif not input_files[j] or not os.path.exists(outpath) or os.path.getmtime(outpath) <= os.path.getmtime(inpath):
+        elif input_files[j] and not (os.path.exists(outpath) and os.path.getmtime(outpath) > os.path.getmtime(inpath)):
             # Process only accessible and modified input files
             fnumbers.append(fnumber)
 
@@ -2387,7 +2383,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         abort('slidoc: Error: --pace option incompatible with --all')
 
     js_params = {'siteName': '', 'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
-                 'draft': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
+                 'overwrite': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'gradeFields': [], 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
@@ -2400,7 +2396,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                  'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
     js_params['siteName'] = config.site_name
-    js_params['draft'] = config.draft or ''
+    js_params['overwrite'] = 1 if config.overwrite else 0
     js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
     js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
@@ -2589,9 +2585,12 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     flist = []
     paced_files = {}
     admin_due_date = {}
+    out_index = {}
     for j, fnumber in enumerate(fnumbers):
         fhandle = input_files[fnumber-1]
         fname = orig_fnames[fnumber-1]
+        outpath = orig_outpaths[fnumber-1]
+        outname = fname+".html"
         release_date_str = ''
         due_date_str = ''
         vote_date_str = ''
@@ -2756,7 +2755,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             max_score_fields += renderer.max_fields if renderer.max_fields else []
 
         all_concept_warnings += renderer.concept_warnings
-        outname = fname+".html"
         flist.append( (fname, outname, release_date_str, fheader, file_toc) )
         
         comb_plugin_defs.update(renderer.plugin_defs)
@@ -2779,7 +2777,11 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             sessions_due = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
-                    index_entries = read_index(dest_dir+opt)
+                    if os.path.exists(dest_dir+opt):
+                        with open(dest_dir+opt) as f:
+                            index_entries = read_index(f)
+                    else:
+                         index_entries = []
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_entries:
                         if iso_due_str and iso_due_str != '-':
                             sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str, iso_release_str])
@@ -2896,22 +2898,24 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 file_plugin_defs.update(renderer.plugin_defs)
                 file_head_html = (js_params_fmt % json.dumps(js_params)) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
-                head = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
+                pre_html = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 if release_date_str != FUTURE_DATE:
                     # Prefix index entry as comment
                     if js_params['paceLevel']:
                         index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
                     else:
                         index_entries = [fname, fheader, 'view', '-', '-']
-                    head = '\n'.join([Index_prefix] + index_entries + [Index_suffix, head])
+                    index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
+                    out_index[outpath] = index_head
+                    pre_html = index_head + pre_html
 
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
-                    outfile_buffer.append([outname, dest_dir+outname, head, tail])
+                    outfile_buffer.append([outname, outpath, fnumber, pre_html, tail])
                 else:
-                    outfile_buffer.append([outname, dest_dir+outname, '', ''])
-                    write_doc(dest_dir+outname, head, tail)
+                    outfile_buffer.append([outname, outpath, fnumber, '', ''])
+                    write_doc(dest_dir+outname, pre_html, tail)
 
             if backup_dir:
                 bakname = backup_dir+os.path.basename(input_paths[fnumber-1])[:-3]+'-bak.md'
@@ -2963,11 +2967,15 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         if config.make_toc:
             # Create ToC using header info from .html files
             for j, outpath in enumerate(orig_outpaths):
-                if not os.path.exists(outpath):
+                if outpath in out_index:
+                    index_entries = read_index(io.BytesIO(out_index[outpath].encode('utf8')))
+                elif os.path.exists(outpath):
+                    with open(outpath) as f:
+                        index_entries = read_index(f)
+                else:
                     abort('Output file '+outpath+' not readable for indexing')
-                index_entries = read_index(outpath)
                 if not index_entries:
-                    message('Index header not found in '+outpath)
+                    message('Index header not found for '+outpath)
                     continue
                 _, fheader, doc_str, iso_due_str, iso_release_str = index_entries[0]
                 doc_link = ''
@@ -3056,14 +3064,14 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     if not config.dry_run:
         if not combined_file:
             message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
-            for outname, outpath, head, tail in outfile_buffer:
+            for outname, outpath, fnumber, pre_html, tail in outfile_buffer:
                 if tail:
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
                     if return_html:
-                        return {'outpath': outpath, 'out_html':Html_header+head+tail+Html_footer, 'toc_html':toc_all_html, 'messages': messages}
+                        return {'outpath': outpath, 'out_html':Html_header+pre_html+tail+Html_footer, 'toc_html':toc_all_html, 'messages': messages}
                     else:
-                        write_doc(outpath, head, tail)
+                        write_doc(outpath, pre_html, tail)
         if config.slides:
             message('Created *-slides.html files')
         if config.notebook:
@@ -3398,7 +3406,6 @@ Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combine
 Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
-Conf_parser.add_argument('--draft', help='Draft label ("Draft view"/"Draft overwrite view")')
 Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
