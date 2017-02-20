@@ -115,7 +115,7 @@ E.. `y[6]`
 
 Answer: B
 
-Concepts: slicing, index; array, index; list, index
+Tags: slicing, index; array, index; list, index
 
 Notes: Since python list indices start at `0`, the fourth element is
 actually `y[3]`. This may seem a bit confusing at first, but you will
@@ -133,7 +133,7 @@ What is the notation for the last element of list `y`?
 
 Answer: `y[7]` OR `y[-1]`
 
-Concepts: slicing, index; array, index; list, index 
+Tags: slicing, index; array, index; list, index 
 
 Notes: There are eight elements in the list. Both `y[7]` and `y[-1]`
 refer to the last element, with the latter notation counting backwards
@@ -165,7 +165,7 @@ E.. `y[5:8]`
 
 Answer: D
 
-Concepts: slicing, range; array, slice
+Tags: slicing, range; array, slice
 
 Notes: Note that `y[4:7]` includes elements `y[4]` through `y[6]`, but not
 `y[7]`.
@@ -184,7 +184,7 @@ element, which is a list with one element, `[9]`.)
 
 Answer: `y[2:3]`
 
-Concepts: slicing, range; array, slice
+Tags: slicing, range; array, slice
 
 Notes: `y[2:3]` is a list containing just the element `y[2]`. Its
 length will be 1.
@@ -199,7 +199,7 @@ What is `len(y[4:4])`?
 
 Answer: 0
 
-Concepts: slicing, range; list, empty 
+Tags: slicing, range; list, empty 
 
 Notes: `y[4:4]` yields a list of length zero, i.e., equivalent to `[]`
 
@@ -214,7 +214,7 @@ negative index notation?
 
 Answer: `y[-2]`
 
-Concepts: slicing, index; array, negative index
+Tags: slicing, index; array, negative index
 
 Notes: Because `y[-1]` is the last element.
 
@@ -229,7 +229,7 @@ of the list?
 
 Answer: `y[0:3]` OR `y[:3]`
 
-Concepts: slicing, range; list, empty  
+Tags: slicing, range; list, empty  
  
 Notes: The initial `0` in a slice range can be omitted.
 
@@ -244,7 +244,7 @@ of the list?
 
 Answer: `y[6:8]` OR `y[6:]` OR `y[-2:]`
 
-Concepts: slicing, range; array, slicing
+Tags: slicing, range; array, slicing
  
 Notes: The final index in a slice range can be omitted. Negative
 indices may sometimes be more convenient. The list `y[-2:]` includes `y[-2]`
@@ -261,7 +261,7 @@ list?
 
 Answer: `y[0:8]` OR `y[0:]` OR `y[:8]` OR `y[:]`
 
-Concepts: slicing, range; array, slicing
+Tags: slicing, range; array, slicing
  
 Notes: The notation `y[:]` is commonly used to denote a complete slice
 of all elements, omitting the starting and ending indices.
@@ -277,7 +277,7 @@ only negative indices?
 
 Answer: `y[-4:-1]`
 
-Concepts: slicing, range; array, slicing; array, negative index
+Tags: slicing, range; array, slicing; array, negative index
  
 Notes: `y[-4:-1]` includes `y[-4]`, `y[-3]`, and `y[-2]`, but *not*
 `y[-1]` (the last element)

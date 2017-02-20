@@ -43,7 +43,7 @@ test **bold** and  \(\alpha = \frac{1}{\beta}\)
 
 Answer: text/markdown; weight=0,5
 
-Concepts: questions, text response 
+Tags: questions, text response 
 
 Notes: This is an example of an open-ended text answer question.
 
@@ -71,7 +71,7 @@ Provide a numeric answer.
 
 Answer: 1.5 +/- 0.5; explain=markdown; weight=0,5
 
-Concepts: questions, text response 
+Tags: questions, text response 
 
 ---
 

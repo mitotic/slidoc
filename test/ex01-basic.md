@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=1 --features=grade_response,quote_response -->
+<!--slidoc-defaults --pace=2 --retakes=2 --features=grade_response,quote_response -->
 # Basic questions
 
 Slidoc supports a simple format for framing interactive questions.
@@ -13,7 +13,7 @@ The next slide contains a multiple choice question that uses the `A.. `
 notation allowing interactive response. (The space after the `..` is
 required.) Click on a choice to view the correct answer.
 
-Concepts: questions, interactive: questions, multiple-choice;
+Tags: questions, interactive: questions, multiple-choice;
 questions, numeric response; questions, formulas; questions, text
 response
 
@@ -56,9 +56,9 @@ C.. Letter C
 
 D.. Letter D
 
-Answer: ;explain
+Answer: ;explain; maxchars=140
 
-Concepts: questions, interactive: questions, multiple-choice
+Tags: questions, interactive: questions, multiple-choice
 
 Notes:
 
@@ -82,7 +82,7 @@ D.. Richard VIII
 
 Answer: BC
 
-Concepts: questions, multichoice
+Tags: questions, multichoice
 
 Notes:
 
@@ -130,7 +130,7 @@ PluginEndDef: SqrtTest
 
 Answer: 2.5 +/- 0.1=SqrtTest.expect()
 
-Concepts: questions, numeric response: questions, formulas; questions, randomized
+Tags: questions, numeric response: questions, formulas; questions, randomized
 
 Notes: An optional error range may be provided after `+/-`.
 
@@ -151,7 +151,7 @@ The dinosaur named tyrant lizard is more commonly known as?
 
 Answer: T.Rex OR T Rex OR T-Rex OR Tyrannosaurus Rex
 
-Concepts: questions, text response
+Tags: questions, text response
 
 Notes: The upper-case OR is used to separate correct answer options,
 which are not case-sensitive. If a correct answer option includes a
@@ -186,9 +186,9 @@ spaces will be expected in the user response.
 
 Write a python function to add two numbers.
 
-Answer: text/x-code; weight=1,4
+Answer: text/x-code; weight=1,4; maxchars=210
 
-Concepts: questions, text response 
+Tags: questions, text response 
 
 Notes: This is an example of an open-ended text answer question.
 
@@ -236,7 +236,7 @@ being correct.
 
 What number is the answer to the Ultimate Question of Life, the Universe and Everything?
 
-Answer: number; explain=markdown; weight=0,2
+Answer: number; explain; weight=0,2
 
 Notes: All answers are assumed correct.
 

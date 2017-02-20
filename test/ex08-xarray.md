@@ -9,7 +9,7 @@ metadata.
 `xarray` will be used to read and manipulate data from a
 netCDF file.
 
-Concepts: xarray
+Tags: xarray
 
 ## History
 
@@ -31,7 +31,7 @@ Concepts: xarray
 - Provides versatile indexing and spreadsheet-like capabilities for
 analyzing tabular data.
 
-Concepts: xarray, history
+Tags: xarray, history
 
 ---
 
@@ -50,7 +50,7 @@ A netCDF file dimensions, coordinate variables, data variables, and attributes.
  - `DataArray`, which corresponds to a single variable in the netCDF file
 
 
-Concepts: xarray, overview
+Tags: xarray, overview
 
 ---
 
@@ -69,7 +69,7 @@ in-memory representation of a netCDF file.
 ![img](http://xarray.pydata.org/en/stable/_images/dataset-diagram.png)
 
 
-Concepts: xarray, DataArray; xarray, DataSet
+Tags: xarray, DataArray; xarray, DataSet
 
 ---
 
@@ -88,7 +88,7 @@ from a list, a list of lists, or a `numpy` array.
 
 Try out the above commands in a Notebook cell.
 
-Concepts: xarray, create
+Tags: xarray, create
 
 ---
 
@@ -96,7 +96,7 @@ In the previous code example, what is the name of the second dimension of `arr_f
 
 Answer: dim_1
 
-Concepts: xarray, create DataArray; xarray, dimensions
+Tags: xarray, create DataArray; xarray, dimensions
 
 Notes: Typing `arr_from_list` produces the following output:
 
@@ -120,7 +120,7 @@ You can explicitly specify the names for the dimensions
     # At two locations: 'inside', 'outside'
 	data = [ [ 3
 
-Concepts: xarray, dimensions
+Tags: xarray, dimensions
 
 ---
 

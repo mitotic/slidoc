@@ -81,7 +81,7 @@ E.. `y[6]`
 
 Answer: B
 
-Concepts: arrays, slicing; array, index; list, index
+Tags: arrays, slicing; array, index; list, index
 
 Notes: Since python list indices start at `0`, the fourth element is
 actually `y[3]`. This may seem a bit confusing at first, but you will
@@ -99,7 +99,7 @@ What is the notation for the last element of list `y`?
 
 Answer: `y[7]` OR `y[-1]`
 
-Concepts: slicing, index; array, index; list, index 
+Tags: slicing, index; array, index; list, index 
 
 Notes: There are eight elements in the list. Both `y[7]` and `y[-1]`
 refer to the last element, with the latter notation counting backwards
