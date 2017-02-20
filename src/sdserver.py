@@ -288,7 +288,7 @@ class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
     static_opts = {'default': dict(make=True, make_toc=True, debug=True),
-                    'top': dict(strip='chapters,contents,navigate,sections'),
+                   'top': dict(strip='chapters,contents,navigate,sections'),
                    }
 
     def get_config_opts(self, uploadType, topnav=False, sheet=False):

@@ -68,8 +68,8 @@ class MDParser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
     indent_strip_re =  re.compile( r'^ {4}', re.MULTILINE)
     answer_re =        re.compile( r'^Answer:')
-    concepts_re =      re.compile( r'^Concepts:')
     notes_re =         re.compile( r'^Notes:')
+    tags_re =          re.compile( r'^Tags:')
     inline_js1 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\);([^`\n]*)`")
     inline_js2 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\)`")
     plugin_re =        re.compile( r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
@@ -164,7 +164,7 @@ class MDParser(object):
                     pass
                 elif self.answer_re.match(line) and 'answer' in self.cmd_args.strip:
                     pass
-                elif self.concepts_re.match(line) and 'concepts' in self.cmd_args.strip:
+                elif self.tags_re.match(line) and 'tags' in self.cmd_args.strip:
                     pass
                 elif self.notes_re.match(line) and 'notes' in self.cmd_args.strip:
                     self.skipping_notes = True
@@ -276,7 +276,7 @@ Args_obj = md2md.ArgsObj( str_args= ['site_url', 'strip'],
 if __name__ == '__main__':
     import argparse
 
-    strip_all = ['answer', 'concepts', 'extensions', 'internal_ref', 'markup', 'notes', 'plugin', 'rule']
+    strip_all = ['answer', 'extensions', 'internal_ref', 'markup', 'notes', 'plugin', 'rule', 'tags']
     
     parser = argparse.ArgumentParser(description='Convert from Markdown to Jupyter Notebook format')
     parser.add_argument('--indented', help='Convert indented code blocks to notebook cells', action="store_true")

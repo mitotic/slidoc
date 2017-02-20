@@ -106,9 +106,9 @@ class Parser(object):
     indent_strip_re =  re.compile( r'^ {4}', re.MULTILINE)
     annotation_re =    re.compile( r'^Annotation:')
     answer_re =        re.compile( r'^Answer:')
-    concepts_re =      re.compile( r'^Concepts:')
     inline_math_re =   re.compile( r'^\\\((.+?)\\\)')
     notes_re =         re.compile( r'^Notes:')
+    tags_re =          re.compile( r'^Tags:')
     inline_js1 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\);([^`\n]*)`")
     inline_js2 =       re.compile( r"`=(\w+)\.(\w+)\(\s*(\d*)\s*\)`")
     plugin_re =        re.compile( r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
@@ -565,7 +565,7 @@ class Parser(object):
                     pass
                 elif self.answer_re.match(line) and 'answers' in self.cmd_args.strip:
                     pass
-                elif self.concepts_re.match(line) and 'concepts' in self.cmd_args.strip:
+                elif self.tags_re.match(line) and 'tags' in self.cmd_args.strip:
                     pass
                 elif self.notes_re.match(line) and 'notes' in self.cmd_args.strip:
                     self.skipping_notes = True
@@ -822,7 +822,7 @@ def make_arg_set(arg_value, arg_all_list):
 if __name__ == '__main__':
     import argparse
 
-    strip_all = ['answers', 'code', 'concepts', 'extensions', 'markup', 'notes', 'plugin', 'rule']
+    strip_all = ['answers', 'code', 'extensions', 'markup', 'notes', 'plugin', 'rule', 'tags']
     
     parser = argparse.ArgumentParser(description='Convert from Markdown to Markdown')
     parser.add_argument('--backtick_off', help='Remove backticks bracketing inline math', action="store_true")

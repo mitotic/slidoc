@@ -51,7 +51,7 @@ same concept. The embedded Javascript also provides interactivity,
 allowing users to answer embedded questions, tallying scores and
 tracking understanding of concepts.
 
-Concepts: Slidoc, design goals; slides, Markdown
+Tags: Slidoc, design goals; slides, Markdown
 
 ---
 
@@ -106,7 +106,7 @@ hosting services like [Site44](https://www.site44.com) and
 [NearlyFreeSpeech.net](https://www.nearlyfreespeech.net) are also
 worth considering.
 
-Concepts: lecture management: index, concepts
+Tags: lecture management: index, concepts
 
 Notes: The `--indexed=,ind,` option can be used with null arguments
 to control generation of index files.
@@ -124,7 +124,7 @@ you edit. There is also a
 [Chrome extension](https://chrome.google.com/webstore/detail/markdown-preview-plus/febilkbfcbhebfnokafefeacimjdckgl?hl=en-US)
 of the same name to render Markdown in the browser.
 
-Concepts: Markdown, editing
+Tags: Markdown, editing
 
 ---
 
@@ -155,39 +155,39 @@ Headers may appear in the Notes portion of a slide (see below), in
 which case they will appear for indexing, but will not be displayed in
 the main slide.
 
-Concepts: :Slidoc, document structure
+Tags: :Slidoc, document structure
 
 ---
 
-## Concepts and Notes
+## Tags and Notes
 
 Two additional pieces of information may optionally be included in
-each slide: a list of concepts and additional notes. A concept list
+each slide: a list of tags/concepts and additional notes. A tag list
 may appear anywhere in the slide, but notes can only appear at the
 very end of the slide.
 
 Example:
 
-    Concepts: primary topic1; primary topic2, subtopic2: secondary topic3, subtopic3; secondary topic4; ...
+    Tags: primary topic1; primary topic2, subtopic2: secondary topic3, subtopic3; secondary topic4; ...
  
     Notes: Additional material
 
-Concept lists are used generate an automatic concept index. Indexing
+Tag/concept lists are used generate an automatic index. Indexing
 is done separately for regular slides and question slides. Slidoc
 supports concept chain navigation. Starting from the index, you can
 easily navigate between all places in the document where a particular
 concept is discussed.
 
-Concepts: concepts, list; concepts, multiple: concepts, tracking
+Tags: concepts, list; concepts, multiple: concepts, tracking
 
-Notes: Concept lists have two parts: primary concept list and
-secondary concept list, separated by a colon. Either part may be
-omitted. (If there are no primary concepts, then a colon should
-precede the secondary concept list.)
+Notes: Tag lists have two parts: primary tag list and
+secondary tag list, separated by a colon. Either part may be
+omitted. (If there are no primary tag, then a colon should
+precede the secondary tag list.)
 
-Concept lists are semicolon-separated. Each concept
+Tag lists are semicolon-separated. Each tag
 uses the syntax `topic, subtopic` where `topic` or `subtopic` is a
-space-separated phrase, with `subtopic` being optional. Concepts are not
+space-separated phrase, with `subtopic` being optional. Tags are not
 visible during a slideshow, but are displayed in the printed version
 of the lecture.
 
@@ -215,7 +215,7 @@ The slideshow mode can be used for quick navigation around the document:
 
 - Press Escape to exit slideshow
 
-Concepts: slideshow: navigation
+Tags: slideshow: navigation
 
 Notes: Unlike a true slideshow, vertical scrolling is permitted in each
 slide, allowing essentially unlimited supporting material such as
@@ -248,7 +248,7 @@ incremental display (see [Another slide with images](#)).
 
 Final paragraph.
 
-Concepts: incremental display: lists, incremental 
+Tags: incremental display: lists, incremental 
 
 ---
 
@@ -275,7 +275,7 @@ filename as the key. It is enabled by the options:
 The Notes portion of a question slide is hidden until a correct
 response is received or all tries are exhausted.
 
-Concepts: paced mode
+Tags: paced mode
 
 ---
 
@@ -300,7 +300,7 @@ questions automatically receive full credit for those
 questions. However, they may still choose to answer some or all of the
 extra questions (without penalty for answering incorrectly).
 
-Concepts: adaptive assessment 
+Tags: adaptive assessment 
 
 ---
 
@@ -331,7 +331,7 @@ The `qind.html` file has a map analyzing each question for all the
 concepts it covers, and relating it to other questions which cover a
 subset of these concepts.
 
-Concepts: concept dependency analysis: index, questions
+Tags: concept dependency analysis: index, questions
 
 ---
 
@@ -415,7 +415,7 @@ questions. Questions are slides of the form:
 
     Answer: X
 
-    Concepts: ...
+    Tags: ...
 
 where `X` can be `a`, `b`, etc. for multiple-choice questions, a
 number for numeric answers, or some text for open-ended answers. For
@@ -427,7 +427,7 @@ containing the word `answer`.
 The optional concepts list for questions is analyzed by Slidoc
 for dependencies.
 
-Concepts: questions: concept list 
+Tags: questions: concept list 
 
 
 ---
@@ -466,7 +466,7 @@ The following command
 
 will strip answers completely from the printable `.html` files.
 
-Concepts: answers, hiding; answers, stripping
+Tags: answers, hiding; answers, stripping
 
 ---
 
@@ -475,7 +475,7 @@ Concepts: answers, hiding; answers, stripping
 Lecture files may be converted to
 [Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/)
 by specifying the `--notebook` option to `slidoc.py`.
-By default, concept lists are stripped during this conversion process.
+By default, tag lists are stripped during this conversion process.
 
 Alternatively, to simply convert to notebooks, use the `md2nb.py` command:
 
@@ -487,10 +487,10 @@ blocks to code cells. Use the `-h` option to list all command options.
 
 The reverse conversion, from notebook to Markdown format, can be
 accomplished using `nb2md.py`. Another script, `md2md.py`, can be used to
-transform Markdown documents by removing concept lists,
+transform Markdown documents by removing tag lists,
 embedding/exporting images etc.
 
-Concepts: jupyter notebook: code, fenced; code, indented
+Tags: jupyter notebook: code, fenced; code, indented
 
 ---
 
@@ -513,9 +513,9 @@ needed.)
 Notes: The script `md2md.py` can be used to apply several Markdown
 tranformations as follows:
 
-    md2md.py --strip=concepts,notes doc.md
+    md2md.py --strip=tags,notes doc.md
 
-The above example creates a new file `doc-modified.md` with concept lists and
+The above example creates a new file `doc-modified.md` with tag lists and
 notes stripped out.
 
 Other supported operations include:
@@ -561,7 +561,7 @@ installed (for presentation mode, see below)
 Any of the above can be a null string, or be omitted, e.g. `--slides=,`
 or `--slides=,,190%`
 
-Concepts: reveal.js; slideshow, reveal.js
+Tags: reveal.js; slideshow, reveal.js
 
 Notes: To customize the presentation further, edit the
 `templates/reveal_template.html` template file.
@@ -589,7 +589,7 @@ useful:
 
 - `?` to display keyboard shortcuts
 
-Concepts: reveal.js, keyboard shortcuts: slideshow, reveal.js
+Tags: reveal.js, keyboard shortcuts: slideshow, reveal.js
 
 ---
 
@@ -613,7 +613,7 @@ presentation mode. Turn off any mirroring of displays. Display the
 standard window on the projected window and the presentation window in
 the desktop/laptop window.
 
-Concepts: reveal.js, presentation mode
+Tags: reveal.js, presentation mode
 
 ---
 
@@ -630,7 +630,7 @@ for web view.)
 
 To customize what appears in the document, you can use the `--strip`
 option. It accepts a list of comma-separated values from the list
-`answers,chapters,concepts,contents,hidden,navigate,notes,rule,sections`
+`answers,chapters,tags,contents,hidden,navigate,notes,rule,sections`
 
 You can also specify `--strip=all` or `--strip=all,but,...`
 
@@ -640,7 +640,7 @@ converts HTML documents produced by `slidoc.py` to PDF. The included
 program `sdprintpy` is a wrapper around `wkhtmltopdf` that can be used
 to create user-specific PDFs for paced sessions.
 
-Concepts: exporting; printing; PDF; wkhtmltopdf
+Tags: exporting; printing; PDF; wkhtmltopdf
 
 
 ---
@@ -672,7 +672,7 @@ The above line appears as the first line of this README file. (These
 options can be overridden by explicity specifying options in the
 command line.)
 
-Concepts: command line, options: options, default
+Tags: command line, options: options, default
 
 ---
 
@@ -728,7 +728,7 @@ can refer to the above equation inline as
 
 which renders as (\(\ref{eq:a}\))
 
-Concepts: equations; mathjax 
+Tags: equations; mathjax 
 
 Notes: Equations are also allowed in notes: \(\boldsymbol{\alpha} = 1+\omega\)
 (note the use of bold face for Greek symbol)
@@ -769,7 +769,7 @@ above).
 When converting to notebook format, indented code is not converted to
 a code cell (unless explicitly requested).
 
-Concepts: code, fenced; code, indented
+Tags: code, fenced; code, indented
 
 ---
 
@@ -824,7 +824,7 @@ notation, such as in the example below that incrementally displays the image.
 
 *[Image ]{#:resized}*: Resized image
 
-Concepts: image, metadata; image, style; image, incremental
+Tags: image, metadata; image, style; image, incremental
 
 ---
 
@@ -842,7 +842,7 @@ The next slide contains a multiple choice question that uses the `A.. `
 notation allowing interactive response. (The space after the `..` is
 required.) Click on a choice to view the correct answer.
 
-Concepts: questions, interactive: questions, multiple-choice; questions, numeric response; questions, formulas; questions, text response
+Tags: questions, interactive: questions, multiple-choice; questions, numeric response; questions, formulas; questions, text response
 
 ---
 
@@ -860,7 +860,7 @@ D.. Letter D
 
 Answer: B
 
-Concepts: questions, interactive: questions, multiple-choice
+Tags: questions, interactive: questions, multiple-choice
 
 Notes:
 
@@ -912,7 +912,7 @@ PluginEndDef: SqrtTest
 
 Answer: 2.5 +/- 0.1 = SqrtTest.expect()
 
-Concepts: questions, numeric response: questions, formulas; questions, randomized
+Tags: questions, numeric response: questions, formulas; questions, randomized
 
 Notes: An optional error range may be provided after `+/-`. The error
 range may be a number or a percent value, i.e. `+/- 5%`
@@ -933,7 +933,7 @@ The dinosaur named tyrant lizard is more commonly known as?
 
 Answer: T.Rex OR T Rex OR T-Rex OR Tyrannosaurus Rex
 
-Concepts: questions, text response
+Tags: questions, text response
 
 Notes: The upper-case OR is used to separate correct answer options,
 which are not case-sensitive. If a correct answer option includes a
@@ -952,7 +952,7 @@ Write a python function to add two numbers.
 
 Answer: text/code
 
-Concepts: questions, text response 
+Tags: questions, text response 
 
 Notes: This is an example of an open-ended text answer question.
 
@@ -1102,7 +1102,7 @@ protocol and domain. In return, Google generates a client ID. Your
 application submits this to the Google Auth server to get an OAuth 2.0
 access token.
 
-Concepts: google docs: due date; login token; late submission token
+Tags: google docs: due date; login token; late submission token
 
 ---
 
@@ -1122,4 +1122,4 @@ Within the slide, include the following `iframe` HTML element:
 
     <iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
 
-Concepts: notebook, embed
+Tags: notebook, embed

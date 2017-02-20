@@ -263,7 +263,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
-    slidoc_concepts = re.compile(r'^ {0,3}(Concepts):(.*?)\n\s*(\n|$)', re.DOTALL)
+    slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)\n\s*(\n|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
     slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     slidoc_extra  =   re.compile(r'^ {0,3}(Extra):\s*?((?=\S)|\n)')
@@ -275,7 +275,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_concepts', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -381,9 +381,9 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2).strip()
         })
 
-    def parse_slidoc_concepts(self, m):
+    def parse_slidoc_tags(self, m):
          self.tokens.append({
-            'type': 'slidoc_concepts',
+            'type': 'slidoc_tags',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -564,8 +564,8 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
 
-    def output_slidoc_concepts(self):
-        return self.renderer.slidoc_concepts(self.token['name'], self.token['text'])
+    def output_slidoc_tags(self):
+        return self.renderer.slidoc_tags(self.token['name'], self.token['text'])
 
     def output_slidoc_hint(self):
         return self.renderer.slidoc_hint(self.token['name'], self.token['text'])
@@ -1747,16 +1747,16 @@ class SlidocRenderer(MathRenderer):
 
         return ans_grade_fields
 
-    def slidoc_concepts(self, name, text):
+    def slidoc_tags(self, name, text):
         if not text:
             return ''
 
         ###if self.notes_end is not None:
-        ###    message("    ****CONCEPT-ERROR: %s: 'Concepts: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header))
+        ###    message("    ****TAGS-ERROR: %s: 'Tags: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header))
         ###    return ''
 
         if self.slide_concepts:
-            message("    ****CONCEPT-ERROR: %s: Extra 'Concepts: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)))
+            message("    ****TAGS-ERROR: %s: Extra 'Tags: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)))
             return ''
 
         primary, _, secondary = text.partition(':')
@@ -1782,7 +1782,7 @@ class SlidocRenderer(MathRenderer):
                 for tag in qtags:
                     # If assessment document, do not warn about lack of concept coverage
                     if tag not in Global.primary_tags and tag not in Global.sec_tags and 'assessment' not in self.options['config'].features:
-                        self.concept_warnings.append("CONCEPT-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
+                        self.concept_warnings.append("TAGS-WARNING: %s: '%s' not covered before '%s'" % (self.options["filename"], tag, self.cur_header or ('slide%02d' % self.slide_number)) )
                         message("        "+self.concept_warnings[-1])
 
                 add_to_index(Global.primary_qtags, Global.sec_qtags, p_tags, s_tags, self.options["filename"], self.get_slide_id(), self.cur_header, qconcepts=self.qconcepts)
@@ -1790,8 +1790,8 @@ class SlidocRenderer(MathRenderer):
                 # Not question
                 add_to_index(Global.primary_tags, Global.sec_tags, p_tags, s_tags, self.options["filename"], self.get_slide_id(), self.cur_header)
 
-        if 'concepts' in self.options['config'].strip:
-            # Strip concepts
+        if 'tags' in self.options['config'].strip:
+            # Strip tags
             return ''
 
         id_str = self.get_slide_id()+'-concepts'
@@ -2757,14 +2757,14 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                                                       image_dir=config.image_dir,
                                                       image_url=config.image_url,
                                                       images=slidoc_images_opts)
-    slide_mods_dict = {'strip': 'concepts,extensions'}
+    slide_mods_dict = {'strip': 'tags,extensions'}
     if 'answers' in config.strip:
         slide_mods_dict['strip'] += ',answers'
     if 'notes' in config.strip:
         slide_mods_dict['strip'] += ',notes'
     slide_mods_args = md2md.Args_obj.create_args(base_mods_args, **slide_mods_dict)
 
-    nb_mods_dict = {'strip': 'concepts,extensions', 'server_url': config.server_url}
+    nb_mods_dict = {'strip': 'tags,extensions', 'server_url': config.server_url}
     if 'rule' in config.strip:
         nb_mods_dict['strip'] += ',rule'
     nb_converter_args = md2nb.Args_obj.create_args(None, **nb_mods_dict)
@@ -3310,8 +3310,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         if config.crossref:
             if config.toc:
                 xref_list.append('<a href="%s%s" class="slidoc-clickable">%s</a><p></p>\n' % (config.server_url, combined_file or config.toc, 'BACK TO CONTENTS'))
-            xref_list.append("<h3>Concepts cross-reference (file prefix: "+fprefix+")</h3><p></p>")
-            xref_list.append("\n<b>Concepts -> files mapping:</b><br>")
+            xref_list.append("<h3>Tags cross-reference (file prefix: "+fprefix+")</h3><p></p>")
+            xref_list.append("\n<b>Tags -> files mapping:</b><br>")
             for tag in first_references:
                 links = ['<a href="%s%s.html#%s" class="slidoc-clickable" target="_blank">%s</a>' % (config.server_url, slide_file, slide_id, slide_file[len(fprefix):] or slide_file) for slide_file, slide_id, slide_header in first_references[tag]]
                 xref_list.append(("%-32s:" % tag)+', '.join(links)+'<br>')
@@ -3693,7 +3693,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     
 # Strip options
 # For pure web pages, --strip=chapters,contents,navigate,sections
-Strip_all = ['answers', 'chapters', 'concepts', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections']
+Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections', 'tags']
 
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
