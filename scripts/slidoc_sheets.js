@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.9b';
+var VERSION = '0.96.9c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['server_url', '', 'URL of server (if any); e.g., http://example.com'],
@@ -1162,12 +1162,22 @@ function sheetAction(params) {
 		    if (!maxRetakes)
 			throw('Error:RETAKES:Retakes not allowed');
 
-		    var retakesVal = parseNumber(origVals[retakesCol-1] || 0);
-		    if (retakesVal >= maxRetakes)
+		    var retakesList = origVals[retakesCol-1] ? origVals[retakesCol-1].split(',') : [];
+		    if (retakesList.length >= maxRetakes)
 			throw('Error:RETAKES:No more retakes available');
 
-		    // Update retakes count
-		    retakesVal = retakesVal + 1;
+		    // Save score for last take
+		    var savedSession = unpackSession(columnHeaders, origVals);
+		    if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
+			var scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers']);
+			var lastTake = ''+(scores.weightedCorrect || 0);
+                    } else {
+			var lastTake = '0';
+		    }
+
+		    // Update retakes score list
+		    retakesList.push(lastTake);
+		    var retakesVal = retakesList.join(',');
 		}
 
 		createRow = origVals[columnIndex['source']-1];

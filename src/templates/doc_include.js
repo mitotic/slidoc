@@ -1393,7 +1393,8 @@ Slidoc.userLoginCallback = function (retryCall, auth) {
 function retakesRemaining() {
     if (!Sliobj.params.maxRetakes || !Sliobj.session || Sliobj.session.submitted)
 	return 0;
-    return Sliobj.params.maxRetakes - (Sliobj.session.retakes || 0);
+    var retakesCount = Sliobj.session.retakes ? Sliobj.session.retakes.split(',').length : 0;
+    return Sliobj.params.maxRetakes - retakesCount;
 }
 
 Slidoc.resetPaced = function () {

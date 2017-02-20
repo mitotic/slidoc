@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.9b'
+VERSION = '0.96.9c'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1608,12 +1608,21 @@ def sheetAction(params, notrace=False):
                     if not maxRetakes:
                         raise Exception('Error:RETAKES:Retakes not allowed')
 
-                    retakesVal = parseNumber(origVals[retakesCol-1] or 0)
-                    if retakesVal >= maxRetakes:
+                    retakesList = origVals[retakesCol-1].split(',') if origVals[retakesCol-1] else []
+                    if len(retakesList) >= maxRetakes:
                         raise Exception('Error:RETAKES:No more retakes available')
 
-                    # Update retakes count
-                    retakesVal = retakesVal + 1
+                    # Save score for last take
+                    savedSession = unpackSession(columnHeaders, origVals)
+                    if savedSession and savedSession.get('questionsAttempted'):
+                        scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers'])
+                        lastTake = str(scores.get('weightedCorrect') or 0)
+                    else:
+                        lastTake = '0'
+
+                    # Update retakes score list
+                    retakesList.append(lastTake)
+                    retakesVal = ','.join(retakesList)
 
                 createRow = origVals[columnIndex['source']-1]
                 rowUpdates = createSessionRow(sheetName, sessionEntries['fieldsMin'], sessionAttributes['params'], questions,
