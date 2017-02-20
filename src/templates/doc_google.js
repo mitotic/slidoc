@@ -125,15 +125,14 @@ GService.openWebsocket = function (wsPath) {
 	var callback_method = msgObj[1];
 	var callback_args = msgObj[2];
 	
-	Slidoc.log('GService.ws.onmessage:', callback_index, callback_method);
+	Slidoc.log('GService.ws.onmessage:', callback_index, callback_method, callback_args);
 
 	if (!callback_index) {
 	    try {
 		if (callback_method == 'lock') {
-		    if (!wsock.locked)
-			wsock.locked = callback_args[1] || 'Locked for writing';
-		    if (callback_args[0]) {
-			if (window.confirm(callback_args[1] || 'Reload page?'))
+		    wsock.locked = callback_args[0]; // Null string to unlock
+		    if (callback_args[1]) {
+			if (window.confirm(callback_args[0] || 'Reload page?'))
 			    location.reload(true);
 		    }
 		} else if (callback_method == 'close') {
@@ -404,7 +403,7 @@ GoogleProfile.prototype.receiveUserInfo = function (authType, userInfo, loginRem
 		     remember: !!loginRemember});
 }
 	
-GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback) {
+GoogleProfile.prototype.promptUserInfo = function (testMode, authType, user, msg, callback) {
     var cookieUserInfo = Slidoc.getServerCookie();
     if (!authType && !cookieUserInfo) {
 	var randStr = Math.random().toString(16).slice(2);
@@ -445,11 +444,15 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 						    email: cookieUserInfo.email||'',
 						    altid: cookieUserInfo.altid||''}, false, callback);
 	    }
-	    if (cookieUserName == 'admin' && !cookieUserData.batch)
-		Slidoc.showPopupOptions('Select role:', userRoles.slice(0,userTokens.length),
-					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
-	    else
-		optCallback();
+	    if (cookieUserName == 'admin' && !cookieUserData.batch) {
+		if (testMode)
+		    optCallback(2);
+		else
+		    Slidoc.showPopupOptions('Select role:', userRoles.slice(0,userTokens.length),
+					    '<p></p><a href="/_dash">Dashboard</a>', optCallback);
+	    } else {
+		optCallback((cookieUserName == 'admin') ? 2 : 1);
+	    }
 	    return;
 	}
     }
@@ -489,6 +492,8 @@ GoogleProfile.prototype.promptUserInfo = function (authType, user, msg, callback
 }
 
 function GoogleSheet(url, sheetName, preHeaders, fields, useJSONP) {
+    if (!url)
+	throw('Error: Null Google Sheet URL');
     this.url = url;
     this.sheetName = sheetName;
     this.preHeaders = preHeaders || [];

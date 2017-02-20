@@ -22,12 +22,14 @@ import BaseHTTPServer
 import base64
 import io
 import os
+import random
 import re
 import shlex
 import subprocess
 import sys
 import urllib
 import urllib2
+import urlparse
 import zipfile
 
 from collections import defaultdict, OrderedDict
@@ -244,27 +246,6 @@ def make_index(primary_tags, sec_tags, server_url, question=False, fprefix='', i
     return first_references, covered_first, ''.join(out_list)
 
 
-class Dummy(object):
-    pass
-
-Global = Dummy()
-
-Global.primary_tags = defaultdict(OrderedDict)
-Global.sec_tags = defaultdict(OrderedDict)
-Global.primary_qtags = defaultdict(OrderedDict)
-Global.sec_qtags = defaultdict(OrderedDict)
-
-Global.all_tags = {}
-
-Global.questions = OrderedDict()
-Global.concept_questions = defaultdict(list)
-
-Global.ref_tracker = dict()
-Global.ref_counter = defaultdict(int)
-Global.chapter_ref_counter = defaultdict(int)
-
-Global.dup_ref_tracker = set()
-
 class MathBlockGrammar(mistune.BlockGrammar):
     def_links = re.compile(  # RE-DEFINE TO INCLUDE SINGLE QUOTES
         r'^ *\[([^^\]]+)\]: *'  # [key]:
@@ -298,7 +279,58 @@ class MathBlockLexer(mistune.BlockLexer):
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
+        self.slidoc_slide_text = []
+        self.slidoc_blocks = []
+        self.slidoc_recursion = 0
+        self.slidoc_slide_header = ''
         super(MathBlockLexer, self).__init__(rules, **kwargs)
+
+    def get_slide_text(self):
+        return self.slidoc_slide_text
+
+    def parse(self, text, rules=None):
+        self.slidoc_recursion += 1
+        text = text.rstrip('\n')
+        if not rules:
+            rules = self.default_rules
+
+        def manipulate(text):
+            for key in rules:
+                rule = getattr(self.rules, key)
+                m = rule.match(text)
+                if not m:
+                    continue
+                getattr(self, 'parse_%s' % key)(m)
+                if self.slidoc_recursion == 1:
+                    if key == 'heading' and len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
+                        if self.slidoc_slide_header:
+                            # Level 2 header not at start of block (implicit slide break)
+                            self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
+                            self.slidoc_blocks = []
+                        self.slidoc_slide_header = m.group(2).strip('#').strip()
+
+                    self.slidoc_blocks.append(m.group(0))
+
+                    if key == 'hrule':
+                        # Explicit slide break
+                        self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
+                        self.slidoc_blocks = []
+                        self.slidoc_slide_header = ''
+                return m
+            return False  # pragma: no cover
+
+        while text:
+            m = manipulate(text)
+            if m is not False:
+                text = text[len(m.group(0)):]
+                continue
+            if text:  # pragma: no cover
+                raise RuntimeError('Infinite loop at: %s' % text)
+        if self.slidoc_recursion == 1:
+            self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
+            self.slidoc_blocks = []
+        self.slidoc_recursion -= 1
+        return self.tokens
 
     def parse_block_math(self, m):
         """Parse a \[math\] block"""
@@ -704,6 +736,7 @@ class SlidocRenderer(MathRenderer):
         self.qconcepts = [set(),set()]
         self.sheet_attributes = {'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
         self.slide_number = 0
+        self.slide_images = []
 
         self._new_slide()
         self.first_id = self.get_slide_id()
@@ -712,6 +745,7 @@ class SlidocRenderer(MathRenderer):
         self.block_input_counter = 0
         self.block_test_counter = 0
         self.block_output_counter = 0
+        self.toggle_slide_id = ''
         self.render_markdown = False
         self.render_mathjax = False
         self.plugin_number = 0
@@ -720,6 +754,7 @@ class SlidocRenderer(MathRenderer):
         self.plugin_loads = set()
         self.plugin_embeds = set()
         self.load_python = False
+        self.slide_maximage = 0
 
     def _new_slide(self):
         self.slide_number += 1
@@ -731,7 +766,7 @@ class SlidocRenderer(MathRenderer):
         self.cur_header = ''
         self.untitled_header = ''
         self.slide_concepts = []
-        self.first_para = True
+        self.alt_header = None
         self.incremental_level = 0
         self.incremental_list = False
         self.incremental_pause = False
@@ -740,6 +775,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_forward_links = []
         self.slide_plugin_refs = set()
         self.slide_plugin_embeds = set()
+        self.slide_images.append([])
 
     def list_incremental(self, activate):
         self.incremental_list = activate
@@ -824,9 +860,61 @@ class SlidocRenderer(MathRenderer):
             return text
 
     def slide_prefix(self, slide_id, classes=''):
-        chapter_id, sep, _ = slide_id.partition('-')
+        chapter_id, sep, slideNumStr = slide_id.partition('-')
+        slide_number = int(slideNumStr)
+        prefix = str(slide_number)+'. ' if 'untitled_number' not in self.options['config'].features else ''
+        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
+        html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
+        html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, '&#x27A4;')
+        right_list = [ ('edit', '&#9998;'), ('drag', '&#8693')]
+        for action, icon in right_list:
+            toggle_classes = 'slidoc-toptoggle-edit slidoc-testuseronly slidoc-serveronly'
+            attrs = ''
+            if action == 'drag':
+                attrs += ' draggable="true" data-slide="%d"' % slide_number
+                toggle_classes += ' slidoc-toggle-hidden slidoc-toggle-draggable'
+            else:
+                attrs += '''onclick="Slidoc.slideEdit('%s', '%s');"''' % (action, slide_id)
+                toggle_classes += ' slidoc-toggle-visible slidoc-clickable'
+
+            html += '''  <span class="%s" %s >%s</span>''' % (toggle_classes, attrs, icon)
+            
+        html += '''    <span id="%s-toptoggle-header" class="slidoc-toptoggle-header slidoc-toggle-hidden slidoc-toggle-draggable" draggable="true" data-slide="%d">%s</span>''' % (slide_id, slide_number, prefix)
+        html += '''  </span>\n'''
+        html += '''</div>\n'''
+        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-img-drop slidoc-noprint" style="display: none;">\n''' % (slide_id,)
+        html += '''  <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button><br>\n''' % (slide_id, slide_id, slide_id, slide_id)
+        html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
+        html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img slidoc-previewonly">''' % (slide_id,)
+        html += '''    <span id="%s-togglebar-edit-imgname" class="slidoc-togglebar-edit-imgname" data-imgname=""></span><img id="%s-togglebar-edit-imgdisp" class="slidoc-togglebar-edit-imgdisp" src="">\n''' % (slide_id, slide_id)
+        html += '''  </div>'''
+        html += '''</div>\n'''
+
         # Slides need to be unhidden in Javascript
-        return '\n<section id="%s" class="slidoc-slide %s-slide %s" style="display: none;"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+        html += '\n<section id="%s" class="slidoc-slide %s-slide %s" style="display: none;"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+        return html
+
+    def slide_toggle_footer(self):
+        slide_id = self.get_slide_id()
+        header = self.cur_header or self.alt_header or ''
+        if self.cur_header or self.untitled_header or not self.toggle_slide_id:
+            self.toggle_slide_id = slide_id
+        elif header:
+            # Nested header
+            header = '&nbsp;&nbsp;&nbsp;' + header
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, mistune.escape(header))
+        return html
+
+    def image(self, src, title, text):
+        basename = os.path.basename(src)
+        self.slide_images[-1].append(basename)
+        fname = os.path.splitext(basename)[0]
+        if fname.startswith('image'):
+            suffix = fname[len('image'):]
+            if suffix.isdigit():
+                self.slide_maximage = max(self.slide_maximage, int(suffix))
+        image_dir = self.options["filename"] + '_images' if self.options['config'].image_dir == '_images' else self.options['config'].image_dir
+        return md2md.new_img_tag(src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url, image_dir=image_dir)
 
     def hrule(self, text='---', implicit=False):
         """Rendering method for ``<hr>`` tag."""
@@ -880,7 +968,7 @@ class SlidocRenderer(MathRenderer):
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
 
-        return prefix_html+self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end'))
+        return prefix_html+self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_toggle_footer()
 
     def list_item(self, text):
         """Rendering list item snippet. Like ``<li>``."""
@@ -889,17 +977,27 @@ class SlidocRenderer(MathRenderer):
         self.incremental_level += 1
         return '<li class="slidoc-incremental%d">%s</li>\n' % (self.incremental_level, text)
 
+    def untitled_slide(self):
+        self.untitled_number += 1
+        if 'untitled_number' not in self.options['config'].features:
+            return
+        # Number untitled slides (e.g., as in question numbering) 
+        self.untitled_header = '%d. ' % self.untitled_number
+        if self.questions and len(self.questions)+1 != self.untitled_number:
+            abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
+
     def paragraph(self, text):
         """Rendering paragraph tags. Like ``<p>``."""
-        if not self.cur_header and self.first_para:
-            self.untitled_number += 1
-            if 'untitled_number' in self.options['config'].features:
-                # Number untitled slides (e.g., as in question numbering) 
-                self.untitled_header = '%d. ' % self.untitled_number
+        if self.alt_header is None:
+            first_words = ' '.join(text.strip().split(' ')[:7]) + '...'       # First seven words of paragraph
+            if first_words.startswith('<'):
+                first_words = 'block...'
+            if not self.cur_header:
+                self.untitled_slide()
                 text = self.untitled_header + text
-                if self.questions and len(self.questions)+1 != self.untitled_number:
-                    abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
-        self.first_para = False
+                self.alt_header = self.untitled_header + first_words
+            else:
+                self.alt_header = first_words
         if not self.incremental_pause:
             return super(SlidocRenderer, self).paragraph(text)
         return '<p class="%s-incremental slidoc-incremental%d">%s</p>\n' % (self.get_slide_id(), self.incremental_level, text.strip(' '))
@@ -997,8 +1095,9 @@ class SlidocRenderer(MathRenderer):
             hdr = ElementTree.Element('p', {})
             hdr.text = text.strip('#')
 
+        text = text.strip()
         prev_slide_end = ''
-        if self.cur_header and level <= 2:
+        if self.cur_header and level <= 2 and text:
             # Implicit horizontal rule before Level 1/2 header
             prev_slide_end = self.hrule(implicit=True)
         
@@ -1042,6 +1141,8 @@ class SlidocRenderer(MathRenderer):
         hide_block = self.options['config'].hide and re.search(self.options['config'].hide, text)
         if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
             # Ignore higher level headers (except for level 3 hide block, if no earlier header in slide)
+            if self.alt_header is None:
+                self.alt_header = text
             return ElementTree.tostring(hdr)
 
         pre_header = ''
@@ -1070,6 +1171,8 @@ class SlidocRenderer(MathRenderer):
                     self.header_list.append( (self.get_slide_id(), self.cur_header) )
                 if 'sections' not in self.options['config'].strip:
                     clickable_secnum = True
+            elif self.alt_header is None:
+                self.alt_header = text.strip('#').strip()
 
             # Record header occurrence (preventing hiding of any more level 3 headers in the same slide)
             self.hide_end = ''
@@ -1830,20 +1933,45 @@ def Missing_ref_num(match):
         return '(%s)??' % ref_id
 
 SLIDE_BREAK_RE =  re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
-HRULE_BREAK_RE =  re.compile(r'(\S\s*\n)( {0,3}----* *(\n|$))')
+HRULE_BREAK_RE =  re.compile(r'(\S *\n)( {0,3}----* *(\n|$))')
     
 def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
-    """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, html)"""
+    """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, md_params, html)"""
     Global.chapter_ref_counter = defaultdict(int)
 
     renderer = SlidocRenderer(escape=False, filename=filename, config=config, filenumber=filenumber, plugin_defs=plugin_defs)
-    content_html = MarkdownWithSlidoc(renderer=renderer).render(source, index_id=index_id, qindex_id=qindex_id)
+    md_parser_obj = MarkdownWithSlidoc(renderer=renderer)
+    content_html = md_parser_obj.render(source, index_id=index_id, qindex_id=qindex_id)
 
+    md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
+    md_source = source.strip()
+    md_digest = sliauth.digest_hex(md_source)
+    if len(md_slides) != renderer.slide_number:
+        message('SLIDES-WARNING: pre-parsing slide count (%d) does not match post-parsing slide count (%d)' % (len(md_slides), renderer.slide_number))
+        md_slides = []
+
+    elif ''.join(md_slides).strip() != md_source:
+        tem_str = ''.join(md_slides).strip()
+        for j in range(min(len(tem_str), len(md_source))):
+            if tem_str[j] != md_source[j]:
+                break
+        message('SLIDES-WARNING: combined slide text does not match preprocessed source text: %d, %d, %d; %s, %s' % (len(tem_str), len(md_source), j, repr(tem_str[max(j-10,0):j+20]), repr(md_source[max(j-10,0):j+20])))
+        md_slides = []
+
+    md_breaks = []
+    count = 0
+    for md_slide in md_slides:
+        count += len(md_slide)
+        md_breaks.append(count)
+
+    new_image_name = 'image%02d' % (renderer.slide_maximage+1)
+    md_params = {'md_digest': md_digest, 'md_slides': md_slides, 'md_breaks': md_breaks,
+                 'md_images': renderer.slide_images, 'new_image_name':new_image_name}
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
     if renderer.questions:
         # Compute question hash digest to track questions
-        sbuf = io.BytesIO(source.encode('utf-8'))
+        sbuf = io.BytesIO(source.encode('utf-8') if isinstance(source, unicode) else source)
         slide_hash = []
         slide_lines = []
         first_slide = True
@@ -1911,7 +2039,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
         ###slide_html = SPACER3+click_span(SYMS['square'], "Slidoc.slideViewStart();", classes=["slidoc-clickable-sym", 'slidoc-nosidebar'])
         sidebar_html = ''
         slide_html = ''
-        pre_header_html += '<div class="slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+slide_html+'</div>\n'
+        pre_header_html += '<div class="slidoc-pre-header slidoc-noslide slidoc-noprint slidoc-noall">'+nav_html+sidebar_html+slide_html+'</div>\n'
 
         tail_html = '<div class="slidoc-noslide slidoc-noprint">' + nav_html + ('<a href="#%s" class="slidoc-clickable-sym">%s</a>%s' % (renderer.first_id, SYMS['up'], SPACER6) if renderer.slide_number > 1 else '') + '</div>\n'
 
@@ -1949,7 +2077,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 
     file_toc = renderer.table_of_contents('' if not config.separate else config.server_url+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, renderer, content_html)
+    return (renderer.file_header or filename, file_toc, renderer, md_params, content_html)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields  = ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
@@ -2086,7 +2214,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
         
     if modify_col:
         if row_count == 1:
-            abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify')
+            abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify' % (modify_col, sheet_name))
         ###elif not modify_session and row_count:
         elif not modify_session:
             abort('ERROR: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
@@ -2169,8 +2297,41 @@ def strip_name(filepath, split_char=''):
     name = os.path.splitext(os.path.basename(filepath))[0]
     return name.split(split_char)[-1] if split_char else name
 
-N_INDEX_ENTRIES = 5
-def read_index(fhandle):
+def preprocess(source, hrule_setext=False):
+    source = mistune.preprocessing(source)
+    if not hrule_setext:
+        # Insert a blank line between hrule and any immediately preceding non-blank line (to avoid it being treated as a Markdown Setext-style header)
+        source = HRULE_BREAK_RE.sub(r'\1\n\2', source)
+    return source
+
+def extract_slides(src_path, web_path):
+    # Extract text for individual slides from Markdown file
+    # Return (md_slides, new_image_name)
+    try:
+        with open(src_path) as f:
+            source = f.read()
+    except Exception, excp:
+        raise Exception('Error in reading session text %s: %s' % (src_path, excp))
+
+    try:
+        with open(web_path) as f:
+            sessionIndex = read_index(f)
+            sessionIndexParams = sessionIndex[0][-1]
+    except Exception, excp:
+        raise Exception('Error in reading session HTML %s: %s' % (web_path, excp))
+
+    md_source = preprocess(source).strip()
+    if sliauth.digest_hex(md_source) != sessionIndexParams['md_digest']:
+        raise Exception('Digest mismatch; may need to re-create session HTML file %s' % web_path)
+    md_slides = []
+    offset = 0
+    for count in sessionIndexParams['md_breaks']:
+        md_slides.append(md_source[offset:count])
+        offset = count
+    return (md_slides, sessionIndexParams['new_image_name'])
+    
+
+def read_index(fhandle, entry_count=6):
     # Read one or more index entries from comment in the header portion of HTML file
     index_entries = []
     found_entries = False
@@ -2185,12 +2346,27 @@ def read_index(fhandle):
     tem_list = []
     while found_entries:
         line = fhandle.readline()
-        if not line or line.strip().startswith(Index_suffix.strip()):
-            break
-        tem_list.append(line.strip())
-        if len(tem_list) == N_INDEX_ENTRIES:
-            index_entries.append(tem_list)
+        if not line:
+            message('INDEX-WARNING: Index entries not terminated')
+            return []
+        sline = line.strip()
+        if not sline or sline.startswith(Index_suffix.strip()):
+            if len(tem_list) >= entry_count:
+                index_entries.append(tem_list[:entry_count])
+            else:
+                message('INDEX-WARNING: Insufficient index entries: %s' % (tem_list,))
+            if sline.startswith(Index_suffix.strip()):
+                break
             tem_list = []
+        else:
+            if sline[0] in '[{':
+                try:
+                    tem_list.append(json.loads(sline))
+                except Exception, excp:
+                    message('INDEX-WARNING: Error in index params %s: %s' % (sline, excp))
+                    tem_list.append(None)
+            else:
+                tem_list.append(sline)
 
     return index_entries
 
@@ -2273,11 +2449,32 @@ def render_topnav(topnav_list, filepath='', site_name=''):
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
+class GlobalState(object):
+    def __init__(self):
+        self.primary_tags = defaultdict(OrderedDict)
+        self.sec_tags = defaultdict(OrderedDict)
+        self.primary_qtags = defaultdict(OrderedDict)
+        self.sec_qtags = defaultdict(OrderedDict)
+
+        self.all_tags = {}
+
+        self.questions = OrderedDict()
+        self.concept_questions = defaultdict(list)
+
+        self.ref_tracker = dict()
+        self.ref_counter = defaultdict(int)
+        self.chapter_ref_counter = defaultdict(int)
+
+        self.dup_ref_tracker = set()
+
+Global = None
+
 def message(*args):
     print(*args, file=sys.stderr)
 
 def process_input(input_files, input_paths, config_dict, images_zipdict={}, return_html=False, return_messages=False):
-    global message
+    global Global, message
+    Global = GlobalState()
     if return_html:
         return_messages = True
 
@@ -2356,8 +2553,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
 
         if not config.make:
             fnumbers.append(fnumber)
-        elif input_files[j] and not (os.path.exists(outpath) and os.path.getmtime(outpath) > os.path.getmtime(inpath)):
-            # Process only accessible and modified input files
+        elif input_files[j] and (return_html or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath))):
+            # Process only accessible and modified input files (if updated using web interface, inpath and outpath may have nearly same mod times)
             fnumbers.append(fnumber)
 
         if config.notebook and os.path.exists(dest_dir+fname+'.ipynb') and not config.overwrite and not config.dry_run:
@@ -2382,7 +2579,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
-    js_params = {'siteName': '', 'fileName': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
+    js_params = {'siteName': '', 'fileName': '', 'chapterId': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'overwrite': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'gradeFields': [], 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0,
@@ -2546,14 +2743,20 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     else:
         reveal_pars = ''
 
-    slidoc_images_opts = set(['embed', '_slidoc'])
+    slidoc_images_opts = set(['_slidoc'])
     if combined_file:
         slidoc_images_opts.add('_slidoc_combine')
+    elif config.preview:
+        slidoc_images_opts.add('zip')
+        slidoc_images_opts.add('md')
+
+    if config.images:
+        slidoc_images_opts.update(config.images)
 
     base_mods_args = md2md.Args_obj.create_args(None, dest_dir=config.dest_dir,
                                                       image_dir=config.image_dir,
                                                       image_url=config.image_url,
-                                                      images=config.images | slidoc_images_opts)
+                                                      images=slidoc_images_opts)
     slide_mods_dict = {'strip': 'concepts,extensions'}
     if 'answers' in config.strip:
         slide_mods_dict['strip'] += ',answers'
@@ -2648,7 +2851,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                         settings_list.append('--'+name)
                 else:
                     settings_list.append('--'+name+'='+str(value))
-            message(fname+' settings: '+' '.join(settings_list))
+            if not return_html:
+                message(fname+' settings: '+' '.join(settings_list))
                     
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
@@ -2700,25 +2904,24 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         md_text = fhandle.read()
         fhandle.close()
 
+        # Preprocess line breaks, tabs etc. (note: hrule_setext=True may break slide editing)
+        md_text = preprocess(md_text, hrule_setext=('underline_headers' in file_config.features))
+
+        # Strip annotations (may also break slide editing)
+        md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
+
         base_parser = md2md.Parser(base_mods_args, images_zipdata=images_zipdict.get(fname))
         slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname))
-        md_text_modified = slide_parser.parse(md_text, filepath)
-        md_text = base_parser.parse(md_text, filepath)
+        md_text_modified, _ = slide_parser.parse(md_text, filepath)
+        md_text, zipped_md = base_parser.parse(md_text, filepath)   # Zipped md will contain original (preprocessed) md_text
 
         if file_config.hide and 'hidden' in file_config.strip:
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+file_config.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
 
-        # Strip annotations
-        md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
-
-        if 'underline_headers' not in file_config.features:
-            # Insert a blank line between hrule and any immediately preceding non-blank line (to avoid it being treated as a Markdown Setext-style header)
-            md_text = HRULE_BREAK_RE.sub(r'\1\n\2', md_text)
-
         prev_file = '' if fnumber == 1      else orig_flinks[fnumber-2]
         next_file = '' if fnumber == nfiles else orig_flinks[fnumber]
 
-        fheader, file_toc, renderer, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
+        fheader, file_toc, renderer, md_params, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
 
@@ -2743,6 +2946,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         if config.separate:
             plugin_list = list(renderer.plugin_embeds)
             plugin_list.sort()
+            js_params['chapterId'] = renderer.get_chapter_id()
             js_params['plugins'] = plugin_list
             
         max_params = {}
@@ -2782,7 +2986,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                             index_entries = read_index(f)
                     else:
                          index_entries = []
-                    for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_entries:
+                    for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str, index_params in index_entries:
                         if iso_due_str and iso_due_str != '-':
                             sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str, iso_release_str])
             if sessions_due:
@@ -2905,6 +3109,10 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                         index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
                     else:
                         index_entries = [fname, fheader, 'view', '-', '-']
+                    # Store MD5 digest of preprocessed source and list of character counts at each slide break
+                    index_dict = {'md_digest': md_params['md_digest'], 'md_breaks': md_params['md_breaks'],
+                                  'md_images': md_params['md_images'], 'new_image_name': md_params['new_image_name']}
+                    index_entries += [ json.dumps(index_dict) ]
                     index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
                     out_index[outpath] = index_head
                     pre_html = index_head + pre_html
@@ -2912,9 +3120,9 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
-                    outfile_buffer.append([outname, outpath, fnumber, pre_html, tail])
+                    outfile_buffer.append([outname, outpath, fnumber, md_params, pre_html, tail, zipped_md])
                 else:
-                    outfile_buffer.append([outname, outpath, fnumber, '', ''])
+                    outfile_buffer.append([outname, outpath, fnumber, md_params, '', '', None])
                     write_doc(dest_dir+outname, pre_html, tail)
 
             if backup_dir:
@@ -2977,16 +3185,18 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 if not index_entries:
                     message('Index header not found for '+outpath)
                     continue
-                _, fheader, doc_str, iso_due_str, iso_release_str = index_entries[0]
+                _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 doc_link = ''
                 if doc_str:
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
                 toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
+                # Five entries
                 toc_list.append(orig_fnames[j])
                 toc_list.append(fheader)
                 toc_list.append(doc_str)
                 toc_list.append(iso_due_str)
                 toc_list.append(iso_release_str)
+                toc_list.append('')
         else:
             # Create ToC using info from rendering
             for ifile, felem in enumerate(flist):
@@ -3063,13 +3273,14 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
 
     if not config.dry_run:
         if not combined_file:
-            message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
-            for outname, outpath, fnumber, pre_html, tail in outfile_buffer:
+            if not return_html:
+                message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
+            for outname, outpath, fnumber, md_params, pre_html, tail, zipped_md in outfile_buffer:
                 if tail:
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
                     if return_html:
-                        return {'outpath': outpath, 'out_html':Html_header+pre_html+tail+Html_footer, 'toc_html':toc_all_html, 'messages': messages}
+                        return {'outpath': outpath, 'out_html':Html_header+pre_html+tail+Html_footer, 'toc_html':toc_all_html, 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
                     else:
                         write_doc(outpath, pre_html, tail)
         if config.slides:
@@ -3192,7 +3403,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         if return_html:
             return {'outpath':dest_dir+combined_file, 'out_html':''.join(output_data), 'toc_html':toc_all_html, 'messages':messages}
         md2md.write_file(dest_dir+combined_file, *output_data)
-        return {'messages':messages}
+    return {'messages':messages}
 
 
 def sort_caseless(list):
@@ -3327,26 +3538,137 @@ def abort(msg):
         raise Exception(msg)
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    preview_token = str(random.randrange(0,2**32))
+    src_path = ''
+    md_content = None
+    pptx_opts = {}
+    config_dict = None
+
+    log_messages = []
+    images_zipfile = None
+    images_map = {}
+    src_modtime = 0
+    upload_content = None
+    upload_name = None
     outname = ''
     out_html = 'NO DATA'
     toc_html = 'NO DATA'
-    images_zipfile = None
-    images_map = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
         
+    @classmethod
+    def create_preview(cls):
+        fname, fext = os.path.splitext(os.path.basename(cls.src_path))
+        cls.src_modtime = os.path.getmtime(cls.src_path)
+        input_file = open(cls.src_path)
+        images_zipdict = {}
+        if fext == 'pptx':
+            import pptx2md
+            md_path = cls.src_path[:-len('.pptx')]+'.md'
+            ppt_parser = pptx2md.PPTXParser(cls.pptx_opts)
+            md_text, images_zipdata = ppt_parser.parse_pptx(input_file, cls.src_path)
+            cls.md_content = md_text.encode('utf8')
+            images_zipdict[fname] = images_zipdata
+        else:
+            md_path = cls.src_path
+            cls.md_content = input_file.read()
+            images_zipdata = None
+        input_file.close()
+        retval = process_input([io.BytesIO(cls.md_content)], [md_path], cls.config_dict, return_html=True, images_zipdict=images_zipdict)
+        cls.log_messages = retval['messages']
+        cls.outname = os.path.basename(retval['outpath'])
+        cls.out_html = retval['out_html']
+        cls.toc_html = retval['toc_html']
+        cls.upload_content = retval['zipped_md'] if retval['zipped_md'] else cls.md_content
+        cls.upload_name = fname + ('.zip' if retval['zipped_md'] else '.md')
+        if retval['zipped_md']:
+            cls.images_zipfile = zipfile.ZipFile(io.BytesIO(retval['zipped_md']))
+        elif images_zipdata:
+            cls.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata))
+
+        if cls.images_zipfile:
+            cls.images_map = dict( (os.path.basename(fpath), fpath) for fpath in cls.images_zipfile.namelist() if os.path.basename(fpath))
+
+        for msg in retval['messages']:
+            print(msg, file=sys.stderr)
+
+
+    def log_message(self, format, *args):
+        if args and args[0].startswith('GET /_reloadcheck'):
+            return
+        return BaseHTTPServer.BaseHTTPRequestHandler.log_message(self, format, *args)
+
     def do_GET(self):
-        if self.path == '/' or self.path.startswith('/?') or self.path == '/'+self.outname:
+        url_comps = urlparse.urlparse(self.path)
+        query = urlparse.parse_qs(url_comps.query)
+        if url_comps.path == '/' or url_comps.path == '/'+self.outname:
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
-            if not self.toc_html or self.path == '/'+self.outname:
+            if not self.toc_html or url_comps.path == '/'+self.outname:
                 self.wfile.write(self.out_html)
             else:
                 self.wfile.write(self.toc_html)
             return
 
+        if url_comps.path in ('/_messages', '/_reloadcheck'):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            token = query.get('token', [])
+            if not token and token[0] != self.preview_token:
+                self.wfile.write('Error: Invalid preview token')
+                return
+
+            if url_comps.path == '/_reloadcheck':
+                if os.path.getmtime(self.src_path) > self.src_modtime:
+                    self.wfile.write('reload')
+                    self.create_preview()
+                else:
+                    self.wfile.write('')
+                return
+            if url_comps.path == '/_messages':
+                self.wfile.write('\n'.join(self.log_messages) if self.log_messages else 'No messages')
+                return
+
+        if url_comps.path == '/_remoteupload':
+            import httplib
+            server_url = self.config_dict.get('server_url')
+            if not server_url:
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write('Error in upload: No server URL')
+                return
+            upload_key = self.config_dict.get('upload_key')
+            headers = {'Content-Type': 'application/octet-stream'}
+            qparams = {}
+            qparams['digest'] = sliauth.digest_hex(self.upload_content)
+            qparams['token'] = sliauth.gen_hmac_token(upload_key, 'upload:'+qparams['digest'])
+            load_path = '/_remoteupload/%s?%s' % (self.upload_name, urllib.urlencode(qparams))
+            if self.config_dict.get('site_name'):
+                load_path = '/' + self.config_dict['site_name'] + load_path
+            server_comps = urlparse.urlparse(server_url)
+            host, _, port = server_comps.netloc.partition(':')
+            port = port or None
+            if server_comps.path and server_comps.path != '/':
+                load_path = server_comps.path + load_url
+            conn = httplib.HTTPSConnection(host, port) if server_comps.scheme == 'https' else httplib.HTTPConnection(host, port)
+            conn.request('PUT', load_path, self.upload_content, headers)
+            resp = conn.getresponse()
+            conn.close()
+            if resp.status != 200:
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write('Error in upload to %s %s: %d %s' % (server_url, load_path, resp.status, resp.reason))
+            else:
+                self.send_response(303)
+                self.send_header('Location', server_url + '/_preview/index.html')
+                self.wfile.write('')
+            return
+
         # Image file?
-        filename = os.path.basename(self.path[1:])
+        filename = os.path.basename(url_comps.path[1:])
         fext = os.path.splitext(filename)[1]
         mime_type = self.mime_types.get(fext.lower())
         if mime_type:
@@ -3356,8 +3678,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     content = self.images_zipfile.read(self.images_map[filename])
                 else:
                     self.send_response(404)
-            elif '..' not in self.path and os.path.exists(self.path[1:]):
-                with open(self.path[1:]) as f:
+            elif '..' not in url_comps.path and os.path.exists(url_comps.path[1:]):
+                with open(url_comps.path[1:]) as f:
                     content = f.read()
 
             if content is not None:
@@ -3458,6 +3780,7 @@ alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Charac
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
+alt_parser.add_argument('--upload_key', metavar='KEYL', help='Auth key for uploading to remote server')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
@@ -3524,37 +3847,38 @@ if __name__ == '__main__':
 
     input_paths = [f.name for f in input_files]
     images_zipdict = {}
+    pptx_paths = {}
     for j, inpath in enumerate(input_paths):
         fname, fext = os.path.splitext(os.path.basename(inpath))
-        if fext == '.pptx':
+        if fext == '.pptx' and not cmd_args_orig.preview:
             # Convert .pptx to .md
             import pptx2md
-            if cmd_args_orig.preview:
-                pptx_opts['img_dir'] = fname + '_images.zip'
             ppt_parser = pptx2md.PPTXParser(pptx_opts)
             md_text, images_zipdata = ppt_parser.parse_pptx(input_files[j], input_files[j].name)
             images_zipdict[fname] = images_zipdata
             input_files[j].close()
             input_files[j] = io.BytesIO(md_text.encode('utf8'))
-            input_paths[j] = input_paths[j][:-len('.pptx')]+'.md'
+            md_path = input_paths[j][:-len('.pptx')]+'.md'
+            pptx_paths[md_path] = input_paths[j]
+            input_paths[j] = md_path
 
     if cmd_args_orig.preview:
         if len(input_files) != 1:
-            raise Exception('ERROR: --preview only works for a singe file')
-        fname, fext = os.path.splitext(os.path.basename(input_paths[0]))
-        images_zipdata = images_zipdict.get(fname)
-        if images_zipdata:
-            RequestHandler.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata))
-            RequestHandler.images_map = dict( (os.path.basename(fpath), fpath) for fpath in RequestHandler.images_zipfile.namelist() if os.path.basename(fpath))
+            raise Exception('ERROR: --preview only works for a single file')
+        if cmd_args_orig.upload_key and not cmd_args_orig.server_url:
+            raise Exception('ERROR: Must specify --server_url with --upload_key')
+        input_files[0].close()
+        src_path = input_paths[0]
+        fname, fext = os.path.splitext(os.path.basename(src_path))
+        RequestHandler.src_path = pptx_paths[src_path] if src_path in pptx_paths else src_path
+        RequestHandler.pptx_opts = pptx_opts.copy()
+        RequestHandler.pptx_opts['img_dir'] = fname + '_images.zip'
+        RequestHandler.pptx_opts['zip_md'] = True
+        RequestHandler.config_dict = config_dict
+        RequestHandler.create_preview()
 
-        retval = process_input(input_files, input_paths, config_dict, return_html=True, images_zipdict=images_zipdict)
-        RequestHandler.outname = os.path.basename(retval['outpath'])
-        RequestHandler.out_html = retval['out_html']
-        RequestHandler.toc_html = retval['toc_html']
-        for msg in retval['messages']:
-            print(msg, file=sys.stderr)
         httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args_orig.preview), RequestHandler)
-        command = "sleep 1 && open -a 'Google Chrome' http://localhost:%d" % cmd_args_orig.preview
+        command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args_orig.preview, RequestHandler.preview_token, '1' if cmd_args_orig.upload_key else '')
         print('Preview at http://localhost:'+str(cmd_args_orig.preview), file=sys.stderr)
         print(command, file=sys.stderr)
         subp = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, stderr=subprocess.STDOUT)

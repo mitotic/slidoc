@@ -23,7 +23,7 @@ function slidocAction(actionName, sessionName) {
   if (slidocSiteName)
     url = '/' + slidocSiteName + url
   if (sessionName || slidocSessionName)
-    url += '/' + sessionName || slidocSessionName;
+    url += '/' + (sessionName || slidocSessionName);
   window.location = url;
 }
 

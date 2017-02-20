@@ -16,7 +16,7 @@
 </b>
 
 <div id="slidoc-upload-form">
-  <form action="/{{site_name}}{% if site_name %}/{% end %}_upload/index.html" method="post" enctype="multipart/form-data" >
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       <label for="sessiontype">Upload type:</label>
       <select name="sessiontype">
@@ -28,6 +28,9 @@
      <br>
      <label for="sessionnumber">Session number:</label>
      <input type="number" id="sessionnumber" name="sessionnumber" value="">
+      &nbsp;&nbsp;
+     <label for="sessionmodify">Modified questions?</label>
+     <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
      <p></p>
      <label for="upload">Session file, markdown (.md) or powerpoint (.pptx):</label><br>
      <input type="file" id="upload1" name="upload1"  accept=".md,.pptx" value="file1">
@@ -37,14 +40,14 @@
      <p></p>
      Images in the zip archive should have names of the form
      <code>sessionName/*.jpg</code> for <code>.pptx</code> files and of the
-     form <code>sessionName_img/*.jpg</code> for <code>.md</code> files
+     form <code>sessionName_images/*.jpg</code> for <code>.md</code> files
    </fieldset>
    {% module xsrf_form_html() %}
    <div>
      <input id="slidoc-upload-submit" type="submit" value="Upload">
     </div>
   </form>
-  {{err_msg}}
+  <div class="slidoc-err-msg">{{err_msg}}</div>
 </div>
 
 </body>

@@ -151,6 +151,10 @@ process slides in a lecture.
 Notes: Any Level 1 header other than the first one will be treated
 like a Level 2 header.
 
+Headers may appear in the Notes portion of a slide (see below), in
+which case they will appear for indexing, but will not be displayed in
+the main slide.
+
 Concepts: :Slidoc, document structure
 
 ---

@@ -65,6 +65,42 @@ def quote_pad_title(title, parentheses=False):
         return " ("+title+")"
     return ''
 
+Attr_re_format = r'''\s%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
+
+def get_html_tag_attr(attr_name, tag_text):
+    match = re.search(Attr_re_format % attr_name, tag_text)
+    return match.group(1).strip('"').strip("'") if match else ''
+
+def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
+    '''Return img tag string, supporting extension of including align/height/width attributes in title string'''
+    attrs = ''
+    classList = classes[:]
+    if title:
+        for attr in shlex.split(title):
+            if attr.startswith('.'):
+                classList.append(attr[1:])
+                title = title.replace(attr, '')
+        for attr in ('align', 'height', 'width'):
+            value = get_html_tag_attr(attr, ' '+title)
+            if value:
+                attrs += ' ' + attr + '=' + value
+                title = re.sub(Attr_re_format % attr, '', title)
+        if title.strip():
+            attrs += ' title="' + mistune.escape(title.strip(), quote=True) + '"'
+
+    if get_url_scheme(src) == 'rel_path':
+        if image_url:
+            src = image_url + src
+
+        elif image_dir and not src.startswith(image_dir+'/'):
+            # Ensure relative paths point to image dir
+            src = image_dir + '/' + os.path.basename(src)
+
+    if classList:
+        attrs += ' class="%s"' % ' '.join(classList)
+    return '<img src="%s" alt="%s" %s>' % (src, alt, attrs)
+
+
 class Parser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
     indent_strip_re =  re.compile( r'^ {4}', re.MULTILINE)
@@ -115,7 +151,6 @@ class Parser(object):
     data_url_re = re.compile(r'^data:([^;]+/[^;]+);base64,(.*)$')
 
     img_re = re.compile(r'''<img(\s+\w+(=[^'"\s]+|='[^'\n]*'|="[^"\n]*")?)*\s*>''')
-    attr_re_format = r'''\s%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
 
     slidoc_choice_re = re.compile(r"^ {0,3}([a-pA-P])\.\. +")
     header_attr_re = re.compile(r'^(\s*#+.*?)(\s*\{\s*#([-.\w]+)(\s+[^\}]*)?\s*\})\s*$')
@@ -128,12 +163,17 @@ class Parser(object):
     def __init__(self, cmd_args, images_zipdata=None):
         self.cmd_args = cmd_args
         self.arg_check(cmd_args)
+        self.images_zipfile = None
+        self.images_map = {}
+        self.content_zip_bytes = None
+        self.content_zip = None
         if images_zipdata:
             self.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata), 'r')
             self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
-        else:
-            self.images_zipfile = None
-            self.images_map = {}
+        elif 'zip' in self.cmd_args.images:
+            self.content_zip_bytes = io.BytesIO()
+            self.content_zip = zipfile.ZipFile(self.image_bytes, 'w')
+
         self.skipping_notes = False
         self.cells_buffer = []
         self.buffered_markdown = []
@@ -157,6 +197,11 @@ class Parser(object):
 
     def write_content(self, filepath, content, dry_run=False):
         """Write content to file. If file already exists, check its content"""
+        if self.content_zip:
+            fname = os.path.basename(filepath)
+            zpath = '_images/'+fname
+            self.content_zip.writestr(zpath, content)
+            return
         fdir = os.path.dirname(filepath)
         if fdir and not os.path.exists(fdir):
             os.mkdir(fdir)
@@ -261,7 +306,7 @@ class Parser(object):
                 if attr.startswith('.'):
                     attrs.append(attr)
             for attr in ('height', 'width'):
-                value = self.get_html_tag_attr(attr, ' '+title)
+                value = get_html_tag_attr(attr, ' '+title)
                 if value:
                     attrs.append(attr + '=' + value)
             if attrs:
@@ -285,6 +330,9 @@ class Parser(object):
 
             elif 'check' in self.cmd_args.images:
                 self.copy_image(text, link, title, check_only=True)
+
+            elif 'zip' in self.cmd_args.images:
+                self.copy_image(text, link, title)
 
             elif 'copy' in self.cmd_args.images:
                 new_link, new_title = self.copy_image(text, link, title)
@@ -392,44 +440,14 @@ class Parser(object):
 
         return orig_content
 
-    
     def make_img_tag(self, src, alt, title):
         '''Return img tag string, supporting extension of including align/height/width attributes in title string'''
-        attrs = ''
-        if title:
-            classes = []
-            for attr in shlex.split(title):
-                if attr.startswith('.'):
-                    classes.append(attr[1:])
-                    title = title.replace(attr, '')
-            if classes:
-                attrs += ' class="'+' '.join(classes)+'"'
-            for attr in ('align', 'height', 'width'):
-                value = self.get_html_tag_attr(attr, ' '+title)
-                if value:
-                    attrs += ' ' + attr + '=' + value
-                    title = re.sub(self.attr_re_format % attr, '', title)
-            if title.strip():
-                attrs += ' title="' + mistune.escape(title.strip(), quote=True) + '"'
-
-        if get_url_scheme(src) == 'rel_path':
-            if self.cmd_args.image_url:
-                src = self.cmd_args.image_url + src
-
-            elif self.cmd_args.image_dir and not src.startswith(self.cmd_args.image_dir+'/'):
-                # Ensure relative paths point to image dir
-                src = self.cmd_args.image_dir + '/' + os.path.basename(src)
-
-        return '<img src="%s" alt="%s" %s>' % (src, alt, attrs)
-
-    def get_html_tag_attr(self, attr_name, tag_text):
-        match = re.search(self.attr_re_format % attr_name, tag_text)
-        return match.group(1).strip('"').strip("'") if match else ''
-
+        return new_img_tag(src, alt, title, image_url=self.cmd_args.image_url, image_dir=self.cmd_args.image_dir)
+    
     def img_tag(self, match):
         orig_content = match.group(0)
 
-        src = self.get_html_tag_attr('src', orig_content)
+        src = get_html_tag_attr('src', orig_content)
         if not src:
             return orig_content
         url_type = get_url_scheme(src)
@@ -455,6 +473,12 @@ class Parser(object):
         return orig_content
 
     def parse(self, content, filepath=''):
+        # Return (output_md, zipped_image_data or None)
+
+        if 'md' in self.cmd_args.images and self.content_zip:
+            # Include content in zipped image file
+            self.content_zip.writestr('content.md', content)
+
         if filepath:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
 
@@ -613,7 +637,12 @@ class Parser(object):
                 new_key, new_link = self.imported_defs[(link, title)]
                 self.output.append('[%s]: %s%s\n' % (new_key, new_link, quote_pad_title(title,parentheses=True)))
 
-        return ''.join(self.output)
+        out_md = ''.join(self.output)
+        if self.content_zip:
+            self.content_zip.close()
+            return out_md, self.content_zip_bytes.getvalue()
+        else:
+            return out_md, None
 
     def gen_filename(self, content_type=''):
         label = generate_random_label()
@@ -634,7 +663,7 @@ class Parser(object):
             if filename is None:
                 return None, None, None
 
-        title_filename = self.get_html_tag_attr('file', ' '+title)
+        title_filename = get_html_tag_attr('file', ' '+title)
         filename = filename or title_filename
         if not filename:
             filename = self.gen_filename(content_type)
@@ -691,7 +720,7 @@ class Parser(object):
             # Create new link to local file
             new_link = make_id_from_text(filename)
             if title:
-                new_link = make_id_from_text(self.get_html_tag_attr('file', ' '+title)) or new_link
+                new_link = make_id_from_text(get_html_tag_attr('file', ' '+title)) or new_link
 
             new_link = new_link or self.gen_filename(content_type=content_type)
 
@@ -800,7 +829,7 @@ if __name__ == '__main__':
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
     parser.add_argument('--image_dir', help='image subdirectory (default: "images")', default='images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags; )', default='')
+    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,md,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file)', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--latex_math', help='Use \\(..\\) and \\[...\\] notation for math', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")

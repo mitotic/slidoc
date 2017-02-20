@@ -2,33 +2,34 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- edit parameters: site_name, site_label, session_name, session_text, discard_url -->
+<!-- edit parameters: site_name, site_label, session_name, session_text, discard_url, err_msg -->
 
 {% include "base.html" %}
 
 <script>
 function slidocDiscard() {
-  if (!window.confirm('Discard changes?')) {
-    return;
-  }
-  window.location = '/{{site_name}}{% if site_name %}/{% end %}{{discard_url}}';
+   if (!window.confirm('Discard changes?')) {
+     return false;
+   }
+   window.location = '/{{site_name}}{% if site_name %}/{% end %}{{discard_url}}';
+   return false;
 }
 </script>
 
 </head>
 <body>
 
-<b><a href="javascript:slidocDiscard()">Discard changes</a></b>
-<p></p>
+<div class="slidoc-err-msg">{{err_msg}}</div>
 
 <form action="/{{site_name}}{% if site_name %}/{% end %}_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
   {% module xsrf_form_html() %}
   <div>
-    <input id="slidoc-edit-submit" type="submit" value="Preview">
+    <input id="slidoc-edit-submit" type="submit" value="Save">
+    <button type="button" onclick="slidocDiscard(); return false">Discard</button>
   </div>
   <fieldset>
     <label for="sessionname">Session:</label>
-    <input type="text" disabled id="sessionname" name="sessionname" value={{session_name}}></input>
+    <input type="text" id="sessionname" readonly="yes" name="sessionname" value="{{session_name}}"></input>
     <p></p>
     <textarea id="sessiontext" name="sessiontext">{{session_text}}</textarea>
   </fieldset>

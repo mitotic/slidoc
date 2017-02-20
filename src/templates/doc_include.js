@@ -21,6 +21,7 @@ var CACHE_GRADING = true; // If true, cache all rows for grading
 
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
+var SLIDE_ID_RE = /(slidoc(\d+))(-(\d+))?$/;
 
 var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
 
@@ -104,6 +105,7 @@ Sliobj.adminState = null;
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
 Sliobj.popupEvent = '';
+Sliobj.popupQueue = [];
 Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
@@ -116,6 +118,8 @@ Sliobj.scores = null;
 Sliobj.liveResponses = {};
 Sliobj.choiceBlockHTML = {};
 Sliobj.printExamView = !Sliobj.params.gd_sheet_url && getParameter('print');
+
+Sliobj.testOverride = null;
 
 Sliobj.errorRetries = 0;
 
@@ -250,6 +254,8 @@ function setupCache(auth, callback) {
     var gsheet = getSheet(Sliobj.sessionName);
     function allCallback(allRows, retStatus) {
 	Slidoc.log('allCallback:', allRows, retStatus);
+	if (!retStatus)
+	    throw('Null retStatus in setupCache.allCallback');
 	if (Sliobj.params.paceLevel >= ADMIN_PACE && retStatus.info.adminPaced)
 	    Sliobj.adminPaced = retStatus.info.adminPaced;
 	if (retStatus.info.maxLastSlide)
@@ -334,7 +340,7 @@ function sessionAbort(err_msg, err_trace) {
 	return;
     sessionAborted = true;
     localDel('auth');
-    try { Slidoc.classDisplay('slidoc-slide', 'none'); } catch(err) {}
+    try { slidesVisible(false); } catch(err) {}
     alert((Sliobj.params.debug ? 'DEBUG: ':'')+err_msg);
     if (!Sliobj.params.debug)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
@@ -345,6 +351,17 @@ function sessionAbort(err_msg, err_trace) {
     }
 
     throw(err_msg);
+}
+
+function loadPath(newPath, newHash) {  // newHash, if specified, should include '#' prefix
+    // Force reload of path, even if it is the same as current path
+    if (location.pathname == newPath) {
+	if (newHash)
+	    location.hash = newHash;
+	location.reload(true);
+    } else {
+	window.location = newPath + (newHash || '');
+    }
 }
 
 function sessionReload(msg) {
@@ -471,27 +488,33 @@ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive" || !document.body)
 	return;
     Slidoc.pageSetup();
-    if (!Sliobj.params.fileName) // Just a simple web page
+    if (!Sliobj.params.fileName) {
+	// Just a simple web page
+	toggleClass(true, 'slidoc-simple-view');
 	return;
+    }
     Slidoc.reportTestAction('ready');
     return abortOnError(onreadystateaux);
 }
 
-Sliobj.previewState = '';
+Sliobj.previewState = false;
 
 Slidoc.pageSetup = function() {
-    Slidoc.log("pageSetup:");
+    Slidoc.log("pageSetup:", Sliobj.reloadCheck);
 
-    var match = location.pathname.match(/\b\/_(preview|upload)\b/);
+    if (Sliobj.reloadCheck) {
+	if (getParameter('remoteupload')) {
+	    var uploadButton = document.getElementById('slidoc-upload-button');
+	    if (uploadButton)
+		uploadButton.style.display = null;
+	}
+	setTimeout(reloadCheckFunc, 1000);
+    }
+
+    var match = location.pathname.match(/\/_preview\b/);
     if (match) {
-	Sliobj.previewState = match[1];
-	var previewLabel = document.getElementById('slidoc-preview-label');
-	if (previewLabel)
-	    previewLabel.textContent = (Sliobj.previewState == 'upload') ? 'Draft' : 'Preview';
-	var previewAccept = document.getElementById('slidoc-preview-accept');
-	if (previewAccept)
-	    previewAccept.textContent = (Sliobj.previewState == 'upload') ? 'Preview' : 'Finalize';
-	previewMessages();
+	Sliobj.previewState = true;
+	previewMessages(true);
     }
 
     var loadElem = document.getElementById("slidoc-init-load");
@@ -520,8 +543,171 @@ Slidoc.pageSetup = function() {
     document.addEventListener('webkitfullscreenchange', fullscreenHandler, false);
     document.addEventListener('mozfullscreenchange', fullscreenHandler, false);
     document.addEventListener('fullscreenchange', fullscreenHandler, false);
+
+    var draggables = document.getElementsByClassName('slidoc-toggle-draggable');
+    [].forEach.call(draggables, function(draggable) {
+	draggable.addEventListener('dragstart', handleEditDragStart, false);
+	draggable.addEventListener('dragend', handleEditDragEnd, false);
+    });
+
+    var togglebars = document.getElementsByClassName('slidoc-togglebar');
+    [].forEach.call(togglebars, function(togglebar) {
+	togglebar.addEventListener('dragenter', handleEditDragEnter, false);
+	togglebar.addEventListener('dragover', handleEditDragOver, false);
+	togglebar.addEventListener('dragleave', handleEditDragLeave, false);
+	togglebar.addEventListener('drop', handleEditDrop, false);
+    });
+
+    if (Sliobj.previewState) {
+	var imageDrops = document.getElementsByClassName('slidoc-img-drop');
+	[].forEach.call(imageDrops, function(imageDrop) {
+	    imageDrop.addEventListener('dragenter', handleImageDragEnter, false);
+	    imageDrop.addEventListener('dragover', handleImageDragOver, false);
+	    imageDrop.addEventListener('dragleave', handleImageDragLeave, false);
+	    imageDrop.addEventListener('drop', handleImageDrop, false);
+	});
+    }
+
 }
 
+var handleEditDragSlideNumber = 0;
+
+function handleEditDragStart(evt) {
+    ///console.log('handleEditDragStart: ', evt, evt.dataTransfer);
+    toggleClass(true, 'slidoc-dragdrop-view');
+
+    evt.dataTransfer.effectAllowed = 'move';
+    evt.dataTransfer.setData('text/plain', ''+this.dataset.slide);
+    handleEditDragSlideNumber = parseInt(this.dataset.slide);
+}
+
+function handleEditDragEnd(evt) {
+    ///console.log('handleEditDragEnd: ', evt);
+    toggleClass(false, 'slidoc-dragdrop-view');
+    handleEditDragSlideNumber = 0;
+    var togglebars = document.getElementsByClassName('slidoc-togglebar');
+    [].forEach.call(togglebars, function(togglebar) {
+    });
+}
+
+function handleEditDragEnter(evt) {
+    if (!handleEditDragSlideNumber)
+	return;
+    if (parseInt(this.dataset.slide) > handleEditDragSlideNumber)
+	this.classList.add('slidoc-dragoverbottom');
+    if (parseInt(this.dataset.slide) < handleEditDragSlideNumber)
+	this.classList.add('slidoc-dragovertop');
+}
+
+function handleEditDragLeave(evt) {
+    this.classList.remove('slidoc-dragovertop');
+    this.classList.remove('slidoc-dragoverbottom');
+}
+
+function handleEditDragOver(evt) {
+    if (evt.stopPropagation) evt.stopPropagation();
+    if (evt.preventDefault) evt.preventDefault();
+
+    evt.dataTransfer.dropEffect = 'move'; 
+    return false;
+}
+
+function handleEditDrop(evt) {
+    if (evt.stopPropagation) evt.stopPropagation();
+    if (evt.preventDefault) evt.preventDefault();
+
+
+    var dropText = evt.dataTransfer.getData('text/plain');
+
+    Slidoc.log('handleEditDrop: ', dropText);
+
+    var sourceNum = parseInt(dropText);
+    var destNum = parseInt(this.dataset.slide);
+    if (sourceNum != destNum)
+	Slidoc.slideMove(this, sourceNum, destNum);
+    return false;
+}
+
+function handleImageDragEnter(evt) {
+    this.classList.add('slidoc-dragover');
+}
+
+function handleImageDragLeave(evt) {
+    this.classList.remove('slidoc-dragover');
+}
+
+function handleImageDragOver(evt) {
+    if (evt.stopPropagation) evt.stopPropagation();
+    if (evt.preventDefault) evt.preventDefault();
+
+    evt.dataTransfer.dropEffect = 'copy'; 
+    return false;
+}
+
+function handleImageDrop(evt) {
+    if (evt.stopPropagation) evt.stopPropagation();
+    if (evt.preventDefault) evt.preventDefault();
+
+    this.classList.remove('slidoc-dragover');
+    Slidoc.log('handleImageDrop: ', this, evt);
+
+    var imageFile = '';
+    var imageName = ''
+    var imageExtn = ''
+    var imageNameElem = null;
+    if (this.tagName == 'IMG') {
+	var imageElem = this;
+	imageFile = this.src.split('/').slice(-1)[0];
+	imageExtn = imageFile.split('.').slice(-1)[0];
+    } else {
+	var imageElem = this.querySelector('img');
+	var imageNameElem = this.querySelector('.slidoc-togglebar-edit-imgname');
+	imageName = imageNameElem.dataset.imgname;
+	if (!imageName) {
+	    alert('Please specify image name');
+	    return false;
+	}
+    }
+
+    var files = evt.dataTransfer.files;
+    if (!files) {
+	alert('Expecting file drop');
+	return false;
+    }
+
+    var fileProps = checkFileUpload(files, /^image\//);
+    Slidoc.log('handleImageDrop:B ', fileProps);
+
+    if (fileProps) {
+	if (!imageFile) {
+	    imageFile = imageName + '.' + fileProps.extension;
+	} else if (imageExtn != fileProps.extension) {
+	    alert('Cannot overwrite image with different image format; upload as new image');
+	    return false;
+	}
+	function handleImageDropAux(result, errMsg) {
+	    if (!result) {
+		alert('Error in uploading image :'+errMsg);
+		return false;
+	    }
+	    if (imageElem.classList.contains('slidoc-img')) {
+		// Reload image
+		imageElem.src = imageElem.src;
+	    } else {
+		// Display uploadable image
+		var imagePath = '_images/'+imageFile;
+		imageElem.src = Sliobj.params.fileName+imagePath;
+		if (imageNameElem)
+		    imageNameElem.textContent = imagePath;
+	    }
+	}
+	Slidoc.ajaxUpload(Sliobj.sitePrefix + '/_imageupload', fileProps.file, {sessionname: Sliobj.params.fileName, imagefile: imageFile}, handleImageDropAux, true);
+    }
+
+    return false;
+}
+
+    
 var PagedownConverter = null;
 function onreadystateaux() {
     Slidoc.log('onreadystateaux:');
@@ -544,7 +730,7 @@ function onreadystateaux() {
 
     if (Sliobj.params.gd_client_id) {
 	// Google client load will authenticate
-    } else if (Sliobj.params.gd_sheet_url) {
+    } else if (Sliobj.params.gd_sheet_url || (window.GService && Sliobj.serverCookie)) {
 	var localAuth = localGet('auth');
 	if (localAuth && !Sliobj.serverCookie) {
 	    Slidoc.showPopup('Accessing Google Docs ...', null, null, 1000);
@@ -553,7 +739,7 @@ function onreadystateaux() {
 	} else {
 	    if (!Sliobj.serverCookie)
 		Slidoc.reportTestAction('loginPrompt');
-	    GService.gprofile.promptUserInfo(Sliobj.params.authType);
+	    GService.gprofile.promptUserInfo(Sliobj.previewState, Sliobj.params.authType);
 	}
     } else {
 	Slidoc.slidocReady(null);
@@ -564,12 +750,158 @@ function onreadystateaux() {
 // Section 8b: Preview functions
 //////////////////////////////////
 
+Slidoc.accordionView = function(active, show) {
+    if (!document.body.classList.contains('slidoc-collapsible-view'))
+	return;
+
+    if (Sliobj.testOverride == null && getUserId() == Sliobj.params.testUserId && Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
+	Sliobj.testOverride = !!window.confirm('Enable test user override to display all slides?');
+
+    var allSlides = document.getElementsByClassName('slidoc-slide');
+    for (var j=0; j<allSlides.length; j++) {
+	var togglebar = document.getElementById(allSlides[j].id+'-togglebar');
+	if (Sliobj.testOverride && getUserId() == Sliobj.params.testUserId) {
+	    allSlides[j].style.display = null;
+	    if (togglebar)
+		togglebar.style.display = null;
+	} else if (allSlides[j].style.display == 'none') {
+	    continue;
+	}
+	toggleClass(active && !show, 'slidoc-toggle-hide', allSlides[j]);
+	if (togglebar)
+	    toggleClass(active && !show, 'slidoc-toggle-hide', togglebar);
+
+	var topToggleHeader = document.getElementById(allSlides[j].id+'-toptoggle-header');
+	var slideToggleFooter = document.getElementById(allSlides[j].id+'-footer-toggle');
+	if (active && topToggleHeader && slideToggleFooter && slideToggleFooter.textContent)
+	    topToggleHeader.innerHTML = slideToggleFooter.innerHTML;
+    }
+    toggleClass(active, 'slidoc-accordion-view');
+}
+
+Slidoc.accordionToggle = function(slideId, show) {
+    var slideElem = document.getElementById(slideId);
+    var togglebar = document.getElementById(slideId+'-togglebar');
+
+    toggleClass(!show, 'slidoc-toggle-hide', slideElem);
+    if (togglebar)
+	toggleClass(!show, 'slidoc-toggle-hide', togglebar);
+
+    // Hide/display slides below without headers
+    var toggleFooters = document.getElementsByClassName(slideId+'-footer-toggle');
+    for (var j=0; j<toggleFooters.length; j++) {
+	var smatch = /^(.*)-footer-toggle$/.exec(toggleFooters[j].id);
+	var temSlideId = smatch[1];
+	if (smatch) {
+	    var temSlideElem = document.getElementById(temSlideId);
+	    if (temSlideElem)
+		toggleClass(!show, 'slidoc-toggle-hide', temSlideElem);
+	    var tembar = document.getElementById(temSlideId+'-togglebar');
+	    if (tembar)
+		toggleClass(!show, 'slidoc-toggle-hide', tembar);
+	}
+    }
+}
+
+function checkActiveEdit() {
+    var allContainers = document.getElementsByClassName('slidoc-togglebar-edit');
+    
+    for (var j=0; j<allContainers.length; j++) {
+	if (allContainers[j].style.display != 'none') {
+	    setTimeout(function(){allContainers[j].scrollIntoView(true);}, 200);
+	    alert('Another slide edit in progress; please save/discard it first.');
+	    return false;
+	}
+    }
+    return true;
+}
+
+Slidoc.slideEdit = function(action, slideId) {
+    Slidoc.log('slideEdit:', action, slideId);
+    if (!slideId) {
+	if (Sliobj.currentSlide) {
+	    slideId = Slidoc.getCurrentSlideId()
+	} else {
+	    if (!checkActiveEdit())
+		return;
+	    loadPath(Sliobj.sitePrefix + '/_edit/'+Sliobj.params.fileName);
+	    return;
+	}
+    }
+    var slideNum = parseSlideId(slideId)[2];
+    var editContainer = document.getElementById(slideId+'-togglebar-edit');
+    var editArea = document.getElementById(slideId+'-togglebar-edit-area');
+    var imageNameElem = document.getElementById(slideId+'-togglebar-edit-imgname');
+    var params = {slide: slideNum, sessionname: Sliobj.params.fileName};
+
+    if (action == 'discard') {
+	editContainer.style.display = 'none';
+	editArea.value = '';
+
+    } else if (action == 'save') {
+	function slideSaveAux(result, errMsg) {
+	    if (!result) {
+		alert('Error in saving edits :'+errMsg);
+		return;
+	    }
+	    loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#'+slideId);
+	}
+	params.sessiontext = editArea.value;
+	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
+
+    } else if (action == 'edit') {
+	if (!checkActiveEdit())
+	    return;
+
+	function slideEditAux(result, errMsg) {
+	    if (!result || !('slideText' in result)) {
+		alert('Error in editing slide :'+errMsg);
+		return;
+	    }
+	    editContainer.style.display = null;
+	    editArea.value = result.slideText;
+	    imageNameElem.dataset.imgname = result.newImageName;
+	    imageNameElem.textContent = 'Image drop area';
+	    setTimeout(function(){editContainer.scrollIntoView(true); editArea.focus();}, 200);
+	}
+	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_edit', params, slideEditAux, true);
+    }
+}
+
+Slidoc.slideMove = function(dropElem, sourceNum, destNum) {
+    Slidoc.log('slideMove', dropElem, sourceNum, destNum);
+    if (!checkActiveEdit()) {
+	dropElem.classList.remove('slidoc-dragovertop');
+	dropElem.classList.remove('slidoc-dragoverbottom');
+	return;
+    }
+    function slideMoveAux(result, errMsg) {
+	if (!result) {
+	    alert('Error in moving slide :'+errMsg);
+	    dropElem.classList.remove('slidoc-dragovertop');
+	    dropElem.classList.remove('slidoc-dragoverbottom');
+	    return;
+	}
+	loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#collapsed');
+    }
+    var params = {slide: sourceNum, move: destNum, sessionname: Sliobj.params.fileName, sessiontext: ''};
+    Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideMoveAux, true);
+}
+
 Slidoc.previewAction = function (action) {
+    if (action == 'messages') {
+	previewMessages();
+	return;
+    }
+    if (!checkActiveEdit())
+	return;
+
     if (action == 'discard') {
 	if (!window.confirm('Discard all changes?'))
 	    return;
+
     } else if (action == 'accept') {
-	if (Sliobj.previewState == 'preview') {
+	if (Sliobj.previewState) {
 	    if (Sliobj.params.overwrite) {
 		if (!window.confirm('Accepting changes will overwrite previous version. Proceed?'))
 		    return;
@@ -578,24 +910,183 @@ Slidoc.previewAction = function (action) {
 	} else {
 	    action = 'preview/index.html';
 	}
-    } else if (action == 'messages') {
-	action = Sliobj.previewState + '/_messages';
+
+    } else if (action == 'edit') {
+	if (Sliobj.currentSlide) {
+	    Slidoc.slideEdit('edit', Slidoc.getCurrentSlideId());
+	    return;
+	}
+	action = 'edit';
     }
 
     window.location = Sliobj.sitePrefix + '/_' + action;
 }
 
-function previewMessages() {
-    var XHR = new XMLHttpRequest();
-    XHR.onload = function (evt) {
-	var messageText = this.responseText.trim();
-	if (!messageText)
+function previewMessages(optional) {
+    function previewMessagesAux(retval, errmsg) {
+	if (retval == null) {
+	    if (errmsg)
+		alert(errmsg);
 	    return;
-	var messageHtml = '<pre>'+messageText+'\n</pre>\n';
+	}
+	if (optional) {
+	    if (retval.trim()) {
+		document.getElementById('slidoc-preview-messages').classList.add('slidoc-amber');
+	    }
+	    return;
+	}
+	var messageText = retval.trim() || 'No messages';
+	var messageHtml = (messageText.charAt(0) == '<') ? messageText : '<pre>'+messageText+'\n</pre>\n';
 	Slidoc.showPopup(messageHtml, null, true);
     }
-    XHR.open('GET', Sliobj.sitePrefix + '/_'+Sliobj.previewState+'/_messages');
-    XHR.send();
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_preview/_messages', {}, previewMessagesAux);
+}
+
+Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
+    // data = {key: value, ...}
+    // callback(result_obj, optional_err_msg)
+
+    var XHR = new XMLHttpRequest();
+
+    XHR.onreadystatechange = function () {
+	var DONE = 4; // readyState 4 means the request is done.
+	var OK = 200; // status 200 is a successful return.
+	if (XHR.readyState === DONE) {
+	    var retval = null;
+	    var msg = '';
+            if (XHR.status === OK) {
+		if (!nolog)
+		    Slidoc.log('ajaxRequest.OK: '+XHR.status, XHR.responseText);
+		if (json) {
+		    if (XHR.getResponseHeader('Content-Type') !== 'application/json') {
+			msg = 'Expected application/json response but received '+XHR.getResponseHeader('Content-Type')+' from '+url;
+			if (!nolog)
+			    Slidoc.log(msg);
+		    } else {
+			try {
+			    retval = JSON.parse(XHR.responseText);
+			} catch (err) {
+			    msg = 'JSON parsing error';
+			    if (!nolog)
+				Slidoc.log(msg, err, XHR.responseText);
+			}
+		    }
+		} else {
+		    retval = XHR.responseText;
+		}
+            } else {
+		msg = 'Error in HTTP request: status='+XHR.status+': '+XHR.responseText;
+		if (!nolog)
+		    Slidoc.log('ajaxRequest.Error: ', msg, XHR.responseText);
+            }
+	    if (callback)
+		callback(retval, msg);
+	}
+    };
+
+    var urlEncodedData = null;
+    if (data && !(data instanceof FormData)) {
+	// Encoded key=value pairs
+	var urlEncodedDataPairs = [];
+	for (var name in data) {
+	    urlEncodedDataPairs.push(encodeURIComponent(name) + '=' + encodeURIComponent(data[name]));
+	}
+
+	// Replaces encoded spaces with plus symbol to mimic form behavior
+	urlEncodedData = urlEncodedDataPairs.join('&').replace(/%20/g, '+');
+    }
+
+    if (!nolog)
+	Slidoc.log('ajaxRequest.send:', method, urlEncodedData, url);
+    if (method == 'GET') {
+	if (urlEncodedData)
+	    XHR.open('GET', url+'?'+urlEncodedData);
+	else
+	    XHR.open('GET', url);
+	XHR.send();
+    } else {
+	// Form data POST request
+	XHR.open('POST', url);
+	if (data instanceof FormData) {
+	    XHR.send(data);
+	} else {
+	    XHR.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+	    XHR.setRequestHeader('Content-Length', urlEncodedData.length);
+
+	    XHR.send(urlEncodedData);
+	}
+    }
+}
+
+
+Slidoc.ajaxUpload = function(url, file, params, callback, json) {
+    var formData = new FormData();
+    for (var name in params)
+	formData.append(name, params[name]);
+    formData.append("upload", file);
+    Slidoc.ajaxRequest('POST', url, formData, callback, json);
+}
+
+function checkFileUpload(files, mimeRegex, extensionList) {
+    if (files.length != 1) {
+	alert("Please select a single file");
+	return null;
+    }
+
+    var file = files[0];
+    var filename = file.name;
+    var fcomps = filename.split('.');
+    var extn = (fcomps.length > 1) ? fcomps[fcomps.length-1] : '';
+    var head = extn ? fcomps.slice(0,-1).join('.') : filename;
+
+    if (!(mimeRegex && file.type && file.type.search(mimeRegex) >= 0) &&
+	!(extensionList && extn && extensionList.indexOf(extn.toLowerCase()) >= 0) ) {
+	var errMsg = 'Invalid file type; expecting';
+	if (mimeRegex)
+	    errMsg += ' ' + mimeRegex;
+	if (extensionList)
+	    errMsg += ' ' + extensionList;
+	alert(errMsg);
+	return null;
+    }
+    return {file:file, filename:filename, head:head, extension:extn, mimeType:file.type}
+}
+
+//////////////////////////////////
+// Section 8c: Reload/upload
+//////////////////////////////////
+
+function reloadCheckFunc() {
+    function reloadCheckAux(result, errMsg) {
+	if (result == null || result.match(/^error/i)) {
+	    document.getElementById('slidoc-localpreview-label').textContent = 'Local preview ENDED';
+	    console.log(errMsg);
+	} else if (result && result.trim()) {
+	    location.reload(true);
+	} else {
+	    setTimeout(reloadCheckFunc, 333);
+	}
+    }
+    Slidoc.ajaxRequest('GET', '/_reloadcheck?token='+Sliobj.reloadCheck, {}, reloadCheckAux, false, true);
+}
+
+Sliobj.reloadCheck = (location.hostname == 'localhost') ? getParameter('reloadcheck') : '';
+Slidoc.remoteUpload = function() {
+    window.location = '/_remoteupload?token='+Sliobj.reloadCheck;
+}
+
+Slidoc.localMessages = function() {
+    function localMessagesAux(retval, errmsg) {
+	if (retval == null) {
+	    if (errmsg)
+		alert(errmsg);
+	    return;
+	}
+	var messageText = retval.trim() || 'No messages';
+	var messageHtml = (messageText.charAt(0) == '<') ? messageText : '<pre>'+messageText+'\n</pre>\n';
+	Slidoc.showPopup(messageHtml, null, true);
+    }
+    Slidoc.ajaxRequest('GET', '/_messages?token='+Sliobj.reloadCheck, {}, localMessagesAux);
 }
 
 //////////////////////////////////
@@ -876,7 +1367,7 @@ Slidoc.userLogin = function (msg, retryCall) {
     if (Sliobj.serverCookie)
 	sessionAbort(msg || 'Error in authentication');
     else
-	GService.gprofile.promptUserInfo(GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
+	GService.gprofile.promptUserInfo(false, GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
 }
 
 Slidoc.userLoginCallback = function (retryCall, auth) {
@@ -1040,17 +1531,18 @@ Slidoc.slideViewIncrement = function () {
 // Section 10: Help display
 ///////////////////////////////
 
-var Slide_help_list = [
+var Slide_help_list_a = [
     ['q, Escape',           'exit',  'exit slide mode'],
     ['h, Home, Fn&#9668;',  'home',  'home (first) slide'],
-    ['e, End, Fn&#9658;',   'end',   'end (last) slide'],
-    ['p, &#9668;',          'left',  'previous slide'],
-    ['n, &#9658;, space',   'right', 'next slide'],
+    ['e, End, Fn&#9658;',   'end',   'end (last) slide']
+];
+
+var Slide_help_list_b = [
     ['i, &#9660;',          'i',     'incremental item'],
     ['f',                   'f',     'fullscreen mode'],
     ['m',                   'm',     'missed question concepts'],
     ['?',                   'qmark', 'help']
-    ]
+];
 
 Slidoc.viewHelp = function () {
     var html = '<b>Slide commands</b><p></p>\n';
@@ -1058,9 +1550,15 @@ Slidoc.viewHelp = function () {
     var userId = getUserId();
     html += '<table class="slidoc-slide-help-table">';
     if (Sliobj.currentSlide) {
-	for (var j=0; j<Slide_help_list.length; j++)
-	    html += formatHelp(Slide_help_list[j]);
+	for (var j=0; j<Slide_help_list_a.length; j++)
+	    html += formatHelp(Slide_help_list_a[j]);
+	html += formatHelp(['p, &#9668;',          'left',  'previous slide']);
+	html += formatHelp(['n, &#9658;, space',   'right', 'next slide']);
+	for (var j=0; j<Slide_help_list_b.length; j++)
+	    html += formatHelp(Slide_help_list_b[j]);
     } else if (Sliobj.params.fileName) {
+	html += formatHelp(['&#9668;',   'left',  'collapse']);
+	html += formatHelp(['&#9658;',   'right', 'uncollapse']);
 	html += formatHelp(['Escape', 'unesc', 'enter slide mode']);
     }
     html += '</table>';
@@ -1162,6 +1660,9 @@ Slidoc.handleKey = function (keyName) {
 
 	if (keyName == 'reset') { Slidoc.resetPaced(); return false; }
 	
+	if (keyName == 'left') { Slidoc.accordionView(true); return false; }
+	if (keyName == 'right') { Slidoc.accordionView(false); return false; }
+	
 	if (Sliobj.curChapterId) {
 	    var chapNum = parseSlideId(Sliobj.curChapterId)[1];
 	    var chapters = document.getElementsByClassName('slidoc-reg-chapter');
@@ -1184,7 +1685,7 @@ Slidoc.inputKeyDown = function (evt) {
 
 function parseSlideId(slideId) {
     // Return chapterId, chapter number, slide number (or 0)
-    var match = /(slidoc(\d+))(-(\d+))?$/.exec(slideId);
+    var match = SLIDE_ID_RE.exec(slideId);
     if (match)
 	return [match[1], parseInt(match[2]), match[4] ? parseInt(match[4]) : 0];
     var chapters = document.getElementsByClassName('slidoc-reg-chapter');
@@ -1252,6 +1753,8 @@ function showDialog(action, testEvent, prompt, value) {
 
 Slidoc.sendEvent = function (eventType, eventName) // Extra Args
 {
+    if (Sliobj.previewState)  // Do not transmit events when previewing
+	return;
     var extraArgs = Array.prototype.slice.call(arguments).slice(2);
     Slidoc.log('Slidoc.sendEvent:', eventType, eventName, extraArgs);
     GService.sendEventWS('', eventType, eventName, extraArgs);
@@ -1938,6 +2441,8 @@ Slidoc.manageSession = function() {
     if (Sliobj.sessionName) {
 	if (userId)
 	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userProfile();">profile</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	else if (window.GService)
+	    html += '<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>\n';
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
 	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
@@ -1966,7 +2471,7 @@ Slidoc.manageSession = function() {
 	}
     } else {
 	if (Sliobj.serverCookie)
-	    html += 'User: <b>'+Sliobj.serverCookie.user+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
+	    html += 'User: <b>'+(userId || Sliobj.serverCookie.user)+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
 
     var fullAdmin = !Sliobj.adminPrefix && (Sliobj.adminState || userId == Sliobj.params.testUserId);
@@ -2045,7 +2550,7 @@ Slidoc.viewSheet = function(sheetName) {
 
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
-    Sliobj.adminState = auth && !!auth.adminKey;
+    Sliobj.adminState = auth && !!auth.adminKey && !Sliobj.previewState;
     Sliobj.adminPrefix = (Sliobj.serverCookie && Sliobj.serverCookie.prefix) || '';
     Sliobj.adminPaced = 0;
     Sliobj.maxLastSlide = 0;
@@ -2180,11 +2685,21 @@ function getUserId() {
 
 function controlledPace() {
     // If test user has submitted, assume controlledPace
-    return (Sliobj.params.paceLevel >= ADMIN_PACE && (getUserId() != Sliobj.params.testUserId || (Sliobj.session && Sliobj.session.submitted)));
+    if (Sliobj.params.paceLevel < ADMIN_PACE)
+	return false;
+    return getUserId() != Sliobj.params.testUserId || (Sliobj.session && Sliobj.session.submitted);
 }
 
 function isController() {
-    return (Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.adminState && getUserId() == Sliobj.params.testUserId);
+    return Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.adminState && getUserId() == Sliobj.params.testUserId;
+}
+
+function collapsibleAccess() {
+    if (getUserId() == Sliobj.params.testUserId)
+	return true;
+    if ('slides_only' in Sliobj.params.features)
+	return false;
+    return !Sliobj.params.paceLevel || (Sliobj.session && Sliobj.session.submitted);
 }
 
 function allowDelay() {
@@ -2235,14 +2750,14 @@ function slidocSetupAux(session, feedback) {
     if (controlledPace()) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
-	    slides[j].style.display = 'block';
+	    slidesVisible(true, j+1, slides);
     } else if (!Sliobj.batchMode && !Sliobj.printExamView && (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) ) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
-	    slides[j].style.display = 'block';
+	    slidesVisible(true, j+1, slides);
     } else {
 	// Not paced or admin-paced; unhide all slides
-	Slidoc.classDisplay('slidoc-slide', 'block');
+	slidesVisible(true);
     }
 
     if (!Sliobj.session) {
@@ -2328,11 +2843,23 @@ function slidocSetupAux(session, feedback) {
     scoreSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
 
-    if (Sliobj.previewState)
+    if (Sliobj.reloadCheck)
+	toggleClass(true, 'slidoc-localpreview-view');
+
+    if (Sliobj.previewState) {
     	toggleClass(true, 'slidoc-preview-view');
+	if (location.hash == '#collapsed')
+	    Slidoc.accordionView(true);
+    }
 
     if (Sliobj.adminState)
     	toggleClass(true, 'slidoc-admin-view');
+
+    if (getUserId() == Sliobj.params.testUserId)
+	toggleClass(true, 'slidoc-testuser-view');
+
+    if (collapsibleAccess())
+	toggleClass(true, 'slidoc-collapsible-view');
 
     if (isController())
     	toggleClass(true, 'slidoc-controller-view');
@@ -3699,6 +4226,25 @@ function delayElement(delaySec) // ElemendIds to be hidden as extra args
     setTimeout(endInterval, (delaySec+transition)*1000);
 }
 
+function slidesVisible(visible, slideNumber, slides) {
+    var dispStyle = visible ? null : 'none';
+    if (!slideNumber) {
+	// All slides (and toggle elements)
+	Slidoc.classDisplay('slidoc-slide', dispStyle);
+	Slidoc.classDisplay('slidoc-togglebar', dispStyle);
+    } else {
+	// Selected slide (and toggle element)
+	if (!slides)
+	    slides = getVisibleSlides();
+	if (slideNumber > slides.length)
+	    throw('slidesVisible: Not enough slides: '+slideNumber+' > '+slides.length);
+	slides[slideNumber-1].style.display = dispStyle;
+	var togglebar = document.getElementById(slides[slideNumber-1].id+'-togglebar');
+	if (togglebar)
+	    togglebar.style.display = dispStyle;
+    }
+}
+
 function visibleSlideCount() {
     if (controlledPace() || (isController() && Sliobj.session.submitted) )
 	return Math.min(Math.max(1,Sliobj.adminPaced), Sliobj.params.pacedSlides);
@@ -3871,15 +4417,10 @@ Slidoc.allDisplay = function (elem) {
 }
 
 Slidoc.classDisplay = function (className, displayValue) {
-   // Set display value (string) for all elements with class
-   // If !displayValue, toggle it
+   // Set display value for all elements with class
    var elements = document.getElementsByClassName(className);
-   for (var i=0; i < elements.length; i++) {
-     if (displayValue)
-         elements[i].style.display = displayValue;
-     else
-         elements[i].style.display = (elements[i].style.display=='none') ? 'block' : 'none';
-   }
+   for (var i=0; i < elements.length; i++)
+       elements[i].style.display = displayValue;
    return false;
 }
 
@@ -5054,7 +5595,7 @@ Slidoc.startPaced = function () {
     startMsg += '</ul>';
     }
 
-    if (!Sliobj.batchMode)
+    if (!Sliobj.batchMode && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
 	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
@@ -5141,7 +5682,9 @@ Slidoc.slideViewStart = function () {
    Slidoc.breakChain();
 
    var startSlide;
-   if (Sliobj.session.paced) {
+   if (Sliobj.previewState && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
+	startSlide = parseSlideId(location.hash.slice(1))[2];
+   } else if (Sliobj.session.paced) {
        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
    } else {
        startSlide = getCurrentlyVisibleSlide(slides) || 1;
@@ -5162,9 +5705,14 @@ Slidoc.slideViewStart = function () {
 
 Slidoc.slideViewEnd = function() {
     if (!Sliobj.adminState && ('slides_only' in Sliobj.params.features)) {
-	var msgStr = 'Cannot exit slide view when in restricted mode';
-	alert(msgStr);
-	return false;
+	if (Sliobj.testOverride == null && getUserId() == Sliobj.params.testUserId)
+	    Sliobj.testOverride = !!window.confirm('Enable test user override to avoid slides_only restriction?');
+
+	if (!Sliobj.testOverride || getUserId() != Sliobj.params.testUserId) {
+	    var msgStr = 'Cannot exit slide view when in restricted mode';
+	    alert(msgStr);
+	    return false;
+	}
     }
 
     if (!Sliobj.currentSlide)
@@ -5178,12 +5726,12 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.PluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
     }
 
-    if (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) {
+    if ( (!Sliobj.testOverride || getUserId() != Sliobj.params.testUserId) && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
 	// Unhide only viewed slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
-	    slides[j].style.display = 'block';
+	    slidesVisible(true, j+1, slides);
     } else {
-	Slidoc.classDisplay('slidoc-slide', 'block');
+	slidesVisible(true);
 	Slidoc.classDisplay('slidoc-notes', 'block');
 	var contElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
 	for (var j=0; j<contElems.length; j++)
@@ -5269,13 +5817,19 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		var ansElem = document.getElementById(prev_slide_id+'-answer-click');
 		if (ansElem)
 		    Slidoc.answerClick(ansElem, prev_slide_id, 'controlled');
-	    } else {
-		var tryCount =  (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
-		var prompt = 'Please answer before proceeding.'
-		if (tryCount > 1)
-		    prompt += 'You have '+tryCount+' try(s)';
-		showDialog('alert', 'requireAnswerDialog', prompt);
-		return false;
+
+	    } else  {
+		if (Sliobj.testOverride == null && getUserId() == Sliobj.params.testUserId)
+		    Sliobj.testOverride = !!window.confirm('Enable test user override to proceed without answering?');
+		if (!Sliobj.testOverride || getUserId() != Sliobj.params.testUserId) {
+		    var tryCount = (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
+		    var prompt = 'Please answer before proceeding.'
+		    if (tryCount > 1)
+			prompt += 'You have '+tryCount+' try(s)';
+
+		    showDialog('alert', 'requireAnswerDialog', prompt);
+		    return false;
+		}
 	    }
 	} else if (Sliobj.delaySec) {
 	    // Current (not new) slide has delay
@@ -5426,9 +5980,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	toggleClass(slide_id in Sliobj.incrementPlugins, 'slidoc-incremental-view');
     }
 
-    slides[slide_num-1].style.display = 'block';
+    slidesVisible(true, slide_num, slides);
     for (var i=0; i<slides.length; i++) {
-	if (i != slide_num-1) slides[i].style.display = 'none';
+	if (i != slide_num-1) slidesVisible(false, i+1, slides);
     }
     Sliobj.currentSlide = slide_num;
     location.href = '#'+slides[Sliobj.currentSlide-1].id;
@@ -5483,7 +6037,7 @@ function goSlide(slideHash, chained, singleChapter) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
     Slidoc.log("goSlide:", slideHash, chained);
-    if (Sliobj.session.paced && ('slides_only' in Sliobj.params.features) && !Sliobj.currentSlide && !singleChapter) {
+    if (Sliobj.session.paced && ('slides_only' in Sliobj.params.features) && !Sliobj.currentSlide && !singleChapter && (getUserId() != Sliobj.params.testUserId)) {
 	alert('Slidoc: InternalError: strict paced mode without slideView');
 	return false;
     }
@@ -5713,7 +6267,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
     if (Sliobj.closePopup) {
 	Slidoc.log('Slidoc.showPopup: Popup already open');
 	if (!autoCloseMillisec)
-	    Sliobj.popupQueue.push([innerHTML||null, divElemId||null]);
+	    Sliobj.popupQueue.push([innerHTML||null, divElemId||null, wide||null]);
 	return null;
     }
 
@@ -5754,7 +6308,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 	    } else {
 		if (Sliobj.popupQueue && Sliobj.popupQueue.length) {
 		    var args = Sliobj.popupQueue.shift();
-		    Slidoc.showPopup(args[0], args[1]);
+		    Slidoc.showPopup(args[0], args[1], args[2]);
 		}
 	    }
 	    if (closeCallback && matchEvent) {

@@ -305,11 +305,13 @@ class PPTXParser(object):
         if self.image_defs:
             all_text += '\n\n' + '\n\n'.join(self.image_defs) + '\n\n'
 
-        images_zip = None
+        zipped_md = None
         if self.img_zip:
+            if self.args_dict.get('zip_md'):
+                self.img_zip.writestr('content.md', all_text)
             self.img_zip.close()
-            images_zip = self.img_bytes.getvalue()
-        return all_text, images_zip
+            zipped_md = self.img_bytes.getvalue()
+        return all_text, zipped_md
 
     def compute_img_height(self, width, height, max_height):
         max_width = int(max_height * (4.0/3.0))
@@ -427,6 +429,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--line_breaks', help='Break lines within text box paragraphs', action="store_true")
     parser.add_argument('-n', '--notes', help='Treat slide notes as Notes: (instead of as text)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
+    parser.add_argument('--zip_md', help='Include md file in zip archive', action="store_true")
     parser.add_argument('file', help='Powerpoint filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
