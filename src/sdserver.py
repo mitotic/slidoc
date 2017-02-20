@@ -302,6 +302,9 @@ class ActionHandler(BaseHandler):
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=Options['gsheet_url'],
                               proxy_url=site_prefix+'/_websocket')
+        elif Options['auth_key']:
+            configOpts.update(auth_key=Options['auth_key'])
+
         return configOpts
 
     def get(self, subpath, inner=None):

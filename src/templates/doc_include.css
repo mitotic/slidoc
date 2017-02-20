@@ -227,6 +227,8 @@ body:not(.slidoc-accordion-view) .slidoc-togglebar {display: none;}
 
 body:not(.slidoc-dragdrop-view) .slidoc-dropbar {display: none;}
 
+.slidoc-togglebar-edit-area { outline: none; width: 90%; }
+
 .slidoc-togglebar,
 .slidoc-togglebar-edit
 {

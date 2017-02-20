@@ -1288,7 +1288,7 @@ class SlidocRenderer(MathRenderer):
             if plugin_name[-1].isdigit():
                 plugin_def_name = plugin_name[:-1]
             if plugin_def_name not in self.plugin_defs and plugin_def_name not in self.options['plugin_defs']:
-                abort('ERROR Plugin '+plugin_name+' not defined!')
+                abort('ERROR Plugin '+plugin_name+' not defined/closed!')
                 return ''
 
         plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'][plugin_def_name]
@@ -2807,8 +2807,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                                            first_line=True, verbose=config.verbose)
 
             if config.preview:
-                if file_config.pace:
-                    file_config.pace = BASIC_PACE
                 if file_config.gsheet_url:
                     file_config.gsheet_url = ''
                 if file_config.images:

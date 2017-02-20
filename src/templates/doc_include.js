@@ -754,13 +754,14 @@ Slidoc.accordionView = function(active, show) {
     if (!document.body.classList.contains('slidoc-collapsible-view'))
 	return;
 
-    if (Sliobj.testOverride == null && getUserId() == Sliobj.params.testUserId && Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
-	Sliobj.testOverride = !!window.confirm('Enable test user override to display all slides?');
+    if (Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
+	setupOverride('Enable test user override to display all slides?');
 
     var allSlides = document.getElementsByClassName('slidoc-slide');
     for (var j=0; j<allSlides.length; j++) {
 	var togglebar = document.getElementById(allSlides[j].id+'-togglebar');
-	if (Sliobj.testOverride && getUserId() == Sliobj.params.testUserId) {
+	if (setupOverride()) {
+	    // Display all slides
 	    allSlides[j].style.display = null;
 	    if (togglebar)
 		togglebar.style.display = null;
@@ -862,7 +863,11 @@ Slidoc.slideEdit = function(action, slideId) {
 	    editArea.value = result.slideText;
 	    imageNameElem.dataset.imgname = result.newImageName;
 	    imageNameElem.textContent = 'Image drop area';
-	    setTimeout(function(){editContainer.scrollIntoView(true); editArea.focus();}, 200);
+	    setTimeout(function() {
+		editArea.style.height = editArea.scrollHeight + 12 + 'px';
+		editContainer.scrollIntoView(true);
+		editArea.focus();
+	    }, 200);
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_edit', params, slideEditAux, true);
     }
@@ -1754,7 +1759,7 @@ function showDialog(action, testEvent, prompt, value) {
 
 Slidoc.sendEvent = function (eventType, eventName) // Extra Args
 {
-    if (Sliobj.previewState)  // Do not transmit events when previewing
+    if (Sliobj.previewState || Sliobj.reloadCheck)  // Do not transmit events when previewing
 	return;
     var extraArgs = Array.prototype.slice.call(arguments).slice(2);
     Slidoc.log('Slidoc.sendEvent:', eventType, eventName, extraArgs);
@@ -2680,8 +2685,21 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
 // Section 14: Session setup
 ///////////////////////////////
 
+function setupOverride(msg) {
+    if (getUserId() != Sliobj.params.testUserId)
+	return false;
+
+    if (Sliobj.testOverride == null && msg)
+	Sliobj.testOverride = !!window.confirm(msg);
+    return Sliobj.testOverride;
+}
+
 function getUserId() {
-    return window.GService && GService.gprofile && GService.gprofile.auth && GService.gprofile.auth.id;
+    if (window.GService && GService.gprofile && GService.gprofile.auth)
+	return GService.gprofile.auth.id;
+    else if (location.hostname == 'localhost' && getParameter('reloadcheck'))
+	return Sliobj.params.testUserId;
+    return '';
 }
 
 function controlledPace() {
@@ -5706,10 +5724,7 @@ Slidoc.slideViewStart = function () {
 
 Slidoc.slideViewEnd = function() {
     if (!Sliobj.adminState && ('slides_only' in Sliobj.params.features)) {
-	if (Sliobj.testOverride == null && getUserId() == Sliobj.params.testUserId)
-	    Sliobj.testOverride = !!window.confirm('Enable test user override to avoid slides_only restriction?');
-
-	if (!Sliobj.testOverride || getUserId() != Sliobj.params.testUserId) {
+	if (!setupOverride('Enable test user override to avoid slides_only restriction?')) {
 	    var msgStr = 'Cannot exit slide view when in restricted mode';
 	    alert(msgStr);
 	    return false;
@@ -5727,11 +5742,12 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.PluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
     }
 
-    if ( (!Sliobj.testOverride || getUserId() != Sliobj.params.testUserId) && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
+    if (!setupOverride() && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
 	// Unhide only viewed slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
     } else {
+	// Unhide all slides
 	slidesVisible(true);
 	Slidoc.classDisplay('slidoc-notes', 'block');
 	var contElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
@@ -5798,8 +5814,10 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
     if (Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
-	showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
-	return false;
+	if (!setupOverride('Enable test user override to proceed without answering?')) {
+	    showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
+	    return false;
+	}
     }
 
     var slide_id = slides[slide_num-1].id;
@@ -5820,9 +5838,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		    Slidoc.answerClick(ansElem, prev_slide_id, 'controlled');
 
 	    } else  {
-		if (Sliobj.testOverride == null && getUserId() == Sliobj.params.testUserId)
-		    Sliobj.testOverride = !!window.confirm('Enable test user override to proceed without answering?');
-		if (!Sliobj.testOverride || getUserId() != Sliobj.params.testUserId) {
+		if (!setupOverride('Enable test user override to proceed without answering?')) {
 		    var tryCount = (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
 		    var prompt = 'Please answer before proceeding.'
 		    if (tryCount > 1)

@@ -14,6 +14,13 @@ function slidocDiscard() {
    window.location = '/{{site_name}}{% if site_name %}/{% end %}{{discard_url}}';
    return false;
 }
+document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+        return;
+    document.querySelectorAll('textarea').forEach(function(tx){
+        tx.style.height = tx.scrollHeight + 12 + 'px';
+    });
+}
 </script>
 
 </head>
@@ -31,7 +38,7 @@ function slidocDiscard() {
     <label for="sessionname">Session:</label>
     <input type="text" id="sessionname" readonly="yes" name="sessionname" value="{{session_name}}"></input>
     <p></p>
-    <textarea id="sessiontext" name="sessiontext">{{session_text}}</textarea>
+    <textarea id="sessiontext" name="sessiontext" style="width: 90%;">{{session_text}}</textarea>
   </fieldset>
 </form>
 
