@@ -167,12 +167,13 @@ class Parser(object):
         self.images_map = {}
         self.content_zip_bytes = None
         self.content_zip = None
+        self.content_image_paths = {}
         if images_zipdata:
             self.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata), 'r')
             self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
         elif 'zip' in self.cmd_args.images:
             self.content_zip_bytes = io.BytesIO()
-            self.content_zip = zipfile.ZipFile(self.image_bytes, 'w')
+            self.content_zip = zipfile.ZipFile(self.content_zip_bytes, 'w')
 
         self.skipping_notes = False
         self.cells_buffer = []
@@ -201,6 +202,7 @@ class Parser(object):
             fname = os.path.basename(filepath)
             zpath = '_images/'+fname
             self.content_zip.writestr(zpath, content)
+            self.content_image_paths.add(zpath)
             return
         fdir = os.path.dirname(filepath)
         if fdir and not os.path.exists(fdir):
@@ -474,11 +476,7 @@ class Parser(object):
 
     def parse(self, content, filepath=''):
         # Return (output_md, zipped_image_data or None)
-
-        if 'md' in self.cmd_args.images and self.content_zip:
-            # Include content in zipped image file
-            self.content_zip.writestr('content.md', content)
-
+        orig_content = content
         if filepath:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
 
@@ -638,7 +636,11 @@ class Parser(object):
                 self.output.append('[%s]: %s%s\n' % (new_key, new_link, quote_pad_title(title,parentheses=True)))
 
         out_md = ''.join(self.output)
-        if self.content_zip:
+        if self.content_zip and self.content_image_paths:
+            if 'md' in self.cmd_args.images:
+                # Include original content in zipped image file
+                self.content_zip.writestr('content.md', orig_content)
+
             self.content_zip.close()
             return out_md, self.content_zip_bytes.getvalue()
         else:
