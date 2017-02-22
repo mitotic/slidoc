@@ -52,6 +52,8 @@ except ImportError:
 
 from xml.etree import ElementTree
 
+ADMIN_ROLE = 'admin'
+
 ADMINUSER_ID = 'admin'
 TESTUSER_ID = '_test_user'
 
@@ -2096,7 +2098,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                          row_count=None, modify_session=False):
     modify_questions = False
     user = ADMINUSER_ID
-    user_token = sliauth.gen_admin_token(hmac_key, user)
+    user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True)
     admin_paced = 1 if pace_level >= ADMIN_PACE else None
 
     post_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
@@ -2141,11 +2143,11 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     # Extending
                     pass
             elif row_count == 1:
-                abort('ERROR: Delete test user entry to modify questions in session '+session_name)
+                abort('ERROR:: Delete test user entry to modify questions in session '+session_name)
             elif mod_question:
-                abort('ERROR: Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
+                abort('ERROR:MODIFY_SESSION: Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
             else:
-                abort('ERROR: Mismatch in question numbers for session %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
+                abort('ERROR:MODIFY_SESSION: Mismatch in question numbers for session %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
 
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
@@ -2179,7 +2181,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
 def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=None):
     modify_col = 0
     user = TESTUSER_ID
-    user_token = sliauth.gen_user_token(hmac_key, user) if hmac_key else ''
+    user_token = sliauth.gen_auth_token(hmac_key, user) if hmac_key else ''
     post_params = {'id': user, 'token': user_token, 'sheet': sheet_name,
                    'get': 1, 'getheaders': '1'}
     retval = sliauth.http_post(sheet_url, post_params)
@@ -2217,13 +2219,13 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
             abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify' % (modify_col, sheet_name))
         ###elif not modify_session and row_count:
         elif not modify_session:
-            abort('ERROR: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
+            abort('ERROR:MODIFY_SESSION: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
 
     return (maxLastSlide, modify_col, row_count)
                 
 def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify=None):
     user = ADMINUSER_ID
-    user_token = sliauth.gen_admin_token(hmac_key, user) if hmac_key else ''
+    user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True) if hmac_key else ''
     post_params = {ADMINUSER_ID: user, 'token': user_token, 'sheet': sheet_name,
                    'headers': json.dumps(headers)}
     if row:
@@ -2590,7 +2592,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                  'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
-                 'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
+                 'adminUserId': ADMINUSER_ID, 'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
     js_params['siteName'] = config.site_name
     js_params['overwrite'] = 1 if config.overwrite else 0
@@ -2681,7 +2683,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 if user_id:
                     label = '%s/%s' % (script, user_id)
                     query += '&testuser=%s&testkey=%s' % (user_id, gd_hmac_key)
-                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == ADMINUSER_ID else sliauth.gen_user_token(gd_hmac_key, user_id))
+                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == ADMINUSER_ID else sliauth.gen_auth_token(gd_hmac_key, user_id))
                 else:
                     label = script
                 test_params.append([label, query, proxy_query])
@@ -2922,6 +2924,23 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         fheader, file_toc, renderer, md_params, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
+
+        if len(fnumbers) == 1 and config.separate and config.extract:
+            md_extract = ''.join(md_params['md_slides'][config.extract-1:])
+            extract_mods_args = md2md.Args_obj.create_args(None,
+                                                          image_dir=fname+'_extract_images',
+                                                          images=set(['_slidoc', 'zip', 'md', 'renumber']))
+            extract_parser = md2md.Parser(extract_mods_args, images_zipdata=images_zipdict.get(fname))
+            extract_text, extract_zipped = extract_parser.parse(md_extract, filepath)
+            if not return_html:
+                if extract_zipped:
+                    extract_file = dest_dir+fname+"_extract.zip"
+                    md2md.write_file(extract_file, extract_zipped)
+                else:
+                    extract_file = dest_dir+fname+"_extract.md"
+                    md2md.write_file(extract_file, extract_text)
+                message('Created extract file:', extract_file)
+
 
         if js_params['paceLevel']:
             # File-specific js_params
@@ -3727,6 +3746,7 @@ Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTM
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
 Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
+Conf_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Extract content from slide onwards (renumbering images)')
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
 Conf_parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
@@ -3778,7 +3798,7 @@ alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Charac
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
-alt_parser.add_argument('--upload_key', metavar='KEYL', help='Auth key for uploading to remote server')
+alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for uploading to remote server')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')

@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.9c'
+VERSION = '0.96.9d'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -70,16 +70,19 @@ RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Shee
 RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
 CACHE_HOLD_SEC = 3600    # Maximum time (sec) to hold sheet in cache
 
+ADMIN_ROLE = 'admin'
+GRADER_ROLE = 'grader'
+
 ADMINUSER_ID = 'admin'
 MAXSCORE_ID = '_max_score'
 AVERAGE_ID = '_average'
 RESCALE_ID = '_rescale'
-TESTUSER_ID = '_test_user'   #var
+TESTUSER_ID = '_test_user'
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
 
-TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']  #var
+TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']
 
 SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
@@ -379,8 +382,8 @@ def downloadSheet(sheetName, backup=False):
     # If backup, retrieve formulas rather than values
     if Global.previewSession.get('sessionName') == sheetName:
         raise Exception('Cannot download when previewing session '+Global.previewSession['sessionName'])
-    user = 'admin'
-    userToken = sliauth.gen_admin_token(Settings['auth_key'], user)
+    user = ADMINUSER_ID
+    userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
 
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
     if backup:
@@ -839,8 +842,8 @@ def update_remote_sheets(force=False, synchronous=False):
     if Settings['debug']:
         print("update_remote_sheets:C", [(x[0], [y[0] for y in x[3]]) for x in modRequests], file=sys.stderr)
 
-    user = 'admin'
-    userToken = sliauth.gen_admin_token(Settings['auth_key'], user)
+    user = ADMINUSER_ID
+    userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
 
     http_client = tornado.httpclient.HTTPClient() if synchronous else tornado.httpclient.AsyncHTTPClient()
     json_data = json.dumps(modRequests, default=sliauth.json_default)
@@ -968,22 +971,48 @@ def sheetAction(params, notrace=False):
 
         freezeDate = createDate(Settings['freeze_date']) or None
         
+        origUser = ''
         adminUser = ''
-        paramId = params.get('id','') #var
+        adminRole = ''
+        readOnlyAccess = False
 
-        if params.get('admin',''):
-            if not params.get('token',''):
-                raise Exception('Error:NEED_ADMIN_TOKEN:Need token for admin authentication')
-            if not validateHMAC('admin:'+params.get('admin','')+':'+params.get('token',''), Settings['auth_key']):
-                raise Exception("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.get('admin','')+"'")
-            adminUser = params.get('admin','')
+        paramId = params.get('id','')
+        authToken = params.get('token', '')
+
+        if ':' in authToken:
+            comps = authToken.split(':')   # effectiveId:userid:role:sites:hmac
+            if len(comps) != 5:
+                raise Exception('Error:INVALID_TOKEN:Invalid auth token format '+authToken);
+            subToken = ':' + ':'.join(comps[1:])
+            if not validateHMAC(subToken, Settings['auth_key']):
+                raise Exception('Error:INVALID_TOKEN:Invalid authentication token '+subToken)
+
+            origUser = comps[1]
+            effectiveUser = comps[0]
+
+            if params.get('admin'):
+                adminRole = comps[2]
+                if adminRole != ADMIN_ROLE and adminRole != GRADER_ROLE:
+                    raise Exception('Error:INVALID_TOKEN:Invalid token admin role: '+adminRole)
+                adminUser = origUser + ':' + adminRole
+            elif effectiveUser:
+                if paramId != effectiveUser:
+                    raise Exception('Error:INVALID_TOKEN:Incorrect effective user: '+paramId+' != '+effectiveUser)
+                readOnlyAccess = (origUser != effectiveUser)
+            else:
+                raise Exception('Error:INVALID_TOKEN:Unexpected admin token for regular access')
+
+        elif params.get('admin'):
+            raise Exception('Error:NEED_TOKEN:Need admin token for admin authentication')
+
         elif Settings['require_login_token']:
+            if not authToken:
+                raise Exception('Error:NEED_TOKEN:Need token for id authentication')
             if not paramId:
                 raise Exception('Error:NEED_ID:Need id for authentication')
-            if not params.get('token',''):
-                raise Exception('Error:NEED_TOKEN:Need token for id authentication')
-            if not validateHMAC('id:'+paramId+':'+params.get('token',''), Settings['auth_key']):
-                raise Exception("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'")
+            if not validateHMAC(sliauth.gen_auth_prefix(paramId,'','')+':'+authToken, Settings['auth_key']):
+                raise Exception('Error:INVALID_TOKEN:Invalid token '+authToken+' for authenticating id '+paramId)
+            origUser = paramId
 
         # Read-only sheets
         protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
@@ -1044,8 +1073,8 @@ def sheetAction(params, notrace=False):
             delSheet(sheetName)
                     
             if Settings['gsheet_url'] and not Settings['dry_run']:
-                user = 'admin'
-                userToken = sliauth.gen_admin_token(Settings['auth_key'], user)
+                user = ADMINUSER_ID
+                userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
                 delParams = {'sheet': sheetName, 'delsheet': '1', 'admin': user, 'token': userToken}
                 retval = sliauth.http_post(Settings['gsheet_url'], delParams)
                 print('sdproxy: delsheet %s: %s' % (sheetName, retval), file=sys.stderr)
@@ -1072,8 +1101,8 @@ def sheetAction(params, notrace=False):
             if newName in Sheet_cache or getSheet(newName, optional=True):
                 raise Exception("Error:COPYSHEET:Destination sheet "+newName+" already exists!")
             if Settings['gsheet_url'] and not Settings['dry_run']:
-                user = 'admin'
-                userToken = sliauth.gen_admin_token(Settings['auth_key'], user)
+                user = ADMINUSER_ID
+                userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
                 copyParams = {'sheet': sheetName, 'copysheet': newName, 'admin': user, 'token': userToken}
                 retval = sliauth.http_post(Settings['gsheet_url'], copyParams)
                 print('sdproxy: copysheet %s: %s' % (sheetName, retval), file=sys.stderr)
@@ -1130,6 +1159,10 @@ def sheetAction(params, notrace=False):
             selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
             rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
 
+            if readOnlyAccess:
+                if delRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
+                    raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
+
             if headers:
                 modifyStartCol = int(params['modify']) if params.get('modify') else 0
                 if modifyStartCol:
@@ -1138,12 +1171,12 @@ def sheetAction(params, notrace=False):
                     checkCols = modifyStartCol-1
                 else:
                     if len(headers) != len(columnHeaders):
-                        raise Exception("Error::Number of headers does not match that present in sheet '"+sheetName+"'; delete it or modify headers.");
+                        raise Exception("Error:MODIFY_SESSION:Number of headers does not match that present in sheet '"+sheetName+"'; delete it or modify headers.");
                     checkCols = len(columnHeaders)
 
                 for j in range( checkCols ):
                     if headers[j] != columnHeaders[j]:
-                        raise Exception("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or modify headers.")
+                        raise Exception("Error:MODIFY_SESSION:Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or modify headers.")
 
                 if modifyStartCol:
                     # Updating maxscore row; modify headers if needed
@@ -1583,7 +1616,7 @@ def sheetAction(params, notrace=False):
             ##returnMessages.append('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues)
             newRow = (not userRow)
 
-            if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
+            if (readOnlyAccess or adminUser) and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
                 raise Exception("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'")
 
             retakesCol = columnIndex.get('retakes')
@@ -2070,6 +2103,9 @@ def sheetAction(params, notrace=False):
     
     return retObj
 
+def gen_proxy_token(username, role='', prefixed=False):
+    return sliauth.gen_auth_token(Settings['auth_key'], username, role=role, prefixed=prefixed)
+
 class LCRandomClass(object):
     # Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
     # m is basically chosen to be large (as it is the max period)
@@ -2238,9 +2274,9 @@ def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayN
     
 def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     if opts.get('admin'):
-        token = sliauth.gen_admin_token(Settings['auth_key'], 'admin')
+        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
     else:
-        token = sliauth.gen_user_token(Settings['auth_key'], userId)
+        token = gen_proxy_token(userId)
     getParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'name': displayName, 'get': '1'}
     getParams.update(opts)
@@ -2248,8 +2284,8 @@ def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     return sheetAction(getParams, notrace=notrace)
 
 def getAllRows(sessionName, opts={}, notrace=False):
-    token = sliauth.gen_admin_token(Settings['auth_key'], 'admin')
-    getParams = {'admin': 'admin', 'token': token,'sheet': sessionName,
+    token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
+    getParams = {'admin': ADMINUSER_ID, 'token': token,'sheet': sessionName,
                  'get': '1', 'all': '1'}
     getParams.update(opts)
 
@@ -2257,9 +2293,9 @@ def getAllRows(sessionName, opts={}, notrace=False):
 
 def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
     if opts.get('admin'):
-        token = sliauth.gen_admin_token(Settings['auth_key'], 'admin')
+        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
     else:
-        token = sliauth.gen_user_token(Settings['auth_key'], userId)
+        token = gen_proxy_token(userId)
     putParams = {'id': userId, 'token': token,'sheet': sessionName,
                  'row': json.dumps(rowValues, default=sliauth.json_default)}
     putParams.update(opts)
@@ -2268,10 +2304,9 @@ def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
 
 def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
     if opts.get('admin'):
-        token = sliauth.gen_admin_token(Settings['auth_key'], 'admin')
+        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
     else:
-        token = sliauth.gen_user_token(Settings['auth_key'], updateObj['id'])
-    token = sliauth.gen_admin_token(Settings['auth_key'], 'admin')
+        token = gen_proxy_token(updateObj['id'])
     updates = []
     for j, header in enumerate(headers):
         if header in updateObj:
@@ -2383,13 +2418,13 @@ def exportAnswers(sessionName):
 
 def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
     create = source or 'import'
-    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
+    retval = getUserRow(sessionName, userId, displayName, {'admin': ADMINUSER_ID, 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
     headers = retval['headers']
     if lateToken:
         updateObj = {'id': userId, 'lateToken': lateToken}
-        retval = updateUserRow(sessionName, headers, updateObj, {'admin': 'admin', 'import': '1'})
+        retval = updateUserRow(sessionName, headers, updateObj, {'admin': ADMINUSER_ID, 'import': '1'})
         if retval['result'] != 'success':
             raise Exception('Error in setting late token for user '+userId+': '+retval.get('error'))
 
@@ -2436,7 +2471,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         createDate(submitDate)
 
     create = source or 'import'
-    retval = getUserRow(sessionName, userId, displayName, {'admin': 'admin', 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
+    retval = getUserRow(sessionName, userId, displayName, {'admin': ADMINUSER_ID, 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
     if source == "prefill":
@@ -2480,7 +2515,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if header.endswith('Timestamp'):
             rowValues[j] = None             # Do not modify (most) timestamps
 
-    putOpts = {'admin': 'admin', 'import': '1' }
+    putOpts = {'admin': ADMINUSER_ID, 'import': '1' }
     submitTimestamp = None
     if paceLevel == ADMIN_PACE:
         if userId == TESTUSER_ID:
@@ -2507,7 +2542,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
 
     if submitTimestamp:
         updateObj = {'id': userId, 'submitTimestamp': submitTimestamp}
-        retval = updateUserRow(sessionName, headers, updateObj, {'admin': 'admin', 'import': '1'})
+        retval = updateUserRow(sessionName, headers, updateObj, {'admin': ADMINUSER_ID, 'import': '1'})
         if retval['result'] != 'success':
             raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
 

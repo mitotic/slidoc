@@ -78,6 +78,7 @@ scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 Options = {
     '_index_html': '',  # Non-command line option
+    'root_auth_key': '',
     'auth_key': '',
     'auth_type': '',
     'debug': False,
@@ -95,7 +96,7 @@ Options = {
     'reload': False,
     'require_login_token': True,
     'require_late_token': True,
-    'root_key': None,
+    'server_key': None,
     'server_url': '',
     'share_averages': True,
     'site_label': 'Slidoc',  # E.g., Calculus 101
@@ -112,7 +113,8 @@ class Dummy():
     pass
     
 Global = Dummy()
-Global.rename = {}
+Global.auth_map = {}
+Global.rev_auth_map = {}
 Global.backup = None
 Global.twitter_config = {}
 Global.relay_list = []
@@ -125,9 +127,6 @@ RESTRICTED_PATH = '_restricted'
 
 ADMIN_PATH = 'admin'
 
-ADMINUSER_ID = 'admin'
-TESTUSER_ID = '_test_user'
-    
 USER_COOKIE_SECURE = "slidoc_user_secure"
 SERVER_COOKIE = "slidoc_server"
 EXPIRES_DAYS = 30
@@ -144,6 +143,10 @@ PARTIAL_SUBMIT = 'partial'
 
 SERVER_NAME = 'Webster0.9'
 
+def gen_proxy_auth_token(username, role='', sites='', key='', prefixed=False, root=False):
+    if not key:
+        key = Options['root_auth_key'] if root else Options['auth_key']
+    return sliauth.gen_auth_token(key, username, role=role, sites=sites, prefixed=prefixed)
 
 class UserIdMixin(object):
     @classmethod
@@ -159,19 +162,25 @@ class UserIdMixin(object):
             return None
         return basename
 
-    def set_id(self, username, origId='', token='', displayName='', email='', altid='', prefix='', data={}):
+    def set_id(self, username, role='', sites='', displayName='', email='', altid='', data={}):
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, origId, token, displayName, email, altid, prefix, data
+            print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, role, sites, displayName, email, altid, data
 
-        if ':' in username or ':' in origId or ':' in token or ':' in displayName:
-            raise Exception('Colon character not allowed in username/origId/token/name')
-        if username == ADMINUSER_ID:
-            tokenList = [token, sliauth.gen_user_token(str(token), TESTUSER_ID)]
-            if origId and origId != username:
-                tokenList.append(sliauth.gen_user_token(str(token), origId))
-            token = ','.join(tokenList)
-        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, origId, token, displayName, email, altid, prefix, base64.b64encode(json.dumps(data))] )
-        if data.get('batch'):
+        if ':' in username or ':' in role or ':' in sites or ':' in displayName:
+            raise Exception('Colon character not allowed in username/role/name')
+
+        cookie_data = {}
+        cookie_data['name'] = displayName or username
+        if email:
+            cookie_data['email'] = email
+        if altid:
+            cookie_data['altid'] = altid
+        cookie_data.update(data)
+
+        token = gen_proxy_auth_token(username, role, sites, root=True)
+        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, role, sites, token, base64.b64encode(json.dumps(cookie_data))] )
+
+        if cookie_data.get('batch'):
             self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, max_age=BATCH_AGE)
             self.set_cookie(SERVER_COOKIE, cookieStr, max_age=BATCH_AGE)
         else:
@@ -182,20 +191,10 @@ class UserIdMixin(object):
         self.clear_cookie(USER_COOKIE_SECURE)
         self.clear_cookie(SERVER_COOKIE)
 
-    def get_alt_name(self, username):
-        if username in Global.rename:
-            alt_name, _, session_prefix = Global.rename[username].partition(':')
-            # Alt name may be followed by an option session name prefix for which the altname is admin, e.g., dummy:assignments
-            return alt_name, session_prefix
-        return username, ''
+    def check_access(self, username, token, role=''):
+        return token == gen_proxy_auth_token(username, role, root=True)
 
-    def check_access(self, username, token):
-        if username == ADMINUSER_ID:
-            return token == Options['auth_key']
-        else:
-            return token == sliauth.gen_user_token(Options['auth_key'], username)
-
-    def get_id_from_cookie(self, orig=False, name=False, email=False, altid=False, prefix=False, data=False):
+    def get_id_from_cookie(self, role=False, sites=False, name=False, email=False, altid=False, data=False):
         # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
         if options.insecure_cookie:
             cookieStr = self.get_cookie(SERVER_COOKIE)
@@ -208,18 +207,21 @@ class UserIdMixin(object):
             comps = [urllib.unquote(x) for x in cookieStr.split(':')]
             ##if Options['debug']:
                 ##print >> sys.stderr, "DEBUG: sdserver.UserIdMixin.get_id_from_cookie", comps
-            userId, origId, token, displayName = comps[:4]
+            userId, role, sites, token, data_json = comps[:5]
+            data_vals = json.loads(base64.b64decode(data_json))
+            if role:
+                return role
+            if sites:
+                return sites
             if name:
-                return displayName
+                return data.get('name', '')
             if email:
-                return comps[4] if len(comps) > 4 else ''
+                return data.get('email', '')
             if altid:
-                return comps[5] if len(comps) > 5 else ''
-            if prefix:
-                return comps[6] if len(comps) > 6 else ''
+                return data.get('altid', '')
             if data:
-                return json.loads(base64.b64decode(comps[7])) if len(comps) > 7 else {}
-            return origId if orig else userId
+                return data_vals
+            return userId
         except Exception, err:
             print >> sys.stderr, 'sdserver: COOKIE ERROR - '+str(err)
             self.clear_id()
@@ -307,6 +309,16 @@ class ActionHandler(BaseHandler):
 
         return configOpts
 
+    def check_admin_access(self, token='', root=''):
+        if root == Options['server_key']:
+            return True
+        if token == Options['auth_key']:
+            return True
+        role = self.get_id_from_cookie(role=True)
+        if role == sdproxy.ADMIN_ROLE and self.get_current_user() in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
+            return True
+        return False
+
     def get(self, subpath, inner=None):
         userId = self.get_current_user()
         if Options['debug']:
@@ -317,26 +329,27 @@ class ActionHandler(BaseHandler):
             return
         root = str(self.get_argument("root", ""))
         token = str(self.get_argument("token", ""))
-        if root == Options['root_key'] or token == Options['auth_key'] or (self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID) and not self.get_id_from_cookie(prefix=True)):
-            try:
-                return self.getAction(subpath)
-            except Exception, excp:
-                msg = str(excp)
-                if msg.startswith('CUSTOM:') and not Options['debug']:
-                    print >> sys.stderr, 'sdserver: '+msg
-                    self.custom_error(500, '<html><body><h3>%s</h3></body></html>' % msg[len('CUSTOM:'):])
-                    return
-                else:
-                    raise
-        raise tornado.web.HTTPError(403)
+        if not self.check_admin_access(token=token, root=root):
+            raise tornado.web.HTTPError(403)
+
+        try:
+            return self.getAction(subpath)
+        except Exception, excp:
+            msg = str(excp)
+            if msg.startswith('CUSTOM:') and not Options['debug']:
+                print >> sys.stderr, 'sdserver: '+msg
+                self.custom_error(500, '<html><body><h3>%s</h3></body></html>' % msg[len('CUSTOM:'):])
+                return
+            else:
+                raise
 
     def post(self, subpath, inner=None):
         userId = self.get_current_user()
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: postAction', userId, Options['site_number'], subpath
-        if userId in (ADMINUSER_ID, TESTUSER_ID) and not self.get_id_from_cookie(prefix=True):
-            return self.postAction(subpath)
-        raise tornado.web.HTTPError(403)
+        if not self.check_admin_access():
+            raise tornado.web.HTTPError(403)
+        return self.postAction(subpath)
 
     def put(self, subpath):
         if Options['debug']:
@@ -375,7 +388,7 @@ class ActionHandler(BaseHandler):
             root = str(self.get_argument("root", ""))
             if action in ('_update', '_reload'):
                 raise tornado.web.HTTPError(403)
-            elif action == '_shutdown' and root != Options['root_key']:
+            elif action == '_shutdown' and root != Options['server_key']:
                 raise tornado.web.HTTPError(403)
             elif action == '_preview':
                 if not previewStatus:
@@ -467,7 +480,7 @@ class ActionHandler(BaseHandler):
             sorted(wsConnections)
             wsInfo = []
             for path, user, connections in wsConnections:
-                wsInfo += [(path, user+('/'+ws.origId if ws.origId else ''), math.floor(curTime-ws.msgTime)) for ws in connections]
+                wsInfo += [(path, user, math.floor(curTime-ws.msgTime)) for ws in connections]
             sorted(wsInfo)
             self.write('\nConnections:\n')
             for x in wsInfo:
@@ -627,7 +640,7 @@ class ActionHandler(BaseHandler):
 
         elif action == '_delete':
             user = 'admin'
-            userToken = sliauth.gen_admin_token(Options['auth_key'], user)
+            userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE)
             args = {'sheet': subsubpath, 'delsheet': '1', 'admin': user, 'token': userToken}
             retObj = sdproxy.sheetAction(args)
             self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
@@ -820,6 +833,7 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewStatus)
             sessionText = self.get_argument('sessiontext')
             slideNumber = self.get_argument('slide', '')
+            sessionModify = self.get_argument('sessionmodify', '')
             newNumber = self.get_argument('move', '')
             if slideNumber.isdigit():
                 slideNumber = int(slideNumber)
@@ -829,7 +843,7 @@ class ActionHandler(BaseHandler):
                 newNumber = int(newNumber)
             else:
                 newNumber = None
-            return self.postEdit(sessionName, sessionText, slideNumber=slideNumber, newNumber=newNumber)
+            return self.postEdit(sessionName, sessionText, slideNumber=slideNumber, newNumber=newNumber, modify=sessionModify)
 
         elif action == '_imageupload':
             if not previewStatus:
@@ -856,10 +870,10 @@ class ActionHandler(BaseHandler):
             if action == '_submit':
                 # Submit test user
                 try:
-                    sdproxy.importUserAnswers(sessionName, TESTUSER_ID, '', submitDate=submitDate, source='submit')
-                    self.displayMessage('Submit '+TESTUSER_ID+' row')
+                    sdproxy.importUserAnswers(sessionName, sdproxy.TESTUSER_ID, '', submitDate=submitDate, source='submit')
+                    self.displayMessage('Submit '+sdproxy.TESTUSER_ID+' row')
                 except Exception, excp:
-                    self.displayMessage('Error in submit for '+TESTUSER_ID+': '+str(excp))
+                    self.displayMessage('Error in submit for '+sdproxy.TESTUSER_ID+': '+str(excp))
 
             elif action in ('_roster', '_import'):
                 # Import from CSV file
@@ -1318,7 +1332,7 @@ class ActionHandler(BaseHandler):
         self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName,
                      session_text=sessionText, discard_url=discard_url, err_msg='')
 
-    def postEdit(self, sessionName, sessionText, slideNumber=None, newNumber=None):
+    def postEdit(self, sessionName, sessionText, slideNumber=None, newNumber=None, modify=False):
         if isinstance(sessionText, unicode):
             sessionText = sessionText.encode('utf-8')
 
@@ -1391,7 +1405,7 @@ class ActionHandler(BaseHandler):
             fname2 = ''
 
         try:
-            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2)
+            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify)
         except Exception, excp:
             if Options['debug']:
                 import traceback
@@ -1437,9 +1451,60 @@ def pad_slide(slide_text, hrule=False):
 class AuthActionHandler(ActionHandler):
     @tornado.web.authenticated
     def get(self, subpath, inner=None):
-        if self.get_current_user() in (ADMINUSER_ID, TESTUSER_ID):
+        if self.get_current_user() in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
             return self.getAction(subpath)
         raise tornado.web.HTTPError(403)
+
+def map_name_role(username):
+    # Return username, role, sites
+    if username not in Global.auth_map:
+        return username, '', ''
+    user_map = Global.auth_map[username]
+    return user_map['id'], user_map['role'], user_map['sites']
+
+def modify_user_auth(args, socketId=None):
+    # Re-create args.token for each site
+    if not Options['site_name'] or not args.get('token'):
+        return
+
+    if ':' in args['token']:
+        effectiveId, adminId, _role, _sites, userToken = args['token'].split(':')
+        if userToken != gen_proxy_auth_token(adminId, role=_role, sites=_sites, root=True):
+            raise Exception('Invalid admin token: '+args['token'])
+
+        if socketId and socketId != adminId:
+            raise Exception('Token admin id mismatch: %s != %s' % (socketId, adminId))
+
+        auth_name = Global.rev_auth_map.get(adminId)
+        if not auth_name or auth_name not in Global.auth_map:
+            raise Exception('Token for unauthorized admin user %s' % adminId)
+
+        sites = Global.auth_map[auth_name]['sites']
+        if sites and Options['site_name'] not in sites.split(','):
+            # No admin access to site
+            if effectiveId == adminId and not args.get('admin'):
+                # Allow non-admin access to site
+                args['token'] = gen_proxy_auth_token(adminId)
+                return
+            raise Exception('Token site disallowed for admin %s: %s' % (adminId, Options['site_name']))
+
+        role = Global.auth_map[auth_name]['role']
+        if role in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE):
+            # Site admin token
+            args['token'] = effectiveId+gen_proxy_auth_token(adminId, role, prefixed=True)
+        else:
+            raise Exception('Invalid role %s for admin user %s' % (role, adminId))
+
+    elif args.get('id'):
+        userId = args['id']
+        if socketId and socketId != userId:
+            raise Exception('Token user id mismatch: %s != %s' % (socketId, userId))
+
+        if args['token'] == gen_proxy_auth_token(userId, root=True):
+            # Site user token
+            args['token'] = gen_proxy_auth_token(userId)
+        else:
+            raise Exception('Invalid user token: '+args['token'])
 
 class ProxyHandler(BaseHandler):
     @tornado.gen.coroutine
@@ -1501,6 +1566,7 @@ class ProxyHandler(BaseHandler):
                     except Exception, err:
                         retObj = {'result': 'error', 'error': 'passthru: JSON parsing error: '+str(err) }
         else:
+            modify_user_auth(args)
             retObj = sdproxy.sheetAction(args)
 
         self.set_header('Content-Type', mimeType)
@@ -1592,7 +1658,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             return msg if allStatus else ''
 
         session_connections = cls._connections.get(path)
-        if ADMINUSER_ID not in session_connections:
+        if sdproxy.ADMINUSER_ID not in session_connections:
             cls._interactiveSession = (None, None, None)
             msg = 'Message from '+fromUser+' discarded. No active controller for session '+sessionName
             if Options['debug']:
@@ -1700,10 +1766,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         for toUser, connections in pathConnections.items():
             if toUser == fromUser:
                 continue
-            if fromUser in (ADMINUSER_ID, TESTUSER_ID):
+            if fromUser in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                 # From special user: broadcast to all but the sender
                 pass
-            elif toUser in (ADMINUSER_ID, TESTUSER_ID):
+            elif toUser in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                 # From non-special user: send only to special users
                 pass
             else:
@@ -1733,9 +1799,6 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.locked = ''
         self.timeout = None
         self.userId = self.get_id_from_cookie()
-        self.origId = self.get_id_from_cookie(orig=True)
-        if self.origId == self.userId:
-            self.origId = ''
         self.pathUser = (path, self.userId)
         self._connections[self.pathUser[0]][self.pathUser[1]].append(self)
         self.pluginInstances = {}
@@ -1842,6 +1905,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     else:
                         self.lockConnections(self.pathUser[0], self.pathUser[1], 'Session locked due to modifications by another browser window. Reload page, if necessary.', excludeConnection=self)
 
+                modify_user_auth(args, self.pathUser[1])
                 retObj = sdproxy.sheetAction(args)
 
                 teamModifiedIds = retObj.get('info', {}).get('teamModifiedIds')
@@ -1850,7 +1914,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     self.closeConnections(self.pathUser[0], teamModifiedIds, excludeId=self.userId)
 
             elif method == 'interact':
-                if self.userId == ADMINUSER_ID:
+                if self.userId == sdproxy.ADMINUSER_ID:
                     self.setupInteractive(self.pathUser[0], args[0], args[1])
 
             elif method == 'plugin':
@@ -2023,17 +2087,17 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 userId, token = qauth.split(':')
                 if token == Options['auth_key']:
                     data = {'batch':1}
-                elif token == sliauth.gen_user_token(Options['auth_key'], userId):
+                elif token == gen_proxy_auth_token(userId, root=True):
                     data = {}
                 else:
                     raise tornado.web.HTTPError(404)
                 name = sdproxy.lookupRoster('name', userId) or ''
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user: BATCH ACCESS", self.request.path, userId, name
-                self.set_id(userId, userId, token, name, data=data)
+                self.set_id(userId, displayName=name, data=data)
 
         if ActionHandler.previewState.get('name'):
             if sessionName and sessionName.startswith(ActionHandler.previewState['name']):
-                if userId == ADMINUSER_ID:
+                if userId == sdproxy.ADMINUSER_ID:
                     preview_url = '_preview/index.html'
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Use %s/%s to view session %s' % (Options['site_name'], preview_url, ActionHandler.previewState['name']))
                 else:
@@ -2057,12 +2121,14 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 return "noauth"
             elif not userId:
                 return None
-            elif sessionName and sessionName.endswith('-'+userId) or userId == ADMINUSER_ID:
+            elif sessionName and sessionName.endswith('-'+userId) or userId == sdproxy.ADMINUSER_ID:
                 return userId
             raise tornado.web.HTTPError(404)
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/_private' are always protected
+            if not userId:
+                return None
             errMsg = ''
             if sessionName and sessionName != 'index':
                 releaseDate = None
@@ -2076,7 +2142,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     if match and not releaseDate:
                         errMsg = '--release_date must be specified for assessment session '+sessionName
                 
-                if releaseDate and not errMsg and not Options['dry_run'] and userId not in (ADMINUSER_ID, TESTUSER_ID):
+                if releaseDate and not errMsg and not Options['dry_run'] and userId not in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                     # Check release date for session (admin/test user always has access, allowing delayed release of live lectures and exams)
                     if isinstance(releaseDate, datetime.datetime):
                         if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
@@ -2086,27 +2152,11 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                         errMsg = 'Session %s unavailable' % sessionName
             if errMsg:
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
-                raise tornado.web.HTTPError(404, log_message=errMsg)
-            sessionPrefix = self.get_id_from_cookie(prefix=True)
-            if not sessionPrefix or not userId:
-                return userId
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
-            # Handle restricted admin access for domain example.com:
-            # --auth_type='@example.com,...,owner=admin,grader@gmail.com=grader:assignments|tests,tester@gmail.com=dummy'
-            # owner@example.com has complete admin access, grader@gmail.com has admin access to _private/(assignments|tests)/*, tester has no admin access
-            # owner can test as special user _test_user
-            # grader and dummy should be added to roster, with last names starting with hash (#) to exclude from stats
-            head, _, tail = self.request.path.partition('/'+PRIVATE_PATH+'/')
-            if re.match(r'^('+sessionPrefix+')', tail):
-                # Admin access allowed for this session prefix
-                if userId != ADMINUSER_ID:
-                    # Switch to admin user
-                    userId = ADMINUSER_ID
-                    self.set_id(ADMINUSER_ID, self.get_id_from_cookie(orig=True), Options['auth_key'], self.get_id_from_cookie(name=True), email=self.get_id_from_cookie(email=True), prefix=sessionPrefix)
-            elif userId == ADMINUSER_ID:
-                # Switch to regular user
-                userId = self.get_id_from_cookie(orig=True)
-                self.set_id(userId, userId, sliauth.gen_user_token(Options['auth_key'], userId), self.get_id_from_cookie(name=True), email=self.get_id_from_cookie(email=True), prefix=sessionPrefix)
+            if userId not in Global.rev_auth_map:
+                if sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
             return userId
 
         if not Options['auth_key']:
@@ -2177,16 +2227,30 @@ class AuthLoginHandler(BaseHandler):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
 
     def login(self, username, token, next="/"):
-        if username != ADMINUSER_ID:
-            if token == Options['auth_key'] or (Options['no_auth'] and Options['debug'] and not Options['gsheet_url']):
-                # Auth_key token option or No authentication option for testing local-only proxy; generate token
-                token = sliauth.gen_user_token(Options['auth_key'], username)
-        auth = self.check_access(username, token)
+        generateToken = False
+        if token == Options['auth_key']:
+            # Auth_key token option for testing local-only proxy
+            generateToken = True
+
+        elif Options['no_auth'] and Options['debug'] and not Options['gsheet_url']:
+            # No authentication option for testing local-only proxy
+            generateToken = True
+
+        role = ''
+        if username == sdproxy.ADMINUSER_ID:
+            role = 'admin'
+        if username == 'grader':
+            role = 'grader'
+
+        if generateToken:
+            token = gen_proxy_auth_token(username, role=role)
+
+        auth = self.check_access(username, token, role=role)
         if auth:
             data = {}
             if Global.twitter_config:
                 data['site_twitter'] = Global.twitter_config['screen_name']
-            self.set_id(username, '', token, username, data=data)
+            self.set_id(username, data=data, role=role)
             self.redirect(next)
         else:
             error_msg = "?error=" + tornado.escape.url_escape("Incorrect username or token")
@@ -2227,7 +2291,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 print >> sys.stderr, "GoogleAuth: step 2", user
 
             username = user['email'].lower()
-            if username in Global.rename:
+            if username in Global.auth_map:
                 # Special out-of-domain case; retain full email addr (to be translated to a name)
                 pass
             else:
@@ -2237,7 +2301,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                         return
                     username = username[:-len(Global.login_domain)]
 
-                if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
+                if username.startswith('_') or username in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                     self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
 
             displayName = user.get('family_name','').replace(',', ' ')
@@ -2246,14 +2310,12 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             displayName += user.get('given_name','')
             if not displayName:
                 displayName = username
-
-            mapname, prefix = self.get_alt_name(username)
-            token = Options['auth_key'] if mapname == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], mapname)
+            
             data = {}
             if Global.twitter_config:
                 data['site_twitter'] = Global.twitter_config['screen_name']
-            self.set_id(mapname, mapname if prefix else username, token, displayName, email=user['email'].lower(), prefix=prefix,
-                        data=data)
+            mapname, role, sites = map_name_role(username)
+            self.set_id(mapname, displayName=displayName, role=role, sites=sites, email=user['email'].lower(), data=data)
             self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
 
@@ -2276,12 +2338,11 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             if Options['debug']:
                 print >> sys.stderr, "TwitterAuth: step 2 access_token =", user.get('access_token')
             username = user['username']
-            if username.startswith('_') or username in (ADMINUSER_ID, TESTUSER_ID):
+            if username.startswith('_') or username in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
-            mapname, prefix = self.get_alt_name(username)
             displayName = user['name']
-            token = Options['auth_key'] if mapname == ADMINUSER_ID else sliauth.gen_user_token(Options['auth_key'], mapname)
-            self.set_id(mapname, mapname if prefix else username, token, displayName, prefix=prefix)
+            mapname, role, sites = map_name_role(username)
+            self.set_id(mapname, displayName=displayName, role=role, sites=sites)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()
@@ -2345,12 +2406,6 @@ def createApplication():
 
         else:
             raise Exception('sdserver: Invalid auth_type: '+comps[0])
-
-        Global.rename = {}
-        for name_map in comps[3:]:
-            auth_name, slidoc_name = name_map.split('=')
-            Global.rename[auth_name] = slidoc_name
-            print >> sys.stderr, 'RENAME %s user %s -> %s' % (comps[0], auth_name, slidoc_name)
 
     settings.update(
         template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
@@ -2637,7 +2692,7 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
             raise Exception('Key column %s not found in roster for import' % importKey)
         if importKey == 'twitter':
             # Special case of test user; not really Twitter ID
-            keyMap[TESTUSER_ID] = TESTUSER_ID
+            keyMap[sdproxy.TESTUSER_ID] = sdproxy.TESTUSER_ID
 
         nameMap = sdproxy.lookupRoster('name')
 
@@ -2735,7 +2790,7 @@ def backupSite(dirpath=''):
         # Primary server
         for j, site in enumerate(Options['sites']):
             relay_addr = Global.relay_list[j+1]
-            retval = makePrivateRequest(relay_addr, path='/'+site+'/_backup?root='+Options['root_key'])
+            retval = makePrivateRequest(relay_addr, path='/'+site+'/_backup?root='+Options['server_key'])
     else:
         errors = sdproxy.backupSheets(dirpath)
         self.set_header('Content-Type', 'text/plain')
@@ -2749,7 +2804,7 @@ def shutdown_all():
     for j, site in enumerate(Options['sites']):
         # Shutdown child servers
         relay_addr = Global.relay_list[j+1]
-        retval = makePrivateRequest(relay_addr, path='/'+site+'/_shutdown?root='+Options['root_key'])
+        retval = makePrivateRequest(relay_addr, path='/'+site+'/_shutdown?root='+Options['server_key'])
 
     # Shutdown parent
     IOLoop.current().add_callback(shutdown_loop)
@@ -2767,7 +2822,8 @@ def main():
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
     define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
-    define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,tuser1=suser1,...")
+    define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,,...")
+    define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
@@ -2800,18 +2856,11 @@ def main():
     if not options.auth_key and not options.public:
         sys.exit('Must specify one of --public or --auth_key=...')
 
-    settings = {}
-    if options.gsheet_url:
-        # Need to restart server if SETTINGS_SHEET is changed
-        settings = sliauth.read_settings(options.gsheet_url, options.auth_key or '', SETTINGS_SHEET)
-
     for key in Options:
         if not key.startswith('_'):
             if hasattr(options, key):
                 # Command line overrides settings
                 Options[key] = getattr(options, key)
-            elif key in settings:
-                Options[key] = settings[key]
 
     Split_opts = {}
     if Options['sites']:
@@ -2846,6 +2895,59 @@ def main():
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
 
+    admin_user = ''
+    if options.auth_users:
+        # Process list of special authorized users
+        if options.auth_users.endswith('.txt'):
+            with open(options.auth_users) as f:
+                file_data = f.read()
+                auth_users = [x.strip() for x in file_data.split('\n') if x.strip()]
+        else:
+            auth_users = [x.strip() for x in options.auth_users.split(';') if x.strip()]
+
+        Global.rev_auth_map[sdproxy.ADMINUSER_ID] = sdproxy.ADMINUSER_ID
+        Global.auth_map[sdproxy.ADMINUSER_ID] = {'id': sdproxy.ADMINUSER_ID, 'role': sdproxy.ADMIN_ROLE, 'sites': ''}
+        for user_map in auth_users:
+            # Format: username[@domain]=[userid][:role[:site1,site2...]]
+            comps = user_map.split(':')
+            auth_name = comps[0]
+
+            slidoc_userid = ''
+            if '=' in auth_name:
+                auth_name, slidoc_userid = auth_name.split('=')
+
+            auth_name = auth_name.strip()
+            slidoc_userid = slidoc_userid.strip()
+            if not slidoc_userid:
+                slidoc_userid = auth_name
+
+            slidoc_role = ''
+            if len(comps) > 1:
+                slidoc_role = comps[1].strip()
+
+            if slidoc_userid in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID) or slidoc_userid.startswith('_'):
+                raise Exception('Username %s is reserved' % slidoc_userid)
+
+            if slidoc_role == sdproxy.ADMIN_ROLE:
+                admin_user = auth_name
+
+            slidoc_sites = ''
+            if len(comps) > 2:
+                site_list = [x.strip() for x in comps[2].strip().split(',') if x.strip()]
+                for auth_site in site_list:
+                    if site_list not in Options['sites']:
+                        raise Exception('Invalid site name in user auth: '+repr(auth_site))
+                slidoc_sites = ','.join(site_list)
+
+            Global.auth_map[auth_name] = {'id': slidoc_userid, 'role': slidoc_role, 'sites': slidoc_sites}
+            if slidoc_userid not in Global.rev_auth_map:
+                # Only the first reverse map is linked to
+                Global.rev_auth_map[slidoc_userid] = auth_name
+            print >> sys.stderr, 'USER %s: %s -> %s:%s:%s' % (user_map, auth_name, slidoc_userid, slidoc_role, slidoc_sites)
+
+    if Options['auth_key'] and not admin_user:
+        raise Exception('There must be at least one user with admin access')
+
     ssl_options = None
     if options.port == 443:
         if not options.ssl:
@@ -2853,15 +2955,17 @@ def main():
         certfile, keyfile = options.ssl.split(',')
         ssl_options = {"certfile": certfile, "keyfile": keyfile}
 
-    Options['root_key'] = str(random.randrange(0,2**60))
+    Options['server_key'] = str(random.randrange(0,2**60))
     if Options['debug']:
-        print >> sys.stderr, 'sdserver: ROOT_KEY', Options['root_key']
+        print >> sys.stderr, 'sdserver: SERVER_KEY', Options['server_key']
     child_pids = []
     Global.relay_list = []
     socket_name_fmt = options.socket_dir + '/uds_socket'
 
     BaseHandler.site_src_dir = Options['source_dir']
     BaseHandler.site_web_dir = Options['static_dir']
+    Options['root_auth_key'] = Options['auth_key']
+
     if Options['sites']:
         if options.forward_port:
             Global.relay_list.append( ('localhost', options.forward_port) )
@@ -2869,7 +2973,6 @@ def main():
             Global.relay_list = [ options.socket_dir+'/uds_socket'+str(Options['private_port']) ]
         else:
             Global.relay_list.append( ('localhost', Options['private_port'] ) )
-            
 
         for j, site_name in enumerate(Options['sites']):
             port = Options['private_port']+j+1
@@ -2890,11 +2993,17 @@ def main():
                 Options['site_number'] = j+1
                 Options['site_name'] = site_name
                 Options['site_label'] = site_name
+                Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
                 for key in Split_opts:
                     # Split gsheet_url, twitter_stream options
                     Options[key] = Split_opts[key][j]
                 BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
                 BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
+
+                site_settings = {}
+                if Options['gsheet_url']:
+                    # Need to restart server if any SETTINGS_SHEET is changed
+                    site_settings = sliauth.read_settings(Options['gsheet_url'], Options['auth_key'], SETTINGS_SHEET)
                 break
 
     if options.proxy_wait is not None:

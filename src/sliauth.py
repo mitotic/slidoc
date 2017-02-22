@@ -27,11 +27,19 @@ def gen_hmac_token(key, message):
     token = base64.b64encode(hmac.new(key, message, DIGEST_ALGORITHM).digest())
     return token[:TRUNCATE_DIGEST]
 
-def gen_user_token(key, user_id):
-    return gen_hmac_token(key, 'id:'+user_id)
+def gen_auth_prefix(user_id, role, sites):
+    return ':%s:%s:%s' % (user_id, role, sites)
 
-def gen_admin_token(key, admin_user_id):
-    return gen_hmac_token(key, 'admin:'+admin_user_id)
+def gen_auth_token(key, user_id, role='', sites='', prefixed=False):
+    prefix = gen_auth_prefix(user_id, role, sites)
+    token = gen_hmac_token(key, prefix)
+    return prefix+':'+token if prefixed else token
+
+def gen_site_key(key, site):
+    return gen_hmac_token(key, 'site:'+site)
+
+def gen_site_auth_token(site, key, user_id, role='', prefixed=False):
+    return gen_auth_token(gen_site_key(key, site), user_id, role=role, prefixed=prefixed)
 
 def gen_late_token(key, user_id, site_name, session_name, date_str):
     # Use date string of the form '1995-12-17T03:24'
@@ -121,7 +129,7 @@ def http_post(url, params_dict=None):
     return result
 
 def read_settings(sheet_url, hmac_key, settings_sheet):
-    user_token = gen_admin_token(hmac_key, 'admin')
+    user_token = gen_auth_token(hmac_key, 'admin', 'admin', prefixed=True)
     get_params = {'sheet': settings_sheet, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
@@ -149,6 +157,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Generate slidoc HMAC authentication tokens')
     parser.add_argument('-a', '--auth_key', help='Digest authentication key (required)')
+    parser.add_argument('-r', '--role', help='Role admin/grader')
     parser.add_argument('-s', '--session', help='Session name')
     parser.add_argument('-t', '--site', help='Site name')
     parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
@@ -158,9 +167,13 @@ if __name__ == '__main__':
     if not cmd_args.auth_key:
         sys.exit('Must specify digest authentication key')
 
+    auth_key = cmd_args.auth_key
+    if cmd_args.site:
+        auth_key = gen_site_key(auth_key, cmd_args.site)
+
     for user in cmd_args.user:
         if cmd_args.due_date:
-            token = gen_late_token(cmd_args.auth_key, user, cmd_args.site or '', cmd_args.session, get_utc_date(cmd_args.due_date))
+            token = gen_late_token(auth_key, user, cmd_args.site or '', cmd_args.session, get_utc_date(cmd_args.due_date))
         else:
-            token = gen_user_token(cmd_args.auth_key, user)
-        print(user+':',  token)
+            token = gen_auth_token(auth_key, user, cmd_args.role or '', prefixed=cmd_args.role)
+        print(user+' token =',  token)

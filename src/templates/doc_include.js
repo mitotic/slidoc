@@ -423,20 +423,20 @@ function getServerCookie() {
     for (var j=0; j<comps.length; j++)
 	comps[j] = decodeURIComponent(comps[j]);
     var retval = {user:   comps[0],
-		  origid: comps.length > 1 ? comps[1] : '',
-		  token:  comps.length > 2 ? comps[2] : '',
-     		  name:   comps.length > 3 ? comps[3] : '',
-     		  email:  comps.length > 4 ? comps[4] : '',
-     		  altid:  comps.length > 5 ? comps[5] : '',
-     		  prefix: comps.length > 6 ? comps[6] : ''
+		  role:   comps.length > 1 ? comps[1] : '',
+		  sites:  comps.length > 2 ? comps[2] : '',
+		  token:  comps.length > 3 ? comps[3] : ''
 	     };
-    if (comps.length > 7 && comps[7]) {
+    if (comps.length > 4 && comps[4]) {
 	try {
-	    retval.data = JSON.parse(atob(comps[7]));
+	    retval.data = JSON.parse(atob(comps[4]));
 	} catch(err) {
 	    Slidoc.log('getServerCookie: ERROR '+err);
 	}
     }
+    retval.name = retval.data.name || '';
+    retval.email = retval.data.email || '';
+    retval.altid = retval.data.altid || '';
     return retval;
 }
 
@@ -524,7 +524,7 @@ Slidoc.pageSetup = function() {
     var contentsButton = document.getElementById("slidoc-contents-button");
     if (contentsButton && !topnavElem)
 	contentsButton.style.display = null;
-    if (Sliobj.serverCookie && Sliobj.serverCookie.user == 'admin') {
+    if (Sliobj.serverCookie && Sliobj.serverCookie.role == Sliobj.params.adminUserId) {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem)
 	    dashElem.style.display = null;
@@ -739,7 +739,7 @@ function onreadystateaux() {
 	} else {
 	    if (!Sliobj.serverCookie)
 		Slidoc.reportTestAction('loginPrompt');
-	    GService.gprofile.promptUserInfo(Sliobj.previewState, Sliobj.params.authType);
+	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.previewState, Sliobj.params.authType);
 	}
     } else {
 	Slidoc.slidocReady(null);
@@ -840,14 +840,21 @@ Slidoc.slideEdit = function(action, slideId) {
 	editArea.value = '';
 
     } else if (action == 'save') {
+	params.sessiontext = editArea.value;
 	function slideSaveAux(result, errMsg) {
 	    if (!result) {
-		alert('Error in saving edits :'+errMsg);
+		var msg = 'Error in saving edits :'+errMsg
+		if (!params.sessionmodify && errMsg.indexOf('MODIFY_SESSION') >=0) {
+		    params.sessionmodify = 'yes';
+		    if (window.confirm(msg+'\n\n Retry save with modify_session switch enabled?'))
+			Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
+		} else {
+		    alert(msg);
+		}
 		return;
 	    }
 	    loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#'+slideId);
 	}
-	params.sessiontext = editArea.value;
 	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
 
     } else if (action == 'edit') {
@@ -1372,7 +1379,7 @@ Slidoc.userLogin = function (msg, retryCall) {
     if (Sliobj.serverCookie)
 	sessionAbort(msg || 'Error in authentication');
     else
-	GService.gprofile.promptUserInfo(false, GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
+	GService.gprofile.promptUserInfo(Sliobj.params.siteName, false, GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
 }
 
 Slidoc.userLoginCallback = function (retryCall, auth) {
@@ -2445,10 +2452,19 @@ Slidoc.manageSession = function() {
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
     if (Sliobj.sessionName) {
-	if (userId)
+	if (userId) {
 	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userProfile();">profile</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
-	else if (window.GService)
+	    if (Sliobj.session) {
+		if (Sliobj.session.displayName)
+		    html += 'Name: '+Sliobj.session.displayName;
+		if (Sliobj.session.email)
+		    html += ' ('+Sliobj.session.email;+')';
+		html += '<br>\n';
+	    }
+	} else if (window.GService) {
 	    html += '<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>\n';
+	}
+
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
 	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
@@ -2466,12 +2482,16 @@ Slidoc.manageSession = function() {
 	if (Sliobj.voteDate)
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
 
-	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight && Sliobj.feedback) {
-	    var totGrade = computeGrade(userId);
-	    if (Sliobj.adminState && isNumber(Sliobj.feedback.q_total) && Math.abs(parseNumber(Sliobj.feedback.q_total)-parseNumber(totGrade)) > 0.01) {
+	var computedGrade = null;
+	if (Sliobj.adminState && Sliobj.params.totalWeight > Sliobj.params.scoreWeight)
+	    computedGrade = computeGrade(userId);
+	    
+	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight && Sliobj.feedback && isNumber(Sliobj.feedback.q_total)) {
+	    var feedbackGrade = parseNumber(Sliobj.feedback.q_total);
+	    if (computedGrade != null && Math.abs(feedbackGrade-parseNumber(computedGrade)) > 0.01) {
 		alert('Warning: Inconsistent total grade: q_total='+Sliobj.feedback.q_total)
 	    }
-	    html += 'Total grade: '+totGrade+'/'+Sliobj.params.totalWeight+'<br>';
+	    html += 'Total grade: '+feedbackGrade+'/'+Sliobj.params.totalWeight+'<br>';
 	} else if (Sliobj.params.scoreWeight && Sliobj.feedback && 'q_scores' in Sliobj.feedback && isNumber(Sliobj.feedback.q_scores)) {
 	    html += 'Score: '+Sliobj.feedback.q_scores+'/'+Sliobj.params.scoreWeight+'<br>';
 	}
@@ -2480,11 +2500,10 @@ Slidoc.manageSession = function() {
 	    html += 'User: <b>'+(userId || Sliobj.serverCookie.user)+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
 
-    var fullAdmin = !Sliobj.adminPrefix && (Sliobj.adminState || userId == Sliobj.params.testUserId);
-    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || retakesRemaining() || fullAdmin))
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
 	html += formatHelp(['', 'reset', 'Reset paced session' + (retakesRemaining()?' for re-takes':'')]) + hr;
 
-    if (fullAdmin) {
+    if (Sliobj.fullAccess) {
 	if (Sliobj.params.releaseDate) {
 	    var dateVal = parseDate(Sliobj.params.releaseDate);
 	    if (dateVal)
@@ -2506,7 +2525,7 @@ Slidoc.manageSession = function() {
 	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
 	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
-	if (!Sliobj.adminPrefix) {
+	if (Sliobj.fullAccess) {
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	    html += hr;
 	    html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
@@ -2556,8 +2575,11 @@ Slidoc.viewSheet = function(sheetName) {
 
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
-    Sliobj.adminState = auth && !!auth.adminKey && !Sliobj.previewState;
-    Sliobj.adminPrefix = (Sliobj.serverCookie && Sliobj.serverCookie.prefix) || '';
+    // adminState should really be called gradableState; adminKey should be graderKey
+    // Also slidoc-admin-view -> slidoc-gradable-view, slidoc-adminonly -> slidoc-gradableonly, slidoc-noadmin -> slidoc-nogradable
+    Sliobj.adminState = auth && !!auth.adminKey;
+    Sliobj.fullAccess = Sliobj.serverCookie && Sliobj.serverCookie.role == Sliobj.params.adminUserId && (getUserId() == Sliobj.params.testUserId || Sliobj.adminState);
+
     Sliobj.adminPaced = 0;
     Sliobj.maxLastSlide = 0;
     Sliobj.userList = null;
@@ -4326,7 +4348,7 @@ Slidoc.hide = function (elem, className, action) {
 Slidoc.pagesDisplay = function() {
     Slidoc.log('Slidoc.pagesDisplay:');
     var html = '<b>Pages</b><p></p>';
-    if (!Sliobj.adminPrefix && (Sliobj.adminState || getUserId() == Sliobj.params.testUserId))
+    if (Sliobj.fullAccess)
 	html += '<a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><p></p>';
 
     if (Sliobj.params.topnavList && Sliobj.params.topnavList.length) {

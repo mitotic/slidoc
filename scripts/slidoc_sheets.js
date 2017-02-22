@@ -1,12 +1,11 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.9c';
+var VERSION = '0.96.9d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['server_url', '', 'URL of server (if any); e.g., http://example.com'],
 			 ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
 			 ['site_name', '', 'Site name, e.g., calc101'],
-			 ['admin_emails', '', 'Google mail addresses of users with admin access (comma-separated)'],
 			 ['late_credit', 0, 'Default late credit fraction for assignments/lectures, a value like 0.25'],
 			 ['participation_credit', 0, 'Default participation credit value (0/1/2) for lectures'],
 			 ['retakes', 0, 'Default number of retakes for assignments (>=0)'],
@@ -102,6 +101,9 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for
 // Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
+
+var ADMIN_ROLE = 'admin';
+var GRADER_ROLE = 'grader';
 
 var ADMINUSER_ID = 'admin';
 var MAXSCORE_ID = '_max_score';
@@ -301,23 +303,58 @@ function sheetAction(params) {
 	loadSettings();
 
 	var freezeDate = createDate(Settings['freeze_date']) || null;
-	var adminUser = '';
-	var paramId = params.id || '';
 
-	if (params.admin) {
-	    if (!params.token)
-		throw('Error:NEED_ADMIN_TOKEN:Need token for admin authentication');
-	    if (!validateHMAC('admin:'+params.admin+':'+params.token, Settings['auth_key']))
-		throw("Error:INVALID_ADMIN_TOKEN:Invalid token for authenticating admin user '"+params.admin+"'");
-	    adminUser = params.admin;
-	} else if (Settings['require_login_token']) {
-	    if (!paramId)
-		throw('Error:NEED_ID:Need id for authentication');
-	    if (!params.token)
-		throw('Error:NEED_TOKEN:Need token for id authentication');
-	    if (!validateHMAC('id:'+paramId+':'+params.token, Settings['auth_key']))
-		throw("Error:INVALID_TOKEN:Invalid token for authenticating id '"+paramId+"'");
-	}
+        var origUser = '';
+        var adminUser = '';
+        var adminRole = '';
+	var readOnlyAccess = false;
+
+	var paramId = params.id || '';
+        var authToken = params.token || '';
+
+        if (authToken.indexOf(':') >= 0) {
+            var comps = authToken.split(':');    // effectiveId:userid:role:sites:hmac
+            if (comps.length != 5) {
+                throw('Error:INVALID_TOKEN:Invalid auth token format '+authToken);
+            }
+            var subToken = ':' + comps.slice(1).join(':');
+            if (!validateHMAC(subToken, Settings['auth_key'])) {
+                throw('Error:INVALID_TOKEN:Invalid authentication token '+subToken);
+            }
+
+            origUser = comps[1];
+            var effectiveUser = comps[0];
+
+            if (params.admin) {
+                adminRole = comps[2];
+                if (adminRole != ADMIN_ROLE && adminRole != GRADER_ROLE) {
+                    throw('Error:INVALID_TOKEN:Invalid token admin role: '+adminRole);
+                }
+                adminUser = origUser + ':' + adminRole;
+            } else if (effectiveUser) {
+                if (paramId != effectiveUser) {
+                    throw('Error:INVALID_TOKEN:Incorrect effective user: '+paramId+' != '+effectiveUser);
+                }
+		readOnlyAccess = (origUser != effectiveUser);
+            } else {
+                throw('Error:INVALID_TOKEN:Unexpected admin token for regular access');
+            }
+
+        } else if (params.admin) {
+            throw('Error:NEED_TOKEN:Need admin token for admin authentication');
+
+        } else if (Settings['require_login_token']) {
+            if (!authToken) {
+                throw('Error:NEED_TOKEN:Need token for id authentication');
+            }
+            if (!paramId) {
+                throw('Error:NEED_ID:Need id for authentication');
+            }
+            if (!validateHMAC(genAuthPrefix(paramId,'','')+':'+authToken, Settings['auth_key'])) {
+                throw('Error:INVALID_TOKEN:Invalid token '+authToken+' for authenticating id '+paramId);
+            }
+            origUser = paramId;
+        }
 
 	var action = params.action || '';
 	var proxy = params.proxy || '';
@@ -616,6 +653,12 @@ function sheetAction(params) {
 	    
 	    var selectedUpdates = params.update ? JSON.parse(params.update) : null;
 	    var rowUpdates = params.row ? JSON.parse(params.row) : null;
+
+            if (readOnlyAccess) {
+                if (delRow || resetRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
+                    throw('Error::Admin user '+origUser+' cannot modify row for user '+paramId);
+                }
+            }
 
 	    if (headers) {
 		var modifyStartCol = params.modify ? parseInt(params.modify) : 0;
@@ -1137,7 +1180,7 @@ function sheetAction(params) {
 	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues);
 	    var newRow = !userRow;
 
-	    if (adminUser && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
+	    if ((readOnlyAccess || adminUser) && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
 		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
 
 	    var retakesCol = columnIndex['retakes'];
@@ -1860,7 +1903,7 @@ function createSessionRow(sessionName, fieldsMin, params, questions, userId, dis
 }
     
 function getUserRow(sessionName, userId, displayName, opts) {
-    var token = genUserToken(Settings['auth_key'], userId);
+    var token = genAuthToken(Settings['auth_key'], userId);
     var getParams = {'id': userId, 'token': token,'sheet': sessionName,
 		     'name': displayName, 'get': '1'};
     if (opts) {
@@ -1952,17 +1995,21 @@ function parseInput(value, headerName) {
     return value;
 }
 
+function genAuthPrefix(userId, role, sites) {
+    return ':' + userId + ':' + (role||'') + ':' + (sites||'');
+}
+
+function getAuthToken(key, userId, role, sites, prefixed) {
+    var prefix = genAuthPrefix(userId, role, sites);
+    var token = genHmacToken(key, prefix);
+    return prefixed ? (prefix+':'+token) : token;
+}
 
 function genHmacToken(key, message) {
     var rawHMAC = Utilities.computeHmacSignature(HMAC_ALGORITHM,
 						 message, key,
 						 Utilities.Charset.US_ASCII);
     return Utilities.base64Encode(rawHMAC).slice(0,TRUNCATE_DIGEST);
-}
-
-function genUserToken(key, userId) {
-    // Generates user token using HMAC key
-    return genHmacToken(key, 'id:'+userId);
 }
 
 function genLateToken(key, userId, siteName, sessionName, dateStr) {
@@ -2975,7 +3022,7 @@ function emailTokens() {
 	if (!emailList[j][1].trim())
 	    continue;
 	var username = emailList[j][0];
-	var token = genUserToken(Settings['auth_key'], emailList[j][0]);
+	var token = genAuthToken(Settings['auth_key'], emailList[j][0]);
 
 	var message = 'Authentication token for userID '+username+' is '+token;
 	if (Settings['server_url'])

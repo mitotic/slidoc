@@ -103,6 +103,7 @@ def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
 
 class Parser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
+    image_renumber_re = re.compile(r'^image\d+\.')
     indent_strip_re =  re.compile( r'^ {4}', re.MULTILINE)
     annotation_re =    re.compile( r'^Annotation:')
     answer_re =        re.compile( r'^Answer:')
@@ -167,11 +168,11 @@ class Parser(object):
         self.images_map = {}
         self.content_zip_bytes = None
         self.content_zip = None
-        self.content_image_paths = {}
+        self.content_image_paths = set()
         if images_zipdata:
             self.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata), 'r')
             self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
-        elif 'zip' in self.cmd_args.images:
+        if 'zip' in self.cmd_args.images:
             self.content_zip_bytes = io.BytesIO()
             self.content_zip = zipfile.ZipFile(self.content_zip_bytes, 'w')
 
@@ -187,6 +188,7 @@ class Parser(object):
         self.old_defs = OrderedDict()
         self.new_defs = OrderedDict()
         self.filedir = ''
+        self.image_count = 0
 
     def arg_check(self, arg_set):
         n = 0
@@ -200,7 +202,10 @@ class Parser(object):
         """Write content to file. If file already exists, check its content"""
         if self.content_zip:
             fname = os.path.basename(filepath)
-            zpath = '_images/'+fname
+            if self.cmd_args.image_dir:
+                zpath = os.path.basename(self.cmd_args.image_dir)+'/'+fname
+            else:
+                zpath = '_images/'+fname
             self.content_zip.writestr(zpath, content)
             self.content_image_paths.add(zpath)
             return
@@ -333,10 +338,7 @@ class Parser(object):
             elif 'check' in self.cmd_args.images:
                 self.copy_image(text, link, title, check_only=True)
 
-            elif 'zip' in self.cmd_args.images:
-                self.copy_image(text, link, title)
-
-            elif 'copy' in self.cmd_args.images:
+            elif 'copy' in self.cmd_args.images or 'zip' in self.cmd_args.images:
                 new_link, new_title = self.copy_image(text, link, title)
                 if new_link is not None:
                     if 'embed' in self.cmd_args.images:
@@ -363,7 +365,7 @@ class Parser(object):
         elif not check_only:
             url_type = get_url_scheme(link)
             new_link = ''
-            if url_type.startswith('http'):
+            if url_type.startswith('http') and 'copy' in self.cmd_args.images:
                 _, extn = content_type.split('/')
                 newpath = os.path.basename(urlparse.urlsplit(link).path.rstrip('/'))
                 if not newpath.endswith('.'+extn):
@@ -373,13 +375,21 @@ class Parser(object):
                 new_link = newpath
 
             elif url_type == 'rel_path':
+                linkbase = os.path.basename(link)
                 if 'gather_images' in self.cmd_args.images:
                     # Copy all images to new destination image directory
-                    newpath = os.path.basename(link)
+                    newpath = linkbase
                     if self.cmd_args.image_dir:
                         newpath = self.cmd_args.image_dir + '/' + newpath
                     if newpath != link:
                         new_link = newpath
+                elif self.image_renumber_re.match(linkbase) and 'renumber' in self.cmd_args.images and ('zip' in self.cmd_args.images or self.cmd_args.dest_dir):
+                    # Renumber image*.* only if zip or dest_dir is specified
+                    self.image_count += 1
+                    newpath = 'image%02d%s' % (self.image_count, os.path.splitext(linkbase)[1])
+                    if self.cmd_args.image_dir:
+                        newpath = self.cmd_args.image_dir + '/' + newpath
+                    new_link = newpath
                 else:
                     # Preserve relative path when copying
                     newpath = link
@@ -804,7 +814,7 @@ class ArgsObj(object):
 Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', 'strip'],
                     bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'latex_math',
                                 'overwrite', 'pandoc', 'tex_math', 'unfence'],
-                    defaults= {'image_dir': 'images'})
+                    defaults= {'image_dir': '_images'})
 
 def make_arg_set(arg_value, arg_all_list):
     """Converts comma-separated argument value to a set, handling 'all', and 'all,but,..' """
@@ -829,9 +839,9 @@ if __name__ == '__main__':
     parser.add_argument('--backtick_on', help='Wrap block math with backticks', action="store_true")
     parser.add_argument('--dest_dir', help='Destination directory for creating files (default:'')', default='')
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
-    parser.add_argument('--image_dir', help='image subdirectory (default: "images")', default='images')
+    parser.add_argument('--image_dir', help='image subdirectory (default: "_images")', default='_images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,md,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file)', default='')
+    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,renumber,md,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file;renumber renumbers images when copying to zip or dest_dir)', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--latex_math', help='Use \\(..\\) and \\[...\\] notation for math', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
