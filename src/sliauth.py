@@ -161,7 +161,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--session', help='Session name')
     parser.add_argument('-t', '--site', help='Site name')
     parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
-    parser.add_argument('user', help='user name(s)', nargs=argparse.ONE_OR_MORE)
+    parser.add_argument('user', help='user name(s)', nargs=argparse.ZERO_OR_MORE)
     cmd_args = parser.parse_args()
 
     if not cmd_args.auth_key:
@@ -170,6 +170,9 @@ if __name__ == '__main__':
     auth_key = cmd_args.auth_key
     if cmd_args.site:
         auth_key = gen_site_key(auth_key, cmd_args.site)
+
+    if not cmd_args.user:
+        print((cmd_args.site or '')+' auth key =', auth_key)
 
     for user in cmd_args.user:
         if cmd_args.due_date:

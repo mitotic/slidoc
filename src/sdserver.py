@@ -99,8 +99,9 @@ Options = {
     'server_key': None,
     'server_url': '',
     'share_averages': True,
-    'site_label': 'Slidoc',  # E.g., Calculus 101
     'site_name': '',         # E.g., calc101
+    'site_label': '',        # E.g., Calculus 101
+    'site_title': '',        # E.g., Elementary Calculus, Fall 2000
     'site_number': 0,
     'sites': [],
     'source_dir': '',
@@ -207,20 +208,20 @@ class UserIdMixin(object):
             comps = [urllib.unquote(x) for x in cookieStr.split(':')]
             ##if Options['debug']:
                 ##print >> sys.stderr, "DEBUG: sdserver.UserIdMixin.get_id_from_cookie", comps
-            userId, role, sites, token, data_json = comps[:5]
-            data_vals = json.loads(base64.b64decode(data_json))
+            userId, userRole, userSites, token, data_json = comps[:5]
+            userData = json.loads(base64.b64decode(data_json))
             if role:
-                return role
+                return userRole
             if sites:
-                return sites
+                return userSites
             if name:
-                return data.get('name', '')
+                return userData.get('name', '')
             if email:
-                return data.get('email', '')
+                return userData.get('email', '')
             if altid:
-                return data.get('altid', '')
+                return userData.get('altid', '')
             if data:
-                return data_vals
+                return userData
             return userId
         except Exception, err:
             print >> sys.stderr, 'sdserver: COOKIE ERROR - '+str(err)
@@ -266,18 +267,8 @@ class HomeHandler(BaseHandler):
     def get(self):
         if Options['sites'] and not Options['site_number']:
             # Primary server
-            html = '<style>body {font-family: sans-serif;}</style>\n'
-            if Options['auth_type']:
-                userId = self.get_current_user()
-                if userId:
-                    html += '<h2>User: %s</h2>\n' % userId
-                else:
-                    html += '<h2><a href="%s">Login</a></h2>\n' % Global.login_url
-            html += '<h3>Select site:</h3><ul>\n'
-            for site in Options['sites']:
-                html += '''<li><a href="/%s" style="text-decoration: none;"><b>%s</b></a></li>\n''' % (site, site)
-            html += '</ul>\n'
-            self.write(html)
+            self.render('index.html', user=self.get_current_user(), login_url=Global.login_url, logout_url=Global.logout_url,
+                         sites=Options['sites'], site_labels=Split_opts['site_label'], site_titles=Split_opts['site_title'])
             return
         elif Options.get('_index_html'):
             # Not authenticated
@@ -1455,12 +1446,15 @@ class AuthActionHandler(ActionHandler):
             return self.getAction(subpath)
         raise tornado.web.HTTPError(403)
 
-def map_name_role(username):
+def map_name_role(username, siteCheck=''):
     # Return username, role, sites
     if username not in Global.auth_map:
         return username, '', ''
     user_map = Global.auth_map[username]
-    return user_map['id'], user_map['role'], user_map['sites']
+    userId, role, sites = user_map['id'], user_map['role'], user_map['sites']
+    if siteCheck and sites and siteCheck not in sites.split(','):
+        role = ''
+    return userId, role, sites
 
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
@@ -2154,9 +2148,12 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
-            if userId not in Global.rev_auth_map:
-                if sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
-                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
+            role = ''
+            auth_name = Global.rev_auth_map.get(userId)
+            if auth_name:
+                _, role, sites = map_name_role(auth_name, siteCheck=Options['site_name'])
+            if not role and sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
             return userId
 
         if not Options['auth_key']:
@@ -2382,6 +2379,7 @@ def createApplication():
 
     Global.login_domain = ''
     Global.login_url = '/_auth/login/'
+    Global.logout_url = '/_logout'
     if Options['auth_type']:
         Global.login_url = '/_oauth/login'
         comps = Options['auth_type'].split(',')
@@ -2410,7 +2408,7 @@ def createApplication():
     settings.update(
         template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
         xsrf_cookies=Options['xsrf'],
-        cookie_secret=Options['auth_key'] or 'testkey',
+        cookie_secret=Options['root_auth_key'] or 'testkey',
         login_url=Global.login_url,
         debug=Options['debug'],
     )
@@ -2815,8 +2813,9 @@ def shutdown_loop():
     IOLoop.current().stop()
     
 twitterStream = None
+Split_opts = {}
 def main():
-    global twitterStream
+    global twitterStream, Split_opts
     define("config", type=str, help="Path to config file",
         callback=lambda path: parse_config_file(path, final=False))
 
@@ -2841,7 +2840,8 @@ def main():
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
-    define("site_label", default=Options["site_label"], help="Site label")
+    define("site_label", default='', help="Site label")
+    define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
@@ -2861,18 +2861,19 @@ def main():
             if hasattr(options, key):
                 # Command line overrides settings
                 Options[key] = getattr(options, key)
+    Options['root_auth_key'] = Options['auth_key']
+    Options['server_key'] = str(random.randrange(0,2**60))
 
-    Split_opts = {}
     if Options['sites']:
         Options['sites'] = [x.strip() for x in Options['sites'].split(',')]
-        for key in ('gsheet_url', 'twitter_stream'):
+        for key in ('gsheet_url', 'twitter_stream', 'site_label', 'site_title'):
             if Options[key]:
                 Split_opts[key] = [x.strip() for x in Options[key].split(';')]
                 if len(Split_opts[key]) != len(Options['sites']):
                     raise Exception('No. of values for --'+key+'=...;... should match number of sites')
                 Options[key] = ''
             else:
-                Split_opts[key] = ['']*len(Options['sites'])
+                Split_opts[key] = Options['sites'][:] if key == 'site_label' else ['']*len(Options['sites'])
 
     if not options.debug:
         logging.getLogger('tornado.access').disabled = True
@@ -2955,7 +2956,6 @@ def main():
         certfile, keyfile = options.ssl.split(',')
         ssl_options = {"certfile": certfile, "keyfile": keyfile}
 
-    Options['server_key'] = str(random.randrange(0,2**60))
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_KEY', Options['server_key']
     child_pids = []
@@ -2964,7 +2964,6 @@ def main():
 
     BaseHandler.site_src_dir = Options['source_dir']
     BaseHandler.site_web_dir = Options['static_dir']
-    Options['root_auth_key'] = Options['auth_key']
 
     if Options['sites']:
         if options.forward_port:
@@ -2992,7 +2991,6 @@ def main():
                 # Secondary server
                 Options['site_number'] = j+1
                 Options['site_name'] = site_name
-                Options['site_label'] = site_name
                 Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
                 for key in Split_opts:
                     # Split gsheet_url, twitter_stream options
@@ -3001,9 +2999,9 @@ def main():
                 BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
 
                 site_settings = {}
-                if Options['gsheet_url']:
-                    # Need to restart server if any SETTINGS_SHEET is changed
-                    site_settings = sliauth.read_settings(Options['gsheet_url'], Options['auth_key'], SETTINGS_SHEET)
+                #if Options['gsheet_url']:
+                #    # Need to restart server if any SETTINGS_SHEET is changed
+                #    site_settings = sliauth.read_settings(Options['gsheet_url'], Options['auth_key'], SETTINGS_SHEET)
                 break
 
     if options.proxy_wait is not None:

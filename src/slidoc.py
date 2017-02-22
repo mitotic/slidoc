@@ -892,8 +892,9 @@ class SlidocRenderer(MathRenderer):
         html += '''  </div>'''
         html += '''</div>\n'''
 
-        # Slides need to be unhidden in Javascript
-        html += '\n<section id="%s" class="slidoc-slide %s-slide %s" style="display: none;"> <!--slide start-->\n' % (slide_id, chapter_id, classes)
+        # Slides need to be unhidden in Javascript for paced sessions
+        style_str = 'style="display: none;"' if self.options['config'].pace else ''
+        html += '\n<section id="%s" class="slidoc-slide %s-slide %s %s" > <!--slide start-->\n' % (slide_id, chapter_id, classes, style_str)
         return html
 
     def slide_toggle_footer(self):
@@ -915,8 +916,7 @@ class SlidocRenderer(MathRenderer):
             suffix = fname[len('image'):]
             if suffix.isdigit():
                 self.slide_maximage = max(self.slide_maximage, int(suffix))
-        image_dir = self.options["filename"] + '_images' if self.options['config'].image_dir == '_images' else self.options['config'].image_dir
-        return md2md.new_img_tag(src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url, image_dir=image_dir)
+        return md2md.new_img_tag(src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url, image_dir=self.options['config'].image_dir)
 
     def hrule(self, text='---', implicit=False):
         """Rendering method for ``<hr>`` tag."""
@@ -2745,7 +2745,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     else:
         reveal_pars = ''
 
-    slidoc_images_opts = set(['_slidoc'])
+    slidoc_images_opts = set(['_slidoc', 'gather_images'])
     if combined_file:
         slidoc_images_opts.add('_slidoc_combine')
     elif config.preview:
@@ -2826,6 +2826,9 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if 'keep_extras' in file_config.features and config.gsheet_url:
                 abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')
 
+            if config.image_dir == '_images':
+                file_config.image_dir = fname + '_images'
+                
             file_config_vars = vars(file_config)
             settings_list = []
             exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
@@ -2910,6 +2913,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         # Strip annotations (may also break slide editing)
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
+        base_mods_args.image_dir = file_config.image_dir
         base_parser = md2md.Parser(base_mods_args, images_zipdata=images_zipdict.get(fname))
         slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname))
         md_text_modified, _ = slide_parser.parse(md_text, filepath)

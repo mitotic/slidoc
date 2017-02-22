@@ -1674,8 +1674,8 @@ function sheetAction(params) {
 		
 		returnValues = getRow ? rowValues : [];
 
-		if (!adminUser && !gradeDate && returnValues.length > fieldsMin) {
-		    // If session not graded, blank out grade-related columns
+		if (!adminUser && (!gradeDate || !rowValues[submitTimestampCol-1])) {
+		    // If session not graded/submitted, blank out grade-related columns
 		    for (var j=fieldsMin; j < returnValues.length; j++) {
 			if (!columnHeaders[j].match(/_response$/) && !columnHeaders[j].match(/_explain$/) && !columnHeaders[j].match(/_plugin$/))
 			    returnValues[j] = null;

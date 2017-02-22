@@ -2072,8 +2072,8 @@ def sheetAction(params, notrace=False):
                 returnInfo['timestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex) else None
                 returnValues = rowValues if getRow else []
 
-                if not adminUser and not gradeDate and len(returnValues) > fieldsMin:
-                    # If session not graded, blank out grade-related columns
+                if not adminUser and (not gradeDate or not rowValues[submitTimestampCol-1]):
+                    # If session not graded/submitted, blank out grade-related columns
                     for j in range(fieldsMin, len(returnValues)):
                         if not columnHeaders[j].endswith('_response') and not columnHeaders[j].endswith('_explain') and not columnHeaders[j].endswith('_plugin'):
                             returnValues[j] = None
