@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.9d';
+var VERSION = '0.96.9e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
 			 ['server_url', '', 'URL of server (if any); e.g., http://example.com'],
@@ -306,7 +306,6 @@ function sheetAction(params) {
 
         var origUser = '';
         var adminUser = '';
-        var adminRole = '';
 	var readOnlyAccess = false;
 
 	var paramId = params.id || '';
@@ -322,20 +321,23 @@ function sheetAction(params) {
                 throw('Error:INVALID_TOKEN:Invalid authentication token '+subToken);
             }
 
-            origUser = comps[1];
             var effectiveUser = comps[0];
+            origUser = comps[1];
+            var temRole = comps[2];
 
             if (params.admin) {
-                adminRole = comps[2];
-                if (adminRole != ADMIN_ROLE && adminRole != GRADER_ROLE) {
-                    throw('Error:INVALID_TOKEN:Invalid token admin role: '+adminRole);
+                if (temRole != ADMIN_ROLE && temRole != GRADER_ROLE) {
+                    throw('Error:INVALID_TOKEN:Invalid token admin role: '+temRole);
                 }
-                adminUser = origUser + ':' + adminRole;
+                adminUser = temRole;
             } else if (effectiveUser) {
-                if (paramId != effectiveUser) {
-                    throw('Error:INVALID_TOKEN:Incorrect effective user: '+paramId+' != '+effectiveUser);
+                if (effectiveUser != origUser && temRole != ADMIN_ROLE) {
+                    throw('Error:INVALID_TOKEN:Not allowed to change from user: '+origUser+' to '+effectiveUser);
                 }
-		readOnlyAccess = (origUser != effectiveUser);
+                if (effectiveUser != paramId) {
+                    throw('Error:INVALID_TOKEN:Incorrect effective user: '+effectiveUser+' != '+paramId);
+                }
+		readOnlyAccess = (origUser != effectiveUser) && (effectiveUser != TESTUSER_ID);
             } else {
                 throw('Error:INVALID_TOKEN:Unexpected admin token for regular access');
             }
@@ -404,10 +406,14 @@ function sheetAction(params) {
 	var computeTotalScore = false;
 	var curDate = new Date();
 
-	if (proxy && !adminUser)
+	if (proxy && adminUser != ADMIN_ROLE)
 	    throw("Error::Must be admin user for proxy access to sheet '"+sheetName+"'");
+
+        if (sheetName == SETTINGS_SHEET && adminUser != ADMIN_ROLE)
+            throw('Error::Must be admin user to access settings')
+
 	if (restrictedSheet && !adminUser)
-	    throw("Error::Must be admin user to access restricted sheet '"+sheetName+"'");
+	    throw("Error::Must be admin/grader user to access restricted sheet '"+sheetName+"'");
 
 	var rosterValues = [];
 	var rosterSheet = getSheet(ROSTER_SHEET);

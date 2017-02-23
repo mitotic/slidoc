@@ -114,8 +114,8 @@ class Dummy():
     pass
     
 Global = Dummy()
-Global.auth_map = {}
-Global.rev_auth_map = {}
+Global.id_role_sites = {}
+Global.id_map = {}
 Global.backup = None
 Global.twitter_config = {}
 Global.relay_list = []
@@ -1446,15 +1446,12 @@ class AuthActionHandler(ActionHandler):
             return self.getAction(subpath)
         raise tornado.web.HTTPError(403)
 
-def map_name_role(username, siteCheck=''):
-    # Return username, role, sites
-    if username not in Global.auth_map:
-        return username, '', ''
-    user_map = Global.auth_map[username]
-    userId, role, sites = user_map['id'], user_map['role'], user_map['sites']
-    if siteCheck and sites and siteCheck not in sites.split(','):
-        role = ''
-    return userId, role, sites
+def map_id_role(userId):
+    # Return (role, sites)
+    if userId not in Global.id_role_sites:
+        return '', ''
+    user_map = Global.id_role_sites[userId]
+    return user_map['role'], user_map['sites']
 
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
@@ -1469,11 +1466,10 @@ def modify_user_auth(args, socketId=None):
         if socketId and socketId != adminId:
             raise Exception('Token admin id mismatch: %s != %s' % (socketId, adminId))
 
-        auth_name = Global.rev_auth_map.get(adminId)
-        if not auth_name or auth_name not in Global.auth_map:
-            raise Exception('Token for unauthorized admin user %s' % adminId)
+        role, sites = map_id_role(adminId)
+        if not role:
+            raise Exception('Token for unknown admin user %s' % adminId)
 
-        sites = Global.auth_map[auth_name]['sites']
         if sites and Options['site_name'] not in sites.split(','):
             # No admin access to site
             if effectiveId == adminId and not args.get('admin'):
@@ -1482,7 +1478,6 @@ def modify_user_auth(args, socketId=None):
                 return
             raise Exception('Token site disallowed for admin %s: %s' % (adminId, Options['site_name']))
 
-        role = Global.auth_map[auth_name]['role']
         if role in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE):
             # Site admin token
             args['token'] = effectiveId+gen_proxy_auth_token(adminId, role, prefixed=True)
@@ -2148,12 +2143,26 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
-            role = ''
-            auth_name = Global.rev_auth_map.get(userId)
-            if auth_name:
-                _, role, sites = map_name_role(auth_name, siteCheck=Options['site_name'])
-            if not role and sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
+            role = self.get_id_from_cookie(role=True)
+            sites = self.get_id_from_cookie(sites=True)
+
+            # Check if pre-authorized for site access
+            if Options['site_name']:
+                # Check if site is explicitly authorized (user has global admin/grader role, or has explicit site listed, including guest users)
+                preAuthorized = (role and not sites) or (sites and Options['site_name'] in sites.split(','))
+            else:
+                # Check if userid is known
+                preAuthorized = userId in Global.id_role_sites
+
+            if not preAuthorized:
+                if Global.login_domain and '@' in userId:
+                    # External user
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:User not pre-authorized to access site')
+
+                # Check userId appears in roster
+                if sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
+
             return userId
 
         if not Options['auth_key']:
@@ -2288,8 +2297,8 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 print >> sys.stderr, "GoogleAuth: step 2", user
 
             username = user['email'].lower()
-            if username in Global.auth_map:
-                # Special out-of-domain case; retain full email addr (to be translated to a name)
+            if username in Global.id_map:
+                # Special case: out-of-domain case
                 pass
             else:
                 if Global.login_domain:
@@ -2301,6 +2310,10 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 if username.startswith('_') or username in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                     self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
 
+            if username in Global.id_map:
+                # Special cases: out-of-domain and aliases
+                username = Global.id_map[username]
+
             displayName = user.get('family_name','').replace(',', ' ')
             if displayName and user.get('given_name',''):
                 displayName += ', '
@@ -2311,8 +2324,8 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             data = {}
             if Global.twitter_config:
                 data['site_twitter'] = Global.twitter_config['screen_name']
-            mapname, role, sites = map_name_role(username)
-            self.set_id(mapname, displayName=displayName, role=role, sites=sites, email=user['email'].lower(), data=data)
+            role, sites = map_id_role(username)
+            self.set_id(username, displayName=displayName, role=role, sites=sites, email=user['email'].lower(), data=data)
             self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
             return
 
@@ -2338,8 +2351,8 @@ class TwitterLoginHandler(tornado.web.RequestHandler,
             if username.startswith('_') or username in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID):
                 self.custom_error(500, 'Disallowed username: '+username, clear_cookies=True)
             displayName = user['name']
-            mapname, role, sites = map_name_role(username)
-            self.set_id(mapname, displayName=displayName, role=role, sites=sites)
+            role, sites = map_id_role(username)
+            self.set_id(username, displayName=displayName, role=role, sites=sites)
             self.redirect(self.get_argument("next", "/"))
         else:
             yield self.authorize_redirect()
@@ -2906,45 +2919,38 @@ def main():
         else:
             auth_users = [x.strip() for x in options.auth_users.split(';') if x.strip()]
 
-        Global.rev_auth_map[sdproxy.ADMINUSER_ID] = sdproxy.ADMINUSER_ID
-        Global.auth_map[sdproxy.ADMINUSER_ID] = {'id': sdproxy.ADMINUSER_ID, 'role': sdproxy.ADMIN_ROLE, 'sites': ''}
+        Global.id_role_sites[sdproxy.ADMINUSER_ID] = {'role': sdproxy.ADMIN_ROLE, 'sites': ''}
         for user_map in auth_users:
-            # Format: username[@domain]=[userid][:role[:site1,site2...]]
+            # Format: [username[@domain]=]userid[:role[:site1,site2...]]
             comps = user_map.split(':')
-            auth_name = comps[0]
+            userId    = comps[0].strip()
+            userRole  = comps[1].strip() if len(comps) > 1 else ''
+            userSites = comps[2].strip() if len(comps) > 2 else ''
 
-            slidoc_userid = ''
-            if '=' in auth_name:
-                auth_name, slidoc_userid = auth_name.split('=')
+            origid = ''
+            if '=' in userId:
+                origid, userId = userId.split('=')
+                origid = origid.strip()
+                userId = userId.strip()
+                Global.id_map[origid] = userId
 
-            auth_name = auth_name.strip()
-            slidoc_userid = slidoc_userid.strip()
-            if not slidoc_userid:
-                slidoc_userid = auth_name
+            if not userId:
+                raise Exception('Null username')
+            if userId in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID) or userId.startswith('_'):
+                raise Exception('Username %s is reserved' % userId)
 
-            slidoc_role = ''
-            if len(comps) > 1:
-                slidoc_role = comps[1].strip()
+            if userRole == sdproxy.ADMIN_ROLE:
+                admin_user = userId
 
-            if slidoc_userid in (sdproxy.ADMINUSER_ID, sdproxy.TESTUSER_ID) or slidoc_userid.startswith('_'):
-                raise Exception('Username %s is reserved' % slidoc_userid)
-
-            if slidoc_role == sdproxy.ADMIN_ROLE:
-                admin_user = auth_name
-
-            slidoc_sites = ''
-            if len(comps) > 2:
-                site_list = [x.strip() for x in comps[2].strip().split(',') if x.strip()]
+            if userSites:
+                site_list = [x.strip() for x in userSites.strip().split(',') if x.strip()]
                 for auth_site in site_list:
                     if site_list not in Options['sites']:
                         raise Exception('Invalid site name in user auth: '+repr(auth_site))
-                slidoc_sites = ','.join(site_list)
+                userSites = ','.join(site_list)
 
-            Global.auth_map[auth_name] = {'id': slidoc_userid, 'role': slidoc_role, 'sites': slidoc_sites}
-            if slidoc_userid not in Global.rev_auth_map:
-                # Only the first reverse map is linked to
-                Global.rev_auth_map[slidoc_userid] = auth_name
-            print >> sys.stderr, 'USER %s: %s -> %s:%s:%s' % (user_map, auth_name, slidoc_userid, slidoc_role, slidoc_sites)
+            Global.id_role_sites[userId] = {'role': userRole, 'sites': userSites}
+            print >> sys.stderr, 'USER %s: %s -> %s:%s:%s' % (user_map, origid, userId, userRole, userSites)
 
     if Options['auth_key'] and not admin_user:
         raise Exception('There must be at least one user with admin access')

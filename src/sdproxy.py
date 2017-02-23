@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.9d'
+VERSION = '0.96.9e'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -973,7 +973,6 @@ def sheetAction(params, notrace=False):
         
         origUser = ''
         adminUser = ''
-        adminRole = ''
         readOnlyAccess = False
 
         paramId = params.get('id','')
@@ -987,18 +986,20 @@ def sheetAction(params, notrace=False):
             if not validateHMAC(subToken, Settings['auth_key']):
                 raise Exception('Error:INVALID_TOKEN:Invalid authentication token '+subToken)
 
-            origUser = comps[1]
             effectiveUser = comps[0]
+            origUser = comps[1]
+            temRole = comps[2]
 
             if params.get('admin'):
-                adminRole = comps[2]
-                if adminRole != ADMIN_ROLE and adminRole != GRADER_ROLE:
-                    raise Exception('Error:INVALID_TOKEN:Invalid token admin role: '+adminRole)
-                adminUser = origUser + ':' + adminRole
+                if temRole != ADMIN_ROLE and temRole != GRADER_ROLE:
+                    raise Exception('Error:INVALID_TOKEN:Invalid token admin role: '+temRole)
+                adminUser = temRole
             elif effectiveUser:
-                if paramId != effectiveUser:
-                    raise Exception('Error:INVALID_TOKEN:Incorrect effective user: '+paramId+' != '+effectiveUser)
-                readOnlyAccess = (origUser != effectiveUser)
+                if effectiveUser != origUser and temRole != ADMIN_ROLE:
+                    raise Exception('Error:INVALID_TOKEN:Not allowed to change from user: '+origUser+' to '+effectiveUser)
+                if effectiveUser != paramId:
+                    raise Exception('Error:INVALID_TOKEN:Incorrect effective user: '+effectiveUser+' != '+paramId)
+                readOnlyAccess = (origUser != effectiveUser) and (effectiveUser != TESTUSER_ID)
             else:
                 raise Exception('Error:INVALID_TOKEN:Unexpected admin token for regular access')
 
@@ -1032,9 +1033,11 @@ def sheetAction(params, notrace=False):
         computeTotalScore = False
         curDate = createDate()
 
-        if restrictedSheet:
-            if not adminUser:
-                raise Exception("Error::Must be admin user to access sheet '"+sheetName+"'")
+        if sheetName == SETTINGS_SHEET and adminUser != ADMIN_ROLE:
+            raise Exception('Error::Must be admin user to access settings')
+
+        if restrictedSheet and not adminUser:
+            raise Exception("Error::Must be admin/grader user to access sheet '"+sheetName+"'")
 
         rosterValues = []
         rosterSheet = getSheet(ROSTER_SHEET, optional=True)

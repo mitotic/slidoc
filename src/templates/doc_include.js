@@ -835,7 +835,10 @@ Slidoc.slideEdit = function(action, slideId) {
     var imageNameElem = document.getElementById(slideId+'-togglebar-edit-imgname');
     var params = {slide: slideNum, sessionname: Sliobj.params.fileName};
 
-    if (action == 'discard') {
+    if (action == 'clear') {
+	editArea.value = '';
+
+    } else if (action == 'discard') {
 	editContainer.style.display = 'none';
 	editArea.value = '';
 

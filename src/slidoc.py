@@ -885,15 +885,17 @@ class SlidocRenderer(MathRenderer):
         html += '''  </span>\n'''
         html += '''</div>\n'''
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-img-drop slidoc-noprint" style="display: none;">\n''' % (slide_id,)
-        html += '''  <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button><br>\n''' % (slide_id, slide_id, slide_id, slide_id)
+        html += '''  <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button><br>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img slidoc-previewonly">''' % (slide_id,)
         html += '''    <span id="%s-togglebar-edit-imgname" class="slidoc-togglebar-edit-imgname" data-imgname=""></span><img id="%s-togglebar-edit-imgdisp" class="slidoc-togglebar-edit-imgdisp" src="">\n''' % (slide_id, slide_id)
         html += '''  </div>'''
         html += '''</div>\n'''
 
-        # Slides need to be unhidden in Javascript for paced sessions
-        style_str = 'style="display: none;"' if self.options['config'].pace else ''
+        # Slides need to be unhidden in Javascript for paced/slides_only sessions
+        style_str = ''
+        if self.options['config'].pace or 'slides_only' in self.options['config'].features:
+            style_str = 'style="display: none;"'
         html += '\n<section id="%s" class="slidoc-slide %s-slide %s %s" > <!--slide start-->\n' % (slide_id, chapter_id, classes, style_str)
         return html
 
