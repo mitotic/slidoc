@@ -148,13 +148,14 @@ var fileTypeMap = {
 };
 		   
 
-/* PluginHead: ^(,?ipynb|,?pdf|,?gif|,?jpg|,?jpeg|,?png)+$
+/* HEAD: ^(,?ipynb|,?pdf|,?gif|,?jpg|,?jpeg|,?png)+$
    <style>
      .slidoc-plugin-Upload-body {
      font-size: 0.66em;
    }
    </style>
-   PluginBody:
+
+   BODY:
    <span id="%(pluginId)s-uploadlabel">Select file or drag-and-drop over button:</span>
    <input type="file" id="%(pluginId)s-uploadbutton" 
    class="slidoc-clickable slidoc-button slidoc-plugin-Upload-button %(pluginId)s-uploadbutton"

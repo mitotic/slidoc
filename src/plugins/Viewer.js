@@ -28,8 +28,8 @@ Viewer = {
     }
 };
 
-/* PluginHead:
-   PluginBody:
+/* HEAD:
+   BODY:
    <img id="%(pluginId)s-viewerimg" src="" style="display: none;">
    <iframe id="%(pluginId)s-vieweriframe" src=""
    class="slidoc-plugin-Viewer-iframe %(pluginSlideId)s-vieweriframe"

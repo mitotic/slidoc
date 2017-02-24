@@ -126,10 +126,10 @@ class Parser(object):
                  ('tex_block_math',    re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
-                 ('plugin_definition', re.compile( r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
-                                                   re.DOTALL)),
-                 ('plugin_embed',      re.compile( r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
-                                                   re.DOTALL)),
+                 ('plugin_definition', re.compile(r'^ {0,3}<slidoc-script( +style="[^"\n]*")? *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\2)? *</slidoc-script> *(\n|$)',
+                                                re.DOTALL)),
+                 ('plugin_embed',      re.compile(r'^ {0,3}<slidoc-embed( +style="[^"\n]*")? *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
+                                                re.DOTALL)),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ),
                  ('minirule',   re.compile( r'^(--) *(?:\n+|$)') )
                   ]

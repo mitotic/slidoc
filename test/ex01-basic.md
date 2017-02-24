@@ -94,7 +94,7 @@ Multiple selections can be specified in the Answer: line
 
 What is the square root of `=SqrtTest.number(1);6.25`?
 
-PluginDef: SqrtTest = {
+<slidoc-script> SqrtTest = {
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
 // Plugin object SqrtTest is automatically attached to global object SlidocPlugins
 // Special function init is called for each slide. 
@@ -124,7 +124,7 @@ PluginDef: SqrtTest = {
     }
 }
 var randVals = {}; // Optional persistent object
-PluginEndDef: SqrtTest
+// SqrtTest </slidoc-script>
 
 =SqrtTest('Slide label', 3.1416)
 

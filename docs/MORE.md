@@ -13,7 +13,7 @@ Define plugins as a pseudo-Javascript block, with additional HTML
 incorporated in comments.
 
 ```
-PluginDef: name = {
+<slidoc-script> Name = {
 // Javascript function definitions
 init: function() {...},
 ...
@@ -21,23 +21,28 @@ init: function() {...},
 
 // Additional Javascript in anonymous namespace
 
-/* PluginHead:
-<script src="..."></script>
+/* HEAD:
+<script src="...">...</script>
+<style>...</style>
 
-PluginButton: &#x260A;
+BUTTON: &#x260A;
 
-PluginBody:
+TOP: 
+<!--html-->
+BODY:
 <!--html-->
 */
-PluginEndDef: name
+// Name </slidoc-script>
 ```
 
-The `name` object is attached to a global object `Slidoc.PluginDefs` as
+(The comment `// Name` in the last line is optional.)
+
+The `Name` object is attached to a global object `Slidoc.PluginDefs` as
 follows:
 
 ```
 <script>(function() {
-Slidoc.PluginDefs.name = {
+Slidoc.PluginDefs.Name = {
 // Javascript function definitions
 ...
 }
@@ -46,12 +51,13 @@ Slidoc.PluginDefs.name = {
 </script>
 ```
 
-The comment portion with `PluginHead`, `PluginButton`, `PluginBody` is
+The comment portion with `HEAD`, `BUTTON`, `TOP`, `BODY` is
 optional, and may be omitted for simple formula plugins. HTML template
-text included in `PluginBody` and in the content following
-`PluginEmbed` (see [Embedding plugins](#)) may contain MathJax as well
+text included in `TOP` and `BODY` and in the content when
+[Embedding plugins](#) may contain MathJax as well
 as python-style format strings of the form `%(plugin*)s` to customize
-element IDs etc.
+element IDs etc. (`TOP` content is inserted in the fixed menu overlay
+at the top right corner, e.g., see `plugins/Timer.js`.)
 
 [The following formats can be substituted in the template:]{#formats}
 
@@ -70,7 +76,7 @@ escaped by doubling them (%%).
 
 See `test/ex01-basic.md` and `test/ex06-plotly.md` for simple
 examples. For more complex examples of pre-defined pugins, see
-`plugins/code.js` and `plugins/slider.js`.
+`plugins/Code.js` and `plugins/Slider.js`.
 
 ---
 
@@ -179,10 +185,10 @@ The following methods may be defined for plugins, as needed:
 
 > `incrementSlide()`: incremental display of slide 
 
-> `buttonClick()`: button corresponding to `PluginButton` unicode symbol has been clicked
+> `buttonClick()`: button corresponding to `BUTTON` unicode symbol has been clicked
 
 Any plugin instance method may be invoked to handle event for elements
-in the `PluginBody` by adding element attributes like
+in the `BODY` by adding element attributes like
 
     onclick="Slidoc.Plugins.pluginName['%(pluginSlideId)s'].method(this);"
 
@@ -201,14 +207,14 @@ invoking its `init` method, with optional arguments, as follows:
 OR
 
 ```
-PluginEmbed: Name(arguments)
-HTML template content
-PluginEnd: Name
+<slidoc-embed> Name(arguments)
+Optional HTML template content
+</slidoc-embed>
 ```
 
-This embeds the PluginBody HTML at this location, in a `div` with `id`
+This embeds the plugin BODY HTML at this location, in a `div` with `id`
 set to `pluginId-body`, using templating to change element IDs. Any
-HTML content between PluginEmbed/PluginEnd is rendered within a `div`
+HTML content between `<slidoc-embed>..</slidoc-embed>` is rendered within a `div`
 with `id` set to `pluginId-content` (for the plugin to access/modify
 during the `setup` instantiation.) In addition to the template
 [formats](#) listed for `PluginBody`, an additional format

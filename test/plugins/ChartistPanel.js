@@ -28,9 +28,9 @@ ChartistPanel = {
     }
 }
 
-/* PluginHead:
+/* HEAD:
    <link rel="stylesheet" href="https://cdn.jsdelivr.net/chartist.js/latest/chartist.min.css">
    <script src="https://cdn.jsdelivr.net/chartist.js/latest/chartist.min.js"></script>
-   PluginBody:
+   BODY:
    <div id="%(pluginSlideId)s-plot" style="width:600px;height:250px;"></div>
 */

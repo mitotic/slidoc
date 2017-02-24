@@ -81,11 +81,11 @@ var PLAY = '\u25BA';
 var STOP = '\u25FC';
 var CLOCK = '\u23F0';
 
-/* PluginHead:
+/* HEAD:
    <style>
    input.slidoc-plugin-Timer-value {width: 4em;};
    </style>
-   PluginTop:
+   TOP:
    <input type="button" id="%(pluginLabel)s-timerbutton"
    class="slidoc-clickable slidoc-button slidoc-plugin-Timer-button"
    value=""

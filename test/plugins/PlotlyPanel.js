@@ -70,8 +70,8 @@ function updateObj(obj, updates) {
         }
     }
 }
-/* PluginHead:
+/* HEAD:
    <script src="https://cdn.plot.ly/plotly-1.2.0.min.js"></script>
-   PluginBody:
+   BODY:
    <div id="%(pluginSlideId)s-plot" style="width:600px;height:250px;"></div>
 */

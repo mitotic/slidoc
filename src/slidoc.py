@@ -258,9 +258,9 @@ class MathBlockGrammar(mistune.BlockGrammar):
     block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
-    plugin_definition = re.compile(r'^PluginDef:\s*(\w+)\s*=\s*\{(.*?)\nPluginEndDef:\s*\1\s*(\n|$)',
+    plugin_definition = re.compile(r'^ {0,3}<slidoc-script( +style="[^"\n]*")? *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\2)? *</slidoc-script> *(\n|$)',
                                                 re.DOTALL)
-    plugin_embed  =   re.compile(r'^PluginEmbed:\s*(\w+)\(([^\n]*)\)\s*\n(.*\n)*PluginEnd:\s*\1\s*(\n|$)',
+    plugin_embed      = re.compile(r'^ {0,3}<slidoc-embed( +style="[^"\n]*")? *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
@@ -351,15 +351,15 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_plugin_definition(self, m):
         self.tokens.append({
             'type': 'plugin_definition',
-            'name': m.group(1),
-            'text': m.group(2)
+            'name': m.group(2),
+            'text': m.group(3)
         })
 
     def parse_plugin_embed(self, m):
          self.tokens.append({
             'type': 'slidoc_plugin',
-            'name': m.group(1),
-            'text': m.group(2)+'\n'+(m.group(3) or '')
+            'name': m.group(2),
+            'text': m.group(3)+'\n'+(m.group(4) or '')
         })
 
     def parse_plugin_insert(self, m):
@@ -428,7 +428,7 @@ class MathInlineGrammar(mistune.InlineGrammar):
     slidoc_choice = re.compile(r"^ {0,3}([a-qA-Q])(\*)?\.\. +")
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
-    tex_inline_math=re.compile(r"\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
+    tex_inline_math=re.compile(r"^\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
     inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\s*(\d*)\s*\)(;([^`\n]*))?`")
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
@@ -436,6 +436,8 @@ class MathInlineGrammar(mistune.InlineGrammar):
         r'(?:\[[^^\]]*\]|[^\[\]]|\](?=[^\[]*\]))*'
         r')\]\s*\{\s*#([^^\}]*)\}'
     )
+    any_block_math =  re.compile(r"\\\[(.+?)\\\]", re.DOTALL)
+    any_inline_math = re.compile(r"(\$|\\\()(.+?)(\\\)|\$)")
 
 class MathInlineLexer(mistune.InlineLexer):
     def __init__(self, renderer, rules=None, **kwargs):
@@ -1302,11 +1304,11 @@ class SlidocRenderer(MathRenderer):
                          'pluginId': slide_id+'-plugin-'+plugin_name,
                          'pluginInitArgs': sliauth.safe_quote(args),
                          'pluginNumber': self.plugin_number,
-                         'pluginButton': sliauth.safe_quote(plugin_def.get('Button', ''))}
+                         'pluginButton': sliauth.safe_quote(plugin_def.get('BUTTON', ''))}
 
         if plugin_def_name not in self.plugin_loads:
             self.plugin_loads.add(plugin_def_name)
-            plugin_top = plugin_def.get('Top', '').strip()
+            plugin_top = plugin_def.get('TOP', '').strip()
             if plugin_top:
                 self.plugin_tops.append( (plugin_top % {}) % plugin_params ) # Unescape the %% before substituting
 
@@ -1314,7 +1316,7 @@ class SlidocRenderer(MathRenderer):
         plugin_params['pluginSlideId'] = slide_id
         tem_params = plugin_params.copy()
         try:
-            tem_params['pluginBodyDef'] = plugin_def.get('Body', '') % plugin_params
+            tem_params['pluginBodyDef'] = plugin_def.get('BODY', '') % plugin_params
         except Exception, err:
             abort('ERROR Template formatting error in Body for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
         body_div = self.plugin_body_template % tem_params
@@ -2249,7 +2251,7 @@ def parse_plugin(text, name=None):
     if name and name != plugin_name:
         abort("Plugin definition must start with '"+name+" = {'")
     plugin_def = {}
-    match = re.match(r'^(.*)\n(\s*/\*\s*)?PluginHead:([^\n]*)\n(.*)$', text, flags=re.DOTALL)
+    match = re.match(r'^(.*)\n(\s*/\*\s*)?HEAD:([^\n]*)\n(.*)$', text, flags=re.DOTALL)
     if match:
         text = match.group(1)+'\n'
         comment = match.group(2)
@@ -2257,17 +2259,17 @@ def parse_plugin(text, name=None):
         tail = match.group(4).strip()
         if comment and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
-        tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in Head/Body template
-        comps = re.split(r'(^|\n)\s*Plugin(Button|Top|Body):' if comment else r'(^|\n)Plugin(Button|Body):', tail)
-        plugin_def['Head'] = comps[0]+'\n' if comps[0] else ''
+        tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in HEAD/BODY template
+        comps = re.split(r'(^|\n)\s*(BUTTON|TOP|BODY):' if comment else r'(^|\n)(BUTTON|BODY):', tail)
+        plugin_def['HEAD'] = comps[0]+'\n' if comps[0] else ''
         comps = comps[1:]
         while comps:
-            if comps[1] == 'Button':
-                plugin_def['Button'] = comps[2]
-            elif comps[1] == 'Top':
-                plugin_def['Top'] = comps[2]
-            elif comps[1] == 'Body':
-                plugin_def['Body'] = comps[2]+'\n'
+            if comps[1] == 'BUTTON':
+                plugin_def['BUTTON'] = comps[2]
+            elif comps[1] == 'TOP':
+                plugin_def['TOP'] = comps[2]
+            elif comps[1] == 'BODY':
+                plugin_def['BODY'] = comps[2]+'\n'
             comps = comps[3:]
 
     plugin_def['JS'] = 'Slidoc.PluginDefs.'+text.lstrip()
@@ -2283,7 +2285,7 @@ def plugin_heads(plugin_defs, plugin_loads):
         if plugin_name not in plugin_loads:
             continue
         plugin_code.append('\n')
-        plugin_head = plugin_defs[plugin_name].get('Head', '') 
+        plugin_head = plugin_defs[plugin_name].get('HEAD', '') 
         if plugin_head:
             plugin_params = {'pluginName': plugin_name,
                              'pluginLabel': 'slidoc-plugin-'+plugin_name}
@@ -2930,6 +2932,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         fheader, file_toc, renderer, md_params, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id)
+        math_present = renderer.render_markdown or renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
 
         if len(fnumbers) == 1 and config.separate and config.extract:
             md_extract = ''.join(md_params['md_slides'][config.extract-1:])
@@ -2946,7 +2949,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                     extract_file = dest_dir+fname+"_extract.md"
                     md2md.write_file(extract_file, extract_text)
                 message('Created extract file:', extract_file)
-
 
         if js_params['paceLevel']:
             # File-specific js_params
@@ -2987,7 +2989,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         comb_plugin_defs.update(renderer.plugin_defs)
         comb_plugin_loads.update(renderer.plugin_loads)
         comb_plugin_embeds.update(renderer.plugin_embeds)
-        if renderer.render_markdown or renderer.render_mathjax:
+        if math_present:
             math_load = True
         if renderer.render_markdown:
             pagedown_load = True
@@ -3030,7 +3032,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
 
         mid_params = {'session_name': fname,
-                      'math_js': math_inc if renderer.render_markdown or renderer.render_mathjax else '',
+                      'math_js': math_inc if math_present else '',
                       'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
                       'body_class': 'slidoc-plain-page' if topnav_html else '',

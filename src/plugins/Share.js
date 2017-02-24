@@ -436,7 +436,7 @@ Share = {
     }
 };
 
-/* PluginHead:
+/* HEAD:
    <style>
 .slidoc-plugin-Share-responder {
     display: inline-block;
@@ -480,7 +480,7 @@ pre.slidoc-plugin-Share-responders {
     font-size: 90%;
 }
    </style>
-   PluginBody:
+   BODY:
    <input type="button" id="%(pluginId)s-sharebutton" 
    class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide slidoc-noprint"
    value="View all responses"

@@ -294,14 +294,14 @@ function execCodeErr(callback, err) {
 }
 
 
-/* PluginHead: ^(javascript|python|test)$
+/* HEAD: ^(javascript|python|test)$
 <style>
 .%(pluginLabel)s-textarea,
   .%(pluginLabel)s-check-button {display: block;}
 .%(pluginLabel)s-output { opacity: 0.7; }
 </style>
 
-PluginBody:
+BODY:
 <button id="%(pluginId)s-check-button" class="slidoc-clickable %(pluginLabel)s-check-button" onclick="Slidoc.PluginMethod('%(pluginName)s','%(pluginSlideId)s','checkCode',this);">Check</button>
 <textarea id="%(pluginId)s-textarea" class="%(pluginLabel)s-textarea" cols="60" rows="5"></textarea>
 <pre><code id="%(pluginId)s-output" class="%(pluginLabel)s-output"></code></pre>

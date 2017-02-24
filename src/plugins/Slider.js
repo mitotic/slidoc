@@ -101,7 +101,7 @@ Slider = {
     }
 };
 
-/* PluginHead:
+/* HEAD:
    <style>
    .slidoc-plugin-Slider-text {
    margin-left: 2px;
@@ -116,7 +116,7 @@ Slider = {
    }
    </style>
 
-   PluginBody:
+   BODY:
    <!-- Data range slider -->
    <div id="%(pluginId)s-input" class="slidoc-plugin-Slider-div">
    <span id="%(pluginId)s-label" class="slidoc-plugin-Slider-text"></span>

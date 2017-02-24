@@ -1,7 +1,7 @@
 <!--slidoc-defaults --pace=1 -->
 # audio+delay plugin example
 
-PluginDef: AudioPace = {
+<slidoc-script> AudioPace = {
 init: function(start,end){
     console.log('AudioPace.init:', this.pluginId, start, end);
 	this.start = start;
@@ -39,18 +39,19 @@ buttonClick: function(){
 
 }
 
-/* PluginHead:
+/* HEAD:
 
-PluginButton: &#x260A;
+BUTTON: &#x260A;
 
-PluginBody:
+BODY:
 <audio id="%(pluginId)s-audio" data-src="wheel.mp3" controls>
 <p>Your browser does not support the <code>audio</code> element.</p>
 </audio>
 
 */
 
-PluginEndDef: AudioPace
+// AudioPace </slidoc-script>
+
 
 =AudioPace(0,4) 
 
