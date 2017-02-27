@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import hmac
 import json
+import sys
 import time
 import urllib
 import urllib2
@@ -128,15 +129,16 @@ def http_post(url, params_dict=None):
         result = {'result': 'error', 'error': 'Error in http_post: result='+str(result)+': '+str(excp)}
     return result
 
-def read_settings(sheet_url, hmac_key, settings_sheet):
-    user_token = gen_auth_token(hmac_key, 'admin', 'admin', prefixed=True)
+def read_settings(sheet_url, hmac_key, settings_sheet, site=''):
+    auth_key = gen_site_key(hmac_key, site) if site else hmac_key
+    user_token = gen_auth_token(auth_key, 'admin', 'admin', prefixed=True)
     get_params = {'sheet': settings_sheet, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
-        raise Exception("Error in accessing '%s': %s" % (settings_sheet, retval['error']))
+        raise Exception("Error in accessing %s %s: %s" % (site, settings_sheet, retval['error']))
     rows = retval.get('value')
     if not rows:
-        raise Exception("Error: Empty sheet '%s'" % settings_sheet)
+        raise Exception("Error: Empty sheet %s %s" % (site, settings_sheet))
     return get_settings(rows)
 
 def get_settings(rows):

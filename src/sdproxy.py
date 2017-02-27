@@ -42,29 +42,46 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.9e'
+VERSION = '0.96.9f'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 # Usually modified by importing module
 Settings = {
+    'update_time': None,
+                          # Site specific settings from server
+    'auth_key': None,     # Site digest authentication key
+    'gsheet_url': None,   # Site google Sheet URL
+    'site_name': '',      # Site name
+
+                          # General settings from server
     'backup_dir': '_BACKUPS/', # Backup directory prefix, including slash
     'debug': None,      
     'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
-    'gsheet_url': None,   # Google Sheet URL
     'lock_proxy_url': '', # URL of proxy server to lock sheet
-    'auth_key': None,     # Digest authentication key
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
+    'server_url': '',     # Base URL of server (if any); e.g., http://example.com'
+
+                          # Settings from SETTINGS_SLIDOC
     'freeze_date': '',    # Date when all user mods are disabled
     'require_login_token': True,
     'require_late_token': True,
-    'site_name': '',
-    'share_averages': True
+    'share_averages': True, # Share class averages for tests etc.
+    'site_label': '',
+    'site_restricted': '',
+    'site_title': '',
+    'admin_users': '',
+    'grader_users': '',
+    'guest_users': ''
     }
 
-DEFAULT_SETTINGS = [ ['require_login_token', 'true', "true/false"],
-			         ['require_late_token', 'true', "true/false"],
-			         ['share_averages', 'true', "true/false"] ]
+COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
+                   'share_averages', 'site_label', 'site_title',
+                   'admin_users', 'grader_users', 'guest_users']
+    
+COPY_FROM_SERVER = [ 'auth_key', 'gsheet_url', 'site_name',
+                     'backup_dir', 'debug', 'dry_run',
+                     'lock_proxy_url', 'min_wait_sec', 'server_url']
     
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
@@ -115,6 +132,28 @@ Global = Dummy()
 
 Global.remoteVersions = set()
 Global.shuttingDown = False
+
+def copyServerOptions(serverOptions):
+    for key in COPY_FROM_SERVER:
+        Settings[key] = serverOptions[key]
+
+def getSheetSettings():
+    # May need to restart server if certain SETTINGS_SHEET parameters changed
+    sheetSettings = {}
+    try:
+        sheetSettings = sliauth.read_settings(Settings['gsheet_url'], Settings['auth_key'], SETTINGS_SHEET)
+    except Exception, excp:
+        if Settings['debug']:
+            import traceback
+            traceback.print_exc()
+        print('ERROR: Unable to read settings_slidoc for site', Settings['site_name'], excp, file=sys.stderr)
+
+    if sheetSettings:
+        for key in COPY_FROM_SHEET:
+            if key in sheetSettings:
+                Settings[key] = sheetSettings[key]
+        Settings['update_time'] = sliauth.create_date()
+    return sheetSettings
 
 def delSheet(sheetName):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
@@ -406,6 +445,7 @@ def createSheet(sheetName, headers, rows=[]):
         raise Exception("Must specify headers to create sheet %s" % sheetName)
     keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
     Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=keyHeader, modTime=sliauth.epoch_ms())
+    Sheet_cache[sheetName].modifiedSheet()
     return Sheet_cache[sheetName]
 
 
@@ -989,7 +1029,16 @@ def sheetAction(params, notrace=False):
             effectiveUser = comps[0]
             origUser = comps[1]
             temRole = comps[2]
+            temSites = comps[3]
 
+            if not temRole and temSites and Settings['site_name']:
+                scomps = temSites.split(',')
+                for j in range(len(scomps)):
+                    smatch = re.match(r'^\w+(\+(\w+))?$', scomps[j])
+                    if smatch and smatch.group(1) == Settings['site_name']:
+                        temRole = smatch.group(3) or ''
+                        break
+                        
             if params.get('admin'):
                 if temRole != ADMIN_ROLE and temRole != GRADER_ROLE:
                     raise Exception('Error:INVALID_TOKEN:Invalid token admin role: '+temRole)
@@ -1047,10 +1096,13 @@ def sheetAction(params, notrace=False):
                 raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
             try:
                 # Copy user info from roster
-                rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, listReturn=True)
-            except Exception, err:
                 if paramId == TESTUSER_ID:
                     rosterValues = TESTUSER_ROSTER
+                else:
+                    rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, listReturn=True)
+            except Exception, err:
+                if isSpecialUser(paramId):
+                    rosterValues = ['#'+paramId+', '+paramId, paramId, '', '']
                 else:
                     raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster")
 
@@ -2108,6 +2160,13 @@ def sheetAction(params, notrace=False):
 
 def gen_proxy_token(username, role='', prefixed=False):
     return sliauth.gen_auth_token(Settings['auth_key'], username, role=role, prefixed=prefixed)
+
+def isSpecialUser(userId):
+    for key in ('admin_users', 'grader_users', 'guest_users'):
+        idList = [x.strip for x in Settings[key].strip().split(',')]
+        if userId in idList:
+            return True
+    return False
 
 class LCRandomClass(object):
     # Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes

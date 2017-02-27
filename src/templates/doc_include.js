@@ -432,6 +432,7 @@ function getServerCookie() {
 	    retval.data = JSON.parse(atob(comps[4]));
 	} catch(err) {
 	    Slidoc.log('getServerCookie: ERROR '+err);
+	    retval.data = {}
 	}
     }
     retval.name = retval.data.name || '';
@@ -1441,10 +1442,10 @@ Slidoc.resetPaced = function () {
 	Sliobj.session = createSession();
 	Sliobj.feedback = null;
 	sessionPut();
+	if (!Slidoc.testingActive())
+	    location.reload(true);
     }
 
-    ///if (!Slidoc.testingActive())
-	///location.reload(true);
 }
 
 function resetSessionCallback(result, retStatus) {
@@ -3347,6 +3348,7 @@ Slidoc.toggleExam = function () {
 	    Slidoc.slideViewEnd();
 	if (Sliobj.adminState)
 	    selectUser(GService.gprofile.auth);
+	toggleClassAll(false, 'slidoc-answered-slideview', 'slidoc-slide');
 	alert('Use Down Arrow to print and advance');
     }
 }
@@ -4849,7 +4851,8 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 
     // Question has been answered
     var slideElem = document.getElementById(slide_id);
-    slideElem.classList.add('slidoc-answered-slideview');
+    if (!Sliobj.printExamView)
+	slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
 	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', dispCorrect && qscore !== 1);

@@ -416,21 +416,25 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 	    var userEmail = userData.email || '';
 	    var userAltid = userData.altid || '';
 
-	    var regularUserToken = userToken;
-	    var effectiveRole = userRole;
-	    if (userRole) {
-		userToken = ':'+userName+':'+userRole+':'+userSites+':'+userToken;
-		regularUserToken = userName+userToken;
-		if (userSites) {
-		    var comps = userSites.split(',');
-		    if (siteName && comps.indexOf(siteName) < 0)
-			effectiveRole = '';
+
+	    var adminToken = ':'+userName+':'+userRole+':'+userSites+':'+userToken;
+	    if (!userRole && siteName && userSites) {
+		var scomps = userSites.split(',');
+		for (var j=0; j<scomps.length; j++) {
+		    var smatch = /^\w+(\+(\w+))?$/.exec(scomps[j]);
+		    if (smatch && smatch[1] == siteName) {
+			userRole = smatch[3] || '';
+			break;
+		    }
 		}
 	    }
+	    var regularUserToken = userToken;
+	    if (userRole)
+		regularUserToken = userName+adminToken;
 
 	    var userIds     = ['_test_user',                 '_grader',               userName,                      ''];
-	    var userTokens  = ['_test_user'+userToken,       userToken,               regularUserToken,              userToken];
-	    var adminKeys   = ['',                           userToken,               '',                            ''];
+	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,              adminToken];
+	    var adminKeys   = ['',                           adminToken,              '',                            ''];
 	    var userOptions = ['Test user (pacing)',         'Admin user (grading)',  'Normal user ('+userName+')',  'Another user (read-only)'];
 
 	    var gprofile = this;
@@ -462,14 +466,14 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 		pickRole(indx);
 	    }
 
-	    if (effectiveRole && (testMode || userData.batch)) {
+	    if (userRole && (testMode || userData.batch)) {
 		// For test/batch mode, test user if admin else normal user if grader
-		pickRole( (effectiveRole == 'admin') ? 1 : 3)
-	    } else if (effectiveRole == 'admin') {
+		pickRole( (userRole == 'admin') ? 1 : 3)
+	    } else if (userRole == 'admin') {
 		userOffset = 0;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset),
 					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
-	    } else if (effectiveRole == 'grader') {
+	    } else if (userRole == 'grader') {
 		userOffset = 1;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset,-1),
 					'', optCallback);

@@ -1,14 +1,20 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.9e';
+var VERSION = '0.96.9f';
 
-var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for secure administrative access'],
-			 ['server_url', '', 'URL of server (if any); e.g., http://example.com'],
-			 ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
-			 ['site_name', '', 'Site name, e.g., calc101'],
-			 ['late_credit', 0, 'Default late credit fraction for assignments/lectures, a value like 0.25'],
-			 ['participation_credit', 0, 'Default participation credit value (0/1/2) for lectures'],
-			 ['retakes', 0, 'Default number of retakes for assignments (>=0)'],
+var DEFAULT_SETTINGS = [ ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
+                         ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
+
+			 ['site_name', '', 'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
+			 ['site_label', '', 'Site label, e.g., Calculus 101'],
+			 ['site_title', '', 'Descriptive site title'],
+			 ['site_restricted', '', 'Restrict access to admins'],
+                         ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
+
+			 ['admin_users', '', 'User IDs or email addresses with admin access'],
+			 ['grader_users', '', 'User IDs or email addresses with grader access'],
+			 ['guest_users', '', 'User IDs or email addresses with guest access'],
+			 ['thaw_date', '', 'Date after which all session releases must start'],
 			 ['freeze_date', '', 'Date when all user modifications are disabled'],
 			 ['require_login_token', 'true', 'true/false'],
 			 ['require_late_token', 'true', 'true/false'],
@@ -16,6 +22,9 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret key/password string for
 		         ['total_formula', '', 'Formula for total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
 			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'] // Or A:180:4,B:160:3,...
 		       ];
+
+// Add settings of the form 'session_assignment' = '--pace=2 ...'
+
 //
 // SENDING FORM DATA TO GOOGLE SHEETS
 //     http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/
@@ -224,6 +233,19 @@ function loadSettings() {
     }
 }
 
+function isSpecialUser(userId) {
+    var keys = ['admin_users', 'grader_users', 'guest_users'];
+    for (var j=0; j<keys.length; j++) {
+        var idList = Settings[keys[j]].trim().split(',');
+        for (var k=0; k<idList.length; k++) {
+            if (userId == idList[k].trim()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 function doGet(evt){
   return handleResponse(evt);
@@ -324,6 +346,18 @@ function sheetAction(params) {
             var effectiveUser = comps[0];
             origUser = comps[1];
             var temRole = comps[2];
+            var temSites = comps[3];
+
+	    if (!temRole && temSites && Settings['site_name']) {
+		var scomps = temSites.split(',');
+		for (var j=0; j<scomps.length; j++) {
+		    var smatch = /^\w+(\+(\w+))?$/.exec(scomps[j]);
+		    if (smatch && smatch[1] == Settings['site_name']) {
+			temRole = smatch[3] || '';
+			break;
+		    }
+		}
+	    }
 
             if (params.admin) {
                 if (temRole != ADMIN_ROLE && temRole != GRADER_ROLE) {
@@ -428,7 +462,10 @@ function sheetAction(params) {
 		else
 		    rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, true);
 	    } catch(err) {
-		throw("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster");
+		if (isSpecialUser(paramId))
+		    rosterValues = ['#'+paramId+', '+paramId, paramId, '', ''];
+		else
+		    throw("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster");
 	    }
 	}
 
