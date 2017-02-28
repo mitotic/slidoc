@@ -86,9 +86,13 @@ class MDParser(object):
                  ('block_math',        re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
-                 ('plugin_definition', re.compile(r'^ {0,3}<slidoc-script( +style="[^"\n]*")? *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\2)? *</slidoc-script> *(\n|$)',
+                 ('plugin_definition', re.compile(r'^ {0,3}<slidoc-script *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\2)? *</slidoc-script> *(\n|$)',
                                                 re.DOTALL)),
-                 ('plugin_embed',      re.compile(r'^ {0,3}<slidoc-embed( +style="[^"\n]*")? *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
+                 ('plugin_definition2', re.compile(r'^ {0,3}<script +type="x-slidoc-script" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
+                                                re.DOTALL)),
+                 ('plugin_embed',      re.compile(r'^ {0,3}<slidoc-embed *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
+                                                re.DOTALL)),
+                 ('plugin_embed2',     re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)),
                  ('external_link',     re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?(.*?)(?(3)>)(?:\s+['"](.*?)['"])?\s*\) *(\n|$)''') ),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ) ]
@@ -142,7 +146,7 @@ class MDParser(object):
                 elif rule_name == 'latex_environment':
                     self.math_block(matched.group(0))
 
-                elif rule_name in ('plugin_definition', 'plugin_embed'):
+                elif rule_name in ('plugin_definition', 'plugin_definition2', 'plugin_embed', 'plugin_embed2'):
                     self.plugin_block(matched.group(0))
 
                 elif rule_name == 'external_link':

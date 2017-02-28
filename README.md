@@ -1,5 +1,4 @@
 <!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number,incremental_slides -->
-<style> slidoc-script { display: none; } </style>
 
 # Slidoc: A slide-oriented document management system using Markdown
 
@@ -879,7 +878,7 @@ Notes:
 What is the square root of `=SqrtTest.number();6.25`?
 
 
-<slidoc-script> SqrtTest = {
+<script type="x-slidoc-script"> SqrtTest = {
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
 // Plugin object SqrtTest is automatically attached to global object Slidoc.PluginDefs
 // Special function init is called for each slide. 
@@ -909,7 +908,7 @@ What is the square root of `=SqrtTest.number();6.25`?
     }
 }
 var randVals = {}; // Optional persistent object
-// SqrtTest </slidoc-script>
+// SqrtTest </script>
 
 
 Answer: 2.5 +/- 0.1 = SqrtTest.expect()

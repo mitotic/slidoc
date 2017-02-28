@@ -258,9 +258,13 @@ class MathBlockGrammar(mistune.BlockGrammar):
     block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
-    plugin_definition = re.compile(r'^ {0,3}<slidoc-script( +style="[^"\n]*")? *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\2)? *</slidoc-script> *(\n|$)',
+    plugin_definition = re.compile(r'^ {0,3}<slidoc-script *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</slidoc-script> *(\n|$)',
                                                 re.DOTALL)
-    plugin_embed      = re.compile(r'^ {0,3}<slidoc-embed( +style="[^"\n]*")? *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
+    plugin_definition2= re.compile(r'^ {0,3}<script +type="x-slidoc-script" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
+                                                re.DOTALL)
+    plugin_embed      = re.compile(r'^ {0,3}<slidoc-embed *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
+                                                re.DOTALL)
+    plugin_embed2     = re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
@@ -277,7 +281,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_definition2', 'plugin_embed', 'plugin_embed2',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -351,16 +355,22 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_plugin_definition(self, m):
         self.tokens.append({
             'type': 'plugin_definition',
-            'name': m.group(2),
-            'text': m.group(3)
+            'name': m.group(1),
+            'text': m.group(2)
         })
+
+    def parse_plugin_definition2(self, m):
+        return self.parse_plugin_definition(m)
 
     def parse_plugin_embed(self, m):
          self.tokens.append({
             'type': 'slidoc_plugin',
-            'name': m.group(2),
-            'text': m.group(3)+'\n'+(m.group(4) or '')
+            'name': m.group(1),
+            'text': m.group(2)+'\n'+(m.group(3) or '')
         })
+
+    def parse_plugin_embed2(self, m):
+        return self.parse_plugin_embed(m)
 
     def parse_plugin_insert(self, m):
          self.tokens.append({
@@ -1253,9 +1263,8 @@ class SlidocRenderer(MathRenderer):
                 abort("    ****CHOICE-ERROR: %s: Out of sequence choice %s in slide %s" % (self.options["filename"], name, self.slide_number))
                 return name+'..'
 
-        randomizing = 'randomize_choice' in self.options['config'].features
-        if alt_choice and not randomizing:
-            message("    ****CHOICE-WARNING: %s: Specify --features=randomize_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
+        if alt_choice and 'shuffle_choice' not in self.options['config'].features:
+            message("    ****CHOICE-WARNING: %s: Specify --features=shuffle_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
 
         params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
             
@@ -2909,8 +2918,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if js_params['paceLevel'] >= ADMIN_PACE and not gd_sheet_url:
                 abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(js_params['paceLevel']))
 
-            if js_params['paceLevel'] >= ADMIN_PACE and 'randomize_choice' in file_config.features:
-                abort('PACE-ERROR: randomize_choice feature not compatible with --pace='+str(js_params['paceLevel']))
+            if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
+                abort('PACE-ERROR: shuffle_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
         if not j or config.separate:
             # First file or separate files
@@ -3749,11 +3758,11 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
-#   randomize_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
 #   remote_answers: Correct answers and score are stored remotely until session is graded
 #   share_all: share responses for all questions
 #   share_answers: share answers for all questions after completion (e.g., an exam)
 #   show_correct: show correct answers for non-paced sessions
+#   shuffle_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
 #   slide_break_avoid: Avoid page breaks within slide
 #   slide_break_page: Force page breaks after each slide
@@ -3763,7 +3772,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'randomize_choice', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
