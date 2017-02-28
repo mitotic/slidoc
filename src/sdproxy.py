@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.9f'
+VERSION = '0.96.9g'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -137,23 +137,14 @@ def copyServerOptions(serverOptions):
     for key in COPY_FROM_SERVER:
         Settings[key] = serverOptions[key]
 
-def getSheetSettings():
+def copySheetOptions(sheetSettings):
     # May need to restart server if certain SETTINGS_SHEET parameters changed
-    sheetSettings = {}
-    try:
-        sheetSettings = sliauth.read_settings(Settings['gsheet_url'], Settings['auth_key'], SETTINGS_SHEET)
-    except Exception, excp:
-        if Settings['debug']:
-            import traceback
-            traceback.print_exc()
-        print('ERROR: Unable to read settings_slidoc for site', Settings['site_name'], excp, file=sys.stderr)
-
-    if sheetSettings:
-        for key in COPY_FROM_SHEET:
-            if key in sheetSettings:
-                Settings[key] = sheetSettings[key]
-        Settings['update_time'] = sliauth.create_date()
-    return sheetSettings
+    if not sheetSettings:
+        return
+    for key in COPY_FROM_SHEET:
+        if key in sheetSettings:
+            Settings[key] = sheetSettings[key]
+    Settings['update_time'] = sliauth.create_date()
 
 def delSheet(sheetName):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):

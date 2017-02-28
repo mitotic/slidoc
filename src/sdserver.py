@@ -90,6 +90,7 @@ Options = {
     'grader_users': '',
     'gsheet_url': '',
     'guest_users': '',
+    'host': 'localhost',
     'insecure_cookie': False,
     'lock_proxy_url': '',
     'min_wait_sec': 0,
@@ -120,8 +121,8 @@ Options = {
     'xsrf': False,
     }
 
-OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'site_label', 'site_restricted', 'site_title', 'twitter_config', 'thaw_date']
-MULTI_OPTIONS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', 'site_title']
+OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'thaw_date']
+SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', 'site_title']
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
@@ -354,14 +355,15 @@ class SiteActionHandler(BaseHandler):
                 return
 
             # New site
-            errMsg = fork_site_server(new_site_name, gsheet_url=new_site_url)
+            errMsg = fork_site_server(new_site_name, new_site_url)
+            if Options['site_number']:
+                # Child process
+                return
             if errMsg:
                 self.write(errMsg)
-                self.write(setup_html)
-                return
-            if not Options['site_number']:
+            else:
                 self.write('Created new site: %s' % new_site_name)
-                self.write(setup_html)
+            self.write(setup_html)
             return
 
         elif action in ('_reload', '_update'):
@@ -3070,7 +3072,7 @@ def relay_setup(site_number):
     if Options['socket_dir']:
         Global.relay_list.append( Options['socket_dir']+'/uds_socket'+str(port) )
     else:
-        Global.relay_list.append( ("localhost", port) )
+        Global.relay_list.append( ('localhost', port) )
 
 def start_multiproxy():
     import multiproxy
@@ -3094,7 +3096,7 @@ def start_multiproxy():
             print >> sys.stderr, 'ABC: get_relay_addr_uri: ', self.request_uri, retval
             return retval
 
-    Global.proxy_server = multiproxy.ProxyServer("localhost", Options['port'], ProxyRequestHandler, log_interval=0,
+    Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,
                       io_loop=IOLoop.current(), xheaders=True, masquerade="server/1.2345", ssl_options=Options['ssl_options'], debug=True)
 
 def start_server(site_number=0, restart=False):
@@ -3128,27 +3130,42 @@ def start_server(site_number=0, restart=False):
     if not restart:
         IOLoop.current().start()
 
-def fork_site_server(site_name, **kwargs):
+def getSheetSettings(gsheet_url, site_name=''):
+    auth_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
+    try:
+        return sliauth.read_settings(gsheet_url, auth_key, sdproxy.SETTINGS_SHEET)
+    except Exception, excp:
+        ##if Options['debug']:
+        ##    import traceback
+        ##    traceback.print_exc()
+        print >> sys.stderr, 'Error:site %s: Failed to read  Google Sheet settings_slidoc from %s: %s' % (site_name, gsheet_url, excp)
+        return {}
+
+def fork_site_server(site_name, gsheet_url, **kwargs):
     # Return error message or null string
-    # kwargs must match MULTI_OPTIONS
+    # kwargs must match SPLIT_OPTS[1:]. Only gsheet_url is required
     if site_name in Options['site_list']:
         raise Exception('ERROR: duplicate site name: '+site_name)
     new_site = site_name not in Global.split_opts['site_list']
 
-    new_site_url = kwargs.get('gsheet_url','')
-    sheetSettings = {}
     errMsg = ''
-    if new_site_url:
-        try:
-            sheetSettings = sliauth.read_settings(new_site_url, sliauth.gen_site_key(Options['root_auth_key'], site_name),  sdproxy.SETTINGS_SHEET)
-        except Exception, excp:
-            ##if Options['debug']:
-            ##    import traceback
-            ##    traceback.print_exc()
-            errMsg = 'Error in reading Google Sheet settings_slidoc for site %s: %s' % (site_name, new_site_url)
+    sheetSettings = getSheetSettings(gsheet_url, site_name) if gsheet_url else {}
 
     Options['site_list'].append(site_name)
     site_number = len(Options['site_list'])
+
+    if new_site:
+        Global.split_opts['site_list'].append(site_name)
+        Global.split_opts['gsheet_url'].append(gsheet_url)
+        for key in SPLIT_OPTS[1:]:
+            Global.split_opts[key].append(kwargs.get(key,''))
+
+    if sheetSettings:
+        for key in SPLIT_OPTS[1:]:
+            if key in sheetSettings:
+                Global.split_opts[key][site_number-1] = sheetSettings[key]
+    else:
+        Global.split_opts['site_restricted'][site_number-1] = 'restricted'
     relay_setup(site_number)
     process_pid = os.fork()
     if Options['debug']:
@@ -3156,16 +3173,6 @@ def fork_site_server(site_name, **kwargs):
 
     if process_pid:
         # Primary (non-proxy) server
-        if not Global.child_pids:
-            if new_site:
-                Global.split_opts['site_list'].append(site_name)
-            for key in MULTI_OPTIONS:
-                # Clear gsheet_url, twitter_config, site label/title options
-                Options[key] = ''
-                if new_site:
-                    Global.split_opts[key].append(sheetSettings.get(key) or kwargs.get(key,''))
-            if not sheetSettings:
-                Global.split_opts['site_restricted'][site_number-1] = 'restricted'
         Global.child_pids.append(process_pid)
         return errMsg
     else:
@@ -3181,25 +3188,26 @@ def fork_site_server(site_name, **kwargs):
         Options['sport'] = 0
         Options['site_number'] = site_number
         Options['site_name'] = site_name
-        Options['gsheet_url'] = kwargs.get('gsheet_url', '')
-        Options['site_label'] = kwargs.get('site_label', '')
-        Options['site_restricted'] = kwargs.get('site_restricted', '')
-        Options['site_title'] = kwargs.get('site_title', '')
+        for key in SPLIT_OPTS:
+            Options[key] = Global.split_opts[key][site_number-1]
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
         BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
         print >> sys.stderr, 'DEBUG: sdserver.fork:', Options['site_number'], Options['site_name']
-        setup_site_server()
+        setup_site_server(sheetSettings)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
 
-def setup_site_server():
+def setup_site_server(sheetSettings):
     if Options['proxy_wait'] is not None:
         # Copy options to proxy
         sdproxy.copyServerOptions(Options)
-        sheetSettings = sdproxy.getSheetSettings()
-        if not sheetSettings:
+
+        if sheetSettings:
+            sdproxy.copySheetOptions(sheetSettings)
+        else:
             Options['site_restricted'] = 'restricted'
+
         Global.session_options = {}
         for key in sheetSettings:
             smatch = SESSION_OPTS_RE.match(key)
@@ -3273,6 +3281,7 @@ def main():
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("forward_port", default=0, help="Forward port for default (root) web server with multiproxy, allowing slidoc sites to overlay a regular website, using '_' prefix for admin")
     define("gsheet_url", default="", help="Google sheet URL1;...")
+    define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
@@ -3351,11 +3360,12 @@ def main():
     if Options['sites']:
         Global.split_opts['site_list'] = [x.strip() for x in Options['sites'].split(',')]
         nsites = len(Global.split_opts['site_list'])
-        for key in MULTI_OPTIONS:
+        for key in SPLIT_OPTS:
             if Options[key]:
                 Global.split_opts[key] = [x.strip() for x in Options[key].split(';')]
                 if len(Global.split_opts[key]) != nsites:
                     raise Exception('No. of values for --'+key+'=...;... should match number of sites')
+                # Clear gsheet_url, twitter_config, site label/title options
                 Options[key] = ''
             else:
                 Global.split_opts[key] = Global.split_opts['site_list'][:] if key == 'site_label' else ['']*nsites
@@ -3373,10 +3383,10 @@ def main():
         print >> sys.stderr, 'DEBUG: sdserver.main:', Global.split_opts['site_list'], Global.relay_list
         relay_setup(0)
         for j, site_name in enumerate(Global.split_opts['site_list']):
-            errMsg = fork_site_server(site_name, gsheet_url=Global.split_opts['gsheet_url'][j],
-                                      twitter_config=Global.split_opts['twitter_config'][j],
-                                      site_label=Global.split_opts['site_label'][j],
-                                      site_title=Global.split_opts['site_title'][j])
+            errMsg = fork_site_server(site_name, Global.split_opts['gsheet_url'][j])
+            if Options['site_number']:
+                # Child process
+                return
             if errMsg:
                 print >> sys.stderr, errMsg
 
@@ -3387,7 +3397,12 @@ def main():
             start_server()
     else:
         # Start single site server
-        setup_site_server()
+        sheetSettings = getSheetSettings(Options['gsheet_url']) if Options['gsheet_url'] else {}
+        if sheetSettings:
+            for key in SPLIT_OPTS[1:]:
+                if key in sheetSettings:
+                    Options[key] = sheetSettings[key]
+        setup_site_server(sheetSettings)
         start_server()
 
 if __name__ == "__main__":
