@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.9f';
+var VERSION = '0.96.9g';
 
 var DEFAULT_SETTINGS = [ ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
                          ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
@@ -168,6 +168,7 @@ function onOpen(evt) {
    var menuEntries = [];
    menuEntries.push({name: "Display session answers", functionName: "sessionAnswerSheet"});
    menuEntries.push({name: "Display session statistics", functionName: "sessionStatSheet"});
+   menuEntries.push({name: "Display correct answers", functionName: "sessionCorrectSheet"});
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Post/refresh session in gradebook", functionName: "updateScoreSession"});
    menuEntries.push({name: "Refresh session total scores", functionName: "updateTotalSession"});
@@ -2573,6 +2574,99 @@ function updateAnswers(sessionName) {
     return answerSheetName;
 }
 
+
+function sessionCorrectSheet() {
+    // Create session correct sheet
+    var sheetName = updateSession(updateCorrect);
+    notify('Created sheet :'+sheetName, 'Slidoc Correct');
+}
+
+function updateCorrect(sessionName) {
+    try {
+	var sessionSheet = getSheet(sessionName);
+	if (!sessionSheet)
+	    throw('Sheet not found: '+sessionName);
+	if (!sessionSheet.getLastColumn())
+	    throw('No columns in sheet: '+sessionName);
+
+	var sessionColIndex = indexColumns(sessionSheet);
+	var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
+
+	var sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET);
+	var sessionAttributes = JSON.parse(sessionEntries.attributes);
+	var questions = JSON.parse(sessionEntries.questions);
+	var qtypes = [];
+	var answers = [];
+	for (var j=0; j<questions.length; j++) {
+	    qtypes[j] = questions[j].qtype||'';
+	    answers[j] = questions[j].correct;
+	}
+
+	// Copy first two columns from session sheet
+	var copyCols = 2;
+	var correctHeaders = sessionSheet.getSheetValues(1, 1, 1, copyCols)[0];
+
+	for (var j=0; j<questions.length; j++) {
+	    correctHeaders.push('q'+(j+1));
+	}
+
+	// Session sheet columns
+	var sessionStartRow = SESSION_START_ROW;
+
+	// Correct sheet columns
+	var correctStartRow = 2;
+
+	// New correct sheet
+	var correctSheetName = sessionName+'-correct';
+	var correctSheet = getSheet(correctSheetName, '', true);
+	correctSheet.clear()
+	var correctHeaderRange = correctSheet.getRange(1, 1, 1, correctHeaders.length);
+	correctHeaderRange.setValues([correctHeaders]);
+	correctHeaderRange.setWrap(true);
+	correctSheet.getRange('1:1').setFontWeight('bold');
+
+	// Number of ids
+	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
+
+	correctSheet.getRange(correctStartRow, 1, nids, copyCols).setValues(sessionSheet.getSheetValues(sessionStartRow, 1, nids, copyCols));
+
+	// Get hidden session values
+	var hiddenSessionCol = sessionColIndex['session_hidden'];
+	var hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1);
+	var qRows = [];
+
+	for (var j=0; j<nids; j++) {
+	    var rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, sessionColHeaders.length)[0];
+	    var savedSession = unpackSession(sessionColHeaders, rowValues);
+	    var qAttempted = savedSession.questionsAttempted;
+	    var qShuffle = savedSession.questionShuffle;
+
+	    var rowVals = [];
+
+	    for (var k=0; k<questions.length; k++) {
+		var qno = k+1;
+		var correctAns = answers[k];
+		if (qno in qShuffle && correctAns) {
+		    var m = qShuffle[qno].indexOf(correctAns.toUpperCase())
+		    if (m > 0)
+			correctAns = String.fromCharCode('A'.charCodeAt(0)+m-1);
+		    else
+			correctAns = 'X';
+		} else if (qAttempted.expect) {
+		    correctAns = qAttempted.expect;
+		} else if (qAttempted.pluginResp && 'correctAnswer' in qAttempted.pluginResp) {
+		    correctAns = qAttempted.pluginResp.correctAnswer;
+		}
+		rowVals.push(correctAns)
+	    }
+	    qRows.push(rowVals);
+
+	}
+	correctSheet.getRange(correctStartRow, copyCols+1, nids, questions.length).setValues(qRows);
+    } finally {
+    }
+    return correctSheetName;
+}
 
 function sessionStatSheet() {
     // Create session stats sheet
