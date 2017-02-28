@@ -3104,14 +3104,15 @@ def start_server(site_number=0, restart=False):
     Options['start_time'] = sliauth.create_date()
     if Options['ssl_options'] and not Options['site_list']:
         Global.http_server = tornado.httpserver.HTTPServer(createApplication(), ssl_options=Options['ssl_options'])
+    else:
+        Global.http_server = tornado.httpserver.HTTPServer(createApplication())
 
+    if Options['ssl_options'] and not site_number:
         # Redirect plain HTTP to HTTPS
         handlers = [ (r'/', PlainHTTPHandler) ]
         plain_http_app = tornado.web.Application(handlers)
         plain_http_app.listen(80)
         print >> sys.stderr, "Listening on HTTP port"
-    else:
-        Global.http_server = tornado.httpserver.HTTPServer(createApplication())
 
     if not Options['site_list']:
         # Start single site server

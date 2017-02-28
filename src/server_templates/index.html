@@ -1,0 +1,73 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+
+<!-- home index template for slidoc server --->
+<!-- index parameters: user, login_url, sites, admin_roles, site_labels, site_titles -->
+
+<title>Courses</title>
+<style>
+body {
+  font-family: 'Trebuchet MS', Trebuchet, 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
+}
+
+.home-banner {
+  background-color: #333;
+  color: #ffa500;
+  margin: 0;
+  padding: 0;
+}
+
+.home-banner h2 {
+  margin: 2px;
+}
+
+.home-title {
+  color: #ffa500;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.home-user {
+  color: #ffa500;
+  padding: 4px 10px 8px 4px;
+  text-align: right;
+}
+
+.home-user a {
+  color: #ffa500;
+   text-decoration: none;
+}
+
+</style>
+
+</head>
+<body>
+
+  <div class="home-banner">
+    <h2 class="home-title">Slidoc sites</h2>
+
+    <div class="home-user">
+      <span><b>
+      {% if user %}
+      User: {{ user }}</b> (<a href="{{ logout_url }}">logout</a>)
+      {% else %}
+      <a href="{{ login_url }}">Login</a>
+      {% end %}
+      </b></span>
+    </div>
+  </div>
+
+  <ul>
+      {% for j, site in enumerate(sites) %}
+        {% if not site_restricteds[j] %}
+        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {{ site_titles[j] }}</li>
+        {% elif admin_roles[j] %}
+        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: (restricted) {{ site_titles[j] }}</li>
+        {% end %}
+      <p></p>
+      {% end %}
+  <ul>
+
+</body>
+</html>

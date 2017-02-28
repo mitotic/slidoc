@@ -1,0 +1,65 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+  <!-- setup template for slidoc server --->
+  <!-- setup parameters: status, site_updates -->
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: sans-serif; }
+  </style>
+  <script>
+  function slidocConfirmAction(actionName) {
+    if (window.confirm('Confirm '+actionName+'?')) {
+      window.location = '/_'+actionName;
+      return;
+    }
+    slidocStatus('');
+  }
+  function slidocStatus(label) {
+    var statusElem = document.getElementById('slidoc-action-status');
+    if (statusElem)
+      statusElem.textContent = label ? 'Processing '+label+'...' : '';
+  }
+  </script>
+</head>
+
+<body>
+  <h2>Slidoc site setup</h2>
+  <p></p>
+  <b><a href="/">Home</a></b>
+  <p></p>
+  <h3><span id="slidoc-action-status"></span>{{status}}</h3>
+  <p></p>
+  <table><th><td>Site name</td><td>Last update time</td></th>
+  {% for j, site_info in enumerate(site_updates) %}
+    <tr><td>{{site_info[0]}}</td><td>{{site_info[1]}}</td></tr>
+  {% end %}
+  </table>
+
+  <ul>
+    <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
+    <hr>
+    <li><a href="javascript:slidocConfirmAction('reload')">reload</a>: Restart proxy server</li>
+    <hr>
+    <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
+    <hr>
+    <li><a href="javascript:slidocConfirmAction('update')">update</a>: Update code and restart proxy server</li>
+  </ul>
+
+  <form action="/_setup" method="get" id="setupform">
+    <fieldset>
+     <label for="sitename">New site name:</label>
+     <input type="text" id="sitename" name="sitename" value="">
+     <br>
+     <label for="siteurl">Google Sheets URL:</label>
+     <input type="text" id="siteurl" name="siteurl" value="">
+   </fieldset>
+   {% module xsrf_form_html() %}
+   <div>
+     <input id="slidoc-setup-submit" type="submit" value="Create new site">
+    </div>
+  </form>
+</body>
+</html>
+
