@@ -3174,6 +3174,9 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
                 Global.split_opts[key][site_number-1] = sheetSettings[key]
     else:
         Global.split_opts['site_restricted'][site_number-1] = 'restricted'
+
+    Global.userRoles.update_site_roles(site_name, sheetSettings.get('admin_users',''), sheetSettings.get('grader_users',''), sheetSettings.get('guest_users','') )
+
     relay_setup(site_number)
     process_pid = os.fork()
     if Options['debug']:
@@ -3240,8 +3243,6 @@ def setup_site_server(sheetSettings):
                             value = int(value)
                         opts_dict[name] = value
                 Global.session_options[sessionName] = opts_dict
-
-        Global.userRoles.update_site_roles(Options['site_name'], Options['admin_users'], Options['grader_users'], Options['guest_users'])
 
     if options.backup:
         curTimeSec = sliauth.epoch_ms()/1000.0
