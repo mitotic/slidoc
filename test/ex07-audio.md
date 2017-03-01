@@ -1,7 +1,7 @@
 <!--slidoc-defaults --pace=1 -->
 # audio+delay plugin example
 
-<slidoc-script> AudioPace = {
+<script type="x-slidoc-plugin"> AudioPace = {
 init: function(start,end){
     console.log('AudioPace.init:', this.pluginId, start, end);
 	this.start = start;
@@ -50,7 +50,7 @@ BODY:
 
 */
 
-// AudioPace </slidoc-script>
+// AudioPace </script>
 
 
 =AudioPace(0,4) 

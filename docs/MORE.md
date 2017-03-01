@@ -13,7 +13,7 @@ Define plugins as a pseudo-Javascript block, with additional HTML
 incorporated in comments.
 
 ```
-<slidoc-script> Name = {
+<script type="x-slidoc-plugin"> Name = {
 // Javascript function definitions
 init: function() {...},
 ...
@@ -22,7 +22,7 @@ init: function() {...},
 // Additional Javascript in anonymous namespace
 
 /* HEAD:
-<script src="...">...</script>
+<slidoc-script src="...">...</slidoc-script>
 <style>...</style>
 
 BUTTON: &#x260A;
@@ -32,10 +32,12 @@ TOP:
 BODY:
 <!--html-->
 */
-// Name </slidoc-script>
+// Name </script>
 ```
 
-(The comment `// Name` in the last line is optional.)
+The comment `// Name` in the last line is optional. Any
+`<slidoc-script>` elements in the `HEAD` portion will be treated as
+standard `<script>` elements when the plugin is embedded.
 
 The `Name` object is attached to a global object `Slidoc.PluginDefs` as
 follows:
@@ -207,15 +209,16 @@ invoking its `init` method, with optional arguments, as follows:
 OR
 
 ```
-<slidoc-embed> Name(arguments)
+<script type="x-slidoc-embed"> Name(arguments)
 Optional HTML template content
-</slidoc-embed>
+</script>
 ```
 
-This embeds the plugin BODY HTML at this location, in a `div` with `id`
+This embeds the HTML BODY of the plugin at this location, in a `div` with `id`
 set to `pluginId-body`, using templating to change element IDs. Any
-HTML content between `<slidoc-embed>..</slidoc-embed>` is rendered within a `div`
-with `id` set to `pluginId-content` (for the plugin to access/modify
+HTML content between `<script type="x-slidoc-embed">..</script>`
+is rendered within a `div`with `id` set to `pluginId-content`
+(for the plugin to access/modify
 during the `setup` instantiation.) In addition to the template
 [formats](#) listed for `PluginBody`, an additional format
 `%(pluginBody)s` may be used to specify where to include the plugin
@@ -234,7 +237,7 @@ context of the arguments. For example, if the first embedded plugin is
 
     =Beta(SlidePlugins.Alpha.method(), SlidePlugins.Alpha.attribute).
 
-Alternatively, using `=Name.expect()` or `=Name.response()` as the
+Alternatively, using ``=Name.expect()`` or ``=Name.response()`` as the
 correct answer automatically embeds the plugin before the Answer (if
 it has not been explicitly embedded before).
 

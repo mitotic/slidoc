@@ -47,7 +47,7 @@ try:
     from pygments.formatters import HtmlFormatter
     from pygments.util import ClassNotFound
 except ImportError:
-    pass
+    HtmlFormatter = None
 
 
 from xml.etree import ElementTree
@@ -258,13 +258,9 @@ class MathBlockGrammar(mistune.BlockGrammar):
     block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
-    plugin_definition = re.compile(r'^ {0,3}<slidoc-script *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</slidoc-script> *(\n|$)',
+    plugin_definition = re.compile(r'^ {0,3}<script +type="x-slidoc-plugin" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
                                                 re.DOTALL)
-    plugin_definition2= re.compile(r'^ {0,3}<script +type="x-slidoc-script" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
-                                                re.DOTALL)
-    plugin_embed      = re.compile(r'^ {0,3}<slidoc-embed *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
-                                                re.DOTALL)
-    plugin_embed2     = re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
+    plugin_embed      = re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
@@ -281,7 +277,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_definition2', 'plugin_embed', 'plugin_embed2',  'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -359,18 +355,12 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2)
         })
 
-    def parse_plugin_definition2(self, m):
-        return self.parse_plugin_definition(m)
-
     def parse_plugin_embed(self, m):
          self.tokens.append({
             'type': 'slidoc_plugin',
             'name': m.group(1),
             'text': m.group(2)+'\n'+(m.group(3) or '')
         })
-
-    def parse_plugin_embed2(self, m):
-        return self.parse_plugin_embed(m)
 
     def parse_plugin_insert(self, m):
          self.tokens.append({
@@ -653,13 +643,13 @@ class MathRenderer(mistune.Renderer):
         lexer = None
         if code.endswith('\n\n'):
             code = code[:-1]
-        if lang:
+        if HtmlFormatter and lang:
             try:
                 lexer = get_lexer_by_name(lang, stripall=True)
             except ClassNotFound:
                 code = lang + '\n' + code
 
-        if not lexer:
+        if not lexer or not HtmlFormatter:
             return '\n<pre><code>%s</code></pre>\n' % mistune.escape(code)
 
         formatter = HtmlFormatter()
@@ -1070,14 +1060,14 @@ class SlidocRenderer(MathRenderer):
             classes += ' slidoc-block-error'
 
         lexer = None
-        if lang and lang not in ('output','error'):
+        if HtmlFormatter and lang and lang not in ('output','error'):
             classes += ' slidoc-block-lang-'+lang
             try:
                 lexer = get_lexer_by_name(lang, stripall=True)
             except ClassNotFound:
                 code = lang + '\n' + code
 
-        if lexer:
+        if lexer and HtmlFormatter:
             html = highlight(code, lexer, HtmlFormatter())
         else:
             html = '<pre><code>%s</code></pre>\n' % mistune.escape(code)
@@ -1329,6 +1319,9 @@ class SlidocRenderer(MathRenderer):
         except Exception, err:
             abort('ERROR Template formatting error in Body for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
         body_div = self.plugin_body_template % tem_params
+
+        content = unescape_slidoc_script(content)
+
         if '%(pluginBody)s' in content:
             # Insert plugin body at the right place within the HTML content
             try:
@@ -2252,6 +2245,11 @@ def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify
     if sheet_name != LOG_SHEET:
         message('slidoc: Created remote spreadsheet:', sheet_name)
 
+def unescape_slidoc_script(content):
+    content = re.sub(r'<slidoc-script', '<script', content)
+    content = re.sub(r'</slidoc-script>', '</script>', content)
+    return content
+
 def parse_plugin(text, name=None):
     nmatch = re.match(r'^\s*([a-zA-Z]\w*)\s*=\s*{', text)
     if not nmatch:
@@ -2268,6 +2266,8 @@ def parse_plugin(text, name=None):
         tail = match.group(4).strip()
         if comment and tail.endswith('*/'):    # Strip comment delimiter
             tail = tail[:-2].strip()
+        # Unescape embedded <script> elements
+        tail = unescape_slidoc_script(tail)
         tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in HEAD/BODY template
         comps = re.split(r'(^|\n)\s*(BUTTON|TOP|BODY):' if comment else r'(^|\n)(BUTTON|BODY):', tail)
         plugin_def['HEAD'] = comps[0]+'\n' if comps[0] else ''
@@ -2696,7 +2696,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
 
     # External CSS replaces doc_custom.css, but not doc_include.css
     css_html += insert_resource('doc_include.css')
-    css_html += '\n<style>\n' + HtmlFormatter().get_style_defs('.highlight') + '\n</style>\n'
+    if HtmlFormatter:
+        css_html += '\n<style>\n' + HtmlFormatter().get_style_defs('.highlight') + '\n</style>\n'
     css_html += insert_resource('wcloud.css')
     test_params = []
     add_scripts = ''

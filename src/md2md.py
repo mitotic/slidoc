@@ -126,13 +126,9 @@ class Parser(object):
                  ('tex_block_math',    re.compile( r'^\$\$(.*?)\$\$', re.DOTALL) ),
                  ('latex_environment', re.compile( r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                    re.DOTALL) ),
-                 ('plugin_definition', re.compile(r'^ {0,3}<slidoc-script *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\2)? *</slidoc-script> *(\n|$)',
+                 ('plugin_definition', re.compile(r'^ {0,3}<script +type="x-slidoc-plugin" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
                                                 re.DOTALL)),
-                 ('plugin_definition2', re.compile(r'^ {0,3}<script +type="x-slidoc-script" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
-                                                re.DOTALL)),
-                 ('plugin_embed',      re.compile(r'^ {0,3}<slidoc-embed *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</slidoc-embed> *(\n|$)',
-                                                re.DOTALL)),
-                 ('plugin_embed2',     re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
+                 ('plugin_embed',      re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)),
                  ('hrule',      re.compile( r'^([-]{3,}) *(?:\n+|$)') ),
                  ('minirule',   re.compile( r'^(--) *(?:\n+|$)') )
@@ -559,7 +555,7 @@ class Parser(object):
                 elif rule_name == 'latex_environment':
                     self.math_block(matched.group(0), matched.group(2), latex=True)
 
-                elif rule_name in ('plugin_definition', 'plugin_definition2', 'plugin_embed', 'plugin_embed2'):
+                elif rule_name in ('plugin_definition', 'plugin_embed'):
                     self.plugin_block(matched.group(0))
 
                 elif rule_name == 'hrule':

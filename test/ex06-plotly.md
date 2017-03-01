@@ -1,6 +1,6 @@
 # Plotly plugin example
 
-<slidoc-script> InteractivePlot = {
+<script type="x-slidoc-plugin"> InteractivePlot = {
     // Data generation plugin
 	init: function(xmin, xmax, initval, minval, maxval, stepval) {
 		Slidoc.log('Slidoc.Plugins.InteractivePlot.init:', arguments, this.slideData);
@@ -48,20 +48,20 @@ function equation(alpha, xmin, xmax) {
 	return [x, y];
 }
 /* HEAD:
-<script src="https://cdn.plot.ly/plotly-1.2.0.min.js"></script>
+<slidoc-script src="https://cdn.plot.ly/plotly-1.2.0.min.js"></slidoc-script>
 BODY:
 <div id="%(pluginSlideId)s-plot" style="width:600px;height:250px;"></div>
 */
 
-// InteractivePlot </slidoc-script>
+// InteractivePlot </script>
 
 
-<slidoc-embed> InteractivePlot(0, 10, 2, 0, 10, 0.1)
+<script type="x-slidoc-embed"> InteractivePlot(0, 10, 2, 0, 10, 0.1)
 \(y = x (x - \alpha) (x-5)\)
 
 %(pluginBody)s
 
-</slidoc-embed>
+</script>
 
 =Slider(SlidePlugins.InteractivePlot.slider)
 
