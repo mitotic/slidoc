@@ -2857,7 +2857,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if 'keep_extras' in file_config.features and config.gsheet_url:
                 abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')
 
-            if config.image_dir == '_images':
+            if config.image_dir == '_images' and ('copy' in config.images or config.preview or config.extract):
                 file_config.image_dir = fname + '_images'
                 
             file_config_vars = vars(file_config)
@@ -3785,7 +3785,7 @@ Conf_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Ex
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
 Conf_parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
-Conf_parser.add_argument('--image_dir', metavar='DIR', help='image subdirectory (default: _images)')
+Conf_parser.add_argument('--image_dir', metavar='DIR', help="image subdirectory. Default value '_images' translates to 'sessionname_images' when extracting or copying images, i.e., --images-'copy,...'")
 Conf_parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
 Conf_parser.add_argument('--images', help='images=(check|copy|export|import) to process images')
 Conf_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
