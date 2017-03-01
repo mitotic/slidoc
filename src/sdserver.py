@@ -95,7 +95,7 @@ Options = {
     'lock_proxy_url': '',
     'min_wait_sec': 0,
     'no_auth': False,
-    'offline_sessions': r'(exam|quiz|test|midterm|final)',
+    'offline_sessions': r'exam|quiz|test|midterm|final',
     'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
@@ -121,7 +121,7 @@ Options = {
     'xsrf': False,
     }
 
-OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'thaw_date']
+OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'offline_sessions', 'thaw_date']
 SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', 'site_title']
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
@@ -2244,7 +2244,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                         # Future release date
                         errMsg = 'Session %s unavailable' % sessionName
 
-                    if not errMsg and not gradeDate and Options['offline_sessions'] and re.search(Options['offline_sessions'], sessionName, re.IGNORECASE):
+                    if not errMsg and not gradeDate and Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE):
                         errMsg = 'Grading must be completed for release of offline session '+sessionName
                 
             if errMsg:
@@ -3134,7 +3134,14 @@ def start_server(site_number=0, restart=False):
 def getSheetSettings(gsheet_url, site_name=''):
     auth_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
     try:
-        return sliauth.read_settings(gsheet_url, auth_key, sdproxy.SETTINGS_SHEET)
+        temSettings = sliauth.read_settings(gsheet_url, auth_key, sdproxy.SETTINGS_SHEET)
+        sheetSettings = {}
+        for key, value in temSettings.items():
+            if isinstance(value, str) or isinstance(value, unicode):
+                value = value.strip()
+            sheetSettings[key.strip()] = value
+        return sheetSettings
+                
     except Exception, excp:
         ##if Options['debug']:
         ##    import traceback

@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.96.9g'
+VERSION = '0.97.0'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -79,9 +79,9 @@ COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
                    'share_averages', 'site_label', 'site_title',
                    'admin_users', 'grader_users', 'guest_users']
     
-COPY_FROM_SERVER = [ 'auth_key', 'gsheet_url', 'site_name',
-                     'backup_dir', 'debug', 'dry_run',
-                     'lock_proxy_url', 'min_wait_sec', 'server_url']
+COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
+                    'backup_dir', 'debug', 'dry_run',
+                    'lock_proxy_url', 'min_wait_sec', 'server_url']
     
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests

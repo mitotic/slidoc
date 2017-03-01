@@ -1,24 +1,26 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.96.9g';
+var VERSION = '0.97.0';
 
-var DEFAULT_SETTINGS = [ ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
-                         ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
+var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
-			 ['site_name', '', 'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
-			 ['site_label', '', 'Site label, e.g., Calculus 101'],
-			 ['site_title', '', 'Descriptive site title'],
+			 ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
+                         ['site_name', '', 'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
+			 ['site_label', 'Site name', 'Site label, e.g., Calculus 101'],
+			 ['site_title', 'Site description', 'Descriptive site title'],
 			 ['site_restricted', '', 'Restrict access to admins'],
                          ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
 
 			 ['admin_users', '', 'User IDs or email addresses with admin access'],
 			 ['grader_users', '', 'User IDs or email addresses with grader access'],
 			 ['guest_users', '', 'User IDs or email addresses with guest access'],
+
+			 ['offline_sessions', 'exam|quiz|test|midterm|final', 'Name patterns for offline sessions which are released only after grading'],
 			 ['thaw_date', '', 'Date after which all session releases must start'],
 			 ['freeze_date', '', 'Date when all user modifications are disabled'],
-			 ['require_login_token', 'true', 'true/false'],
-			 ['require_late_token', 'true', 'true/false'],
-			 ['share_averages', 'true', 'true/false'],
+			 ['require_login_token', 'require', 'Non-null string for true'],
+			 ['require_late_token', 'require', 'Non-null string for true'],
+			 ['share_averages', 'require', 'Non-null string for true'],
 		         ['total_formula', '', 'Formula for total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
 			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'] // Or A:180:4,B:160:3,...
 		       ];
@@ -198,7 +200,7 @@ function getDoc() {
 }
 
 function resetSettings() {
-    var response = getPrompt('Reset settings?', "");
+    var response = getPrompt('Reset settings?', "Confirm");
     if (response == null)
 	return;
     var doc = getDoc();
@@ -225,12 +227,10 @@ function loadSettings() {
     var settingsData = settingsSheet.getSheetValues(2, 1, settingsSheet.getLastRow()-1, 2);
     for (var j=0; j<settingsData.length; j++) {
 	var settingsName = settingsData[j][0].trim();
-	var settingsVal = (''+settingsData[j][1]).trim();
-	if (settingsVal.toLowerCase().match(/^(on|true|yes)$/))
-	    settingsVal = true;
-	else if (settingsVal.toLowerCase().match(/^(off|false|no)$/))
-	    settingsVal = false;
-	Settings[settingsName] = settingsVal;
+	var settingsValue = settingsData[j][1];
+	if (typeof settingsValue == 'string')
+	    settingsValue = settingsValue.trim();
+	Settings[settingsName] = settingsValue;
     }
 }
 
