@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0';
+var VERSION = '0.97.0b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -147,6 +147,8 @@ var ADMIN_PACE    = 3;
 var SKIP_ANSWER = 'skip';
 
 var LATE_SUBMIT = 'late';
+
+var FUTURE_DATE = 'future';
 
 var TRUNCATE_DIGEST = 8;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
@@ -2004,6 +2006,8 @@ function createDate(date) {
     if (typeof date === 'string') {
 	if (!date)
 	    return '';
+	if (date.toLowerCase() == FUTURE_DATE)
+            return FUTURE_DATE;
 	if (date.slice(-1) == 'Z') {
 	    if (date.length == 17)      // yyyy-mm-ddThh:mmZ
 		date = date.slice(0,-1) + ':00.000Z';

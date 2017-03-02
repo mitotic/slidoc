@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.0'
+VERSION = '0.97.0b'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -115,6 +115,8 @@ ADMIN_PACE    = 3
 SKIP_ANSWER = 'skip'
 
 LATE_SUBMIT = 'late'
+
+FUTURE_DATE = 'future'
 
 TRUNCATE_DIGEST = 8
 
@@ -871,7 +873,7 @@ def update_remote_sheets(force=False, synchronous=False):
         return
 
     if Settings['debug']:
-        print("update_remote_sheets:C", [(x[0], [y[0] for y in x[3]]) for x in modRequests], file=sys.stderr)
+        print("update_remote_sheets:C", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
 
     user = ADMINUSER_ID
     userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
@@ -2714,6 +2716,8 @@ def createDate(date=None):
     if isinstance(date, datetime.datetime):
         return date
     elif type(date) in (str, unicode):
+        if date.lower() == FUTURE_DATE:
+            return FUTURE_DATE
         return sliauth.parse_date(date) if date else ''
     else:
         # Create date from local epoch time (in ms)

@@ -143,8 +143,6 @@ Global.session_options = {}
 Global.twitterStream = None
 Global.split_opts = {}
 
-FUTURE_DATE = 'future'
-
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
@@ -241,8 +239,8 @@ class UserIdMixin(object):
                     if userSites:
                         scomps = userSites.split(',')
                         for j in range(len(scomps)):
-                            smatch = re.match(r'^\w+(\+(\w+))?$', scomps[j])
-                            if smatch and smatch.group(1) == Options['site_name']:
+                            smatch = re.match(r'^([^\+]+)(\+(\w+))?$', scomps[j])
+                            if smatch and smatch.group(1) == for_site:
                                 return smatch.group(3) or ''
                     return None
                 return userRole
@@ -2231,7 +2229,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 if isinstance(releaseDate, datetime.datetime) and Options['thaw_date'] and sliauth.epoch_ms(releaseDate) < sliauth.epoch_ms(Options['thaw_date']):
                     errMsg = '--release_date %s must be after thaw date %s for session %s' % (releaseDate, Options['thaw_date'], sessionName)
 
-                if Options['dry_run'] or siteRole == sdproxy.ADMIN_ROLE:
+                if siteRole == sdproxy.ADMIN_ROLE:
                     # Admin user always has access regardless of release date, allowing delayed release of live lectures and exams
                     pass
 
@@ -3047,10 +3045,10 @@ class UserRoles(object):
         siteRoles = []
         for siteName in Options['site_list']:
             if userId in self.site_roles[siteName]:
-                siteRoles = siteName
+                siteRole = siteName
                 if self.site_roles[siteName][userId]:
-                    siteRoles += '+' + self.site_roles[siteName][userId]
-                siteRoles.append(siteRoles)
+                    siteRole += '+' + self.site_roles[siteName][userId]
+                siteRoles.append(siteRole)
 
         siteRoles.sort()
         return '', ','.join(siteRoles)
@@ -3179,8 +3177,8 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
 
     relay_setup(site_number)
     process_pid = os.fork()
-    if Options['debug']:
-        print >> sys.stderr, 'DEBUG: sdserver.fork:', site_name, site_number, process_pid
+    ##if Options['debug']:
+    ##    print >> sys.stderr, 'DEBUG: sdserver.fork:', site_name, site_number, process_pid
 
     if process_pid:
         # Primary (non-proxy) server
@@ -3204,7 +3202,6 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
         BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
-        print >> sys.stderr, 'DEBUG: sdserver.fork:', Options['site_number'], Options['site_name']
         setup_site_server(sheetSettings)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
@@ -3402,6 +3399,7 @@ def main():
         # After forking (secondary site servers are setup and started in fork_site_server)
         if not Options['site_number']:
             # Root server
+            print >> sys.stderr, 'DEBUG: sdserver.userRoles:', Global.userRoles.root_role, Global.userRoles.site_roles, Global.userRoles.external_users
             start_multiproxy()
             start_server()
     else:
