@@ -100,6 +100,21 @@ def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
         attrs += ' class="%s"' % ' '.join(classList)
     return '<img src="%s" alt="%s" %s>' % (src, alt, attrs)
 
+def find_image_path(src, filename='', filedir='', image_dir=''):
+    fprefix = filedir+'/' if filedir else ''
+    if os.path.exists(fprefix+src):
+        # Found in specified subpath
+        return src
+    if image_dir != '_images':
+        return None
+    basename = os.path.basename(src)
+    if filename and os.path.exists(fprefix+filename+'_images/'+basename):
+        # Found in filename_images/
+        return filename+'_images/'+basename
+    elif os.path.exists(fprefix+'_images/'+basename):
+        # Found in _images/
+        return '_images/'+basename
+    return None
 
 class Parser(object):
     newline_norm_re =  re.compile( r'\r\n|\r')
@@ -188,6 +203,7 @@ class Parser(object):
         self.old_defs = OrderedDict()
         self.new_defs = OrderedDict()
         self.filedir = ''
+        self.filename = ''
         self.image_count = 0
 
     def arg_check(self, arg_set):
@@ -268,11 +284,12 @@ class Parser(object):
                     else:
                         raise Exception('File %s not found in zip archive' % filename)
                 else:
-                    filepath = self.filedir+'/'+link
-                    if not os.path.exists(filepath):
-                        raise Exception('File %s does not exist' % filepath)
+                    new_link = md2md.find_image_path(link, filename=self.filename, filedir=self.filedir, image_dir=self.cmd_args.image_dir)
+                    if not new_link:
+                        raise Exception('File %s does not exist' % link)
 
                     if not check_only:
+                        filepath = self.filedir+'/'+new_link if self.filedir else new_link
                         content = read_file(filepath)
                         if data_url:
                             if not content_type:
@@ -489,6 +506,7 @@ class Parser(object):
         orig_content = content
         if filepath:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
+            self.filename = os.path.basename(filepath)
 
         content = self.newline_norm_re.sub('\n', content) # Normalize newlines
 

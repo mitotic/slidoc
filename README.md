@@ -878,7 +878,7 @@ Notes:
 What is the square root of `=SqrtTest.number();6.25`?
 
 
-<script type="x-slidoc-script"> SqrtTest = {
+<script type="x-slidoc-plugin"> SqrtTest = {
 // Sample code for embedding Javascript formulas ("macros") in questions and answers.
 // Plugin object SqrtTest is automatically attached to global object Slidoc.PluginDefs
 // Special function init is called for each slide. 

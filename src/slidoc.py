@@ -606,6 +606,7 @@ class MarkdownWithSlidoc(MarkdownWithMath):
         self.renderer.index_id = index_id
         self.renderer.qindex_id = qindex_id
         html = super(MarkdownWithSlidoc, self).render(text)
+        self.renderer.close_zip(text)
 
         first_slide_pre = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
 
@@ -760,6 +761,20 @@ class SlidocRenderer(MathRenderer):
         self.load_python = False
         self.slide_maximage = 0
 
+        self.images_zipfile = None
+        self.images_map = {}
+        if self.options['images_zipdata']:
+            self.images_zipfile = zipfile.ZipFile(io.BytesIO(self.options['images_zipdata']), 'r')
+            self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
+
+        self.content_zip_bytes = None
+        self.content_zip = None
+        self.content_image_paths = set()
+        self.zipped_content = None
+        if self.options['zip_content']:
+            self.content_zip_bytes = io.BytesIO()
+            self.content_zip = zipfile.ZipFile(self.content_zip_bytes, 'w')
+
     def _new_slide(self):
         self.slide_number += 1
         self.qtypes.append('')
@@ -780,6 +795,14 @@ class SlidocRenderer(MathRenderer):
         self.slide_plugin_refs = set()
         self.slide_plugin_embeds = set()
         self.slide_images.append([])
+
+    def close_zip(self, md_content=None):
+        # Create zipped content (only if there are any images)
+        if self.content_zip and self.content_image_paths:
+            if md_content is not None:
+                self.content_zip.writestr('content.md', md_content)
+            self.content_zip.close()
+            self.zipped_content = self.content_zip_bytes.getvalue()
 
     def list_incremental(self, activate):
         self.incremental_list = activate
@@ -914,13 +937,68 @@ class SlidocRenderer(MathRenderer):
 
     def image(self, src, title, text):
         basename = os.path.basename(src)
+        dirname = os.path.dirname(src)
         self.slide_images[-1].append(basename)
         fname = os.path.splitext(basename)[0]
         if fname.startswith('image'):
             suffix = fname[len('image'):]
             if suffix.isdigit():
                 self.slide_maximage = max(self.slide_maximage, int(suffix))
-        return md2md.new_img_tag(src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url, image_dir=self.options['config'].image_dir)
+
+        new_src = src
+        img_content = None
+        copy_image = self.content_zip or self.options['config'].dest_dir
+        url_type = md2md.get_url_scheme(src)
+        if url_type == 'rel_path':
+            # Image link is a relative filepath
+            if self.images_zipfile:
+                if basename in self.images_map:
+                    if copy_image:
+                        img_content = self.images_zipfile.read(self.images_map[basename])
+                else:
+                    raise Exception('File %s not found in zip archive' % basename)
+            else:
+                # Check for image file
+                new_src = md2md.find_image_path(src, filename=self.options['filename'], filedir=self.options['filedir'], image_dir=self.options['config'].image_dir)
+                if not new_src:
+                    raise Exception('Image file %s not found in %s' % (src, self.options['filedir']))
+
+                if copy_image:
+                    filepath = self.options['filedir']+'/'+new_src if self.options['filedir'] else new_src
+                    img_content = md2md.read_file(filepath)
+
+            if self.content_zip:
+                # Copy image to zip file
+                if self.options['config'].image_dir:
+                    zpath = os.path.basename(self.options['config'].image_dir)+'/'+basename
+                else:
+                    zpath = '_images/'+basename
+                new_src = zpath
+                self.content_zip.writestr(zpath, img_content)
+                self.content_image_paths.add(zpath)
+
+            elif self.options['config'].dest_dir:
+                # Copy image to subdirectory of destination directory
+                # If image_dir == '_images', destination subdirectory will be sessionname_images
+                if self.options['config'].image_dir == '_images':
+                    img_dir = self.options['filename']+'_images'
+                else:
+                    img_dir = self.options['config'].image_dir or dirname or self.options['filename']+'_images'
+                new_src = img_dir + '/' + basename
+                out_path = self.options['config'].dest_dir + '/' + new_src
+                out_dir  = self.options['config'].dest_dir + '/' + img_dir
+
+                if not os.path.exists(out_dir):
+                    os.mkdir(out_dir)
+
+                if os.path.exists(out_path) and img_content == md2md.read_file(out_path):
+                    # File already present (with same content)
+                    pass
+                else:
+                    md2md.write_file(out_path, img_content)
+
+        return md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url)
+
 
     def hrule(self, text='---', implicit=False):
         """Rendering method for ``<hr>`` tag."""
@@ -1943,11 +2021,13 @@ def Missing_ref_num(match):
 SLIDE_BREAK_RE =  re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
 HRULE_BREAK_RE =  re.compile(r'(\S *\n)( {0,3}----* *(\n|$))')
     
-def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id=''):
-    """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, md_params, html)"""
+def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id='',
+            zip_content=False, images_zipdata=None):
+    """Convert a markdown string to HTML using mistune, returning (first_header, file_toc, renderer, md_params, html, zipped_content_images)"""
     Global.chapter_ref_counter = defaultdict(int)
 
-    renderer = SlidocRenderer(escape=False, filename=filename, config=config, filenumber=filenumber, plugin_defs=plugin_defs)
+    renderer = SlidocRenderer(escape=False, filename=filename, config=config, filenumber=filenumber, filedir=filedir, plugin_defs=plugin_defs,
+                              images_zipdata=images_zipdata, zip_content=zip_content)
     md_parser_obj = MarkdownWithSlidoc(renderer=renderer)
     content_html = md_parser_obj.render(source, index_id=index_id, qindex_id=qindex_id)
 
@@ -2085,7 +2165,7 @@ def md2html(source, filename, config, filenumber=1, plugin_defs={}, prev_file=''
 
     file_toc = renderer.table_of_contents('' if not config.separate else config.server_url+filename+'.html', filenumber=filenumber)
 
-    return (renderer.file_header or filename, file_toc, renderer, md_params, content_html)
+    return (renderer.file_header or filename, file_toc, renderer, md_params, content_html, renderer.zipped_content)
 
 # 'name' and 'id' are required field; entries are sorted by name but uniquely identified by id
 Manage_fields  = ['name', 'id', 'email', 'altid', 'source', 'Timestamp', 'initTimestamp', 'submitTimestamp']
@@ -2669,8 +2749,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     if config.image_url and not config.image_url.endswith('/'):
         config.image_url += '/'
 
-    config.images = set(config.images.split(',')) if config.images else set()
-
     config.strip = md2md.make_arg_set(config.strip, Strip_all)
     if nfiles == 1:
         config.strip.add('chapters')
@@ -2776,26 +2854,16 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     else:
         reveal_pars = ''
 
-    slidoc_images_opts = set(['_slidoc', 'gather_images'])
-    if combined_file:
-        slidoc_images_opts.add('_slidoc_combine')
-    elif config.preview:
-        slidoc_images_opts.add('zip')
-        slidoc_images_opts.add('md')
-
-    if config.images:
-        slidoc_images_opts.update(config.images)
-
-    base_mods_args = md2md.Args_obj.create_args(None, dest_dir=config.dest_dir,
-                                                      image_dir=config.image_dir,
-                                                      image_url=config.image_url,
-                                                      images=slidoc_images_opts)
-    slide_mods_dict = {'strip': 'tags,extensions'}
+    slide_mods_dict = dict(dest_dir=config.dest_dir,
+                           image_dir=config.image_dir,
+                           image_url=config.image_url,
+                           images=set(['_slidoc']),
+                           strip='tags,extensions')
     if 'answers' in config.strip:
         slide_mods_dict['strip'] += ',answers'
     if 'notes' in config.strip:
         slide_mods_dict['strip'] += ',notes'
-    slide_mods_args = md2md.Args_obj.create_args(base_mods_args, **slide_mods_dict)
+    slide_mods_args = md2md.Args_obj.create_args(None, **slide_mods_dict)
 
     nb_mods_dict = {'strip': 'tags,extensions', 'server_url': config.server_url}
     if 'rule' in config.strip:
@@ -2842,8 +2910,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if config.preview:
                 if file_config.gsheet_url:
                     file_config.gsheet_url = ''
-                if file_config.images:
-                    file_config.images = ''
 
             file_config.features = file_config.features or set()
             if 'grade_response' in file_config.features and gd_hmac_key is None:
@@ -2857,9 +2923,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if 'keep_extras' in file_config.features and config.gsheet_url:
                 abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')
 
-            if config.image_dir == '_images' and ('copy' in config.images or config.preview or config.extract):
-                file_config.image_dir = fname + '_images'
-                
             file_config_vars = vars(file_config)
             settings_list = []
             exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
@@ -2935,6 +2998,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             abort('Error: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
             
         filepath = input_paths[fnumber-1]
+        filedir = os.path.dirname(os.path.realpath(filepath))
         md_text = fhandle.read()
         fhandle.close()
 
@@ -2944,11 +3008,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         # Strip annotations (may also break slide editing)
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        base_mods_args.image_dir = file_config.image_dir
-        base_parser = md2md.Parser(base_mods_args, images_zipdata=images_zipdict.get(fname))
         slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname))
         md_text_modified, _ = slide_parser.parse(md_text, filepath)
-        md_text, zipped_md = base_parser.parse(md_text, filepath)   # Zipped md will contain original (preprocessed) md_text
 
         if file_config.hide and 'hidden' in file_config.strip:
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+file_config.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
@@ -2956,9 +3017,11 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         prev_file = '' if fnumber == 1      else orig_flinks[fnumber-2]
         next_file = '' if fnumber == nfiles else orig_flinks[fnumber]
 
-        fheader, file_toc, renderer, md_params, md_html = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
-                                                        plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
-                                                        index_id=index_id, qindex_id=qindex_id)
+        # zipped_md containing will only be created if any images are present (and will also include the original (preprocessed) md_text as content.md)
+        fheader, file_toc, renderer, md_params, md_html, zipped_md = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
+                                                        filedir=filedir, plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
+                                                        index_id=index_id, qindex_id=qindex_id, zip_content=config.preview,
+                                                        images_zipdata=images_zipdict.get(fname))
         math_present = renderer.render_markdown or renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
 
         if len(fnumbers) == 1 and config.separate and config.extract:
@@ -3785,9 +3848,8 @@ Conf_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Ex
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
 Conf_parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
-Conf_parser.add_argument('--image_dir', metavar='DIR', help="image subdirectory. Default value '_images' translates to 'sessionname_images' when extracting or copying images, i.e., --images-'copy,...'")
+Conf_parser.add_argument('--image_dir', metavar='DIR', help="image subdirectory. Default value '_images' translates to 'sessionname_images' when reading images or copying images to dest_dir")
 Conf_parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
-Conf_parser.add_argument('--images', help='images=(check|copy|export|import) to process images')
 Conf_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 Conf_parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
 Conf_parser.add_argument('--media_url', metavar='URL', help='URL for media')
