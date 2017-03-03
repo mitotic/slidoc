@@ -410,6 +410,7 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 	    var userRole = cookieInfo.role;
 	    var userSites = cookieInfo.sites;
 	    var userToken = cookieInfo.token;
+	    var siteRole = cookieInfo.siteRole;
 	    var userData = cookieInfo.data || {};
 
 	    var displayName = userData.name || '';
@@ -418,18 +419,8 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 
 
 	    var adminToken = ':'+userName+':'+userRole+':'+userSites+':'+userToken;
-	    if (!userRole && siteName && userSites) {
-		var scomps = userSites.split(',');
-		for (var j=0; j<scomps.length; j++) {
-		    var smatch = /^\w+(\+(\w+))?$/.exec(scomps[j]);
-		    if (smatch && smatch[1] == siteName) {
-			userRole = smatch[3] || '';
-			break;
-		    }
-		}
-	    }
 	    var regularUserToken = userToken;
-	    if (userRole)
+	    if (userRole || userSites)
 		regularUserToken = userName+adminToken;
 
 	    var userIds     = ['_test_user',                 '_grader',               userName,                      ''];
@@ -466,14 +457,14 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 		pickRole(indx);
 	    }
 
-	    if (userRole && (testMode || userData.batch)) {
+	    if (siteRole && (testMode || userData.batch)) {
 		// For test/batch mode, test user if admin else normal user if grader
-		pickRole( (userRole == 'admin') ? 1 : 3)
-	    } else if (userRole == 'admin') {
+		pickRole( (siteRole == 'admin') ? 1 : 3)
+	    } else if (siteRole == 'admin') {
 		userOffset = 0;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset),
 					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
-	    } else if (userRole == 'grader') {
+	    } else if (siteRole == 'grader') {
 		userOffset = 1;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset,-1),
 					'', optCallback);

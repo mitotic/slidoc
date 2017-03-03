@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0b';
+var VERSION = '0.97.0c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -236,6 +236,18 @@ function loadSettings() {
     }
 }
 
+function getSiteRole(siteName, siteRoles) {
+    // Return role for site or null
+    var scomps = siteRoles.split(',');
+    for (var j=0; j<scomps.length; j++) {
+	var smatch = /^([^\+]+)(\+(\w+))?$/.exec(scomps[j]);
+	if (smatch && smatch[1] == siteName) {
+	    return smatch[3] || '';
+	}
+	return null;
+    }
+}
+
 function isSpecialUser(userId) {
     var keys = ['admin_users', 'grader_users', 'guest_users'];
     for (var j=0; j<keys.length; j++) {
@@ -352,14 +364,7 @@ function sheetAction(params) {
             var temSites = comps[3];
 
 	    if (!temRole && temSites && Settings['site_name']) {
-		var scomps = temSites.split(',');
-		for (var j=0; j<scomps.length; j++) {
-		    var smatch = /^\w+(\+(\w+))?$/.exec(scomps[j]);
-		    if (smatch && smatch[1] == Settings['site_name']) {
-			temRole = smatch[3] || '';
-			break;
-		    }
-		}
+		temRole = getSiteRole(Settings['site_name'], temSites) || '';
 	    }
 
             if (params.admin) {

@@ -3167,7 +3167,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             iso_release_str = '-'
 
             if release_date_str == FUTURE_DATE:
-                doc_str += ', not available'
+                doc_str += ', to be released'
                 iso_release_str = release_date_str
             elif release_date_str:
                 release_date = sliauth.parse_date(release_date_str)
@@ -3218,19 +3218,18 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 file_head_html = (js_params_fmt % json.dumps(js_params)) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
                 pre_html = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
-                if release_date_str != FUTURE_DATE:
-                    # Prefix index entry as comment
-                    if js_params['paceLevel']:
-                        index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
-                    else:
-                        index_entries = [fname, fheader, 'view', '-', '-']
-                    # Store MD5 digest of preprocessed source and list of character counts at each slide break
-                    index_dict = {'md_digest': md_params['md_digest'], 'md_breaks': md_params['md_breaks'],
-                                  'md_images': md_params['md_images'], 'new_image_name': md_params['new_image_name']}
-                    index_entries += [ json.dumps(index_dict) ]
-                    index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
-                    out_index[outpath] = index_head
-                    pre_html = index_head + pre_html
+                # Prefix index entry as comment
+                if js_params['paceLevel']:
+                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
+                else:
+                    index_entries = [fname, fheader, 'view', '-', '-']
+                # Store MD5 digest of preprocessed source and list of character counts at each slide break
+                index_dict = {'md_digest': md_params['md_digest'], 'md_breaks': md_params['md_breaks'],
+                              'md_images': md_params['md_images'], 'new_image_name': md_params['new_image_name']}
+                index_entries += [ json.dumps(index_dict) ]
+                index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
+                out_index[outpath] = index_head
+                pre_html = index_head + pre_html
 
                 tail = md_prefix + md_html + md_suffix
                 if Missing_ref_num_re.search(md_html) or return_html:
@@ -3301,10 +3300,16 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                     message('Index header not found for '+outpath)
                     continue
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
+                entry_extra = ''
+                entry_prefix = ''
+                if release_date_str == FUTURE_DATE:
+                    entry_extra = ' class="slidoc-restrictedonly" style="display: none"'
+                    entry_prefix = '[restricted] '
+
                 doc_link = ''
                 if doc_str:
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
-                toc_html.append('<li><span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (fheader, SPACER6, doc_link))
+                toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_extra, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries
                 toc_list.append(orig_fnames[j])
                 toc_list.append(fheader)

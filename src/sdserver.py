@@ -236,13 +236,9 @@ class UserIdMixin(object):
 
             if role:
                 if not userRole and for_site:
-                    if userSites:
-                        scomps = userSites.split(',')
-                        for j in range(len(scomps)):
-                            smatch = re.match(r'^([^\+]+)(\+(\w+))?$', scomps[j])
-                            if smatch and smatch.group(1) == for_site:
-                                return smatch.group(3) or ''
-                    return None
+                    if not userSites:
+                        return None
+                    return sdproxy.getSiteRole(for_site, userSites)
                 return userRole
 
             if sites:
@@ -1537,24 +1533,22 @@ def modify_user_auth(args, socketId=None):
         return
 
     if ':' in args['token']:
-        effectiveId, adminId, _role, _sites, userToken = args['token'].split(':')
-        if userToken != gen_proxy_auth_token(adminId, role=_role, sites=_sites, root=True):
+        effectiveId, adminId, role, sites, userToken = args['token'].split(':')
+        if userToken != gen_proxy_auth_token(adminId, role=role, sites=sites, root=True):
             raise Exception('Invalid admin token: '+args['token'])
 
         if socketId and socketId != adminId:
             raise Exception('Token admin id mismatch: %s != %s' % (socketId, adminId))
 
-        role, sites = Global.userRoles.id_role_sites(adminId)
-        if not role:
-            raise Exception('Token for unknown admin user %s' % adminId)
+        if not role and sites and Options['site_name']:
+            role = sdproxy.getSiteRole(Options['site_name'], sites) or ''
 
-        if sites and Options['site_name'] not in sites.split(','):
-            # No admin access to site
+        if not role:
             if effectiveId == adminId and not args.get('admin'):
                 # Allow non-admin access to site
                 args['token'] = gen_proxy_auth_token(adminId)
                 return
-            raise Exception('Token site disallowed for admin %s: %s' % (adminId, Options['site_name']))
+            raise Exception('Token disallowed by site for admin %s: %s' % (adminId, Options['site_name']))
 
         if role in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE):
             # Site admin token

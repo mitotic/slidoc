@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.0b'
+VERSION = '0.97.0c'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1025,12 +1025,7 @@ def sheetAction(params, notrace=False):
             temSites = comps[3]
 
             if not temRole and temSites and Settings['site_name']:
-                scomps = temSites.split(',')
-                for j in range(len(scomps)):
-                    smatch = re.match(r'^\w+(\+(\w+))?$', scomps[j])
-                    if smatch and smatch.group(1) == Settings['site_name']:
-                        temRole = smatch.group(3) or ''
-                        break
+                temRole = getSiteRole(Settings['site_name'], temSites) or ''
                         
             if params.get('admin'):
                 if temRole != ADMIN_ROLE and temRole != GRADER_ROLE:
@@ -2153,6 +2148,15 @@ def sheetAction(params, notrace=False):
 
 def gen_proxy_token(username, role='', prefixed=False):
     return sliauth.gen_auth_token(Settings['auth_key'], username, role=role, prefixed=prefixed)
+
+def getSiteRole(siteName, siteRoles):
+    # Return role for site or None
+    scomps = siteRoles.split(',')
+    for j in range(len(scomps)):
+        smatch = re.match(r'^([^\+]+)(\+(\w+))?$', scomps[j])
+        if smatch and smatch.group(1) == siteName:
+            return smatch.group(3) or ''
+    return None
 
 def isSpecialUser(userId):
     for key in ('admin_users', 'grader_users', 'guest_users'):

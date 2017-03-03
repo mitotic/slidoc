@@ -414,6 +414,18 @@ function getCookieValue(a, stripQuote) {
     return stripQuote ? c.replace(/"/g,'') : c;
 }
 
+function getSiteRole(siteName, siteRoles) {
+    // Return role for site or null
+    var scomps = siteRoles.split(',');
+    for (var j=0; j<scomps.length; j++) {
+	var smatch = /^([^\+]+)(\+(\w+))?$/.exec(scomps[j]);
+	if (smatch && smatch[1] == siteName) {
+	    return smatch[3] || '';
+	}
+	return null;
+    }
+}
+
 function getServerCookie() {
     var slidocCookie = getCookieValue("slidoc_server", true);
     if (!slidocCookie)
@@ -427,6 +439,12 @@ function getServerCookie() {
 		  sites:  comps.length > 2 ? comps[2] : '',
 		  token:  comps.length > 3 ? comps[3] : ''
 	     };
+
+    retval.siteRole = retval.role;
+    if (!retval.siteRole && Sliobj.params.siteName && retval.sites) {
+	retval.siteRole = getSiteRole(Sliobj.params.siteName, retval.sites) || '';
+    }
+
     if (comps.length > 4 && comps[4]) {
 	try {
 	    retval.data = JSON.parse(atob(comps[4]));
@@ -512,6 +530,12 @@ Slidoc.pageSetup = function() {
 	setTimeout(reloadCheckFunc, 1000);
     }
 
+    if (Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
+	toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
+	var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
+	[].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
+    }
+
     var match = location.pathname.match(/\/_preview\b/);
     if (match) {
 	Sliobj.previewState = true;
@@ -525,7 +549,7 @@ Slidoc.pageSetup = function() {
     var contentsButton = document.getElementById("slidoc-contents-button");
     if (contentsButton && !topnavElem)
 	contentsButton.style.display = null;
-    if (Sliobj.serverCookie && Sliobj.serverCookie.role == Sliobj.params.adminUserId) {
+    if (Sliobj.serverCookie && Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem)
 	    dashElem.style.display = null;
@@ -2582,7 +2606,7 @@ Slidoc.slidocReady = function (auth) {
     // adminState should really be called gradableState; adminKey should be graderKey
     // Also slidoc-admin-view -> slidoc-gradable-view, slidoc-adminonly -> slidoc-gradableonly, slidoc-noadmin -> slidoc-nogradable
     Sliobj.adminState = auth && !!auth.adminKey;
-    Sliobj.fullAccess = Sliobj.serverCookie && Sliobj.serverCookie.role == Sliobj.params.adminUserId && (getUserId() == Sliobj.params.testUserId || Sliobj.adminState);
+    Sliobj.fullAccess = Sliobj.serverCookie && Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId && (getUserId() == Sliobj.params.testUserId || Sliobj.adminState);
 
     Sliobj.adminPaced = 0;
     Sliobj.maxLastSlide = 0;
