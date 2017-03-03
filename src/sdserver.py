@@ -197,6 +197,8 @@ class UserIdMixin(object):
             cookie_data['email'] = email
         if altid:
             cookie_data['altid'] = altid
+        if Options['source_dir']:
+            cookie_data['editable'] = 'edit'
         cookie_data.update(data)
 
         token = gen_proxy_auth_token(username, role, sites, root=True)

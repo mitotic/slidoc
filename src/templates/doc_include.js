@@ -530,10 +530,16 @@ Slidoc.pageSetup = function() {
 	setTimeout(reloadCheckFunc, 1000);
     }
 
-    if (Sliobj.serverCookie && Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
-	toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
-	var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
-	[].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
+    if (Sliobj.serverCookie) {
+	if (Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
+	    toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
+	    var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
+	    [].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
+	}
+	if (!Sliobj.serverCookie.data.editable) {
+	    var editIcons = document.getElementsByClassName('slidoc-edit-icon');
+	    [].forEach.call(editIcons, function(elem) { elem.style.display = 'none'; });
+	}
     }
 
     var match = location.pathname.match(/\/_preview\b/);
@@ -2540,6 +2546,7 @@ Slidoc.manageSession = function() {
 		html += '<br>Release date: '+Sliobj.params.releaseDate;
 	}
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="http://code.mitotic.org/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
     }
 
     if (Sliobj.adminState || !Sliobj.params.gd_sheet_url) {
