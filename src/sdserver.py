@@ -94,6 +94,7 @@ Options = {
     'insecure_cookie': False,
     'lock_proxy_url': '',
     'min_wait_sec': 0,
+    'missing_choice': '*',
     'no_auth': False,
     'offline_sessions': r'exam|quiz|test|midterm|final',
     'plugindata_dir': 'plugindata',
@@ -111,6 +112,7 @@ Options = {
     'site_title': '',        # E.g., Elementary Calculus, Fall 2000
     'site_number': 0,
     'sites': '',             # Comma separated list of site names
+    'skip_users': 'zzz, zzz',
     'socket_dir': '',
     'source_dir': '',
     'ssl_options': None,
@@ -977,10 +979,13 @@ class ActionHandler(BaseHandler):
                     if not missed and not errors:
                         self.displayMessage('Imported answers from '+fname)
                     else:
+                        errMsg = ''
                         if missed:
-                            self.displayMessage('ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n')
+                            errMsg += 'ERROR: Missed uploading IDs: '+' '.join(missed)+'\n\n'
                         if errors:
-                            self.displayMessage('\n'.join(errors)+'\n')
+                             errMsg += '\n'.join(errors)+'\n'
+                        if errMsg:
+                            self.displayMessage('<pre>'+errMsg+'</pre>')
             elif action in ('_upload',):
                 # Import two files
                 if not Options['source_dir']:
@@ -2655,8 +2660,8 @@ def importRoster(filepath, csvfile):
 
         rows = []
         for row in reader:
-            if not rows and len(row) < 3:
-                # Skip initial rows with fewer than 3 columns
+            if not rows and (len(row) < 3 or row[2:] == ['']*(len(row)-2)):
+                # Skip initial rows with fewer than 3 non-blank columns
                 continue
             rows.append(row)
 
@@ -2752,8 +2757,8 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
 
         rows = []
         for row in reader:
-            if not rows and len(row) < 3:
-                # Skip initial rows with fewer than 3 columns
+            if not rows and (len(row) < 3 or row[2:] == ['']*(len(row)-2)):
+                # Skip initial rows with fewer than 3 non-blank columns
                 continue
             rows.append(row)
 
@@ -2837,7 +2842,7 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
             else:
                 userKey = row[keyCol-1].strip().lower()
 
-            if not userKey:
+            if not userKey or userKey in Options['skip_users'].split(';'):
                 continue
                 
             if userKey in userKeys:
@@ -2868,7 +2873,7 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
                 qnumberMapped = qnumberMap[formSwitch][qnumber-1]
                 offset, prefix = qresponse[qnumberMapped]
                 cellValue = row[offset].strip() if offset < len(row) else ''
-                if not cellValue:
+                if not cellValue or cellValue in Options['missing_choice']:
                     continue
                 if prefix == 'qg':
                     answers[qnumber] = {'grade': cellValue}
@@ -3292,6 +3297,7 @@ def main():
     define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
+    define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
     define("insecure_cookie", default=False, help="Insecure cookies (for printing)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
@@ -3307,6 +3313,7 @@ def main():
     define("site_restricted", default='', help="Site restricted")
     define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
+    define("skip_users", default=Options['skip_users'], help="Semicolon separated list of special user names 'last, first' to skip when importing answers")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("source_dir", default=Options["source_dir"], help="Path to source files directory (required for edit/upload)")
