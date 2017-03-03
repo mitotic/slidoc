@@ -553,6 +553,14 @@ class ActionHandler(BaseHandler):
                 lastMap = sdproxy.makeShortNames(nameMap)
                 firstMap = sdproxy.makeShortNames(nameMap, first=True)
                 self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
+
+                firstNames = firstMap.values()
+                firstNames.sort()
+                qwheel_link = 'http://code.mitotic.org/wheel/?session=' + urllib.quote_plus(Options['site_name'])
+                qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x) for x in firstNames)
+
+                self.write('<a href="%s" target="_blank"><b>New question wheel session</b></a><p></p>' % qwheel_new)
+                self.write('<a href="%s" target="_blank"><b>Question wheel session</b></a><p></p>' % qwheel_link)
                 self.write('Roster: \n')
                 for nMap in [nameMap, lastMap, firstMap]:
                     vals = nMap.values()

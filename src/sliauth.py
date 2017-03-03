@@ -147,10 +147,12 @@ def get_settings(rows):
         if not row or not row[0].strip():
             continue
         name = row[0].strip()
+        value = ''
         if len(row) > 1:
-            value = row[1].strip()
-        else:
-            value = ''
+            if type(row[1]) in (str, unicode):
+                value = row[1].strip()
+            elif row[1]:                   # None, False, or 0 become null string
+                row[1] = str(row[1])
         settings[name] = value
     return settings
 

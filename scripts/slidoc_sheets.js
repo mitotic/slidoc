@@ -232,9 +232,13 @@ function loadSettings() {
 	if (!settingsData[j].length || !settingsData[j][0].trim())
 	    continue;
 	var settingsValue = (settingsData[j].length > 1) ? settingsData[j][1] : '';
-	if (typeof settingsValue !== 'string')
+	if (typeof settingsValue == 'string')
+	    settingsValue = settingsValue.trim();
+	else if (settingsValue)                    // null, false, or 0 become null string
 	    settingsValue = '' + settingsValue;
-	Settings[settingsData[j][0].trim()] = settingsValue.trim();
+	else
+	    settingsValue = '';
+	Settings[settingsData[j][0].trim()] = settingsValue;
     }
 }
 
