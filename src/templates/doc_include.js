@@ -530,7 +530,7 @@ Slidoc.pageSetup = function() {
 	setTimeout(reloadCheckFunc, 1000);
     }
 
-    if (Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
+    if (Sliobj.serverCookie && Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
 	toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
 	var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
 	[].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });

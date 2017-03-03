@@ -105,15 +105,15 @@ def find_image_path(src, filename='', filedir='', image_dir=''):
     if os.path.exists(fprefix+src):
         # Found in specified subpath
         return src
-    if image_dir != '_images':
-        return None
-    basename = os.path.basename(src)
-    if filename and os.path.exists(fprefix+filename+'_images/'+basename):
-        # Found in filename_images/
-        return filename+'_images/'+basename
-    elif os.path.exists(fprefix+'_images/'+basename):
-        # Found in _images/
-        return '_images/'+basename
+    dirname = os.path.dirname(src)
+    if dirname == '_images' or image_dir == '_images':
+        basename = os.path.basename(src)
+        if filename and os.path.exists(fprefix+filename+'_images/'+basename):
+            # Found in filename_images/
+            return filename+'_images/'+basename
+        elif os.path.exists(fprefix+'_images/'+basename):
+            # Found in _images/
+            return '_images/'+basename
     return None
 
 class Parser(object):

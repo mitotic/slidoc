@@ -501,15 +501,27 @@ Handling images is a bit tricky when using Markdown. For Slidoc,
 the convention is to use web URLs or to store images in a local
 folder and include references of the form
 
-    ![alt text](_images/figure1.png)
+    ![alt text](_images/hello.png)
 
-The local image folder is usually named `session_images`, if the
-Markdown file is named `session.md`. Using Slidoc with
-`--image_dir=session_images` will substitute `_images` with
-`session_images` in the image reference during HTML conversion. (This
-convention allows images associated with each Markdown file to be
-stored in a separate folder, while still allowing it to be renamed as
-needed.)
+If the Markdown file is named `session.md`, the image `hello.png`
+can be located either in the folder named `_images` or in a folder
+named `session_images`. Slidoc will automatically adjust the image
+reference during HTML conversion, and create a folder named
+`session_images` in the destination directory, if necessary.  This
+behavior allows all images associated with each Markdown file to be
+stored in a separate folder, while still allowing Markdown files to be
+renamed easily. Using folder names other than `_images` disables this
+behavior. (Option `--image_dir=_images` can be used to force this
+behavior, if the image reference is not of the above form.)
+
+If `session.md`, including images, is to be stored in a github repository,
+then it should be saved in its own directory named `session`, with
+Markdown in `session/session.md` and images in `session/_images`. This
+will allow images to be rendered inline by github.
+
+Image files can be given a unique name, like `hello.png`, or use
+generic names of the form `image01.png`. Slidoc can renumber images of
+the latter type automatically.
 
 Notes: The script `md2md.py` can be used to apply several Markdown
 tranformations as follows:
@@ -526,8 +538,8 @@ Other supported operations include:
 - `--images=check,web`: Check that all image references in the document are
 valid, including web references.
 
-- `--images=copy --dest_dir=...`: Copy all image references to
-destination
+- `--images=copy,renumber --dest_dir=...`: Copy all image references to
+destination, with optional renumbering of images
 
 - `--images=import,web`: Import all image references into the document
 as data URLs (including web URLs)
