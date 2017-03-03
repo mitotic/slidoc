@@ -121,7 +121,7 @@ Options = {
     'xsrf': False,
     }
 
-OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'offline_sessions', 'thaw_date']
+OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'thaw_date']
 SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', 'site_title']
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
@@ -2221,13 +2221,13 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     releaseDate = sessionEntries['releaseDate']
 
                 if isinstance(releaseDate, datetime.datetime) and Options['thaw_date'] and sliauth.epoch_ms(releaseDate) < sliauth.epoch_ms(Options['thaw_date']):
-                    errMsg = '--release_date %s must be after thaw date %s for session %s' % (releaseDate, Options['thaw_date'], sessionName)
+                    errMsg = 'release_date %s must be after thaw_date %s for session %s' % (releaseDate, Options['thaw_date'], sessionName)
 
                 if siteRole == sdproxy.ADMIN_ROLE:
                     # Admin user always has access regardless of release date, allowing delayed release of live lectures and exams
                     pass
-
                 else:
+                    # Non-admin access
                     if isinstance(releaseDate, datetime.datetime):
                         # Check release date for session
                         if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
@@ -2236,8 +2236,14 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                         # Future release date
                         errMsg = 'Session %s unavailable' % sessionName
 
-                    if not errMsg and not gradeDate and Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE):
-                        errMsg = 'Grading must be completed for release of offline session '+sessionName
+                    offlineCheck = Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE)
+                    if not errMsg and offlineCheck:
+                        # Failsafe check to prevent premature release of offline exams etc.
+                        if Options['thaw_date'] and releaseDate:
+                            pass
+                        else:
+                            errMsg = 'Valid thaw_date & release_date must be specified to access offline session '+sessionName
+                            
                 
             if errMsg:
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
@@ -3124,16 +3130,8 @@ def start_server(site_number=0, restart=False):
         IOLoop.current().start()
 
 def getSheetSettings(gsheet_url, site_name=''):
-    auth_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
     try:
-        temSettings = sliauth.read_settings(gsheet_url, auth_key, sdproxy.SETTINGS_SHEET)
-        sheetSettings = {}
-        for key, value in temSettings.items():
-            if isinstance(value, str) or isinstance(value, unicode):
-                value = value.strip()
-            sheetSettings[key.strip()] = value
-        return sheetSettings
-                
+        return sliauth.read_settings(gsheet_url, Options['root_auth_key'], sdproxy.SETTINGS_SHEET, site=site_name)
     except Exception, excp:
         ##if Options['debug']:
         ##    import traceback

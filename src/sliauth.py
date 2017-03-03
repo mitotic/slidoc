@@ -144,13 +144,13 @@ def read_settings(sheet_url, hmac_key, settings_sheet, site=''):
 def get_settings(rows):
     settings = {}
     for row in rows:
-        name, value = row[:2]
-        name = name.strip()
-        value = str(value).strip()
-        if value.lower() in ('on', 'true', 'yes'):
-            value = True
-        elif value.lower() in ('off', 'false', 'no'):
-            value = False
+        if not row or not row[0].strip():
+            continue
+        name = row[0].strip()
+        if len(row) > 1:
+            value = row[1].strip()
+        else:
+            value = ''
         settings[name] = value
     return settings
 

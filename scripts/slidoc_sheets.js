@@ -1,21 +1,21 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0c';
+var VERSION = '0.97.0d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
 			 ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
+			 [],
                          ['site_name', '', 'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
 			 ['site_label', 'Site name', 'Site label, e.g., Calculus 101'],
 			 ['site_title', 'Site description', 'Descriptive site title'],
-			 ['site_restricted', '', 'Restrict access to admins'],
+			 ['site_restricted', '', 'Restrict site access to admins only'],
                          ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
-
+			 [],
 			 ['admin_users', '', 'User IDs or email addresses with admin access'],
 			 ['grader_users', '', 'User IDs or email addresses with grader access'],
 			 ['guest_users', '', 'User IDs or email addresses with guest access'],
-
-			 ['offline_sessions', 'exam|quiz|test|midterm|final', 'Name patterns for offline sessions which are released only after grading'],
+			 [],
 			 ['thaw_date', '', 'Date after which all session releases must start'],
 			 ['freeze_date', '', 'Date when all user modifications are disabled'],
 			 ['require_login_token', 'require', 'Non-null string for true'],
@@ -218,7 +218,8 @@ function defaultSettings(overwrite) {
     for (var j=0; j<DEFAULT_SETTINGS.length; j++) {
 	var defaultRow = DEFAULT_SETTINGS[j];
 	settingsSheet.insertRows(j+2);
-	settingsSheet.getRange(j+2, 1, 1, defaultRow.length).setValues([defaultRow]);
+	if (defaultRow.length && defaultRow[0].trim())
+	    settingsSheet.getRange(j+2, 1, 1, defaultRow.length).setValues([defaultRow]);
     }
 }
 
@@ -228,11 +229,12 @@ function loadSettings() {
 	throw('loadSettings: Sheet '+SETTINGS_SHEET+' not found!');
     var settingsData = settingsSheet.getSheetValues(2, 1, settingsSheet.getLastRow()-1, 2);
     for (var j=0; j<settingsData.length; j++) {
-	var settingsName = settingsData[j][0].trim();
-	var settingsValue = settingsData[j][1];
-	if (typeof settingsValue == 'string')
-	    settingsValue = settingsValue.trim();
-	Settings[settingsName] = settingsValue;
+	if (!settingsData[j].length || !settingsData[j][0].trim())
+	    continue;
+	var settingsValue = (settingsData[j].length > 1) ? settingsData[j][1] : '';
+	if (typeof settingsValue !== 'string')
+	    settingsValue = '' + settingsValue;
+	Settings[settingsData[j][0].trim()] = settingsValue.trim();
     }
 }
 
