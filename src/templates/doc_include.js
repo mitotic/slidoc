@@ -345,7 +345,7 @@ function sessionAbort(err_msg, err_trace) {
     if (!Sliobj.params.debug)
 	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
 
-    if (Sliobj.serverCookie) {
+    if (Slidoc.serverCookie) {
 	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
@@ -460,9 +460,9 @@ function getServerCookie() {
 }
 
 Sliobj.serverData = {};
-Sliobj.serverCookie = getServerCookie();
-if (Sliobj.serverCookie) {
-    Sliobj.serverData = Sliobj.serverCookie.data || {};
+Slidoc.serverCookie = getServerCookie();
+if (Slidoc.serverCookie) {
+    Sliobj.serverData = Slidoc.serverCookie.data || {};
 }
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
@@ -470,7 +470,7 @@ Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
 Slidoc.websocketPath = '';
 if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
     // Proxy URL
-    if (Sliobj.serverCookie) {
+    if (Slidoc.serverCookie) {
 	Slidoc.websocketPath = Sliobj.params.gd_sheet_url+location.pathname;
     } else {
 	sessionAbort('Error: File must be served from proxy server for websocket authentication');
@@ -478,7 +478,6 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
 }
 
 Slidoc.logoutURL = "/_auth/logout/";
-Slidoc.getServerCookie = getServerCookie;
 Slidoc.getParameter = getParameter;
 
 var resetParam = getParameter('reset');
@@ -516,6 +515,45 @@ document.onreadystatechange = function(event) {
     return abortOnError(onreadystateaux);
 }
 
+    
+var PagedownConverter = null;
+function onreadystateaux() {
+    Slidoc.log('onreadystateaux:');
+    if (window.GService)
+	GService.setEventReceiverWS(Sliobj.eventReceiver);
+    setupPlugins();
+    if (window.Markdown) {
+	PagedownConverter = new Markdown.getSanitizingConverter();
+	if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
+	    Markdown.Extra.init(PagedownConverter, {extensions: ["fenced_code_gfm"]});
+
+	// Need latest version of Markdown for hooks
+	PagedownConverter.hooks.chain("preSpanGamut", MDPreSpanGamut);
+	PagedownConverter.hooks.chain("preBlockGamut", MDPreBlockGamut);
+    }
+
+    // Typeset MathJax after plugin setup
+    if (window.MathJax)
+	MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+
+    if (Sliobj.params.gd_client_id) {
+	// Google client load will authenticate
+    } else if (Sliobj.params.gd_sheet_url || (window.GService && Slidoc.serverCookie)) {
+	var localAuth = localGet('auth');
+	if (localAuth && !Slidoc.serverCookie) {
+	    Slidoc.showPopup('Accessing Google Docs ...', null, null, 1000);
+	    GService.gprofile.auth = localAuth;
+	    Slidoc.slidocReady(localAuth);
+	} else {
+	    if (!Slidoc.serverCookie)
+		Slidoc.reportTestAction('loginPrompt');
+	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.previewState, Sliobj.params.authType);
+	}
+    } else {
+	Slidoc.slidocReady(null);
+    }
+}
+
 Sliobj.previewState = false;
 
 Slidoc.pageSetup = function() {
@@ -530,13 +568,13 @@ Slidoc.pageSetup = function() {
 	setTimeout(reloadCheckFunc, 1000);
     }
 
-    if (Sliobj.serverCookie) {
-	if (Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
+    if (Slidoc.serverCookie) {
+	if (Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) {
 	    toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
 	    var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
 	    [].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
 	}
-	if (!Sliobj.serverCookie.data.editable) {
+	if (!Slidoc.serverCookie.data.editable) {
 	    var editIcons = document.getElementsByClassName('slidoc-edit-icon');
 	    [].forEach.call(editIcons, function(elem) { elem.style.display = 'none'; });
 	}
@@ -555,7 +593,7 @@ Slidoc.pageSetup = function() {
     var contentsButton = document.getElementById("slidoc-contents-button");
     if (contentsButton && !topnavElem)
 	contentsButton.style.display = null;
-    if (Sliobj.serverCookie && Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId) {
+    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem)
 	    dashElem.style.display = null;
@@ -736,45 +774,6 @@ function handleImageDrop(evt) {
     }
 
     return false;
-}
-
-    
-var PagedownConverter = null;
-function onreadystateaux() {
-    Slidoc.log('onreadystateaux:');
-    if (window.GService)
-	GService.setEventReceiverWS(Sliobj.eventReceiver);
-    setupPlugins();
-    if (window.Markdown) {
-	PagedownConverter = new Markdown.getSanitizingConverter();
-	if (Markdown.Extra) // Need to install https://github.com/jmcmanus/pagedown-extra
-	    Markdown.Extra.init(PagedownConverter, {extensions: ["fenced_code_gfm"]});
-
-	// Need latest version of Markdown for hooks
-	PagedownConverter.hooks.chain("preSpanGamut", MDPreSpanGamut);
-	PagedownConverter.hooks.chain("preBlockGamut", MDPreBlockGamut);
-    }
-
-    // Typeset MathJax after plugin setup
-    if (window.MathJax)
-	MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
-
-    if (Sliobj.params.gd_client_id) {
-	// Google client load will authenticate
-    } else if (Sliobj.params.gd_sheet_url || (window.GService && Sliobj.serverCookie)) {
-	var localAuth = localGet('auth');
-	if (localAuth && !Sliobj.serverCookie) {
-	    Slidoc.showPopup('Accessing Google Docs ...', null, null, 1000);
-	    GService.gprofile.auth = localAuth;
-	    Slidoc.slidocReady(localAuth);
-	} else {
-	    if (!Sliobj.serverCookie)
-		Slidoc.reportTestAction('loginPrompt');
-	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.previewState, Sliobj.params.authType);
-	}
-    } else {
-	Slidoc.slidocReady(null);
-    }
 }
 
 //////////////////////////////////
@@ -1410,7 +1409,7 @@ Slidoc.userLogout = function () {
 
 Slidoc.userLogin = function (msg, retryCall) {
     Slidoc.log('Slidoc.userLogin:', msg, retryCall);
-    if (Sliobj.serverCookie)
+    if (Slidoc.serverCookie)
 	sessionAbort(msg || 'Error in authentication');
     else
 	GService.gprofile.promptUserInfo(Sliobj.params.siteName, false, GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
@@ -2267,8 +2266,8 @@ Slidoc.switchToUser = function(userId) {
 function selectUser(auth, callback) {
     var userId = Sliobj.userList[Sliobj.gradingUser-1];
     Slidoc.log('selectUser:', auth, userId);
-    if (!auth.adminKey) {
-	sessionAbort('Only admin can pick user');
+    if (!auth.graderKey) {
+	sessionAbort('Only grader can pick user');
     }
     GService.switchUser(auth, userId);
 
@@ -2530,8 +2529,8 @@ Slidoc.manageSession = function() {
 	    html += 'Score: '+Sliobj.feedback.q_scores+'/'+Sliobj.params.scoreWeight+'<br>';
 	}
     } else {
-	if (Sliobj.serverCookie)
-	    html += 'User: <b>'+(userId || Sliobj.serverCookie.user)+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
+	if (Slidoc.serverCookie)
+	    html += 'User: <b>'+(userId || Slidoc.serverCookie.user)+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
@@ -2546,6 +2545,7 @@ Slidoc.manageSession = function() {
 		html += '<br>Release date: '+Sliobj.params.releaseDate;
 	}
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
+	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="http://code.mitotic.org/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
     }
 
@@ -2562,8 +2562,6 @@ Slidoc.manageSession = function() {
 	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
 	if (Sliobj.fullAccess) {
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
-	    html += hr;
-	    html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
 	    html += hr;
 	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
 	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
@@ -2610,10 +2608,10 @@ Slidoc.viewSheet = function(sheetName) {
 
 Slidoc.slidocReady = function (auth) {
     Slidoc.log('slidocReady:', auth);
-    // adminState should really be called gradableState; adminKey should be graderKey
+    // adminState should really be called gradableState
     // Also slidoc-admin-view -> slidoc-gradable-view, slidoc-adminonly -> slidoc-gradableonly, slidoc-noadmin -> slidoc-nogradable
-    Sliobj.adminState = auth && !!auth.adminKey;
-    Sliobj.fullAccess = Sliobj.serverCookie && Sliobj.serverCookie.siteRole == Sliobj.params.adminUserId && (getUserId() == Sliobj.params.testUserId || Sliobj.adminState);
+    Sliobj.adminState = auth && !!auth.graderKey;
+    Sliobj.fullAccess = auth && auth.authRole == Sliobj.params.adminUserId;
 
     Sliobj.adminPaced = 0;
     Sliobj.maxLastSlide = 0;
@@ -2943,7 +2941,7 @@ function slidocSetupAux(session, feedback) {
     if (location.protocol == 'http:' || location.protocol == 'https:')
     	toggleClass(true, 'slidoc-server-view');
 
-    if (Sliobj.serverCookie)
+    if (Slidoc.serverCookie)
     	toggleClass(true, 'slidoc-proxy-view');
 
     if (Sliobj.params.gd_sheet_url) {

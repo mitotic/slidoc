@@ -336,7 +336,7 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
             break;
         }
     }
-    if (!resp.adminKey && !resp.id && !email) {
+    if (!resp.graderKey && !resp.id && !email) {
 	alert('GAuth: ERROR no user id or email specified');
         return;
     }
@@ -360,7 +360,8 @@ GoogleProfile.prototype.onUserInfo = function (resp) {
     this.auth.token = resp.token || '';
     this.auth.domain = resp.domain || '';
     this.auth.image = (resp.image && resp.image.url) ? resp.image.url : ''; 
-    this.auth.adminKey = resp.adminKey || '';
+    this.auth.graderKey = resp.graderKey || '';
+    this.auth.authRole = resp.authRole || '';
     this.auth.remember = resp.remember || false;
     this.auth.validated = null;
 
@@ -376,7 +377,8 @@ GoogleProfile.prototype.receiveUserInfo = function (authType, userInfo, loginRem
     this.onUserInfo({id: loginUser,
 		     origid: userInfo.origid||'',
 		     token: userInfo.token,
-		     adminKey: userInfo.adminKey||'',
+		     graderKey: userInfo.graderKey||'',
+		     authRole: userInfo.authRole||'',
 		     displayName: userInfo.name || loginUser,
 		     authType: authType,
 		     emails: [{type: 'account', value: email}],
@@ -385,7 +387,7 @@ GoogleProfile.prototype.receiveUserInfo = function (authType, userInfo, loginRem
 }
 	
 GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType, user, msg, callback) {
-    var cookieInfo = Slidoc.getServerCookie();
+    var cookieInfo = Slidoc.serverCookie;
     if (!authType && !cookieInfo) {
 	var randStr = Math.random().toString(16).slice(2);
 	this.receiveUserInfo(authType, {user: 'anon'+randStr, name: 'User Anon'+randStr}, false, callback);
@@ -425,8 +427,9 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 
 	    var userIds     = ['_test_user',                 '_grader',               userName,                      ''];
 	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,              adminToken];
-	    var adminKeys   = ['',                           adminToken,              '',                            ''];
-	    var userOptions = ['Test user (pacing)',         'Admin user (grading)',  'Normal user ('+userName+')',  'Another user (read-only)'];
+	    var graderKeys   = ['',                           adminToken,              '',                            ''];
+	    var authRoles   = [siteRole,                       siteRole,              '',                            ''];
+	    var userOptions = ['Leader view (for testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {
@@ -442,7 +445,8 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 		var userParams = {
 		    user: userIds[indx-1],
 		    token: userTokens[indx-1],
-		    adminKey: adminKeys[indx-1],
+		    graderKey: graderKeys[indx-1],
+		    authRole: authRoles[indx-1],
 		    origid: userName,
 		    name: displayName,
 		    email: userEmail,
@@ -538,7 +542,7 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     if (GService.gprofile.auth.token)
 	params.token = GService.gprofile.auth.token;
 
-    if (GService.gprofile.auth.adminKey)
+    if (GService.gprofile.auth.graderKey)
 	params.admin = GService.gprofile.auth.origid;
 
     if (callType != 'action')
@@ -966,14 +970,14 @@ GService.sheetIsLocked = function () {
 }
 
 GService.switchUser = function (auth, userId, switchUserToken) {
-    if (!auth.adminKey)
-	throw('Only admin can switch user');
+    if (!auth.graderKey)
+	throw('Only grader can switch user');
     auth.displayName = userId;
     auth.id = userId;
     auth.email = (userId.indexOf('@')>0) ? userId : '';
     auth.altid = '';
     if (switchUserToken)
-	auth.token = userId+auth.adminKey;
+	auth.token = userId+auth.graderKey;
 }
     
 GService.GoogleSheet = GoogleSheet;

@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.0f'
+VERSION = '0.97.0g'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1082,17 +1082,8 @@ def sheetAction(params, notrace=False):
             # Check user access
             if not paramId:
                 raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
-            try:
-                # Copy user info from roster
-                if paramId == TESTUSER_ID:
-                    rosterValues = TESTUSER_ROSTER
-                else:
-                    rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, listReturn=True)
-            except Exception, err:
-                if isSpecialUser(paramId):
-                    rosterValues = ['#'+paramId+', '+paramId, paramId, '', '']
-                else:
-                    raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster")
+            # Copy user info from roster
+            rosterValues = getRosterEntry(paramId)
 
         returnInfo['prevTimestamp'] = None
         returnInfo['timestamp'] = None
@@ -2160,10 +2151,21 @@ def getSiteRole(siteName, siteRoles):
 
 def isSpecialUser(userId):
     for key in ('admin_users', 'grader_users', 'guest_users'):
-        idList = [x.strip for x in Settings[key].strip().split(',')]
+        idList = [x.strip() for x in Settings[key].strip().split(',')]
         if userId in idList:
             return True
     return False
+
+def getRosterEntry(userId):
+    if userId == TESTUSER_ID:
+        return TESTUSER_ROSTER
+    try:
+        # Copy user info from roster
+        return lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, listReturn=True)
+    except Exception, err:
+        if isSpecialUser(userId):
+            return ['#'+userId+', '+userId, userId, '', '']
+        raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+userId+"' not found in roster")
 
 class LCRandomClass(object):
     # Set to values from http://en.wikipedia.org/wiki/Numerical_Recipes
@@ -2306,13 +2308,11 @@ def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayN
 
     rosterSheet = getSheet(ROSTER_SHEET, optional=True)
     if rosterSheet:
-        rosterVals = lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, True)
-        if not rosterVals:
-            raise Exception('User ID '+userId+' not found in roster')
+        rosterValues = getRosterEntry(userId)
 
-        for j in range(len(rosterVals)):
-            if rosterVals[j]:
-                rowVals[j] = rosterVals[j]
+        for j in range(len(rosterValues)):
+            if rosterValues[j]:
+                rowVals[j] = rosterValues[j]
 
     # Management fields
     rowVals[idCol-1] = userId

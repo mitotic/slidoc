@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0f';
+var VERSION = '0.97.0g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -267,6 +267,19 @@ function isSpecialUser(userId) {
     return false;
 }
 
+function getRosterEntry(userId) {
+    if (userId == TESTUSER_ID)
+        return TESTUSER_ROSTER;
+    try {
+	// Copy user info from roster
+	return lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, true);
+    } catch(err) {
+	if (isSpecialUser(userId))
+	    return ['#'+userId+', '+userId, userId, '', ''];
+	throw("Error:NEED_ROSTER_ENTRY:userID '"+userId+"' not found in roster");
+    }
+}
+
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 function doGet(evt){
   return handleResponse(evt);
@@ -469,18 +482,8 @@ function sheetAction(params) {
 	    // Check user access
 	    if (!paramId)
 		throw('Error:NEED_ID:Must specify userID to lookup roster')
-	    try {
-		// Copy user info from roster
-		if (paramId == TESTUSER_ID)
-                    rosterValues = TESTUSER_ROSTER;
-		else
-		    rosterValues = lookupValues(paramId, MIN_HEADERS, ROSTER_SHEET, true);
-	    } catch(err) {
-		if (isSpecialUser(paramId))
-		    rosterValues = ['#'+paramId+', '+paramId, paramId, '', ''];
-		else
-		    throw("Error:NEED_ROSTER_ENTRY:userID '"+paramId+"' not found in roster");
-	    }
+	    // Copy user info from roster
+	    rosterValues = getRosterEntry(paramId);
 	}
 
 	returnInfo.prevTimestamp = null;
@@ -1931,13 +1934,11 @@ function createSessionRow(sessionName, fieldsMin, params, questions, userId, dis
 
     var rosterSheet = getSheet(ROSTER_SHEET);
     if (rosterSheet) {
-	var rosterVals = lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, true);
-	if (!rosterVals)
-	    throw('User ID '+userId+' not found in roster');
+	var rosterValues = getRosterEntry(userId);
 
-	for (var j=0; j<rosterVals.length; j++) {
-	    if (rosterVals[j])
-		rowVals[j] = rosterVals[j];
+	for (var j=0; j<rosterValues.length; j++) {
+	    if (rosterValues[j])
+		rowVals[j] = rosterValues[j];
 	}
     }
 
