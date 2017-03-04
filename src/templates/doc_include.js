@@ -3392,7 +3392,7 @@ function preAnswer() {
     var chapter_id = parseSlideId(firstSlideId)[0];
     clearAnswerElements();
 
-    if ('randomize_choice' in Sliobj.params.features && Sliobj.session && Sliobj.session.questionShuffle) {
+    if ('shuffle_choice' in Sliobj.params.features && Sliobj.session && Sliobj.session.questionShuffle) {
 	// Handle choice randomization
 	for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	    var question_attrs = attr_vals[qnumber-1];
@@ -3401,7 +3401,7 @@ function preAnswer() {
 	    // Choice question
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var shuffleStr = Sliobj.session.questionShuffle[qnumber] || '';
-	    if (shuffleStr && Sliobj.adminState && !Sliobj.printExamView) {
+	    if (shuffleStr && Sliobj.adminState && !Sliobj.printExamView && Sliobj.testOverride) {
 		// Do not display shuffled choices for grading; simply display shuffle string
 		var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
 		if (shuffleDiv)
@@ -3584,7 +3584,7 @@ function createSession(sessionName, retakes, randomSeed) {
         randomSeed = Slidoc.Random.makeSeed();
 
     var qshuffle = null;
-    if (questions && Sliobj.params['features'].randomize_choice) {
+    if (questions && Sliobj.params['features'].shuffle_choice) {
         var randFunc = makeRandomFunction(makeRandomChoiceSeed(randomSeed));
         qshuffle = {};
         for (var qno=1; qno < questions.length+1; qno++) {

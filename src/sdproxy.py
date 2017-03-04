@@ -42,7 +42,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.0d'
+VERSION = '0.97.0f'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -2254,7 +2254,7 @@ def createSession(sessionName, params, questions=None, retakes='', randomSeed=No
         randomSeed = LCRandom.makeSeed()
 
     qshuffle = None
-    if questions is not None and params['features'].get('randomize_choice'):
+    if questions is not None and params['features'].get('shuffle_choice'):
         randFunc = makeRandomFunction(makeRandomChoiceSeed(randomSeed))
         qshuffle = {}
         for qno in range(1,len(questions)+1):

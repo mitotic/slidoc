@@ -1406,7 +1406,7 @@ class ActionHandler(BaseHandler):
                 with open(src_path) as f:
                     sessionText = f.read()
             except Exception, excp:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading session %s: %s' % (sessionName, excp))
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading session from %s: %s' % (src_path, excp))
 
         if isinstance(sessionText, unicode):
             sessionText = sessionText.encode('utf-8')

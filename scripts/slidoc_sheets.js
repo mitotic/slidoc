@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0d';
+var VERSION = '0.97.0f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1874,7 +1874,7 @@ function createSession(sessionName, params, questions, retakes, randomSeed) {
         randomSeed = LCRandom.makeSeed();
 
     var qshuffle = null;
-    if (questions && params['features'].randomize_choice) {
+    if (questions && params['features'].shuffle_choice) {
         var randFunc = makeRandomFunction(makeRandomChoiceSeed(randomSeed));
         qshuffle = {};
         for (var qno=1; qno < questions.length+1; qno++) {
@@ -3755,24 +3755,26 @@ function updateScores(sessionNames, interactive) {
 	    }
 	    var agFormula = '';
 	    var agAverage = '';
+	    var dropScores = 0;
 	    if (agColMax > agCol) {
 		// Aggregate columns
+		dropScores = Math.min(agColMax-agCol-1, agParams.drop);
 		var agRangeStr = colIndexToChar(agCol+1)+'@:'+colIndexToChar(agColMax)+'@';
 		var agMaxRangeStr = colIndexToChar(agCol+1)+'$'+maxWeightRow+':'+colIndexToChar(agColMax)+'$'+maxWeightRow;
 		agFormula = agSumFormula.replace(/%range/g, agRangeStr);
-		for (var kdrop=0; kdrop < agParams.drop; kdrop++) // Drop n lowest scores
+		for (var kdrop=0; kdrop < dropScores; kdrop++) // Drop n lowest scores
 		    agFormula += agDropFormula.replace(/%range/g, agRangeStr).replace(/%drop/g, ''+(kdrop+1));
 		if (agParams.type.toLowerCase() == 'avg') {
 		    // Average
 		    if (agMaxWeightMismatch)
 			throw('All max weights should be identical to aggregate column '+agName+' in session '+sessionName);
-		    if (agParams.drop)
-			agFormula = '(' + agFormula + ')/(COLUMNS(' + agRangeStr + ')-'+agParams.drop+')';
+		    if (dropScores)
+			agFormula = '(' + agFormula + ')/(COLUMNS(' + agRangeStr + ')-'+dropScores+')';
 		    else
 			agFormula = agFormula + '/COLUMNS(' + agRangeStr + ')';
 		} else if (agParams.type.toLowerCase() == 'normavg') {
 		    // Normalized average
-		    if (agParams.drop)
+		    if (dropScores)
 			throw('Cannot drop lowest values when computing normalized average for aggregate column '+agName+' in session '+sessionName);
 		    agFormula = agFormula + '/'+agSumFormula.replace(/%range/g, agMaxRangeStr);
 		}
@@ -3783,8 +3785,8 @@ function updateScores(sessionNames, interactive) {
 		    agAverage = '=AVERAGEIF('+colChar+avgStartRow+':'+colChar+',">0")';
 	    }
 	    insertColumnFormulas(scoreSheet, agFormula, agCol, scoreStartRow, scoreAvgRow);
-	    if (agParams.drop && rescaleRow)
-		scoreSheet.getRange(rescaleRow, agCol, 1, 1).setValues([['dropped '+agParams.drop]]);
+	    if (dropScores && rescaleRow)
+		scoreSheet.getRange(rescaleRow, agCol, 1, 1).setValues([['dropped '+dropScores]]);
 	}
 	var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
 	for (var jcol=scoreColHeaders.length; jcol >= 1; jcol--) {
