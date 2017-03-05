@@ -117,7 +117,6 @@ Sliobj.delaySec = null;
 Sliobj.scores = null;
 Sliobj.liveResponses = {};
 Sliobj.choiceBlockHTML = {};
-Sliobj.printExamView = !Sliobj.params.gd_sheet_url && getParameter('print');
 
 Sliobj.testOverride = null;
 
@@ -464,6 +463,7 @@ Slidoc.serverCookie = getServerCookie();
 if (Slidoc.serverCookie) {
     Sliobj.serverData = Slidoc.serverCookie.data || {};
 }
+Sliobj.printExamView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
 
@@ -1525,7 +1525,7 @@ Slidoc.showConcepts = function (submitMsg) {
 
     if (Sliobj.allQuestionConcepts.length && !controlledPace()) {
 	html += '<p></p>';
-	var labels = ['Primary concepts missed', 'Secondary concepts missed'];
+	var labels = ['<h3>Primary concepts missed</h3>', '<h3>Secondary concepts missed</h3>'];
 	for (var m=0; m<labels.length; m++)
 	    html += labels[m]+conceptStats(Sliobj.allQuestionConcepts[m], missedConcepts[m])+'<p></p>';
     }
@@ -2349,6 +2349,88 @@ function nextUserAux(gradingUser, needGradingOnly) {
     return true;
 }
 
+Slidoc.showQDiff = function () {
+    if (!Sliobj.params.gd_sheet_url)
+	return;
+    if (!Sliobj.closePopup)
+	Slidoc.showPopup('Retrieving answer stats...');
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_qstats/'+Sliobj.sessionName, {json: 1}, showQDiffCallback, true);
+}
+
+function showQDiffCallback(result, errMsg) {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    if (!result) {
+	alert('Error in retrieving answer stats :'+errMsg);
+	return;
+    }
+    var firstSlideId = getVisibleSlides()[0].id;
+    var attr_vals = getChapterAttrs(firstSlideId);
+    var chapter_id = parseSlideId(firstSlideId)[0];
+    var html = '<h2>Question correct response rate</h2><p></p>';
+    html += '<table>\n';
+    for (var j=0; j < result.qcorrect.length; j++) {
+	var qno = result.qcorrect[j][1];
+	var question_attrs = attr_vals[qno-1];
+	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	var footer_elem = document.getElementById(slide_id+'-footer-toggle');
+	var concept_elem = document.getElementById(slide_id+'-concepts');
+	var header = 'slide';
+	var tags = ''
+	if (footer_elem)
+	    header = footer_elem.textContent;
+	if (concept_elem)
+	    tags = ' [' + concept_elem.textContent.trim() + ']';
+	html += '<tr><td>'+(result.qcorrect[j][0]*100).toFixed(0)+'%:</td><td><a href="#'+slide_id+'" target="_blank">'+header+'</a></td><td>'+tags+'</td></tr>\n';
+    }
+    html += '</table>\n';
+    Slidoc.showPopup(html, '', true);;
+}
+
+Slidoc.showStats = function () {
+    if (!Sliobj.params.gd_sheet_url)
+	return;
+    if (!Sliobj.closePopup)
+	Slidoc.showPopup('Retrieving response stats...');
+    Sliobj.statSheet.getRow('_average', {getheaders: 1}, showStatsCallback);
+}
+
+var TAG_RE = /^(p|s):(.*)$/;
+function showStatsCallback(result, retStatus) {
+    Slidoc.log('showStatsCallback:', result, retStatus);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    if (!result) {
+	alert('No stats found for session '+Sliobj.sessionName);
+	return;
+    }
+    var headers = retStatus.info.headers;
+    var tags = [[], []];
+    var tallies = [[], []];
+    for (var j=0; j<headers.length; j++) {
+	var header = headers[j];
+	var tmatch = TAG_RE.exec(header);
+	if (!tmatch)
+	    continue;
+	if (tmatch[1] == 'p') {
+	    tags[0].push(tmatch[2]);
+	    tallies[0].push([result[header], 0]);
+	} else {
+	    tags[1].push(tmatch[2]);
+	    tallies[1].push([result[header], 0]);
+	}
+    }
+    var html = '<h3>Average response stats</h3><p></p>';
+    html += 'Correct response: '+result['correct'].toFixed(2)+'<br>';
+    html += 'Weighted score: '+result['weightedCorrect'].toFixed(2)+'<br>';
+    html += 'Answered: '+result['count'].toFixed(2)+'<br>';
+    html += 'Skipped: '+result['skipped'].toFixed(2)+'<br>';
+    var labels = ['<hr><h3>Primary concepts missed</h3>', '<hr><h3>Secondary concepts missed</h3>'];
+    for (var m=0; m<2; m++)
+	html += labels[m]+conceptStats(tags[m], tallies[m])+'<p></p>';
+    Slidoc.showPopup(html);;
+}
+
 Slidoc.showGrades = function () {
     if (!Sliobj.params.gd_sheet_url)
 	return;
@@ -2559,6 +2641,9 @@ Slidoc.manageSession = function() {
 	html += 'Session admin:<br><blockquote>\n';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
 	html += hr;
+	html += '<span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span><br>';
+	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
 	if (Sliobj.fullAccess) {
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
@@ -2619,6 +2704,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.indexSheet = null;
     Sliobj.rosterSheet = null;
     Sliobj.scoreSheet = null;
+    Sliobj.statSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
     Sliobj.remoteAnswers = '';
@@ -2628,6 +2714,8 @@ Slidoc.slidocReady = function (auth) {
 	Sliobj.rosterSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.roster_sheet,
 						     [], [], useJSONP);
 	Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
+						     [], [], useJSONP);
+	Sliobj.statSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'-stats',
 						     [], [], useJSONP);
     }
     if (Sliobj.gradableState) {
@@ -2914,6 +3002,9 @@ function slidocSetupAux(session, feedback) {
 
     scoreSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
+
+    if (Sliobj.printExamView)
+	toggleClass(true, 'slidoc-assessment-view');
 
     if (Sliobj.reloadCheck)
 	toggleClass(true, 'slidoc-localpreview-view');
@@ -3360,6 +3451,8 @@ function scoreSession(session) {
 }
 
 Slidoc.toggleExam = function () {
+    if (Slidoc.serverCookie && !Slidoc.serverCookie.siteRole)
+	return;
     if (!Sliobj.params.gd_sheet_url) {
 	var href = location.protocol+'//'+location.host+location.pathname;
 	if (!Sliobj.printExamView)
@@ -3370,6 +3463,7 @@ Slidoc.toggleExam = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Sliobj.printExamView = !Sliobj.printExamView;
+    toggleClass(Sliobj.printExamView, 'slidoc-assessment-view');
     if (Sliobj.printExamView) {
 	if (Sliobj.currentSlide)
 	    Slidoc.slideViewEnd();
@@ -5467,16 +5561,20 @@ function releaseGradesCallback(gradeDateStr, result, retStatus){
 }
 
 function conceptStats(tags, tallies) {
-    var scores = [];
+    var tagTallies = [];
     for (var j=0; j<tags.length; j++) {
-	scores.push([tags[j], tallies[j][0], tallies[j][1]]);
+	tagTallies.push([tags[j], tallies[j][0], tallies[j][1]]);
     }
-    scores.sort(function(a,b){return cmp(b[1]/Math.max(1,b[2]), a[1]/Math.max(1,a[2])) || cmp(a[0].toLowerCase(), b[0].toLowerCase());});
+    tagTallies.sort(function(a,b){return cmp(-a[1], -b[1]) || cmp(a[2], b[2]) || cmp(a[0].toLowerCase(), b[0].toLowerCase());});
 
     var html = '<table class="slidoc-missed-concepts-table">';
-    for (var j=0; j<scores.length; j++) {
-	var tagId = 'slidoc-index-concept-' + make_id_from_text(scores[j][0]);
-	html += '<tr><td><a href="'+Sliobj.params.conceptIndexFile+'#'+tagId+'" target="_blank">'+scores[j][0]+'</a>:</td><td>'+scores[j][1]+'/'+scores[j][2]+'</td></tr>';
+    for (var j=0; j<tagTallies.length; j++) {
+	if (!tagTallies[j][1])
+	    continue;
+	var tagId = 'slidoc-index-concept-' + make_id_from_text(tagTallies[j][0]);
+	var tagTally = tagTallies[j][2] ? (tagTallies[j][1]+'/'+tagTallies[j][2]) : ((100*tagTallies[j][1]).toFixed(0)+'%');
+	var tagLink = Sliobj.params.conceptIndexFile ? ('<a href="'+Sliobj.params.conceptIndexFile+'#'+tagId+'" target="_blank">'+tagTallies[j][0]+'</a>') : ('<b>'+tagTallies[j][0]+'</b>');
+	html += '<tr><td>'+tagLink+':</td><td>'+tagTally+'</td></tr>';
     }
     html += '</table>';
     return html;

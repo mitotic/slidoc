@@ -483,10 +483,11 @@ class ActionHandler(BaseHandler):
         site_label = Options['site_label'] or 'Home'
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         dash_url = site_prefix + '/_dash'
+        json_return = self.get_argument('json', '')
         previewStatus = sdproxy.previewStatus()
         if not Options['site_list'] or Options['site_number']:
             # Secondary server
-            root = str(self.get_argument("root", ""))
+            root = str(self.get_argument('root', ''))
             if action == '_preview':
                 if not previewStatus:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
@@ -773,13 +774,18 @@ class ActionHandler(BaseHandler):
                 if qmatch:
                     qaverages.append([float(qrows[1][j]), int(qmatch.group(1))])
             qaverages.sort()
-            lines = []
-            for j, qavg in enumerate(qaverages):
-                lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
-                if j%5 == 4:
-                    lines.append('')
-            self.write('<a href="%s">Dashboard</a><br>' % dash_url)
-            self.write(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+            if json_return:
+                self.set_header('Content-Type', 'application/json')
+                retval = {'result': 'success', 'qcorrect': qaverages}
+                self.write( json.dumps(retval) )
+            else:
+                lines = []
+                for j, qavg in enumerate(qaverages):
+                    lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
+                    if j%5 == 4:
+                        lines.append('')
+                self.write('<a href="%s">Dashboard</a><br>' % dash_url)
+                self.write(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
 
         elif action == '_refresh':
             if subsubpath:
@@ -2235,8 +2241,12 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     gradeDate = sessionEntries['gradeDate']
                     releaseDate = sessionEntries['releaseDate']
 
-                if isinstance(releaseDate, datetime.datetime) and Options['thaw_date'] and sliauth.epoch_ms(releaseDate) < sliauth.epoch_ms(Options['thaw_date']):
-                    errMsg = 'release_date %s must be after thaw_date %s for session %s' % (releaseDate, Options['thaw_date'], sessionName)
+                if Options['thaw_date']:
+                    thawTime = sliauth.epoch_ms(Options['thaw_date'])
+                    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < thawTime:
+                        errMsg = 'release_date %s must be after thaw_date %s for session %s' % (releaseDate, Options['thaw_date'], sessionName)
+                    if gradeDate and sliauth.epoch_ms(gradeDate) < thawTime:
+                        errMsg = 'grade date %s must be after thaw_date %s for session %s' % (gradeDate, Options['thaw_date'], sessionName)
 
                 if siteRole == sdproxy.ADMIN_ROLE:
                     # Admin user always has access regardless of release date, allowing delayed release of live lectures and exams
@@ -2254,12 +2264,12 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     offlineCheck = Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE)
                     if not errMsg and offlineCheck:
                         # Failsafe check to prevent premature release of offline exams etc.
-                        if Options['thaw_date'] and releaseDate:
+                        if gradeDate or (Options['thaw_date'] and releaseDate):
                             pass
                         else:
-                            errMsg = 'Valid thaw_date & release_date must be specified to access offline session '+sessionName
+                            # Valid gradeDate or (thaw_date & release_date) must be specified to access offline session
+                            errMsg = 'Session '+sessionName+' not yet released'
                             
-                
             if errMsg:
                 print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)

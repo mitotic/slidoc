@@ -7,6 +7,7 @@ body.slidoc-paced-view .slidoc-nopaced,
 body.slidoc-remote-view .slidoc-noremote,
 body.slidoc-simple-view .slidoc-nosimple,
 body.slidoc-slide-view .slidoc-noslide,
+body.slidoc-assessment-view .slidoc-noassessment,
 .slidoc-hidden {
     display: none; }
 
@@ -25,6 +26,7 @@ body:not(.slidoc-restricted-view) .slidoc-restrictedonly,
 body:not(.slidoc-testuser-view) .slidoc-testuseronly,
 body:not(.slidoc-collapsible-view) .slidoc-collapsibleonly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
+body:not(.slidoc-assessment-view) .slidoc-assessmentonly,
 body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
     display: none; }
 

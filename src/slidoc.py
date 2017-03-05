@@ -1882,7 +1882,7 @@ class SlidocRenderer(MathRenderer):
 
         id_str = self.get_slide_id()+'-concepts'
         display_style = 'inline' if self.options['config'].printable else 'none'
-        tag_html = '''<div class="slidoc-concepts-container slidoc-noslide slidoc-nopaced"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
+        tag_html = '''<div class="slidoc-concepts-container slidoc-noslide slidoc-nopaced slidoc-noassessment"><span class="slidoc-clickable" onclick="Slidoc.toggleInlineId('%s')">%s:</span> <span id="%s" style="display: %s;">''' % (id_str, name.capitalize(), id_str, display_style)
 
         if self.options['config'].index:
             for j, tag in enumerate(all_tags):
@@ -2708,7 +2708,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     js_params['overwrite'] = 1 if config.overwrite else 0
     js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
-    js_params['conceptIndexFile'] = 'index.html'  # Need command line option to modify this
+    js_params['conceptIndexFile'] = '' if config.make_toc else 'index.html' # Need command line option to modify this
     js_params['printable'] = config.printable
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
