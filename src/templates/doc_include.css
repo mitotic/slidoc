@@ -25,19 +25,19 @@ body:not(.slidoc-restricted-view) .slidoc-restrictedonly,
 body:not(.slidoc-testuser-view) .slidoc-testuseronly,
 body:not(.slidoc-collapsible-view) .slidoc-collapsibleonly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
-body.slidoc-completed-view:not(.slidoc-admin-view) .slidoc-incrementalonly {
+body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
     display: none; }
 
 /* Plugin display */
 div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
 
 /* Answer/grading control */
-body.slidoc-admin-view .slidoc-noadmin { display: none; }
+body.slidoc-gradable-view .slidoc-nogradable { display: none; }
 body.slidoc-graded-view .slidoc-nograded { display: none; }
-body:not(.slidoc-admin-view) .slidoc-adminonly { display: none; }
+body:not(.slidoc-gradable-view) .slidoc-gradableonly { display: none; }
 body:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
 
-body:not(.slidoc-admin-view):not(.slidoc-graded-view) .slidoc-admin-graded { display: none; }
+body:not(.slidoc-gradable-view):not(.slidoc-graded-view) .slidoc-gradable-graded { display: none; }
 
 body:not(.slidoc-interact-view) .slidoc-interactonly { display: none; }
 
@@ -47,8 +47,8 @@ section:not(.slidoc-grading-slideview) .slidoc-gradingonly { display: none; }
 section.slidoc-answered-slideview .slidoc-noanswered { display: none; }
 section.slidoc-grading-slideview .slidoc-nograding { display: none; }
 
-body.slidoc-admin-view section:not(.slidoc-answered-slideview) .slidoc-render-button { display: none; }
-body:not(.slidoc-admin-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
+body.slidoc-gradable-view section:not(.slidoc-answered-slideview) .slidoc-render-button { display: none; }
+body:not(.slidoc-gradable-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
 section.slidoc-answered-slideview:not(.slidoc-grading-slideview) .slidoc-render-button { display: none; }
 
 section:not(.slidoc-answered-slideview) .slidoc-choice-selected {background: #aaa; }
@@ -139,7 +139,7 @@ body:not(.slidoc-slide-view) section.slidoc-page-break-before {
  #slidoc-pages-button
      {font-size: 80%;}
 
-body:not(.slidoc-admin-view):not(.slidoc-incremental-view) .slidoc-slide-nav-down { display: none; }
+body:not(.slidoc-gradable-view):not(.slidoc-incremental-view) .slidoc-slide-nav-down { display: none; }
 
 body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }

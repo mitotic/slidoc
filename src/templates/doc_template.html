@@ -26,7 +26,7 @@
   <span id="slidoc-session-display" class="slidoc-nofullscreen slidoc-top-spaced"></span>
   <span id="slidoc-submit-display" class="slidoc-clickable slidoc-nofullscreen slidoc-top-spaced slidoc-remoteonly" onclick="Slidoc.submitStatus();"></span>
   <span id="slidoc-grades-button" class="slidoc-clickable slidoc-nofullscreen slidoc-top-spaced slidoc-top-right-button" onclick="Slidoc.showGrades();" style="display: none;">%(letters)s</span>
-  <select id="slidoc-switch-user" class="slidoc-switch-user slidoc-adminonly"></select>
+  <select id="slidoc-switch-user" class="slidoc-switch-user slidoc-gradableonly"></select>
   <span id="slidoc-score-display" class="slidoc-clickable slidoc-top-spaced slidoc-nofullscreen" onclick="Slidoc.showConcepts();"></span>
   <span class="slidoc-clickable slidoc-top-spaced slidoc-top-right-button" onclick="Slidoc.manageSession();">%(gear)s</span>
   <span class="slidoc-clickable slidoc-top-spaced" onclick="Slidoc.viewHelp();"><b>?</b></span>
@@ -35,8 +35,8 @@
 </div>
 
 <table class="slidoc-slide-nav slidoc-slideonly slidoc-nav-overlay">
-<tr class=" slidoc-noadmin"><td id="slidoc-slide-nav-counter" class="slidoc-slide-nav-counter" colspan="3" align=center valign=bottom></td></tr>
-<tr class=" slidoc-adminonly"><td></td>
+<tr class=" slidoc-nogradable"><td id="slidoc-slide-nav-counter" class="slidoc-slide-nav-counter" colspan="3" align=center valign=bottom></td></tr>
+<tr class=" slidoc-gradableonly"><td></td>
 <td id="slidoc-slide-nav-up" class="slidoc-clickable-sym" onclick="Slidoc.prevUser();">%(up)s</td>
 <td></td></tr>
 <tr>

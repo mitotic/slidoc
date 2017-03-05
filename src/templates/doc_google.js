@@ -6,19 +6,30 @@
 var TRUNCATE_DIGEST = 8;
 var MAXSCORE_ID = '_max_score';
 
-function gen_hmac_token(key, message) {
+function genHmacToken(key, message) {
     // Generates token using HMAC key
     return btoa(md5(message, key, true)).slice(0,TRUNCATE_DIGEST);
 }
 
-function gen_late_token(key, user_id, site_name, session_name, date_str) {
+function genAuthPrefix(userId, role, sites) {
+    return ':' + userId + ':' + (role||'') + ':' + (sites||'');
+}
+
+function genAuthToken(key, userId, role, sites, prefixed) {
+    var prefix = genAuthPrefix(userId, role, sites);
+    var token = genHmacToken(key, prefix);
+    return prefixed ? (prefix+':'+token) : token;
+}
+
+
+function genLateToken(key, user_id, site_name, session_name, date_str) {
     // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
     var date = new Date(date_str);
     if (date_str.slice(-1) != 'Z') {  // Convert local time to UTC
 	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
 	date_str = date.toISOString().slice(0,16)+'Z';
     }
-    return date_str+':'+gen_hmac_token(key, 'late:'+user_id+':'+site_name+':'+session_name+':'+date_str);
+    return date_str+':'+genHmacToken(key, 'late:'+user_id+':'+site_name+':'+session_name+':'+date_str);
 }
 
 var GService = {};
@@ -429,7 +440,7 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,              adminToken];
 	    var graderKeys   = ['',                           adminToken,              '',                            ''];
 	    var authRoles   = [siteRole,                       siteRole,              '',                            ''];
-	    var userOptions = ['Leader view (for testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
+	    var userOptions = ['Admin view (for testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {

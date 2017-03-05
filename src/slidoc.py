@@ -668,8 +668,8 @@ class SlidocRenderer(MathRenderer):
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(disabled)s" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
   <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly %(disabled)s" data-qnumber="%(qno)d">Answer:</span>
-  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-noadmin slidoc-noanswered slidoc-noprint %(disabled)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
-  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-noanswered slidoc-noprint %(disabled)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
@@ -680,17 +680,17 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
   </span>
   %(explain)s %(boxlabel)s
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-noadmin slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" %(boxsize)s ></textarea>
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" %(boxsize)s ></textarea>
 '''                
 
     grading_template = '''
   <div id="%(sid)s-grade-element" class="slidoc-grade-element slidoc-answeredonly %(zero_gwt)s">
-    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-adminonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
-    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-adminonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
-    <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-admin-graded"><em>Grade:</em></span>
-    <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-adminonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
+    <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
+    <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-gradableonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
+    <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-gradable-graded"><em>Grade:</em></span>
+    <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-gradableonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
-    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-admin-graded">%(gweight)s</span>
+    <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-gradable-graded">%(gweight)s</span>
     <button id="%(sid)s-grademax" class="slidoc-clickable slidoc-button slidoc-grademax slidoc-gradingonly" onclick="Slidoc.gradeMax(this,'%(sid)s','%(gweight)s');">&#x2714;</button>
   </div>
 '''
@@ -705,7 +705,7 @@ class SlidocRenderer(MathRenderer):
   <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-button slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
 '''
     comments_template_b = '''              
-<div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-admin-graded"><em>Comments:</em>
+<div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-gradable-graded"><em>Comments:</em>
   <div id="%(sid)s-comments-content" class="slidoc-comments-content"></div>
 </div>
 '''
@@ -2916,9 +2916,9 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 # No grading without google sheet
                 file_config.features.remove('grade_response')
 
-            if 'slides_only' in file_config.features and config.printable:
-                file_config.features.remove('slides_only')
-                message('slides_only feature suppressed by --printable option')
+            ##if 'slides_only' in file_config.features and config.printable:
+            ##    file_config.features.remove('slides_only')
+            ##    message('slides_only feature suppressed by --printable option')
 
             if 'keep_extras' in file_config.features and config.gsheet_url:
                 abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')

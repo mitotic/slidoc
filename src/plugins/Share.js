@@ -8,7 +8,7 @@ Share = {
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
 
-	var manage = (this.paced == Slidoc.PluginManager.ADMIN_PACE && (this.adminState || this.testUser));
+	var manage = (this.paced == Slidoc.PluginManager.ADMIN_PACE && (this.gradableState || this.testUser));
 	toggleClass(!manage, 'slidoc-shareable-hide', this.countElem);
 
 	if (!manage)
@@ -134,7 +134,7 @@ Share = {
 	    this.nCols += 1;
 	var colPrefix = 'q'+this.qattributes.qnumber;
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.getShare(colPrefix, this.adminState, this.responseCallback.bind(this, display));
+	gsheet.getShare(colPrefix, this.gradableState, this.responseCallback.bind(this, display));
     },
 
     responseCallback: function (display, result, retStatus) {
@@ -193,7 +193,7 @@ Share = {
 	    return;
 
 	var checkResp = [];
-	var testShare = this.adminState || (this.testUser && (Slidoc.PluginManager.submitted() || Slidoc.PluginManager.answered(this.qattributes.qnumber)) );
+	var testShare = this.gradableState || (this.testUser && (Slidoc.PluginManager.submitted() || Slidoc.PluginManager.answered(this.qattributes.qnumber)) );
 	if (this.correctAnswer && (testShare || Slidoc.PluginManager.shareReady(this.qattributes.share, this.qattributes.qnumber)) ) {
 	    // Display correct answer
 	    if (this.qattributes.qtype == 'number') {

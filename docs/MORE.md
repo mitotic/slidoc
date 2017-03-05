@@ -104,7 +104,7 @@ attributes:
 
 > `this.displayName`: "LastName, FirstName ..."
 
-> `this.adminState`: *true* if grading
+> `this.gradableState`: *true* if grading
 
 > `this.testUser`: *true* if test user
 
@@ -318,7 +318,7 @@ Use query options of the form:
     name.html?testscript=basic&teststep=1&testuser=aaa&testkey=key
 
 to trigger testing. `testscript` is the name of the script to run,
-`testuser` is login id (which would be `admin` for grading). `testkey`
+`testuser` is login id (which would be `grader` for grading). `testkey`
 is the digest authentication key (a `testtoken` may also be provided instead.)
 `teststep=1` enables stepwise testing, requiring user interaction.
 

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0g';
+var VERSION = '0.97.0h';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -2059,7 +2059,7 @@ function genAuthPrefix(userId, role, sites) {
     return ':' + userId + ':' + (role||'') + ':' + (sites||'');
 }
 
-function getAuthToken(key, userId, role, sites, prefixed) {
+function genAuthToken(key, userId, role, sites, prefixed) {
     var prefix = genAuthPrefix(userId, role, sites);
     var token = genHmacToken(key, prefix);
     return prefixed ? (prefix+':'+token) : token;

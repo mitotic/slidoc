@@ -3,7 +3,7 @@
 // Use URL query options to activate testing:
 //    ?testscript=basic/...    # testing script name
 //    &teststep=1              # step-wise testing
-//    &testuser=admin/aaa/...  # login user name
+//    &testuser=grader/aaa/...  # login user name
 //    &testkey=key OR testtoken=token # login key/token (token automatically generated from testkey)
 //
 //  Sample script in *.md files:
@@ -169,7 +169,7 @@ TestScript.prototype.eventAction = function(commands) {
 	var testkey   = Slidoc.getParameter('testkey') || '';
 	var testtoken = Slidoc.getParameter('testtoken') || '';
 	if (testkey && !testtoken)
-	    testtoken = (testuser == 'admin') ? testkey : gen_user_token(testkey, testuser);
+	    testtoken = (testuser == 'grader') ? testkey :  genAuthToken(testkey, testuser);
 	var testlate  = Slidoc.getParameter('testlate') || '';
 
 	switch (action) {
@@ -196,7 +196,7 @@ TestScript.prototype.eventAction = function(commands) {
 		    date = newDate.toISOString().slice(0,16);
 		}
 		if (date)
-		    value = gen_late_token(testkey, GService.gprofile.auth.id, Sliobj.sessionName, date);
+		    value = genLateToken(testkey, GService.gprofile.auth.id, '', Sliobj.sessionName, date);
 	    }
 	    return value;
 	case 'dialogReturn':
