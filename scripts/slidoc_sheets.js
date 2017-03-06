@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0h';
+var VERSION = '0.97.0i';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -728,13 +728,13 @@ function sheetAction(params) {
                     var checkCols = modifyStartCol-1;
 		} else {
                     if (headers.length != columnHeaders.length)
-			throw("Error::Number of headers does not match that present in sheet '"+sheetName+"'; delete it or modify headers.");
+			throw("Error:MODIFY_SESSION:Number of headers does not match that present in sheet '"+sheetName+"'; delete it or modify headers.");
                     var checkCols = columnHeaders.length;
 		}
 
 		for (var j=0; j< checkCols; j++) {
                     if (headers[j] != columnHeaders[j]) {
-			throw("Error::Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or modify headers.")
+			throw("Error:MODIFY_SESSION:Column header mismatch: Expected "+headers[j]+" but found "+columnHeaders[j]+" in sheet '"+sheetName+"'; delete it or modify headers.")
                     }
 		}
 		if (modifyStartCol) {
@@ -742,8 +742,15 @@ function sheetAction(params) {
                     var startRow = 2;
                     var nRows = modSheet.getLastRow()-startRow+1;
 		    var idValues = null;
-                    if (nRows)
+                    if (nRows) {
 			idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
+                        var submitValues = modSheet.getSheetValues(startRow, columnIndex['submitTimestamp'], nRows, 1);
+                        for (var k=0; k < nRows; k++) {
+                            if (submitValues[k][0]) {
+                                throw( "Error::Cannot modify sheet "+sheetName+" with submissions");
+			    }
+			}
+		    }
 		    if (modifyStartCol <= columnHeaders.length) {
                         // Truncate columns; ensure truncated columns are empty
                         var startCol = modifyStartCol;

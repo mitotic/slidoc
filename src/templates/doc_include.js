@@ -854,6 +854,7 @@ Slidoc.slideEditMenu = function() {
     if (Sliobj.currentSlide) {
 	var slideId = Slidoc.getCurrentSlideId();
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit','"+slideId+"');"+'">Edit current slide</span></li><p></p>\n';
+	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li>\n';
     html += '</ul>';
@@ -864,6 +865,8 @@ Slidoc.slideEditMenu = function() {
 
 Slidoc.slideEdit = function(action, slideId) {
     Slidoc.log('slideEdit:', action, slideId);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
     if (!slideId) {
 	if (!checkActiveEdit())
 	    return;
@@ -883,8 +886,11 @@ Slidoc.slideEdit = function(action, slideId) {
 	editContainer.style.display = 'none';
 	editArea.value = '';
 
-    } else if (action == 'save') {
+    } else if (action == 'save' || action == 'delete') {
 	params.sessiontext = editArea.value;
+	if (action == 'delete')
+	    params.deleteslide = 'delete';
+
 	function slideSaveAux(result, errMsg) {
 	    if (Sliobj.closePopup)
 		Sliobj.closePopup();
@@ -892,8 +898,10 @@ Slidoc.slideEdit = function(action, slideId) {
 		var msg = 'Error in saving edits :'+errMsg
 		if (!params.sessionmodify && errMsg.indexOf('MODIFY_SESSION') >=0) {
 		    params.sessionmodify = 'yes';
-		    if (window.confirm(msg+'\n\n Retry save with modify_session switch enabled?'))
-			Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
+		    if (window.confirm(msg+'\n\n Retry save with modify_session switch enabled?')) {
+			if (window.confirm('CONFIRM that you want to modify the number/order of questions?'))
+			    Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
+		    }
 		} else {
 		    alert(msg);
 		}
@@ -902,7 +910,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#'+slideId);
 	}
 	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
-	Slidoc.showPopup('Saving edits. May take a while...');
+	Slidoc.showPopup('Saving edits...');
 
     } else if (action == 'edit') {
 	if (!checkActiveEdit())

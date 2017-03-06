@@ -173,6 +173,28 @@ def gen_proxy_auth_token(username, role='', sites='', key='', prefixed=False, ro
         key = Options['root_auth_key'] if root else Options['auth_key']
     return sliauth.gen_auth_token(key, username, role=role, sites=sites, prefixed=prefixed)
 
+def http_sync_post(url, params_dict=None):
+    site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+    if url == site_prefix+'/_proxy':
+        return sdproxy.sheetAction(params_dict)
+
+    http_client = tornado.httpclient.HTTPClient()
+    if params_dict:
+        body = urllib.urlencode(params_dict)
+        response = http_client.fetch(url, method='POST', headers=None, body=body)
+    else:
+        response = http_client.fetch(url, method='GET', headers=None, body=body)
+    if response.error:
+        raise Exception('ERROR in accessing URL %s: %s' % (url, excp))
+    # Successful return
+    result = response.read()
+    try:
+        result = json.loads(result)
+    except Exception, excp:
+        result = {'result': 'error', 'error': 'Error in http_sync_post: result='+str(result)+': '+str(excp)}
+    return result
+    
+
 class UserIdMixin(object):
     @classmethod
     def get_path_base(cls, path, sessions_only=True):
@@ -414,7 +436,7 @@ class ActionHandler(BaseHandler):
             configOpts.update(topnav=','.join(self.get_topnav_list()))
         if sheet:
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-            configOpts.update(auth_key=Options['auth_key'], gsheet_url=Options['gsheet_url'],
+            configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
         elif Options['auth_key']:
             configOpts.update(auth_key=Options['auth_key'])
@@ -921,6 +943,7 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewStatus)
             sessionText = self.get_argument('sessiontext')
             slideNumber = self.get_argument('slide', '')
+            deleteSlide = self.get_argument('deleteslide', '')
             sessionModify = self.get_argument('sessionmodify', '')
             newNumber = self.get_argument('move', '')
             if slideNumber.isdigit():
@@ -931,7 +954,8 @@ class ActionHandler(BaseHandler):
                 newNumber = int(newNumber)
             else:
                 newNumber = None
-            return self.postEdit(sessionName, sessionText, slideNumber=slideNumber, newNumber=newNumber, modify=sessionModify)
+            return self.postEdit(sessionName, sessionText, slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide,
+                                 modify=sessionModify)
 
         elif action == '_imageupload':
             if not previewStatus:
@@ -1178,7 +1202,8 @@ class ActionHandler(BaseHandler):
             fileHandles = [io.BytesIO(fbody1) if fpath == src_path else None for fpath in filePaths]
             fileNames = [os.path.basename(fpath) for fpath in filePaths]
 
-            retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True)
+            retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True,
+                                          http_post_func=http_sync_post)
             if 'md_params' not in retval:
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
             if Options['debug'] and retval.get('messages'):
@@ -1226,7 +1251,8 @@ class ActionHandler(BaseHandler):
         fileHandles = [open(fpath) for fpath in filePaths]
         fileNames = [os.path.basename(fpath) for fpath in filePaths]
         try:
-            retval = slidoc.process_input(fileHandles, filePaths, configOpts)
+            retval = slidoc.process_input(fileHandles, filePaths, configOpts,
+                                          http_post_func=http_sync_post)
             if Options['debug'] and retval.get('messages'):
                 print >> sys.stderr, 'sdserver.makeTopIndex:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
             return retval.get('messages',[])
@@ -1403,7 +1429,8 @@ class ActionHandler(BaseHandler):
 
             if slideNumber > len(md_slides):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
-            retval = {'slideText': md_slides[slideNumber-1], 'newImageName': new_image_name}
+            slideText = strip_slide(md_slides[slideNumber-1])
+            retval = {'slideText': slideText, 'newImageName': new_image_name}
             self.set_header('Content-Type', 'application/json')
             self.write( json.dumps(retval) )
             return
@@ -1426,13 +1453,14 @@ class ActionHandler(BaseHandler):
         self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName,
                      session_text=sessionText, discard_url=discard_url, err_msg='')
 
-    def postEdit(self, sessionName, sessionText, slideNumber=None, newNumber=None, modify=False):
+    def postEdit(self, sessionName, sessionText, slideNumber=None, newNumber=None, deleteSlide='', modify=False):
         if isinstance(sessionText, unicode):
             sessionText = sessionText.encode('utf-8')
 
         prevPreviewState = self.previewState.copy() 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
         if slideNumber:
+            # Editing slide
             if self.previewState:
                 if self.previewState['md_slides'] is None:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to edit individual slides in preview')
@@ -1450,7 +1478,11 @@ class ActionHandler(BaseHandler):
             if slideNumber > len(md_slides):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
 
-            if newNumber:
+            if deleteSlide:
+                # Delete slide
+                del md_slides[slideNumber-1]
+                splice_slides(md_slides, slideNumber-2)
+            elif newNumber:
                 # Move slide to new location
                 if newNumber > len(md_slides) or newNumber == slideNumber:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid move to slide number %d' % newNumber)
@@ -1478,25 +1510,19 @@ class ActionHandler(BaseHandler):
             else:
                 # Modify slide
                 md_slides[slideNumber-1] = pad_slide(sessionText)
+                splice_slides(md_slides, slideNumber-2)
+                splice_slides(md_slides, slideNumber-1)
 
-            sessionText = ''.join(md_slides)
-            if sessionText.rstrip()[-3:] == '---':
-                sessionText = pad_slide( sessionText.rstrip().rstrip('-') )
+            sessionText = strip_slide( ''.join(md_slides) )
 
+        fbody2 = ''
+        fname2 = ''
         if self.previewState:
-            self.previewState['md'] = sessionText
-            self.previewState['md_slides'] = None
             if self.previewState['image_zipbytes']:
                 self.previewState['image_zipfile'].close()
                 fbody2 = self.previewState['image_zipbytes'].getvalue()
                 fname2 = sessionName+'_images.zip'
-            else:
-                fbody2 = ''
-                fname2 = ''
             self.previewClear()
-        else:
-            fbody2 = ''
-            fname2 = ''
 
         try:
             errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify)
@@ -1511,8 +1537,13 @@ class ActionHandler(BaseHandler):
                 self.previewState.update(prevPreviewState)
             if slideNumber:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in editing session %s: %s' % (sessionName, errMsg))
+
+            if self.previewState:
+                discard_url = '_preview/index.html'
             else:
-                self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, session_text=sessionText, discard_url=discard_url, err_msg=errMsg)
+                discard_url = ''
+            self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, session_text=sessionText, discard_url='', err_msg=errMsg)
+            return
 
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         if slideNumber:
@@ -1529,6 +1560,13 @@ def splice_slides(md_slides, offset):
         return
     hrule = (offset+1 < len(md_slides)) and not SECTION_HEADER_RE.match(md_slides[offset+1].lstrip('\n'))
     md_slides[offset] = pad_slide(md_slides[offset], hrule=hrule)
+
+def strip_slide(slide_text):
+    # Strip any trailing ---
+    if slide_text.rstrip()[-3:] == '---':
+        return pad_slide( slide_text.rstrip().rstrip('-') )
+    else:
+        return slide_text
 
 def pad_slide(slide_text, hrule=False):
     # Ensure that slide text ends with two newlines (preceded, optionally, by hrule ---)
@@ -1587,7 +1625,7 @@ def modify_user_auth(args, socketId=None):
             # Site user token
             args['token'] = gen_proxy_auth_token(userId)
         else:
-            raise Exception('Invalid user token: '+args['token'])
+            raise Exception('Invalid token %s for user %s' % (args['token'], userId))
 
 class ProxyHandler(BaseHandler):
     @tornado.gen.coroutine

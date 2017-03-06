@@ -2189,7 +2189,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
 
     post_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
                   'get': '1', 'headers': json.dumps(Index_fields), 'getheaders': '1'}
-    retval = sliauth.http_post(sheet_url, post_params)
+    retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
@@ -2255,7 +2255,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
                   }
-    retval = sliauth.http_post(sheet_url, post_params)
+    retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
     message('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name))
@@ -2270,7 +2270,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
     user_token = sliauth.gen_auth_token(hmac_key, user) if hmac_key else ''
     post_params = {'id': user, 'token': user_token, 'sheet': sheet_name,
                    'get': 1, 'getheaders': '1'}
-    retval = sliauth.http_post(sheet_url, post_params)
+    retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if retval['error'].startswith('Error:NOSHEET:'):
             return (None, modify_col, 0)
@@ -2318,7 +2318,7 @@ def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify
         post_params['row'] = json.dumps(row)
     if modify:
         post_params['modify'] = modify
-    retval = sliauth.http_post(sheet_url, post_params)
+    retval = Global.http_post(sheet_url, post_params)
 
     if retval['result'] != 'success':
         abort("Error in creating sheet '%s': %s\n headers=%s\n%s" % (sheet_name, retval['error'], headers, retval.get('messages')))
@@ -2545,7 +2545,8 @@ def render_topnav(topnav_list, filepath='', site_name=''):
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 class GlobalState(object):
-    def __init__(self):
+    def __init__(self, http_post_func=None):
+        self.http_post = http_post_func or sliauth.http_post
         self.primary_tags = defaultdict(OrderedDict)
         self.sec_tags = defaultdict(OrderedDict)
         self.primary_qtags = defaultdict(OrderedDict)
@@ -2567,9 +2568,10 @@ Global = None
 def message(*args):
     print(*args, file=sys.stderr)
 
-def process_input(input_files, input_paths, config_dict, images_zipdict={}, return_html=False, return_messages=False):
+def process_input(input_files, input_paths, config_dict, images_zipdict={}, return_html=False, return_messages=False,
+                  http_post_func=None):
     global Global, message
-    Global = GlobalState()
+    Global = GlobalState(http_post_func=http_post_func)
     if return_html:
         return_messages = True
 
