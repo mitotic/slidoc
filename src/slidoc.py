@@ -3302,7 +3302,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_extra = ''
                 entry_prefix = ''
-                if release_date_str == FUTURE_DATE:
+                if iso_release_str == FUTURE_DATE:
                     entry_extra = ' class="slidoc-restrictedonly" style="display: none"'
                     entry_prefix = '[restricted] '
 

@@ -165,6 +165,7 @@ SCORES_SHEET = 'scores_slidoc'
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
+COOKIE_VERSION = '0.9'             # Update version if cookie format changes
 SERVER_NAME = 'Webster0.9'
 
 def gen_proxy_auth_token(username, role='', sites='', key='', prefixed=False, root=False):
@@ -897,7 +898,7 @@ class ActionHandler(BaseHandler):
         fname, fext = os.path.splitext(sessionName)
         if fext and fext != '.md':
             tornado.web.HTTPError(404, log_message='CUSTOM:Invalid session name (must end in .md): '+sessionName)
-        smatch = re.match(r'^(\w*[a-zA-Z_])(\d+).md$', sessionName)
+        smatch = re.match(r'^(\w*[a-zA-Z_])(\d+)$', sessionName)
         if not smatch:
             return 'top', 0, self.site_src_dir+'/'+sessionName+'.md', self.site_web_dir+'/'+sessionName+'.html', self.site_web_dir+'/'+sessionName+'_images'
         uploadType = smatch.group(1)
@@ -1177,7 +1178,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [io.BytesIO(fbody1) if fpath == src_path else None for fpath in filePaths]
             fileNames = [os.path.basename(fpath) for fpath in filePaths]
 
-            retval = slidoc.process_input(fileHandles, fileNames, configOpts, return_html=True)
+            retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True)
             if 'md_params' not in retval:
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
             if Options['debug'] and retval.get('messages'):
@@ -1225,7 +1226,7 @@ class ActionHandler(BaseHandler):
         fileHandles = [open(fpath) for fpath in filePaths]
         fileNames = [os.path.basename(fpath) for fpath in filePaths]
         try:
-            retval = slidoc.process_input(fileHandles, fileNames, configOpts)
+            retval = slidoc.process_input(fileHandles, filePaths, configOpts)
             if Options['debug'] and retval.get('messages'):
                 print >> sys.stderr, 'sdserver.makeTopIndex:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
             return retval.get('messages',[])
@@ -2557,7 +2558,7 @@ def createApplication():
     settings.update(
         template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
         xsrf_cookies=Options['xsrf'],
-        cookie_secret=Options['root_auth_key'] or 'testkey',
+        cookie_secret=(Options['root_auth_key'] or 'testkey')+COOKIE_VERSION,
         login_url=Global.login_url,
         debug=Options['debug'],
     )

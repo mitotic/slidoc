@@ -847,17 +847,28 @@ function checkActiveEdit() {
     return true;
 }
 
+Slidoc.slideEditMenu = function() {
+    Slidoc.log('slideEditMenu:');
+    var html = '<h3>Edit menu</h3>\n';
+    html += '<ul>\n';
+    if (Sliobj.currentSlide) {
+	var slideId = Slidoc.getCurrentSlideId();
+	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit','"+slideId+"');"+'">Edit current slide</span></li><p></p>\n';
+    }
+    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li>\n';
+    html += '</ul>';
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showPopup(html);
+}
+
 Slidoc.slideEdit = function(action, slideId) {
     Slidoc.log('slideEdit:', action, slideId);
     if (!slideId) {
-	if (Sliobj.currentSlide) {
-	    slideId = Slidoc.getCurrentSlideId()
-	} else {
-	    if (!checkActiveEdit())
-		return;
-	    loadPath(Sliobj.sitePrefix + '/_edit/'+Sliobj.params.fileName);
+	if (!checkActiveEdit())
 	    return;
-	}
+	loadPath(Sliobj.sitePrefix + '/_edit/'+Sliobj.params.fileName);
+	return;
     }
     var slideNum = parseSlideId(slideId)[2];
     var editContainer = document.getElementById(slideId+'-togglebar-edit');
@@ -875,6 +886,8 @@ Slidoc.slideEdit = function(action, slideId) {
     } else if (action == 'save') {
 	params.sessiontext = editArea.value;
 	function slideSaveAux(result, errMsg) {
+	    if (Sliobj.closePopup)
+		Sliobj.closePopup();
 	    if (!result) {
 		var msg = 'Error in saving edits :'+errMsg
 		if (!params.sessionmodify && errMsg.indexOf('MODIFY_SESSION') >=0) {
@@ -889,6 +902,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#'+slideId);
 	}
 	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
+	Slidoc.showPopup('Saving edits. May take a while...');
 
     } else if (action == 'edit') {
 	if (!checkActiveEdit())

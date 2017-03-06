@@ -228,7 +228,7 @@ def savePreview():
         raise Exception('No preview session to save')
     sessionSheet = Sheet_cache.get(sessionName)
     if not sessionSheet:
-        raise Exception('Preview session sheet not cached to save')
+        raise Exception('Preview session %s sheet not cached for saving' % sessionName)
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if not indexSheet:
         raise Exception('Preview index sheet not cached to save')
