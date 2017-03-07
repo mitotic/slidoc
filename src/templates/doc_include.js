@@ -4607,9 +4607,13 @@ Slidoc.allDisplay = function (elem) {
 
 Slidoc.classDisplay = function (className, displayValue) {
    // Set display value for all elements with class
-   var elements = document.getElementsByClassName(className);
-   for (var i=0; i < elements.length; i++)
-       elements[i].style.display = displayValue;
+    var elements = document.getElementsByClassName(className);
+    for (var i=0; i < elements.length; i++) {
+	if (!displayValue && displayValue !== null)
+	    elements[i].style.display = (elements[i].style.display == 'none') ? null : 'none';
+	else
+	    elements[i].style.display = displayValue;
+    }
    return false;
 }
 

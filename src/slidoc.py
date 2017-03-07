@@ -2032,19 +2032,28 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     content_html = md_parser_obj.render(source, index_id=index_id, qindex_id=qindex_id)
 
     md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
+    match = DEFAULTS_RE.match(md_slides[0])
+    if match:
+        md_defaults = match.group(0)
+        md_slides[0] = md_slides[0][len(match.group(0)):]
+    else:
+        md_defaults = ''
+        
     md_source = source.strip()
     md_digest = sliauth.digest_hex(md_source)
     if len(md_slides) != renderer.slide_number:
         message('SLIDES-WARNING: pre-parsing slide count (%d) does not match post-parsing slide count (%d)' % (len(md_slides), renderer.slide_number))
         md_slides = []
+        md_defaults = ''
 
-    elif ''.join(md_slides).strip() != md_source:
+    elif (md_defaults+''.join(md_slides)).strip() != md_source:
         tem_str = ''.join(md_slides).strip()
         for j in range(min(len(tem_str), len(md_source))):
             if tem_str[j] != md_source[j]:
                 break
         message('SLIDES-WARNING: combined slide text does not match preprocessed source text: %d, %d, %d; %s, %s' % (len(tem_str), len(md_source), j, repr(tem_str[max(j-10,0):j+20]), repr(md_source[max(j-10,0):j+20])))
         md_slides = []
+        md_defaults = ''
 
     md_breaks = []
     count = 0
@@ -2053,7 +2062,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         md_breaks.append(count)
 
     new_image_name = 'image%02d' % (renderer.slide_maximage+1)
-    md_params = {'md_digest': md_digest, 'md_slides': md_slides, 'md_breaks': md_breaks,
+    md_params = {'md_digest': md_digest, 'md_defaults': md_defaults, 'md_slides': md_slides, 'md_breaks': md_breaks,
                  'md_images': renderer.slide_images, 'new_image_name':new_image_name}
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
@@ -2401,7 +2410,7 @@ def preprocess(source, hrule_setext=False):
 
 def extract_slides(src_path, web_path):
     # Extract text for individual slides from Markdown file
-    # Return (md_slides, new_image_name)
+    # Return (md_defaults, md_slides, new_image_name)
     try:
         with open(src_path) as f:
             source = f.read()
@@ -2417,13 +2426,15 @@ def extract_slides(src_path, web_path):
 
     md_source = preprocess(source).strip()
     if sliauth.digest_hex(md_source) != sessionIndexParams['md_digest']:
-        raise Exception('Digest mismatch; may need to re-create session HTML file %s' % web_path)
+        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-create session HTML file %s' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
     md_slides = []
+
+    base = len(sessionIndexParams['md_defaults'])
     offset = 0
     for count in sessionIndexParams['md_breaks']:
-        md_slides.append(md_source[offset:count])
+        md_slides.append(md_source[base+offset:base+count])
         offset = count
-    return (md_slides, sessionIndexParams['new_image_name'])
+    return (sessionIndexParams['md_defaults'], md_slides, sessionIndexParams['new_image_name'])
     
 
 def read_index(fhandle, entry_count=6):
@@ -2455,11 +2466,16 @@ def read_index(fhandle, entry_count=6):
             tem_list = []
         else:
             if sline[0] in '[{':
+                tem_obj = None
                 try:
-                    tem_list.append(json.loads(sline))
+                    tem_obj = json.loads(sline.replace('&lt;', '<').replace('&gt;', '>'))
                 except Exception, excp:
                     message('INDEX-WARNING: Error in index params %s: %s' % (sline, excp))
-                    tem_list.append(None)
+                if isinstance(tem_obj, dict):
+                    for key, value in tem_obj.items():
+                        if isinstance(value, unicode):
+                            tem_obj[key] = value.encode('ascii', 'replace')
+                tem_list.append(tem_obj)
             else:
                 tem_list.append(sline)
 
@@ -2524,6 +2540,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         if fname == 'index':
            fname = strip_name(os.path.dirname(filepath))
     elems = []
+
     for link, basename, linkid in topnav_list:
         classes = ''
         if basename.lower() == fname.lower() or (basename == site_name and fname.lower() == 'home'):
@@ -2752,8 +2769,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         config.image_url += '/'
 
     config.strip = md2md.make_arg_set(config.strip, Strip_all)
-    if nfiles == 1:
-        config.strip.add('chapters')
 
     templates = {}
     for tname in ('doc_include.css', 'wcloud.css', 'doc_custom.css',
@@ -2917,6 +2932,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if 'grade_response' in file_config.features and gd_hmac_key is None:
                 # No grading without google sheet
                 file_config.features.remove('grade_response')
+            if nfiles == 1:
+                file_config.strip.add('chapters')
 
             ##if 'slides_only' in file_config.features and config.printable:
             ##    file_config.features.remove('slides_only')
@@ -3027,7 +3044,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         math_present = renderer.render_markdown or renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
 
         if len(fnumbers) == 1 and config.separate and config.extract:
-            md_extract = ''.join(md_params['md_slides'][config.extract-1:])
+            md_extract = md_defaults + ''.join(md_params['md_slides'][config.extract-1:])
             extract_mods_args = md2md.Args_obj.create_args(None,
                                                           image_dir=fname+'_extract_images',
                                                           images=set(['_slidoc', 'zip', 'md', 'renumber']))
@@ -3226,9 +3243,9 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 else:
                     index_entries = [fname, fheader, 'view', '-', '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
-                index_dict = {'md_digest': md_params['md_digest'], 'md_breaks': md_params['md_breaks'],
+                index_dict = {'md_digest': md_params['md_digest'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
                               'md_images': md_params['md_images'], 'new_image_name': md_params['new_image_name']}
-                index_entries += [ json.dumps(index_dict) ]
+                index_entries += [ json.dumps(index_dict).replace('<', '&lt;').replace('>', '&gt;')]
                 index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
                 out_index[outpath] = index_head
                 pre_html = index_head + pre_html
@@ -3606,10 +3623,11 @@ def read_first_line(file):
     file.seek(0)
     return first_line
 
+DEFAULTS_RE = re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n')
 def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
     # Read file args and merge with command line args, with command line args being final
     if first_line:
-        match = re.match(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n', args_text)
+        match = DEFAULTS_RE.match(args_text)
         if match:
             args_text = match.group(1).strip()
         else:
@@ -3637,19 +3655,19 @@ def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set()
     except Exception, excp:
         abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (fname, excp))
 
-    for arg_name in cmd_args_dict:
+    for arg_name, arg_value in cmd_args_dict.items():
         if arg_name not in line_args_dict:
             # Argument not specified in file line (copy from command line)
-            line_args_dict[arg_name] = cmd_args_dict[arg_name]
+            line_args_dict[arg_name] = arg_value
 
-        elif cmd_args_dict[arg_name] is not None:
+        elif (isinstance(arg_value, set) and not arg_value) or arg_value is not None:
             # Argument also specified in command line
-            if arg_name == 'features' and line_args_dict[arg_name] and 'override' not in cmd_args_dict[arg_name]:
+            if arg_name == 'features' and line_args_dict[arg_name] and 'override' not in arg_value:
                 # Merge features from file with command line (unless 'override' feature is present in command line)
-                line_args_dict[arg_name] = cmd_args_dict[arg_name].union(line_args_dict[arg_name])
+                line_args_dict[arg_name] = arg_value.union(line_args_dict[arg_name])
             else:
                 # Command line overrides file line
-                line_args_dict[arg_name] = cmd_args_dict[arg_name]
+                line_args_dict[arg_name] = arg_value
 
     return argparse.Namespace(**line_args_dict)
 

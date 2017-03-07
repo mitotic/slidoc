@@ -424,12 +424,15 @@ class ActionHandler(BaseHandler):
                    'top': dict(strip='chapters,contents,navigate,sections'),
                    }
 
-    def get_config_opts(self, uploadType, topnav=False, sheet=False):
+    def get_config_opts(self, uploadType, text='', topnav=False, sheet=False, dest_dir=''):
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
         configOpts.update(self.static_opts['default'])
         configOpts.update(self.static_opts.get(uploadType,{}))
         if uploadType in Global.session_options:
+            # session-specific options (TBD)
             pass
+        if text:
+            configOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, configOpts, first_line=True))
 
         configOpts.update(site_name=Options['site_name'])
         if topnav:
@@ -440,6 +443,9 @@ class ActionHandler(BaseHandler):
                               proxy_url=site_prefix+'/_websocket')
         elif Options['auth_key']:
             configOpts.update(auth_key=Options['auth_key'])
+
+        if dest_dir:
+            configOpts.update(dest_dir=dest_dir)
 
         return configOpts
 
@@ -1092,7 +1098,7 @@ class ActionHandler(BaseHandler):
         topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/*/index.html')]
         topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/_private/*/index.html')]
 
-        homeIndex = self.site_web_dir+'/index.html'
+        homeIndex = 'index.html'
         topnavList = [homeIndex]
         if homeIndex in topFiles:
             del topFiles[topFiles.index(homeIndex)]
@@ -1186,7 +1192,9 @@ class ActionHandler(BaseHandler):
             src_path = src_dir + '/' + sessionName + '.md'
             overwrite = os.path.exists(src_path)
             image_dir = sessionName+'_images'
-            configOpts = self.get_config_opts(uploadType, topnav=True, sheet=uploadType not in ('top', 'exercise)') )
+
+            configOpts = self.get_config_opts(uploadType, text=fbody1, topnav=True, dest_dir=web_dir,
+                                              sheet=uploadType not in ('top', 'exercise)') )
             configOpts.update(image_dir=image_dir)
             if Options['thaw_date']:
                 configOpts.update(thaw_date=Options['thaw_date'])
@@ -1213,6 +1221,7 @@ class ActionHandler(BaseHandler):
             sdproxy.savePreview()
 
             self.previewState['md'] = fbody1
+            self.previewState['md_defaults'] = retval['md_params']['md_defaults']
             self.previewState['md_slides'] = retval['md_params']['md_slides']
             self.previewState['new_image_name'] = retval['md_params']['new_image_name']
             self.previewState['HTML'] = retval['out_html']
@@ -1416,11 +1425,12 @@ class ActionHandler(BaseHandler):
             if self.previewState:
                 if self.previewState['md_slides'] is None:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to edit individual slides in preview')
+                md_defaults = self.previewState['md_defaults']
                 md_slides = self.previewState['md_slides']
                 new_image_name = self.previewState['new_image_name']
             else:
                 try:
-                    md_slides, new_image_name = slidoc.extract_slides(src_path, web_path)
+                    md_defaults, md_slides, new_image_name = slidoc.extract_slides(src_path, web_path)
                 except Exception, excp:
                     if Options['debug']:
                         import traceback
@@ -1464,11 +1474,12 @@ class ActionHandler(BaseHandler):
             if self.previewState:
                 if self.previewState['md_slides'] is None:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to edit individual slides in preview')
+                md_defaults = self.previewState['md_defaults']
                 md_slides = self.previewState['md_slides'][:]  # Shallow copy of slides so as not overwrite any backup copy
                 new_image_name = self.previewState['new_image_name']
             else:
                 try:
-                    md_slides, new_image_name = slidoc.extract_slides(src_path, web_path)
+                    md_defaults, md_slides, new_image_name = slidoc.extract_slides(src_path, web_path)
                 except Exception, excp:
                     if Options['debug']:
                         import traceback
@@ -1513,7 +1524,7 @@ class ActionHandler(BaseHandler):
                 splice_slides(md_slides, slideNumber-2)
                 splice_slides(md_slides, slideNumber-1)
 
-            sessionText = strip_slide( ''.join(md_slides) )
+            sessionText = md_defaults + strip_slide( ''.join(md_slides) )
 
         fbody2 = ''
         fname2 = ''
