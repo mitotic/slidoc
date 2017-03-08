@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- roster template for slidoc server --->
-<!-- roster parameters: site_name, site_label, session_name -->
+<!-- roster parameters: site_name, site_label, session_name, lastname_col, firstname_col, midname_col, id_col, email_col, altid_col -->
 
 {% include "base.html" %}
 
@@ -18,6 +18,19 @@
 <div id="slidoc-roster-form">
   <form action="/{{site_name}}{% if site_name %}/{% end %}_roster" method="post" enctype="multipart/form-data" >
     <fieldset>
+      <label for="lastnamecol">Last name column:</label><br>
+      <input type="text" id="lastnamecol" name="lastnamecol"  value="{{lastname_col}}"><br>
+      <label for="firstnamecol">First name column:</label><br>
+      <input type="text" id="firstnamecol" name="firstnamecol"  value="{{firstname_col}}"><br>
+      <label for="midnamecol">Middle names column:</label><br>
+      <input type="text" id="midnamecol" name="midnamecol"  value="{{midname_col}}"><br>
+      <label for="idcol">Id column:</label><br>
+      <input type="text" id="idcol" name="idcol"  value="{{id_col}}"><br>
+      <label for="emailcol">Email column:</label><br>
+      <input type="text" id="emailcol" name="emailcol"  value="{{email_col}}"><br>
+      <label for="altidcol">Alternate ID column:</label><br>
+      <input type="text" altid="altidcol" name="altidcol"  value="{{altid_col}}"><br>
+      <p></p>
       <label for="upload">Roster file (CSV spreadsheet file):</label><br>
       <input type="file" id="upload" name="upload"  accept=".csv" value="file"><br>
       The file should contain the column headers

@@ -2661,18 +2661,22 @@ Slidoc.manageSession = function() {
     if (Sliobj.gradableState) {
 	html += hr;
 	html += 'Session admin:<br><blockquote>\n';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
+	if (!Sliobj.gradeDateStr)
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
+	else
+	    html += 'Grades released to students at '+Sliobj.gradeDateStr+'<br>';
 	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span><br>';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span><br>\n';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span><br>\n';
 	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"'"+');">View scores for this session</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><br>';
 	if (Sliobj.fullAccess) {
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	    html += hr;
 	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
-	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><hr>';
+	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><hr>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	}
 	html += '</blockquote>\n';
     }

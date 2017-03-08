@@ -23,6 +23,7 @@ import cStringIO
 import csv
 import datetime
 import functools
+import io
 import json
 import math
 import os
@@ -497,6 +498,44 @@ class Sheet(object):
     def expire(self):
         # Delete after any updates are processed
         self.holdSec = 0
+
+    def export(self, keepHidden=False, allUsers=False, csvFormat=False, idRename='', altidRename=''):
+        headers = self.xrows[0][:]
+        if idRename and 'id' in headers:
+            headers[headers.index('id')] = idRename
+        if altidRename and 'altid' in headers:
+            headers[headers.index('altid')] = altidRename
+
+        hideCols = []
+        if not keepHidden:
+            for k, header in enumerate(headers):
+                if header.lower().endswith('hidden'):
+                    hideCols.append(k)
+        skipName = None
+        if not allUsers and 'name' in headers:
+            skipName = headers.index('name')
+
+        dataRows =[]
+        for j in range(len(self.xrows)-1):
+            # Ensure all rows have the same number of columns
+            temRow = self.xrows[j+1][:] + ['']*(len(headers)-len(self.xrows[j+1]))
+            if skipName is not None and (not temRow[skipName] or temRow[skipName].startswith('#')):
+                continue
+            for k in hideCols:
+                temRow[k] = 'hidden'
+            dataRows.append(temRow)
+
+        if csvFormat:
+            memfile = io.BytesIO()
+            writer = csv.writer(memfile)
+            writer.writerow(headers)
+            for row in dataRows:
+                writer.writerow(row)
+            content = memfile.getvalue()
+            memfile.close()
+            return content
+        else:
+            return [headers] + dataRows
 
     def getLastColumn(self):
         return self.nCols

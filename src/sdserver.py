@@ -103,6 +103,7 @@ Options = {
     'proxy_wait': None,
     'public': False,
     'reload': False,
+    'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
     'server_url': '',
     'site_name': '',         # E.g., calc101
@@ -579,7 +580,10 @@ class ActionHandler(BaseHandler):
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
             if not nameMap:
-                self.render('roster.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='')
+                lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
+                self.render('roster.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
+                             session_name='', lastname_col=lastname_col, firstname_col=firstname_col, midname_col=midname_col,
+                             id_col=id_col, email_col=email_col, altid_col=altid_col)
             else:
                 for idVal, name in nameMap.items():
                     if name.startswith('#'):
@@ -712,7 +716,9 @@ class ActionHandler(BaseHandler):
             if not sheet:
                 self.write('Unable to retrieve sheet '+subsubpath)
                 return
-            self.render('table.html', table_name=subsubpath, table_data=sheet.getRows(), table_fixed='fixed')
+            lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
+            rows = sheet.export(idRename=id_col,altidRename=altid_col)
+            self.render('table.html', site_name=Options['site_name'], table_name=subsubpath, table_data=rows, table_fixed='fixed')
 
         elif action in ('_getcol', '_getrow'):
             subsubpath, sep, label = subsubpath.partition(';')
@@ -973,6 +979,20 @@ class ActionHandler(BaseHandler):
             imageFile = self.get_argument("imagefile")
             return self.imageUpload(sessionName, imageFile, fname, fbody)
 
+        if action in ('_sheet',):
+            keepHidden = self.get_argument("keephidden", '')
+            allUsers = self.get_argument("allusers", '')
+            sheet = sdproxy.getSheet(sessionName, optional=True)
+            if not sheet:
+                self.write('Unable to retrieve sheet '+sessionName)
+                return
+            self.set_header('Content-Type', 'text/csv')
+            self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % sessionName)
+            lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
+            csvData = sheet.export(csvFormat=True, keepHidden=keepHidden, allUsers=allUsers, idRename=id_col, altidRename=altid_col)
+            self.write(csvData)
+            return
+
         if previewStatus:
             self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewStatus))
             return
@@ -1005,7 +1025,14 @@ class ActionHandler(BaseHandler):
                     print >> sys.stderr, 'ActionHandler:upload', fname, len(fbody), sessionName, submitDate
                 uploadedFile = cStringIO.StringIO(fbody)
                 if action == '_roster':
-                    errMsg = importRoster(fname, uploadedFile)
+                    lastname_col = self.get_argument('lastnamecol','').strip().lower() 
+                    firstname_col = self.get_argument('firstnamecol','').strip().lower() 
+                    midname_col = self.get_argument('midnamecol','').strip().lower() 
+                    id_col = self.get_argument('idcol','').strip().lower() 
+                    email_col = self.get_argument('emailcol','').strip().lower() 
+                    altid_col = self.get_argument('altidcol','').strip().lower() 
+                    errMsg = importRoster(fname, uploadedFile, lastname_col=lastname_col, firstname_col=firstname_col,
+                                           midname_col=midname_col, id_col=id_col, email_col=email_col, altid_col=altid_col)
                     if not errMsg:
                         self.displayMessage('Imported roster from '+fname)
                     else:
@@ -2711,8 +2738,8 @@ def makeName(lastName, firstName, middleName=''):
             name += ' ' +middleName
     return name
 
-def importRoster(filepath, csvfile):
-    middleName = False
+def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_col='',
+                            id_col='', email_col='', altid_col=''):
     try:
         ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
         ##csvfile.seek(0)
@@ -2743,23 +2770,33 @@ def importRoster(filepath, csvfile):
         midNameCol = 0
         for j, header in enumerate(headers):
             lheader = header.lower()
-            if lheader == 'id':
+            if lheader == id_col:
                 idCol = j+1
-            elif lheader == 'altid':
+            if not id_col and lheader == 'id':
+                idCol = j+1
+            elif lheader == altid_col:
                 altidCol = j+1
-            elif lheader == 'email':
+            elif not altid_col and lheader == 'altid':
+                altidCol = j+1
+            elif lheader == email_col:
+                emailCol = j+1
+            elif not email_col and lheader == 'email':
                 emailCol = j+1
             elif lheader == 'twitter':
                 twitterCol = j+1
-            elif lheader in ('last', 'lastname', 'last name', 'surname'):
+            elif lheader == lastname_col:
                 lastNameCol = j+1
-            elif lheader in ('first', 'firstname', 'first name', 'given name', 'given names'):
+            elif not lastname_col and lheader in ('last', 'lastname', 'last name', 'surname'):
+                lastNameCol = j+1
+            elif lheader == firstname_col:
                 firstNameCol = j+1
-            elif middleName and lheader in ('middle', 'middlename', 'middlenames', 'middle name', 'middle names', 'mid name'):
+            elif not firstname_col and lheader in ('first', 'firstname', 'first name', 'given name', 'given names'):
+                firstNameCol = j+1
+            elif lheader == midname_col:
                 midNameCol = j+1
 
         if not idCol and not emailCol:
-            raise Exception('ID column %s not found in CSV file %s' % filepath)
+            raise Exception('ID column %s not found in CSV file %s' % (id_col, filepath))
 
         rosterHeaders = ['name', 'id', 'email', 'altid']
         if twitterCol:
@@ -2790,7 +2827,7 @@ def importRoster(filepath, csvfile):
                 rosterRow.append(row[twitterCol-1] if twitterCol else '')
             rosterRows.append(rosterRow)
 
-        if not idCol and singleDomain:
+        if (not idCol or idCol == emailCol) and singleDomain:
             # Strip out common domain from email used as ID
             endStr = '@'+singleDomain
             endLen = len(endStr)
@@ -3368,6 +3405,7 @@ def main():
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("offline_sessions", default=Options["offline_sessions"], help="Pattern matching sessions that are offline assessments, default=(exam|quiz|test|midterm|final)")
+    define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")
     define("site_restricted", default='', help="Site restricted")
@@ -3391,6 +3429,9 @@ def main():
         if not key.startswith('_') and hasattr(options, key):
             # Command line overrides settings
             Options[key] = getattr(options, key)
+
+    if len(Options['roster_columns'].split(',')) != 6:
+        sys.exit('Must specify --roster_columns=lastname_col,firstname_col,midname_col,id_col,email_col,altid_col')
 
     Options['root_auth_key'] = Options['auth_key']
     Options['server_key'] = str(random.randrange(0,2**60))

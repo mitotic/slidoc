@@ -127,6 +127,18 @@ document.onreadystatechange = function(event) {
 </script>
 </head>
 <body>
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_sheet/{{table_name}}" method="post" enctype="multipart/form-data" >
+     <a href="/{{site_name}}{% if site_name %}/{% end %}">Home</a> &nbsp;
+     <p></p>
+     <input id="slidoc-sheet-submit" type="submit" value="Download sheet">
+     &nbsp;&nbsp;
+     <label for="keephidden">Keep hidden columns:</label> <input type="checkbox" id="keephidden" name="keephidden" value="keep">
+     &nbsp;&nbsp;
+     <label for="allusers">Keep all users:</label> <input type="checkbox" id="allusers" name="allusers" value="keep">
+     <p></p>
+   </fieldset>
+   {% module xsrf_form_html() %}
+  </form>
     <h3>{{table_name}}</h3>
     <div id="table_data" class="ztablecontainer showScroll">
       {% if isinstance(table_data, (list,tuple)) %}
