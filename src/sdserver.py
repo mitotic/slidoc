@@ -514,18 +514,22 @@ class ActionHandler(BaseHandler):
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         dash_url = site_prefix + '/_dash'
         json_return = self.get_argument('json', '')
-        previewStatus = sdproxy.previewStatus()
+        previewingSession = sdproxy.previewingSession()
         if not Options['site_list'] or Options['site_number']:
             # Secondary server
             root = str(self.get_argument('root', ''))
             if action == '_preview':
-                if not previewStatus:
+                if not previewingSession:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
+                if previewingSession not in sdproxy.Sheet_cache:
+                    # Failsafe check failed; preview session not in cache
+                    self.discardPreview()
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Preview state inconsistent; resetting')
                 return self.displayPreview(subsubpath)
             elif action == '_accept':
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-                if not previewStatus:
+                if not previewingSession:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
                 return self.acceptPreview()
             elif action == '_edit':
@@ -533,8 +537,8 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to edit')
                 if not sessionName:
                     sessionName = self.get_argument('sessionname', '')
-                if previewStatus and previewStatus != sessionName:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewStatus)
+                if previewingSession and previewingSession != sessionName:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewingSession)
                 return self.startEdit(sessionName)
             elif action == '_discard':
                 return self.discardPreview()
@@ -544,8 +548,8 @@ class ActionHandler(BaseHandler):
             if action not in ('_backup',):
                 raise tornado.web.HTTPError(403)
 
-        if previewStatus:
-            self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewStatus))
+        if previewingSession:
+            self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
         if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
@@ -942,7 +946,7 @@ class ActionHandler(BaseHandler):
 
 
     def postAction(self, subpath):
-        previewStatus = sdproxy.previewStatus()
+        previewingSession = sdproxy.previewingSession()
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         action, sep, sessionName = subpath.partition('/')
         if not sessionName:
@@ -951,8 +955,8 @@ class ActionHandler(BaseHandler):
         if action == '_edit':
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to edit')
-            if previewStatus and previewStatus != sessionName:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewStatus)
+            if previewingSession and previewingSession != sessionName:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewingSession)
             sessionText = self.get_argument('sessiontext')
             slideNumber = self.get_argument('slide', '')
             deleteSlide = self.get_argument('deleteslide', '')
@@ -970,7 +974,7 @@ class ActionHandler(BaseHandler):
                                  modify=sessionModify)
 
         elif action == '_imageupload':
-            if not previewStatus:
+            if not previewingSession:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Can only upload images in preview mode')
             fileinfo = self.request.files['upload'][0]
             fname = fileinfo['filename']
@@ -993,8 +997,8 @@ class ActionHandler(BaseHandler):
             self.write(csvData)
             return
 
-        if previewStatus:
-            self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewStatus))
+        if previewingSession:
+            self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
         submitDate = ''
@@ -1142,7 +1146,7 @@ class ActionHandler(BaseHandler):
 
     def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=False):
         # Return null string on success or error message
-        if sdproxy.previewStatus() or self.previewState:
+        if sdproxy.previewingSession() or self.previewState:
             raise Exception('Already previewing session')
 
         zfile = None
@@ -1271,7 +1275,7 @@ class ActionHandler(BaseHandler):
             if Options['debug']:
                 import traceback
                 traceback.print_exc()
-            sdproxy.revertPreview(original=True)
+            self.previewClear(revert=True, original=True)
             WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
@@ -1301,7 +1305,7 @@ class ActionHandler(BaseHandler):
     def imageUpload(self, sessionName, imageFile, fname, fbody):
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:imageUpload', sessionName, imageFile, fname, len(fbody)
-        if not sdproxy.previewStatus() or not self.previewState:
+        if not sdproxy.previewingSession() or not self.previewState:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         if not self.previewState['image_zipfile']:
             self.previewState['image_zipbytes'] = io.BytesIO()
@@ -1313,7 +1317,7 @@ class ActionHandler(BaseHandler):
         self.write( json.dumps( {'result': 'success'} ) )
 
     def displayPreview(self, filepath=None):
-        if not sdproxy.previewStatus() or not self.previewState:
+        if not sdproxy.previewingSession() or not self.previewState:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         uploadType = self.previewState['type']
         sessionName = self.previewState['name']
@@ -1418,7 +1422,7 @@ class ActionHandler(BaseHandler):
                 self.redirect(redirectURL)
 
     def discardPreview(self):
-        if not sdproxy.previewStatus() or not self.previewState:
+        if not sdproxy.previewingSession() or not self.previewState:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         sessionName = self.previewState['name']
         self.previewClear(revert=True, original=True)

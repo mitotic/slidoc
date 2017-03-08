@@ -176,12 +176,12 @@ def initCache():
 
     Global.cachePendingUpdate = None
     Global.suspended = ''
-    Global.previewSession = {}
+    Global.previewStatus = {}
 
 initCache()
 
-def previewStatus():
-    return Global.previewSession.get('sessionName', '')
+def previewingSession():
+    return Global.previewStatus.get('sessionName', '')
 
 def startPreview(sessionName):
     # Initiate/end preview of session
@@ -212,19 +212,19 @@ def startPreview(sessionName):
     else:
         indexSheet = getSheet(INDEX_SHEET)
 
-    Global.previewSession = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
+    Global.previewStatus = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
                               'indexSheetOrig': indexSheet.copy()}
     return ''
 
 def endPreview():
     # End preview; enable upstream updates
-    if not Global.previewSession:
+    if not Global.previewStatus:
         return
-    Global.previewSession = {}
+    Global.previewStatus = {}
     schedule_update(force=True)
 
 def savePreview():
-    sessionName = Global.previewSession.get('sessionName', '')
+    sessionName = Global.previewStatus.get('sessionName', '')
     if not sessionName:
         raise Exception('No preview session to save')
     sessionSheet = Sheet_cache.get(sessionName)
@@ -233,31 +233,31 @@ def savePreview():
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if not indexSheet:
         raise Exception('Preview index sheet not cached to save')
-    Global.previewSession['sessionSheetSave'] = sessionSheet.copy()
-    Global.previewSession['indexSheetSave'] = indexSheet.copy()
+    Global.previewStatus['sessionSheetSave'] = sessionSheet.copy()
+    Global.previewStatus['indexSheetSave'] = indexSheet.copy()
 
 def revertPreview(original=False):
     # Discard all changes to session sheet and session index sheet and revert to saved (or original) sheet values
     # and end preview
-    sessionName = Global.previewSession.get('sessionName', '')
+    sessionName = Global.previewStatus.get('sessionName', '')
     if not sessionName:
         raise Exception('No preview session to revert')
     if original:
-        if Global.previewSession['sessionSheetOrig']:
-            Sheet_cache[sessionName] = Global.previewSession['sessionSheetOrig']
+        if Global.previewStatus['sessionSheetOrig']:
+            Sheet_cache[sessionName] = Global.previewStatus['sessionSheetOrig']
         else:
             delSheet(sessionName)
-        Sheet_cache[INDEX_SHEET] = Global.previewSession['indexSheetOrig']
+        Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetOrig']
     else:
-        Sheet_cache[sessionName] = Global.previewSession['sessionSheetSave']
-        Sheet_cache[INDEX_SHEET] = Global.previewSession['indexSheetSave']
+        Sheet_cache[sessionName] = Global.previewStatus['sessionSheetSave']
+        Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetSave']
 
     endPreview()
 
 def freezeCache(fill=False):
     # Freeze cache (clear when done)
-    if Global.previewSession:
-        raise Exception('Cannot freeze when previewing session '+Global.previewSession['sessionName'])
+    if Global.previewStatus:
+        raise Exception('Cannot freeze when previewing session '+Global.previewStatus['sessionName'])
     if Global.suspended == "freeze":
         return
     if fill:
@@ -276,8 +276,8 @@ def freezeCache(fill=False):
 def backupSheets(dirpath=''):
     # Returns null string on success or error string list
     # (synchronous)
-    if Global.previewSession:
-        return [ 'Cannot freeze when previewing session '+Global.previewSession['sessionName'] ]
+    if Global.previewStatus:
+        return [ 'Cannot freeze when previewing session '+Global.previewStatus['sessionName'] ]
     dirpath = dirpath or Settings['backup_dir'] or '_backup'
     if dirpath.endswith('-'):
         dirpath += sliauth.iso_date()[:16].replace(':','-')
@@ -413,8 +413,8 @@ def getSheet(sheetName, optional=False, backup=False):
 def downloadSheet(sheetName, backup=False):
     # Download sheet synchronously
     # If backup, retrieve formulas rather than values
-    if Global.previewSession.get('sessionName') == sheetName:
-        raise Exception('Cannot download when previewing session '+Global.previewSession['sessionName'])
+    if Global.previewStatus.get('sessionName') == sheetName:
+        raise Exception('Cannot download when previewing session '+Global.previewStatus['sessionName'])
     user = ADMINUSER_ID
     userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
 
@@ -631,8 +631,8 @@ class Sheet(object):
     def check_lock_status(self, keyValue=None):
         if self.readOnly:
             raise Exception('Cannot modify read only sheet '+self.name)
-        if self.name == INDEX_SHEET and keyValue and Global.previewSession and keyValue != Global.previewSession['sessionName']:
-            raise Exception('Cannot modify index values for non-previewed session '+keyValue+' when previewing session '+Global.previewSession['sessionName'])
+        if self.name == INDEX_SHEET and keyValue and Global.previewStatus and keyValue != Global.previewStatus['sessionName']:
+            raise Exception('Cannot modify index values for non-previewed session '+keyValue+' when previewing session '+Global.previewStatus['sessionName'])
         check_if_locked(self.name)
 
     def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
@@ -674,7 +674,7 @@ class Sheet(object):
         if self.modTime < lastUpdateTime:
             return None
 
-        if Global.previewSession and self.name in (Global.previewSession['sessionName'], INDEX_SHEET):
+        if Global.previewStatus and self.name in (Global.previewStatus['sessionName'], INDEX_SHEET):
             # Delay updates for preview session and index sheet
             return None
         
@@ -737,7 +737,7 @@ def getCacheStatus():
 
 def lockSheet(sheetName, lockType='user'):
     # Returns True if lock is immediately effective; False if it will take effect later
-    if sheetName == Global.previewSession.get('sessionName'):
+    if sheetName == Global.previewStatus.get('sessionName'):
         return False
     if sheetName not in Lock_cache and not isReadOnly(sheetName):
         Lock_cache[sheetName] = lockType
@@ -747,7 +747,7 @@ def lockSheet(sheetName, lockType='user'):
 
 def unlockSheet(sheetName):
     # Unlock and refresh sheet (if no updates pending)
-    if sheetName == Global.previewSession.get('sessionName'):
+    if sheetName == Global.previewStatus.get('sessionName'):
         return False
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
         return False
@@ -756,7 +756,7 @@ def unlockSheet(sheetName):
 
 def expireSheet(sheetName):
     # Expire sheet from cache (delete after any updates are processed)
-    if sheetName == Global.previewSession.get('sessionName'):
+    if sheetName == Global.previewStatus.get('sessionName'):
         return
     sheet = Sheet_cache.get(sheetName)
     if sheet:
@@ -764,7 +764,7 @@ def expireSheet(sheetName):
 
 def refreshSheet(sheetName):
     # Refresh sheet, if unlocked (after any updates)
-    if sheetName == Global.previewSession.get('sessionName'):
+    if sheetName == Global.previewStatus.get('sessionName'):
         return False
     if sheetName in Lock_cache or sheetName in Lock_passthru:
         return False
@@ -897,7 +897,7 @@ def update_remote_sheets(force=False, synchronous=False):
         # Check each cached sheet for updates
         updates = sheet.get_updates(Global.cacheUpdateTime)
         if updates is None:
-            if curTime-sheet.accessTime > 1000*sheet.holdSec:
+            if curTime-sheet.accessTime > 1000*sheet.holdSec and previewingSession() != sheetName:
                 # Cache entry has expired
                 del Sheet_cache[sheetName]
             continue
