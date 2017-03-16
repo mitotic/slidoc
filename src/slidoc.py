@@ -2644,12 +2644,12 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % (config.resource_dir, filename)) if config.resource_dir else ('\n<style>\n%s</style>\n' % templates[filename])
         raise Exception('Invalid filename for insert_resource: '+filename)
 
-    thaw_date = None
-    if config.thaw_date:
+    start_date = None
+    if config.start_date:
         try:
-            thaw_date = sliauth.parse_date(config.thaw_date)
+            start_date = sliauth.parse_date(config.start_date)
         except Exception, excp:
-            abort('***ERROR*** Invalid thaw date: %s' % config.thaw_date)
+            abort('***ERROR*** Invalid start date: %s' % config.start_date)
 
     orig_fnames = []
     orig_outpaths = []
@@ -2672,11 +2672,11 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         orig_outpaths.append(outpath)
         orig_flinks.append(flink)
 
-        if not config.make and not thaw_date:
+        if not config.make and not start_date:
             fnumbers.append(fnumber)
         elif input_files[j] and (return_html or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath))):
             # Process only accessible and modified input files (if updated using web interface, inpath and outpath may have nearly same mod times)
-            if not thaw_date:
+            if not start_date:
                 fnumbers.append(fnumber)
             else:
                 # Only process files with a release data after the minimum required release date
@@ -2684,7 +2684,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 tem_release_date_str = tem_config.release_date or config.release_date
                 if tem_release_date_str:
                     tem_release_date = sliauth.parse_date(tem_release_date_str)
-                    if tem_release_date >= thaw_date:
+                    if tem_release_date >= start_date:
                         fnumbers.append(fnumber)
 
 
@@ -3918,7 +3918,7 @@ alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link 
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
-alt_parser.add_argument('--thaw_date', metavar='DATE', help="Date after which all session releases must start yyyy-mm-dd[Thh:mm]")
+alt_parser.add_argument('--start_date', metavar='DATE', help="Date after which all session releases must start yyyy-mm-dd[Thh:mm]")
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
 alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for uploading to remote server')

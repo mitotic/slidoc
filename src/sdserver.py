@@ -105,6 +105,7 @@ Options = {
     'reload': False,
     'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
+    'server_start': None,
     'server_url': '',
     'site_name': '',         # E.g., calc101
     'site_label': '',        # E.g., Calculus 101
@@ -117,14 +118,13 @@ Options = {
     'socket_dir': '',
     'source_dir': '',
     'ssl_options': None,
-    'start_time': None,
+    'start_date': '',
     'static_dir': 'static',
-    'thaw_date': '',
     'twitter_config': '',
     'xsrf': False,
     }
 
-OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'thaw_date']
+OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'start_date']
 SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', 'site_title']
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
@@ -1227,8 +1227,8 @@ class ActionHandler(BaseHandler):
             configOpts = self.get_config_opts(uploadType, text=fbody1, topnav=True, dest_dir=web_dir,
                                               sheet=uploadType not in ('top', 'exercise)') )
             configOpts.update(image_dir=image_dir)
-            if Options['thaw_date']:
-                configOpts.update(thaw_date=Options['thaw_date'])
+            if Options['start_date']:
+                configOpts.update(start_date=Options['start_date'])
 
             configOpts['overwrite'] = 1 if overwrite else 0
             if modify:
@@ -2322,12 +2322,12 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     gradeDate = sessionEntries['gradeDate']
                     releaseDate = sessionEntries['releaseDate']
 
-                if Options['thaw_date']:
-                    thawTime = sliauth.epoch_ms(Options['thaw_date'])
-                    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < thawTime:
-                        errMsg = 'release_date %s must be after thaw_date %s for session %s' % (releaseDate, Options['thaw_date'], sessionName)
-                    if gradeDate and sliauth.epoch_ms(gradeDate) < thawTime:
-                        errMsg = 'grade date %s must be after thaw_date %s for session %s' % (gradeDate, Options['thaw_date'], sessionName)
+                if Options['start_date']:
+                    startDate = sliauth.epoch_ms(Options['start_date'])
+                    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < startDate:
+                        errMsg = 'release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName)
+                    if gradeDate and sliauth.epoch_ms(gradeDate) < startDate:
+                        errMsg = 'grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName)
 
                 if siteRole == sdproxy.ADMIN_ROLE:
                     # Admin user always has access regardless of release date, allowing delayed release of live lectures and exams
@@ -2345,10 +2345,10 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     offlineCheck = Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE)
                     if not errMsg and offlineCheck:
                         # Failsafe check to prevent premature release of offline exams etc.
-                        if gradeDate or (Options['thaw_date'] and releaseDate):
+                        if gradeDate or (Options['start_date'] and releaseDate):
                             pass
                         else:
-                            # Valid gradeDate or (thaw_date & release_date) must be specified to access offline session
+                            # Valid gradeDate or (start_date & release_date) must be specified to access offline session
                             errMsg = 'Session '+sessionName+' not yet released'
                             
             if errMsg:
@@ -3215,7 +3215,7 @@ def start_multiproxy():
 
 def start_server(site_number=0, restart=False):
     # Start site/root server
-    Options['start_time'] = sliauth.create_date()
+    Options['server_start'] = sliauth.create_date()
     if Options['ssl_options'] and not Options['site_list']:
         Global.http_server = tornado.httpserver.HTTPServer(createApplication(), ssl_options=Options['ssl_options'])
     else:
@@ -3301,7 +3301,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         if Global.proxy_server:
             Global.proxy_server.stop()
             Global.proxy_server = None
-        Options['start_time'] = sliauth.create_date()
+        Options['server_start'] = sliauth.create_date()
         Options['sport'] = 0
         Options['site_number'] = site_number
         Options['site_name'] = site_name
