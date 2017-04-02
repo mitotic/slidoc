@@ -645,8 +645,9 @@ function handleEditDragStart(evt) {
     ///console.log('handleEditDragStart: ', evt, evt.dataTransfer);
     toggleClass(true, 'slidoc-dragdrop-view');
 
+    var params = {slide: this.dataset.slide, session: Sliobj.params.fileName}
     evt.dataTransfer.effectAllowed = 'move';
-    evt.dataTransfer.setData('text/plain', ''+this.dataset.slide);
+    evt.dataTransfer.setData('application/json', JSON.stringify(params));
     handleEditDragSlideNumber = parseInt(this.dataset.slide);
 }
 
@@ -686,14 +687,20 @@ function handleEditDrop(evt) {
     if (evt.preventDefault) evt.preventDefault();
 
 
-    var dropText = evt.dataTransfer.getData('text/plain');
+    try {
+	var params = JSON.parse(evt.dataTransfer.getData('application/json'));
+    } catch(err) {
+	alert('Edit drop error: '+err);
+	return;
+    }
 
-    Slidoc.log('handleEditDrop: ', dropText);
+    Slidoc.log('handleEditDrop: ', params);
 
-    var sourceNum = parseInt(dropText);
+    var sourceNum = params.slide;
+    var fromSession = params.session;
     var destNum = parseInt(this.dataset.slide);
-    if (sourceNum != destNum)
-	Slidoc.slideMove(this, sourceNum, destNum);
+    if (sourceNum != destNum || fromSession != Sliobj.params.fileName)
+	Slidoc.slideMove(this, sourceNum, destNum, fromSession);
     return false;
 }
 
@@ -855,6 +862,7 @@ Slidoc.slideEditMenu = function() {
 	var slideId = Slidoc.getCurrentSlideId();
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit','"+slideId+"');"+'">Edit current slide</span></li><p></p>\n';
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
+	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('rollover','"+slideId+"');"+'">Rollover remaining slides to next session</span></li><p></p>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li>\n';
     html += '</ul>';
@@ -886,10 +894,12 @@ Slidoc.slideEdit = function(action, slideId) {
 	editContainer.style.display = 'none';
 	editArea.value = '';
 
-    } else if (action == 'save' || action == 'delete') {
+    } else if (action == 'save' || action == 'delete' || action == 'rollover') {
 	params.sessiontext = editArea.value;
 	if (action == 'delete')
 	    params.deleteslide = 'delete';
+	if (action == 'rollover')
+	    params.rollover = 'rollover';
 
 	function slideSaveAux(result, errMsg) {
 	    if (Sliobj.closePopup)
@@ -935,8 +945,8 @@ Slidoc.slideEdit = function(action, slideId) {
     }
 }
 
-Slidoc.slideMove = function(dropElem, sourceNum, destNum) {
-    Slidoc.log('slideMove', dropElem, sourceNum, destNum);
+Slidoc.slideMove = function(dropElem, sourceNum, destNum, fromSession) {
+    Slidoc.log('slideMove', dropElem, sourceNum, destNum, fromSession);
     if (!checkActiveEdit()) {
 	dropElem.classList.remove('slidoc-dragovertop');
 	dropElem.classList.remove('slidoc-dragoverbottom');
@@ -951,7 +961,8 @@ Slidoc.slideMove = function(dropElem, sourceNum, destNum) {
 	}
 	loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#collapsed');
     }
-    var params = {slide: sourceNum, move: destNum, sessionname: Sliobj.params.fileName, sessiontext: ''};
+    var params = {slide: sourceNum, move: destNum, sessionname: Sliobj.params.fileName,
+		  fromsession: fromSession, sessiontext: ''};
     Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideMoveAux, true);
 }
 
@@ -6042,7 +6053,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	}
 
 	if (0 && !controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel == BASIC_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
-	    // To last slide (DISABLED CHECK: no auto submit for BASIC PACE)
+	    // To last slide (DISABLED: no auto submit for BASIC PACE)
 	    var prompt = 'You have only answered '+Sliobj.scores.questionsCount+' of '+Sliobj.params.questionsMax+' questions. Do you wish to go to the last slide and end the paced session?';
 	    if (!showDialog('confirm', 'lastSlideDialog', prompt))
 		return false;

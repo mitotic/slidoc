@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.0j';
+var VERSION = '0.97.0k';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -744,10 +744,12 @@ function sheetAction(params) {
 		    var idValues = null;
                     if (nRows) {
 			idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
-                        var submitValues = modSheet.getSheetValues(startRow, columnIndex['submitTimestamp'], nRows, 1);
-                        for (var k=0; k < nRows; k++) {
-                            if (submitValues[k][0]) {
-                                throw( "Error::Cannot modify sheet "+sheetName+" with submissions");
+                        if (paceLevel == BASIC_PACE || paceLevel == QUESTION_PACE) {
+                            var submitValues = modSheet.getSheetValues(startRow, columnIndex['submitTimestamp'], nRows, 1);
+                            for (var k=0; k < nRows; k++) {
+				if (submitValues[k][0]) {
+                                    throw( "Error::Cannot modify sheet "+sheetName+" with submissions");
+				}
 			    }
 			}
 		    }

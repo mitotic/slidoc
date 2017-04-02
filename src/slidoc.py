@@ -20,6 +20,7 @@ from __future__ import print_function
 import argparse
 import BaseHTTPServer
 import base64
+import datetime
 import io
 import os
 import random
@@ -1043,10 +1044,11 @@ class SlidocRenderer(MathRenderer):
         if last_slide and self.options['config'].pace:
             # Last paced slide
             if self.qtypes[-1]:
-                abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
+                pass
+                ###abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
 
-            if self.options['config'].pace == BASIC_PACE and 'Submit' not in self.plugin_loads:
-                # Submit button not previously included in this slide or earlier slides
+            elif self.options['config'].pace == BASIC_PACE and 'Submit' not in self.plugin_loads:
+                # Non-question slide and submit button not previously included in this slide or earlier slides
                 prefix_html += self.embed_plugin_body('Submit', self.get_slide_id())
 
         ###if self.cur_qtype and not self.qtypes[-1]:
@@ -2061,9 +2063,8 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         count += len(md_slide)
         md_breaks.append(count)
 
-    new_image_name = 'image%02d' % (renderer.slide_maximage+1)
     md_params = {'md_digest': md_digest, 'md_defaults': md_defaults, 'md_slides': md_slides, 'md_breaks': md_breaks,
-                 'md_images': renderer.slide_images, 'new_image_name':new_image_name}
+                 'md_images': renderer.slide_images, 'new_image_number': renderer.slide_maximage+1}
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
     if renderer.questions:
@@ -2190,7 +2191,7 @@ Log_fields =     ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file'
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
                          questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
-                         row_count=None, modify_session=False):
+                         row_count=None, modify_session=None):
     modify_questions = False
     user = ADMINUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True)
@@ -2262,7 +2263,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         abort('Error in updating index entry for session %s: number of headers != row length' % (session_name,))
 
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
-                   'headers': json.dumps(Index_fields), 'row': json.dumps(row_values)
+                   'headers': json.dumps(Index_fields), 'row': json.dumps(row_values, default=sliauth.json_default)
                   }
     retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
@@ -2299,22 +2300,31 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
         # One or more regular user rows
         row_count = 2
 
-    min_count = min(len(prev_headers), len(headers))
-    for j in range(min_count):
-        if prev_headers[j] != headers[j]:
-            modify_col = j+1
-            break
+    if modify_session == 'overwrite':
+        modify_col = len(Manage_fields)+len(Session_fields)+1
 
-    if not modify_col:
-        if len(headers) != len(prev_headers):
-            modify_col = min_count + 1
+    elif modify_session == 'truncate':
+        if len(headers) < len(prev_headers):
+            modify_col = len(headers) + 1
+
+    else:
+        min_count = min(len(prev_headers), len(headers))
+
+        for j in range(min_count):
+            if prev_headers[j] != headers[j]:
+                modify_col = j+1
+                break
+
+        if not modify_col:
+            if len(headers) != len(prev_headers):
+                modify_col = min_count + 1
         
-    if modify_col:
-        if row_count == 1:
-            abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify' % (modify_col, sheet_name))
-        ###elif not modify_session and row_count:
-        elif not modify_session:
-            abort('ERROR:MODIFY_SESSION: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
+        if modify_col:
+            if row_count == 1:
+                abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify' % (modify_col, sheet_name))
+            ###elif not modify_session and row_count:
+            elif not modify_session:
+                abort('ERROR:MODIFY_SESSION: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
 
     return (maxLastSlide, modify_col, row_count)
                 
@@ -2410,7 +2420,7 @@ def preprocess(source, hrule_setext=False):
 
 def extract_slides(src_path, web_path):
     # Extract text for individual slides from Markdown file
-    # Return (md_defaults, md_slides, new_image_name)
+    # Return (md_defaults, md_slides, new_image_number)
     try:
         with open(src_path) as f:
             source = f.read()
@@ -2434,7 +2444,34 @@ def extract_slides(src_path, web_path):
     for count in sessionIndexParams['md_breaks']:
         md_slides.append(md_source[base+offset:base+count])
         offset = count
-    return (sessionIndexParams['md_defaults'], md_slides, sessionIndexParams['new_image_name'])
+    return (sessionIndexParams['md_defaults'], md_slides, sessionIndexParams['new_image_number'])
+
+def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber=0, session_name=''):
+    # Extract text and images for a range of slides from Markdown file
+    # Return (md_defaults, slides_text_md, slides_images_zip or None, new_image_number)
+    md_defaults, md_slides, new_image_number = extract_slides(src_path, web_path)
+
+    if not start_slide:
+        start_slide = 1
+    elif start_slide > len(md_slides):
+        raise Exception('Invalid slide number %d' % start_slide)
+
+    if not end_slide:
+        end_slide = len(md_slides)
+
+    fname = os.path.splitext(os.path.basename(src_path))[0]
+    if not session_name:
+        session_name = fname
+    md_extract = ''.join(md_slides[start_slide-1:end_slide])
+    extract_mods_args = md2md.Args_obj.create_args(None,
+                                                  image_dir=session_name+'_images',
+                                                  images=set(['_slidoc', 'zip', 'md']),
+                                                  renumber=renumber)
+    extract_parser = md2md.Parser(extract_mods_args)
+    extract_text, extract_zipped, tem_image_number = extract_parser.parse(md_extract, src_path)
+
+    
+    return (md_defaults, extract_text, extract_zipped, tem_image_number if renumber else new_image_number)
     
 
 def read_index(fhandle, entry_count=6):
@@ -2618,7 +2655,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     # Create config object
     config = argparse.Namespace(**tem_dict)
 
-    config.modify_sessions = set(config.modify_sessions.split(',')) if config.modify_sessions else set()
+    if config.modify_sessions not in ('overwrite', 'truncate'):
+        config.modify_sessions = set(config.modify_sessions.split(',')) if config.modify_sessions else set()
 
     if config.make:
         # Process only modified input files
@@ -3028,7 +3066,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
         slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname))
-        md_text_modified, _ = slide_parser.parse(md_text, filepath)
+        md_text_modified, _, new_renumber = slide_parser.parse(md_text, filepath)
 
         if file_config.hide and 'hidden' in file_config.strip:
             md_text_modified = re.sub(r'(^|\n *\n--- *\n( *\n)+) {0,3}#{2,3}[^#][^\n]*'+file_config.hide+r'.*?(\n *\n--- *\n|$)', r'\1', md_text_modified, flags=re.DOTALL)
@@ -3047,9 +3085,10 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             md_extract = md_defaults + ''.join(md_params['md_slides'][config.extract-1:])
             extract_mods_args = md2md.Args_obj.create_args(None,
                                                           image_dir=fname+'_extract_images',
-                                                          images=set(['_slidoc', 'zip', 'md', 'renumber']))
+                                                          images=set(['_slidoc', 'zip', 'md']),
+                                                          renumber=1)
             extract_parser = md2md.Parser(extract_mods_args, images_zipdata=images_zipdict.get(fname))
-            extract_text, extract_zipped = extract_parser.parse(md_extract, filepath)
+            extract_text, extract_zipped, new_renumber = extract_parser.parse(md_extract, filepath)
             if not return_html:
                 if extract_zipped:
                     extract_file = dest_dir+fname+"_extract.zip"
@@ -3154,7 +3193,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             tem_attributes = renderer.sheet_attributes.copy()
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
-            modify_session = (fname in config.modify_sessions)
+            modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
             max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields,
                                                                      modify_session=modify_session)
             mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
@@ -3202,7 +3241,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
             iso_due_str = '-'
             if doc_date_str:
-                date_time = sliauth.parse_date(doc_date_str)
+                date_time = doc_date_str if isinstance(doc_date_str, datetime.datetime) else sliauth.parse_date(doc_date_str)
                 local_time_str = date_time.ctime()
                 if admin_ended:
                     doc_str += ', ended '
@@ -3244,7 +3283,7 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                     index_entries = [fname, fheader, 'view', '-', '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
                 index_dict = {'md_digest': md_params['md_digest'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
-                              'md_images': md_params['md_images'], 'new_image_name': md_params['new_image_name']}
+                              'md_images': md_params['md_images'], 'new_image_number': md_params['new_image_number']}
                 index_entries += [ json.dumps(index_dict).replace('<', '&lt;').replace('>', '&gt;')]
                 index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
                 out_index[outpath] = index_head
@@ -3906,7 +3945,7 @@ alt_parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='cli
 alt_parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
-alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,...', help='Sessions with questions to be modified')
+alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Sessions with questions to be modified')
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')

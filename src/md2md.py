@@ -24,6 +24,14 @@ from collections import defaultdict, namedtuple, OrderedDict
 
 import mistune
 
+IMAGE_FMT = 'image%02d'
+
+def stringify(*args):
+    if len(args) == 1:
+        return args[0].encode('utf-8') if isinstance(args[0], unicode) else args[0]
+    else:
+        return [arg.encode('utf-8') if isinstance(arg, unicode) else arg for arg in args]
+
 def read_file(path):
     with open(path) as f:
         return f.read()
@@ -102,15 +110,16 @@ def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
 
 def find_image_path(src, filename='', filedir='', image_dir=''):
     fprefix = filedir+'/' if filedir else ''
+    fname = os.path.splitext(filename)[0] if filename else ''
     if os.path.exists(fprefix+src):
         # Found in specified subpath
         return src
     dirname = os.path.dirname(src)
     if dirname == '_images' or image_dir == '_images':
         basename = os.path.basename(src)
-        if filename and os.path.exists(fprefix+filename+'_images/'+basename):
-            # Found in filename_images/
-            return filename+'_images/'+basename
+        if fname and os.path.exists(fprefix+fname+'_images/'+basename):
+            # Found in fname_images/
+            return fname+'_images/'+basename
         elif os.path.exists(fprefix+'_images/'+basename):
             # Found in _images/
             return '_images/'+basename
@@ -204,7 +213,8 @@ class Parser(object):
         self.new_defs = OrderedDict()
         self.filedir = ''
         self.filename = ''
-        self.image_count = 0
+        self.fname = ''
+        self.renumber_count = cmd_args.renumber
 
     def arg_check(self, arg_set):
         n = 0
@@ -284,7 +294,7 @@ class Parser(object):
                     else:
                         raise Exception('File %s not found in zip archive' % filename)
                 else:
-                    new_link = md2md.find_image_path(link, filename=self.filename, filedir=self.filedir, image_dir=self.cmd_args.image_dir)
+                    new_link = find_image_path(link, filename=self.filename, filedir=self.filedir, image_dir=self.cmd_args.image_dir)
                     if not new_link:
                         raise Exception('File %s does not exist' % link)
 
@@ -389,7 +399,12 @@ class Parser(object):
                     newpath += '.'+extn
                 if self.cmd_args.image_dir:
                     newpath = self.cmd_args.image_dir + '/' + newpath
-                new_link = newpath
+
+                if newpath.startswith(self.fname + '_images/'):
+                    # Special folder: _images
+                    new_link = newpath[len(self.fname):]
+                else:
+                    new_link = newpath
 
             elif url_type == 'rel_path':
                 linkbase = os.path.basename(link)
@@ -400,13 +415,18 @@ class Parser(object):
                         newpath = self.cmd_args.image_dir + '/' + newpath
                     if newpath != link:
                         new_link = newpath
-                elif self.image_renumber_re.match(linkbase) and 'renumber' in self.cmd_args.images and ('zip' in self.cmd_args.images or self.cmd_args.dest_dir):
+                elif self.image_renumber_re.match(linkbase) and self.renumber_count and ('zip' in self.cmd_args.images or self.cmd_args.dest_dir):
                     # Renumber image*.* only if zip or dest_dir is specified
-                    self.image_count += 1
-                    newpath = 'image%02d%s' % (self.image_count, os.path.splitext(linkbase)[1])
+                    newpath = (IMAGE_FMT % self.renumber_count) + os.path.splitext(linkbase)[1]
+                    self.renumber_count += 1
                     if self.cmd_args.image_dir:
                         newpath = self.cmd_args.image_dir + '/' + newpath
-                    new_link = newpath
+
+                    if newpath.startswith(self.fname + '_images/'):
+                        # Special folder: _images
+                        new_link = newpath[len(self.fname):]
+                    else:
+                        new_link = newpath
                 else:
                     # Preserve relative path when copying
                     newpath = link
@@ -502,11 +522,12 @@ class Parser(object):
         return orig_content
 
     def parse(self, content, filepath=''):
-        # Return (output_md, zipped_image_data or None)
+        # Return (output_md, zipped_image_data or None, new_image_number (if renumbering) or 0)
         orig_content = content
         if filepath:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
             self.filename = os.path.basename(filepath)
+            self.fname = os.path.splitext(self.filename)[0]
 
         content = self.newline_norm_re.sub('\n', content) # Normalize newlines
 
@@ -670,9 +691,9 @@ class Parser(object):
                 self.content_zip.writestr('content.md', orig_content)
 
             self.content_zip.close()
-            return out_md, self.content_zip_bytes.getvalue()
+            return out_md, self.content_zip_bytes.getvalue(), self.renumber_count
         else:
-            return out_md, None
+            return out_md, None, self.renumber_count
 
     def gen_filename(self, content_type=''):
         label = generate_random_label()
@@ -812,18 +833,19 @@ class Parser(object):
 
 
 class ArgsObj(object):
-    def __init__(self, str_args=[], bool_args=[], defaults={}):
+    def __init__(self, str_args=[], bool_args=[], int_args=[], defaults={}):
         """List of string args, bool args and dictionary of non-null/False defaults"""
         self.str_args = str_args
         self.bool_args = bool_args
+        self.int_args = int_args
         self.defaults = defaults
 
     def create_args(self, *args, **kwargs):
         """Returns a argparse.Namespace object with argument values, optionally initialized from object args[0] (if not None) and updated with kwargs"""
         if args and args[0] is not None:
-            arg_vals = dict( [(k, getattr(args[0], k)) for k in self.str_args+self.bool_args] )
+            arg_vals = dict( [(k, getattr(args[0], k)) for k in self.str_args+self.bool_args+self.int_args] )
         else:
-            arg_vals = dict( [(k, '') for k in self.str_args] + [(k, False) for k in self.bool_args] )
+            arg_vals = dict( [(k, '') for k in self.str_args] + [(k, False) for k in self.bool_args] + [(k, 0) for k in self.int_args] )
             arg_vals.update(self.defaults)
         arg_vals.update(kwargs)
 
@@ -832,6 +854,7 @@ class ArgsObj(object):
 Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', 'strip'],
                     bool_args= ['backtick_off', 'backtick_on', 'fence', 'keep_annotation', 'latex_math',
                                 'overwrite', 'pandoc', 'tex_math', 'unfence'],
+                    int_args= ['renumber'],
                     defaults= {'image_dir': '_images'})
 
 def make_arg_set(arg_value, arg_all_list):
@@ -855,15 +878,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert from Markdown to Markdown')
     parser.add_argument('--backtick_off', help='Remove backticks bracketing inline math', action="store_true")
     parser.add_argument('--backtick_on', help='Wrap block math with backticks', action="store_true")
-    parser.add_argument('--dest_dir', help='Destination directory for creating files (default:'')', default='')
+    parser.add_argument('--dest_dir', help="Destination directory for creating files (default:'')", default='')
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
     parser.add_argument('--image_dir', help='image subdirectory (default: "_images")', default='_images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,renumber,md,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file;renumber renumbers images when copying to zip or dest_dir)', default='')
+    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,md,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file)', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--latex_math', help='Use \\(..\\) and \\[...\\] notation for math', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('--pandoc', help='Convert to Pandoc markdown', action="store_true")
+    parser.add_argument('--renumber', deault=0, help='Start number for renumbering images when copying to zip or dest_dir')
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
     parser.add_argument('--tex_math', help='Use $..$ and $$...$$ notation for math', action="store_true")
     parser.add_argument('--unfence', help='Convert fenced code block to indented blocks', action="store_true")

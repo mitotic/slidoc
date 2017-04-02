@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.0j'
+VERSION = '0.97.0k'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1258,10 +1258,11 @@ def sheetAction(params, notrace=False):
                     idValues = None
                     if nRows:
                         idValues = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
-                        submitValues = modSheet.getSheetValues(startRow, columnIndex['submitTimestamp'], nRows, 1)
-                        for k in range(nRows):
-                            if submitValues[k][0]:
-                                raise Exception( "Error::Cannot modify sheet "+sheetName+" with submissions")
+                        if paceLevel == BASIC_PACE or paceLevel == QUESTION_PACE:
+                            submitValues = modSheet.getSheetValues(startRow, columnIndex['submitTimestamp'], nRows, 1)
+                            for k in range(nRows):
+                                if submitValues[k][0]:
+                                    raise Exception( "Error::Cannot modify sheet "+sheetName+" with submissions")
                     if modifyStartCol <= len(columnHeaders):
                         # Truncate columns; ensure truncated columns are empty
                         startCol = modifyStartCol
@@ -1272,7 +1273,6 @@ def sheetAction(params, notrace=False):
                                 startRow += 1
                                 modRows -= 1
                             if modRows:
-
                                 values = modSheet.getSheetValues(startRow, startCol, modRows, nCols)
                                 for j in range(nCols):
                                     for k in range(modRows):
