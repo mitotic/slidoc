@@ -796,6 +796,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_plugin_refs = set()
         self.slide_plugin_embeds = set()
         self.slide_images.append([])
+        self.slide_img_tag = ''
 
     def close_zip(self, md_content=None):
         # Create zipped content (only if there are any images)
@@ -927,13 +928,15 @@ class SlidocRenderer(MathRenderer):
 
     def slide_toggle_footer(self):
         slide_id = self.get_slide_id()
-        header = self.cur_header or self.alt_header or ''
+        header = self.cur_header or self.slide_img_tag or self.alt_header or ''
+        if header and not header.startswith('<img '):
+            header = mistune.escape(header)
         if self.cur_header or self.untitled_header or not self.toggle_slide_id:
             self.toggle_slide_id = slide_id
         elif header:
             # Nested header
             header = '&nbsp;&nbsp;&nbsp;' + header
-        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, mistune.escape(header))
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, header)
         return html
 
     def image(self, src, title, text):
@@ -998,7 +1001,10 @@ class SlidocRenderer(MathRenderer):
                 else:
                     md2md.write_file(out_path, img_content)
 
-        return md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url)
+        img_tag = md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url)
+        if not self.slide_img_tag:
+            self.slide_img_tag = img_tag
+        return img_tag
 
 
     def hrule(self, text='---', implicit=False):
@@ -2469,7 +2475,6 @@ def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber
                                                   renumber=renumber)
     extract_parser = md2md.Parser(extract_mods_args)
     extract_text, extract_zipped, tem_image_number = extract_parser.parse(md_extract, src_path)
-
     
     return (md_defaults, extract_text, extract_zipped, tem_image_number if renumber else new_image_number)
     

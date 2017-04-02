@@ -270,6 +270,11 @@ body.slidoc-accordion-view .slidoc-chapter-accordion .slidoc-toggle-visible {dis
     max-height: 48px;
 }
 
+.slidoc-toptoggle-header img {
+    max-width: 64px;
+    max-height: 48px;
+}
+
 /* Progress bar */
 #slidoc-progressbar-container {
     z-index: 900; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em;

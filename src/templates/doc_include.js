@@ -2965,7 +2965,7 @@ function slidocSetupAux(session, feedback) {
     }
 
     var sessionElem = document.getElementById("slidoc-session-display");
-    if (sessionElem && Sliobj.params.fileName && Sliobj.params.fileName != 'index' && (Sliobj.session.submitted || !isController()) ) {
+    if (sessionElem && Sliobj.params.fileName && Sliobj.params.fileName != 'index') {
 	if (Sliobj.params.tocFile) {
 	    var prefix = Sliobj.params.fileName;
 	    var suffix = '';
@@ -2974,7 +2974,8 @@ function slidocSetupAux(session, feedback) {
 		suffix = nmatch[1];
 		prefix = prefix.slice(0,-suffix.length);
 	    }
-	    sessionElem.innerHTML = '<a href="'+Sliobj.params.tocFile+'">'+prefix+'</a>'+suffix;
+	    var target = Sliobj.session.submitted ? '' : ' target="_blank"';
+	    sessionElem.innerHTML = '<a href="'+Sliobj.params.tocFile+'" '+target+'>'+prefix+'</a>'+suffix;
 	} else {
 	    sessionElem.textContent = Sliobj.params.fileName;
 	}

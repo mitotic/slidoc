@@ -1571,6 +1571,7 @@ class ActionHandler(BaseHandler):
         prevPreviewState = self.previewState.copy() 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
         slide_images_zip = None
+        image_zipdata = ''
         if slideNumber:
             # Editing slide
             if self.previewState:
@@ -1581,6 +1582,8 @@ class ActionHandler(BaseHandler):
                 new_image_number = self.previewState['new_image_number']
             else:
                 md_defaults, md_slides, new_image_number = self.extract_slides(src_path, web_path)
+                if fromSession:
+                    _, _, image_zipdata, _ = self.extract_slide_range(src_path, web_path) # Redundant, but need images
 
             if fromSession == sessionName and slideNumber > len(md_slides):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
@@ -1643,6 +1646,9 @@ class ActionHandler(BaseHandler):
                 fbody2 = self.previewState['image_zipbytes'].getvalue()
                 fname2 = sessionName+'_images.zip'
             self.previewClear()
+        elif image_zipdata:
+            fbody2 = image_zipdata
+            fname2 = sessionName+'_images.zip'
 
         modimages = ''
         if slide_images_zip:
