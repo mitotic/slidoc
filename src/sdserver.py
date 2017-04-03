@@ -815,6 +815,12 @@ class ActionHandler(BaseHandler):
             for userId, name in nameMap.items():
                 if not name or name.startswith('#'):
                     continue
+                try:
+                    userEntry = sdproxy.lookupValues(userId, ['Timestamp'], sessionName)
+                except Exception, excp:
+                    userEntry = None
+                if userEntry:
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: User %s (%s) already pre-filled' % (name, userId))
                 count += 1
                 sdproxy.importUserAnswers(sessionName, userId, name, source='prefill')
             self.displayMessage('Prefilled session '+sessionName+' with '+str(count)+' users')

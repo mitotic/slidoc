@@ -22,26 +22,34 @@
   <h3><span id="slidoc-action-status"></span></h3>
 
   <ul>
-    <li><a href="javascript:slidocAction('respond')">respond</a>: Award participation credit</li>
-    <li><a href="javascript:slidocAction('submissions')">submissions</a>: Session submission stats, allow late submissions etc.</li>
+    <li><a href="javascript:slidocAction('edit')">edit</a>: Edit session Markdown file</li>
+    <li><a href="javascript:slidocAction('download')">download</a>: Download session Markdown file (and images)</li>
     <hr>
-    <li><a href="javascript:slidocAction('edit')">edit</a>: Edit Markdown file</li>
-    <li><a href="javascript:slidocAction('download')">download</a>: Download Markdown file (and images)</li>
+    <li><a href="javascript:slidocAction('respond')">respond</a>: Award participation credit for lectures</li>
+    <li><a href="javascript:slidocConfirmAction('submit')">submit</a>: Submit test user responses (used for ending admin-paced sessions)</li>
+    <li><a href="javascript:slidocAction('submissions')">submissions</a>: Show session submission stats, allow late submissions etc.</li>
     <hr>
-    <li><a href="javascript:slidocConfirmAction('prefill')">prefill</a>: Prefill session with roster users (for paper tests)</li>
-    <li><a href="javascript:slidocConfirmAction('import')">import</a>: Import responses/grades from spreadsheet.csv (for paper tests)</li>
-    <li><a href="javascript:slidocAction('export')">export</a>: Export responses to spreadsheet.csv</li>
-    <li><a href="javascript:slidocConfirmAction('submit')">submit</a>: Submit test user responses (useful to end admin paced sessions)</li>
+    <li><a href="javascript:slidocConfirmAction('prefill')">prefill</a>: Pre-fill session with all roster users (for creating paper tests)</li>
+    <li><a href="javascript:slidocAction('sheet', '{{session_name}}')">view</a>: View session data (scores, grades, etc.)</em></li>
     <hr>
+    <li><a href="javascript:slidocConfirmAction('import')">import</a>: Import responses/grades from spreadsheet.csv (from paper tests)</li>
+    <li><a href="javascript:slidocAction('export')">export</a>: Export responses to <em>spreadsheet.csv</em></li>
+    <hr>
+    <li><a href="javascript:slidocConfirmAction('delete')">delete</a>: Delete session (IRREVERSIBLE)</LI>
+  </ul>
+
+  <p></p>
+
+  <a href="#" onclick="document.getElementById('slidoc-dash-advanced').style.display=null;this.style.display='none'">Less useful options</a>
+  <ul id="slidoc-dash-advanced" style="display: none;">
     <li><a href="javascript:slidocAction('qstats')">qstats</a>: Question response statistics</li>
     <hr>
     <li><a href="javascript:slidocAction('getrow')">headers</a>: List session spreadsheet columns (headers)</li>
     <li><a href="javascript:slidocAction('getcol')">ids</a>: List all rows (ids) in session spreadsheet</li>
     <hr>
     <li><a href="javascript:slidocAction('refresh')">refresh</a>: Refresh session cache</li>
-    <hr>
-    <li><a href="javascript:slidocConfirmAction('delete')">delete</a>: Delete session (irreversible)</li>
   </ul>
+
 </div>
 
 </body>
