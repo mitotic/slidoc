@@ -273,6 +273,7 @@ body.slidoc-accordion-view .slidoc-chapter-accordion .slidoc-toggle-visible {dis
 .slidoc-toptoggle-header img {
     max-width: 64px;
     max-height: 48px;
+    vertical-align: middle;
 }
 
 /* Progress bar */

@@ -661,12 +661,10 @@ function handleEditDragEnd(evt) {
 }
 
 function handleEditDragEnter(evt) {
-    if (!handleEditDragSlideNumber)
-	return;
-    if (parseInt(this.dataset.slide) > handleEditDragSlideNumber)
-	this.classList.add('slidoc-dragoverbottom');
-    if (parseInt(this.dataset.slide) < handleEditDragSlideNumber)
+    if (!handleEditDragSlideNumber || parseInt(this.dataset.slide) < handleEditDragSlideNumber)
 	this.classList.add('slidoc-dragovertop');
+    else if (parseInt(this.dataset.slide) > handleEditDragSlideNumber)
+	this.classList.add('slidoc-dragoverbottom');
 }
 
 function handleEditDragLeave(evt) {
