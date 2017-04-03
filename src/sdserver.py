@@ -772,8 +772,9 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Error in deleting sheet '+subsubpath+': '+retObj.get('error',''))
                 return
 
+            sessionName = subsubpath
             if Options['source_dir']:
-                uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(subsubpath)
+                uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
 
                 if os.path.exists(src_path):
                     os.remove(src_path)
@@ -783,7 +784,24 @@ class ActionHandler(BaseHandler):
 
                 if os.path.isdir(web_images):
                     shutil.rmtree(web_images)
-            self.write('Deleted sheet '+subsubpath)
+
+                if uploadType != 'top':
+                    configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=os.path.dirname(web_path),
+                                                      sheet=uploadType not in ('top', 'exercise)') )
+                    if Options['start_date']:
+                        configOpts.update(start_date=Options['start_date'])
+
+                    filePaths = self.get_md_list(uploadType)
+                    fileHandles = [None for fpath in filePaths]
+                    fileNames = [os.path.basename(fpath) for fpath in filePaths]
+
+                    retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True, http_post_func=http_sync_post)
+                    if 'md_params' not in retval:
+                        raise Exception('\n'.join(retval.get('messages',[]))+'\n')
+                    if Options['debug'] and retval.get('messages'):
+                        print >> sys.stderr, 'sdserver.deleteSession:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
+
+            self.write('Deleted sheet '+sessionName)
 
         elif action == '_import':
             self.render('import.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, submit_date=sliauth.iso_date())
