@@ -1140,6 +1140,11 @@ function reloadCheckFunc() {
 	    document.getElementById('slidoc-localpreview-label').textContent = 'Local preview ENDED';
 	    console.log(errMsg);
 	} else if (result && result.trim()) {
+	    if (!Sliobj.currentSlide) {
+		var slides = document.getElementsByClassName(Sliobj.curChapterId ? Sliobj.curChapterId+'-slide' : 'slidoc-slide');
+		var curSlide = getCurrentlyVisibleSlide(slides);
+		location.hash = curSlide ? '##'+slides[curSlide-1].id : '##';
+	    }
 	    location.reload(true);
 	} else {
 	    setTimeout(reloadCheckFunc, 333);
@@ -3153,8 +3158,11 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
-    if ('slides_only' in Sliobj.params.features && !Sliobj.printExamView && !Sliobj.gradableState)
+    if (Sliobj.reloadCheck && location.hash && location.hash.slice(0,2) == '##') {
+	location.hash = location.hash.slice(1);
+    } else if ('slides_only' in Sliobj.params.features && !Sliobj.printExamView && !Sliobj.gradableState) {
 	Slidoc.slideViewStart();
+    }
 
     ///if (Slidoc.testingActive())
 	///Slidoc.slideViewStart();
@@ -5810,15 +5818,20 @@ Slidoc.startPaced = function () {
     startMsg += '</ul>';
     }
 
-    if (!Sliobj.batchMode && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
+    if (!Sliobj.batchMode && !Sliobj.reloadCheck && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
 	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
 
-    if (!Sliobj.batchMode && !Sliobj.printExamView)
+    if (Sliobj.reloadCheck && location.hash && location.hash.slice(0,2) == '##') {
+	// Unhide all slides
+	slidesVisible(true);
+	location.hash = location.hash.slice(1);
+    } else if (!Sliobj.batchMode && !Sliobj.printExamView) {
 	Slidoc.slideViewStart();
+    }
 }
 
 Slidoc.endPaced = function (reload) {
@@ -5897,8 +5910,10 @@ Slidoc.slideViewStart = function () {
    Slidoc.breakChain();
 
    var startSlide;
-   if (Sliobj.previewState && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
+    if ((Sliobj.previewState || Sliobj.reloadCheck) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
 	startSlide = parseSlideId(location.hash.slice(1))[2];
+    } else if (Sliobj.reloadCheck) {
+	startSlide = 1;
    } else if (Sliobj.session.paced) {
        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
    } else {
