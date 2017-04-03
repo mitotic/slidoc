@@ -3817,6 +3817,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         if url_comps.path == '/_remoteupload':
             import httplib
             server_url = self.config_dict.get('server_url')
+            site_name = self.config_dict.get('site_name', '')
             if not server_url:
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
@@ -3847,7 +3848,10 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.wfile.write('Error in upload to %s %s: %d %s' % (server_url, load_path, resp.status, resp.reason))
             else:
                 self.send_response(303)
-                self.send_header('Location', server_url + '/_preview/index.html')
+                redirect_url = server_url
+                if site_name:
+                    redirect_url += '/' + site_name
+                self.send_header('Location', redirect_url + '/_preview/index.html')
                 self.wfile.write('')
             return
 

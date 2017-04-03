@@ -458,7 +458,7 @@ class ProxyServer(object):
 class Pipeline(object):
     """ Two-way information pipeline created by splicing external and internal streams.
     """
-    METHODS = {"http": ("GET", "HEAD", "POST")}
+    METHODS = {"http": ("GET", "HEAD", "POST", "PUT")}
 
     def __init__(self, server_type, external_stream, from_address, proxy_server):
         self.server_type = server_type
@@ -930,7 +930,7 @@ class RequestHandler(object):
             # Modified request URI
             new_headers[0] = "%s %s %s" % (self.request_method, self.request_uri, self.request_protocol)
 
-        if self.request_method != "POST":
+        if self.request_method not in ("POST", "PUT"):
             pipeline.inbound_flow.content_length = 0
 
         elif self.req_content_length is None:

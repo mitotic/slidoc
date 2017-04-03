@@ -489,15 +489,15 @@ class ActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: putAction', Options['site_number'], subpath, len(self.request.body), self.request.arguments, self.request.headers.get('Content-Type')
         action, sep, subsubpath = subpath.partition('/')
-        sessionName = subsubpath
         if action == '_remoteupload':
             token = sliauth.gen_hmac_token(Options['auth_key'], 'upload:'+sliauth.digest_hex(self.request.body))
             if self.get_argument('token') != token:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid remote upload token')
+            sessionName = os.path.splitext(subsubpath)[0]
             uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
             errMsg = ''
             try:
-                errMsg = self.uploadSession(uploadType, sessionNumber, sessionName, self.request.body, '', '')
+                errMsg = self.uploadSession(uploadType, sessionNumber, subsubpath, self.request.body, '', '')
             except Exception, excp:
                 if Options['debug']:
                     import traceback
