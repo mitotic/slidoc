@@ -636,20 +636,18 @@ class ActionHandler(BaseHandler):
         elif action == '_twitter':
             self.set_header('Content-Type', 'text/plain')
             if not Global.twitterStream:
-                self.write('No twitter stream active')
+                self.displayMessage('No twitter stream active')
             else:
-                self.write('Twitter stream status: '+Global.twitterStream.status+'\n\n')
-                self.write('Twitter stream log: '+'\n'.join(Global.twitterStream.log_buffer)+'\n')
+                self.displayMessage(['Twitter stream status: '+Global.twitterStream.status+'\n\n',
+                                     'Twitter stream log: '+'\n'.join(Global.twitterStream.log_buffer)+'\n'])
 
         elif action == '_freeze':
             sdproxy.freezeCache(fill=True)
-            self.write('Freezing cache<br>')
-            self.write('<a href="%s">Dashboard</a><br>' % dash_url)
+            self.displayMessage('Freezing cache<br>')
 
         elif action == '_clear':
             sdproxy.suspend_cache('clear')
-            self.write('Clearing cache<br>')
-            self.write('<a href="%s">Dashboard</a><br>' % dash_url)
+            self.displayMessage('Clearing cache<br>')
 
         elif action == '_backup':
             backupSite(subsubpath)
@@ -663,20 +661,17 @@ class ActionHandler(BaseHandler):
                     if lockType == 'proxy':
                         raise Exception('Failed to lock sheet '+sessionName+'. Try again after a few seconds?')
                     prefix = 'Locking'
-            self.write(prefix +' sessions: %s<p></p><a href="%s/_cache">Cache status</a><p></p>' % (site_prefix, ', '.join(sdproxy.get_locked())) )
-            self.write('<a href="%s">Dashboard</a><br>' % dash_url)
+            self.displayMessage(prefix +' sessions: %s<p></p><a href="%s/_cache">Cache status</a><p></p>' % (site_prefix, ', '.join(sdproxy.get_locked())) )
 
         elif action == '_unlock':
             if not sdproxy.unlockSheet(sessionName):
                 raise Exception('Failed to unlock sheet '+sessionName)
-            self.write('Unlocked '+sessionName+('<p></p><a href="%s/_cache">Cache status</a><p></p>' % site_prefix))
-            self.write('<a href="%s">Dashboard</a><br>' % dash_url)
+            self.displayMessage('Unlocked '+sessionName+('<p></p><a href="%s/_cache">Cache status</a><p></p>' % site_prefix))
 
         elif action in ('_manage',):
             sheet = sdproxy.getSheet(sessionName, optional=True)
             if not sheet:
-                self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
-                self.write('No such session: '+sessionName)
+                self.displayMessage('No such session: '+sessionName)
                 return
             self.render('manage.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName)
 
@@ -721,7 +716,7 @@ class ActionHandler(BaseHandler):
         elif action in ('_sheet',):
             sheet = sdproxy.getSheet(subsubpath, optional=True)
             if not sheet:
-                self.write('Unable to retrieve sheet '+subsubpath)
+                self.displayMessage('Unable to retrieve sheet '+subsubpath)
                 return
             lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
             rows = sheet.export(idRename=id_col,altidRename=altid_col)
@@ -731,7 +726,7 @@ class ActionHandler(BaseHandler):
             subsubpath, sep, label = subsubpath.partition(';')
             sheet = sdproxy.getSheet(subsubpath, optional=True)
             if not sheet:
-                self.write('Unable to retrieve sheet '+subsubpath)
+                self.displayMessage('Unable to retrieve sheet '+subsubpath)
             else:
                 self.write('<a href="%s">Dashboard</a><br>' % dash_url)
                 if label.isdigit():
@@ -767,7 +762,6 @@ class ActionHandler(BaseHandler):
             userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
             args = {'sheet': subsubpath, 'delsheet': '1', 'admin': user, 'token': userToken}
             retObj = sdproxy.sheetAction(args)
-            self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
             if retObj['result'] != 'success':
                 self.displayMessage('Error in deleting sheet '+subsubpath+': '+retObj.get('error',''))
                 return
@@ -805,7 +799,7 @@ class ActionHandler(BaseHandler):
                     if Options['debug'] and retval.get('messages'):
                         print >> sys.stderr, 'sdserver.deleteSession:', sessionName, '\n'.join(retval['messages'])
 
-            self.write('Deleted sheet '+sessionName)
+            self.displayMessage('Deleted session '+sessionName)
 
         elif action == '_import':
             self.render('import.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, submit_date=sliauth.iso_date())
@@ -823,13 +817,13 @@ class ActionHandler(BaseHandler):
                     continue
                 count += 1
                 sdproxy.importUserAnswers(sessionName, userId, name, source='prefill')
-            self.write('Prefilled session '+sessionName+' with '+str(count)+' users')
+            self.displayMessage('Prefilled session '+sessionName+' with '+str(count)+' users')
 
         elif action in ('_qstats',):
             sheetName = sessionName + '-answers'
             sheet = sdproxy.getSheet(sheetName, optional=True)
             if not sheet:
-                self.write('Unable to retrieve sheet '+sheetName)
+                self.displayMessage('Unable to retrieve sheet '+sheetName)
                 return
             qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
             qaverages = []
@@ -848,8 +842,7 @@ class ActionHandler(BaseHandler):
                     lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
                     if j%5 == 4:
                         lines.append('')
-                self.write('<a href="%s">Dashboard</a><br>' % dash_url)
-                self.write(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+                self.displayMessage(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
 
         elif action == '_refresh':
             if subsubpath:
@@ -857,25 +850,23 @@ class ActionHandler(BaseHandler):
                     msg = ' Refreshed sheet '+subsubpath
                 else:
                     msg = ' Cannot refresh locked sheet '+subsubpath+' ...'
-                self.write(msg+('<p></p><a href="%s/_cache">Cache status</a><p></p>' % site_prefix))
-                self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
+                self.displayMessage(msg+('<p></p><a href="%s/_cache">Cache status</a><p></p>' % site_prefix))
 
         elif action in ('_respond',):
             sessionName, sep, respId = sessionName.partition(';')
-            self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
             if not sessionName:
-                self.write('Please specify /_respond/session name')
+                self.displayMessage('Please specify /_respond/session name')
                 return
             sheet = sdproxy.getSheet(sessionName, optional=True)
             if not sheet:
-                self.write('Unable to retrieve session '+sessionName)
+                self.displayMessage('Unable to retrieve session '+sessionName)
                 return
             nameMap = sdproxy.lookupRoster('name')
             if respId:
                 if respId in nameMap:
                     sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual', submitDate='dueDate')
                 else:
-                    self.write('User ID '+respId+' not in roster')
+                    self.displayMessage('User ID '+respId+' not in roster')
                     return
             colIndex = sdproxy.indexColumns(sheet)
             idSet = set([x[0] for x in sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)])
@@ -888,7 +879,7 @@ class ActionHandler(BaseHandler):
                 else:
                     lines.append('<li>%s (<a href="%s/_respond/%s;%s">set responded</a>)</li>\n' % (site_prefix, name, sessionName, idVal))
             lines.append('</ul>\n')
-            self.write(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
+            self.displayMessage(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
 
         elif action in ('_submissions',):
             comps = sessionName.split(';')
@@ -897,13 +888,13 @@ class ActionHandler(BaseHandler):
             dateStr = comps[2] if len(comps) >= 3 else ''
             sheet = sdproxy.getSheet(sessionName, optional=True)
             if not sheet:
-                self.write('Unable to retrieve session '+sessionName)
+                self.displayMessage('Unable to retrieve session '+sessionName)
                 return
             sessionConnections = WSHandler.get_connections(sessionName)
             nameMap = sdproxy.lookupRoster('name')
             if userId:
                 if not dateStr:
-                    self.write('Please specify date')
+                    self.displayMessage('Please specify date')
                     return
                 if 'T' not in dateStr:
                     dateStr += 'T23:59'
@@ -914,7 +905,7 @@ class ActionHandler(BaseHandler):
                     newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, Options['site_name'], sessionName, dateStr)
                     sdproxy.createUserRow(sessionName, userId, lateToken=newLatetoken, source='allow')
                 else:
-                    self.write('User ID '+userId+' not in roster')
+                    self.displayMessage('User ID '+userId+' not in roster')
                     return
             colIndex = sdproxy.indexColumns(sheet)
             idVals = sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)
@@ -1034,7 +1025,7 @@ class ActionHandler(BaseHandler):
             allUsers = self.get_argument("allusers", '')
             sheet = sdproxy.getSheet(sessionName, optional=True)
             if not sheet:
-                self.write('Unable to retrieve sheet '+sessionName)
+                self.displayMessage('Unable to retrieve sheet '+sessionName)
                 return
             self.set_header('Content-Type', 'text/csv')
             self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % sessionName)
@@ -1044,13 +1035,13 @@ class ActionHandler(BaseHandler):
             return
 
         if previewingSession:
-            self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+            self.displayMessage('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
         submitDate = ''
         if action in ('_import', '_submit'):
             if not sessionName:
-                self.write('Must specify session name')
+                self.displayMessage('Must specify session name')
                 return
             submitDate = self.get_argument('submitdate','')
 
