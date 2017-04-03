@@ -645,7 +645,7 @@ function handleEditDragStart(evt) {
     ///console.log('handleEditDragStart: ', evt, evt.dataTransfer);
     toggleClass(true, 'slidoc-dragdrop-view');
 
-    var params = {slide: this.dataset.slide, session: Sliobj.params.fileName}
+    var params = {slide: this.dataset.slide, session: Sliobj.params.fileName, siteName: Sliobj.params.siteName}
     evt.dataTransfer.effectAllowed = 'move';
     evt.dataTransfer.setData('application/json', JSON.stringify(params));
     handleEditDragSlideNumber = parseInt(this.dataset.slide);
@@ -696,9 +696,10 @@ function handleEditDrop(evt) {
 
     var sourceNum = params.slide;
     var fromSession = params.session;
+    var fromSite = params.siteName;
     var destNum = parseInt(this.dataset.slide);
-    if (sourceNum != destNum || fromSession != Sliobj.params.fileName)
-	Slidoc.slideMove(this, sourceNum, destNum, fromSession);
+    if (sourceNum != destNum || fromSession != Sliobj.params.fileName || fromSite != Sliobj.params.siteName)
+	Slidoc.slideMove(this, sourceNum, destNum, fromSession, fromSite);
     return false;
 }
 
@@ -943,8 +944,8 @@ Slidoc.slideEdit = function(action, slideId) {
     }
 }
 
-Slidoc.slideMove = function(dropElem, sourceNum, destNum, fromSession) {
-    Slidoc.log('slideMove', dropElem, sourceNum, destNum, fromSession);
+Slidoc.slideMove = function(dropElem, sourceNum, destNum, fromSession, fromSite) {
+    Slidoc.log('slideMove', dropElem, sourceNum, destNum, fromSession, fromSite);
     if (!checkActiveEdit()) {
 	dropElem.classList.remove('slidoc-dragovertop');
 	dropElem.classList.remove('slidoc-dragoverbottom');
@@ -961,6 +962,7 @@ Slidoc.slideMove = function(dropElem, sourceNum, destNum, fromSession) {
     }
     var params = {slide: sourceNum, move: destNum, sessionname: Sliobj.params.fileName,
 		  fromsession: fromSession, sessiontext: ''};
+    params.fromsite = (fromSite != Sliobj.params.siteName) ? fromSite : '';
     Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideMoveAux, true);
 }
 

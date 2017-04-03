@@ -931,21 +931,34 @@ class ActionHandler(BaseHandler):
         else:
             self.displayMessage('Invalid get action: '+action)
 
-    def getSessionType(self, sessionName):
+    def getSessionType(self, sessionName, siteName=''):
         if not Options['source_dir']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to get session type')
+
+        if siteName:
+            # Check permissions to retrieve session from another site
+            siteRole = self.get_id_from_cookie(role=True, for_site=siteName)
+            if siteRole != sdproxy.ADMIN_ROLE:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Denied access to site %s to retrieve session %s' % (siteName, sessionName))
+
+            src_dir = Options['source_dir'] + '/' + siteName
+            web_dir = Options['static_dir'] + '/' + siteName
+        else:
+            src_dir = self.site_src_dir
+            web_dir = self.site_web_dir
 
         # Return (uploadType, sessionNumber, src_path, web_path, web_images)
         fname, fext = os.path.splitext(sessionName)
         if fext and fext != '.md':
             tornado.web.HTTPError(404, log_message='CUSTOM:Invalid session name (must end in .md): '+sessionName)
+
         smatch = re.match(r'^(\w*[a-zA-Z_])(\d+)$', sessionName)
         if not smatch:
-            return 'top', 0, self.site_src_dir+'/'+sessionName+'.md', self.site_web_dir+'/'+sessionName+'.html', self.site_web_dir+'/'+sessionName+'_images'
+            return 'top', 0, src_dir+'/'+sessionName+'.md', web_dir+'/'+sessionName+'.html', web_dir+'/'+sessionName+'_images'
         uploadType = smatch.group(1)
         sessionNumber = int(smatch.group(2))
-        web_prefix = self.site_web_dir+'/_private/'+uploadType+'/'+sessionName
-        return uploadType, sessionNumber, self.site_src_dir+'/'+uploadType+'/'+sessionName+'.md', web_prefix+'.html', web_prefix+'_images'
+        web_prefix = web_dir+'/_private/'+uploadType+'/'+sessionName
+        return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+sessionName+'.md', web_prefix+'.html', web_prefix+'_images'
 
 
     def postAction(self, subpath):
@@ -977,10 +990,11 @@ class ActionHandler(BaseHandler):
 
             sessionText = self.get_argument('sessiontext')
             fromSession = self.get_argument('fromsession', '')
+            fromSite = self.get_argument('fromsite', '')
             deleteSlide = self.get_argument('deleteslide', '')
             sessionModify = sessionName if self.get_argument('sessionmodify', '') else ''
 
-            return self.postEdit(sessionName, sessionText, fromSession=fromSession, slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide,
+            return self.postEdit(sessionName, sessionText, fromSession=fromSession, fromSite=fromSite, slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide,
                                  modify=sessionModify)
 
         elif action == '_imageupload':
@@ -1565,8 +1579,10 @@ class ActionHandler(BaseHandler):
         self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName,
                      session_text=sessionText, discard_url=discard_url, err_msg='')
 
-    def postEdit(self, sessionName, sessionText, fromSession='', slideNumber=None, newNumber=None, deleteSlide='', modify=None):
-        sessionName, sessionText, fromSession = md2md.stringify(sessionName, sessionText, fromSession)
+    def postEdit(self, sessionName, sessionText, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide='', modify=None):
+        sessionName, sessionText, fromSession, fromSite = md2md.stringify(sessionName, sessionText, fromSession, fromSite)
+
+        sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
 
         prevPreviewState = self.previewState.copy() 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
@@ -1582,15 +1598,15 @@ class ActionHandler(BaseHandler):
                 new_image_number = self.previewState['new_image_number']
             else:
                 md_defaults, md_slides, new_image_number = self.extract_slides(src_path, web_path)
-                if fromSession:
+                if not sameSession:
                     _, _, image_zipdata, _ = self.extract_slide_range(src_path, web_path) # Redundant, but need images
 
-            if fromSession == sessionName and slideNumber > len(md_slides):
+            if sameSession and slideNumber > len(md_slides):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
 
-            if fromSession and fromSession != sessionName:
+            if not sameSession:
                 # Insert slide from another session
-                _, _, from_src, from_web, _ = self.getSessionType(fromSession)
+                _, _, from_src, from_web, _ = self.getSessionType(fromSession, siteName=fromSite)
                 _, slideText, slide_images_zip, new_image_number = self.extract_slide_range(from_src, from_web, start_slide=slideNumber, end_slide=slideNumber, renumber=new_image_number, session_name=sessionName)
 
                 if not newNumber or newNumber > len(md_slides)+1:
