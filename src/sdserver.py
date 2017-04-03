@@ -1146,7 +1146,7 @@ class ActionHandler(BaseHandler):
             newPath = self.site_src_dir+'/'+uploadType+'/'+newSession+'.md'
             if newPath not in md_list:
                 md_list.append(newPath)
-                md_list.sort()
+        md_list.sort()
         return md_list
 
     def get_topnav_list(self):
