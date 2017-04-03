@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.0k'
+VERSION = '0.97.1a'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -416,7 +416,7 @@ def downloadSheet(sheetName, backup=False):
     if Global.previewStatus.get('sessionName') == sheetName:
         raise Exception('Cannot download when previewing session '+Global.previewStatus['sessionName'])
     user = ADMINUSER_ID
-    userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
+    userToken = gen_proxy_token(user, ADMIN_ROLE)
 
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
     if backup:
@@ -915,7 +915,7 @@ def update_remote_sheets(force=False, synchronous=False):
         print("update_remote_sheets:C", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
 
     user = ADMINUSER_ID
-    userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
+    userToken = gen_proxy_token(user, ADMIN_ROLE)
 
     http_client = tornado.httpclient.HTTPClient() if synchronous else tornado.httpclient.AsyncHTTPClient()
     json_data = json.dumps(modRequests, default=sliauth.json_default)
@@ -1147,7 +1147,7 @@ def sheetAction(params, notrace=False):
                     
             if Settings['gsheet_url'] and not Settings['dry_run']:
                 user = ADMINUSER_ID
-                userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
+                userToken = gen_proxy_token(user, ADMIN_ROLE)
                 delParams = {'sheet': sheetName, 'delsheet': '1', 'admin': user, 'token': userToken}
                 retval = sliauth.http_post(Settings['gsheet_url'], delParams)
                 print('sdproxy: delsheet %s: %s' % (sheetName, retval), file=sys.stderr)
@@ -1175,7 +1175,7 @@ def sheetAction(params, notrace=False):
                 raise Exception("Error:COPYSHEET:Destination sheet "+newName+" already exists!")
             if Settings['gsheet_url'] and not Settings['dry_run']:
                 user = ADMINUSER_ID
-                userToken = gen_proxy_token(user, ADMIN_ROLE, prefixed=True)
+                userToken = gen_proxy_token(user, ADMIN_ROLE)
                 copyParams = {'sheet': sheetName, 'copysheet': newName, 'admin': user, 'token': userToken}
                 retval = sliauth.http_post(Settings['gsheet_url'], copyParams)
                 print('sdproxy: copysheet %s: %s' % (sheetName, retval), file=sys.stderr)
@@ -2181,7 +2181,8 @@ def sheetAction(params, notrace=False):
     
     return retObj
 
-def gen_proxy_token(username, role='', prefixed=False):
+def gen_proxy_token(username, role=''):
+    prefixed = role in (ADMIN_ROLE, GRADER_ROLE)
     return sliauth.gen_auth_token(Settings['auth_key'], username, role=role, prefixed=prefixed)
 
 def getSiteRole(siteName, siteRoles):
@@ -2377,7 +2378,7 @@ def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayN
     
 def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     if opts.get('admin'):
-        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
+        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE)
     else:
         token = gen_proxy_token(userId)
     getParams = {'id': userId, 'token': token,'sheet': sessionName,
@@ -2387,7 +2388,7 @@ def getUserRow(sessionName, userId, displayName, opts={}, notrace=False):
     return sheetAction(getParams, notrace=notrace)
 
 def getAllRows(sessionName, opts={}, notrace=False):
-    token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
+    token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE)
     getParams = {'admin': ADMINUSER_ID, 'token': token,'sheet': sessionName,
                  'get': '1', 'all': '1'}
     getParams.update(opts)
@@ -2396,7 +2397,7 @@ def getAllRows(sessionName, opts={}, notrace=False):
 
 def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
     if opts.get('admin'):
-        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
+        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE)
     else:
         token = gen_proxy_token(userId)
     putParams = {'id': userId, 'token': token,'sheet': sessionName,
@@ -2407,7 +2408,7 @@ def putUserRow(sessionName, userId, rowValues, opts={}, notrace=False):
 
 def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
     if opts.get('admin'):
-        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE, prefixed=True)
+        token = gen_proxy_token(ADMINUSER_ID, ADMIN_ROLE)
     else:
         token = gen_proxy_token(updateObj['id'])
     updates = []

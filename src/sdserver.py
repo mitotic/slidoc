@@ -764,7 +764,7 @@ class ActionHandler(BaseHandler):
 
         elif action == '_delete':
             user = sdproxy.ADMINUSER_ID
-            userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE)
+            userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
             args = {'sheet': subsubpath, 'delsheet': '1', 'admin': user, 'token': userToken}
             retObj = sdproxy.sheetAction(args)
             self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
