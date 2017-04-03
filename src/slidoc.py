@@ -3466,6 +3466,9 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                         return {'outpath': outpath, 'out_html':Html_header+pre_html+tail+Html_footer, 'toc_html':toc_all_html, 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
                     else:
                         write_doc(outpath, pre_html, tail)
+            if return_html:
+                # No output files
+                return {'outpath': '', 'out_html':'', 'toc_html':toc_all_html, 'md_params':{}, 'zipped_md':None, 'messages': messages}
         if config.slides:
             message('Created *-slides.html files')
         if config.notebook:

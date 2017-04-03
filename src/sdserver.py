@@ -775,6 +775,7 @@ class ActionHandler(BaseHandler):
             sessionName = subsubpath
             if Options['source_dir']:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
+                web_dir = os.path.dirname(web_path)
 
                 if os.path.exists(src_path):
                     os.remove(src_path)
@@ -786,7 +787,7 @@ class ActionHandler(BaseHandler):
                     shutil.rmtree(web_images)
 
                 if uploadType != 'top':
-                    configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=os.path.dirname(web_path),
+                    configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=web_dir,
                                                       sheet=uploadType not in ('top', 'exercise)') )
                     if Options['start_date']:
                         configOpts.update(start_date=Options['start_date'])
@@ -796,10 +797,13 @@ class ActionHandler(BaseHandler):
                     fileNames = [os.path.basename(fpath) for fpath in filePaths]
 
                     retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True, http_post_func=http_sync_post)
-                    if 'md_params' not in retval:
+                    if 'toc_html' in retval:
+                        with open(web_dir+'/index.html', 'w') as f:
+                            f.write(retval['toc_html'])
+                    else:
                         raise Exception('\n'.join(retval.get('messages',[]))+'\n')
                     if Options['debug'] and retval.get('messages'):
-                        print >> sys.stderr, 'sdserver.deleteSession:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
+                        print >> sys.stderr, 'sdserver.deleteSession:', sessionName, '\n'.join(retval['messages'])
 
             self.write('Deleted sheet '+sessionName)
 
