@@ -425,7 +425,7 @@ class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
     static_opts = {'default': dict(debug=True),
-                   'top': dict(make=True, strip='chapters,contents,navigate,sections'),
+                   'top': dict(make=True, strip='chapters'),
                    'raw': dict(strip='chapters'),
                    'other': dict(make=True, make_toc=True),
                    }
