@@ -2722,14 +2722,13 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             if not start_date:
                 fnumbers.append(fnumber)
             else:
-                # Only process files with a release data after the minimum required release date
+                # Only process files with a release date after the minimum required release date
                 tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, include_args=Select_file_args, first_line=True)
                 tem_release_date_str = tem_config.release_date or config.release_date
                 if tem_release_date_str:
                     tem_release_date = sliauth.parse_date(tem_release_date_str)
                     if tem_release_date >= start_date:
                         fnumbers.append(fnumber)
-
 
         if config.notebook and os.path.exists(dest_dir+fname+'.ipynb') and not config.overwrite and not config.dry_run:
             abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fname)

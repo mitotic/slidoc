@@ -424,14 +424,19 @@ class SiteActionHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
-    static_opts = {'default': dict(make=True, make_toc=True, debug=True),
-                   'top': dict(strip='chapters,contents,navigate,sections'),
+    static_opts = {'default': dict(debug=True),
+                   'top': dict(make=True, strip='chapters,contents,navigate,sections'),
+                   'raw': dict(),
+                   'other': dict(make=True, make_toc=True),
                    }
 
     def get_config_opts(self, uploadType, text='', topnav=False, sheet=False, dest_dir=''):
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
         configOpts.update(self.static_opts['default'])
-        configOpts.update(self.static_opts.get(uploadType,{}))
+        if uploadType in self.static_opts:
+            configOpts.update(self.static_opts[uploadType])
+        else:
+            configOpts.update(self.static_opts['other'])
         if uploadType in Global.session_options:
             # session-specific options (TBD)
             pass
@@ -1116,26 +1121,36 @@ class ActionHandler(BaseHandler):
                 # Import two files
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-                uploadType = self.get_argument('sessiontype')
-                sessionNumber = self.get_argument('sessionnumber')
-                if not sessionNumber.isdigit():
-                    self.displayMessage('Invalid session number!')
+                if 'upload1' not in self.request.files and 'upload2' not in self.request.files:
+                    self.displayMessage('No session file(s) to upload!')
                     return
-                sessionNumber = int(sessionNumber)
-                sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
-                sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
-                if 'upload1' not in self.request.files:
-                    self.displayMessage('No session file to upload!')
-                    return
-                fileinfo1 = self.request.files['upload1'][0]
-                fname1 = fileinfo1['filename']
-                fbody1 = fileinfo1['body']
+                fname1 = ''
+                fbody1 = ''
                 fname2 = ''
                 fbody2 = ''
+                if 'upload1' in self.request.files:
+                    fileinfo1 = self.request.files['upload1'][0]
+                    fname1 = fileinfo1['filename']
+                    fbody1 = fileinfo1['body']
                 if 'upload2' in self.request.files:
                     fileinfo2 = self.request.files['upload2'][0]
                     fname2 = fileinfo2['filename']
                     fbody2 = fileinfo2['body']
+
+                uploadType = self.get_argument('sessiontype')
+
+                sessionNumber = self.get_argument('sessionnumber')
+                if uploadType in ('raw', 'top'):
+                    sessionNumber = 0
+                    sessionName = uploadType
+                elif not sessionNumber.isdigit():
+                    self.displayMessage('Invalid session number!')
+                    return
+                else:
+                    sessionNumber = int(sessionNumber)
+                    sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
+
+                sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
                     
                 if Options['debug']:
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
@@ -1235,7 +1250,7 @@ class ActionHandler(BaseHandler):
                 if web_list:
                     zfile.extractall(self.site_web_dir, web_list)
                 msgs = ['Zip archive uploaded']
-                errMsgs = self.makeTopIndex()
+                errMsgs = self.makeTopIndex(uploadType)
                 if errMsgs:
                     msgs += [''] + errMsgs
                 self.displayMessage(msgs)
@@ -1343,10 +1358,14 @@ class ActionHandler(BaseHandler):
             WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
-    def makeTopIndex(self):
+    def makeTopIndex(self, uploadType):
         if not self.get_topnav_list():
             return []
-        configOpts = self.get_config_opts('top', topnav=True)
+        if uploadType == 'top':
+            configOpts = self.get_config_opts('top', topnav=True)
+        else:
+            # Force re-make of index
+            configOpts = self.get_config_opts('raw', topnav=True)
         configOpts.update(dest_dir=self.site_web_dir)
 
         filePaths = glob.glob(self.site_src_dir+'/*.md')
@@ -1482,19 +1501,20 @@ class ActionHandler(BaseHandler):
             self.previewClear(revert=True)   # Revert to start of preview
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving session %s: %s' % (sessionName, excp))
 
+        uploadType = self.previewState['type']
         redirectURL = ''
         if Options['site_name']:
             redirectURL += '/' + Options['site_name']
-        if self.previewState['type'] == 'top':
+        if uploadType == 'top':
             redirectURL += '/' + sessionName + '.html'
         else:
-            redirectURL += '/_private/'+self.previewState['type'] + '/index.html'
+            redirectURL += '/_private/'+uploadType+'/index.html'
 
         rolloverParams = self.previewState['rollover']
         self.previewClear(revert=True)   # Revert to start of preview
 
         WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
-        errMsgs = self.makeTopIndex()
+        errMsgs = self.makeTopIndex(uploadType)
         if errMsgs:
             msgs = ['Saved changes to session '+sessionName] + [''] + errMsgs
             self.displayMessage(msgs)
