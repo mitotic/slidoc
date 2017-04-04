@@ -426,9 +426,12 @@ class ActionHandler(BaseHandler):
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
     static_opts = {'default': dict(debug=True),
                    'top': dict(make=True, strip='chapters,contents,navigate,sections'),
-                   'raw': dict(),
+                   'raw': dict(strip='chapters'),
                    'other': dict(make=True, make_toc=True),
                    }
+
+    def previewActive(self):
+        return self.previewState.get('name', '')
 
     def get_config_opts(self, uploadType, text='', topnav=False, sheet=False, dest_dir=''):
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
@@ -446,12 +449,11 @@ class ActionHandler(BaseHandler):
         configOpts.update(site_name=Options['site_name'])
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list()))
+
         if sheet:
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
-        elif Options['auth_key']:
-            configOpts.update(auth_key=Options['auth_key'])
 
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
@@ -527,15 +529,16 @@ class ActionHandler(BaseHandler):
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         dash_url = site_prefix + '/_dash'
         json_return = self.get_argument('json', '')
-        previewingSession = sdproxy.previewingSession()
+        previewingSession = self.previewActive()
         if not Options['site_list'] or Options['site_number']:
             # Secondary server
             root = str(self.get_argument('root', ''))
             if action == '_preview':
                 if not previewingSession:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
-                if previewingSession not in sdproxy.Sheet_cache:
-                    # Failsafe check failed; preview session not in cache
+                cachePreview = sdproxy.previewingSession()
+                if cachePreview and cachePreview != previewingSession:
+                    # Inconsistent preview
                     self.discardPreview()
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Preview state inconsistent; resetting')
                 return self.displayPreview(subsubpath)
@@ -792,7 +795,7 @@ class ActionHandler(BaseHandler):
 
                 if uploadType != 'top':
                     configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=web_dir,
-                                                      sheet=uploadType not in ('top', 'exercise)') )
+                                                      sheet=uploadType not in ('raw', 'top', 'exercise)') )
                     if Options['start_date']:
                         configOpts.update(start_date=Options['start_date'])
 
@@ -987,7 +990,7 @@ class ActionHandler(BaseHandler):
 
 
     def postAction(self, subpath):
-        previewingSession = sdproxy.previewingSession()
+        previewingSession = self.previewActive()
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         action, sep, sessionName = subpath.partition('/')
         if not sessionName:
@@ -1220,7 +1223,7 @@ class ActionHandler(BaseHandler):
 
     def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=None):
         # Return null string on success or error message
-        if sdproxy.previewingSession() or self.previewState:
+        if self.previewActive():
             raise Exception('Already previewing session')
 
         zfile = None
@@ -1280,8 +1283,9 @@ class ActionHandler(BaseHandler):
 
         WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
 
-        # Lock proxy for preview
-        sdproxy.startPreview(sessionName)
+        if uploadType != 'top':
+            # Lock proxy for preview
+            sdproxy.startPreview(sessionName)
 
         try:
             images_zipdata = None
@@ -1326,7 +1330,8 @@ class ActionHandler(BaseHandler):
                 print >> sys.stderr, 'sdserver.uploadSession:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
 
             # Save current preview state
-            sdproxy.savePreview()
+            if uploadType != 'top':
+                sdproxy.savePreview()
 
             self.previewState['md'] = fbody1
             self.previewState['md_defaults'] = retval['md_params']['md_defaults']
@@ -1361,11 +1366,8 @@ class ActionHandler(BaseHandler):
     def makeTopIndex(self, uploadType):
         if not self.get_topnav_list():
             return []
-        if uploadType == 'top':
-            configOpts = self.get_config_opts('top', topnav=True)
-        else:
-            # Force re-make of index
-            configOpts = self.get_config_opts('raw', topnav=True)
+        # Force re-make of index
+        configOpts = self.get_config_opts('raw', topnav=True)
         configOpts.update(dest_dir=self.site_web_dir)
 
         filePaths = glob.glob(self.site_src_dir+'/*.md')
@@ -1388,7 +1390,7 @@ class ActionHandler(BaseHandler):
     def imageUpload(self, sessionName, imageFile, fname, fbody):
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:imageUpload', sessionName, imageFile, fname, len(fbody)
-        if not sdproxy.previewingSession() or not self.previewState:
+        if not self.previewActive():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         if not self.previewState['image_zipfile']:
             self.previewState['image_zipbytes'] = io.BytesIO()
@@ -1400,7 +1402,7 @@ class ActionHandler(BaseHandler):
         self.write( json.dumps( {'result': 'success'} ) )
 
     def displayPreview(self, filepath=None):
-        if not sdproxy.previewingSession() or not self.previewState:
+        if not self.previewActive():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         uploadType = self.previewState['type']
         sessionName = self.previewState['name']
@@ -1546,7 +1548,7 @@ class ActionHandler(BaseHandler):
 
 
     def discardPreview(self):
-        if not sdproxy.previewingSession() or not self.previewState:
+        if not self.previewActive():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         sessionName = self.previewState['name']
         self.previewClear(revert=True, original=True)
@@ -1554,10 +1556,11 @@ class ActionHandler(BaseHandler):
         self.displayMessage('Discarded changes')
 
     def previewClear(self, revert=False, original=False):
-        if revert:
-            sdproxy.revertPreview(original=original)
-        else:
-            sdproxy.endPreview()
+        if sdproxy.previewingSession():
+            if revert:
+                sdproxy.revertPreview(original=original)
+            else:
+                sdproxy.endPreview()
         self.previewState.clear()
 
     def extract_slides(self, src_path, web_path):
