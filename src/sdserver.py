@@ -425,10 +425,11 @@ class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
     static_opts = {'default': dict(debug=True),
-                   'top': dict(make=True, strip='chapters'),
-                   'raw': dict(strip='chapters'),
+                   'top': dict(make=True, strip='chapters,contents'),
+                   'raw': dict(strip='chapters,contents'),
                    'other': dict(make=True, make_toc=True),
                    }
+    fix_opts = set()
 
     def previewActive(self):
         return self.previewState.get('name', '')
@@ -443,8 +444,13 @@ class ActionHandler(BaseHandler):
         if uploadType in Global.session_options:
             # session-specific options (TBD)
             pass
+
         if text:
-            configOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, configOpts, first_line=True))
+            fileOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, {}, first_line=True))
+            for key, value in fileOpts.items():
+                if key not in self.fix_opts and value is not None:
+                    # Override with file opts
+                    configOpts[key] = value
 
         configOpts.update(site_name=Options['site_name'])
         if topnav:
@@ -770,49 +776,63 @@ class ActionHandler(BaseHandler):
                             rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
                             self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
 
-        elif action == '_delete':
-            user = sdproxy.ADMINUSER_ID
-            userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
-            args = {'sheet': subsubpath, 'delsheet': '1', 'admin': user, 'token': userToken}
-            retObj = sdproxy.sheetAction(args)
-            if retObj['result'] != 'success':
-                self.displayMessage('Error in deleting sheet '+subsubpath+': '+retObj.get('error',''))
-                return
-
+        elif action in ('_delete', '_reindex'):
             sessionName = subsubpath
+            if action == '_delete':
+                user = sdproxy.ADMINUSER_ID
+                userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
+                args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
+                retObj = sdproxy.sheetAction(args)
+                if retObj['result'] != 'success':
+                    self.displayMessage('Error in deleting sheet '+sessionName+': '+retObj.get('error',''))
+                    return
+
             if Options['source_dir']:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
                 web_dir = os.path.dirname(web_path)
 
-                if os.path.exists(src_path):
-                    os.remove(src_path)
+                if sessionName != 'index' and action == '_delete':
+                    if os.path.exists(src_path):
+                        os.remove(src_path)
 
-                if os.path.exists(web_path):
-                    os.remove(web_path)
+                    if os.path.exists(web_path):
+                        os.remove(web_path)
 
-                if os.path.isdir(web_images):
-                    shutil.rmtree(web_images)
+                    if os.path.isdir(web_images):
+                        shutil.rmtree(web_images)
 
-                if uploadType != 'top':
-                    configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=web_dir,
-                                                      sheet=uploadType not in ('raw', 'top', 'exercise)') )
-                    if Options['start_date']:
-                        configOpts.update(start_date=Options['start_date'])
-
+                if uploadType == 'top':
+                    errMsgs = self.makeTopIndex(uploadType)
+                    if errMsgs:
+                        msgs = [action+' modified session '+sessionName] + [''] + errMsgs
+                        self.displayMessage(msgs)
+                        return
+                else:
                     filePaths = self.get_md_list(uploadType)
-                    fileHandles = [None for fpath in filePaths]
-                    fileNames = [os.path.basename(fpath) for fpath in filePaths]
+                    if filePaths:
+                        fileHandles = [None for fpath in filePaths]
+                        fileNames = [os.path.basename(fpath) for fpath in filePaths]
+                        configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=web_dir,
+                                                          sheet=uploadType not in ('raw', 'top', 'exercise)') )
+                        if Options['start_date']:
+                            configOpts.update(start_date=Options['start_date'])
 
-                    retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True, http_post_func=http_sync_post)
-                    if 'toc_html' in retval:
-                        with open(web_dir+'/index.html', 'w') as f:
-                            f.write(retval['toc_html'])
-                    else:
-                        raise Exception('\n'.join(retval.get('messages',[]))+'\n')
-                    if Options['debug'] and retval.get('messages'):
-                        print >> sys.stderr, 'sdserver.deleteSession:', sessionName, '\n'.join(retval['messages'])
+                        retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True, http_post_func=http_sync_post)
+                        if 'toc_html' in retval:
+                            with open(web_dir+'/index.html', 'w') as f:
+                                f.write(retval['toc_html'])
+                        else:
+                            raise Exception('\n'.join(retval.get('messages',[]))+'\n')
+                        if Options['debug'] and retval.get('messages'):
+                            print >> sys.stderr, 'sdserver.deleteSession:', sessionName, '\n'.join(retval['messages'])
 
-            self.displayMessage('Deleted session '+sessionName)
+                    elif action == '_delete':
+                        # No more sessions of this type; remove session index
+                        ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
+                        if os.path.exists(ind_path):
+                            os.remove(ind_path)
+
+            self.displayMessage('Completed '+action+' for session '+sessionName)
 
         elif action == '_import':
             self.render('import.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, import_params=updateImportParams(Options['import_params']) if Options['import_params'] else {}, submit_date=sliauth.iso_date())
@@ -1135,6 +1155,7 @@ class ActionHandler(BaseHandler):
                     fileinfo1 = self.request.files['upload1'][0]
                     fname1 = fileinfo1['filename']
                     fbody1 = fileinfo1['body']
+
                 if 'upload2' in self.request.files:
                     fileinfo2 = self.request.files['upload2'][0]
                     fname2 = fileinfo2['filename']
@@ -1322,6 +1343,10 @@ class ActionHandler(BaseHandler):
             images_zipdict = {}
             if images_zipdata:
                 images_zipdict[sessionName] = images_zipdata
+
+            if Options['debug']:
+                print >> sys.stderr, 'sdserver.uploadSession:', configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), fileNames
+
             retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True,
                                           images_zipdict=images_zipdict, http_post_func=http_sync_post)
             if 'md_params' not in retval:
@@ -2936,6 +2961,7 @@ def createApplication():
                       r"/(_qstats/[-\w.]+)",
                       r"/(_refresh/[-\w.]+)",
                       r"/(_remoteupload/[-\w.]+)",
+                      r"/(_reindex/[-\w.]+)",
                       r"/(_respond/[-\w.;]+)",
                       r"/(_roster)",
                       r"/(_sessions)",
