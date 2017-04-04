@@ -982,7 +982,7 @@ class ActionHandler(BaseHandler):
             return 'top', 0, src_dir+'/'+sessionName+'.md', web_dir+'/'+sessionName+'.html', web_dir+'/'+sessionName+'_images'
         uploadType = smatch.group(1)
         sessionNumber = int(smatch.group(2))
-        web_prefix = web_dir+'/_private/'+uploadType+'/'+sessionName
+        web_prefix = web_dir+'/'+PRIVATE_PATH+'/'+uploadType+'/'+sessionName
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+sessionName+'.md', web_prefix+'.html', web_prefix+'_images'
 
 
@@ -1201,7 +1201,7 @@ class ActionHandler(BaseHandler):
     def get_topnav_list(self):
         topFiles = [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/*.html')]
         topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/*/index.html')]
-        topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/_private/*/index.html')]
+        topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/'+PRIVATE_PATH+'/*/index.html')]
 
         homeIndex = 'index.html'
         topnavList = [homeIndex]
@@ -1210,7 +1210,7 @@ class ActionHandler(BaseHandler):
 
         for j, flist in enumerate([topFiles, topFolders, topFolders2]):
             for fname in flist:
-                entry = '_private/'+fname if j == 2 else fname 
+                entry = PRIVATE_PATH+'/'+fname if j == 2 else fname 
                 if entry not in topnavList:
                     if entry.endswith('index.html'):
                         topnavList.insert(0, entry)
@@ -1276,7 +1276,7 @@ class ActionHandler(BaseHandler):
         else:
             sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
             src_dir = self.site_src_dir + '/' + uploadType
-            web_dir = self.site_web_dir + '/_private/' + uploadType
+            web_dir = self.site_web_dir + '/'+PRIVATE_PATH+'/' + uploadType
 
         WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
 
@@ -1420,7 +1420,7 @@ class ActionHandler(BaseHandler):
                 if self.previewState['image_zipfile'] and fname+fext in self.previewState['image_paths']:
                     content = self.previewState['image_zipfile'].read(self.previewState['image_paths'][fname+fext])
                 else:
-                    web_dir = self.site_web_dir if uploadType == 'top' else self.site_web_dir + '/_private/' + uploadType
+                    web_dir = self.site_web_dir if uploadType == 'top' else self.site_web_dir + '/'+PRIVATE_PATH+'/' + uploadType
                     img_path = web_dir+'/'+sessionName+'_images/'+fname+fext
                     if os.path.exists(img_path):
                         with open(img_path) as f:
@@ -1508,7 +1508,7 @@ class ActionHandler(BaseHandler):
         if uploadType == 'top':
             redirectURL += '/' + sessionName + '.html'
         else:
-            redirectURL += '/_private/'+uploadType+'/index.html'
+            redirectURL += '/'+PRIVATE_PATH+'/'+uploadType+'/index.html'
 
         rolloverParams = self.previewState['rollover']
         self.previewClear(revert=True)   # Revert to start of preview
@@ -2570,7 +2570,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             raise tornado.web.HTTPError(404)
 
         elif ('/'+PRIVATE_PATH) in self.request.path:
-            # Paths containing '/_private' are always protected
+            # Paths containing '/'+PRIVATE_PATH are always protected
             if not userId:
                 return None
             accessErr = ''
