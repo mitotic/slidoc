@@ -506,7 +506,7 @@ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive" || !document.body)
 	return;
     Slidoc.pageSetup();
-    if (!Sliobj.params.fileName || Sliobj.params.fileName == 'index') {
+    if (!Sliobj.params.fileName || (Sliobj.params.fileName == 'index' && !Sliobj.previewState)) {
 	// Just a simple web page
 	toggleClass(true, 'slidoc-simple-view');
 	return;
