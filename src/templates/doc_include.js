@@ -547,7 +547,7 @@ function onreadystateaux() {
 	} else {
 	    if (!Slidoc.serverCookie)
 		Slidoc.reportTestAction('loginPrompt');
-	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.previewState, Sliobj.params.authType);
+	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.params.fileName, Sliobj.previewState, Sliobj.params.authType);
 	}
     } else {
 	Slidoc.slidocReady(null);
@@ -1450,7 +1450,7 @@ Slidoc.userLogin = function (msg, retryCall) {
     if (Slidoc.serverCookie)
 	sessionAbort(msg || 'Error in authentication');
     else
-	GService.gprofile.promptUserInfo(Sliobj.params.siteName, false, GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
+	GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.params.fileName, false, GService.gprofile.auth.type, GService.gprofile.auth.id, msg||'', Slidoc.userLoginCallback.bind(null, retryCall||null));
 }
 
 Slidoc.userLoginCallback = function (retryCall, auth) {
@@ -2341,9 +2341,12 @@ function selectUserCallback(auth, userId, result, retStatus) {
     showSubmitted();
     preAnswer();
     var infoElem = document.getElementById('slidoc-session-info');
+    var footerElem = document.getElementById('slidoc-body-footer');
     if (Sliobj.printExamView) {
 	if (infoElem)
-	    infoElem.textContent = (Sliobj.userGrades[userId].name || userId)+' ('+Sliobj.session.randomSeed+')';
+	    infoElem.textContent = (Sliobj.userGrades[userId].name || userId);
+	if (footerElem)
+	    footerElem.innerHTML = '<p></p><p></p><em>Seed: '+Sliobj.session.randomSeed+'</em>';
 
 	var ncomps = Sliobj.userGrades[userId].name.split(',');
 	var username = ncomps[0].trim();

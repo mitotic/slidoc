@@ -3603,6 +3603,7 @@ Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 '''
 
 Html_footer = '''
+<div id="slidoc-body-footer" class="slidoc-noslide"></div>
 </body></html>
 '''
 
@@ -3839,7 +3840,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             host, _, port = server_comps.netloc.partition(':')
             port = port or None
             if server_comps.path and server_comps.path != '/':
-                load_path = server_comps.path + load_url
+                load_path = server_comps.path + load_path
             conn = httplib.HTTPSConnection(host, port) if server_comps.scheme == 'https' else httplib.HTTPConnection(host, port)
             conn.request('PUT', load_path, self.upload_content, headers)
             resp = conn.getresponse()

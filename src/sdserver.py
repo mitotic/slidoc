@@ -92,6 +92,7 @@ Options = {
     'gsheet_url': '',
     'guest_users': '',
     'host': 'localhost',
+    'import_params': '',
     'insecure_cookie': False,
     'lock_proxy_url': '',
     'min_wait_sec': 0,
@@ -115,7 +116,6 @@ Options = {
     'site_title': '',        # E.g., Elementary Calculus, Fall 2000
     'site_number': 0,
     'sites': '',             # Comma separated list of site names
-    'skip_users': 'zzz, zzz',
     'socket_dir': '',
     'source_dir': '',
     'ssl_options': None,
@@ -493,11 +493,16 @@ class ActionHandler(BaseHandler):
             token = sliauth.gen_hmac_token(Options['auth_key'], 'upload:'+sliauth.digest_hex(self.request.body))
             if self.get_argument('token') != token:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid remote upload token')
-            sessionName = os.path.splitext(subsubpath)[0]
+            sessionName, fext = os.path.splitext(subsubpath)
             uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
             errMsg = ''
+            if fext == '.zip':
+                fname1, fbody1, fname2, fbody2 = '', '', subsubpath, self.request.body
+            else:
+                fname1, fbody1, fname2, fbody2 = subsubpath, self.request.body, '', ''
+
             try:
-                errMsg = self.uploadSession(uploadType, sessionNumber, subsubpath, self.request.body, '', '')
+                errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2)
             except Exception, excp:
                 if Options['debug']:
                     import traceback
@@ -802,7 +807,7 @@ class ActionHandler(BaseHandler):
             self.displayMessage('Deleted session '+sessionName)
 
         elif action == '_import':
-            self.render('import.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, submit_date=sliauth.iso_date())
+            self.render('import.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, import_params=updateImportParams(Options['import_params']) if Options['import_params'] else {}, submit_date=sliauth.iso_date())
 
         elif action == '_upload':
             if not Options['source_dir']:
@@ -810,17 +815,13 @@ class ActionHandler(BaseHandler):
             self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='', err_msg='')
 
         elif action == '_prefill':
+            if sdproxy.getRowMap(sessionName, 'Timestamp', regular=True):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s already filled' % sessionName)
             nameMap = sdproxy.lookupRoster('name')
             count = 0
             for userId, name in nameMap.items():
                 if not name or name.startswith('#'):
                     continue
-                try:
-                    userEntry = sdproxy.lookupValues(userId, ['Timestamp'], sessionName)
-                except Exception, excp:
-                    userEntry = None
-                if userEntry:
-                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: User %s (%s) already pre-filled' % (name, userId))
                 count += 1
                 sdproxy.importUserAnswers(sessionName, userId, name, source='prefill')
             self.displayMessage('Prefilled session '+sessionName+' with '+str(count)+' users')
@@ -1085,8 +1086,22 @@ class ActionHandler(BaseHandler):
                     else:
                         self.displayMessage(errMsg+'\n')
                 elif action == '_import':
-                    importKey = self.get_argument("importkey", "name")
-                    missed, errors = importAnswers(sessionName, importKey, submitDate, fname, uploadedFile)
+                    overwrite = self.get_argument('overwrite', '')
+                    if not overwrite and any(sdproxy.getRowMap(sessionName, 'submitTimestamp', regular=True).values()):
+                        raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s already has submitted entries. Specify overwrite' % sessionName)
+                    if Options['import_params']:
+                        importParams = updateImportParams(Options['import_params'])
+                    else:
+                        importKey = self.get_argument('importkey', '')
+                        keyColName = self.get_argument('keycolname', '').strip()
+                        skipKeys = self.get_argument('skipkeys', '').strip()
+                        if not keyColName:
+                            keyColName = importKey
+
+                        importParams = dict(importKey=importKey, keyColName=keyColName, skipKeys=skipKeys)
+                        importParams = updateImportParams(Options['import_params'], importParams)
+
+                    missed, errors = importAnswers(sessionName, fname, uploadedFile, importParams, submitDate=submitDate)
                     if not missed and not errors:
                         self.displayMessage('Imported answers from '+fname)
                     else:
@@ -2538,8 +2553,9 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Paths containing '/_private' are always protected
             if not userId:
                 return None
-            errMsg = ''
+            accessErr = ''
             if sessionName and sessionName != 'index':
+                # Session access checks
                 gradeDate = None
                 releaseDate = None
                 indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True)
@@ -2551,35 +2567,33 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 if Options['start_date']:
                     startDate = sliauth.epoch_ms(Options['start_date'])
                     if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < startDate:
-                        errMsg = 'release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName)
-                    if gradeDate and sliauth.epoch_ms(gradeDate) < startDate:
-                        errMsg = 'grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName)
+                        accessErr = 'release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName)
+                    elif gradeDate and sliauth.epoch_ms(gradeDate) < startDate:
+                        accessErr = 'grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName)
 
-                if siteRole == sdproxy.ADMIN_ROLE:
-                    # Admin user always has access regardless of release date, allowing delayed release of live lectures and exams
-                    pass
-                else:
+                if not accessErr and siteRole != sdproxy.ADMIN_ROLE:
                     # Non-admin access
+                    # (Admin has access regardless of release date, allowing delayed release of live lectures and exams)
                     if isinstance(releaseDate, datetime.datetime):
                         # Check release date for session
                         if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
-                            errMsg = 'Session %s not yet available' % sessionName
+                            accessErr = 'Session %s not yet available' % sessionName
                     elif releaseDate:
                         # Future release date
-                        errMsg = 'Session %s unavailable' % sessionName
+                        accessErr = 'Session %s unavailable' % sessionName
 
                     offlineCheck = Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE)
-                    if not errMsg and offlineCheck:
+                    if not accessErr and offlineCheck:
                         # Failsafe check to prevent premature release of offline exams etc.
                         if gradeDate or (Options['start_date'] and releaseDate):
                             pass
                         else:
                             # Valid gradeDate or (start_date & release_date) must be specified to access offline session
-                            errMsg = 'Session '+sessionName+' not yet released'
+                            accessErr = 'Session '+sessionName+' not yet released'
                             
-            if errMsg:
-                print >> sys.stderr, "AuthStaticFileHandler.get_current_user", errMsg
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
+            if accessErr:
+                print >> sys.stderr, "AuthStaticFileHandler.get_current_user", accessErr
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:'+accessErr)
 
             # Check if pre-authorized for site access
             if Options['site_name']:
@@ -3074,9 +3088,27 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
             traceback.print_exc()
         return 'Error in importRoster: '+str(excp)
 
-def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
+def updateImportParams(paramStr, prevParams={'importKey':'', 'keyColName':'', 'skipKeys':''}):
+    params = prevParams.copy()
+    if paramStr:
+        comps = [x.strip() for x in paramStr.split(';')]
+        if len(comps) > 0 and comps[0] and not params['importKey']:
+            params['importKey'] = comps[0]
+        if len(comps) > 1 and comps[1] and not params['keyColName']:
+            params['keyColName'] = comps[1]
+        if len(comps) > 2 and not params['skipKeys']:
+            params['skipKeys'] = ';'.join(comps[2:])
+    return params
+
+def importAnswers(sessionName, filepath, csvfile, importParams, submitDate=''):
     missed = []
     errors = []
+
+    if importParams['skipKeys']:
+        skipKeySet = set(x.strip() for x in importParams['skipKeys'].split(';') if x.strip())
+    else:
+        skipKeySet = set()
+
     try:
         ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
         ##csvfile.seek(0)
@@ -3110,7 +3142,7 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
             if hmatch:
                 qnumber = int(hmatch.group(2))
                 qresponse[qnumber] = (j, hmatch.group(1))
-            elif lheader == importKey.lower():
+            elif lheader == importParams['keyColName'].lower():
                 keyCol = j+1
             elif lheader == 'form':
                 formCol = j+1
@@ -3123,8 +3155,8 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
 
         nameKey = False
         if not keyCol:
-            if importKey != 'name':
-                raise Exception('Import key column %s not found in CSV file %s' % (importKey, filepath))
+            if importParams['importKey'] != 'name':
+                raise Exception('Import key column %s not found in CSV file %s' % (importParams['importKey'], filepath))
             if lastNameCol and firstNameCol:
                 nameKey = True
             else:
@@ -3151,10 +3183,10 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
                     qnumberMap[1].append(qnumber + midnumber + midoffset)
         print >> sys.stderr, 'qnumberMap=', qnumberMap
 
-        keyMap = sdproxy.makeRosterMap(importKey, lowercase=True, unique=True)
+        keyMap = sdproxy.makeRosterMap(importParams['importKey'], lowercase=True, unique=True)
         if not keyMap:
-            raise Exception('Key column %s not found in roster for import' % importKey)
-        if importKey == 'twitter':
+            raise Exception('Key column %s not found in roster for import' % importParams['importKey'])
+        if importParams['importKey'] == 'twitter':
             # Special case of test user; not really Twitter ID
             keyMap[sdproxy.TESTUSER_ID] = sdproxy.TESTUSER_ID
 
@@ -3169,7 +3201,7 @@ def importAnswers(sessionName, importKey, submitDate, filepath, csvfile):
             else:
                 userKey = row[keyCol-1].strip().lower()
 
-            if not userKey or userKey in Options['skip_users'].split(';'):
+            if not userKey or userKey in skipKeySet:
                 continue
                 
             if userKey in userKeys:
@@ -3625,7 +3657,7 @@ def main():
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
-    define("import_answers", default="", help="sessionName,CSV_spreadsheet_file,submitDate; with CSV file containing columns id/twitter, q1, qx2, q3, qx4, ...")
+    define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")
     define("insecure_cookie", default=False, help="Insecure cookies (for printing)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
@@ -3641,7 +3673,6 @@ def main():
     define("site_restricted", default='', help="Site restricted")
     define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
-    define("skip_users", default=Options['skip_users'], help="Semicolon separated list of special user names 'last, first' to skip when importing answers")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("source_dir", default=Options["source_dir"], help="Path to source files directory (required for edit/upload)")

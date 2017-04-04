@@ -397,7 +397,8 @@ GoogleProfile.prototype.receiveUserInfo = function (authType, userInfo, loginRem
 		     remember: !!loginRemember});
 }
 	
-GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType, user, msg, callback) {
+GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMode, authType, user, msg, callback) {
+    var sitePrefix = siteName ? '/'+siteName : '';
     var cookieInfo = Slidoc.serverCookie;
     if (!authType && !cookieInfo) {
 	var randStr = Math.random().toString(16).slice(2);
@@ -478,7 +479,9 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, testMode, authType,
 	    } else if (siteRole == 'admin') {
 		userOffset = 0;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset),
-					'<p></p><a href="/_dash">Dashboard</a>', optCallback);
+					'<p></p><a href="'+sitePrefix+'/_manage/'+sessionName+'">Manage session '+sessionName+'</a>'+
+					'<br><a href="'+sitePrefix+'/_dash">Dashboard</a>',
+					optCallback);
 	    } else if (siteRole == 'grader') {
 		userOffset = 1;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset,-1),

@@ -2430,6 +2430,8 @@ def makeRosterMap(colName, lowercase=False, unique=False):
     for userId, otherIds in colValues.items():
         if colName == 'name':
             comps = [otherIds]
+        elif colName == 'altid':
+            comps = [str(otherIds)]
         else:
             comps = otherIds.strip().split(',')
         for otherId in comps:
@@ -2691,6 +2693,28 @@ def createRoster(headers, rows):
         raise Exception('Roster sheet already present; delete it before importing')
     return createSheet(ROSTER_SHEET, headers, rosterRows)
         
+def getRowMap(sheetName, colName, regular=False, startRow=2):
+    # Return dict of id->value in sheet (if regular, only for names defined and not starting with #)
+    sheet = getSheet(sheetName)
+    if not sheet:
+        raise Exception('Sheet '+sheetName+' not found')
+    colIndex = indexColumns(sheet)
+    if colName not in colIndex:
+        raise Exception('Column '+colName+' not found in sheet '+sheetName)
+    nRows = sheet.getLastRow()-startRow+1
+    rowMap = {}
+    if nRows > 0:
+        names = sheet.getSheetValues(startRow, colIndex['name'], nRows, 1)
+        rowIds = sheet.getSheetValues(startRow, colIndex['id'], nRows, 1)
+        vals = sheet.getSheetValues(startRow, colIndex[colName], nRows, 1)
+        for j, rowId in enumerate(rowIds):
+            if not rowId[0]:
+                continue
+            if regular and (not names[j][0] or names[j][0].startswith('#')):
+                continue
+            rowMap[rowId[0]] = vals[j][0]
+    return rowMap
+
 def lookupRoster(field, userId=None):
     rosterSheet = getSheet(ROSTER_SHEET, optional=True)
     if not rosterSheet:
