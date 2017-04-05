@@ -860,7 +860,11 @@ Args_obj = ArgsObj( str_args= ['dest_dir', 'image_dir', 'image_url', 'images', '
 def make_arg_set(arg_value, arg_all_list):
     """Converts comma-separated argument value to a set, handling 'all', and 'all,but,..' """
     arg_all_set = set(arg_all_list)
-    arg_set = set(arg_value.split(',')) if arg_value else set()
+    if isinstance(arg_value, set):
+        arg_set = arg_value
+    else:
+        arg_set = set(arg_value.split(',')) if arg_value else set()
+
     if 'all' in arg_set:
         arg_set.discard('all')
         if 'but' in arg_set:

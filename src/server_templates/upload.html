@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- upload template for slidoc server --->
-<!-- upload parameters: site_name, site_label, session_name, err_msg -->
+<!-- upload parameters: site_name, site_label, session_types, err_msg -->
 
 {% include "base.html" %}
 
@@ -18,25 +18,23 @@
 <div id="slidoc-upload-form">
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
-      <label for="sessiontype">Upload type:</label>
-      <select name="sessiontype">
-       <option value="assignment" selected>assignment (.md/.pptx/.zip)</option>
-       <option value="exam">exam (.md/.pptx/.zip)</option>
-       <option value="exercise">exercise (.md/.pptx/.zip)</option>
-       <option value="lecture">lecture (.md/.pptx/.zip)</option>
-       <option value="test">test (.md/.pptx/.zip)</option>
-       <option value="top">top level document (.md/.pptx/.zip)</option>
-       <hr>
-       <option value="raw">raw web files (.zip)</option>
-     </select>
+      <label for="sessiontype">Session type:</label><br>
+      <table>
+      {% for session_type, session_label in session_types %}
+       <tr><td><input type="radio" name="sessiontype" value="{{ session_type }}"> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+      {% end %}
+       <tr><td><input type="radio" name="sessiontype" value="raw"> <b>raw</b></td><td> [Raw web archive (zip)]</td></tr>
+     </table>
      <br>
      <label for="sessionnumber">Session number:</label>
      <input type="number" id="sessionnumber" name="sessionnumber" value="">
-      &nbsp;&nbsp;
+     (only for non-top/raw cases)<br>
+     Session names will be of the form <tt>sessionType??</tt>, e.g., <tt>lecture01</tt>
+     <p></p>
      <label for="sessionmodify">Modified questions?</label>
      <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
      <p></p>
-     <label for="upload">Session file, markdown (.md) or powerpoint (.pptx):</label><br>
+     <label for="upload">Session file markdown (.md) or powerpoint (.pptx):</label><br>
      <input type="file" id="upload1" name="upload1"  accept=".md,.pptx" value="file1">
      <p></p>
      <label for="upload">Zip archive with Markdown, images, HTML or data (.zip):</label><br>

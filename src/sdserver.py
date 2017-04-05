@@ -98,7 +98,7 @@ Options = {
     'min_wait_sec': 0,
     'missing_choice': '*',
     'no_auth': False,
-    'offline_sessions': r'exam|quiz|test|midterm|final',
+    'offline_sessions': r'exam|final|midterm',
     'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
@@ -170,16 +170,63 @@ PARTIAL_SUBMIT = 'partial'
 COOKIE_VERSION = '0.9'             # Update version if cookie format changes
 SERVER_NAME = 'Webster0.9'
 
-SESSION_NAME_FMT = '%s%02d'
+RAW_UPLOAD = 'raw'
+TOP_LEVEL = 'top'
 
+SESSION_TYPES = [
+    [TOP_LEVEL, 'Top level web page'],
+    ['announce', 'Announcements'],
+    ['assignment', 'Assigments'],
+    ['exam', 'Exams'],
+    ['exercise', 'Exercises'],
+    ['final', 'Final exam'],
+    ['help', 'Help info'],
+    ['lecture', 'Lectures'],
+    ['midterm', 'Midterms'],
+    ['notes', 'Notes'],
+    ['project', 'Projects'],
+    ['quiz', 'Quizzes'],
+    ['test', 'Tests']
+    ]
+
+PUBLIC_SESSIONS = (TOP_LEVEL, 'help')
+UNPACED_SESSIONS = (TOP_LEVEL, 'announce', 'exercise', 'help', 'notes')
+OFFLINE_SESSIONS = ('exam', 'final', 'midterm')
+
+SESSION_TYPE_SET = set()
+for j, entry in enumerate(SESSION_TYPES):
+    SESSION_TYPE_SET.add(entry[0])
+
+    if entry[0] in PUBLIC_SESSIONS:
+        entry[1] += ' (public)'
+
+    if entry[0] not in UNPACED_SESSIONS:
+        entry[1] += ' (paced)'
+
+    if entry[0] in OFFLINE_SESSIONS:
+        entry[1] += ' (offline)'
+
+SESSION_NAME_FMT = '%s%02d'
+SESSION_NAME_RE = re.compile(r'^(\w*[a-zA-Z_])(\d+)$')
+
+def getSessionType(sessionName):
+    smatch = SESSION_NAME_RE.match(sessionName)
+    sessionType = smatch.group(1)
+    sessionNumber = int(smatch.group(2))
+
+    if sessionType in SESSION_TYPE_SET:
+        return (sessionType, sessionNumber)
+    else:
+        return (TOP_LEVEL, 0)
+        
 def privatePrefix(uploadType):
-    if uploadType in ('top',):
+    if uploadType in PUBLIC_SESSIONS:
         return ''
     else:
         return '/' + PRIVATE_PATH
 
 def pacedSession(uploadType):
-    if uploadType in ('top', 'announce', 'exercise', 'help', 'notes'):
+    if uploadType in UNPACED_SESSIONS:
         return 0
     else:
         return 1
@@ -380,7 +427,7 @@ class SiteActionHandler(BaseHandler):
             new_site_name = self.get_argument('sitename', '').strip()
             new_site_url = self.get_argument('siteurl', '').strip()
             if not new_site_name:
-                self.render('setup.html', status='STATUS', site_updates=[('aa', 'aa1')])
+                self.render('setup.html', status='STATUS', site_updates=[('TBD', 'TBD')])
                 return
             elif new_site_name in Options['site_list']:
                 self.write('Site %s already active' % new_site_name)
@@ -440,7 +487,6 @@ class ActionHandler(BaseHandler):
                    'other': dict(),
                   }
     default_opts = { 'base':  dict(),
-                     'top':   dict(strip='chapters,contents'),
                      'other': dict(),
                      }
     fix_opts = set()
@@ -467,12 +513,19 @@ class ActionHandler(BaseHandler):
         else:
             configOpts.update(self.cmd_opts['other'])
 
-        if uploadType != 'top':
-            configOpts['make_toc'] = True
-
         if uploadType in Global.session_options:
             # session-specific options (TBD)
             pass
+
+        if pacedSession(uploadType):
+            defaultOpts['pace'] = 1
+        else:
+            configOpts['pace'] = 0
+
+        if uploadType == TOP_LEVEL:
+            defaultOpts['strip'] = 'chapters,contents'
+        else:
+            configOpts['make_toc'] = True
 
         if text:
             fileOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, {}, first_line=True))
@@ -485,10 +538,7 @@ class ActionHandler(BaseHandler):
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list()))
 
-        if not pacedSession(uploadType):
-            configOpts['pace'] = 0
-        else:
-            defaultOpts['pace'] = 1
+        if pacedSession(uploadType):
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
@@ -541,7 +591,7 @@ class ActionHandler(BaseHandler):
             if self.get_argument('token') != token:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid remote upload token')
             sessionName, fext = os.path.splitext(subsubpath)
-            uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
+            uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
             errMsg = ''
             if fext == '.zip':
                 fname1, fbody1, fname2, fbody2 = '', '', subsubpath, self.request.body
@@ -732,7 +782,7 @@ class ActionHandler(BaseHandler):
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to download')
 
-            uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(subsubpath)
+            uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
             sessionFile = os.path.basename(src_path)
             image_dir = os.path.basename(web_images)
             try:
@@ -817,7 +867,7 @@ class ActionHandler(BaseHandler):
             if subsubpath == 'all':
                 uploadType = ''
             else:
-                uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(subsubpath)
+                uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
 
             errMsgs = self.rebuild(uploadType, indexOnly=(action == '_reindex'))
             if errMsgs and any(errMsgs):
@@ -836,7 +886,7 @@ class ActionHandler(BaseHandler):
                 return
 
             if Options['source_dir']:
-                uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
+                uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
 
                 if sessionName != 'index':
                     if os.path.exists(src_path):
@@ -872,7 +922,8 @@ class ActionHandler(BaseHandler):
         elif action == '_upload':
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-            self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='', err_msg='')
+            self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
+                        session_name='',  session_types=SESSION_TYPES, err_msg='')
 
         elif action == '_prefill':
             if sdproxy.getRowMap(sessionName, 'Timestamp', regular=True):
@@ -1011,7 +1062,7 @@ class ActionHandler(BaseHandler):
         else:
             self.displayMessage('Invalid get action: '+action)
 
-    def getSessionType(self, sessionName, siteName=''):
+    def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to get session type')
 
@@ -1032,11 +1083,10 @@ class ActionHandler(BaseHandler):
         if fext and fext != '.md':
             tornado.web.HTTPError(404, log_message='CUSTOM:Invalid session name (must end in .md): '+sessionName)
 
-        smatch = re.match(r'^(\w*[a-zA-Z_])(\d+)$', sessionName)
-        if not smatch:
-            return 'top', 0, src_dir+'/'+sessionName+'.md', web_dir+'/'+sessionName+'.html', web_dir+'/'+sessionName+'_images'
-        uploadType = smatch.group(1)
-        sessionNumber = int(smatch.group(2))
+        uploadType, sessionNumber = getSessionType(sessionName)
+        if uploadType == TOP_LEVEL:
+            return uploadType, sessionNumber, src_dir+'/'+sessionName+'.md', web_dir+'/'+sessionName+'.html', web_dir+'/'+sessionName+'_images'
+
         web_prefix = web_dir+privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+sessionName+'.md', web_prefix+'.html', web_prefix+'_images'
 
@@ -1196,20 +1246,24 @@ class ActionHandler(BaseHandler):
                 uploadType = self.get_argument('sessiontype')
 
                 sessionNumber = self.get_argument('sessionnumber')
-                if uploadType in ('raw', 'top'):
+                if uploadType in (RAW_UPLOAD, TOP_LEVEL):
                     sessionNumber = 0
                     sessionName = uploadType
-                elif not sessionNumber.isdigit():
-                    self.displayMessage('Invalid session number!')
-                    return
                 else:
+                    if uploadType not in SESSION_TYPE_SET:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Unrecognized session type: '+uploadType)
+
+                    if not sessionNumber.isdigit():
+                        self.displayMessage('Invalid session number!')
+                        return
+
                     sessionNumber = int(sessionNumber)
                     sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
 
                 sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
                     
                 if Options['debug']:
-                    print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
+                    print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 
                 try:
                     errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify)
@@ -1221,7 +1275,7 @@ class ActionHandler(BaseHandler):
 
                 if errMsg:
                     self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='', err_msg=errMsg)
-                elif uploadType != 'raw':
+                elif uploadType != RAW_UPLOAD:
                     site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
                     self.redirect(site_prefix+'/_preview/index.html')
                     return
@@ -1246,9 +1300,9 @@ class ActionHandler(BaseHandler):
 
 
     def get_md_list(self, uploadType, newSession=''):
-        md_list = glob.glob(self.site_src_dir+'/*.md') if uploadType == 'top' else glob.glob(self.site_src_dir+'/'+uploadType+'/'+uploadType+'[0-9][0-9].md')
+        md_list = glob.glob(self.site_src_dir+'/*.md') if uploadType == TOP_LEVEL else glob.glob(self.site_src_dir+'/'+uploadType+'/'+uploadType+'[0-9][0-9].md')
         if newSession:
-            newPath = self.site_src_dir+'/'+newSession+'.md' if uploadType == 'top' else self.site_src_dir+'/'+uploadType+'/'+newSession+'.md'
+            newPath = self.site_src_dir+'/'+newSession+'.md' if uploadType == TOP_LEVEL else self.site_src_dir+'/'+uploadType+'/'+newSession+'.md'
             if newPath not in md_list:
                 md_list.append(newPath)
         md_list.sort()
@@ -1298,7 +1352,7 @@ class ActionHandler(BaseHandler):
             except Exception, excp:
                 raise Exception('Error in loading zip archive: ' + str(excp))
 
-        if uploadType == 'raw':
+        if uploadType == RAW_UPLOAD:
             if not zfile:
                 return 'Error: Must provide Zip archive for raw upload'
             try:
@@ -1316,7 +1370,7 @@ class ActionHandler(BaseHandler):
                 if web_list:
                     zfile.extractall(self.site_web_dir, web_list)
                 msgs = ['Zip archive uploaded']
-                errMsgs = self.rebuild('top', indexOnly=True)
+                errMsgs = self.rebuild(TOP_LEVEL, indexOnly=True)
                 if errMsgs and any(errMsgs):
                     msgs += [''] + errMsgs
                 self.displayMessage(msgs)
@@ -1335,7 +1389,7 @@ class ActionHandler(BaseHandler):
             fbody1 = zfile.read(fname1)
 
         fname, fext = os.path.splitext(fname1)
-        if uploadType == 'top':
+        if uploadType == TOP_LEVEL:
             sessionName = fname
             src_dir = self.site_src_dir
             web_dir = self.site_web_dir
@@ -1463,7 +1517,7 @@ class ActionHandler(BaseHandler):
 
     def rebuild(self, uploadType='', indexOnly=False):
         if uploadType:
-            utypes = [uploadType] if uploadType != 'top' else []
+            utypes = [uploadType] if uploadType != TOP_LEVEL else []
         else:
             utypes = self.get_session_folders()
 
@@ -1472,7 +1526,7 @@ class ActionHandler(BaseHandler):
             retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly)
             msgs = retval.get('messages',[]) + ['']
 
-        retval = self.compile('top', dest_dir=self.site_web_dir, indexOnly=indexOnly)
+        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=indexOnly)
         msgs = retval.get('messages',[]) + ['']
         return msgs
 
@@ -1511,7 +1565,7 @@ class ActionHandler(BaseHandler):
                 if self.previewState['image_zipfile'] and fname+fext in self.previewState['image_paths']:
                     content = self.previewState['image_zipfile'].read(self.previewState['image_paths'][fname+fext])
                 else:
-                    web_dir = self.site_web_dir if uploadType == 'top' else self.site_web_dir + privatePrefix(uploadType)+'/' + uploadType
+                    web_dir = self.site_web_dir if uploadType == TOP_LEVEL else self.site_web_dir + privatePrefix(uploadType)+'/' + uploadType
                     img_path = web_dir+'/'+sessionName+'_images/'+fname+fext
                     if os.path.exists(img_path):
                         with open(img_path) as f:
@@ -1596,7 +1650,7 @@ class ActionHandler(BaseHandler):
         redirectURL = ''
         if Options['site_name']:
             redirectURL += '/' + Options['site_name']
-        if uploadType == 'top':
+        if uploadType == TOP_LEVEL:
             redirectURL += '/' + sessionName + '.html'
         else:
             redirectURL += privatePrefix(uploadType)+'/'+uploadType+'/index.html'
@@ -1686,7 +1740,7 @@ class ActionHandler(BaseHandler):
         else:
             slideNumber = None
 
-        uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
 
         if slideNumber:
             if self.previewState:
@@ -1731,7 +1785,7 @@ class ActionHandler(BaseHandler):
         sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
 
         prevPreviewState = self.previewState.copy() 
-        uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
         slide_images_zip = None
         image_zipdata = ''
         if slideNumber:
@@ -1752,7 +1806,7 @@ class ActionHandler(BaseHandler):
 
             if not sameSession:
                 # Insert slide from another session
-                _, _, from_src, from_web, _ = self.getSessionType(fromSession, siteName=fromSite)
+                _, _, from_src, from_web, _ = self.getUploadType(fromSession, siteName=fromSite)
                 _, slideText, slide_images_zip, new_image_number = self.extract_slide_range(from_src, from_web, start_slide=slideNumber, end_slide=slideNumber, renumber=new_image_number, session_name=sessionName)
 
                 if not newNumber or newNumber > len(md_slides)+1:
@@ -1860,8 +1914,8 @@ class ActionHandler(BaseHandler):
         if self.previewState:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted in preview state')
 
-        uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
-        if uploadType == 'top':
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+        if uploadType == TOP_LEVEL:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for top-level sessions')
 
         sessionEntries = sdproxy.lookupValues(sessionName, ['paceLevel'], sdproxy.INDEX_SHEET)
@@ -1904,7 +1958,7 @@ class ActionHandler(BaseHandler):
         _, rolloverText, rollover_images_zip, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=start_slide, renumber=1, session_name=sessionName)
 
         sessionNext = SESSION_NAME_FMT % (uploadType, sessionNumber+1)
-        _, __, src_next, web_next, web_images_next = self.getSessionType(sessionNext)
+        _, __, src_next, web_next, web_images_next = self.getUploadType(sessionNext)
 
         if os.path.exists(src_next):
             next_defaults, nextText, next_images_zip, new_image_number = self.extract_slide_range(src_next, web_next, renumber=new_image_number, session_name=sessionNext)
@@ -2670,8 +2724,11 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 # Session access checks
                 gradeDate = None
                 releaseDate = None
-                indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True)
-                if indexSheet:
+                sessionType, _ = getSessionType(sessionName)
+                if pacedSession(sessionType):
+                    indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True)
+                    if not indexSheet:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:No index sheet for paced session '+sessionName)
                     sessionEntries = sdproxy.lookupValues(sessionName, ['gradeDate', 'releaseDate'], sdproxy.INDEX_SHEET)
                     gradeDate = sessionEntries['gradeDate']
                     releaseDate = sessionEntries['releaseDate']
