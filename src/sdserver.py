@@ -394,6 +394,9 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
 
 class HomeHandler(BaseHandler):
     def get(self):
+        if sdproxy.proxy_error_status():
+            self.write('<h3>Server error - restart required</h3> ('+sdproxy.proxy_error_status()+')')
+            return
         if Options['site_list'] and not Options['site_number']:
             # Primary server
             admin_roles = []
@@ -869,7 +872,13 @@ class ActionHandler(BaseHandler):
             else:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
 
-            errMsgs = self.rebuild(uploadType, indexOnly=(action == '_reindex'))
+            indexOnly = (action == '_reindex')
+            errMsgs = self.rebuild(uploadType, indexOnly=indexOnly)
+
+            if not uploadType and not indexOnly:
+                # Re-index after complete rebuild
+                errMsgs += self.rebuild(uploadType, indexOnly=True)
+
             if errMsgs and any(errMsgs):
                 self.displayMessage(['Error in %s:' % action] + errMsgs)
             else:
@@ -1226,22 +1235,7 @@ class ActionHandler(BaseHandler):
                 # Import two files
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-                if 'upload1' not in self.request.files and 'upload2' not in self.request.files:
-                    self.displayMessage('No session file(s) to upload!')
-                    return
-                fname1 = ''
-                fbody1 = ''
-                fname2 = ''
-                fbody2 = ''
-                if 'upload1' in self.request.files:
-                    fileinfo1 = self.request.files['upload1'][0]
-                    fname1 = fileinfo1['filename']
-                    fbody1 = fileinfo1['body']
-
-                if 'upload2' in self.request.files:
-                    fileinfo2 = self.request.files['upload2'][0]
-                    fname2 = fileinfo2['filename']
-                    fbody2 = fileinfo2['body']
+                sessionCreate = self.get_argument('sessioncreate')
 
                 uploadType = self.get_argument('sessiontype')
 
@@ -1262,6 +1256,28 @@ class ActionHandler(BaseHandler):
 
                 sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
                     
+                fname1 = ''
+                fbody1 = ''
+                fname2 = ''
+                fbody2 = ''
+                if sessionCreate:
+                    fname1 = sessionName + '.md'
+                    fbody1 = 'BLANK SESSION'
+                else:
+                    if 'upload1' not in self.request.files and 'upload2' not in self.request.files:
+                        self.displayMessage('No session file(s) to upload!')
+                        return
+
+                    if 'upload1' in self.request.files:
+                        fileinfo1 = self.request.files['upload1'][0]
+                        fname1 = fileinfo1['filename']
+                        fbody1 = fileinfo1['body']
+
+                    if 'upload2' in self.request.files:
+                        fileinfo2 = self.request.files['upload2'][0]
+                        fname2 = fileinfo2['filename']
+                        fbody2 = fileinfo2['body']
+
                 if Options['debug']:
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 

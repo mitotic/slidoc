@@ -135,6 +135,7 @@ Global = Dummy()
 
 Global.remoteVersions = set()
 Global.shuttingDown = False
+Global.proxyError = ''
 
 def copyServerOptions(serverOptions):
     for key in COPY_FROM_SERVER:
@@ -841,6 +842,12 @@ def suspend_cache(action="shutdown"):
 def shutdown_loop():
     print("Completed IO loop shutdown", file=sys.stderr)
     IOLoop.current().stop()
+
+def sheet_proxy_error(errMsg=''):
+    Global.proxyError = sliauth.iso_date() + ': ' + errMsg
+
+def proxy_error_status():
+    return Global.proxyError
         
 def updates_current():
     if not Global.suspended:
@@ -938,18 +945,10 @@ def handle_proxy_response(response):
     Global.totalCacheResponseCount += 1
 
     errMsg = ""
+    respObj = None
     if response.error:
-        print("handle_proxy_response: Update ERROR:", response.error, file=sys.stderr)
         errMsg = response.error
-        if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
-            sys.exit('Failed to update cache after %d tries' % RETRY_MAX_COUNT)
-        Global.cacheRequestTime = 0
-        Global.cacheRetryCount += 1
-        Global.totalCacheRetryCount += 1
-        Global.cacheWaitTime += RETRY_WAIT_TIME
-        schedule_update(Global.cacheWaitTime)
     else:
-        Global.totalCacheResponseBytes += len(response.body)
         if Settings['debug']:
             print("handle_proxy_response: Update RESPONSE", response.body[:256], file=sys.stderr)
         try:
@@ -959,21 +958,31 @@ def handle_proxy_response(response):
         except Exception, err:
             errMsg = 'JSON parsing error: '+str(err)
 
-        if errMsg:
-            print("handle_proxy_response: Update ERROR:", errMsg, file=sys.stderr)
-            sys.exit(errMsg)
+    if errMsg or not respObj:
+        print("handle_proxy_response: Update ERROR:", errMsg, file=sys.stderr)
+        if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
+            sheet_proxy_error('Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg))
+            return
+        Global.cacheRequestTime = 0
+        Global.cacheRetryCount += 1
+        Global.totalCacheRetryCount += 1
+        Global.cacheWaitTime += RETRY_WAIT_TIME
+        schedule_update(Global.cacheWaitTime)
+        return
+    else:
+        # Update succeeded
+        Global.totalCacheResponseBytes += len(response.body)
 
         for errSessionName, proxyErrMsg in respObj['info'].get('updateErrors',[]):
             Lock_cache[errSessionName] = proxyErrMsg
             print("handle_proxy_response: Update LOCKED %s: %s" % (errSessionName, proxyErrMsg), file=sys.stderr)
 
-    if not errMsg:
-        # Update succeeded
         if Settings['debug']:
             print("handle_proxy_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
 
         updates_completed(Global.cacheRequestTime)
         schedule_update(0 if Global.suspended else Settings['min_wait_sec'])
+
 
 def updates_completed(updateTime):
         Global.cacheUpdateTime = updateTime
