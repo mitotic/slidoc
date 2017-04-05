@@ -2740,7 +2740,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 fnumbers.append(fnumber)
             else:
                 # Only process files with a release date after the minimum required release date
-                tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, include_args=Select_file_args, first_line=True)
+                tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
                 tem_release_date_str = tem_config.release_date or config.release_date
                 if tem_release_date_str:
                     tem_release_date = sliauth.parse_date(tem_release_date_str)
@@ -2973,7 +2973,6 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
             # Merge file config with command line
             file_config = parse_merge_args(read_first_line(fhandle), fname, Conf_parser, vars(config), default_args_dict=default_args_dict,
-                                           include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
             if config.preview:
                 if file_config.gsheet_url:
@@ -3671,8 +3670,6 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-Select_file_args = set(['due_date', 'features', 'gsheet_url', 'late_credit', 'media_url', 'pace', 'participation_credit', 'prereqs', 'release_date', 'retakes', 'revision', 'session_rescale', 'session_weight', 'slide_delay', 'topnav', 'vote_date'])
-    
 def read_first_line(file):
     # Read first line of file and rewind it
     first_line = file.readline()
@@ -3707,6 +3704,9 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
             elif arg_name == 'features':
                 # Convert feature string to set
                 line_args_dict[arg_name] = md2md.make_arg_set(line_args_dict[arg_name], Features_all)
+            elif arg_name == 'strip':
+                # Convert strip string to set
+                line_args_dict[arg_name] = md2md.make_arg_set(line_args_dict[arg_name], Strip_all)
         if verbose:
             message('Read command line arguments from ', source, argparse.Namespace(**line_args_dict))
     except Exception, excp:
@@ -3936,13 +3936,11 @@ Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTM
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
 Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
-Conf_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Extract content from slide onwards (renumbering images)')
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
 Conf_parser.add_argument('--hide', metavar='REGEX', help='Hide sections with headers matching regex (e.g., "[Aa]nswer")')
 Conf_parser.add_argument('--image_dir', metavar='DIR', help="image subdirectory. Default value '_images' translates to 'sessionname_images' when reading images or copying images to dest_dir")
 Conf_parser.add_argument('--image_url', metavar='URL', help='URL prefix for images, including image_dir')
-Conf_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 Conf_parser.add_argument('--late_credit', type=float, default=None, metavar='FRACTION', help='Fractional credit for late submissions, e.g., 0.25')
 Conf_parser.add_argument('--media_url', metavar='URL', help='URL for media')
 Conf_parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace level: 0 (none), 1 (basic-paced), 2 (question-paced), 3 (instructor-paced)')
@@ -3970,8 +3968,10 @@ alt_parser.add_argument('--copy_source', help='Create a modified copy (only if d
 alt_parser.add_argument('--default_args', metavar='ARGS', help="'--arg=val --arg2=val2' default arguments ('file' to read first line of first file)")
 alt_parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
+alt_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Extract content from slide onwards (renumbering images)')
 alt_parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
 alt_parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
+alt_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Sessions with questions to be modified')
@@ -4018,10 +4018,8 @@ if __name__ == '__main__':
 
     if cmd_args.default_args == 'file':
         # Read default args from first line of first file
-        # Do not exclude args if combined file
-        exclude_args = Select_file_args if cmd_args.all is None else None
         default_args = parse_merge_args(read_first_line(cmd_args.file[0]), cmd_args.file[0].name, Conf_parser, vars(cmd_args),
-                                        exclude_args=exclude_args, first_line=True, verbose=cmd_args.verbose)
+                                        first_line=True, verbose=cmd_args.verbose)
     elif cmd_args.default_args:
         default_args = parse_merge_args(cmd_args.default_args, '--default_args', Conf_parser, {})
     else:
