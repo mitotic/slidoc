@@ -424,23 +424,28 @@ class SiteActionHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
-    static_opts = {'default': dict(debug=True),
-                   'top': dict(make=True, strip='chapters,contents'),
-                   'raw': dict(strip='chapters,contents'),
+    cmd_opts =   { 'base': dict(debug=True),
+                   'top': dict(make=True),
+                   'raw': dict(),
                    'other': dict(make=True, make_toc=True),
-                   }
+                  }
+    default_opts = { 'base': dict(),
+                     'top': dict(strip='chapters,contents'),
+                     'raw': dict(strip='chapters,contents'),
+                     }
     fix_opts = set()
 
     def previewActive(self):
         return self.previewState.get('name', '')
 
-    def get_config_opts(self, uploadType, text='', topnav=False, sheet=False, dest_dir=''):
+    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', image_dir=''):
+        # Return (cmd_args, default_args)
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
-        configOpts.update(self.static_opts['default'])
-        if uploadType in self.static_opts:
-            configOpts.update(self.static_opts[uploadType])
+        configOpts.update(self.cmd_opts['base'])
+        if uploadType in self.cmd_opts:
+            configOpts.update(self.cmd_opts[uploadType])
         else:
-            configOpts.update(self.static_opts['other'])
+            configOpts.update(self.cmd_opts['other'])
         if uploadType in Global.session_options:
             # session-specific options (TBD)
             pass
@@ -456,15 +461,22 @@ class ActionHandler(BaseHandler):
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list()))
 
-        if sheet:
+        if paced:
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
+            if Options['start_date']:
+                configOpts.update(start_date=Options['start_date'])
 
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
 
-        return configOpts
+        defaultOpts = self.default_opts['base'].copy()
+        defaultOpts.update(self.default_opts.get(uploadType, {}))
+        if image_dir:
+            defaultOpts.update(image_dir=image_dir)
+
+        return configOpts, defaultOpts
 
     def get(self, subpath, inner=None):
         userId = self.get_current_user()
@@ -776,7 +788,7 @@ class ActionHandler(BaseHandler):
                             rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
                             self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
 
-        elif action in ('_delete', '_reindex'):
+        elif action in ('_delete', '_rebuild'):
             sessionName = subsubpath
             if action == '_delete':
                 user = sdproxy.ADMINUSER_ID
@@ -789,7 +801,6 @@ class ActionHandler(BaseHandler):
 
             if Options['source_dir']:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
-                web_dir = os.path.dirname(web_path)
 
                 if sessionName != 'index' and action == '_delete':
                     if os.path.exists(src_path):
@@ -801,36 +812,24 @@ class ActionHandler(BaseHandler):
                     if os.path.isdir(web_images):
                         shutil.rmtree(web_images)
 
-                if uploadType == 'top':
-                    errMsgs = self.makeTopIndex(uploadType)
-                    if errMsgs:
-                        msgs = [action+' modified session '+sessionName] + [''] + errMsgs
+                filePaths = self.get_md_list(uploadType)
+                if filePaths:
+                    # Rebuild session index
+                    retval = self.compile(uploadType, dest_dir=os.path.dirname(web_path))
+                    if retval.get('messages'):
+                        msgs = ['Error in '+action+' for session '+sessionName] + [''] + retval.get('messages',[])
                         self.displayMessage(msgs)
                         return
                 else:
-                    filePaths = self.get_md_list(uploadType)
-                    if filePaths:
-                        fileHandles = [None for fpath in filePaths]
-                        fileNames = [os.path.basename(fpath) for fpath in filePaths]
-                        configOpts = self.get_config_opts(uploadType, text='', topnav=True, dest_dir=web_dir,
-                                                          sheet=uploadType not in ('raw', 'top', 'exercise)') )
-                        if Options['start_date']:
-                            configOpts.update(start_date=Options['start_date'])
-
-                        retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True, http_post_func=http_sync_post)
-                        if 'toc_html' in retval:
-                            with open(web_dir+'/index.html', 'w') as f:
-                                f.write(retval['toc_html'])
-                        else:
-                            raise Exception('\n'.join(retval.get('messages',[]))+'\n')
-                        if Options['debug'] and retval.get('messages'):
-                            print >> sys.stderr, 'sdserver.deleteSession:', sessionName, '\n'.join(retval['messages'])
-
-                    elif action == '_delete':
-                        # No more sessions of this type; remove session index
-                        ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
-                        if os.path.exists(ind_path):
-                            os.remove(ind_path)
+                    # No more sessions of this type; remove session index
+                    ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
+                    if os.path.exists(ind_path):
+                        os.remove(ind_path)
+                    errMsgs = self.makeTopIndex()
+                    if errMsgs:
+                        msgs = ['Error in '+action+' for top index'] + [''] + errMsgs
+                        self.displayMessage(msgs)
+                        return
 
             self.displayMessage('Completed '+action+' for session '+sessionName)
 
@@ -1214,9 +1213,9 @@ class ActionHandler(BaseHandler):
 
 
     def get_md_list(self, uploadType, newSession=''):
-        md_list = glob.glob(self.site_src_dir+'/'+uploadType+'/'+uploadType+'[0-9][0-9].md')
+        md_list = glob.glob(self.site_src_dir+'/*.md') if uploadType == 'top' else glob.glob(self.site_src_dir+'/'+uploadType+'/'+uploadType+'[0-9][0-9].md')
         if newSession:
-            newPath = self.site_src_dir+'/'+uploadType+'/'+newSession+'.md'
+            newPath = self.site_src_dir+'/'+newSession+'.md' if uploadType == 'top' else self.site_src_dir+'/'+uploadType+'/'+newSession+'.md'
             if newPath not in md_list:
                 md_list.append(newPath)
         md_list.sort()
@@ -1274,7 +1273,7 @@ class ActionHandler(BaseHandler):
                 if web_list:
                     zfile.extractall(self.site_web_dir, web_list)
                 msgs = ['Zip archive uploaded']
-                errMsgs = self.makeTopIndex(uploadType)
+                errMsgs = self.makeTopIndex()
                 if errMsgs:
                     msgs += [''] + errMsgs
                 self.displayMessage(msgs)
@@ -1323,36 +1322,16 @@ class ActionHandler(BaseHandler):
             overwrite = os.path.exists(src_path)
             image_dir = sessionName+'_images'
 
-            configOpts = self.get_config_opts(uploadType, text=fbody1, topnav=True, dest_dir=web_dir,
-                                              sheet=uploadType not in ('top', 'exercise)') )
-            configOpts.update(image_dir=image_dir)
-            if Options['start_date']:
-                configOpts.update(start_date=Options['start_date'])
-
-            configOpts['overwrite'] = 1 if overwrite else 0
+            extraOpts = {}
+            extraOpts['overwrite'] = 1 if overwrite else 0
             if modify:
-                configOpts['modify_sessions'] = modify
+                extraOpts['modify_sessions'] = modify
 
-            if uploadType == 'top':
-                filePaths = [src_path]
-            else:
-                filePaths = self.get_md_list(uploadType, newSession=sessionName)
-            fileHandles = [io.BytesIO(fbody1) if fpath == src_path else None for fpath in filePaths]
-            fileNames = [os.path.basename(fpath) for fpath in filePaths]
+            retval = self.compile(uploadType, src_path=src_path, contentText=fbody1, images_zipdata=images_zipdata, dest_dir=web_dir,
+                                              image_dir=image_dir, extraOpts=extraOpts)
 
-            images_zipdict = {}
-            if images_zipdata:
-                images_zipdict[sessionName] = images_zipdata
-
-            if Options['debug']:
-                print >> sys.stderr, 'sdserver.uploadSession:', configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), fileNames
-
-            retval = slidoc.process_input(fileHandles, filePaths, configOpts, return_html=True,
-                                          images_zipdict=images_zipdict, http_post_func=http_sync_post)
             if 'md_params' not in retval:
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
-            if Options['debug'] and retval.get('messages'):
-                print >> sys.stderr, 'sdserver.uploadSession:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
 
             # Save current preview state
             if uploadType != 'top':
@@ -1388,29 +1367,56 @@ class ActionHandler(BaseHandler):
             WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
-    def makeTopIndex(self, uploadType):
-        if not self.get_topnav_list():
-            return []
-        # Force re-make of index
-        configOpts = self.get_config_opts('raw', topnav=True)
-        configOpts.update(dest_dir=self.site_web_dir)
+    def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', extraOpts={}):
+        # If src_path, compile single .md file, returning output
+        # Else, compile all files of that type, updating index etc.
+        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
+                                                       image_dir=image_dir, paced=uploadType not in ('raw', 'top', 'exercise)') )
 
-        filePaths = glob.glob(self.site_src_dir+'/*.md')
-        if not filePaths:
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Source directory has no index.md')
-        fileHandles = [open(fpath) for fpath in filePaths]
+        configOpts.update(extraOpts)
+
+        images_zipdict = {}
+        if src_path:
+            sessionName = os.path.splitext(os.path.basename(src_path))[0]
+            if images_zipdata:
+                images_zipdict[sessionName] = images_zipdata
+        else:
+            sessionName = ''
+
+        filePaths = self.get_md_list(uploadType, newSession=sessionName)
         fileNames = [os.path.basename(fpath) for fpath in filePaths]
+
+        if src_path:
+            fileHandles = [io.BytesIO(contentText) if fpath == src_path else None for fpath in filePaths]
+        else:
+            fileHandles = [open(fpath) for fpath in filePaths]
+
+        if Options['debug']:
+            print >> sys.stderr, 'sdserver.compile:', uploadType, src_path, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), fileNames
+
+        return_html = bool(src_path)
+
         try:
-            retval = slidoc.process_input(fileHandles, filePaths, configOpts,
-                                          http_post_func=http_sync_post)
-            if Options['debug'] and retval.get('messages'):
-                print >> sys.stderr, 'sdserver.makeTopIndex:', ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
-            return retval.get('messages',[])
+            retval = slidoc.process_input(fileHandles, filePaths, configOpts, default_args_dict=defaultOpts, return_html=return_html,
+                                          images_zipdict=images_zipdict, http_post_func=http_sync_post)
         except Exception, excp:
             if Options['debug']:
                 import traceback
                 traceback.print_exc()
-            return ['Error in makeTopIndex: '+excp.message]
+            # Error return
+            return {'messages': ['Error in compile: '+excp.message]}
+            
+        if return_html:
+            if Options['debug'] and retval.get('messages'):
+                print >> sys.stderr, 'sdserver.compile:', src_path, ' '.join(fileNames)+'\n', '\n'.join(retval['messages'])
+            return retval
+        else:
+            # Normal return
+            return {'messages': []}
+
+    def makeTopIndex(self):
+        retval = self.compile('top', dest_dir=self.site_web_dir)
+        return retval.get('messages',[])
 
     def imageUpload(self, sessionName, imageFile, fname, fbody):
         if Options['debug']:
@@ -1541,7 +1547,7 @@ class ActionHandler(BaseHandler):
         self.previewClear(revert=True)   # Revert to start of preview
 
         WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
-        errMsgs = self.makeTopIndex(uploadType)
+        errMsgs = self.makeTopIndex()
         if errMsgs:
             msgs = ['Saved changes to session '+sessionName] + [''] + errMsgs
             self.displayMessage(msgs)
@@ -2959,9 +2965,9 @@ def createApplication():
                       r"/(_prefill/[-\w.]+)",
                       r"/(_preview/[-\w./]+)",
                       r"/(_qstats/[-\w.]+)",
+                      r"/(_rebuild/[-\w.]+)",
                       r"/(_refresh/[-\w.]+)",
                       r"/(_remoteupload/[-\w.]+)",
-                      r"/(_reindex/[-\w.]+)",
                       r"/(_respond/[-\w.;]+)",
                       r"/(_roster)",
                       r"/(_sessions)",

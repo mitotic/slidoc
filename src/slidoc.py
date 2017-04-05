@@ -2627,8 +2627,8 @@ Global = None
 def message(*args):
     print(*args, file=sys.stderr)
 
-def process_input(input_files, input_paths, config_dict, images_zipdict={}, return_html=False, return_messages=False,
-                  http_post_func=None):
+def process_input(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
+                  return_html=False, return_messages=False,http_post_func=None):
     global Global, message
     Global = GlobalState(http_post_func=http_post_func)
     if return_html:
@@ -2715,21 +2715,6 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         orig_outpaths.append(outpath)
         orig_flinks.append(flink)
 
-        if not config.make and not start_date:
-            fnumbers.append(fnumber)
-        elif input_files[j] and (return_html or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath))):
-            # Process only accessible and modified input files (if updated using web interface, inpath and outpath may have nearly same mod times)
-            if not start_date:
-                fnumbers.append(fnumber)
-            else:
-                # Only process files with a release date after the minimum required release date
-                tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, include_args=Select_file_args, first_line=True)
-                tem_release_date_str = tem_config.release_date or config.release_date
-                if tem_release_date_str:
-                    tem_release_date = sliauth.parse_date(tem_release_date_str)
-                    if tem_release_date >= start_date:
-                        fnumbers.append(fnumber)
-
         if config.notebook and os.path.exists(dest_dir+fname+'.ipynb') and not config.overwrite and not config.dry_run:
             abort("File %s.ipynb already exists. Delete it or specify --overwrite" % fname)
 
@@ -2741,6 +2726,26 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
                 if fname[:len(fprefix)] == fprefix:
                     break
                 fprefix = fprefix[:-1]
+
+        if not input_files[j]:
+            continue
+
+        if not config.make and not start_date:
+            fnumbers.append(fnumber)
+
+        elif return_html or fname == 'index' or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath)):
+            # Process only accessible and modified input files (if updated using web interface, inpath and outpath may have nearly same mod times)
+            # (Always process return_html or index.md file)
+            if not start_date:
+                fnumbers.append(fnumber)
+            else:
+                # Only process files with a release date after the minimum required release date
+                tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, include_args=Select_file_args, first_line=True)
+                tem_release_date_str = tem_config.release_date or config.release_date
+                if tem_release_date_str:
+                    tem_release_date = sliauth.parse_date(tem_release_date_str)
+                    if tem_release_date >= start_date:
+                        fnumbers.append(fnumber)
 
     if not fnumbers:
         message('All output files are newer than corresponding input files')
@@ -2783,6 +2788,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
     # Reset config properties that will be overridden for separate files
     if config.features is not None and not isinstance(config.features, set):
         config.features = md2md.make_arg_set(config.features, Features_all)
+    if 'features' in default_args_dict:
+        default_args_dict['features'] = md2md.make_arg_set(default_args_dict['features'], Features_all)
 
     topnav_opts = ''
     gd_sheet_url = ''
@@ -2811,6 +2818,8 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
         config.image_url += '/'
 
     config.strip = md2md.make_arg_set(config.strip, Strip_all)
+    if 'strip' in default_args_dict:
+        default_args_dict['strip'] = md2md.make_arg_set(default_args_dict['strip'], Strip_all)
 
     templates = {}
     for tname in ('doc_include.css', 'wcloud.css', 'doc_custom.css',
@@ -2963,9 +2972,9 @@ def process_input(input_files, input_paths, config_dict, images_zipdict={}, retu
             # Separate files (may also be paced)
 
             # Merge file config with command line
-            file_config = parse_merge_args(read_first_line(fhandle), fname, Conf_parser, vars(config), include_args=Select_file_args,
+            file_config = parse_merge_args(read_first_line(fhandle), fname, Conf_parser, vars(config), default_args_dict=default_args_dict,
+                                           include_args=Select_file_args,
                                            first_line=True, verbose=config.verbose)
-
             if config.preview:
                 if file_config.gsheet_url:
                     file_config.gsheet_url = ''
@@ -3671,8 +3680,9 @@ def read_first_line(file):
     return first_line
 
 DEFAULTS_RE = re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n')
-def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
+def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
     # Read file args and merge with command line args, with command line args being final
+    # If default_args_dict is specified, it is updated with file args
     if first_line:
         match = DEFAULTS_RE.match(args_text)
         if match:
@@ -3698,25 +3708,27 @@ def parse_merge_args(args_text, fname, parser, cmd_args_dict, exclude_args=set()
                 # Convert feature string to set
                 line_args_dict[arg_name] = md2md.make_arg_set(line_args_dict[arg_name], Features_all)
         if verbose:
-            message('Read command line arguments from file', fname, argparse.Namespace(**line_args_dict))
+            message('Read command line arguments from ', source, argparse.Namespace(**line_args_dict))
     except Exception, excp:
-        abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (fname, excp))
+        abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (source, excp))
 
+    merged_args_dict = default_args_dict.copy()
+    merged_args_dict.update(line_args_dict)
     for arg_name, arg_value in cmd_args_dict.items():
-        if arg_name not in line_args_dict:
+        if arg_name not in merged_args_dict:
             # Argument not specified in file line (copy from command line)
-            line_args_dict[arg_name] = arg_value
+            merged_args_dict[arg_name] = arg_value
 
-        elif (isinstance(arg_value, set) and not arg_value) or arg_value is not None:
+        elif (isinstance(arg_value, set) and arg_value) or (not isinstance(arg_value, set) and arg_value is not None):
             # Argument also specified in command line
-            if arg_name == 'features' and line_args_dict[arg_name] and 'override' not in arg_value:
+            if arg_name == 'features' and merged_args_dict[arg_name] and 'override' not in arg_value:
                 # Merge features from file with command line (unless 'override' feature is present in command line)
-                line_args_dict[arg_name] = arg_value.union(line_args_dict[arg_name])
+                merged_args_dict[arg_name] = arg_value.union(merged_args_dict[arg_name])
             else:
                 # Command line overrides file line
-                line_args_dict[arg_name] = arg_value
+                merged_args_dict[arg_name] = arg_value
 
-    return argparse.Namespace(**line_args_dict)
+    return argparse.Namespace(**merged_args_dict)
 
 def abort(msg):
     if __name__ == '__main__':
@@ -3760,7 +3772,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             cls.md_content = input_file.read()
             images_zipdata = None
         input_file.close()
-        retval = process_input([io.BytesIO(cls.md_content)], [md_path], cls.config_dict, return_html=True, images_zipdict=images_zipdict)
+        retval = process_input([io.BytesIO(cls.md_content)], [md_path], cls.config_dict,
+                               default_args_dict=cls.default_args_dict, return_html=True, images_zipdict=images_zipdict)
         cls.log_messages = retval['messages']
         cls.outname = os.path.basename(retval['outpath'])
         cls.out_html = retval['out_html']
@@ -3951,6 +3964,7 @@ alt_parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_au
 alt_parser.add_argument('--backup_dir', default='_backup', help='Directory to create backup files for last valid version in when dest_dir is specified')
 alt_parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 alt_parser.add_argument('--copy_source', help='Create a modified copy (only if dest_dir is specified)', action="store_true", default=None)
+alt_parser.add_argument('--default_args', metavar='ARGS', help="'--arg=val --arg2=val2' default arguments ('file' to read first line of first file)")
 alt_parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
 alt_parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
@@ -3959,7 +3973,7 @@ alt_parser.add_argument('--make', help='Make mode: only process .md files that a
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Sessions with questions to be modified')
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
-alt_parser.add_argument('--overwrite', help='Overwrite files', action="store_true", default=None)
+alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
@@ -3984,23 +3998,33 @@ Cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', '
     
 def cmd_args2dict(cmd_args):
     # Assign default (non-None) values to arguments not specified anywhere
+    args_dict = vars(cmd_args)
     for arg_name in Cmd_defaults:
-        if getattr(cmd_args, arg_name) == None:
-            setattr(cmd_args, arg_name, Cmd_defaults[arg_name]) 
-
-    return vars(cmd_args)
+        if args_dict.get(arg_name) == None:
+            args_dict[arg_name] = Cmd_defaults[arg_name]
+    return args_dict
 
 if __name__ == '__main__':
     cmd_args_orig = cmd_parser.parse_args()
     if cmd_args_orig.config:
         cmd_args = parse_merge_args(md2md.read_file(cmd_args_orig.config), cmd_args_orig.config, Conf_parser, vars(cmd_args_orig),
                                     verbose=cmd_args_orig.verbose)
+
     else:
+        cmd_args = cmd_args_orig
+
+    if cmd_args.default_args == 'file':
         # Read default args from first line of first file
         # Do not exclude args if combined file
-        exclude_args = Select_file_args if cmd_args_orig.all is None else None
-        cmd_args = parse_merge_args(read_first_line(cmd_args_orig.file[0]), cmd_args_orig.file[0].name, Conf_parser, vars(cmd_args_orig),
-                                    exclude_args=exclude_args, first_line=True, verbose=cmd_args_orig.verbose)
+        exclude_args = Select_file_args if cmd_args.all is None else None
+        default_args = parse_merge_args(read_first_line(cmd_args.file[0]), cmd_args.file[0].name, Conf_parser, vars(cmd_args),
+                                        exclude_args=exclude_args, first_line=True, verbose=cmd_args.verbose)
+    elif cmd_args.default_args:
+        default_args = parse_merge_args(cmd_args.default_args, '--default_args', Conf_parser, {})
+    else:
+        default_args = argparse.Namespace()
+
+    default_args_dict = vars(default_args)
 
     config_dict = cmd_args2dict(cmd_args)
 
@@ -4016,7 +4040,7 @@ if __name__ == '__main__':
     skipped = []
     for fhandle in fhandles:
         first_line = read_first_line(fhandle)
-        if cmd_args_orig.publish and (not first_line.strip().startswith('<!--slidoc-defaults') or '--publish' not in first_line):
+        if cmd_args.publish and (not first_line.strip().startswith('<!--slidoc-defaults') or '--publish' not in first_line):
             # Skip files without --publish option in the first line
             skipped.append(fhandle.name)
             continue
@@ -4030,7 +4054,7 @@ if __name__ == '__main__':
 
     if cmd_args.verbose:
         print('Effective argument list', file=sys.stderr)
-        print('    ', argparse.Namespace(**config_dict), file=sys.stderr)
+        print('    ', argparse.Namespace(**config_dict), argparse.Namespace(**default_args_dict), file=sys.stderr)
 
     pptx_opts = {}
     if cmd_args.pptx_options:
@@ -4042,7 +4066,7 @@ if __name__ == '__main__':
     pptx_paths = {}
     for j, inpath in enumerate(input_paths):
         fname, fext = os.path.splitext(os.path.basename(inpath))
-        if fext == '.pptx' and not cmd_args_orig.preview:
+        if fext == '.pptx' and not cmd_args.preview:
             # Convert .pptx to .md
             import pptx2md
             ppt_parser = pptx2md.PPTXParser(pptx_opts)
@@ -4054,10 +4078,10 @@ if __name__ == '__main__':
             pptx_paths[md_path] = input_paths[j]
             input_paths[j] = md_path
 
-    if cmd_args_orig.preview:
+    if cmd_args.preview:
         if len(input_files) != 1:
             raise Exception('ERROR: --preview only works for a single file')
-        if cmd_args_orig.upload_key and not cmd_args_orig.server_url:
+        if cmd_args.upload_key and not cmd_args.server_url:
             raise Exception('ERROR: Must specify --server_url with --upload_key')
         input_files[0].close()
         src_path = input_paths[0]
@@ -4067,11 +4091,12 @@ if __name__ == '__main__':
         RequestHandler.pptx_opts['img_dir'] = fname + '_images.zip'
         RequestHandler.pptx_opts['zip_md'] = True
         RequestHandler.config_dict = config_dict
+        RequestHandler.default_args_dict = default_args_dict
         RequestHandler.create_preview()
 
-        httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args_orig.preview), RequestHandler)
-        command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args_orig.preview, RequestHandler.preview_token, '1' if cmd_args_orig.upload_key else '')
-        print('Preview at http://localhost:'+str(cmd_args_orig.preview), file=sys.stderr)
+        httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args.preview), RequestHandler)
+        command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args.preview, RequestHandler.preview_token, '1' if cmd_args.upload_key else '')
+        print('Preview at http://localhost:'+str(cmd_args.preview), file=sys.stderr)
         print(command, file=sys.stderr)
         subp = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, stderr=subprocess.STDOUT)
         try:
@@ -4080,7 +4105,7 @@ if __name__ == '__main__':
             pass
         httpd.server_close()
     else:
-        process_input(input_files, input_paths, config_dict, images_zipdict=images_zipdict)
+        process_input(input_files, input_paths, config_dict, default_args_dict=default_args_dict, images_zipdict=images_zipdict)
 
         if cmd_args.printable:
             if cmd_args.gsheet_url:
