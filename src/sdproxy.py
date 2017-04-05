@@ -839,7 +839,7 @@ def suspend_cache(action="shutdown"):
         schedule_update(force=True)
 
 def shutdown_loop():
-    print("Completed shutdown", file=sys.stderr)
+    print("Completed IO loop shutdown", file=sys.stderr)
     IOLoop.current().stop()
         
 def updates_current():
