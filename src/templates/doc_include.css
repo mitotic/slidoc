@@ -259,6 +259,9 @@ body.slidoc-accordion-view .slidoc-pre-header {display: none;}
 
 body:not(.slidoc-accordion-view) .slidoc-chapter-accordion .slidoc-toptoggle {display: none;}
 
+.slidoc-chapter-accordion .slidoc-toggle-visible {opacity: 0.5;}
+.slidoc-chapter-accordion .slidoc-toggle-hidden {background: #eee;}
+
 body:not(.slidoc-accordion-view) .slidoc-toggle-hidden {display: none;}
 body.slidoc-accordion-view .slidoc-chapter-accordion .slidoc-toggle-visible {display: none;}
 

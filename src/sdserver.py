@@ -172,6 +172,18 @@ SERVER_NAME = 'Webster0.9'
 
 SESSION_NAME_FMT = '%s%02d'
 
+def privatePrefix(uploadType):
+    if uploadType in ('top',):
+        return ''
+    else:
+        return '/' + PRIVATE_PATH
+
+def pacedSession(uploadType):
+    if uploadType in ('top', 'announce', 'exercise', 'help', 'notes'):
+        return 0
+    else:
+        return 1
+
 def gen_proxy_auth_token(username, role='', sites='', key='', prefixed=False, root=False):
     if not key:
         key = Options['root_auth_key'] if root else Options['auth_key']
@@ -424,14 +436,12 @@ class SiteActionHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
-    cmd_opts =   { 'base': dict(debug=True),
-                   'top': dict(make=True),
-                   'raw': dict(),
-                   'other': dict(make=True, make_toc=True),
+    cmd_opts =   { 'base': dict(make=True, debug=True),
+                   'other': dict(),
                   }
-    default_opts = { 'base': dict(),
-                     'top': dict(strip='chapters,contents'),
-                     'raw': dict(strip='chapters,contents'),
+    default_opts = { 'base':  dict(),
+                     'top':   dict(strip='chapters,contents'),
+                     'other': dict(),
                      }
     fix_opts = set()
 
@@ -439,13 +449,27 @@ class ActionHandler(BaseHandler):
         return self.previewState.get('name', '')
 
     def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', image_dir=''):
-        # Return (cmd_args, default_args)
+        # Return (cmd_args, default_args) 
+        defaultOpts = self.default_opts['base'].copy()
+        if uploadType in self.default_opts:
+            defaultOpts.update(self.default_opts[uploadType])
+        else:
+            defaultOpts.update(self.default_opts['other'])
+
+        if image_dir:
+            defaultOpts.update(image_dir=image_dir)
+
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
         configOpts.update(self.cmd_opts['base'])
+
         if uploadType in self.cmd_opts:
             configOpts.update(self.cmd_opts[uploadType])
         else:
             configOpts.update(self.cmd_opts['other'])
+
+        if uploadType != 'top':
+            configOpts['make_toc'] = True
+
         if uploadType in Global.session_options:
             # session-specific options (TBD)
             pass
@@ -461,7 +485,10 @@ class ActionHandler(BaseHandler):
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list()))
 
-        if paced:
+        if not pacedSession(uploadType):
+            configOpts['pace'] = 0
+        else:
+            defaultOpts['pace'] = 1
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
@@ -470,11 +497,6 @@ class ActionHandler(BaseHandler):
 
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
-
-        defaultOpts = self.default_opts['base'].copy()
-        defaultOpts.update(self.default_opts.get(uploadType, {}))
-        if image_dir:
-            defaultOpts.update(image_dir=image_dir)
 
         return configOpts, defaultOpts
 
@@ -788,21 +810,35 @@ class ActionHandler(BaseHandler):
                             rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
                             self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
 
-        elif action in ('_delete', '_rebuild'):
+        elif action in ('_rebuild', '_reindex'):
+            if not Options['source_dir']:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to reindex/rebuild')
+
+            if subsubpath == 'all':
+                uploadType = ''
+            else:
+                uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(subsubpath)
+
+            errMsgs = self.rebuild(uploadType, indexOnly=(action == '_reindex'))
+            if errMsgs and any(errMsgs):
+                self.displayMessage(['Error in %s:' % action] + errMsgs)
+            else:
+                self.redirect("/"+Options['site_name']+"/index.html" if Options['site_number'] else "/index.html")
+
+        elif action == '_delete':
             sessionName = subsubpath
-            if action == '_delete':
-                user = sdproxy.ADMINUSER_ID
-                userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
-                args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
-                retObj = sdproxy.sheetAction(args)
-                if retObj['result'] != 'success':
-                    self.displayMessage('Error in deleting sheet '+sessionName+': '+retObj.get('error',''))
-                    return
+            user = sdproxy.ADMINUSER_ID
+            userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
+            args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
+            retObj = sdproxy.sheetAction(args)
+            if retObj['result'] != 'success':
+                self.displayMessage('Error in deleting sheet '+sessionName+': '+retObj.get('error',''))
+                return
 
             if Options['source_dir']:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getSessionType(sessionName)
 
-                if sessionName != 'index' and action == '_delete':
+                if sessionName != 'index':
                     if os.path.exists(src_path):
                         os.remove(src_path)
 
@@ -815,21 +851,18 @@ class ActionHandler(BaseHandler):
                 filePaths = self.get_md_list(uploadType)
                 if filePaths:
                     # Rebuild session index
-                    retval = self.compile(uploadType, dest_dir=os.path.dirname(web_path))
-                    if retval.get('messages'):
-                        msgs = ['Error in '+action+' for session '+sessionName] + [''] + retval.get('messages',[])
-                        self.displayMessage(msgs)
-                        return
+                    errMsgs = self.rebuild(uploadType, indexOnly=True)
                 else:
                     # No more sessions of this type; remove session index
                     ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
                     if os.path.exists(ind_path):
                         os.remove(ind_path)
-                    errMsgs = self.makeTopIndex()
-                    if errMsgs:
-                        msgs = ['Error in '+action+' for top index'] + [''] + errMsgs
-                        self.displayMessage(msgs)
-                        return
+                    errMsgs = self.rebuild(indexOnly=True)
+
+                if errMsgs and any(errMsgs):
+                    msgs = ['Error in deleting session '+sessionName] + [''] + errMsgs
+                    self.displayMessage(msgs)
+                    return
 
             self.displayMessage('Completed '+action+' for session '+sessionName)
 
@@ -1004,7 +1037,7 @@ class ActionHandler(BaseHandler):
             return 'top', 0, src_dir+'/'+sessionName+'.md', web_dir+'/'+sessionName+'.html', web_dir+'/'+sessionName+'_images'
         uploadType = smatch.group(1)
         sessionNumber = int(smatch.group(2))
-        web_prefix = web_dir+'/'+PRIVATE_PATH+'/'+uploadType+'/'+sessionName
+        web_prefix = web_dir+privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+sessionName+'.md', web_prefix+'.html', web_prefix+'_images'
 
 
@@ -1221,24 +1254,34 @@ class ActionHandler(BaseHandler):
         md_list.sort()
         return md_list
 
-    def get_topnav_list(self):
-        topFiles = [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/*.html')]
+    def get_session_folders(self):
+        fnames = []
+        for fname in set(os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_src_dir+'/*/*.md')):
+            if self. get_md_list(fname):
+                fnames.append(fname)
+        fnames.sort()
+        return fnames
+
+    def get_topnav_list(self, folders_only=False):
+        topFiles = [] if folders_only else [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/*.html')]
         topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/*/index.html')]
         topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/'+PRIVATE_PATH+'/*/index.html')]
+        if 'index.html' in topFiles:
+            del topFiles[topFiles.index('index.html')]
 
-        homeIndex = 'index.html'
-        topnavList = [homeIndex]
-        if homeIndex in topFiles:
-            del topFiles[topFiles.index(homeIndex)]
+        topFiles.sort()
+        topFolders.sort()
+        topFolders2.sort()
 
-        for j, flist in enumerate([topFiles, topFolders, topFolders2]):
+        topnavList = []
+
+        for j, flist in enumerate([topFolders2, topFiles, topFolders]):
             for fname in flist:
-                entry = PRIVATE_PATH+'/'+fname if j == 2 else fname 
+                entry = fname if j > 0 else PRIVATE_PATH+'/'+fname
                 if entry not in topnavList:
-                    if entry.endswith('index.html'):
-                        topnavList.insert(0, entry)
-                    else:
-                        topnavList.append(entry)
+                    topnavList.append(entry)
+        if not folders_only:
+            topnavList = ['index.html'] + topnavList
         return topnavList
 
     def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=None):
@@ -1273,8 +1316,8 @@ class ActionHandler(BaseHandler):
                 if web_list:
                     zfile.extractall(self.site_web_dir, web_list)
                 msgs = ['Zip archive uploaded']
-                errMsgs = self.makeTopIndex()
-                if errMsgs:
+                errMsgs = self.rebuild('top', indexOnly=True)
+                if errMsgs and any(errMsgs):
                     msgs += [''] + errMsgs
                 self.displayMessage(msgs)
                 return ''
@@ -1299,11 +1342,11 @@ class ActionHandler(BaseHandler):
         else:
             sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
             src_dir = self.site_src_dir + '/' + uploadType
-            web_dir = self.site_web_dir + '/'+PRIVATE_PATH+'/' + uploadType
+            web_dir = self.site_web_dir + privatePrefix(uploadType) + '/' + uploadType
 
         WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
 
-        if uploadType != 'top':
+        if pacedSession(uploadType):
             # Lock proxy for preview
             sdproxy.startPreview(sessionName)
 
@@ -1334,7 +1377,7 @@ class ActionHandler(BaseHandler):
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
 
             # Save current preview state
-            if uploadType != 'top':
+            if pacedSession(uploadType):
                 sdproxy.savePreview()
 
             self.previewState['md'] = fbody1
@@ -1367,11 +1410,10 @@ class ActionHandler(BaseHandler):
             WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
-    def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', extraOpts={}):
+    def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False, extraOpts={}):
         # If src_path, compile single .md file, returning output
         # Else, compile all files of that type, updating index etc.
-        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
-                                                       image_dir=image_dir, paced=uploadType not in ('raw', 'top', 'exercise)') )
+        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir, image_dir=image_dir)
 
         configOpts.update(extraOpts)
 
@@ -1384,10 +1426,15 @@ class ActionHandler(BaseHandler):
             sessionName = ''
 
         filePaths = self.get_md_list(uploadType, newSession=sessionName)
+        if not filePaths:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Empty session folder '+uploadType)
+
         fileNames = [os.path.basename(fpath) for fpath in filePaths]
 
         if src_path:
             fileHandles = [io.BytesIO(contentText) if fpath == src_path else None for fpath in filePaths]
+        elif indexOnly:
+            fileHandles = [None for fpath in filePaths]
         else:
             fileHandles = [open(fpath) for fpath in filePaths]
 
@@ -1414,9 +1461,20 @@ class ActionHandler(BaseHandler):
             # Normal return
             return {'messages': []}
 
-    def makeTopIndex(self):
-        retval = self.compile('top', dest_dir=self.site_web_dir)
-        return retval.get('messages',[])
+    def rebuild(self, uploadType='', indexOnly=False):
+        if uploadType:
+            utypes = [uploadType] if uploadType != 'top' else []
+        else:
+            utypes = self.get_session_folders()
+
+        msgs = []
+        for utype in utypes:
+            retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly)
+            msgs = retval.get('messages',[]) + ['']
+
+        retval = self.compile('top', dest_dir=self.site_web_dir, indexOnly=indexOnly)
+        msgs = retval.get('messages',[]) + ['']
+        return msgs
 
     def imageUpload(self, sessionName, imageFile, fname, fbody):
         if Options['debug']:
@@ -1453,7 +1511,7 @@ class ActionHandler(BaseHandler):
                 if self.previewState['image_zipfile'] and fname+fext in self.previewState['image_paths']:
                     content = self.previewState['image_zipfile'].read(self.previewState['image_paths'][fname+fext])
                 else:
-                    web_dir = self.site_web_dir if uploadType == 'top' else self.site_web_dir + '/'+PRIVATE_PATH+'/' + uploadType
+                    web_dir = self.site_web_dir if uploadType == 'top' else self.site_web_dir + privatePrefix(uploadType)+'/' + uploadType
                     img_path = web_dir+'/'+sessionName+'_images/'+fname+fext
                     if os.path.exists(img_path):
                         with open(img_path) as f:
@@ -1541,14 +1599,14 @@ class ActionHandler(BaseHandler):
         if uploadType == 'top':
             redirectURL += '/' + sessionName + '.html'
         else:
-            redirectURL += '/'+PRIVATE_PATH+'/'+uploadType+'/index.html'
+            redirectURL += privatePrefix(uploadType)+'/'+uploadType+'/index.html'
 
         rolloverParams = self.previewState['rollover']
         self.previewClear(revert=True)   # Revert to start of preview
 
         WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
-        errMsgs = self.makeTopIndex()
-        if errMsgs:
+        errMsgs = self.rebuild(uploadType, indexOnly=True)
+        if errMsgs and any(errMsgs):
             msgs = ['Saved changes to session '+sessionName] + [''] + errMsgs
             self.displayMessage(msgs)
             return
@@ -2967,6 +3025,7 @@ def createApplication():
                       r"/(_qstats/[-\w.]+)",
                       r"/(_rebuild/[-\w.]+)",
                       r"/(_refresh/[-\w.]+)",
+                      r"/(_reindex/[-\w.]+)",
                       r"/(_remoteupload/[-\w.]+)",
                       r"/(_respond/[-\w.;]+)",
                       r"/(_roster)",

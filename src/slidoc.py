@@ -3714,6 +3714,9 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
 
     merged_args_dict = default_args_dict.copy()
     merged_args_dict.update(line_args_dict)
+    if default_args_dict.get('pace'):
+        # Ensure minimum pace level if default requiring pacing
+        merged_args_dict['pace'] = max(merged_args_dict['pace'], default_args_dict['pace'])
     for arg_name, arg_value in cmd_args_dict.items():
         if arg_name not in merged_args_dict:
             # Argument not specified in file line (copy from command line)
