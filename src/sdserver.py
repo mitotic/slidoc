@@ -211,6 +211,9 @@ SESSION_NAME_RE = re.compile(r'^(\w*[a-zA-Z_])(\d+)$')
 
 def getSessionType(sessionName):
     smatch = SESSION_NAME_RE.match(sessionName)
+    if not smatch:
+        return (TOP_LEVEL, 0)
+
     sessionType = smatch.group(1)
     sessionNumber = int(smatch.group(2))
 
@@ -1235,7 +1238,7 @@ class ActionHandler(BaseHandler):
                 # Import two files
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-                sessionCreate = self.get_argument('sessioncreate')
+                sessionCreate = self.get_argument('sessioncreate', '')
 
                 uploadType = self.get_argument('sessiontype')
 
@@ -1252,7 +1255,7 @@ class ActionHandler(BaseHandler):
                         return
 
                     sessionNumber = int(sessionNumber)
-                    sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
+                    sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
 
                 sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
                     
@@ -1410,13 +1413,14 @@ class ActionHandler(BaseHandler):
             src_dir = self.site_src_dir
             web_dir = self.site_web_dir
         else:
-            sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber)
+            sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
             src_dir = self.site_src_dir + '/' + uploadType
             web_dir = self.site_web_dir + privatePrefix(uploadType) + '/' + uploadType
 
-        WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
+        if sessionName != 'index':
+            WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
 
-        if pacedSession(uploadType):
+        if pacedSession(uploadType) and sessionName != 'index':
             # Lock proxy for preview
             sdproxy.startPreview(sessionName)
 
@@ -1447,7 +1451,7 @@ class ActionHandler(BaseHandler):
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
 
             # Save current preview state
-            if pacedSession(uploadType):
+            if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
             self.previewState['md'] = fbody1
@@ -1477,7 +1481,8 @@ class ActionHandler(BaseHandler):
                 import traceback
                 traceback.print_exc()
             self.previewClear(revert=True, original=True)
-            WSHandler.lockSessionConnections(sessionName, '', reload=False)
+            if sessionName != 'index':
+                WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
     def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False, extraOpts={}):
@@ -1674,7 +1679,8 @@ class ActionHandler(BaseHandler):
         rolloverParams = self.previewState['rollover']
         self.previewClear(revert=True)   # Revert to start of preview
 
-        WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
+        if sessionName != 'index':
+            WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
         errMsgs = self.rebuild(uploadType, indexOnly=True)
         if errMsgs and any(errMsgs):
             msgs = ['Saved changes to session '+sessionName] + [''] + errMsgs
@@ -1711,7 +1717,8 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         sessionName = self.previewState['name']
         self.previewClear(revert=True, original=True)
-        WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
+        if sessionName != 'index':
+            WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
         self.displayMessage('Discarded changes')
 
     def previewClear(self, revert=False, original=False):
