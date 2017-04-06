@@ -3470,7 +3470,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
                     if return_html:
-                        return {'outpath': outpath, 'out_html':Html_header+pre_html+tail+Html_footer, 'toc_html':toc_all_html, 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
+                        return {'outpath': outpath, 'out_html':Html_header+sliauth.str_encode(pre_html)+sliauth.str_encode(tail)+Html_footer, 'toc_html':toc_all_html, 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
                     else:
                         write_doc(outpath, pre_html, tail)
             if return_html:

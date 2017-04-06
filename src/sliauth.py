@@ -47,8 +47,8 @@ def gen_late_token(key, user_id, site_name, session_name, date_str):
     token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s:%s' % (user_id, site_name, session_name, date_str) )
     return token
 
-def str_encode(value):
-    return value.encode('utf-8') if isinstance(value, unicode) else value
+def str_encode(value, errors='strict'):
+    return value.encode('utf-8', errors) if isinstance(value, unicode) else value
 
 def safe_quote(value):
     return urllib.quote(str_encode(value), safe='')

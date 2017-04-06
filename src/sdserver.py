@@ -1240,7 +1240,7 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
                 sessionCreate = self.get_argument('sessioncreate', '')
 
-                uploadType = self.get_argument('sessiontype')
+                uploadType = self.get_argument('sessiontype', '')
 
                 sessionNumber = self.get_argument('sessionnumber')
                 if uploadType in (RAW_UPLOAD, TOP_LEVEL):
@@ -1293,7 +1293,7 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in uploading session: '+str(excp))
 
                 if errMsg:
-                    self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='', err_msg=errMsg)
+                    self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='',  session_types=SESSION_TYPES, err_msg=errMsg)
                 elif uploadType != RAW_UPLOAD:
                     site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
                     self.redirect(site_prefix+'/_preview/index.html')
@@ -1514,7 +1514,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile:', uploadType, src_path, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), fileNames
+            print >> sys.stderr, 'sdserver.compile:', uploadType, src_path, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames
 
         return_html = bool(src_path)
 
