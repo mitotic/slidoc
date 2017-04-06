@@ -2630,7 +2630,7 @@ def message(*args):
 def process_input(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
                   return_html=False, return_messages=False,http_post_func=None):
     global Global, message
-    input_paths = md2md.stringify(*input_paths) # unicode -> str
+    input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
     Global = GlobalState(http_post_func=http_post_func)
     if return_html:
@@ -3075,6 +3075,9 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
         # Preprocess line breaks, tabs etc. (note: hrule_setext=True may break slide editing)
         md_text = preprocess(md_text, hrule_setext=('underline_headers' in file_config.features))
+        loc = md2md.find_non_ascii(md_text)
+        if loc:
+            message('ASCII-ERROR: Possible non-ascii character at position %d could create problems: %s' % (loc, repr(md_text[max(0,loc-10):loc+15])) )
 
         # Strip annotations (may also break slide editing)
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)

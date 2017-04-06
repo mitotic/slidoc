@@ -45,6 +45,10 @@ def asciify(s):
         s = s.replace('\xe2\x80\x9c', '"').replace('\xe2\x80\x9d', '"')
     return s
 
+def find_non_ascii(s):
+    m = re.search(r'[\x00\x80-\xff]', s)
+    return 1+m.start() if m else 0
+
 def restore_angular(s):
     # Restore escaped angular brackets (for powerpoint -> ascii)
     return s.replace('&lt;', '<').replace('&gt;', '>')
