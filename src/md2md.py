@@ -26,11 +26,28 @@ import mistune
 
 IMAGE_FMT = 'image%02d'
 
+def str_join(*args):
+    return ''.join(stringify(*args))
+
 def stringify(*args):
     if len(args) == 1:
         return args[0].encode('utf-8') if isinstance(args[0], unicode) else args[0]
     else:
         return [arg.encode('utf-8') if isinstance(arg, unicode) else arg for arg in args]
+
+def asciify(s):
+    # Replace curly quotes with straight quotes (for powerpoint -> ascii)
+    if isinstance(s, unicode):
+        s = s.replace(u'\u2018', u"'").replace(u'\u2019', u"'")
+        s = s.replace(u'\u201c', u'"').replace(u'\u201d', u'"')
+    else:
+        s = s.replace('\xe2\x80\x98', "'").replace('\xe2\x80\x99', "'")
+        s = s.replace('\xe2\x80\x9c', '"').replace('\xe2\x80\x9d', '"')
+    return s
+
+def restore_angular(s):
+    # Restore escaped angular brackets (for powerpoint -> ascii)
+    return s.replace('&lt;', '<').replace('&gt;', '>')
 
 def read_file(path):
     with open(path) as f:

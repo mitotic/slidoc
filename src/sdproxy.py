@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.1a'
+VERSION = '0.97.3'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -918,8 +918,8 @@ def update_remote_sheets(force=False, synchronous=False):
         updates_current()
         return
 
-    if Settings['debug']:
-        print("update_remote_sheets:C", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
+    ##if Settings['debug']:
+    ##    print("update_remote_sheets:C", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
 
     user = ADMINUSER_ID
     userToken = gen_proxy_token(user, ADMIN_ROLE)

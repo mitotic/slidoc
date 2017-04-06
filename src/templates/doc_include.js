@@ -584,6 +584,8 @@ Slidoc.pageSetup = function() {
     if (match) {
 	Sliobj.previewState = true;
 	previewMessages(true);
+	if (!Sliobj.params.fileName)
+	    toggleClass(true, 'slidoc-preview-view');
     }
 
     var loadElem = document.getElementById("slidoc-init-load");
@@ -595,8 +597,22 @@ Slidoc.pageSetup = function() {
 	contentsButton.style.display = null;
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) {
 	var dashElem = document.getElementById('dashlink');
-	if (dashElem)
+	if (dashElem) {
 	    dashElem.style.display = null;
+	    var dashEditElem = document.getElementById('dashlinkedit');
+	    if (dashEditElem) {
+		var fname = Sliobj.params.fileName;
+		if (!fname) {
+		    var match = location.pathname.match(/\/(\w+)\/index.html$/);
+		    if (match)
+			fname = match[1]+'00';
+		}
+		if (fname)
+		    dashEditElem.href = Sliobj.sitePrefix + '/_edit/' + fname;
+		else
+		    dashEditElem.style.display = 'none';
+	    }
+	}
     }
     var indexElems = document.getElementsByClassName('slidoc-index-entry');
     for (var j=0; j<indexElems.length; j++) {
@@ -2352,7 +2368,7 @@ function selectUserCallback(auth, userId, result, retStatus) {
 	var username = ncomps[0].trim();
 	if (ncomps.length > 1)
 	    username += '-'+ncomps[1].trim();
-	username = username.replace(/ /g,'-').toLowerCase();
+	username = username.replace(/ /g,'-').replace(/\./g,'').toLowerCase();
 	document.title = (username || userId)+'-'+Sliobj.sessionName;
     } else {
 	if (infoElem)

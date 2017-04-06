@@ -43,14 +43,6 @@ except ImportError:
 import md2md
 
 
-def usub(s):
-    # Replace curly quotes with straight quotes (Unicode)
-    s = s.replace(u'\u2018', u"'").replace(u'\u2019', u"'")
-    s = s.replace(u'\u201c', u'"').replace(u'\u201d', u'"')
-    # Restore angular brackets
-    s = s.replace(u'&lt;', u'<').replace(u'&gt;', u'>')
-    return s
-
 class PPTXParser(object):
     defaults_re = re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*$')
     choice_re   = re.compile(r'^([A-P]\.\.)', re.IGNORECASE)
@@ -159,7 +151,7 @@ class PPTXParser(object):
                                     para_text += ' '
                             para_text += run_text
 
-                        para_text = usub(para_text)
+                        para_text = md2md.restore_angular(md2md.asciify(para_text))
 
                         if self.choice_re.match(para_text):
                             # Choice option

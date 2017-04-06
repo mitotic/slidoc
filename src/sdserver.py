@@ -375,6 +375,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     def write_error(self, status_code, **kwargs):
         err_cls, err, traceback = kwargs['exc_info']
         if getattr(err, 'log_message', None) and err.log_message.startswith('CUSTOM:'):
+            print >> sys.stderr, err.log_message
             customMsg = err.log_message[len('CUSTOM:'):]
             if customMsg.startswith('<'):
                 self.write('<html><body><h3>%s</h3></body></html>' % customMsg)
@@ -596,8 +597,8 @@ class ActionHandler(BaseHandler):
             token = sliauth.gen_hmac_token(Options['auth_key'], 'upload:'+sliauth.digest_hex(self.request.body))
             if self.get_argument('token') != token:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid remote upload token')
-            sessionName, fext = os.path.splitext(subsubpath)
-            uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+            fname, fext = os.path.splitext(subsubpath)
+            uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(fname)
             errMsg = ''
             if fext == '.zip':
                 fname1, fbody1, fname2, fbody2 = '', '', subsubpath, self.request.body
@@ -1095,12 +1096,14 @@ class ActionHandler(BaseHandler):
         if fext and fext != '.md':
             tornado.web.HTTPError(404, log_message='CUSTOM:Invalid session name (must end in .md): '+sessionName)
 
-        uploadType, sessionNumber = getSessionType(sessionName)
+        uploadType, sessionNumber = getSessionType(fname)
         if uploadType == TOP_LEVEL:
-            return uploadType, sessionNumber, src_dir+'/'+sessionName+'.md', web_dir+'/'+sessionName+'.html', web_dir+'/'+sessionName+'_images'
+            return uploadType, sessionNumber, src_dir+'/'+fname+'.md', web_dir+'/'+fname+'.html', web_dir+'/'+fname+'_images'
+        if not sessionNumber:
+            fname = 'index'
 
-        web_prefix = web_dir+privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName
-        return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+sessionName+'.md', web_prefix+'.html', web_prefix+'_images'
+        web_prefix = web_dir+privatePrefix(uploadType)+'/'+uploadType+'/'+fname
+        return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+fname+'.md', web_prefix+'.html', web_prefix+'_images'
 
 
     def postAction(self, subpath):
@@ -1320,7 +1323,8 @@ class ActionHandler(BaseHandler):
 
     def get_md_list(self, uploadType, newSession=''):
         md_list = glob.glob(self.site_src_dir+'/*.md') if uploadType == TOP_LEVEL else glob.glob(self.site_src_dir+'/'+uploadType+'/'+uploadType+'[0-9][0-9].md')
-        if newSession:
+
+        if newSession and (uploadType == TOP_LEVEL or newSession != 'index'):
             newPath = self.site_src_dir+'/'+newSession+'.md' if uploadType == TOP_LEVEL else self.site_src_dir+'/'+uploadType+'/'+newSession+'.md'
             if newPath not in md_list:
                 md_list.append(newPath)
@@ -1455,9 +1459,9 @@ class ActionHandler(BaseHandler):
                 sdproxy.savePreview()
 
             self.previewState['md'] = fbody1
-            self.previewState['md_defaults'] = retval['md_params']['md_defaults']
-            self.previewState['md_slides'] = retval['md_params']['md_slides']
-            self.previewState['new_image_number'] = retval['md_params']['new_image_number']
+            self.previewState['md_defaults'] = retval['md_params'].get('md_defaults', '')
+            self.previewState['md_slides'] = retval['md_params'].get('md_slides', [])
+            self.previewState['new_image_number'] = retval['md_params'].get('new_image_number', 0)
             self.previewState['HTML'] = retval['out_html']
             self.previewState['TOC'] = retval['toc_html']
             self.previewState['messages'] = retval['messages']
@@ -1503,6 +1507,14 @@ class ActionHandler(BaseHandler):
         filePaths = self.get_md_list(uploadType, newSession=sessionName)
         if not filePaths:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Empty session folder '+uploadType)
+
+        if uploadType != TOP_LEVEL:
+            if sessionName == 'index':
+                configOpts['toc_header'] = io.BytesIO(contentText)
+            else:
+                ind_path = os.path.join(os.path.dirname(filePaths[0]), 'index.md')
+                if os.path.exists(ind_path):
+                    configOpts['toc_header'] = ind_path
 
         fileNames = [os.path.basename(fpath) for fpath in filePaths]
 
@@ -1574,7 +1586,10 @@ class ActionHandler(BaseHandler):
         mime_type = ''
         if not filepath or filepath == 'index.html':
             mime_type = 'text/html'
-            content = self.previewState['HTML']
+            if sessionName == 'index' and uploadType != TOP_LEVEL:
+                content = self.previewState['TOC']
+            else:
+                content = self.previewState['HTML']
         elif filepath == '_messages':
             mime_type = 'text/plain'
             content = '\n'.join(self.previewState['messages'])
@@ -1639,6 +1654,7 @@ class ActionHandler(BaseHandler):
 
     def acceptPreview(self, rollover=False):
         sessionName = self.previewState['name']
+        uploadType = self.previewState['type']
 
         try:
             if not os.path.exists(self.previewState['src_dir']):
@@ -1654,11 +1670,13 @@ class ActionHandler(BaseHandler):
             if not os.path.exists(self.previewState['web_dir']):
                 os.makedirs(self.previewState['web_dir'])
 
-            with open(self.previewState['web_dir']+'/'+sessionName+'.html', 'w') as f:
-                f.write(self.previewState['HTML'])
+            if sessionName != 'index' or uploadType == TOP_LEVEL:
+                with open(self.previewState['web_dir']+'/'+sessionName+'.html', 'w') as f:
+                    f.write(self.previewState['HTML'])
 
-            with open(self.previewState['web_dir']+'/index.html', 'w') as f:
-                f.write(self.previewState['TOC'])
+            if sessionName != 'index' or uploadType != TOP_LEVEL:
+                with open(self.previewState['web_dir']+'/index.html', 'w') as f:
+                    f.write(self.previewState['TOC'])
 
             if self.previewState['image_zipfile']:
                 self.extractFolder(self.previewState['image_zipfile'], self.previewState['web_dir'], folder=self.previewState['image_dir'])
@@ -1667,7 +1685,6 @@ class ActionHandler(BaseHandler):
             self.previewClear(revert=True)   # Revert to start of preview
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving session %s: %s' % (sessionName, excp))
 
-        uploadType = self.previewState['type']
         redirectURL = ''
         if Options['site_name']:
             redirectURL += '/' + Options['site_name']
@@ -1754,16 +1771,19 @@ class ActionHandler(BaseHandler):
         if self.previewState:
             sessionName = self.previewState['name']
             sessionText = self.previewState['md']
+            uploadType = self.previewState['type']
+            if uploadType != TOP_LEVEL and sessionName == 'index':
+                sessionName = SESSION_NAME_FMT % (uploadType, 0)
         elif not sessionName:
             sessionName = self.get_argument('sessionname')
+
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
 
         slideNumber = self.get_argument('slide', '')
         if slideNumber.isdigit():
             slideNumber = int(slideNumber)
         else:
             slideNumber = None
-
-        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
 
         if slideNumber:
             if self.previewState:
@@ -1809,6 +1829,9 @@ class ActionHandler(BaseHandler):
 
         prevPreviewState = self.previewState.copy() 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+        if uploadType != TOP_LEVEL and not sessionNumber:
+            sessionName = 'index'
+
         slide_images_zip = None
         image_zipdata = ''
         if slideNumber:
@@ -2742,7 +2765,6 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             # Paths containing '/'+PRIVATE_PATH are always protected
             if not userId:
                 return None
-            accessErr = ''
             if sessionName and sessionName != 'index':
                 # Session access checks
                 gradeDate = None
@@ -2752,41 +2774,41 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True)
                     if not indexSheet:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:No index sheet for paced session '+sessionName)
-                    sessionEntries = sdproxy.lookupValues(sessionName, ['gradeDate', 'releaseDate'], sdproxy.INDEX_SHEET)
-                    gradeDate = sessionEntries['gradeDate']
-                    releaseDate = sessionEntries['releaseDate']
+                    try:
+                        sessionEntries = sdproxy.lookupValues(sessionName, ['gradeDate', 'releaseDate'], sdproxy.INDEX_SHEET)
+                        gradeDate = sessionEntries['gradeDate']
+                        releaseDate = sessionEntries['releaseDate']
+                    except Exception, excp:
+                        print >> sys.stderr, "AuthStaticFileHandler.get_current_user", str(excp)
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
                 if Options['start_date']:
                     startDate = sliauth.epoch_ms(Options['start_date'])
                     if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < startDate:
-                        accessErr = 'release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName)
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName) )
                     elif gradeDate and sliauth.epoch_ms(gradeDate) < startDate:
-                        accessErr = 'grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName)
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName) )
 
-                if not accessErr and siteRole != sdproxy.ADMIN_ROLE:
+                if siteRole != sdproxy.ADMIN_ROLE:
                     # Non-admin access
                     # (Admin has access regardless of release date, allowing delayed release of live lectures and exams)
                     if isinstance(releaseDate, datetime.datetime):
                         # Check release date for session
                         if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
-                            accessErr = 'Session %s not yet available' % sessionName
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s not yet available' % sessionName)
                     elif releaseDate:
                         # Future release date
-                        accessErr = 'Session %s unavailable' % sessionName
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
                     offlineCheck = Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE)
-                    if not accessErr and offlineCheck:
+                    if offlineCheck:
                         # Failsafe check to prevent premature release of offline exams etc.
                         if gradeDate or (Options['start_date'] and releaseDate):
                             pass
                         else:
                             # Valid gradeDate or (start_date & release_date) must be specified to access offline session
-                            accessErr = 'Session '+sessionName+' not yet released'
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Session '+sessionName+' not yet released')
                             
-            if accessErr:
-                print >> sys.stderr, "AuthStaticFileHandler.get_current_user", accessErr
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:'+accessErr)
-
             # Check if pre-authorized for site access
             if Options['site_name']:
                 # Check if site is explicitly authorized (user has global admin/grader role, or has explicit site listed, including guest users)

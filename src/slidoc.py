@@ -2418,7 +2418,7 @@ def strip_name(filepath, split_char=''):
     return name.split(split_char)[-1] if split_char else name
 
 def preprocess(source, hrule_setext=False):
-    source = mistune.preprocessing(source)
+    source = mistune.preprocessing(md2md.asciify(source))
     if not hrule_setext:
         # Insert a blank line between hrule and any immediately preceding non-blank line (to avoid it being treated as a Markdown Setext-style header)
         source = HRULE_BREAK_RE.sub(r'\1\n\2', source)
@@ -2595,7 +2595,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
-    topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">dashboard</a></li>' % site_prefix
+    topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html
@@ -2630,6 +2630,8 @@ def message(*args):
 def process_input(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
                   return_html=False, return_messages=False,http_post_func=None):
     global Global, message
+    input_paths = md2md.stringify(*input_paths) # unicode -> str
+
     Global = GlobalState(http_post_func=http_post_func)
     if return_html:
         return_messages = True
@@ -3342,8 +3344,12 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                           'top_nav_hide': ' slidoc-topnav-hide' if topnav_list else ''}
         toc_mid_params.update(SYMS)
         if config.toc_header:
-            header_insert = md2md.read_file(config.toc_header)
-            if config.toc_header.endswith('.md'):
+            if isinstance(config.toc_header, io.BytesIO):
+                header_insert = config.toc_header.getvalue()
+            else:
+                header_insert = md2md.read_file(config.toc_header)
+
+            if not isinstance(config.toc_header, (str, unicode)) or config.toc_header.endswith('.md'):
                 header_insert = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(header_insert)
         else:
             header_insert = ''
@@ -3470,7 +3476,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
                     if return_html:
-                        return {'outpath': outpath, 'out_html':Html_header+sliauth.str_encode(pre_html)+sliauth.str_encode(tail)+Html_footer, 'toc_html':toc_all_html, 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
+                        return {'outpath': outpath, 'out_html':md2md.str_join(Html_header, pre_html, tail, Html_footer), 'toc_html':md2md.stringify(toc_all_html), 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
                     else:
                         write_doc(outpath, pre_html, tail)
             if return_html:
