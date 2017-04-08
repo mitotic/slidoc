@@ -1,56 +1,38 @@
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html>
 <head>
-
 <!-- dashboard template for slidoc server --->
-<!-- dash parameters: site_name, site_label, session_name, version, suspended, interactive -->
+<!-- dashboard parameters: site_name, version, interactive -->
 
 {% include "base.html" %}
+
+<style>
+.clickable { padding: 0.2em 0 0 1em; }
+</style>
 
 </head>
 <body>
 
-  <h2>{{site_label}} Dashboard </h2>
-  <h3>(Slidoc version {{version}})</h3>
-
-  <b><a href="/{{site_name}}">Home</a></b>
+  <h2><a href="/{{ site_name }}">{{ site_name or 'Home' }}</a> Dashboard</h2>
+  <b>(Slidoc version {{version}})</b>
   <p></p>
-  <h3><span id="slidoc-action-status"></span></h3>
 
-  <ul>
-    <li><a href="javascript:slidocAction('sessions')">sessions</a>: Session info and actions</li>
-    <hr>
-    <li><a href="javascript:slidocAction('roster')">roster</a>: List roster of students</li>
-    <hr>
-    <li><a href="javascript:slidocAction('twitter')">twitter</a>: View twitter stream status</li>
-    <hr>
-    <li><a href="javascript:slidocAction('upload')">upload</a>: Upload Markdown/Powerpoint/Zip file</li>
-    <hr>
-    <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
-    {% if not site_name %}
-    <hr>
-    <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
-    {% end %}
-  </ul>
-  Suspend status: <b>{{suspended}}</b><br>
+  <b><a href="{{ site_prefix }}/_actions">Actions</a></b>
+  <p></p>
+
+  <b><a href="{{ site_prefix }}/_sessions">Sessions</a></b>
+  <p></p>
+
   Current interactive session: <a href="/_manage/{{interactive}}">{{interactive}}</a><br>
   <p></p>
 
-  <a href="#" onclick="document.getElementById('slidoc-dash-advanced').style.display=null;this.style.display='none'">Show advanced options</a>
-  <ul id="slidoc-dash-advanced" style="display: none;">
-    <li><a href="javascript:slidocAction('cache')">proxy status</a>: Status of proxy cache and active connections</li>
-    <hr>
-    <li><a href="javascript:slidocConfirmAction('freeze')">freeze</a>: Freeze all cached sessions (clear to cancel freeze)</li>
-    <li><a href="javascript:slidocConfirmAction('clear')">clear</a>: Clear all cached sessions</li>
-    <hr>
-    <li><a href="javascript:slidocSheetAction('edit')">edit</a>: Edit markdown</li>
-    <li><a href="javascript:slidocSheetAction('rebuild')">rebuild</a>: Rebuild sessions (e.g., all, resource, lecture01, ...)</li>
-    <li><a href="javascript:slidocSheetAction('reindex')">reindex</a>: Re-index sessions (e.g., all, resource, lecture01, ...)</li>
-    <hr>
-    <li><a href="javascript:slidocSheetAction('sheet')">sheet</a>: Display sheet</li>
-    <li><a href="javascript:slidocSheetAction('getrow')">getrow</a>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
-    <li><a href="javascript:slidocSheetAction('getcol')">getcol</a>: Get columns from sheet</li>
-  </ul>
+  Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
+  <a class="clickable" href="{{ site_prefix }}/_sheet/roster_slidoc" >&#9783;</a>
+  <p></p>
+
+  Gradebook:
+  <a class="clickable" href="{{ site_prefix }}/_sheet/scores_slidoc" >&#9783;</a>
+  <p></p>
 
 </body>
 </html>

@@ -1,0 +1,118 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- sessions template for slidoc server --->
+<!-- sessions parameters: site_name, session_props, message -->
+
+{% include "base.html" %}
+
+<style>
+.clickable { padding: 0.2em 0 0 1em; }
+</style>
+
+<script>
+function togglebelow(elem, open) {
+   var belowElem = elem.parentNode.parentNode.nextElementSibling;
+   console.log('togglebelow', open, elem, belowElem);
+ if (open) {
+ elem.style.display = 'none';
+ elem.nextElementSibling.style.display = null;
+if (belowElem)
+belowElem.style.display = null;
+} else {
+ elem.style.display = 'none';
+ elem.previousElementSibling.style.display = null;
+if (belowElem)
+belowElem.style.display = 'none';
+}
+}
+function action(actionName, sessionName, sessionPrefix, checkboxId) {
+var msg = 'Confirm '+actionName+' '+(sessionPrefix||'')+(sessionName||'');
+if (!window.confirm(msg+'?'))
+return;
+var url = '{{ site_prefix }}'+'/_'+actionName;
+if (sessionName)
+  url += '/' + sessionName;
+if (checkboxId) {
+  var checkElem = document.getElementById(checkboxId);
+  if (checkElem && checkElem.checked)
+    url += '?'+checkboxId+'=1';
+}
+window.location = url;
+}
+</script>
+
+</head>
+<body>
+
+  <h2>{{site_name}} Sessions </h2>
+
+  <b>
+  {% include "linkback.html" %}
+  </b>
+  <p></p>
+
+  Status: <tt>{{ message }}</tt>
+  <p></p>
+
+  <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Upload
+  <p></p>
+  <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Rebuild All
+  <p></p>
+  <label for="rebuildforce">Force re-builds</label>
+  <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
+  <p></p>
+  <ul>
+    {% for dirname, private, sessions, dates, logs in session_props %}
+    <li>
+      <div>
+        <div>
+          <span class="clickable" onclick="togglebelow(this,true);" style="{% if sessions is None %}visibility: hidden;{% end %}">&#x27A4;</span>
+          <span class="clickable smaller" onclick="togglebelow(this,false);" style="display: none; {% if sessions is None %}visibility: hidden;{% end %}">&#9660;</span>
+	  <a class="clickable" href="{{ site_prefix }}{% if private %}/_private{% end %}/{{ dirname }}{% if sessions is not None %}/index{% end %}.html">{{ dirname }}</a>
+	  <a class="clickable" href="{{ site_prefix }}/_edit/{{ dirname }}{% if sessions is not None %}00{% end %}" >&#9998;</a>
+	  <a class="clickable" href="{{ site_prefix }}/_upload/{{ dirname }}{% if sessions is not None %}00{% end %}">&#x21EA;</a>
+	  {% if sessions is not None %}
+	  <a class="clickable" href="{{ site_prefix }}/_rebuild/{{ dirname }}00">&#x21BA;</a>
+          {% end %}
+	  <span class="clickable" onclick="action('delete','{{ dirname }}{% if sessions is not None %}00{% end %}','folder ');" >&#x1F5D1;</span>
+        </div>
+	{% if logs %}
+        <ul class="amber"><li>
+	  <span class="clickable" onclick="togglebelow(this,true)">&#9776;</span>
+	  <span class="clickable" onclick="togglebelow(this,false)" style="display: none; background: #eee;">&#9776;</span>
+        </li></ul>
+        <pre style="display: none;">{{ logs }}</pre>
+        {% end %}
+      </div>
+      {% if sessions %}
+      <table style="display: none;">
+        {% for session in sessions %}
+	<tr>
+          <td>
+	    <a class="clickable" href="{{ site_prefix }}{% if private %}/_private{% end %}/{{ dirname }}/{{ session }}.html">{{ session }}</a>
+	    <a class="clickable" href="{{ site_prefix }}/_sheet/{{ session }}" >&#9783;</a>
+	    <a class="clickable" href="{{ site_prefix }}/_manage/{{ session }}" >&#9881;</a>
+	    <a class="clickable" href="{{ site_prefix }}/_edit/{{ session }}">&#9998;</a>
+	    <a class="clickable" href="{{ site_prefix }}/_upload/{{ session }}">&#x21EA;</a>
+  	    <span class="clickable" onclick="action('delete','{{ session }}');" >&#x1F5D1;</span>  
+          </td>
+          <td>
+          {% if dates[1] %}due: {{ dates[1] }}{% end %}
+          </td>
+          <td>
+          {% if dates[2] %}graded: {{ dates[2] }}{% end %}
+          </td>
+        </tr>
+        {% end %}
+        {% set last =''.join(x for x in sessions[-1] if x.isdigit()) %}
+        {% set next = '%s%02d' % (sessions[-1][:-len(last)], int(last or '0')+1) %}
+        <tr><td> &nbsp;<a class="clickable larger" href="{{ site_prefix }}/_upload/{{ next }}"><b>+</b></a></td></tr>
+      </table>
+      {% end %}
+    </li>
+    {% end %}
+  </ul>
+
+</body>
+</html>

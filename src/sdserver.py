@@ -47,6 +47,7 @@ import math
 import random
 import os.path
 import re
+import shutil
 import socket
 import sys
 import time
@@ -361,6 +362,7 @@ class UserIdMixin(object):
 class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     site_src_dir = None
     site_web_dir = None
+    site_uploads_dir = None
     def set_default_headers(self):
         # Completely disable cache
         self.set_header('Server', SERVER_NAME)
@@ -490,7 +492,7 @@ class SiteActionHandler(BaseHandler):
 class ActionHandler(BaseHandler):
     previewState = {}
     mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
-    cmd_opts =   { 'base': dict(make=True, debug=True),
+    cmd_opts =   { 'base': dict(debug=True),
                    'other': dict(),
                   }
     default_opts = { 'base':  dict(),
@@ -501,7 +503,7 @@ class ActionHandler(BaseHandler):
     def previewActive(self):
         return self.previewState.get('name', '')
 
-    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', image_dir=''):
+    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', image_dir='', no_make=False):
         # Return (cmd_args, default_args) 
         defaultOpts = self.default_opts['base'].copy()
         if uploadType in self.default_opts:
@@ -514,6 +516,9 @@ class ActionHandler(BaseHandler):
 
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
         configOpts.update(self.cmd_opts['base'])
+
+        if not no_make:
+            configOpts['make'] = True
 
         if uploadType in self.cmd_opts:
             configOpts.update(self.cmd_opts[uploadType])
@@ -665,41 +670,69 @@ class ActionHandler(BaseHandler):
             self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
-        if action not in ('_dash', '_sessions', '_roster', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
+        if action not in ('_dash', '_actions', '_sessions', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
 
         if action == '_dash':
-            self.render('dashboard.html', site_name=Options['site_name'], site_label=site_label, session_name='', version=sdproxy.VERSION, suspended=sdproxy.Global.suspended, interactive=WSHandler.getInteractiveSession())
+            self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
+                        version=sdproxy.VERSION, interactive=WSHandler.getInteractiveSession())
+
+        elif action == '_actions':
+            self.render('actions.html', site_name=Options['site_name'], session_name='', suspended=sdproxy.Global.suspended)
 
         elif action == '_sessions':
-            colNames = ['dueDate', 'gradeDate']
-            sessionParamList = sdproxy.lookupSessions(colNames)
-            self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
-            self.write('<h3>Sessions</h3><p></p>\n')
-            self.write('<table><tr>\n')
-            self.write('<th>Manage</th>\n')
-            self.write('<th>Edit</th>\n')
-            self.write('<th>Session</th>\n')
-            for colName in colNames:
-                self.write('<th>%s</th>' % colName)
-            self.write('</tr>\n')
-            for sessionId, sessionParams in sessionParamList:
-                self.write('<td><a href="%s/_manage/%s" style="text-decoration: none;">&#9881;</a></td>' % (site_prefix, sessionId))
-                self.write('<td><a href="%s/_edit/%s" style="text-decoration: none;">&#9998;</a></td>' % (site_prefix, sessionId))
-                self.write('<td><a href="%s/_sheet/%s">%s</a></td>' % (site_prefix, sessionId, sessionId))
-                for value in sessionParams:
-                    self.write('<td>%s</td>' % value)
-                self.write('</tr>\n')
-            self.write('</table>\n')
+            self.displaySessions()
+
+        elif action == '_browse':
+            if '..' in subsubpath:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
+            if not subsubpath:
+                file_list = [ ['source', 'source', False, False],
+                              ['web', 'web', False, False],
+                              ['uploads', 'uploads', False, False] ]
+                up_path = ''
+            else:
+                predir, _, dirpath = subsubpath.partition('/')
+                if predir == 'source':
+                    rootdir = self.site_src_dir
+                elif predir == 'web':
+                    rootdir = self.site_web_dir
+                elif predir == 'uploads':
+                    rootdir = self.site_uploads_dir
+                else:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
+
+                up_path = os.path.dirname(subsubpath)
+                fullpath = os.path.join(rootdir, dirpath)
+                if not os.path.exists(fullpath):
+                    self.displayMessage('Path %s does not exist!' % subsubpath)
+                    return
+                if not os.path.isdir(fullpath):
+                    self.displayMessage('Path %s not a directory!' % subsubpath)
+                    return
+
+                file_list = []
+                for fname in os.listdir(fullpath):
+                    fpath = os.path.join(fullpath, fname)
+                    fext = os.path.splitext(fname)[1]
+                    subpath = os.path.join(subsubpath, fname)
+                    isfile = os.path.isfile(fpath)
+                    if predir in ('web', 'uploads') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
+                        _, _, viewpath = subpath.partition('/')
+                    else:
+                        viewpath = ''
+                    file_list.append( [fname, subpath, isfile, viewpath] )
+
+            self.render('browse.html', site_name=Options['site_name'], up_path=up_path, browse_path=subsubpath, file_list=file_list)
 
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
             if not nameMap:
                 lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
-                self.render('roster.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
-                             session_name='', lastname_col=lastname_col, firstname_col=firstname_col, midname_col=midname_col,
+                self.render('newroster.html', site_name=Options['site_name'],
+                             lastname_col=lastname_col, firstname_col=firstname_col, midname_col=midname_col,
                              id_col=id_col, email_col=email_col, altid_col=altid_col)
             else:
                 for idVal, name in nameMap.items():
@@ -707,24 +740,15 @@ class ActionHandler(BaseHandler):
                         del nameMap[idVal]
                 lastMap = sdproxy.makeShortNames(nameMap)
                 firstMap = sdproxy.makeShortNames(nameMap, first=True)
-                self.write('<a href="%s">Dashboard</a><p></p>' % dash_url)
-
                 firstNames = firstMap.values()
                 firstNames.sort()
+
                 qwheel_link = 'http://code.mitotic.org/wheel/?session=' + urllib.quote_plus(Options['site_name'])
                 qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x) for x in firstNames)
 
-                self.write('<a href="%s" target="_blank"><b>New question wheel session</b></a><p></p>' % qwheel_new)
-                self.write('<a href="%s" target="_blank"><b>Question wheel session</b></a><p></p>' % qwheel_link)
-                self.write('Roster: \n')
-                for nMap in [nameMap, lastMap, firstMap]:
-                    vals = nMap.values()
-                    vals.sort()
-                    lines = ['<hr><table>\n']
-                    for val in vals:
-                        lines.append('<tr><td>%s</td></tr>\n' % val)
-                    lines += ['</table>\n']
-                    self.write(''.join(lines))
+                self.render('roster.html', site_name=Options['site_name'],
+                             qwheel_link=qwheel_link, qwheel_new=qwheel_new,
+                             name_map=nameMap, last_map=lastMap, first_map=firstMap)
 
         elif action == '_cache':
             self.write('<h2>Proxy cache and connection status</h2>')
@@ -783,7 +807,7 @@ class ActionHandler(BaseHandler):
             if not sheet:
                 self.displayMessage('No such session: '+sessionName)
                 return
-            self.render('manage.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName)
+            self.render('manage.html', site_name=Options['site_name'], session_name=sessionName)
 
         elif action == '_download':
             if not Options['source_dir']:
@@ -871,72 +895,50 @@ class ActionHandler(BaseHandler):
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to reindex/rebuild')
 
+            rebuildForce = bool(self.get_argument('rebuildforce',''))
+
             if subsubpath == 'all':
                 uploadType = ''
             else:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
 
-            indexOnly = (action == '_reindex')
-            errMsgs = self.rebuild(uploadType, indexOnly=indexOnly)
-
-            if not uploadType and not indexOnly:
+            if action == '_rebuild':
+                buildMsgs = self.rebuild(uploadType, force=rebuildForce, log_dict=True)
                 # Re-index after complete rebuild
-                errMsgs += self.rebuild(uploadType, indexOnly=True)
+                indMsgs = self.rebuild(uploadType, indexOnly=True)
+            else:
+                buildMsgs = {}
+                indMsgs = self.rebuild(uploadType, indexOnly=True)
 
-            if errMsgs and any(errMsgs):
-                self.displayMessage(['Error in %s:' % action] + errMsgs)
+            if action == '_rebuild' and (1 or any(buildMsgs.values()) or any(indMsgs)):
+                self.displaySessions(buildMsgs, indMsgs, msg='Completed rebuild')
+            elif action == '_reindex' and indMsgs and any(indMsgs):
+                self.displayMessage(['Error in %s:' % action] + indMsgs)
             else:
                 self.redirect("/"+Options['site_name']+"/index.html" if Options['site_number'] else "/index.html")
 
         elif action == '_delete':
-            sessionName = subsubpath
-            user = sdproxy.ADMINUSER_ID
-            userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
-            args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
-            retObj = sdproxy.sheetAction(args)
-            if retObj['result'] != 'success':
-                self.displayMessage('Error in deleting sheet '+sessionName+': '+retObj.get('error',''))
-                return
-
-            if Options['source_dir']:
-                uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
-
-                if sessionName != 'index':
-                    if os.path.exists(src_path):
-                        os.remove(src_path)
-
-                    if os.path.exists(web_path):
-                        os.remove(web_path)
-
-                    if os.path.isdir(web_images):
-                        shutil.rmtree(web_images)
-
-                filePaths = self.get_md_list(uploadType)
-                if filePaths:
-                    # Rebuild session index
-                    errMsgs = self.rebuild(uploadType, indexOnly=True)
-                else:
-                    # No more sessions of this type; remove session index
-                    ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
-                    if os.path.exists(ind_path):
-                        os.remove(ind_path)
-                    errMsgs = self.rebuild(indexOnly=True)
-
-                if errMsgs and any(errMsgs):
-                    msgs = ['Error in deleting session '+sessionName] + [''] + errMsgs
-                    self.displayMessage(msgs)
-                    return
-
-            self.displayMessage('Completed '+action+' for session '+sessionName)
+            errMsgs = self.deleteSession(subsubpath)
+            if errMsgs and any(errMsgs):
+                self.displayMessage(errMsgs)
+            else:
+                self.displayMessage('Deleted session '+sessionName)
 
         elif action == '_import':
-            self.render('import.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, import_params=updateImportParams(Options['import_params']) if Options['import_params'] else {}, submit_date=sliauth.iso_date())
+            self.render('import.html', site_name=Options['site_name'], session_name=sessionName, import_params=updateImportParams(Options['import_params']) if Options['import_params'] else {}, submit_date=sliauth.iso_date())
 
         elif action == '_upload':
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-            self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
-                        session_name='',  session_types=SESSION_TYPES, err_msg='')
+            smatch = SESSION_NAME_RE.match(sessionName)
+            if smatch:
+                upload_type = smatch.group(1)
+                session_number = smatch.group(2)
+            else:
+                upload_type = TOP_LEVEL if sessionName else ''
+                session_number = ''
+            self.render('upload.html', site_name=Options['site_name'],
+                        upload_type=upload_type, session_number=session_number, session_types=SESSION_TYPES, err_msg='')
 
         elif action == '_prefill':
             if sdproxy.getRowMap(sessionName, 'Timestamp', regular=True):
@@ -1067,13 +1069,68 @@ class ActionHandler(BaseHandler):
                 lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
 
             lines.append('</ul>\n')
-            self.render('submissions.html', site_label=site_label, submissions_label='Late submission',
+            self.render('submissions.html', site_name=site_name, submissions_label='Late submission',
                          submissions_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
 
         elif action == '_submit':
-            self.render('submit.html', site_label=site_label, session=sessionName)
+            self.render('submit.html', site_name=site_name, session_name=sessionName)
         else:
             self.displayMessage('Invalid get action: '+action)
+
+    def deleteSession(self, sessionName):
+        user = sdproxy.ADMINUSER_ID
+        userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
+        args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
+        retObj = sdproxy.sheetAction(args)
+        if retObj['result'] != 'success':
+            return ['Error in deleting sheet '+sessionName+': '+retObj.get('error','')]
+
+        if Options['source_dir']:
+            uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+
+            if sessionName != 'index':
+                if os.path.exists(src_path):
+                    os.remove(src_path)
+
+                if os.path.exists(web_path):
+                    os.remove(web_path)
+
+                if os.path.isdir(web_images):
+                    shutil.rmtree(web_images)
+
+            filePaths = self.get_md_list(uploadType)
+            if filePaths:
+                # Rebuild session index
+                errMsgs = self.rebuild(uploadType, indexOnly=True)
+            else:
+                # No more sessions of this type; remove session index
+                ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
+                if os.path.exists(ind_path):
+                    os.remove(ind_path)
+                errMsgs = self.rebuild(indexOnly=True)
+
+            if errMsgs and any(errMsgs):
+                msgs = ['Re-indexing after deleting session '+sessionName+':'] + [''] + errMsgs
+                return msgs
+
+            return []
+
+
+    def displaySessions(self, buildMsgs={}, indMsgs=[], msg=''):
+        colNames = ['releaseDate', 'dueDate', 'gradeDate']
+        sessionParamDict = dict(sdproxy.lookupSessions(colNames))
+        session_props = []
+        for sessionType in self.get_session_names(top=True):
+            session_props.append( [sessionType, 0, None, [], '\n'.join(buildMsgs.get(TOP_LEVEL, [])+indMsgs) if sessionType == 'index' else ''] )
+        for sessionType in self.get_session_names():
+            fnames = [os.path.splitext(os.path.basename(x))[0] for x in self.get_md_list(sessionType)]
+            session_props.append( [sessionType,
+                                    1 if privatePrefix(sessionType) else 0,
+                                    fnames,
+                                    sessionParamDict.get(sessionType, ['','','']),
+                                    '\n'.join(buildMsgs.get(sessionType, []))] )
+        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+        self.render('sessions.html', site_name=Options['site_name'], session_props=session_props, message=msg)
 
     def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:
@@ -1296,7 +1353,7 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in uploading session: '+str(excp))
 
                 if errMsg:
-                    self.render('upload.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='',  session_types=SESSION_TYPES, err_msg=errMsg)
+                    self.render('upload.html', site_name=Options['site_name'], session_types=SESSION_TYPES, err_msg=errMsg)
                 elif uploadType != RAW_UPLOAD:
                     site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
                     self.redirect(site_prefix+'/_preview/index.html')
@@ -1307,7 +1364,7 @@ class ActionHandler(BaseHandler):
     def displayMessage(self, message, back_url=''):
         if isinstance(message, list):
             message = '<pre>\n'+'\n'.join(message)+'\n</pre>\n'
-        self.render('message.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name='', message=message, back_url=back_url)
+        self.render('message.html', site_name=Options['site_name'], message=message, back_url=back_url)
 
     def pptx2md(self, filename, file_content, slides_zip=None, zip_images=False):
         import pptx2md
@@ -1331,10 +1388,17 @@ class ActionHandler(BaseHandler):
         md_list.sort()
         return md_list
 
-    def get_session_folders(self):
+    def get_session_names(self, top=False):
+        if top:
+            tnames = [os.path.splitext(os.path.basename(fpath))[0] for fpath in glob.glob(self.site_src_dir+'/*.md')]
+            if 'index' in tnames:
+                del tnames[tnames.index('index')]
+            tnames.sort()
+            return ['index'] + tnames
+
         fnames = []
         for fname in set(os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_src_dir+'/*/*.md')):
-            if self. get_md_list(fname):
+            if self.get_md_list(fname):
                 fnames.append(fname)
         fnames.sort()
         return fnames
@@ -1489,10 +1553,12 @@ class ActionHandler(BaseHandler):
                 WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
-    def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False, extraOpts={}):
+    def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False,
+                force=False, extraOpts={}):
         # If src_path, compile single .md file, returning output
         # Else, compile all files of that type, updating index etc.
-        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir, image_dir=image_dir)
+        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
+                                                       image_dir=image_dir, no_make=force)
 
         configOpts.update(extraOpts)
 
@@ -1526,13 +1592,13 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile:', uploadType, src_path, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames
+            print >> sys.stderr, 'sdserver.compile:', uploadType, repr(src_path), indexOnly, force, 'OPTS', configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames
 
         return_html = bool(src_path)
 
         try:
             retval = slidoc.process_input(fileHandles, filePaths, configOpts, default_args_dict=defaultOpts, return_html=return_html,
-                                          images_zipdict=images_zipdict, http_post_func=http_sync_post)
+                                          images_zipdict=images_zipdict, http_post_func=http_sync_post, return_messages=True)
         except Exception, excp:
             if Options['debug']:
                 import traceback
@@ -1546,22 +1612,33 @@ class ActionHandler(BaseHandler):
             return retval
         else:
             # Normal return
-            return {'messages': []}
+            return {'messages': retval.get('messages', []) if retval else []}
 
-    def rebuild(self, uploadType='', indexOnly=False):
+    def rebuild(self, uploadType='', indexOnly=False, force=False, log_dict=False):
         if uploadType:
             utypes = [uploadType] if uploadType != TOP_LEVEL else []
         else:
-            utypes = self.get_session_folders()
+            utypes = self.get_session_names()
 
-        msgs = []
+        msg_dict = {}
+        msg_list = []
+        if Options['debug'] :
+            print >> sys.stderr, 'sdserver.rebuild:', utypes
         for utype in utypes:
-            retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly)
-            msgs = retval.get('messages',[]) + ['']
+            retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly, force=force)
+            msgs = retval.get('messages',[])
+            msg_dict[utype] = msgs
+            if msgs:
+                msg_list += msgs + ['']
 
         retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=indexOnly)
-        msgs = retval.get('messages',[]) + ['']
-        return msgs
+        msgs = retval.get('messages',[])
+        msg_dict[TOP_LEVEL] = msgs
+        if msgs:
+            msg_list += msgs
+
+        return msg_dict if log_dict else msg_list
+
 
     def imageUpload(self, sessionName, imageFile, fname, fbody):
         if Options['debug']:
@@ -1819,7 +1896,7 @@ class ActionHandler(BaseHandler):
         else:
             discard_url = ''
 
-        self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName,
+        self.render('edit.html', site_name=Options['site_name'], session_name=sessionName,
                      session_text=sessionText, discard_url=discard_url, err_msg='')
 
     def postEdit(self, sessionName, sessionText, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide='', modify=None):
@@ -1943,7 +2020,7 @@ class ActionHandler(BaseHandler):
                 discard_url = '_preview/index.html'
             else:
                 discard_url = ''
-            self.render('edit.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home', session_name=sessionName, session_text=sessionText, discard_url=discard_url, err_msg=errMsg)
+            self.render('edit.html', site_name=Options['site_name'], session_name=sessionName, session_text=sessionText, discard_url=discard_url, err_msg=errMsg)
             return
 
         self.previewState['modimages'] = modimages
@@ -2081,6 +2158,25 @@ class AuthActionHandler(ActionHandler):
         if self.check_admin_access():
             return self.getAction(subpath)
         raise tornado.web.HTTPError(403)
+
+class UserActionHandler(ActionHandler):
+    @tornado.web.authenticated
+    def get(self, subpath=''):
+        action, sep, subsubpath = subpath.partition('/')
+        if action == '_grades':
+            if self.check_admin_access():
+                if not subsubpath:
+                    self.redirect(('/'+Options['site_name'] if Options['site_name'] else '') + '/_roster')
+                    return
+                userId = subsubpath
+            else:
+                userId = self.get_id_from_cookie()
+            grades = sdproxy.lookupGrades(userId)
+            if not grades:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to access grades for user %s' % userId)
+            self.render('grades.html', site_name=Options['site_name'], user_id=userId, grades=grades)
+
+        raise tornado.web.HTTPError(404)
 
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
@@ -2858,7 +2954,7 @@ class AuthMessageHandler(BaseHandler):
         note = self.get_argument("note", "")
         interactiveSession = WSHandler.getInteractiveSession()
         label = '%s: %s' % (self.get_id_from_cookie(), interactiveSession if interactiveSession else 'No interactive session')
-        self.render("interact.html", note=note, site_label=Options['site_label'], session_label=label)
+        self.render("interact.html", note=note, site_name=Options['site_name'], site_label=Options['site_label'], session_label=label)
 
     @tornado.web.authenticated
     def post(self, subpath=''):
@@ -2890,7 +2986,7 @@ class AuthLoginHandler(BaseHandler):
         if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
-            self.render("login.html", error_msg=error_msg, next=next, site_label=Options['site_label'],
+            self.render("login.html", error_msg=error_msg, next=next, login_label=Options['site_label'],
                         login_url=Global.login_url, password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
 
     def post(self):
@@ -3103,12 +3199,17 @@ def createApplication():
                       (pathPrefix+r"/_websocket/(.*)", WSHandler),
                       (pathPrefix+r"/interact", AuthMessageHandler),
                       (pathPrefix+r"/interact/(.*)", AuthMessageHandler),
-                      (pathPrefix+r"/(_dash)", AuthActionHandler)
+                      (pathPrefix+r"/(_dash)", AuthActionHandler),
+                      (pathPrefix+r"/(_grades)", UserActionHandler),
+                      (pathPrefix+r"/(_grades/[-\w.]+)", UserActionHandler),
                       ]
 
         patterns= [   r"/(_(backup|cache|clear|freeze))",
                       r"/(_accept)",
+                      r"/(_actions)",
                       r"/(_backup/[-\w.]+)",
+                      r"/(_browse)",
+                      r"/(_browse/[-\w./]+)",
                       r"/(_delete/[-\w.]+)",
                       r"/(_discard)",
                       r"/(_download/[-\w.]+)",
@@ -3137,6 +3238,7 @@ def createApplication():
                       r"/(_twitter)",
                       r"/(_unlock/[-\w.]+)",
                       r"/(_upload)",
+                      r"/(_upload/[-\w.]+)",
                       r"/(_lock/[-\w.]+)",
                        ]
         action_handlers = [(pathPrefix+pattern, ActionHandler) for pattern in patterns]
@@ -3146,13 +3248,20 @@ def createApplication():
 
     file_handler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
 
-    for path in [PLUGINDATA_PATH, PRIVATE_PATH, RESTRICTED_PATH]:
-        dir = (Options['plugindata_dir'] if path == PLUGINDATA_PATH else Options['static_dir']) + pathPrefix
-        if dir:
-            site_handlers += [ (r'/(%s/.*)' % path+pathPrefix, file_handler, {"path": dir}) ]
-
     if Options['static_dir']:
-        site_handlers += [ (r'/([^_].*)', file_handler, {"path": Options['static_dir']}) ]
+        sprefix = Options['site_name']+'/' if Options['site_name'] else ''
+        # Handle special paths
+        for path in [PRIVATE_PATH, RESTRICTED_PATH, PLUGINDATA_PATH]:
+            if path == PLUGINDATA_PATH:
+                if not Options['plugindata_dir']:
+                    continue
+                dir = Options['plugindata_dir'] + pathPrefix
+            else:
+                dir = Options['static_dir'] + pathPrefix
+            site_handlers += [ (r'/%s(%s/.*)' % (sprefix, path), file_handler, {"path": dir}) ]
+
+        # Default static path
+        site_handlers += [ (r'/%s([^_].*)' % sprefix, file_handler, {"path": Options['static_dir']+pathPrefix}) ]
 
     if Options['site_list']:
         if not Options['site_number']:
@@ -3784,6 +3893,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
         BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
+        BaseHandler.site_uploads_dir = Options['plugindata_dir'] + '/' + site_name
         setup_site_server(sheetSettings)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops

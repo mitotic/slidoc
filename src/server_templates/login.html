@@ -1,5 +1,21 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+
+<!-- login template for slidoc server --->
+<!-- login parameters: login_label, login_url, password, error_msg, next-->
+
+<style>
+body {
+    font-family: sans-serif;
+}
+</style>
+
+</head>
+<body>
+
 <div id="main-container">
-  <h2><a href="/">{{site_label}}</a></h2>
+  <h2><a href="/">{{ login_label or 'Home' }}</a></h2>
   <div id="main">
     <div id="login-form">
       <form action="{{login_url}}" method="post" id="login_form">
@@ -26,3 +42,6 @@
   <a href="/">Home</a>
   </div>
 </div>
+
+</body>
+</html>

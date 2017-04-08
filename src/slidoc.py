@@ -2442,7 +2442,7 @@ def extract_slides(src_path, web_path):
 
     md_source = preprocess(source).strip()
     if sliauth.digest_hex(md_source) != sessionIndexParams['md_digest']:
-        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-create session HTML file %s' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
+        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-create session HTML file %s by editing all slides and saving' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
     md_slides = []
 
     base = len(sessionIndexParams['md_defaults'])
@@ -2595,6 +2595,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
+    topnav_html += '<li id="gradelink" style="display: none;"><a href="%s_grades" target="_blank">%s</a></li>' % (site_prefix, '&#x1f520;')
     topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
@@ -2628,7 +2629,7 @@ def message(*args):
     print(*args, file=sys.stderr)
 
 def process_input(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
-                  return_html=False, return_messages=False,http_post_func=None):
+                  return_html=False, return_messages=False, http_post_func=None):
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
@@ -2640,6 +2641,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     if return_messages:
         def append_message(*args):
             messages.append(''.join(str(x) for x in args))
+            if config_dict.get('debug'):
+                print(*args, file=sys.stderr)
         message = append_message
 
     if config_dict['indexed']:
@@ -2732,22 +2735,20 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         if not input_files[j]:
             continue
 
-        if not config.make and not start_date:
+        if  start_date:
+            # Only process files with a release date after the minimum required release date
+            tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
+            tem_release_date_str = tem_config.release_date or config.release_date
+            if not tem_release_date_str or sliauth.parse_date(tem_release_date_str) < start_date:
+                continue
+
+        if not config.make:
             fnumbers.append(fnumber)
 
         elif return_html or fname == 'index' or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath)):
             # Process only accessible and modified input files (if updated using web interface, inpath and outpath may have nearly same mod times)
             # (Always process return_html or index.md file)
-            if not start_date:
-                fnumbers.append(fnumber)
-            else:
-                # Only process files with a release date after the minimum required release date
-                tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
-                tem_release_date_str = tem_config.release_date or config.release_date
-                if tem_release_date_str:
-                    tem_release_date = sliauth.parse_date(tem_release_date_str)
-                    if tem_release_date >= start_date:
-                        fnumbers.append(fnumber)
+            fnumbers.append(fnumber)
 
     if not fnumbers:
         message('All output files are newer than corresponding input files')
@@ -3349,10 +3350,13 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         if config.toc_header:
             if isinstance(config.toc_header, io.BytesIO):
                 header_insert = config.toc_header.getvalue()
-            else:
+            elif os.path.exists(config.toc_header):
                 header_insert = md2md.read_file(config.toc_header)
+            else:
+                message('TOC-WARNING: ToC header file %s not found!' % config.toc_header)
+                header_insert = ''
 
-            if not isinstance(config.toc_header, (str, unicode)) or config.toc_header.endswith('.md'):
+            if header_insert and (not isinstance(config.toc_header, (str, unicode)) or config.toc_header.endswith('.md')):
                 header_insert = MarkdownWithMath(renderer=MathRenderer(escape=False)).render(header_insert)
         else:
             header_insert = ''
@@ -3971,7 +3975,7 @@ Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes d
 alt_parser = argparse.ArgumentParser(parents=[Conf_parser], add_help=False)
 alt_parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
 alt_parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
-alt_parser.add_argument('--backup_dir', default='_backup', help='Directory to create backup files for last valid version in when dest_dir is specified')
+alt_parser.add_argument('--backup_dir', default='', help='Directory to create backup files for last valid version in when dest_dir is specified')
 alt_parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 alt_parser.add_argument('--copy_source', help='Create a modified copy (only if dest_dir is specified)', action="store_true", default=None)
 alt_parser.add_argument('--default_args', metavar='ARGS', help="'--arg=val --arg2=val2' default arguments ('file' to read first line of first file)")

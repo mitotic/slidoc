@@ -3,14 +3,15 @@
 <head>
 
 <!-- manage template for slidoc server --->
-<!-- manage parameters: site_name, site_label, session_name -->
+<!-- manage parameters: site_name, session_name -->
 
 {% include "base.html" %}
+{% include "actbase.html" %}
 
 </head>
 <body>
 
-<h2><a href="/">{{site_label}}</a></h2>
+<h2><a href="/{{site_name}}">{{site_name or 'Home'}}</a></h2>
 
 <b>
 {% include "linkback.html" %}
@@ -22,9 +23,6 @@
   <h3><span id="slidoc-action-status"></span></h3>
 
   <ul>
-    <li><a href="javascript:slidocAction('edit')">edit</a>: Edit session Markdown file</li>
-    <li><a href="javascript:slidocAction('download')">download</a>: Download session Markdown file (and images)</li>
-    <hr>
     <li><a href="javascript:slidocAction('respond')">respond</a>: Award participation credit for lectures</li>
     <li><a href="javascript:slidocConfirmAction('submit')">submit</a>: Submit test user responses (used for ending admin-paced sessions)</li>
     <li><a href="javascript:slidocAction('submissions')">submissions</a>: Show session submission stats, allow late submissions etc.</li>
@@ -34,7 +32,9 @@
     <hr>
     <li><a href="javascript:slidocConfirmAction('import')">import</a>: Import responses/grades from spreadsheet.csv (from paper tests)</li>
     <li><a href="javascript:slidocAction('export')">export</a>: Export responses to <em>spreadsheet.csv</em></li>
+    <li><a href="javascript:slidocAction('download')">download</a>: Download session Markdown file (and images)</li>
     <hr>
+    <li><a href="javascript:slidocAction('edit')">edit</a>: Edit session Markdown file</li>
     <li><a href="javascript:slidocConfirmAction('delete')">delete</a>: Delete session (IRREVERSIBLE)</LI>
   </ul>
 

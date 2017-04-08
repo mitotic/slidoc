@@ -1,3 +1,11 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- submissions template for slidoc server --->
+<!-- submissions parameters: site_name-->
+
+{% include "base.html" %}
+
 <script>
 function submit(label, args) {
     var dateElem = document.getElementById("dateinput");
@@ -18,15 +26,20 @@ document.onreadystatechange = function(event) {
         dateElem.value = (new Date()).toISOString().slice(0,11)+'23:59';
 }
 </script>
+
 <style>
 body {
     font-family: sans-serif;
 }
 </style>
+
+</head>
+<body>
+<b>
+{% include "linkback.html" %}
+</b>
+
 <div id="main-container">
-  <h2><a href="/">{{site_label}}</a></h2>
-  <a href="/_dash">Dashboard</a><br>
-  <p></p>
   <div id="main">
     <div id="message-form">
         <fieldset>
@@ -42,3 +55,5 @@ body {
 </div>
 <p></p>
 {% raw submissions_html%}
+</body>
+</html>

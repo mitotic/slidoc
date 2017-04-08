@@ -1,55 +1,34 @@
 <html>
 <head>
 <!-- roster template for slidoc server --->
-<!-- roster parameters: site_name, site_label, session_name, lastname_col, firstname_col, midname_col, id_col, email_col, altid_col -->
+<!-- roster parameters: site_name, qwheel_new, qwheel_link, name_map, last_map, first_map -->
 
 {% include "base.html" %}
 
 </head>
 <body>
 
-<h2>{{site_name}}</h2>
-<h2>Import roster file</h2>
+<h2>{{site_name}} Roster</h2>
 
 <b>
 {% include "linkback.html" %}
 </b>
+<p></p>
 
-<div id="slidoc-roster-form">
-  <form action="/{{site_name}}{% if site_name %}/{% end %}_roster" method="post" enctype="multipart/form-data" >
-    <fieldset>
-      <label for="lastnamecol">Last name column:</label><br>
-      <input type="text" id="lastnamecol" name="lastnamecol"  value="{{lastname_col}}"><br>
-      <label for="firstnamecol">First name column:</label><br>
-      <input type="text" id="firstnamecol" name="firstnamecol"  value="{{firstname_col}}"><br>
-      <label for="midnamecol">Middle names column:</label><br>
-      <input type="text" id="midnamecol" name="midnamecol"  value="{{midname_col}}"><br>
-      <label for="idcol">Id column:</label><br>
-      <input type="text" id="idcol" name="idcol"  value="{{id_col}}"><br>
-      <label for="emailcol">Email column:</label><br>
-      <input type="text" id="emailcol" name="emailcol"  value="{{email_col}}"><br>
-      <label for="altidcol">Alternate ID column:</label><br>
-      <input type="text" id="altidcol" name="altidcol"  value="{{altid_col}}"><br>
-      <p></p>
-      <label for="upload">Roster file (CSV spreadsheet file):</label><br>
-      <input type="file" id="upload" name="upload"  accept=".csv" value="file"><br>
-      The file should contain the column headers
-      <code>id</code>, <code>lastname</code>, and
-      <code>firstname</code>. Additional headers that are
-      recognized are: <code>email, altid, twitter</code>.<br>
+<a href="{{ qwheel_new  }}" target="_blank"><b>New question wheel session</b></a>
+<p></p>
 
-      (If <code>id</code> column is not present but <code>email</code> column is, then the
-      email addresses (with any common domain dropped) are used as unique ids.<br>
-      <p></p>
-      Id's are required to be unique, but names are not required to
-      be unique (unless they are to be used for importing answers etc.)
-    </fieldset>
-    {% module xsrf_form_html() %}
-    <div>
-      <input id="slidoc-roster-submit" type="submit" value="Import">
-    </div>
-  </form>
-</div>
+<a href="{{ qwheel_link }}" target="_blank"><b>Question wheel session</b></a>
+<p></p>
+
+{% for j, nMap in enumerate([name_map, last_map, first_map]) %}
+  {% set items = sorted(nMap.items(), key=lambda x: x[1]) %}
+  <hr><table>
+  {% for userid, name in items %}
+  <tr><td>{{ name }}{% if not j %} <a href="{{ site_prefix }}/_grades/{{ userid }}">&#x1F520;</a>{% end %}</td></tr>
+  {% end %}
+  </table>
+{% end %}
 
 </body>
 </html>

@@ -1,18 +1,25 @@
-<style>
-body {
-    font-family: sans-serif;
-}
-</style>
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- submit template for slidoc server --->
+<!-- submit parameters: site_name, session_name-->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+<b>
+{% include "linkback.html" %}
+</b>
+
 <div id="main-container">
-  <h2><a href="/">{{site_label}}</a></h2>
-  <a href="/_dash">Dashboard</a><br>
-  <p></p>
-  <a href="/_manage/{{session}}">Manage session</a><br>
+  <a href="/_manage/{{session_name}}">Manage session</a><br>
   <p></p>
   <div id="main">
     <div id="message-form">
-      <h2>Submit test user responses for session {{session}}</h2>
-      <form action="/_submit/{{session}}" method="post" id="message_form" enctype="multipart/form-data" >
+      <h2>Submit test user responses for session {{session_name}}</h2>
+      <form action="/_submit/{{session_name}}" method="post" id="message_form" enctype="multipart/form-data" >
 	<fieldset>
 	  <label for="submitdate">Submit date:</label>
           <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="">
@@ -25,3 +32,6 @@ body {
     </div>
   </div>
 </div>
+
+</body>
+</html>

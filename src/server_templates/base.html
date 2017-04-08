@@ -1,6 +1,6 @@
 <!-- base head template for slidoc server -->
 
-<!-- base parameters: site_name, site_label, session_name -->
+<!-- base parameters: site_name -->
 
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta charset="UTF-8">
@@ -9,43 +9,21 @@
 body {
     font-family: sans-serif;
 }
+
+ul {
+  list-style-type: none; 
+  list-style-image: none; 
+}
+
+.clickable { cursor: pointer; color: #2980B9; text-decoration: none}
+
+.clickable:hover {text-decoration: underline;}
+
+.smaller { font-size: 85%; }
+
+.smaller { font-size: 115%; }
+
+.amber span {color: #FFBF00 ;}
 </style>
 
-<script>
-var slidocSiteName = '{{site_name}}'; 
-var slidocSiteLabel = '{{site_label}}'; 
-var slidocSessionName = '{{session_name}}';
-
-function slidocAction(actionName, sessionName) {
-  slidocStatus(actionName);
-
-  var url = '/_' + actionName;
-  if (slidocSiteName)
-    url = '/' + slidocSiteName + url
-  if (sessionName || slidocSessionName)
-    url += '/' + (sessionName || slidocSessionName);
-  window.location = url;
-}
-
-function slidocConfirmAction(actionName) {
-  if (window.confirm('Confirm '+actionName+'?')) {
-    slidocAction(actionName);
-    return;
-  }
-  slidocStatus('');
-}
-
-
-function slidocSheetAction(actionName) {
-  var sessionName = window.prompt('Sheet name:');
-  if (!sessionName)
-    return;
-  slidocAction(actionName, sessionName);
-}
-
-function slidocStatus(label) {
-  var statusElem = document.getElementById('slidoc-action-status');
-  if (statusElem)
-    statusElem.textContent = label ? 'Processing '+label+'...' : '';
-}
-</script>
+{% set site_prefix = '/'+site_name if site_name else '' %}

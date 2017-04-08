@@ -1,14 +1,21 @@
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html>
 <head>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
+
+<!-- interact template for slidoc server --->
+<!-- interact parameters: site_name , site_label, session_label, note-->
+
+{% include "base.html" %}
+
+<style>
     textarea { font-size: 14px; }
-  </style>
+</style>
+
 </head>
 <body>
+
 <div id="main-container">
-  <h2><a href="/">{{site_label}}</a></h2>
+  <h2><a href="/{{site_name}}">{{site_label}}</a></h2>
   <h3>{{session_label}}</h3>
   <div id="main">
     <div id="message-form">
@@ -29,5 +36,6 @@
     </div>
   </div>
 </div>
+
 </body>
 </html>

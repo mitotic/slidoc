@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.3'
+VERSION = '0.97.3b'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -2749,6 +2749,47 @@ def lookupRoster(field, userId=None):
     for j, idVal in enumerate(idVals):
         fieldDict[idVal] = fieldVals[j]
     return fieldDict
+
+AGGREGATE_COL_RE = re.compile(r'\b(_\w+)_(avg|normavg|sum)(_(\d+))?$', re.IGNORECASE)
+def lookupGrades(userId):
+    scoreSheet = getSheet(SCORES_SHEET, optional=True)
+    if not scoreSheet:
+        return None
+
+    colIndex = indexColumns(scoreSheet)
+    rowIndex = indexRows(scoreSheet, colIndex['id'], 2)
+    userRow = lookupRowIndex(userId, scoreSheet)
+    if not userRow:
+        return None
+
+    headers = scoreSheet.getHeaders()
+    nCols = len(headers)
+    userScores = scoreSheet.getSheetValues(userRow, 1, 1, nCols)[0]
+    rescale = scoreSheet.getSheetValues(rowIndex['_rescale'], 1, 1, nCols)[0]
+    average = scoreSheet.getSheetValues(rowIndex['_average'], 1, 1, nCols)[0]
+    maxscore = scoreSheet.getSheetValues(rowIndex['_max_score'], 1, 1, nCols)[0]
+
+    grades = {}
+    sessionGrades = []
+    for j, header in enumerate(headers):
+        if not header.startswith('_') and header not in ('total', 'grade'):
+            continue
+        colGrades = {'score': parseNumber(userScores[j]),
+                     'rescale': rescale[j],
+                     'average': parseNumber(average[j]),
+                     'maxscore': parseNumber(maxscore[j])
+                     } 
+        if header.startswith('_'):
+            amatch = AGGREGATE_COL_RE.match(header)
+            if amatch:
+                header = amatch.group(1)[1:] + '_' + amatch.group(2)
+            print(header, amatch)
+            sessionGrades.append( [header, colGrades] )
+        else:
+            grades[header] = colGrades
+
+    grades['sessions'] = sessionGrades
+    return grades
 
 def lookupSessions(colNames):
     indexSheet = getSheet(INDEX_SHEET, optional=True)

@@ -595,6 +595,10 @@ Slidoc.pageSetup = function() {
     var contentsButton = document.getElementById("slidoc-contents-button");
     if (contentsButton && !topnavElem)
 	contentsButton.style.display = null;
+
+    var gradeElem = document.getElementById('gradelink');
+    if (gradeElem)
+	gradeElem.style.display = null;
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem) {
@@ -3080,7 +3084,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
 
-    if (getUserId() == Sliobj.params.testUserId)
+    if (getUserId() == Sliobj.params.testUserId || Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId)
 	toggleClass(true, 'slidoc-testuser-view');
 
     if (collapsibleAccess())

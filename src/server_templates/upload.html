@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- upload template for slidoc server --->
-<!-- upload parameters: site_name, site_label, session_types, err_msg -->
+<!-- upload parameters: site_name, session_types, upload_type, session_number, err_msg -->
 
 {% include "base.html" %}
 
@@ -18,18 +18,27 @@
 <div id="slidoc-upload-form">
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
-      <label for="sessiontype">Session type:</label><br>
-      <table>
-      {% for session_type, session_label in session_types %}
-       <tr><td><input type="radio" name="sessiontype" value="{{ session_type }}"> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+      {% if upload_type %}
+        Uploading session: <b>{{ upload_type }}{% if session_number.isdigit() %}{{ '%02d' % int(session_number) }}{% end %}</b>
+        <input type="hidden" name="sessiontype" value="{{ upload_type }}">
+      {% else %}
+        <label for="sessiontype">Session type:</label><br>
+        <table>
+        {% for session_type, session_label in session_types %}
+        <tr><td><input type="radio" name="sessiontype" value="{{ session_type }}"> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+        {% end %}
+        <tr><td><input type="radio" name="sessiontype" value="raw"> <b>raw</b></td><td> [Raw web archive (zip)]</td></tr>
+        </table>
+        Session names will be of the form <tt>sessionType??</tt>, e.g., <tt>lecture01</tt>
       {% end %}
-       <tr><td><input type="radio" name="sessiontype" value="raw"> <b>raw</b></td><td> [Raw web archive (zip)]</td></tr>
-     </table>
      <br>
+     {% if upload_type == 'top' %}
+     <input type="hidden" name="sessionnumber" value="">
+     {% else %}
      <label for="sessionnumber">Session number:</label>
-     <input type="number" id="sessionnumber" name="sessionnumber" value="">
-     (only for non-top/raw cases)<br>
-     Session names will be of the form <tt>sessionType??</tt>, e.g., <tt>lecture01</tt>
+     <input type="number" id="sessionnumber" name="sessionnumber" value="{{ session_number }}">
+     (needed only for non-top/raw cases; specify 0 to upload ToC header)<br>
+     {% end %}
      <p></p>
      <label for="sessioncreate">Create blank session?</label>
      <input type="checkbox" id="sessioncreate" name="sessioncreate" value="create">
