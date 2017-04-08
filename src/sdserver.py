@@ -1069,11 +1069,11 @@ class ActionHandler(BaseHandler):
                 lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
 
             lines.append('</ul>\n')
-            self.render('submissions.html', site_name=site_name, submissions_label='Late submission',
+            self.render('submissions.html', site_name=Options['site_name'], submissions_label='Late submission',
                          submissions_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
 
         elif action == '_submit':
-            self.render('submit.html', site_name=site_name, session_name=sessionName)
+            self.render('submit.html', site_name=Options['site_name'], session_name=sessionName)
         else:
             self.displayMessage('Invalid get action: '+action)
 
