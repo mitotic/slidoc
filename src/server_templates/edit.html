@@ -14,7 +14,13 @@ function slidocDiscard() {
    window.location = '/{{site_name}}{% if site_name %}/{% end %}{{discard_url}}';
    return false;
 }
-document.onreadystatechange = function(event) {
+function slidocUpdate() {
+   var xhr = new XMLHttpRequest();
+   xhr.open('GET', "{{site_prefix}}/_reloadpreview", true);
+   xhr.send();
+   return false;
+}
+ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive" || !document.body)
         return;
     document.querySelectorAll('textarea').forEach(function(tx){
@@ -28,11 +34,13 @@ document.onreadystatechange = function(event) {
 
 <div class="slidoc-err-msg">{{err_msg}}</div>
 
-<form action="/{{site_name}}{% if site_name %}/{% end %}_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
+<form action="{{site_prefix}}/_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
   {% module xsrf_form_html() %}
   <div>
+    <a href="window.open('{{site_prefix}}/_preview/index.html','{{site_prefix}}_preview').focus()" target=''>Switch to preview</a>
+    <button type="button" onclick="slidocUpdate()">Update preview</button>
     <input id="slidoc-edit-submit" type="submit" value="Save">
-    <button type="button" onclick="slidocDiscard(); return false">Discard</button>
+    <button type="button" onclick="slidocDiscard()">Discard</button>
   </div>
   <fieldset>
     <label for="sessionname">Session:</label>

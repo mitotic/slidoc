@@ -222,7 +222,17 @@ def getSessionType(sessionName):
         return (sessionType, sessionNumber)
     else:
         return (TOP_LEVEL, 0)
-        
+
+def getSessionPath(sessionName, site_prefix=False):
+    # Return path to session HTML file, including '/' prefix and optionally site_prefix
+    sessionType, sessionNumber = getSessionType(sessionName)
+    path = privatePrefix(sessionType) + '/' + sessionName+'.html'
+    if sessionType != TOP_LEVEL:
+        path = '/' + sessionType + path
+    if site_prefix and Options['site_name']:
+        path = '/' + Options['site_name'] + path
+    return path
+
 def privatePrefix(uploadType):
     if uploadType in PUBLIC_SESSIONS:
         return ''
@@ -260,19 +270,28 @@ def http_sync_post(url, params_dict=None):
     except Exception, excp:
         result = {'result': 'error', 'error': 'Error in http_sync_post: result='+str(result)+': '+str(excp)}
     return result
-    
+
+def zipdir(dirpath):
+    stream = io.BytesIO()
+    zfile = zipfile.ZipFile(stream, 'w')
+    for dirname, subdirs, files in os.walk(dirpath):
+        zfile.write(dirname)
+        for filename in files:
+            zfile.write(os.path.join(dirname, filename))
+    zfile.close()
+    return stream.getvalue()
 
 class UserIdMixin(object):
     @classmethod
-    def get_path_base(cls, path, sessions_only=True):
+    def get_path_base(cls, path, special=False):
         # Extract basename, without file extension, from URL path
-        # If sessions_only, return None if not html file or is index.html
-        if sessions_only and not path.endswith('.html'):
+        # If not special, return None if non-html file or index.html
+        if not special and not path.endswith('.html'):
             return None
         basename = path.split('/')[-1]
         if '.' in basename:
             basename, sep, suffix = basename.rpartition('.')
-        if sessions_only and basename == 'index':
+        if not special and basename == 'index':
             return None
         return basename
 
@@ -660,6 +679,12 @@ class ActionHandler(BaseHandler):
                 return self.startEdit(sessionName)
             elif action == '_discard':
                 return self.discardPreview()
+            elif action == '_reloadpreview':
+                if not previewingSession:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
+                self.reloadPreview()
+                self.write('reloadpreview')
+                return
 
         if Options['site_list'] and not Options['site_number']:
             # Primary server
@@ -686,46 +711,8 @@ class ActionHandler(BaseHandler):
             self.displaySessions()
 
         elif action == '_browse':
-            if '..' in subsubpath:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
-            if not subsubpath:
-                file_list = [ ['source', 'source', False, False],
-                              ['web', 'web', False, False],
-                              ['uploads', 'uploads', False, False] ]
-                up_path = ''
-            else:
-                predir, _, dirpath = subsubpath.partition('/')
-                if predir == 'source':
-                    rootdir = self.site_src_dir
-                elif predir == 'web':
-                    rootdir = self.site_web_dir
-                elif predir == 'uploads':
-                    rootdir = self.site_uploads_dir
-                else:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
-
-                up_path = os.path.dirname(subsubpath)
-                fullpath = os.path.join(rootdir, dirpath)
-                if not os.path.exists(fullpath):
-                    self.displayMessage('Path %s does not exist!' % subsubpath)
-                    return
-                if not os.path.isdir(fullpath):
-                    self.displayMessage('Path %s not a directory!' % subsubpath)
-                    return
-
-                file_list = []
-                for fname in os.listdir(fullpath):
-                    fpath = os.path.join(fullpath, fname)
-                    fext = os.path.splitext(fname)[1]
-                    subpath = os.path.join(subsubpath, fname)
-                    isfile = os.path.isfile(fpath)
-                    if predir in ('web', 'uploads') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
-                        _, _, viewpath = subpath.partition('/')
-                    else:
-                        viewpath = ''
-                    file_list.append( [fname, subpath, isfile, viewpath] )
-
-            self.render('browse.html', site_name=Options['site_name'], up_path=up_path, browse_path=subsubpath, file_list=file_list)
+            download = self.get_argument('download', '')
+            self.browse(subsubpath, download=download)
 
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
@@ -1131,6 +1118,89 @@ class ActionHandler(BaseHandler):
                                     '\n'.join(buildMsgs.get(sessionType, []))] )
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         self.render('sessions.html', site_name=Options['site_name'], session_props=session_props, message=msg)
+
+    def browse(self, filepath, download='', uploadName='', uploadContent=''):
+        if '..' in filepath:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
+        if not filepath:
+            file_list = [ ['source', 'source', False, False],
+                          ['web', 'web', False, False],
+                          ['uploads', 'uploads', False, False] ]
+            up_path = ''
+        else:
+            predir, _, dirpath = filepath.partition('/')
+            if predir == 'source':
+                rootdir = self.site_src_dir
+            elif predir == 'web':
+                rootdir = self.site_web_dir
+            elif predir == 'uploads':
+                rootdir = self.site_uploads_dir
+            else:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
+
+            up_path = os.path.dirname(filepath)
+            fullpath = os.path.join(rootdir, dirpath)
+            if not os.path.exists(fullpath):
+                self.displayMessage('Path %s does not exist!' % filepath)
+                return
+
+            if download:
+                basename= os.path.basename(fullpath)
+                if os.path.isdir(fullpath):
+                    try:
+                        content = zipdir(fullpath)
+                    except Exception, excp:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in archiving directory %s: %s' % (fullpath, excp))
+                    outfile = basename+'.zip'
+                    self.set_header('Content-Type', 'application/zip')
+                else:
+                    try:
+                        with open(fullpath) as f:
+                            content = f.read()
+                    except Exception, excp:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading file %s: %s' % (fullpath, excp))
+                    outfile = basename
+                    self.set_header('Content-Type', 'text/plain')
+                self.set_header('Content-Disposition', 'attachment; filename="%s"' % outfile)
+                self.write(content)
+                return
+
+            elif uploadName:
+                if not os.path.isdir(fullpath):
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Browse path not a directory %s' % fullpath)
+
+                if uploadName.endswith('.zip'):
+                    try:
+                        zfile = zipfile.ZipFile(io.BytesIO(uploadContent))
+                        zfile.extractall(fullpath)
+                    except Exception, excp:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in unzipping archive to %s: %s' % (fullpath, excp))
+                else:
+                    try:
+                        outpath = os.path.join(fullpath, uploadName)
+                        with open(outpath, 'wb') as f:
+                            f.write(uploadContent)
+                    except Exception, excp:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in writing file %s: %s' % (outpath, excp))
+
+            if not os.path.isdir(fullpath):
+                self.displayMessage('Path %s not a directory!' % filepath)
+                return
+
+
+            file_list = []
+            for fname in os.listdir(fullpath):
+                fpath = os.path.join(fullpath, fname)
+                fext = os.path.splitext(fname)[1]
+                subpath = os.path.join(filepath, fname)
+                isfile = os.path.isfile(fpath)
+                if isfile and predir in ('web', 'uploads') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
+                    _, _, viewpath = subpath.partition('/')
+                else:
+                    viewpath = ''
+                file_list.append( [fname, subpath, isfile, viewpath] )
+
+        self.render('browse.html', site_name=Options['site_name'], up_path=up_path, browse_path=filepath, file_list=file_list)
 
     def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:
@@ -1552,6 +1622,19 @@ class ActionHandler(BaseHandler):
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
+
+    def reloadPreview(self):
+        previewingSession = self.previewActive()
+        if not previewingSession:
+            raise Exceptionr('Not previewing session')
+        previewPath = '_preview/index.html'
+        if Options['site_name']:
+            previewPath = Options['site_name'] + '/' + previewPath
+        sessionConnections = WSHandler.get_connections('index')
+        userId = self.get_id_from_cookie()
+        userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
+        for connection in sessionConnections.get(userId, []):
+            connection.sendEvent(previewPath, '', userRole, ['', 1, 'ReloadPage', []])
 
     def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False,
                 force=False, extraOpts={}):
@@ -2171,10 +2254,12 @@ class UserActionHandler(ActionHandler):
                 userId = subsubpath
             else:
                 userId = self.get_id_from_cookie()
+            rawHTML = self.get_argument('raw','')
             grades = sdproxy.lookupGrades(userId)
             if not grades:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to access grades for user %s' % userId)
-            self.render('grades.html', site_name=Options['site_name'], user_id=userId, grades=grades)
+            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, grades=grades)
+            return
 
         raise tornado.web.HTTPError(404)
 
@@ -2301,7 +2386,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         lst = []
         for path, path_dict in cls._connections.items():
             if sessionName:
-                if cls.get_path_base(path) == sessionName:
+                if cls.get_path_base(path, special=True) == sessionName:
                     return path_dict
             else:
                 for user, connections in path_dict.items():
@@ -2484,7 +2569,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         # event_name = [plugin.]event_name[.slide_id]
         evTarget, evType, evName, evArgs = args
         if Options['debug'] and not evName.startswith('Timer.clockTick'):
-            print >> sys.stderr, 'sdserver.sendEvent: event', fromUser, evType, evName
+            print >> sys.stderr, 'sdserver.sendEvent: event', path, fromUser, fromRole, evType, evName
         pathConnections = cls._connections[path]
         for toUser, connections in pathConnections.items():
             if toUser == fromUser:
@@ -2651,7 +2736,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 pluginMethod = self.getPluginMethod(pluginName, pluginMethodName)
 
                 params = {'pastDue': ''}
-                sessionName = self.get_path_base(self.pathUser[0], sessions_only=True)
+                sessionName = self.get_path_base(self.pathUser[0])
                 userId = self.pathUser[1]
                 if sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                     sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
@@ -2801,7 +2886,7 @@ class BaseStaticFileHandler(tornado.web.StaticFileHandler):
 class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
-        sessionName = self.get_path_base(self.request.path, sessions_only=True)
+        sessionName = self.get_path_base(self.request.path)
         userId = self.get_id_from_cookie() or None
         siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])  # May be None
 
@@ -3229,6 +3314,7 @@ def createApplication():
                       r"/(_rebuild/[-\w.]+)",
                       r"/(_refresh/[-\w.]+)",
                       r"/(_reindex/[-\w.]+)",
+                      r"/(_reloadpreview)",
                       r"/(_remoteupload/[-\w.]+)",
                       r"/(_respond/[-\w.;]+)",
                       r"/(_roster)",

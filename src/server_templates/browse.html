@@ -6,6 +6,10 @@
 
 {% include "base.html" %}
 
+<style>
+.clickable { padding: 0.2em 0 0 1em; }
+</style>
+
 <script>
 function action(actionName, sessionName, sessionPrefix, checkboxId) {
 var msg = 'Confirm '+actionName+' '+(sessionPrefix||'')+(sessionName||'');
@@ -42,10 +46,12 @@ window.location = url;
 {% for fname, subpath, isfile, viewpath in file_list %}
   <li>
   {% if isfile %}
-    {{ fname }}{% if viewpath %} <a class="clickable" href="{{ site_prefix }}/{{ viewpath }}">(view)</a>{% end %}
+  {{ fname }}
   {% else %}
     <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">{{ fname }}</a>
   {% end %}
+  <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
+  {% if viewpath %}<a class="clickable" href="{{ site_prefix }}/{{ viewpath }}">(view)</a>{% end %}
   </li>
 {% end %}
 </ul>

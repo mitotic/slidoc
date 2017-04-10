@@ -2783,7 +2783,6 @@ def lookupGrades(userId):
             amatch = AGGREGATE_COL_RE.match(header)
             if amatch:
                 header = amatch.group(1)[1:] + '_' + amatch.group(2)
-            print(header, amatch)
             sessionGrades.append( [header, colGrades] )
         else:
             grades[header] = colGrades

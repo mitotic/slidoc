@@ -15,54 +15,7 @@
 </b>
 <p></p>
 
-{% if grades.get('total') and grades['total']['score'] is not None %}
-<em>Weighted total</em>: <b>{{ '%.2f' % grades['total']['score'] }}</b>
- <b>{% if grades['total']['score'] %}</b>out of {{ '%.2f' % grades['total']['maxscore'] }}{% end %}
-    {% if grades['total']['rescale'] %}<br>&nbsp;&nbsp;&nbsp;Weighting={{ grades['total']['rescale'].replace('+',' + ') }}{% end %}
-<br>
-{% end %}
+{% include "gradebase.html" %}
 
-{% if grades.get('grade') and grades['grade']['score'] %}
-<em>Potential grade</em>: {{ grades['grade']['score'] }} (this is a tentative,
-estimated grade based on the total/curving so far; the final grade may
-be different, depending upon any additional credits/corrrections/curving)
-<br>
-{% end %}
-
-{% if grades.get('sessions') %}
-  {% set prefix = '' %}
-  {% for session, sessionGrades in grades['sessions'] %}
-    {% if not session.startswith('_') %}
-      {% set prefix = '_'.join(session.split('_')[:-1]) %}
-<p></p>{{ prefix }}
-    {% else %}
-<br>
-      {% if prefix and session[1:].startswith(prefix) %}
-&nbsp;&nbsp;&nbsp; <em>{{ session[1:] }}</em>:
-      {% else %}
-        {% set prefix = '' %}
-<p></p><em>{{ session[1:] }}</em>:
-      {% end %}
-    {% end %}
-    {% if sessionGrades['score'] is not None %}
-<b>{{ '%.2f' % sessionGrades['score'] }}</b>
-    {% else %}
-missed
-    {% end %}
-     {% if sessionGrades['maxscore'] is not None %}
-out of {{ sessionGrades['maxscore'] }}
-    {% end %}
-    {% if sessionGrades['rescale'] %}
-      {% if 'drop' in sessionGrades['rescale']  %}
-[ {{ sessionGrades['rescale'] }} ]
-      {% else %}
-rescaled
-      {% end %}
-    {% end %}
-    {% if sessionGrades['average'] is not None %}
-(avg={{ '%.2f' % sessionGrades['average'] }})
-    {% end %}
-  {% end %}
-{% end %}
 </body>
 </html>

@@ -1154,18 +1154,22 @@ function checkFileUpload(files, mimeRegex, extensionList) {
 // Section 8c: Reload/upload
 //////////////////////////////////
 
+function statefulReload() {
+    if (!Sliobj.currentSlide) {
+	var slides = document.getElementsByClassName(Sliobj.curChapterId ? Sliobj.curChapterId+'-slide' : 'slidoc-slide');
+	var curSlide = getCurrentlyVisibleSlide(slides);
+	location.hash = curSlide ? '##'+slides[curSlide-1].id : '##';
+    }
+    location.reload(true);
+}
+
 function reloadCheckFunc() {
     function reloadCheckAux(result, errMsg) {
 	if (result == null || result.match(/^error/i)) {
 	    document.getElementById('slidoc-localpreview-label').textContent = 'Local preview ENDED';
 	    console.log(errMsg);
 	} else if (result && result.trim()) {
-	    if (!Sliobj.currentSlide) {
-		var slides = document.getElementsByClassName(Sliobj.curChapterId ? Sliobj.curChapterId+'-slide' : 'slidoc-slide');
-		var curSlide = getCurrentlyVisibleSlide(slides);
-		location.hash = curSlide ? '##'+slides[curSlide-1].id : '##';
-	    }
-	    location.reload(true);
+	    statefulReload();
 	} else {
 	    setTimeout(reloadCheckFunc, 333);
 	}
@@ -1889,6 +1893,9 @@ Sliobj.eventReceiver = function(eventMessage) {
 		Slidoc.PluginManager.invoke.apply(null, [Sliobj.slidePlugins[slide_id][j], pluginMethodName].concat(eventArgs));
 	}
 
+    } else if (eventName == 'ReloadPage') {
+	statefulReload();
+
     } else if (eventName == 'LiveResponse') {
 	if (!(eventArgs[0] in Sliobj.liveResponses))
 	    Sliobj.liveResponses[eventArgs[0]] = [];
@@ -2517,7 +2524,7 @@ function showGradesCallback(userId, result, retStatus) {
 	if (keys[j].slice(0,1) == '_')
 	    sessionKeys.push(keys[j]);
     }
-    sessionKeys.sort();
+    sessionKeys.sort( function(a,b){return cmp(a.replace(AGGREGATE_COL_RE,'$1'),b.replace(AGGREGATE_COL_RE,'$1'));});
     var html = '<b>Gradebook</b><br><em>User</em>: '+userId+'<p></p>';
     if (result.total) {
 	html += '<em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
