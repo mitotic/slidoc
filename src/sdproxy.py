@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.3b'
+VERSION = '0.97.3c'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -2774,7 +2774,7 @@ def lookupGrades(userId):
     for j, header in enumerate(headers):
         if not header.startswith('_') and header not in ('total', 'grade'):
             continue
-        colGrades = {'score': parseNumber(userScores[j]),
+        colGrades = {'score': parseNumber(userScores[j]) if header != 'grade' else userScores[j],
                      'rescale': rescale[j],
                      'average': parseNumber(average[j]),
                      'maxscore': parseNumber(maxscore[j])

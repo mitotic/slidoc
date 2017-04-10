@@ -2530,13 +2530,13 @@ function showGradesCallback(userId, result, retStatus) {
 	html += '<em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
 	var totalIndex = retStatus.info.headers.indexOf('total');
 	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
-	    html += ' out of '+retStatus.info.maxScores[totalIndex];
+	    html += ' out of '+retStatus.info.maxScores[totalIndex].toFixed(2);
 	if (retStatus.info.rescale && retStatus.info.rescale[totalIndex])
-	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting='+retStatus.info.rescale[totalIndex].replace(/\+/g,' + ');
+	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting= '+retStatus.info.rescale[totalIndex].replace(/\+/g,' + ');
 	html += '<br>';
     }
     if (result.grade) {
-	html += '<em>Potential grade</em>: '+result.grade+' (this is a tentative, estimated grade based on the total/curving so far; the final grade may be different, depending upon any additional credits/corrrections/curving)<br>';
+	html += '<p></p><em>Potential grade</em>: '+result.grade+'<br>(This is a tentative grade estimate based on the credits/curving earned so far; the final grade may be different, depending upon any additional credits/corrrections/curving)<br>';
     }
     var prefix = '';
     for (var j=0; j<sessionKeys.length; j++) {
@@ -2559,7 +2559,6 @@ function showGradesCallback(userId, result, retStatus) {
 		html += '&nbsp;&nbsp;&nbsp;';
 	    } else {
 		// New session family
-		prefix = pmatch ? pmatch[1] : sessionName;
 		html += '<p></p>';
 	    }
 	}
@@ -2567,7 +2566,7 @@ function showGradesCallback(userId, result, retStatus) {
 	if (retStatus && retStatus.info && retStatus.info.headers) {
 	    var sessionIndex = retStatus.info.headers.indexOf(sessionName);
 	    if (retStatus.info.maxScores && retStatus.info.maxScores[sessionIndex])
-		html += ' out of '+retStatus.info.maxScores[sessionIndex];
+		html += ' / '+retStatus.info.maxScores[sessionIndex].toFixed(2);
 	    if (retStatus.info.rescale) {
 		var rescaleDesc = retStatus.info.rescale[sessionIndex];
 		if (rescaleDesc) {
