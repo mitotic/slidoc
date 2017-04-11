@@ -2,28 +2,21 @@
 <html>
 <head>
 <!-- browse template for slidoc server --->
-<!-- browse parameters: site_name, up_path, browsepath, file_list-->
+<!-- browse parameters: site_name, status, up_path, browse_path, file_list-->
 
 {% include "base.html" %}
 
 <style>
-.clickable { padding: 0.2em 0 0 1em; }
+td { padding: 0.2em 0 0 1em; }
+.rowhover:hover {background: #eee;}
 </style>
 
 <script>
-function action(actionName, sessionName, sessionPrefix, checkboxId) {
-var msg = 'Confirm '+actionName+' '+(sessionPrefix||'')+(sessionName||'');
-if (!window.confirm(msg+'?'))
+function deletePath(subpath) {
+var msg = 'Confirm deletion of '+subpath+'. This cannot be undone.';
+if (!window.confirm(msg))
 return;
-var url = '{{ site_prefix }}'+'/_'+actionName;
-if (sessionName)
-  url += '/' + sessionName;
-if (checkboxId) {
-  var checkElem = document.getElementById(checkboxId);
-  if (checkElem && checkElem.checked)
-    url += '?'+checkboxId+'=1';
-}
-window.location = url;
+window.location = "{{site_prefix }}/_browse/" + subpath + '?delete=1';
 }
 </script>
 
@@ -35,6 +28,23 @@ window.location = url;
 
 <h3>Browsing directory {{ browse_path }}</h3>
 
+<b>Status:</b> <b id="status-line">{{ status }}</b>
+<p></p>
+
+{% if browse_path %}
+<a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;</a>
+<form id="upload-form" style="display: none;" action="{{site_prefix }}/_browse/{{ browse_path }}" method="post" enctype="multipart/form-data" >
+  <fieldset>
+    <label for="upload">File (or .zip archive) to upload:</label><br>
+    <input type="file" id="upload" name="upload"  value="file1">
+    <br>(Select or drag-and-drop on above button)
+    <p></p>
+    <input id="upload-submit" type="submit" value="Upload">
+  </fieldset>
+</form>
+{% end %}
+<p></p>
+  
 <a class="clickable" href="{{ site_prefix }}/_browse"><b>~</b></a>
 <br>
 
@@ -42,18 +52,27 @@ window.location = url;
 <a class="clickable" href="{{ site_prefix }}/_browse/{{ up_path }}"><b>..</b></a>
 {% end %}
 
-<ul>
+<table>
 {% for fname, subpath, isfile, viewpath in file_list %}
-  <li>
+  <tr class="rowhover">
+  <td>
   {% if isfile %}
   {{ fname }}
   {% else %}
     <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">{{ fname }}</a>
   {% end %}
+  </td>
+  <td>
   <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
+  </td>
+  <td>
+  <span class="clickable" onclick="deletePath('{{ subpath }}');" >&#x1F5D1;</span>
+  </td>
+  <td>
   {% if viewpath %}<a class="clickable" href="{{ site_prefix }}/{{ viewpath }}">(view)</a>{% end %}
-  </li>
+  </td>
+  </tr>
 {% end %}
-</ul>
+</table>
 </body>
 </html>

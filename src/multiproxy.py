@@ -50,10 +50,11 @@ PERIODIC_SEC = 10                                    # Interval for periodic cle
 RETRY_SEC = 5
 
 # Bandwidth limits
+ENFORCE_PER_IP_LIMITS = False                        # Set to enforce bandwidth limits per IP address
 LIMIT_PERIOD   = 25 * 3600                           # Period over which limits/blocks are reset
 LIMIT_REQUESTS  = 30000                              # Number of requests allowed over period
-LIMIT_BYTES     = 100 * 1000000                      # Limit over period per IP address
-LIMIT_REQ_BYTES =   5 * 1000000                      # Limit per request
+LIMIT_BYTES     = 1000 * 1000000                     # Limit over period per IP address
+LIMIT_REQ_BYTES =   10 * 1000000                     # Limit per request
 
 # Request stats
 ITIME         = 0
@@ -573,6 +574,10 @@ class Pipeline(object):
         """ If limits are exceeded, shutdown pipeline immediately and return False
         (Client will only see blocked message on next connect attempt)
         """
+
+        if not ENFORCE_PER_IP_LIMITS:
+            return True
+
         if self.ip_addr not in self.proxy_server.request_stats:
             # Start collecting request stats for this address
             self.proxy_server.request_stats[self.ip_addr] = [time.time(), 0, 0, 0, 0, 0] # [time, requests, bytes, logged_reqs, logged_bytes]

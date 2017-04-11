@@ -269,13 +269,17 @@ def http_sync_post(url, params_dict=None):
         result = {'result': 'error', 'error': 'Error in http_sync_post: result='+str(result)+': '+str(excp)}
     return result
 
-def zipdir(dirpath):
+def zipdir(dirpath, inner=False):
+    basedir = dirpath if inner else os.path.dirname(dirpath)
     stream = io.BytesIO()
     zfile = zipfile.ZipFile(stream, 'w')
     for dirname, subdirs, files in os.walk(dirpath):
-        zfile.write(dirname)
+        if dirname != basedir:
+            zfile.write(dirname, os.path.relpath(dirname, basedir))
         for filename in files:
-            zfile.write(os.path.join(dirname, filename))
+            fpath = os.path.join(dirname, filename)
+            relpath = os.path.relpath(fpath, basedir)
+            zfile.write(fpath, relpath)
     zfile.close()
     return stream.getvalue()
 
@@ -709,8 +713,9 @@ class ActionHandler(BaseHandler):
             self.displaySessions()
 
         elif action == '_browse':
+            delete = self.get_argument('delete', '')
             download = self.get_argument('download', '')
-            self.browse(subsubpath, download=download)
+            self.browse(subsubpath, delete=delete, download=download)
 
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
@@ -1117,16 +1122,18 @@ class ActionHandler(BaseHandler):
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         self.render('sessions.html', site_name=Options['site_name'], session_props=session_props, message=msg)
 
-    def browse(self, filepath, download='', uploadName='', uploadContent=''):
+    def browse(self, filepath, delete='', download='', uploadName='', uploadContent=''):
         if '..' in filepath:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
+
+        status = ''
         if not filepath:
             file_list = [ ['source', 'source', False, False],
                           ['web', 'web', False, False],
                           ['uploads', 'uploads', False, False] ]
             up_path = ''
         else:
-            predir, _, dirpath = filepath.partition('/')
+            predir, _, subpath = filepath.partition('/')
             if predir == 'source':
                 rootdir = self.site_src_dir
             elif predir == 'web':
@@ -1137,19 +1144,19 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
 
             up_path = os.path.dirname(filepath)
-            fullpath = os.path.join(rootdir, dirpath)
+            fullpath = os.path.join(rootdir, subpath) if subpath else rootdir
             if not os.path.exists(fullpath):
                 self.displayMessage('Path %s does not exist!' % filepath)
                 return
 
+            basename= os.path.basename(fullpath)
             if download:
-                basename= os.path.basename(fullpath)
                 if os.path.isdir(fullpath):
                     try:
-                        content = zipdir(fullpath)
+                        content = zipdir(fullpath, inner=not subpath)
                     except Exception, excp:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in archiving directory %s: %s' % (fullpath, excp))
-                    outfile = basename+'.zip'
+                    outfile = (basename if subpath else predir) +'.zip'
                     self.set_header('Content-Type', 'application/zip')
                 else:
                     try:
@@ -1163,13 +1170,28 @@ class ActionHandler(BaseHandler):
                 self.write(content)
                 return
 
-            elif uploadName:
+            if delete:
+                if not subpath:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot delete root directory' % predir)
+                if not os.path.exists(fullpath):
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Path %s does not exist' % fullpath)
+                if os.path.isdir(fullpath):
+                    shutil.rmtree(fullpath)
+                else:
+                    os.remove(fullpath)
+                site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+                self.redirect(site_prefix+'/_browse/'+os.path.dirname(filepath))
+                return
+
+            if uploadName:
                 if not os.path.isdir(fullpath):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Browse path not a directory %s' % fullpath)
 
+                file_list = []
                 if uploadName.endswith('.zip'):
                     try:
                         zfile = zipfile.ZipFile(io.BytesIO(uploadContent))
+                        file_list = zfile.namelist()
                         zfile.extractall(fullpath)
                     except Exception, excp:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in unzipping archive to %s: %s' % (fullpath, excp))
@@ -1181,24 +1203,27 @@ class ActionHandler(BaseHandler):
                     except Exception, excp:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in writing file %s: %s' % (outpath, excp))
 
+                status = 'Uploaded '+uploadName
+                if file_list:
+                    status += ' (' + ' '.join(file_list) + ')'
+
             if not os.path.isdir(fullpath):
                 self.displayMessage('Path %s not a directory!' % filepath)
                 return
-
 
             file_list = []
             for fname in os.listdir(fullpath):
                 fpath = os.path.join(fullpath, fname)
                 fext = os.path.splitext(fname)[1]
-                subpath = os.path.join(filepath, fname)
+                subdirpath = os.path.join(filepath, fname)
                 isfile = os.path.isfile(fpath)
                 if isfile and predir in ('web', 'uploads') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
-                    _, _, viewpath = subpath.partition('/')
+                    _, _, viewpath = subdirpath.partition('/')
                 else:
                     viewpath = ''
-                file_list.append( [fname, subpath, isfile, viewpath] )
+                file_list.append( [fname, subdirpath, isfile, viewpath] )
 
-        self.render('browse.html', site_name=Options['site_name'], up_path=up_path, browse_path=filepath, file_list=file_list)
+        self.render('browse.html', site_name=Options['site_name'], status=status, up_path=up_path, browse_path=filepath, file_list=file_list)
 
     def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:
@@ -1234,7 +1259,8 @@ class ActionHandler(BaseHandler):
     def postAction(self, subpath):
         previewingSession = self.previewActive()
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        action, sep, sessionName = subpath.partition('/')
+        action, sep, subsubpath = subpath.partition('/')
+        sessionName = subsubpath
         if not sessionName:
             sessionName = self.get_argument('sessionname', '')
 
@@ -1302,7 +1328,7 @@ class ActionHandler(BaseHandler):
                 return
             submitDate = self.get_argument('submitdate','')
 
-        if action in ('_roster', '_import', '_submit', '_upload'):
+        if action in ('_browse', '_roster', '_import', '_submit', '_upload'):
             if action == '_submit':
                 # Submit test user
                 try:
@@ -1310,6 +1336,11 @@ class ActionHandler(BaseHandler):
                     self.displayMessage('Submit '+sdproxy.TESTUSER_ID+' row')
                 except Exception, excp:
                     self.displayMessage('Error in submit for '+sdproxy.TESTUSER_ID+': '+str(excp))
+
+            elif action == '_browse':
+                fileinfo = self.request.files['upload'][0]
+                fname = fileinfo['filename']
+                self.browse(subsubpath, uploadName=fname, uploadContent=fileinfo['body'])
 
             elif action in ('_roster', '_import'):
                 # Import from CSV file
