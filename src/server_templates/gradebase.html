@@ -1,5 +1,5 @@
 <!-- gradebase template for slidoc server (SNIPPET) --->
-<!-- gradebase parameters: site_name, session_name, user_id, grades -->
+<!-- gradebase parameters: site_name, session_name, user_id, total_grade, letter_grade, session_grades -->
 
 <style>
 .clickable { cursor: pointer; color: #2980B9; text-decoration: none}
@@ -9,24 +9,24 @@
 
 {% set site_prefix = '/'+site_name if site_name else '' %}
 
-{% if grades.get('total') and grades['total']['score'] is not None %}
-<em>Weighted total</em>: <b>{{ '%.2f' % grades['total']['score'] }}</b>
- <b>{% if grades['total']['score'] %}</b>out of {{ '%.2f' % grades['total']['maxscore'] }}{% end %}
-    {% if grades['total']['rescale'] %}<br>&nbsp;&nbsp;&nbsp;Weighting= {{ grades['total']['rescale'].replace('+',' + ') }}{% end %}
+{% if total_grade and total_grade['score'] is not None %}
+<em>Weighted total</em>: <b>{{ '%.2f' % total_grade['score'] }}</b>
+ <b>{% if total_grade['score'] %}</b>out of {{ '%.2f' % total_grade['maxscore'] }}{% end %}
+    {% if total_grade['rescale'] %}<br>&nbsp;&nbsp;&nbsp;Weighting= {{ total_grade['rescale'].replace('+',' + ') }}{% end %}
 <br>
 {% end %}
 
-{% if grades.get('grade') and grades['grade']['score'] %}
-<p></p><em>Potential grade</em>: {{ grades['grade']['score'] }} &nbsp;&nbsp;
+{% if letter_grade and letter_grade['score'] %}
+<p></p><em>Potential grade</em>: {{ letter_grade['score'] }} &nbsp;&nbsp;
 <br>(This is a tentative letter grade estimate based on the
 credits/curving earned so far; the final grade may
 be different, depending upon any additional credits/corrrections/curving)
 <br>
 {% end %}
 
-{% if grades.get('sessions') %}
+{% if session_grades %}
   {% set prefix = '' %}
-  {% for session, sessionGrades in grades['sessions'] %}
+  {% for session, sessionPath, sessionGrades in session_grades %}
     {% if not session.startswith('_') %}
       {% set comps = session.split('_') %}
       {% set prefix = '_'.join(comps[:-1]) %}
@@ -34,10 +34,10 @@ be different, depending upon any additional credits/corrrections/curving)
     {% else %}
 <br>
       {% if prefix and session[1:].startswith(prefix) %}
-&nbsp;&nbsp;&nbsp; <a class="clickable" href="{{ site_prefix  }}/_private/{{ prefix }}/{{ session[1:] }}.html">{{ session[1:] }}</a>:
+&nbsp;&nbsp;&nbsp; <a class="clickable" href="{{ site_prefix  }}{{ sessionPath }}">{{ session[1:] }}</a>:
       {% else %}
         {% set prefix = '' %}
-<p></p><a class="clickable" href="{{ site_prefix  }}/_private/{{ prefix }}/{{ session[1:] }}.html">{{ session[1:] }}</a>:
+<p></p><a class="clickable" href="{{ site_prefix  }}{{ sessionPath }}">{{ session[1:] }}</a>:
       {% end %}
     {% end %}
     {% if sessionGrades['score'] is not None %}

@@ -218,17 +218,15 @@ def getSessionType(sessionName):
     sessionType = smatch.group(1)
     sessionNumber = int(smatch.group(2))
 
-    if sessionType in SESSION_TYPE_SET:
-        return (sessionType, sessionNumber)
-    else:
-        return (TOP_LEVEL, 0)
+    return (sessionType, sessionNumber)
 
 def getSessionPath(sessionName, site_prefix=False):
     # Return path to session HTML file, including '/' prefix and optionally site_prefix
     sessionType, sessionNumber = getSessionType(sessionName)
-    path = privatePrefix(sessionType) + '/' + sessionName+'.html'
+    path = '/' + sessionName+'.html'
     if sessionType != TOP_LEVEL:
         path = '/' + sessionType + path
+    path = privatePrefix(sessionType) + path
     if site_prefix and Options['site_name']:
         path = '/' + Options['site_name'] + path
     return path
@@ -2255,10 +2253,14 @@ class UserActionHandler(ActionHandler):
             else:
                 userId = self.get_id_from_cookie()
             rawHTML = self.get_argument('raw','')
-            grades = sdproxy.lookupGrades(userId)
-            if not grades:
+            gradeVals = sdproxy.lookupGrades(userId)
+            if not gradeVals:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to access grades for user %s' % userId)
-            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, grades=grades)
+            sessionGrades = []
+            for sessionName, vals in gradeVals['sessions']:
+                sessionPath = getSessionPath(sessionName[1:]) if sessionName.startswith('_') else ''
+                sessionGrades.append([sessionName, sessionPath, vals])
+            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], session_grades=sessionGrades)
             return
 
         raise tornado.web.HTTPError(404)
