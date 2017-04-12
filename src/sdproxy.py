@@ -1035,7 +1035,7 @@ def sheetAction(params, notrace=False):
     # [1] http://googleappsdeveloper.blogspot.co.uk/2011/10/concurrency-and-google-apps-script.html
     # we want a public lock, one that locks for all invocations
 
-    if Settings['debug']:
+    if Settings['debug'] and not notrace:
         print("DEBUG: sheetAction PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
 
     returnValues = None
@@ -2569,7 +2569,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     # answers = {1:{'response':, 'explain':},...}
     # If source == "prefill", only row creation occurs
     if Settings['debug']:
-        print("DEBUG:importUserAnswers", sessionName, submitDate, userId, displayName, answers, file=sys.stderr)
+        print("DEBUG:importUserAnswers", userId, displayName, sessionName, len(answers), submitDate, file=sys.stderr)
     if not getSheet(sessionName, optional=True):
         raise Exception('Session '+sessionName+' not found')
     sessionEntries = lookupValues(sessionName, ['dueDate', 'paceLevel', 'adminPaced', 'attributes'], INDEX_SHEET)
@@ -2586,7 +2586,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         createDate(submitDate)
 
     create = source or 'import'
-    retval = getUserRow(sessionName, userId, displayName, {'admin': ADMINUSER_ID, 'import': '1', 'create': create, 'getheaders': '1'}, notrace=False)
+    retval = getUserRow(sessionName, userId, displayName, {'admin': ADMINUSER_ID, 'import': '1', 'create': create, 'getheaders': '1'}, notrace=True)
     if retval['result'] != 'success':
 	    raise Exception('Error in creating session for user '+userId+': '+retval.get('error'))
     if source == "prefill":
@@ -2612,8 +2612,11 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
                 # Import shuffled response value
                 indexVal = ord(respVal.upper()) - ord('A')
                 if indexVal < 0 or indexVal >= len(shuffleStr[1:]):
-                    raise Exception('Error in creating session for user '+userId+': Invalid shuffle choice '+respVal+' ('+shuffleStr+')')
-                respVal = shuffleStr[1:][indexVal].upper()
+                    if Settings['debug']:
+                        print('DEBUG:importUserAnswers: ERROR for user %s, question %d: Invalid choice %s (%s)' % (userId, qnumber, respVal, shuffleStr), file=sys.stderr)
+                    respVal = ''
+                else:
+                    respVal = shuffleStr[1:][indexVal].upper()
         if q_response in headers:
             rowValues[headerCols[q_response]-1] = respVal or SKIP_ANSWER
             if q_explain in headers:
@@ -2648,16 +2651,13 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if submitDate:
             submitTimestamp = submitDate
 
-    if Settings['debug']:
-        print("DEBUG:importUserAnswers2", sessionName, userId, adminPaced, file=sys.stderr)
-            
-    retval = putUserRow(sessionName, userId, rowValues, putOpts)
+    retval = putUserRow(sessionName, userId, rowValues, putOpts, notrace=True)
     if retval['result'] != 'success':
 	    raise Exception('Error in importing session for user '+userId+': '+retval.get('error'))
 
     if submitTimestamp:
         updateObj = {'id': userId, 'submitTimestamp': submitTimestamp}
-        retval = updateUserRow(sessionName, headers, updateObj, {'admin': ADMINUSER_ID, 'import': '1'})
+        retval = updateUserRow(sessionName, headers, updateObj, {'admin': ADMINUSER_ID, 'import': '1'}, notrace=True)
         if retval['result'] != 'success':
             raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
 

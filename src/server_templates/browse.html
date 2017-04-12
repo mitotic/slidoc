@@ -9,15 +9,97 @@
 <style>
 td { padding: 0.2em 0 0 1em; }
 .rowhover:hover {background: #eee;}
+
+.dropzone {
+  border: 3px dashed transparent;
+  min-height: 48px;
+  min-width: 200px;
+}
+
+.dropzone.dragover {
+  border: 3px dashed gray;
+}
+
 </style>
 
 <script>
 function deletePath(subpath) {
-var msg = 'Confirm deletion of '+subpath+'. This cannot be undone.';
-if (!window.confirm(msg))
-return;
-window.location = "{{site_prefix }}/_browse/" + subpath + '?delete=1';
+    var msg = 'Confirm deletion of '+subpath+'. This cannot be undone.';
+    if (!window.confirm(msg))
+        return;
+    window.location = "{{site_prefix }}/_browse/" + subpath + '?delete=1';
 }
+
+function dropContainer(element, callback) {
+    element.addEventListener('dragover', function(evt) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        element.classList.add('dragover');
+    });
+
+    element.addEventListener('dragleave', function(evt) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        element.classList.remove('dragover');
+    });
+
+    element.addEventListener('drop', function(evt) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        element.classList.remove('dragover');
+      triggerCallback(evt);
+    });
+  
+    function triggerCallback(evt) {
+        var files;
+        if (evt.dataTransfer) {
+          files = evt.dataTransfer.files;
+        } else if (evt.target) {
+          files = evt.target.files;
+        }
+        callback.call(null, files);
+    }
+}
+
+function dropCallback(files) {
+    var file = files[0];
+    console.log("dropCallback", file);
+    if (document.getElementById("file-"+file.name)) {
+        if (!window.confirm('Overwrite file '+file.name+'?'))
+          return;
+    }
+    var formData = new FormData();
+    formData.append("upload", file);
+    post("{{site_prefix }}/_browse/{{ browse_path }}", formData, "Uploaded "+file.name);
+}
+
+function post(url, formData, successMsg) {
+    console.log("post", url);
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.onload = function () {
+        console.log("xhr", xhr.status);
+        if (xhr.status === 200) {
+            location.hash = "#"+successMsg;
+            location.reload(true);
+        } else {
+            alert("Error in upload: "+xhr.status);
+        }
+    };
+
+  xhr.send(formData);
+}
+
+document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+        return;
+    dropContainer(document.getElementById("dropzone"), dropCallback);
+    if (location.hash) {
+        document.getElementById("status-line").textContent = location.hash.slice(1);
+        location.hash = "";
+    }
+}
+
 </script>
 
 </head>
@@ -26,7 +108,7 @@ window.location = "{{site_prefix }}/_browse/" + subpath + '?delete=1';
 {% include "linkback.html" %}
 </b>
 
-<h3>Browsing directory {{ browse_path }}</h3>
+<h3><em>Directory</em>: {{ browse_path }}</h3>
 
 <b>Status:</b> <b id="status-line">{{ status }}</b>
 <p></p>
@@ -37,42 +119,49 @@ window.location = "{{site_prefix }}/_browse/" + subpath + '?delete=1';
   <fieldset>
     <label for="upload">File (or .zip archive) to upload:</label><br>
     <input type="file" id="upload" name="upload"  value="file1">
-    <br>(Select or drag-and-drop on above button)
+    <br><em>(Select or drag and drop on button above, or over file
+             list area below.)</em>
     <p></p>
     <input id="upload-submit" type="submit" value="Upload">
   </fieldset>
 </form>
 {% end %}
 <p></p>
-  
+
+{% if browse_path %}
 <a class="clickable" href="{{ site_prefix }}/_browse"><b>~</b></a>
 <br>
+{% end %}
 
 {% if up_path %}
 <a class="clickable" href="{{ site_prefix }}/_browse/{{ up_path }}"><b>..</b></a>
 {% end %}
 
+<div id="dropzone" class="dropzone">
+
 <table>
 {% for fname, subpath, isfile, viewpath in file_list %}
   <tr class="rowhover">
-  <td>
-  {% if isfile %}
-  {{ fname }}
-  {% else %}
-    <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">{{ fname }}</a>
-  {% end %}
-  </td>
-  <td>
-  <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
-  </td>
-  <td>
-  <span class="clickable" onclick="deletePath('{{ subpath }}');" >&#x1F5D1;</span>
-  </td>
-  <td>
-  {% if viewpath %}<a class="clickable" href="{{ site_prefix }}/{{ viewpath }}">(view)</a>{% end %}
-  </td>
+    <td>
+    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">&#x27A4;</a>{% end %}
+    </td>
+    <td id="file-{{ fname }}">
+    {% if viewpath %}
+      <a class="clickable" href="{{ site_prefix }}/{{ viewpath }}">{{ fname }}</a>
+    {% else %}
+      {{ fname }}
+    {% end %}
+    </td>
+    <td>
+    <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
+    </td>
+    <td>
+    <span class="clickable" onclick="deletePath('{{ subpath }}');" >&#x1F5D1;</span>
+    </td>
   </tr>
 {% end %}
 </table>
+</div>
+
 </body>
 </html>

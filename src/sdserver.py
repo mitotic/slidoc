@@ -2855,12 +2855,17 @@ class PluginManager(object):
             
         fullpath = filepath
         if restricted:
-            fullpath = RESTRICTED_PATH + '/' + fullpath
+            fullpath = os.path.join(RESTRICTED_PATH, fullpath)
         elif private:
-            fullpath = PRIVATE_PATH + '/' + fullpath
+            fullpath = os.path.join(PRIVATE_PATH, fullpath)
 
-        return '/'.join([ Options['plugindata_dir'], PLUGINDATA_PATH, self.pluginName, fullpath ])
+        fullpath = os.path.join(PLUGINDATA_PATH, self.pluginName, fullpath)
 
+        if Options['site_name']:
+            fullpath = os.path.join(Options['site_name'], fullpath)
+            
+        return os.path.join(Options['plugindata_dir'], fullpath )
+    
     def readFile(self, filepath, restricted=True, private=True):
         # Returns file content from relative path
         fullpath = self.makePath(filepath, restricted=restricted, private=private)
@@ -3693,8 +3698,6 @@ def importAnswers(sessionName, filepath, csvfile, importParams, submitDate=''):
 
             displayName = nameMap[userId] or 'Unknown, Name'
             try:
-                if Options['debug']:
-                    print >> sys.stderr, 'DEBUG: importAnswers', sessionName, userId, displayName
                 sdproxy.importUserAnswers(sessionName, userId, displayName, answers=answers, submitDate=submitDate, source='import')
             except Exception, excp:
                 errors.append('Error in import for user '+str(userId)+': '+str(excp))
