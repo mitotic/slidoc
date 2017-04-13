@@ -782,6 +782,7 @@ class SlidocRenderer(MathRenderer):
         self.choices = None
         self.choice_end = None
         self.choice_questions = 0
+        self.count_of_the_above = 0
         self.cur_qtype = ''
         self.cur_header = ''
         self.untitled_header = ''
@@ -1090,6 +1091,14 @@ class SlidocRenderer(MathRenderer):
                 self.alt_header = self.untitled_header + first_words
             else:
                 self.alt_header = first_words
+
+        if self.choices:
+            _, _, tem_text = text.rpartition('>')  # Strip any preceding markup
+            tem_text = tem_text.strip().strip('.').strip() # Strip leading/trailing periods
+            tem_text = md2md.normalize_text(tem_text, lower=True)
+            if tem_text in ('all of the above', 'none of the above'):
+                self.count_of_the_above += 1
+
         if not self.incremental_pause:
             return super(SlidocRenderer, self).paragraph(text)
         return '<p class="%s-incremental slidoc-incremental%d">%s</p>\n' % (self.get_slide_id(), self.incremental_level, text.strip(' '))
@@ -1592,6 +1601,12 @@ class SlidocRenderer(MathRenderer):
                         message("    ****ANSWER-WARNING: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
                 elif not qtype:
                     qtype = 'multichoice' if len(text) > 1 else 'choice'
+
+                if not noshuffle and self.count_of_the_above:
+                    if 'auto_noshuffle' in self.options['config'].features:
+                        noshuffle = self.count_of_the_above
+                    else:
+                        message("    ****CHOICE-WARNING: Choice question %d may need noshuffle=%d value for '... of the above' option(s)" % (len(self.questions)+1, self.count_of_the_above))
             else:
                 # Ignore choice options
                 self.choices = None
@@ -2838,10 +2853,14 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         css_html = insert_resource('doc_custom.css')
         if config.fontsize:
             comps = config.fontsize.split(',')
-            tem_css = '@media not print { body { font-size: %s; }  }\n' % comps[0]
-            if len(comps) > 1:
+            if comps[0]:
+                tem_css = '@media not print { body { font-size: %s; }  }\n' % comps[0]
+            else:
+                tem_css = ''
+            if len(comps) > 1 and comps[1]:
                 tem_css += '@media print { body { font-size: %s; }  }\n' % comps[1]
-            css_html += '<style>\n'+tem_css+'</style>\n'
+            if tem_css:
+                css_html += '<style>\n'+tem_css+'</style>\n'
 
     # External CSS replaces doc_custom.css, but not doc_include.css
     css_html += insert_resource('doc_include.css')
@@ -3918,6 +3937,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents
+#   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
 #   disable_answering: Hide all answer buttons/input boxes (to generate closed book question sheets that are manually graded)
 #   delay_answers: Correct answers and score are hidden from users until session is graded
 #   equation_number: Number equations sequentially
@@ -3941,7 +3961,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

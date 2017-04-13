@@ -383,7 +383,7 @@ class UserIdMixin(object):
 class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     site_src_dir = None
     site_web_dir = None
-    site_uploads_dir = None
+    site_data_dir = None
     def set_default_headers(self):
         # Completely disable cache
         self.set_header('Server', SERVER_NAME)
@@ -758,7 +758,6 @@ class ActionHandler(BaseHandler):
             self.write('</pre>')
 
         elif action == '_twitter':
-            self.set_header('Content-Type', 'text/plain')
             if not Global.twitterStream:
                 self.displayMessage('No twitter stream active')
             else:
@@ -1130,7 +1129,7 @@ class ActionHandler(BaseHandler):
         if not filepath:
             file_list = [ ['source', 'source', False, False],
                           ['web', 'web', False, False],
-                          ['uploads', 'uploads', False, False] ]
+                          ['data', 'data', False, False] ]
             up_path = ''
         else:
             predir, _, subpath = filepath.partition('/')
@@ -1138,15 +1137,15 @@ class ActionHandler(BaseHandler):
                 rootdir = self.site_src_dir
             elif predir == 'web':
                 rootdir = self.site_web_dir
-            elif predir == 'uploads':
-                rootdir = self.site_uploads_dir
+            elif predir == 'data':
+                rootdir = self.site_data_dir
             else:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
 
             up_path = os.path.dirname(filepath)
             fullpath = os.path.join(rootdir, subpath) if subpath else rootdir
             if not os.path.exists(fullpath):
-                self.displayMessage('Path %s does not exist!' % filepath)
+                self.displayMessage('Path %s (%s) does not exist!' % (filepath, fullpath))
                 return
 
             basename= os.path.basename(fullpath)
@@ -1217,10 +1216,13 @@ class ActionHandler(BaseHandler):
                 fext = os.path.splitext(fname)[1]
                 subdirpath = os.path.join(filepath, fname)
                 isfile = os.path.isfile(fpath)
-                if isfile and predir in ('web', 'uploads') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
+                if isfile and predir in ('web', 'data') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
                     _, _, viewpath = subdirpath.partition('/')
+                    if predir == 'data':
+                       viewpath = PLUGINDATA_PATH + '/' + viewpath
                 else:
                     viewpath = ''
+
                 file_list.append( [fname, subdirpath, isfile, viewpath] )
 
         self.render('browse.html', site_name=Options['site_name'], status=status, up_path=up_path, browse_path=filepath, file_list=file_list)
@@ -4015,7 +4017,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
         BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
-        BaseHandler.site_uploads_dir = Options['plugindata_dir'] + '/' + site_name
+        BaseHandler.site_data_dir = Options['plugindata_dir'] + '/' + site_name + '/' + PLUGINDATA_PATH
         setup_site_server(sheetSettings)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops

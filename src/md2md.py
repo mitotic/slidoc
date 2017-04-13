@@ -62,9 +62,14 @@ def write_file(path, *args):
         for arg in args:
             f.write(arg)
     
+def normalize_text(text, lower=False):
+    # Strip leading/trailing spaces, compress multiple space and optionally lowercase
+    text = re.sub(r'\s+', ' ', text.strip())
+    return text.lower() if lower else text
+
 def ref_key(text):
-    # create reference key: compress multiple spaces, and lower-case
-    return re.sub(r'\s+', ' ', text).strip().lower()
+    # create reference key (compress multiple spaces, and lower-case)
+    return normalize_text(text, lower=True)
 
 def make_id_from_text(text):
     """Make safe ID string from string"""
