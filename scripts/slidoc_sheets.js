@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.3c';
+var VERSION = '0.97.3d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -714,16 +714,18 @@ function sheetAction(params) {
 	    var selectedUpdates = params.update ? JSON.parse(params.update) : null;
 	    var rowUpdates = params.row ? JSON.parse(params.row) : null;
 
-            if (readOnlyAccess) {
-                if (delRow || resetRow || selectedUpdates || (rowUpdates && !nooverwriteRow)) {
+	    var modifyingRow = delRow || resetRow || selectedUpdates || (rowUpdates && !nooverwriteRow);
+            if (modifyingRow) {
+		if (readOnlyAccess) {
                     throw('Error::Admin user '+origUser+' cannot modify row for user '+paramId);
                 }
             }
 
+	    var updatingMaxScoreRow = sessionEntries && rowUpdates && rowUpdates[columnIndex['id']-1] == MAXSCORE_ID;
 	    if (headers) {
 		var modifyStartCol = params.modify ? parseInt(params.modify) : 0;
 		if (modifyStartCol) {
-                    if (!sessionEntries || !rowUpdates || rowUpdates[columnIndex['id']-1] != MAXSCORE_ID)
+                    if (!updatingMaxScoreRow)
 			throw("Error::Must be updating max scores row to modify headers in sheet "+sheetName);
                     var checkCols = modifyStartCol-1;
 		} else {
@@ -790,14 +792,15 @@ function sheetAction(params) {
 		    columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
 		    columnIndex = indexColumns(modSheet);
 
-		    if (computeTotalScore) {
-			updateTotalScores(modSheet, sessionAttributes, questions, true);
-		    }
 		    updateTotalFormula(modSheet, modSheet.getLastRow());
 		}
 
 	    }
 	    
+	    if (updatingMaxScoreRow && computeTotalScore && questions) {
+		updateTotalScores(modSheet, sessionAttributes, questions, true);
+	    }
+
 	    var userId = null;
 	    var displayName = null;
 
@@ -2857,11 +2860,11 @@ function updateTotalFormula(modSheet, nRows) {
 
 function updateTotalScores(modSheet, sessionAttributes, questions, force) {
     // If not force, only update non-blank entries
-    var startRow = 2;
-    var nRows = modSheet.getLastRow()-startRow+1;
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
-    if (nRows) {
+    var startRow = 2;
+    var nRows = modSheet.getLastRow()-startRow+1;
+    if (nRows > 0) {
         // Update total scores
         var idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
         var scoreRange = modSheet.getRange(startRow, columnIndex['q_scores'], nRows, 1);

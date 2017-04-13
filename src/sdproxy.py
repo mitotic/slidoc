@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.3c'
+VERSION = '0.97.3d'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1241,14 +1241,19 @@ def sheetAction(params, notrace=False):
             selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
             rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
 
-            if readOnlyAccess:
-                if delRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
+            modifyingRow = delRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow)
+            if modifyingRow:
+                if readOnlyAccess:
                     raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-
+                if adminUser:
+                    # Clear cached gradebook (because scores/grade may be updated)
+                    delSheet(SCORES_SHEET)
+                
+            updatingMaxScoreRow = sessionEntries and rowUpdates and rowUpdates[columnIndex['id']-1] == MAXSCORE_ID
             if headers:
                 modifyStartCol = int(params['modify']) if params.get('modify') else 0
                 if modifyStartCol:
-                    if not sessionEntries or not rowUpdates or rowUpdates[columnIndex['id']-1] != MAXSCORE_ID:
+                    if not updatingMaxScoreRow:
                         raise Exception("Error::Must be updating max scores row to modify headers in sheet "+sheetName)
                     checkCols = modifyStartCol-1
                 else:
@@ -1303,8 +1308,8 @@ def sheetAction(params, notrace=False):
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
 
-                    if computeTotalScore:
-                        updateTotalScores(modSheet, sessionAttributes, questions, True)
+            if updatingMaxScoreRow and computeTotalScore and questions:
+                updateTotalScores(modSheet, sessionAttributes, questions, True)
 
             userId = None
             displayName = None
@@ -2546,10 +2551,12 @@ def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
 def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
     # If not force, only update non-blank entries
     startRow = 2
-    nRows = modSheet.getLastRow()-startRow+1
     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
     columnIndex = indexColumns(modSheet)
-    if nRows:
+    nRows = modSheet.getLastRow()-startRow+1
+    if Settings['debug']:
+        print("DEBUG:updateTotalScores", nRows)
+    if nRows > 0:
         # Update total scores
         idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
         scoreRange = modSheet.getRange(startRow, columnIndex['q_scores'], nRows, 1)
