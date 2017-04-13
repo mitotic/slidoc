@@ -1218,11 +1218,13 @@ def sheetAction(params, notrace=False):
                 gradeDate = sessionEntries.get('gradeDate')
                 voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
 
-                if sessionAttributes['params']['features'].get('delay_answers') or sessionAttributes['params']['features'].get('remote_answers'):
-                    # Delayed or remote answers; compute total score only after grading
-                    computeTotalScore = gradeDate
-                else:
-                    computeTotalScore = True
+                if parseNumber(sessionEntries.get('scoreWeight')):
+                    # Compute total score?
+                    if sessionAttributes['params']['features'].get('delay_answers') or sessionAttributes['params']['features'].get('remote_answers'):
+                        # Delayed or remote answers; compute total score only after grading
+                        computeTotalScore = gradeDate
+                    else:
+                        computeTotalScore = True
 
             # Check parameter consistency
             getRow = params.get('get','')
@@ -1308,7 +1310,7 @@ def sheetAction(params, notrace=False):
                     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
                     columnIndex = indexColumns(modSheet)
 
-            if updatingMaxScoreRow and computeTotalScore and questions:
+            if updatingMaxScoreRow and computeTotalScore:
                 updateTotalScores(modSheet, sessionAttributes, questions, True)
 
             userId = None
@@ -1739,7 +1741,7 @@ def sheetAction(params, notrace=False):
 
                     # Save score for last take
                     savedSession = unpackSession(columnHeaders, origVals)
-                    if savedSession and savedSession.get('questionsAttempted'):
+                    if savedSession and savedSession.get('questionsAttempted') and computeTotalScore:
                         scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers'])
                         lastTake = str(scores.get('weightedCorrect') or 0)
                     else:
@@ -1997,13 +1999,12 @@ def sheetAction(params, notrace=False):
                             if rowValues[j] != colValue:
                                 raise Exception("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'")
 
-                    if scoresCol and sessionEntries and parseNumber(sessionEntries.get('scoreWeight')):
-                        if userId != MAXSCORE_ID and computeTotalScore:
-                            # Tally user scores
-                            savedSession = unpackSession(columnHeaders, rowValues)
-                            if savedSession and len(savedSession.get('questionsAttempted').keys()):
-                                scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
-                                rowValues[scoresCol-1] = scores.get('weightedCorrect', '')
+                    if userId != MAXSCORE_ID and scoresCol and computeTotalScore:
+                        # Tally user scores
+                        savedSession = unpackSession(columnHeaders, rowValues)
+                        if savedSession and len(savedSession.get('questionsAttempted').keys()):
+                            scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
+                            rowValues[scoresCol-1] = scores.get('weightedCorrect', '')
 
                     # Copy user info from roster (if available)
                     for j in range(len(rosterValues)):

@@ -689,12 +689,15 @@ function sheetAction(params) {
 		gradeDate = sessionEntries.gradeDate;
 		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
 
-		if (sessionAttributes['params']['features'].delay_answers || sessionAttributes['params']['features'].remote_answers) {
-                    // Delayed or remote answers; compute total score only after grading
-                    computeTotalScore = gradeDate;
-                } else {
-                    computeTotalScore = true;
-                }
+		if (parseNumber(sessionEntries.scoreWeight)) {
+		    // Compute total score?
+		    if (sessionAttributes['params']['features'].delay_answers || sessionAttributes['params']['features'].remote_answers) {
+			// Delayed or remote answers; compute total score only after grading
+			computeTotalScore = gradeDate;
+                    } else {
+			computeTotalScore = true;
+                    }
+		}
 	    }
 
 	    // Check parameter consistency
@@ -797,7 +800,7 @@ function sheetAction(params) {
 
 	    }
 	    
-	    if (updatingMaxScoreRow && computeTotalScore && questions) {
+	    if (updatingMaxScoreRow && computeTotalScore) {
 		updateTotalScores(modSheet, sessionAttributes, questions, true);
 	    }
 
@@ -1283,7 +1286,7 @@ function sheetAction(params) {
 
 		    // Save score for last take
 		    var savedSession = unpackSession(columnHeaders, origVals);
-		    if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
+		    if (savedSession && Object.keys(savedSession.questionsAttempted).length && computeTotalScore) {
 			var scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers']);
 			var lastTake = ''+(scores.weightedCorrect || 0);
                     } else {
@@ -1566,14 +1569,12 @@ function sheetAction(params) {
 			}
 		    }
 
-		    if (scoresCol && sessionEntries && parseNumber(sessionEntries.scoreWeight)) {
-			if (userId != MAXSCORE_ID && computeTotalScore) {
-			    // Tally user scores
-			    var savedSession = unpackSession(columnHeaders, rowValues);
-			    if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
-				var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params, sessionAttributes.remoteAnswers);
-				rowValues[scoresCol-1] = scores.weightedCorrect || '';
-			    }
+		    if (userId != MAXSCORE_ID && scoresCol && computeTotalScore) {
+			// Tally user scores
+			var savedSession = unpackSession(columnHeaders, rowValues);
+			if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
+			    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params, sessionAttributes.remoteAnswers);
+			    rowValues[scoresCol-1] = scores.weightedCorrect || '';
 			}
 		    }
 		    // Copy user info from roster (if available)
