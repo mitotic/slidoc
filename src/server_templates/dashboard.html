@@ -17,15 +17,19 @@
   <b>(Slidoc version {{version}})</b>
   <p></p>
 
-  <b><a href="{{ site_prefix }}/_actions">Actions</a></b>
+  <b><a class="clickable" href="{{ site_prefix }}/_upload">Upload files</a></b>
   <p></p>
 
-  <b><a href="{{ site_prefix }}/_sessions">Sessions</a></b>
+  <b><a class="clickable" href="{{ site_prefix }}/_actions">Site actions</a></b>
   <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_sessions">Manage sessions</a></b>
+  <p></p>
+
+  <hr>
 
   Current interactive session: {% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}
   <p></p>
-  <hr>
 
   Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
   <a class="clickable" href="{{ site_prefix }}/_sheet/roster_slidoc" >&#9783;</a>

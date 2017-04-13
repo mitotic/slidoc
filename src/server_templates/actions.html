@@ -11,7 +11,7 @@
 </head>
 <body>
 
-  <h2>{{site_name}} Actions </h2>
+  <h2>{{site_name}} Site actions </h2>
 
   <b>
   {% include "linkback.html" %}
@@ -23,15 +23,13 @@
   <ul>
     <li><a href="javascript:slidocAction('twitter')">twitter</a>: View twitter stream status</li>
     <hr>
-    <li><a href="javascript:slidocAction('upload')">upload</a>: Upload Markdown/Powerpoint/Zip file</li>
-    <hr>
     <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
     {% if not site_name %}
     <hr>
     <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
     {% end %}
   </ul>
-  Suspend status: <b>{{suspended}}</b><br>
+  Suspend status: <b>{{suspended or 'none'}}</b><br>
   <p></p>
 
   <a href="#" onclick="document.getElementById('slidoc-dash-advanced').style.display=null;this.style.display='none'">Show advanced options</a>
