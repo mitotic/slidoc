@@ -1001,7 +1001,7 @@ def sheetAction(params, notrace=False):
     # sheet: 'sheet name' (required)
     # admin: admin user name (optional)
     # token: authentication token
-    # action: ''|'answers'|'stats'|'scores'
+    # actions: ''|'answers'|'stats'|'scores'
     # headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     # name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     # id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -1044,7 +1044,7 @@ def sheetAction(params, notrace=False):
     returnMessages = []
 
     try:
-        if params.get('action'):
+        if params.get('actions'):
             raise Exception('Error:ACTION::Actions not supported by proxy')
         sheetName = params.get('sheet','')
         if not sheetName:

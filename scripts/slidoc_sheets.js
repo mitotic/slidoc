@@ -314,7 +314,7 @@ function sheetAction(params) {
     // sheet: 'sheet name' (required, except for proxy/action)
     // admin: admin user name (optional)
     // token: authentication token
-    // action: ''|'answers'|'stats'|'scores'
+    // actions: ''|'answers'|'stats'|'scores'
     // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     // id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -419,10 +419,10 @@ function sheetAction(params) {
             origUser = paramId;
         }
 
-	var action = params.action || '';
+	var performActions = params.actions || '';
 	var proxy = params.proxy || '';
 	var sheetName = params.sheet || '';
-	if (!action && !proxy && !sheetName)
+	if (!performActions && !proxy && !sheetName)
 	    throw('Error:SHEETNAME:No sheet name specified');
 
 	// Read-only sheets
@@ -433,24 +433,27 @@ function sheetAction(params) {
 
 	var loggingSheet = sheetName.match(/_log$/);
 
-	if (params.action) {
+	if (performActions) {
 	    if (!adminUser)
 		throw("Error:ACTION:Must be admin user to perform action on sheet "+sheetName);
 	    if (protectedSheet || restrictedSheet || loggingSheet)
 		throw('Error:ACTION:Action not allowed for sheet '+sheetName);
 	    var sessions = sheetName ? [sheetName] : getSessionNames();
-	    if (params.action == 'answers') {
-		for (var j=0; j<sessions.length; j++)
-		    updateAnswers(sessions[j]);
-	    } else if (params.action == 'stats') {
-		for (var j=0; j<sessions.length; j++)
-		    updateStats(sessions[j]);
-	    } else if (params.action == 'scores') {
-		var retval = updateScores(sessions);
-		if (sheetName && !retval.length)
-		    throw('Error:ACTION:Failed to update score for sheet '+sheetName);
-	    } else {
-		throw('Error:ACTION:Invalid action '+params.action+' for sheet '+sheetName);
+	    var actionList = performActions.split(',');
+	    for (var j=0; j<actionList.length; j++) {
+		if (actionList[j] == 'answers') {
+		    for (var j=0; j<sessions.length; j++)
+			updateAnswers(sessions[j]);
+		} else if (actionList[j] == 'stats') {
+		    for (var j=0; j<sessions.length; j++)
+			updateStats(sessions[j]);
+		} else if (actionList[j] == 'scores') {
+		    var retval = updateScores(sessions);
+		    if (sheetName && !retval.length)
+			throw('Error:ACTION:Failed to update score for sheet '+sheetName);
+		} else {
+		    throw('Error:ACTION:Invalid action '+actionList[j]+' for sheet '+sheetName);
+		}
 	    }
 	    return {"result": "success", "value": [], "headers": [],
 		    "info": [], "messages": ""};

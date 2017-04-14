@@ -2718,10 +2718,10 @@ Slidoc.manageSession = function() {
 	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><br>';
 	if (Sliobj.fullAccess) {
 	    html += hr;
-	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'stats'"+');">stats</span><br>';
+	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'stats'"+');">stats</span><br>';
 	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><hr>';
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionAction('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	}
 	html += '</blockquote>\n';
     }
@@ -2730,20 +2730,20 @@ Slidoc.manageSession = function() {
     Slidoc.showPopup(html);
 }
 
-Slidoc.sessionAction = function(action, sessionName) {
-    Slidoc.log('Slidoc.sessionAction: ', action, sessionName);
+Slidoc.sessionActions = function(actions, sessionName) {
+    Slidoc.log('Slidoc.sessionActions: ', actions, sessionName);
     if (sessionName == 'all')
 	var sheetName = '';
     else
 	var sheetName = sessionName || Sliobj.sessionName;
-    if (!window.confirm("Confirm action '"+action+"' for session "+(sheetName||'ALL')+'?'))
+    if (!window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'?'))
 	return;
-    Sliobj.indexSheet.action(action, sheetName, sheetActionCallback.bind(null, action, sheetName));
+    Sliobj.indexSheet.actions(actions, sheetName, sheetActionsCallback.bind(null, actions, sheetName));
 }
 
-function sheetActionCallback(action, sheetName, result, retStatus) {
-    Slidoc.log('sheetActionCallback:', action, sheetName, result, retStatus);
-    var msg = 'action '+action+' for sheet '+sheetName;
+function sheetActionsCallback(actions, sheetName, result, retStatus) {
+    Slidoc.log('sheetActionsCallback:', actions, sheetName, result, retStatus);
+    var msg = 'actions '+actions+' for sheet '+sheetName;
     if (!result) {
 	alert('Error in '+msg+': '+retStatus.error);
 	return;
@@ -5636,7 +5636,7 @@ function releaseGradesCallback(gradeDateStr, result, retStatus){
     if (result) {
 	Sliobj.gradeDateStr = gradeDateStr;
 	if (window.confirm('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students. Also copy to gradebook?'))
-	Slidoc.sessionAction('scores');
+	Slidoc.sessionActions('scores');
 
     } else {
 	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');

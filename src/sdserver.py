@@ -2366,8 +2366,9 @@ class ProxyHandler(BaseHandler):
 
         # Replace root-signed tokens with site-specific tokens
         modify_user_auth(args)
-        if (args.get('action') or args.get('modify')) and Options['gsheet_url'] and not Options['dry_run']:
+        if (args.get('actions') or args.get('modify')) and Options['gsheet_url'] and not Options['dry_run']:
             sessionName = args.get('sheet','')
+            actionSet = set(x.strip() for x in args.get('actions','').split(',') if x.strip())
             errMsg = ''
             if args.get('modify'):
                 if not sdproxy.startPassthru(sessionName):
@@ -2385,16 +2386,18 @@ class ProxyHandler(BaseHandler):
                     # Successful return
                     if args.get('modify'):
                         sdproxy.endPassthru(sessionName)
-                    elif args.get('action'):
+                    elif actionSet:
                         # Clear cached sheets
-                        if args.get('action') == 'scores':
+                        if 'scores' in actionSet:
                             sdproxy.refreshSheet(SCORES_SHEET)
-                        elif sessionName:
-                            sdproxy.refreshSheet(sessionName+'-'+args.get('action'))
-                        else:
-                            for name in sdproxy.Sheet_cache:
-                                if name.endswith('-'+action):
-                                    sdproxy.refreshSheet(name)
+                        for suffix in ('answers', 'stats'):
+                            if suffix in actionSet:
+                                if sessionName:
+                                    sdproxy.refreshSheet(sessionName+'-'+suffix)
+                                else:
+                                    for name in sdproxy.Sheet_cache:
+                                        if name.endswith('-'+suffix):
+                                            sdproxy.refreshSheet(name)
                     try:
                         retObj = json.loads(response.body)
                     except Exception, err:

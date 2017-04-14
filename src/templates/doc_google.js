@@ -227,7 +227,7 @@ var receiveDataCounter = 0;
 GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
 
-  if (data.action || data.modify) {
+  if (data.actions || data.modify) {
       // Workaround for passthru actions; this could be done without a GSheet
       if (url.match(/_websocket$/))
 	  url = url.replace(/_websocket$/, '_proxy');
@@ -559,7 +559,7 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     if (GService.gprofile.auth.graderKey)
 	params.admin = GService.gprofile.auth.origid;
 
-    if (callType != 'action')
+    if (callType != 'actions')
 	params.sheet = this.sheetName;
 
     var userId = params.id||null;
@@ -697,11 +697,11 @@ GoogleSheet.prototype.obj2row = function(obj) {
     return row;
 }
 
-GoogleSheet.prototype.action = function (action, sheetName, callback) {
+GoogleSheet.prototype.actions = function (actions, sheetName, callback) {
     // Workaround for passthru actions; this could be done without a GSheet
-    var params = { action: action, sheet: sheetName||'' };
+    var params = { actions: actions, sheet: sheetName||'' };
     this.callbackCounter += 1;
-    this.send(params, 'action', callback);
+    this.send(params, 'actions', callback);
 }
 
 GoogleSheet.prototype.createSheet = function (callback) {
