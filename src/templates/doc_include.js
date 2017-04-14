@@ -2713,15 +2713,13 @@ Slidoc.manageSession = function() {
 	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span><br>\n';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span><br>\n';
-	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"'"+');">View scores for this session</span><br>';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'scores_slidoc'"+');">View scores for all sessions</span><br>';
 	if (Sliobj.fullAccess) {
 	    html += hr;
-	    html += 'Update session: <span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'stats'"+');">stats</span><br>';
-	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><hr>';
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'scores'"+');">Post scores from this session to gradebook</span><br>';
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'scores', 'all'"+');">Post scores from all sessions to gradebook</span>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span><br>\n';
+	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
+	    html += hr;
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');">Post scores from this session to gradebook</span><br>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook', 'all'"+');">Post scores from all sessions to gradebook</span>';
 	}
 	html += '</blockquote>\n';
     }
@@ -5636,7 +5634,7 @@ function releaseGradesCallback(gradeDateStr, result, retStatus){
     if (result) {
 	Sliobj.gradeDateStr = gradeDateStr;
 	if (window.confirm('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students. Also copy to gradebook?'))
-	Slidoc.sessionActions('scores');
+	Slidoc.sessionActions('gradebook');
 
     } else {
 	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');

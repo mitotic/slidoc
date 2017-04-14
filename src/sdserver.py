@@ -2362,7 +2362,7 @@ class ProxyHandler(BaseHandler):
             args[arg_name] = self.get_argument(arg_name)
 
         if Options['debug']:
-            print >> sys.stderr, "DEBUG: URI", self.request.uri
+            print >> sys.stderr, "DEBUG: URI", self.request.uri, args.get('sheet'), args.get('actions'), args.get('modify')
 
         # Replace root-signed tokens with site-specific tokens
         modify_user_auth(args)
@@ -2388,10 +2388,10 @@ class ProxyHandler(BaseHandler):
                         sdproxy.endPassthru(sessionName)
                     elif actionSet:
                         # Clear cached sheets
-                        if 'scores' in actionSet:
+                        if 'gradebook' in actionSet:
                             sdproxy.refreshSheet(SCORES_SHEET)
-                        for suffix in ('answers', 'stats'):
-                            if suffix in actionSet:
+                        if 'answer_stats' in actionSet:
+                            for suffix in ('answers', 'stats'):
                                 if sessionName:
                                     sdproxy.refreshSheet(sessionName+'-'+suffix)
                                 else:

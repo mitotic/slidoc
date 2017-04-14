@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.3d';
+var VERSION = '0.97.3e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -314,7 +314,7 @@ function sheetAction(params) {
     // sheet: 'sheet name' (required, except for proxy/action)
     // admin: admin user name (optional)
     // token: authentication token
-    // actions: ''|'answers'|'stats'|'scores'
+    // actions: ''|'answer_stats'|'gradebook' (may be carried out directly or after proxy cache updates have been applied)
     // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     // id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -419,11 +419,8 @@ function sheetAction(params) {
             origUser = paramId;
         }
 
-	var performActions = params.actions || '';
 	var proxy = params.proxy || '';
 	var sheetName = params.sheet || '';
-	if (!performActions && !proxy && !sheetName)
-	    throw('Error:SHEETNAME:No sheet name specified');
 
 	// Read-only sheets
 	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != INDEX_SHEET) || sheetName.match(/-answers$/) || sheetName.match(/-stats$/);
@@ -433,30 +430,15 @@ function sheetAction(params) {
 
 	var loggingSheet = sheetName.match(/_log$/);
 
+	var performActions = params.actions || '';
 	if (performActions) {
 	    if (!adminUser)
 		throw("Error:ACTION:Must be admin user to perform action on sheet "+sheetName);
 	    if (protectedSheet || restrictedSheet || loggingSheet)
 		throw('Error:ACTION:Action not allowed for sheet '+sheetName);
-	    var sessions = sheetName ? [sheetName] : getSessionNames();
-	    var actionList = performActions.split(',');
-	    for (var j=0; j<actionList.length; j++) {
-		if (actionList[j] == 'answers') {
-		    for (var j=0; j<sessions.length; j++)
-			updateAnswers(sessions[j]);
-		} else if (actionList[j] == 'stats') {
-		    for (var j=0; j<sessions.length; j++)
-			updateStats(sessions[j]);
-		} else if (actionList[j] == 'scores') {
-		    var retval = updateScores(sessions);
-		    if (sheetName && !retval.length)
-			throw('Error:ACTION:Failed to update score for sheet '+sheetName);
-		} else {
-		    throw('Error:ACTION:Invalid action '+actionList[j]+' for sheet '+sheetName);
-		}
-	    }
-	    return {"result": "success", "value": [], "headers": [],
-		    "info": [], "messages": ""};
+
+	} else if (!proxy && !sheetName) {
+	    throw('Error:SHEETNAME:No sheet name specified');
 	}
 
 	var sessionEntries = null;
@@ -492,7 +474,10 @@ function sheetAction(params) {
 	returnInfo.prevTimestamp = null;
 	returnInfo.timestamp = null;
 
-	if (proxy && params.get && params.all) {
+	if (performActions) {
+	    actionHandler(performActions, sheetName, true);
+
+	} else if (proxy && params.get && params.all) {
 	    // Return all sheet values to proxy
 	    var modSheet = getSheet(sheetName);
 	    if (!modSheet)
@@ -517,10 +502,11 @@ function sheetAction(params) {
 	    var data = JSON.parse(params.data);
 	    for (var j=0; j<data.length; j++) {
 		var updateSheetName = data[j][0];
-		var updateHeaders = data[j][1];
-		var updateKeys = data[j][2];
-		var updateRows = data[j][3];
-		//returnMessages.push('Debug::updateSheet, keys, rows: '+updateSheetName+', '+updateKeys+', '+updateRows.length);
+		var proxyActions = data[j][1];
+		var updateHeaders = data[j][2];
+		var updateKeys = data[j][3];
+		var updateRows = data[j][4];
+		//returnMessages.push('Debug::updateSheet, actions, keys, rows: '+updateSheetName+', '+proxyActions+', '+updateKeys+', '+updateRows.length);
 
 		try {
 		    var updateSheet = getSheet(updateSheetName);
@@ -621,6 +607,16 @@ function sheetAction(params) {
 			}
 			if (totalCol && (deletedRows || insertedRows))
 			    updateTotalFormula(updateSheet, lastRowNum+insertedRows-deletedRows);
+
+			if (proxyActions) {
+			    // Perform actions after cache updates have been applied
+			    try {
+				actionHandler(proxyActions, updateSheetName);
+			    } catch(err) {
+				returnInfo.updateErrors.push([updateSheetName, "Error:ACTION:Failed proxy action(s) "+proxyActions+' for sheet '+updateSheetName+': '+err]);
+			    }
+			}
+
 		    }
 		} catch(err) {
 		    var errMsg = ''+err;
@@ -630,6 +626,7 @@ function sheetAction(params) {
 			///throw(errMsg);
 		}
 	    }
+
         } else if (params.delsheet) {
 	    // Delete sheet (and session entry)
 	    returnValues = [];
@@ -2458,7 +2455,7 @@ function updateSession(actionFunc) {
 	    if (sessionSheet.getLastRow() < 2)
 		throw('No data rows in sheet: '+sessionName);
 	}
-	return actionFunc(sessionName);
+	return actionFunc(sessionName, true);
     } finally { //release lock
 	lock.releaseLock();
     }
@@ -2471,7 +2468,7 @@ function sessionAnswerSheet() {
     notify('Created sheet :'+sheetName, 'Slidoc Answers');
 }
 
-function updateAnswers(sessionName) {
+function updateAnswers(sessionName, create) {
     try {
 	var sessionSheet = getSheet(sessionName);
 	if (!sessionSheet)
@@ -2479,6 +2476,11 @@ function updateAnswers(sessionName) {
 	if (!sessionSheet.getLastColumn())
 	    throw('No columns in sheet: '+sessionName);
 
+	var answerSheetName = sessionName+'-answers';
+	var answerSheet = getSheet(answerSheetName, ANSWERS_DOC, create);
+	if (!answerSheet)
+	    return '';
+	
 	var sessionColIndex = indexColumns(sessionSheet);
 	var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
@@ -2534,8 +2536,6 @@ function updateAnswers(sessionName) {
 	// Session answers headers
 
 	// New answers sheet
-	var answerSheetName = sessionName+'-answers';
-	var answerSheet = getSheet(answerSheetName, ANSWERS_DOC, true);
 	answerSheet.clear()
 	var answerHeaderRange = answerSheet.getRange(1, 1, 1, answerHeaders.length);
 	answerHeaderRange.setValues([answerHeaders]);
@@ -2706,7 +2706,7 @@ function sessionStatSheet() {
     notify('Created sheet :'+sheetName, 'Slidoc Stats');
 }
 
-function updateStats(sessionName) {
+function updateStats(sessionName, create) {
     try {
 	loadSettings();
 	var sessionSheet = getSheet(sessionName);
@@ -2714,6 +2714,11 @@ function updateStats(sessionName) {
 	    throw('Sheet not found '+sessionName);
 	if (!sessionSheet.getLastColumn())
 	    throw('No columns in sheet '+sessionName);
+
+	var statSheetName = sessionName+'-stats';
+	var statSheet = getSheet(statSheetName, STATS_DOC, create);
+	if (!statSheet)
+	    return '';
 
 	var sessionColIndex = indexColumns(sessionSheet);
 	var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
@@ -2762,8 +2767,6 @@ function updateStats(sessionName) {
 	}
 
 	// New stat sheet
-	var statSheetName = sessionName+'-stats';
-	var statSheet = getSheet(statSheetName, STATS_DOC, true);
 	statSheet.clear()
 	var statHeaderRange = statSheet.getRange(1, 1, 1, statHeaders.length);
 	statHeaderRange.setValues([statHeaders]);
@@ -2864,29 +2867,33 @@ function updateTotalFormula(modSheet, nRows) {
 
 function updateTotalScores(modSheet, sessionAttributes, questions, force) {
     // If not force, only update non-blank entries
+    // Return number of rows updated
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
+    var nUpdates = 0;
     var startRow = 2;
     var nRows = modSheet.getLastRow()-startRow+1;
     if (nRows > 0) {
         // Update total scores
         var idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
-        var scoreRange = modSheet.getRange(startRow, columnIndex['q_scores'], nRows, 1);
-        var scoreValues = scoreRange.getValues();
+        var scoreValues = modSheet.getSheetValues(startRow, columnIndex['q_scores'], nRows, 1);
         for (var k=0; k < nRows; k++) {
             if (idVals[k][0] != MAXSCORE_ID && questions && (force || scoreValues[k][0] != '')) {
 		var temRowVals = modSheet.getSheetValues(startRow+k, 1, 1, columnHeaders.length)[0];
 		var savedSession = unpackSession(columnHeaders, temRowVals);
+		var newScore = '';
 		if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
 		    var scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers']);
-		    scoreValues[k][0] = scores.weightedCorrect || '';
-                } else {
-		    scoreValues[k][0] = '';
+		    newScore = scores.weightedCorrect || '';
+		}
+		if (scoreValues[k][0] != newScore) {
+                    modSheet.setSheetValues(startRow+k, columnIndex['q_scores'], 1, 1, [[newScore]]);
+		    nUpdates += 1;
 		}
 	    }
 	}
-        scoreRange.setValues(scoreValues);
     }
+    return nUpdates;
 }
 
 
@@ -3294,7 +3301,7 @@ function updateTotalSession() {
     return updateSession(updateTotalAux);
 }
 
-function updateTotalAux(sheetName) {
+function updateTotalAux(sheetName, create) {
     if (sheetName == 'all')
 	var sessionNames = getSessionNames();
     else
@@ -3311,13 +3318,33 @@ function updateTotalAux(sheetName) {
     notify('Updated totals for sessions: '+sessionNames.join(', '), 'Slidoc Totals');
 }
 
+function actionHandler(actions, sheetName, create) {
+    var sessions = sheetName ? [sheetName] : getSessionNames();
+    var actionList = actions.split(',');
+    for (var j=0; j<actionList.length; j++) {
+	if (actionList[j] == 'answer_stats') {
+	    for (var j=0; j<sessions.length; j++) {
+		updateAnswers(sessions[j], create);
+		updateStats(sessions[j], create);
+	    }
+	} else if (actionList[j] == 'gradebook') {
+	    var retval = updateScores(sessions, create);
+	    if (!retval.length && sessions.length)
+		throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
+	} else {
+	    throw('Error:ACTION:Invalid action '+actionList[j]+' for session(s) '+sessions);
+	}
+    }
+}
+
+
 function updateScoreSession() {
     // Update scores sheet for current session
     return updateSession(updateScoreAux);
 }
 
-function updateScoreAux(sessionName) {
-    var updatedNames = updateScores([sessionName], true);
+function updateScoreAux(sessionName, create) {
+    var updatedNames = updateScores([sessionName], create||false, true);
     if (updatedNames && updatedNames.length)
 	notify('Updated scores for session '+sessionName, 'Slidoc Scores');
     else
@@ -3326,27 +3353,14 @@ function updateScoreAux(sessionName) {
 }
 
 function updateScoreAll() {
-    // Update scores sheet for all sessions
+    // Update scores sheet for all sessions alread-posted
 
     var lock = LockService.getPublicLock();
     lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
 
     try {
 	loadSettings();
-	var sessionNames = getSessionNames();
-	var scoreSheet = getSheet(SCORES_SHEET);
-	if (scoreSheet) {
-	    // Refresh only posted sessions
-	    var scoreColIndex = indexColumns(scoreSheet);
-	    var curSessions = [];
-	    for (var j=0; j<sessionNames.length; j++) {
-		if (scoreColIndex['_'+sessionNames[j]])
-		    curSessions.push(sessionNames[j]);
-	    }
-	    sessionNames = curSessions;
-	}
-
-	var updatedNames = updateScores(sessionNames, true);
+	var updatedNames = updateScores(getSessionNames(), false, true);
 	notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
     } catch(err) {
 	SpreadsheetApp.getUi().alert(''+err);
@@ -3358,11 +3372,28 @@ function updateScoreAll() {
 
 var AGGREGATE_COL_RE = /\b(_\w+)_(avg|normavg|sum)(_(\d+))?$/i;
 
-function updateScores(sessionNames, interactive) {
+function updateScores(sessionNames, create, interactive) {
     // Update scores sheet for sessions in list
     // Returns list of updated sessions
 
     try {
+	var scoreSheet = getSheet(SCORES_SHEET);
+
+	if (!create) {
+	    // Refresh only already posted sessions
+	    if (!scoreSheet)
+		return [];
+	    var temColIndex = indexColumns(scoreSheet);
+	    var curSessions = [];
+	    for (var j=0; j<sessionNames.length; j++) {
+		if (temColIndex['_'+sessionNames[j]])
+		    curSessions.push(sessionNames[j]);
+	    }
+	    if (!curSessions.length)
+		return [];
+	    sessionNames = curSessions;
+	}
+
 	var totalFormula = Settings['total_formula'] || '';
 	var gradingScale = Settings['grading_scale'] || '';
 	var aggregateColumns = [];
@@ -3457,11 +3488,9 @@ function updateScores(sessionNames, interactive) {
 	// New score sheet
 	var extraHeaders = ['total', 'grade', 'numGrade'];
 	var scoreHeaders = MIN_HEADERS.concat(extraHeaders);
-	var scoreSheetName = SCORES_SHEET;
-	var scoreSheet = getSheet(scoreSheetName);
 	if (!scoreSheet) {
 	    // Create session score sheet
-	    scoreSheet = getSheet(scoreSheetName, null, true);
+	    scoreSheet = getSheet(SCORES_SHEET, null, true);
 
 	    // Score sheet headers
 	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
@@ -3541,26 +3570,18 @@ function updateScores(sessionNames, interactive) {
 	    updateTotalScores(sessionSheet, sessionAttributes, questions, true);
 
 	    // Update answers/stats sheets (if already present)
-	    var ansName = sessionName+'-answers';
-	    if (getSheet(ansName)) {
-		try {
-		    deleteSheet(ansName);
-		    updateAnswers(sessionName);
-		} catch(err) {
-		    if (interactive)
-			notify('Error in updating sheet '+ansName+': '+err, 'Slidoc Answers');
-		}
+	    try {
+		updateAnswers(sessionName);
+	    } catch(err) {
+		if (interactive)
+		    notify('Error in updating answers sheet for '+sessionName+': '+err, 'Slidoc Answers');
 	    }
 
-	    var statsName = sessionName+'-stats';
-	    if (getSheet(statsName)) {
-		try {
-		    deleteSheet(statsName);
-		    updateStats(sessionName);
-		} catch(err) {
-		    if (interactive)
-			notify('Error in updating sheet '+statsName+': '+err, 'Slidoc Stats');
-		}
+	    try {
+		updateStats(sessionName);
+	    } catch(err) {
+		if (interactive)
+		    notify('Error in updating stats sheet for '+sessionName+': '+err, 'Slidoc Stats');
 	    }
 
 	    if (sessionWeight !== null && !sessionWeight) // Skip if zero sessionWeight

@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.3d'
+VERSION = '0.97.3e'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -201,14 +201,14 @@ def startPreview(sessionName):
         del Miss_cache[sessionName]
     sessionSheet = Sheet_cache.get(sessionName)
     if sessionSheet:
-        if sessionSheet.get_updates(Global.cacheUpdateTime) is not None:
+        if sessionSheet.get_updates() is not None:
             return 'Pending updates for session '+sessionName+'; retry preview after 10-20 seconds'
     else:
         sessionSheet = getSheet(sessionName, optional=True)
 
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if indexSheet:
-        if indexSheet.get_updates(Global.cacheUpdateTime) is not None:
+        if indexSheet.get_updates() is not None:
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
@@ -454,6 +454,9 @@ class Sheet(object):
         self.modTime = modTime
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
 
+        self.actionsRequested = ''
+        self.actionsRequestTime = 0
+
         self.readOnly = isReadOnly(name)
         self.holdSec = CACHE_HOLD_SEC
 
@@ -499,6 +502,11 @@ class Sheet(object):
     def expire(self):
         # Delete after any updates are processed
         self.holdSec = 0
+
+    def requestActions(self, actions=''):
+        # Actions to be carried after cache updates to this sheet are completed
+        self.actionsRequested = actions
+        self.actionsRequestTime = sliauth.epoch_ms()
 
     def export(self, keepHidden=False, allUsers=False, csvFormat=False, idRename='', altidRename=''):
         headers = self.xrows[0][:]
@@ -671,27 +679,33 @@ class Sheet(object):
         self.accessTime = self.modTime
         IOLoop.current().add_callback(update_remote_sheets)
 
-    def get_updates(self, lastUpdateTime):
-        if self.modTime < lastUpdateTime:
-            return None
-
+    def get_updates(self):
         if Global.previewStatus and self.name in (Global.previewStatus['sessionName'], INDEX_SHEET):
             # Delay updates for preview session and index sheet
             return None
-        
+
+        if self.actionsRequestTime >= Global.cacheUpdateTime:
+            actions = self.actionsRequested
+        else:
+            actions = ''
+            
+        if self.modTime < Global.cacheUpdateTime and not actions:
+            return None
+
         rows = []
         if self.keyCol:
             keys = dict( (key, 1) for key in self.keyMap )
             for row in self.xrows[1:]:
                 keyValue = row[self.keyCol-1]
-                if self.keyMap[keyValue] > lastUpdateTime:
+                if self.keyMap[keyValue] > Global.cacheUpdateTime:
                     rows.append([keyValue, row])
         else:
             keys = None
             for j, row in enumerate(self.xrows[1:]):
-                if self.keyMap[j+2] > lastUpdateTime:
+                if self.keyMap[j+2] > Global.cacheUpdateTime:
                     rows.append([j+2, row])
-        return [self.xrows[0], keys, rows]
+
+        return [actions, self.xrows[0], keys, rows]
                     
 
 class Range(object):
@@ -719,7 +733,7 @@ def getCacheStatus():
         sheetStr = ''
         sheet = Sheet_cache.get(sheetName)
         if sheetName in Lock_cache:
-            if sheet and sheet.get_updates(Global.cacheUpdateTime) is not None:
+            if sheet and sheet.get_updates() is not None:
                 sheetStr = sheetName+' (locking...)'
             else:
                 action = 'unlock'
@@ -742,7 +756,7 @@ def lockSheet(sheetName, lockType='user'):
         return False
     if sheetName not in Lock_cache and not isReadOnly(sheetName):
         Lock_cache[sheetName] = lockType
-    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates() is not None:
         return False
     return True
 
@@ -750,7 +764,7 @@ def unlockSheet(sheetName):
     # Unlock and refresh sheet (if no updates pending)
     if sheetName == Global.previewStatus.get('sessionName'):
         return False
-    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+    if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates() is not None:
         return False
     delSheet(sheetName)
     return True
@@ -772,7 +786,7 @@ def refreshSheet(sheetName):
     sheet = Sheet_cache.get(sheetName)
     if not sheet:
         return True
-    if sheet.get_updates(Global.cacheUpdateTime) is None:
+    if sheet.get_updates() is None:
         delSheet(sheetName)
     else:
         sheet.expire()
@@ -811,7 +825,7 @@ def get_locked():
     # Return list of locked sheet name (* if updates not yet send to Google sheets)
     locked = []
     for sheetName in Lock_cache:
-        if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates(Global.cacheUpdateTime) is not None:
+        if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates() is not None:
             locked.append(sheetName+'*')
         else:
             locked.append(sheetName)
@@ -898,18 +912,28 @@ def update_remote_sheets(force=False, synchronous=False):
         schedule_update(cur_time-Global.cacheResponseTime)
         return
 
-    modRequests = []
+    specialMods = []
+    sessionMods = []
     curTime = sliauth.epoch_ms()
     for sheetName, sheet in Sheet_cache.items():
         # Check each cached sheet for updates
-        updates = sheet.get_updates(Global.cacheUpdateTime)
+        updates = sheet.get_updates()
         if updates is None:
             if curTime-sheet.accessTime > 1000*sheet.holdSec and previewingSession() != sheetName:
                 # Cache entry has expired
                 del Sheet_cache[sheetName]
             continue
-        # sheet_name, headers_list, keys_dictionary, modified_rows
-        modRequests.append([sheetName, updates[0], updates[1], updates[2]])
+
+        # sheet_name, actions, headers_list, keys_dictionary, modified_rows
+        modVals = [sheetName, updates[0], updates[1], updates[2], updates[3]]
+
+        if sheetName.endswith('_slidoc'):
+            # Update '*_slidoc' sheets before regular sessions (better for re-computing score totals etc.)
+            specialMods.append(modVals)
+        else:
+            sessionMods.append(modVals)
+
+    modRequests = specialMods + sessionMods
 
     if Settings['debug']:
             print("update_remote_sheets:B", modRequests is not None, file=sys.stderr)
@@ -1001,7 +1025,7 @@ def sheetAction(params, notrace=False):
     # sheet: 'sheet name' (required)
     # admin: admin user name (optional)
     # token: authentication token
-    # actions: ''|'answers'|'stats'|'scores'
+    # actions: ''|'answer_stats'|'gradebook' (not for proxy)
     # headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     # name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     # id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -1045,10 +1069,10 @@ def sheetAction(params, notrace=False):
 
     try:
         if params.get('actions'):
-            raise Exception('Error:ACTION::Actions not supported by proxy')
+            raise Exception('Error:ACTION:Actions not supported by proxy')
         sheetName = params.get('sheet','')
         if not sheetName:
-            raise Exception('Error:SHEETNAME::No sheet name specified')
+            raise Exception('Error:SHEETNAME:No sheet name specified')
 
         freezeDate = createDate(Settings['freeze_date']) or None
         
@@ -1311,7 +1335,8 @@ def sheetAction(params, notrace=False):
                     columnIndex = indexColumns(modSheet)
 
             if updatingMaxScoreRow and computeTotalScore:
-                updateTotalScores(modSheet, sessionAttributes, questions, True)
+                if updateTotalScores(modSheet, sessionAttributes, questions, True):
+                    modSheet.requestActions('answer_stats,gradebook')
 
             userId = None
             displayName = None
@@ -2551,27 +2576,31 @@ def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
 
 def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
     # If not force, only update non-blank entries
-    startRow = 2
+    # Return number of rows updated
     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
     columnIndex = indexColumns(modSheet)
+    nUpdates = 0
+    startRow = 2
     nRows = modSheet.getLastRow()-startRow+1
     if Settings['debug']:
         print("DEBUG:updateTotalScores", nRows)
     if nRows > 0:
         # Update total scores
         idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
-        scoreRange = modSheet.getRange(startRow, columnIndex['q_scores'], nRows, 1)
-        scoreValues = scoreRange.getValues()
+        scoreValues = modSheet.getSheetValues(startRow, columnIndex['q_scores'], nRows, 1)
         for k in range(nRows):
             if idVals[k][0] != MAXSCORE_ID and questions and (force or scoreValues[k][0] != ''):
                 temRowVals = modSheet.getSheetValues(startRow+k, 1, 1, len(columnHeaders))[0]
                 savedSession = unpackSession(columnHeaders, temRowVals)
+                newScore = '';
                 if savedSession and savedSession.get('questionsAttempted'):
                     scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers'])
-                    scoreValues[k][0] = scores.get('weightedCorrect', '')
-                else:
-                    scoreValues[k][0] = ''
-        scoreRange.setValues(scoreValues)
+                    newScore = scores.get('weightedCorrect', '')
+                if scoreValues[k][0] != newScore:
+                    modSheet.setSheetValues(startRow+k, columnIndex['q_scores'], 1, 1, [[newScore]])
+                    nUpdates += 1
+    return nUpdates
+
 
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
     # answers = {1:{'response':, 'explain':},...}
