@@ -837,13 +837,8 @@ class ActionHandler(BaseHandler):
             self.write(content)
 
         elif action in ('_sheet',):
-            sheet = sdproxy.getSheet(subsubpath, optional=True)
-            if not sheet:
-                self.displayMessage('Unable to retrieve sheet '+subsubpath)
-                return
-            lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
-            rows = sheet.export(idRename=id_col,altidRename=altid_col)
-            self.render('table.html', site_name=Options['site_name'], table_name=subsubpath, table_data=rows, table_fixed='fixed')
+            self.displaySheet(sessionName, download=self.get_argument("download", ''),
+                               allUsers=self.get_argument("allusers", ''), keepHidden=self.get_argument("keephidden", ''))
 
         elif action in ('_getcol', '_getrow'):
             subsubpath, sep, label = subsubpath.partition(';')
@@ -1257,6 +1252,27 @@ class ActionHandler(BaseHandler):
         web_prefix = web_dir+privatePrefix(uploadType)+'/'+uploadType+'/'+fname
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+fname+'.md', web_prefix+'.html', web_prefix+'_images'
 
+    def displaySheet(self, sessionName, download=False, allUsers=False, keepHidden=False):
+            sheet = sdproxy.getSheet(sessionName, optional=True)
+            if not sheet:
+                self.displayMessage('Unable to retrieve sheet '+sessionName)
+                return
+            lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
+            timestamp = ''
+            if sessionName.endswith('-answers') or sessionName.endswith('-correct') or sessionName.endswith('-stats'):
+                try:
+                    timestamp = sliauth.iso_date(sdproxy.lookupValues('_average', ['Timestamp'], sessionName)['Timestamp'])
+                except Exception, excp:
+                    pass
+
+            rows = sheet.export(csvFormat=download, allUsers=allUsers, keepHidden=keepHidden, idRename=id_col, altidRename=altid_col)
+            if download:
+                self.set_header('Content-Type', 'text/csv')
+                self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % sessionName)
+                self.write(rows)
+            else:
+                self.render('table.html', site_name=Options['site_name'], table_name=sessionName, table_data=rows, table_fixed='fixed',
+                            timestamp=timestamp)
 
     def postAction(self, subpath):
         previewingSession = self.previewActive()
@@ -1306,17 +1322,8 @@ class ActionHandler(BaseHandler):
             return self.imageUpload(sessionName, imageFile, fname, fbody)
 
         if action in ('_sheet',):
-            keepHidden = self.get_argument("keephidden", '')
-            allUsers = self.get_argument("allusers", '')
-            sheet = sdproxy.getSheet(sessionName, optional=True)
-            if not sheet:
-                self.displayMessage('Unable to retrieve sheet '+sessionName)
-                return
-            self.set_header('Content-Type', 'text/csv')
-            self.set_header('Content-Disposition', 'attachment; filename="%s.csv"' % sessionName)
-            lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
-            csvData = sheet.export(csvFormat=True, keepHidden=keepHidden, allUsers=allUsers, idRename=id_col, altidRename=altid_col)
-            self.write(csvData)
+            self.displaySheet(sessionName, download=self.get_argument("download", ''),
+                               allUsers=self.get_argument("allusers", ''), keepHidden=self.get_argument("keephidden", ''))
             return
 
         if previewingSession:

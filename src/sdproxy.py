@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.3e'
+VERSION = '0.97.3f'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -1336,7 +1336,7 @@ def sheetAction(params, notrace=False):
 
             if updatingMaxScoreRow and computeTotalScore:
                 if updateTotalScores(modSheet, sessionAttributes, questions, True):
-                    modSheet.requestActions('answer_stats,gradebook')
+                    modSheet.requestActions('answer_stats,gradebook,correct')
 
             userId = None
             displayName = None

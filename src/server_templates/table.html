@@ -130,12 +130,18 @@ document.onreadystatechange = function(event) {
   <form action="/{{site_name}}{% if site_name %}/{% end %}_sheet/{{table_name}}" method="post" enctype="multipart/form-data" >
      <a href="/{{site_name}}{% if site_name %}/{% end %}">Home</a> &nbsp;
      <p></p>
-     <input id="slidoc-sheet-submit" type="submit" value="Download sheet">
+     <input id="slidoc-sheet-submit" type="submit" value="Redisplay">
      &nbsp;&nbsp;
-     <label for="keephidden">Keep hidden columns:</label> <input type="checkbox" id="keephidden" name="keephidden" value="keep">
+     <label for="download">Download as CSV:</label> <input type="checkbox" id="download" name="download" value="download">
      &nbsp;&nbsp;
-     <label for="allusers">Keep all users:</label> <input type="checkbox" id="allusers" name="allusers" value="keep">
+     <label for="allusers">Show all users:</label> <input type="checkbox" id="allusers" name="allusers" value="keep">
+     &nbsp;&nbsp;
+     <label for="keephidden">Show hidden columns:</label> <input type="checkbox" id="keephidden" name="keephidden" value="keep">
      <p></p>
+     {% if timestamp %}
+     Timestamp = {{ timestamp }}
+     <p></p>
+     {% end %}
    </fieldset>
    {% module xsrf_form_html() %}
   </form>
