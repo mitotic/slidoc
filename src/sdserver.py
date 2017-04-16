@@ -2393,22 +2393,13 @@ class ProxyHandler(BaseHandler):
                     # Successful return
                     if args.get('modify'):
                         sdproxy.endPassthru(sessionName)
-                    elif actionSet:
-                        # Clear cached sheets
-                        if 'gradebook' in actionSet:
-                            sdproxy.refreshSheet(SCORES_SHEET)
-                        if 'answer_stats' in actionSet:
-                            for suffix in ('answers', 'stats'):
-                                if sessionName:
-                                    sdproxy.refreshSheet(sessionName+'-'+suffix)
-                                else:
-                                    for name in sdproxy.Sheet_cache:
-                                        if name.endswith('-'+suffix):
-                                            sdproxy.refreshSheet(name)
                     try:
                         retObj = json.loads(response.body)
                     except Exception, err:
                         retObj = {'result': 'error', 'error': 'passthru: JSON parsing error: '+str(err) }
+
+                    for sheetName in retObj.get('info',{}).get('refreshSheets',[]):
+                        sdproxy.refreshSheet(sheetName)
         else:
             retObj = sdproxy.sheetAction(args)
 

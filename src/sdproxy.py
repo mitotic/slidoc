@@ -997,6 +997,9 @@ def handle_proxy_response(response):
         # Update succeeded
         Global.totalCacheResponseBytes += len(response.body)
 
+        for sheetName in respObj['info'].get('refreshSheets',[]):
+            refreshSheet(sheetName)
+
         for errSessionName, proxyErrMsg in respObj['info'].get('updateErrors',[]):
             Lock_cache[errSessionName] = proxyErrMsg
             print("handle_proxy_response: Update LOCKED %s: %s" % (errSessionName, proxyErrMsg), file=sys.stderr)
@@ -1272,8 +1275,8 @@ def sheetAction(params, notrace=False):
                 if readOnlyAccess:
                     raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
                 if adminUser:
-                    # Clear cached gradebook (because scores/grade may be updated)
-                    delSheet(SCORES_SHEET)
+                    # Refresh cached gradebook (because scores/grade may be updated)
+                    refreshSheet(SCORES_SHEET)
                 
             updatingMaxScoreRow = sessionEntries and rowUpdates and rowUpdates[columnIndex['id']-1] == MAXSCORE_ID
             if headers:

@@ -476,7 +476,7 @@ function sheetAction(params) {
 	returnInfo.timestamp = null;
 
 	if (performActions) {
-	    actionHandler(performActions, sheetName, true);
+	    returnInfo.refreshSheets = actionHandler(performActions, sheetName, true);
 
 	} else if (proxy && params.get && params.all) {
 	    // Return all sheet values to proxy
@@ -612,7 +612,7 @@ function sheetAction(params) {
 			if (proxyActions) {
 			    // Perform actions after cache updates have been applied
 			    try {
-				actionHandler(proxyActions, updateSheetName);
+				returnInfo.refreshSheets = actionHandler(proxyActions, updateSheetName);
 			    } catch(err) {
 				returnInfo.updateErrors.push([updateSheetName, "Error:ACTION:Failed proxy action(s) "+proxyActions+' for sheet '+updateSheetName+': '+err]);
 			    }
@@ -3348,24 +3348,30 @@ function updateTotalAux(sheetName, create) {
 function actionHandler(actions, sheetName, create) {
     var sessions = sheetName ? [sheetName] : getSessionNames();
     var actionList = actions.split(',');
+    var refreshSheets = []
     for (var j=0; j<actionList.length; j++) {
 	if (actionList[j] == 'answer_stats') {
 	    for (var j=0; j<sessions.length; j++) {
 		updateAnswers(sessions[j], create);
 		updateStats(sessions[j], create);
+		refreshSheets.push(sessions[j]+'-answers');
+		refreshSheets.push(sessions[j]+'-stats');
 	    }
 	} else if (actionList[j] == 'correct') {
 	    for (var j=0; j<sessions.length; j++) {
 		updateCorrect(sessions[j], create);
+		refreshSheets.push(sessions[j]+'-correct');
 	    }
 	} else if (actionList[j] == 'gradebook') {
 	    var retval = updateScores(sessions, create);
 	    if (!retval.length && sessions.length)
 		throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
+	    refreshSheets.push(SCORES_SHEET);
 	} else {
 	    throw('Error:ACTION:Invalid action '+actionList[j]+' for session(s) '+sessions);
 	}
     }
+    return refreshSheets;
 }
 
 
