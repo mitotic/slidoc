@@ -4,6 +4,7 @@
 body.slidoc-all-view .slidoc-noall, 
 body.slidoc-fullscreen-view .slidoc-nofullscreen,
 body.slidoc-paced-view .slidoc-nopaced,
+body.slidoc-localpreview-view .slidoc-nolocalpreview,
 body.slidoc-remote-view .slidoc-noremote,
 body.slidoc-simple-view .slidoc-nosimple,
 body.slidoc-slide-view .slidoc-noslide,

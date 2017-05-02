@@ -225,6 +225,7 @@ def endPreview():
     schedule_update(force=True)
 
 def savePreview():
+    # Save snapshot of preview (usually after compiling)
     sessionName = Global.previewStatus.get('sessionName', '')
     if not sessionName:
         raise Exception('No preview session to save')
@@ -895,8 +896,8 @@ def updates_current():
             print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
 def update_remote_sheets(force=False, synchronous=False):
-    if Settings['debug']:
-        print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
+    ##if Settings['debug']:
+    ##    print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
 
     if not Settings['gsheet_url'] or Settings['dry_run']:
         # No updates if no sheet URL or dry run

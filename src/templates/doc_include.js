@@ -555,6 +555,7 @@ function onreadystateaux() {
 }
 
 Sliobj.previewState = false;
+Sliobj.updateView = false;
 
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:", Sliobj.reloadCheck);
@@ -566,6 +567,20 @@ Slidoc.pageSetup = function() {
 		uploadButton.style.display = null;
 	}
 	setTimeout(reloadCheckFunc, 1000);
+	Sliobj.updateView = true;
+	Slidoc.localMessages(true);
+    }
+
+    var match = location.pathname.match(/\/_preview\b/);
+    if (match) {
+	Sliobj.previewState = true;
+	previewMessages(true);
+	if (!Sliobj.params.fileName)
+	    toggleClass(true, 'slidoc-preview-view');
+	if (getParameter('update')) {
+	    hideClass('slidoc-previewend', true);
+	    Sliobj.updateView = true;
+	}
     }
 
     if (Slidoc.serverCookie) {
@@ -578,14 +593,6 @@ Slidoc.pageSetup = function() {
 	    var editIcons = document.getElementsByClassName('slidoc-edit-icon');
 	    [].forEach.call(editIcons, function(elem) { elem.style.display = 'none'; });
 	}
-    }
-
-    var match = location.pathname.match(/\/_preview\b/);
-    if (match) {
-	Sliobj.previewState = true;
-	previewMessages(true);
-	if (!Sliobj.params.fileName)
-	    toggleClass(true, 'slidoc-preview-view');
     }
 
     var loadElem = document.getElementById("slidoc-init-load");
@@ -704,6 +711,10 @@ function handleEditDrop(evt) {
     if (evt.stopPropagation) evt.stopPropagation();
     if (evt.preventDefault) evt.preventDefault();
 
+    if (Sliobj.reloadCheck) {
+	alert('Slide drag-drop not implemented for local preview');
+	return;
+    }
 
     try {
 	var params = JSON.parse(evt.dataTransfer.getData('application/json'));
@@ -890,6 +901,29 @@ Slidoc.slideEditMenu = function() {
     Slidoc.showPopup(html);
 }
 
+function winURL(win) {
+    return win.location.origin + win.location.pathname + win.location.search;
+}
+
+function openWin(url, name) {
+   // Open named window, if not already open
+   // For previously open window with different url, switch to blank url
+   var win = window.open("", name);
+
+   if (win) {
+      var utemp = winURL(win);
+      console.log("openWin", win.location.href, utemp, ' URL:', url, win);
+      if (utemp != url)
+         win.location.href = 'about:blank';
+   } else {
+      win = window.open(url, name);
+      win.focus();
+   }
+   return win;
+}
+
+Sliobj.previewWin = null;
+
 Slidoc.slideEdit = function(action, slideId) {
     Slidoc.log('slideEdit:', action, slideId);
     if (Sliobj.closePopup)
@@ -910,21 +944,35 @@ Slidoc.slideEdit = function(action, slideId) {
 	editArea.value = '';
 
     } else if (action == 'discard') {
+	if (!window.confirm('Discard edits?'))
+	    return;
 	editContainer.style.display = 'none';
 	editArea.value = '';
+	if (Sliobj.previewWin) {
+	    Sliobj.previewWin.close();
+	    Sliobj.previewWin = null;
+	}
+	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
 
-    } else if (action == 'save' || action == 'delete' || action == 'rollover') {
+    } else if (action == 'update' || action == 'save' || action == 'delete' || action == 'rollover') {
 	params.sessiontext = editArea.value;
+	if (action == 'update')
+	    params.update = '1';
 	if (action == 'delete')
 	    params.deleteslide = 'delete';
 	if (action == 'rollover')
 	    params.rollover = 'rollover';
 
+	// Window opening must be triggered by user input
+	var previewURL = location.origin + Sliobj.sitePrefix+'/_preview/index.html?update=1#'+slideId;
+	if (!Sliobj.previewWin || Sliobj.previewWin.location.href != previewURL)
+	    Sliobj.previewWin = openWin(previewURL, Sliobj.params.siteName+'_preview');
+
 	function slideSaveAux(result, errMsg) {
 	    if (Sliobj.closePopup)
 		Sliobj.closePopup();
 	    if (!result) {
-		var msg = 'Error in saving edits :'+errMsg
+		var msg = 'Error in updating/saving edits :'+errMsg
 		if (!params.sessionmodify && errMsg.indexOf('MODIFY_SESSION') >=0) {
 		    params.sessionmodify = 'yes';
 		    if (window.confirm(msg+'\n\n Retry save with modify_session switch enabled?')) {
@@ -936,7 +984,19 @@ Slidoc.slideEdit = function(action, slideId) {
 		}
 		return;
 	    }
-	    loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#'+slideId);
+
+	    if (action == 'update') {
+                if (Sliobj.previewWin.location.href == 'about:blank') {
+                    Sliobj.previewWin.location = previewURL;
+		} else if (!Sliobj.params.fileName) {
+		    // Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket
+		    Sliobj.previewWin.location.reload(true);
+		}
+	    } else {
+		Sliobj.previewWin.close();
+		Sliobj.previewWin = null;
+		loadPath(Sliobj.sitePrefix+'/_preview/index.html', '#'+slideId);
+	    }
 	}
 	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
 	Slidoc.showPopup('Saving edits...');
@@ -945,6 +1005,8 @@ Slidoc.slideEdit = function(action, slideId) {
 	if (!checkActiveEdit())
 	    return;
 
+	params.start = '1';
+	
 	function slideEditAux(result, errMsg) {
 	    if (!result || !('slideText' in result)) {
 		alert('Error in editing slide :'+errMsg);
@@ -1008,13 +1070,6 @@ Slidoc.previewAction = function (action) {
 	} else {
 	    action = 'preview/index.html';
 	}
-
-    } else if (action == 'edit') {
-	if (Sliobj.currentSlide) {
-	    Slidoc.slideEdit('edit', Slidoc.getCurrentSlideId());
-	    return;
-	}
-	action = 'edit';
     }
 
     window.location = Sliobj.sitePrefix + '/_' + action;
@@ -1154,25 +1209,53 @@ function checkFileUpload(files, mimeRegex, extensionList) {
 // Section 8c: Reload/upload
 //////////////////////////////////
 
-function statefulReload() {
-    if (!Sliobj.currentSlide) {
-	var slides = document.getElementsByClassName(Sliobj.curChapterId ? Sliobj.curChapterId+'-slide' : 'slidoc-slide');
-	var curSlide = getCurrentlyVisibleSlide(slides);
-	location.hash = curSlide ? '##'+slides[curSlide-1].id : '##';
+function restoreScroll() {
+    var hashVal = location.hash.slice(2);
+    var scrollVal = parseNumber(hashVal);
+    if (scrollVal) {
+	window.scrollTo(0,scrollVal);
+    } else {
+	location.hash = '#' + hashVal;
     }
+}
+
+function statefulReload(slideNum) {
+    var hashVal = '';
+    if (slideNum) {
+	var visibleSlides = getVisibleSlides();
+	if (visibleSlides && visibleSlides.length) {
+	    var firstSlideId = visibleSlides[0].id;
+	    var chapter_id = parseSlideId(firstSlideId)[0];
+	    var slide_id = chapter_id + '-' + zeroPad(slideNum, 2);
+	    hashVal = Sliobj.currentSlide ? '#'+slide_id : '##'+slide_id;
+	}
+    }
+    if (!hashVal && !Sliobj.currentSlide) {
+	 hashVal = '##'+window.scrollY;
+    }
+    if (hashVal)
+	location.hash = hashVal;
     location.reload(true);
 }
 
 function reloadCheckFunc() {
     function reloadCheckAux(result, errMsg) {
-	if (result == null || result.match(/^error/i)) {
-	    document.getElementById('slidoc-localpreview-label').textContent = 'Local preview ENDED';
+	if (result == null) {
+	    document.getElementById('slidoc-localpreview-status').textContent = ' PREVIEW ENDED';
 	    console.log(errMsg);
-	} else if (result && result.trim()) {
-	    statefulReload();
-	} else {
-	    setTimeout(reloadCheckFunc, 333);
+	    return;
 	}
+
+	if (result.match(/^error/i)) {
+	    // Error message
+	    console.log(result);
+	    document.getElementById('slidoc-localpreview-status').textContent = ' '+result;
+	} else if (result && result.trim()) {
+	    // Reload
+	    statefulReload();
+	    return;
+	}
+	setTimeout(reloadCheckFunc, 333);
     }
     Slidoc.ajaxRequest('GET', '/_reloadcheck?token='+Sliobj.reloadCheck, {}, reloadCheckAux, false, true);
 }
@@ -1182,16 +1265,23 @@ Slidoc.remoteUpload = function() {
     window.location = '/_remoteupload?token='+Sliobj.reloadCheck;
 }
 
-Slidoc.localMessages = function() {
+Slidoc.localMessages = function(optional) {
     function localMessagesAux(retval, errmsg) {
 	if (retval == null) {
 	    if (errmsg)
 		alert(errmsg);
 	    return;
 	}
+	if (optional) {
+	    if (retval.trim()) {
+		document.getElementById('slidoc-log-button').classList.add('slidoc-amber');
+	    }
+	    return;
+	}
 	var messageText = retval.trim() || 'No messages';
 	var messageHtml = (messageText.charAt(0) == '<') ? messageText : '<pre>'+messageText+'\n</pre>\n';
-	Slidoc.showPopup(messageHtml, null, true);
+	if (!optional)
+	    Slidoc.showPopup(messageHtml, null, true);
     }
     Slidoc.ajaxRequest('GET', '/_messages?token='+Sliobj.reloadCheck, {}, localMessagesAux);
 }
@@ -1326,6 +1416,12 @@ function toggleClassAll(add, className, allClassName) {
     var elems = document.getElementsByClassName(allClassName);
     for (var j=0; j<elems.length; j++)
 	toggleClass(add, className, elems[j]);
+}
+
+function hideClass(className, hide) {
+    var elems = document.getElementsByClassName(className);
+    for (var j=0; j<elems.length; j++)
+	elems[j].style.display = hide ? 'none' : null;
 }
 
 function getFullsScreenElement() {
@@ -1731,6 +1827,16 @@ document.onkeydown = function(evt) {
     if ((nodeName == 'input' || nodeName == 'textarea') && evt.keyCode >= 32)
 	return;  // Disable arrow key handling for input/textarea
 
+    if (nodeName == 'textarea' && (evt.keyCode == 10 || evt.keyCode == 13) && evt.ctrlKey) {
+	if (Sliobj.previewWin && Sliobj.currentSlide) {
+	    // Preview updating
+	    evt.stopPropagation();
+	    evt.preventDefault();
+	    Slidoc.slideEdit('update', Slidoc.getCurrentSlideId());
+	    return false;
+	}
+    }
+
     if (!(evt.keyCode in Key_codes))
 	return;
 
@@ -1861,7 +1967,7 @@ function showDialog(action, testEvent, prompt, value) {
 
 Slidoc.sendEvent = function (eventType, eventName) // Extra Args
 {
-    if (Sliobj.previewState || Sliobj.reloadCheck)  // Do not transmit events when previewing
+    if (Sliobj.previewState || Sliobj.updateView)  // Do not transmit events when previewing
 	return;
     var extraArgs = Array.prototype.slice.call(arguments).slice(2);
     Slidoc.log('Slidoc.sendEvent:', eventType, eventName, extraArgs);
@@ -1894,7 +2000,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 	}
 
     } else if (eventName == 'ReloadPage') {
-	statefulReload();
+	statefulReload(eventArgs.length ? eventArgs[0] : '');
 
     } else if (eventName == 'LiveResponse') {
 	if (!(eventArgs[0] in Sliobj.liveResponses))
@@ -3185,8 +3291,8 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
-    if (Sliobj.reloadCheck && location.hash && location.hash.slice(0,2) == '##') {
-	location.hash = location.hash.slice(1);
+    if (Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') {
+	restoreScroll();
     } else if ('slides_only' in Sliobj.params.features && !Sliobj.printExamView && !Sliobj.gradableState) {
 	Slidoc.slideViewStart();
     }
@@ -5849,17 +5955,17 @@ Slidoc.startPaced = function () {
     startMsg += '</ul>';
     }
 
-    if (!Sliobj.batchMode && !Sliobj.reloadCheck && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
+    if (!Sliobj.batchMode && !Sliobj.updateView && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
 	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
 
-    if (Sliobj.reloadCheck && location.hash && location.hash.slice(0,2) == '##') {
+    if (Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') {
 	// Unhide all slides
 	slidesVisible(true);
-	location.hash = location.hash.slice(1);
+	restoreScroll();
     } else if (!Sliobj.batchMode && !Sliobj.printExamView) {
 	Slidoc.slideViewStart();
     }
@@ -5941,9 +6047,9 @@ Slidoc.slideViewStart = function () {
    Slidoc.breakChain();
 
    var startSlide;
-    if ((Sliobj.previewState || Sliobj.reloadCheck) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
+    if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
 	startSlide = parseSlideId(location.hash.slice(1))[2];
-    } else if (Sliobj.reloadCheck) {
+    } else if (Sliobj.updateView) {
 	startSlide = 1;
    } else if (Sliobj.session.paced) {
        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 

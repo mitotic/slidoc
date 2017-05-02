@@ -896,9 +896,9 @@ class SlidocRenderer(MathRenderer):
         html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
         html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
         html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, '&#x27A4;')
-        right_list = [ ('edit', '&#9998;'), ('drag', '&#8693')]
+        right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
         for action, icon in right_list:
-            toggle_classes = 'slidoc-toptoggle-edit slidoc-edit-icon slidoc-testuseronly slidoc-serveronly'
+            toggle_classes = 'slidoc-toptoggle-edit slidoc-edit-icon slidoc-testuseronly slidoc-nolocalpreview slidoc-serveronly'
             attrs = ''
             if action == 'drag':
                 attrs += ' draggable="true" data-slide="%d"' % slide_number
@@ -909,10 +909,14 @@ class SlidocRenderer(MathRenderer):
 
             html += '''  <span class="%s" %s >%s</span>''' % (toggle_classes, attrs, icon)
             
+        site_name = self.options['config'].site_name
+        site_prefix = '/'+site_name if site_name else ''
+
         html += '''    <span id="%s-toptoggle-header" class="slidoc-toptoggle-header slidoc-toggle-hidden slidoc-toggle-draggable" draggable="true" data-slide="%d">%s</span>''' % (slide_id, slide_number, prefix)
         html += '''  </span>\n'''
         html += '''</div>\n'''
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-img-drop slidoc-noprint" style="display: none;">\n''' % (slide_id,)
+        html += '''  <button id="%s-togglebar-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Open/update preview</button> <br>\n''' % (slide_id, slide_id)
         html += '''  <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button><br>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img slidoc-previewonly">''' % (slide_id,)
@@ -2247,8 +2251,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                 break
 
         if mod_question or len(prev_questions) != len(questions):
-            ###if modify_session or not row_count:
-            if modify_session:
+            if modify_session or not row_count:
                 modify_questions = True
                 if len(prev_questions) > len(questions):
                     # Truncating
@@ -2620,8 +2623,9 @@ def render_topnav(topnav_list, filepath='', site_name=''):
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 class GlobalState(object):
-    def __init__(self, http_post_func=None):
+    def __init__(self, http_post_func=None, return_html=False):
         self.http_post = http_post_func or sliauth.http_post
+        self.return_html = return_html
         self.primary_tags = defaultdict(OrderedDict)
         self.sec_tags = defaultdict(OrderedDict)
         self.primary_qtags = defaultdict(OrderedDict)
@@ -2640,6 +2644,12 @@ class GlobalState(object):
 
 Global = None
 
+def abort(msg):
+    if not Global or not Global.return_html:
+        sys.exit(msg)
+    else:
+        raise Exception(msg)
+
 def message(*args):
     print(*args, file=sys.stderr)
 
@@ -2648,7 +2658,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
-    Global = GlobalState(http_post_func=http_post_func)
+    Global = GlobalState(http_post_func=http_post_func, return_html=return_html)
     if return_html:
         return_messages = True
 
@@ -3765,12 +3775,6 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
 
     return argparse.Namespace(**merged_args_dict)
 
-def abort(msg):
-    if __name__ == '__main__':
-        sys.exit(msg)
-    else:
-        raise Exception(msg)
-
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     preview_token = str(random.randrange(0,2**32))
     src_path = ''
@@ -3828,7 +3832,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 
     def log_message(self, format, *args):
-        if args and args[0].startswith('GET /_reloadcheck'):
+        if args and isinstance(args[0], (str, unicode)) and (args[0].startswith('GET /_') or args[0].startswith('GET /?')):
             return
         return BaseHTTPServer.BaseHTTPRequestHandler.log_message(self, format, *args)
 
@@ -3856,8 +3860,13 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
             if url_comps.path == '/_reloadcheck':
                 if os.path.getmtime(self.src_path) > self.src_modtime:
-                    self.wfile.write('reload')
-                    self.create_preview()
+                    try:
+                        self.create_preview()
+                        self.wfile.write('reload')
+                        print('Updated preview\n---', file=sys.stderr)
+                    except Exception, excp:
+                        self.wfile.write('Error: '+str(excp))
+                        print(str(excp)+'\n---', file=sys.stderr)
                 else:
                     self.wfile.write('')
                 return
@@ -4126,7 +4135,10 @@ if __name__ == '__main__':
         RequestHandler.pptx_opts['zip_md'] = True
         RequestHandler.config_dict = config_dict
         RequestHandler.default_args_dict = default_args_dict
-        RequestHandler.create_preview()
+        try:
+            RequestHandler.create_preview()
+        except Exception, excp:
+            sys.exit(str(excp))
 
         httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args.preview), RequestHandler)
         command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args.preview, RequestHandler.preview_token, '1' if cmd_args.upload_key else '')

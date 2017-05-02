@@ -38,6 +38,15 @@
   .slidoc-printonly { display: none; }
 }
 
+a.button, a.button:visited {
+    -webkit-appearance: button;
+    -moz-appearance: button;
+    appearance: button;
+    color: inherit;
+    font-family: system-ui;
+    font-size: 11px;
+}
+
 
 @media print {
   body { 

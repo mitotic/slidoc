@@ -2,25 +2,119 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- edit parameters: site_name, session_name, session_text, discard_url, err_msg -->
+<!-- edit parameters: site_name, session_name, session_text, err_msg -->
 
 {% include "base.html" %}
 
 <script>
+var PreviewWin = null;
+
 function slidocDiscard() {
    if (!window.confirm('Discard changes?')) {
      return false;
    }
-   window.location = '/{{site_name}}{% if site_name %}/{% end %}{{discard_url}}';
+   if (PreviewWin) {
+      PreviewWin.close();
+      PreviewWin = null;
+   }
+   window.location = '{{site_prefix}}/_discard';
    return false;
 }
-function slidocUpdate() {
+
+function winURL(win) {
+    return win.location.origin + win.location.pathname + win.location.search;
+}
+
+function openWin(url, name) {
+   // Open named window, if not already open
+   // For previously open window with different url, switch to blank url
+   var win = window.open("", name);
+
+   if (win) {
+      var utemp = winURL(win);
+      console.log("openWin", win.location.href, utemp, ' URL:', url, win);
+      if (utemp != url)
+         win.location.href = 'about:blank';
+   } else {
+      win = window.open(url, name);
+      win.focus();
+   }
+   return win;
+}
+
+document.onkeydown = function(evt) {
+   if ((evt.keyCode == 10 || evt.keyCode == 13) && evt.ctrlKey) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      slidocUpdate(false, true);
+      return false;
+   }
+}
+
+function slidocUpdate(save, keystroke) {
    var xhr = new XMLHttpRequest();
-   xhr.open('GET', "{{site_prefix}}/_reloadpreview", true);
-   xhr.send();
+   var previewURL = location.origin + "{{site_prefix}}/_preview/index.html";
+   var previewName = "{{site_name}}_preview";
+   var indexSession = ("{{session_name}}" == "index");
+
+   // Window opening must be triggered by user input
+   if (!save && (!PreviewWin || !keystroke))
+      PreviewWin = openWin(previewURL+"?update=1", previewName);
+
+   xhr.onreadystatechange = function () {
+      var DONE = 4; // readyState 4 means the request is done.
+      if (xhr.readyState === DONE) {
+
+         if (xhr.status === 200) {
+            if (xhr.getResponseHeader('Content-Type') === 'application/json') {
+               var retval = null;
+               try {
+                  retval = JSON.parse(xhr.responseText);
+                  if (retval.result === 'error') {
+                     slidocStatus('Error in update: '+retval.error);
+                  }
+               } catch(err) {
+               }
+               console.log('retval=', retval);
+            }
+
+           if (save) {
+              if (PreviewWin) {
+                 PreviewWin.close();
+                 PreviewWin = null;
+               }
+               window.location = previewURL;
+           } else {
+              if (PreviewWin) {
+                 if (PreviewWin.location.href == 'about:blank') {
+                    PreviewWin.location = previewURL;
+                 } else if (indexSession) {
+                    // Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket 
+                    PreviewWin.location.reload(true);
+                 }
+              }
+           }
+
+        } else {
+          slidocStatus('Error in update: status='+xhr.status+': '+xhr.responseText);
+        }
+
+      }
+   };
+
+   var data = new FormData(document.getElementById("slidoc-edit-form"));
+   if (!save)
+      data.append('update', 1);
+   xhr.open('POST', "{{site_prefix}}/_edit", true);
+   xhr.send(data);
    return false;
 }
- document.onreadystatechange = function(event) {
+function slidocStatus(text, show) {
+   try { document.getElementById("slidoc-err-msg").textContent = text; } catch(err) {}
+   if (show)
+      alert(msg);
+}
+document.onreadystatechange = function(event) {
     if (document.readyState != "interactive" || !document.body)
         return;
     document.querySelectorAll('textarea').forEach(function(tx){
@@ -32,14 +126,13 @@ function slidocUpdate() {
 </head>
 <body>
 
-<div class="slidoc-err-msg">{{err_msg}}</div>
+<tt><div id="slidoc-err-msg">{{err_msg}}</div></tt>
 
 <form action="{{site_prefix}}/_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
   {% module xsrf_form_html() %}
   <div>
-    <a href="window.open('{{site_prefix}}/_preview/index.html','{{site_prefix}}_preview').focus()" target=''>Switch to preview</a>
-    <button type="button" onclick="slidocUpdate()">Update preview</button>
-    <input id="slidoc-edit-submit" type="submit" value="Save">
+    <button type="button" onclick="slidocUpdate()">Open/update preview</button>
+    <button type="button" onclick="slidocUpdate(true)">Save</button>
     <button type="button" onclick="slidocDiscard()">Discard</button>
   </div>
   <fieldset>

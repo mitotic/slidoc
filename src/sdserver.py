@@ -658,7 +658,8 @@ class ActionHandler(BaseHandler):
             root = str(self.get_argument('root', ''))
             if action == '_preview':
                 if not previewingSession:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
+                    self.displayMessage('Not previewing any session')
+                    return
                 cachePreview = sdproxy.previewingSession()
                 if cachePreview and cachePreview != previewingSession:
                     # Inconsistent preview
@@ -669,7 +670,8 @@ class ActionHandler(BaseHandler):
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
                 if not previewingSession:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
+                    self.displayMessage('Not previewing any session')
+                    return
                 return self.acceptPreview()
             elif action == '_edit':
                 if not Options['source_dir']:
@@ -677,8 +679,9 @@ class ActionHandler(BaseHandler):
                 if not sessionName:
                     sessionName = self.get_argument('sessionname', '')
                 if previewingSession and previewingSession != sessionName:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewingSession)
-                return self.startEdit(sessionName)
+                    self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+                    return
+                return self.editSession(sessionName, start=True)
             elif action == '_discard':
                 return self.discardPreview()
             elif action == '_reloadpreview':
@@ -1286,7 +1289,8 @@ class ActionHandler(BaseHandler):
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to edit')
             if previewingSession and previewingSession != sessionName:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot edit other sessions while reviewing session '+previewingSession)
+                self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+                return
             slideNumber = self.get_argument('slide', '')
             newNumber = self.get_argument('move', '')
             if slideNumber.isdigit():
@@ -1302,14 +1306,15 @@ class ActionHandler(BaseHandler):
             if rollover:
                 return self.rollover(sessionName, slideNumber)
 
-            sessionText = self.get_argument('sessiontext')
+            sessionText = self.get_argument('sessiontext', '')
             fromSession = self.get_argument('fromsession', '')
             fromSite = self.get_argument('fromsite', '')
             deleteSlide = self.get_argument('deleteslide', '')
             sessionModify = sessionName if self.get_argument('sessionmodify', '') else ''
+            update = self.get_argument('update', '')
 
-            return self.postEdit(sessionName, sessionText, fromSession=fromSession, fromSite=fromSite, slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide,
-                                 modify=sessionModify)
+            return self.editSession(sessionName, update=update, sessionText=sessionText, fromSession=fromSession, fromSite=fromSite,
+                                    slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide, modify=sessionModify)
 
         elif action == '_imageupload':
             if not previewingSession:
@@ -1533,7 +1538,7 @@ class ActionHandler(BaseHandler):
             topnavList = ['index.html'] + topnavList
         return topnavList
 
-    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=None):
+    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None):
         # Return null string on success or error message
         if self.previewActive():
             raise Exception('Already previewing session')
@@ -1661,18 +1666,21 @@ class ActionHandler(BaseHandler):
                 WSHandler.lockSessionConnections(sessionName, '', reload=False)
             return 'Error:\n'+err.message+'\n'
 
-    def reloadPreview(self):
+    def reloadPreview(self, slideNumber=0):
         previewingSession = self.previewActive()
         if not previewingSession:
-            raise Exceptionr('Not previewing session')
+            return
         previewPath = '_preview/index.html'
         if Options['site_name']:
             previewPath = Options['site_name'] + '/' + previewPath
         sessionConnections = WSHandler.get_connections('index')
         userId = self.get_id_from_cookie()
         userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
-        for connection in sessionConnections.get(userId, []):
-            connection.sendEvent(previewPath, '', userRole, ['', 1, 'ReloadPage', []])
+        userConnections = sessionConnections.get(userId, [])
+        if Options['debug']:
+            print >> sys.stderr, 'sdserver.reloadPreview: slide=%s, conn=%s' % (slideNumber, len(userConnections))
+        for connection in userConnections:
+            connection.sendEvent(previewPath, '', userRole, ['', 1, 'ReloadPage', [slideNumber]])
 
     def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False,
                 force=False, extraOpts={}):
@@ -1713,7 +1721,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile:', uploadType, repr(src_path), indexOnly, force, 'OPTS', configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames
+            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, force=%s, make=%s, make_toc=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, force, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
 
         return_html = bool(src_path)
 
@@ -1928,12 +1936,11 @@ class ActionHandler(BaseHandler):
 
 
     def discardPreview(self):
-        if not self.previewActive():
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
-        sessionName = self.previewState['name']
-        self.previewClear(revert=True, original=True)
-        if sessionName != 'index':
-            WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
+        if self.previewActive():
+            sessionName = self.previewState['name']
+            self.previewClear(revert=True, original=True)
+            if sessionName != 'index':
+                WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
         self.displayMessage('Discarded changes')
 
     def previewClear(self, revert=False, original=False):
@@ -1963,19 +1970,13 @@ class ActionHandler(BaseHandler):
                 traceback.print_exc()
             raise tornado.web.HTTPError(404, log_message='CUSTOM:'+str(excp))
 
-    def startEdit(self, sessionName):
-        sessionName = md2md.stringify(sessionName)
-        sessionText = None
-        if self.previewState:
-            sessionName = self.previewState['name']
-            sessionText = self.previewState['md']
-            uploadType = self.previewState['type']
-            if uploadType != TOP_LEVEL and sessionName == 'index':
-                sessionName = SESSION_NAME_FMT % (uploadType, 0)
-        elif not sessionName:
-            sessionName = self.get_argument('sessionname')
 
-        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+    def editSession(self, sessionName, sessionText='', start=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide=''):
+        # sessiontext may be modified text for all slides or just a single slide, depending upon slideNumber
+        sessionName, sessionText, fromSession, fromSite = md2md.stringify(sessionName, sessionText, fromSession, fromSite)
+
+        if Options['debug']:
+            print >> sys.stderr, 'ActionHandler:editSession: session=%s, start=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, start, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
 
         slideNumber = self.get_argument('slide', '')
         if slideNumber.isdigit():
@@ -1983,52 +1984,58 @@ class ActionHandler(BaseHandler):
         else:
             slideNumber = None
 
-        if slideNumber:
-            if self.previewState:
-                if self.previewState['md_slides'] is None:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to edit individual slides in preview')
-                md_defaults = self.previewState['md_defaults']
-                md_slides = self.previewState['md_slides']
-                new_image_number = self.previewState['new_image_number']
-                if slideNumber > len(md_slides):
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
-                slideText = md_slides[slideNumber-1]
-            else:
-                md_defaults, slideText, _, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
-
-            slideText = strip_slide(slideText)
-            retval = {'slideText': slideText, 'newImageName': md2md.IMAGE_FMT % new_image_number}
-            self.set_header('Content-Type', 'application/json')
-            self.write( json.dumps(retval) )
-            return
-
-        if sessionText is None:
-            try:
-                with open(src_path) as f:
-                    sessionText = f.read()
-            except Exception, excp:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading session from %s: %s' % (src_path, excp))
-
-        if isinstance(sessionText, unicode):
-            sessionText = sessionText.encode('utf-8')
-
-        if self.previewState:
-            discard_url = '_preview/index.html'
-        else:
-            discard_url = ''
-
-        self.render('edit.html', site_name=Options['site_name'], session_name=sessionName,
-                     session_text=sessionText, discard_url=discard_url, err_msg='')
-
-    def postEdit(self, sessionName, sessionText, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide='', modify=None):
-        sessionName, sessionText, fromSession, fromSite = md2md.stringify(sessionName, sessionText, fromSession, fromSite)
-
-        sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
-
-        prevPreviewState = self.previewState.copy() 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
         if uploadType != TOP_LEVEL and not sessionNumber:
             sessionName = 'index'
+
+        sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
+
+        if self.previewState and sessionName != self.previewState['name']:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Edit session %s does not match preview session %s' % (sessionName, self.previewState['name']))
+
+        if start:
+            if slideNumber:
+                if self.previewState:
+                    if self.previewState['md_slides'] is None:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to edit individual slides in preview')
+                    md_defaults = self.previewState['md_defaults']
+                    md_slides = self.previewState['md_slides']
+                    new_image_number = self.previewState['new_image_number']
+                    if slideNumber > len(md_slides):
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
+                    slideText = md_slides[slideNumber-1]
+
+                else:
+                    md_defaults, slideText, _, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
+
+                slideText = strip_slide(slideText)
+                # Edit single slide
+                retval = {'slideText': slideText, 'newImageName': md2md.IMAGE_FMT % new_image_number}
+                self.set_header('Content-Type', 'application/json')
+                self.write( json.dumps(retval) )
+                return
+
+            else:
+                if self.previewState:
+                    sessionText = self.previewState['md']
+
+                else:
+                    # Setup preview by uploading file
+                    try:
+                        with open(src_path) as f:
+                            sessionText = f.read()
+                    except Exception, excp:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading session file %s: %s' % (src_path, excp))
+
+                    if isinstance(sessionText, unicode):
+                        sessionText = sessionText.encode('utf-8')
+
+                # Edit all slides
+                self.render('edit.html', site_name=Options['site_name'], session_name=sessionName,
+                            session_text=sessionText, discard_url='_preview/index.html', err_msg='')
+                return
+
+        prevPreviewState = self.previewState.copy() if self.previewState else None
 
         slide_images_zip = None
         image_zipdata = ''
@@ -2134,24 +2141,20 @@ class ActionHandler(BaseHandler):
         if errMsg:
             if prevPreviewState:
                 self.previewState.update(prevPreviewState)
-            if slideNumber:
+
+            if slideNumber or update:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in editing session %s: %s' % (sessionName, errMsg))
 
-            if self.previewState:
-                discard_url = '_preview/index.html'
-            else:
-                discard_url = ''
-            self.render('edit.html', site_name=Options['site_name'], session_name=sessionName, session_text=sessionText, discard_url=discard_url, err_msg=errMsg)
+            self.render('edit.html', site_name=Options['site_name'], session_name=sessionName, session_text=sessionText, err_msg=errMsg)
             return
 
         self.previewState['modimages'] = modimages
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        if slideNumber:
-            self.set_header('Content-Type', 'application/json')
-            self.write( json.dumps( {'result': 'success'} ) )
-            return
-        else:
-            self.redirect(site_prefix+'/_preview/index.html')
+        if update:
+            self.reloadPreview(slideNumber)
+        self.set_header('Content-Type', 'application/json')
+        self.write( json.dumps( {'result': 'success'} ) )
+
 
     def rollover(self, sessionName, slideNumber=None):
         sessionName = md2md.stringify(sessionName)
@@ -2470,7 +2473,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     @classmethod
     def lockSessionConnections(cls, sessionName, lock_msg, reload=False):
         # Lock all socket connections for specified session (for uploads/modifications)
-        # (Null string for lock_msg unlocks)
+        # (Null string value for lock_msg unlocks)
         for userId, connections in cls.get_connections(sessionName).items():
             for connection in connections:
                 connection.locked = lock_msg
