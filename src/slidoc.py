@@ -932,6 +932,7 @@ class SlidocRenderer(MathRenderer):
         html += '''</div>\n'''
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-img-drop slidoc-noprint" style="display: none;">\n''' % (slide_id,)
         html += '''  <button id="%s-togglebar-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Open/update preview</button> <br>\n''' % (slide_id, slide_id)
+        html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
         html += '''  <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button><br>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img slidoc-previewonly">''' % (slide_id,)

@@ -1074,8 +1074,10 @@ Slidoc.slideEdit = function(action, slideId) {
     var slideNum = parseSlideId(slideId)[2];
     var editContainer = document.getElementById(slideId+'-togglebar-edit');
     var editArea = document.getElementById(slideId+'-togglebar-edit-area');
+    var statusElem = document.getElementById(slideId+'-togglebar-edit-status');
     var imageNameElem = document.getElementById(slideId+'-togglebar-edit-imgname');
     var params = {slide: slideNum, sessionname: Sliobj.params.fileName};
+    statusElem.textContent = '';
 
     if (action == 'clear') {
 	editArea.value = '';
@@ -1117,7 +1119,11 @@ Slidoc.slideEdit = function(action, slideId) {
 			    Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
 		    }
 		} else {
-		    alert(msg);
+		    statusElem.textContent = msg;
+		    if (Sliobj.previewWin) {
+			Sliobj.previewWin.Slidoc = null;
+			Sliobj.previewWin.document.body.textContent = msg;
+		    }
 		}
 		return;
 	    }
@@ -1125,10 +1131,11 @@ Slidoc.slideEdit = function(action, slideId) {
 	    if (action == 'update') {
                 if (Sliobj.previewWin.location.href == 'about:blank') {
                     Sliobj.previewWin.location = previewURL;
-		} else if (!Sliobj.params.fileName) {
+		} else if (!Sliobj.params.fileName || !Sliobj.previewWin.Slidoc) {
 		    // Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket
 		    Sliobj.previewWin.location.reload(true);
 		}
+		statusElem.textContent = 'Updated preview window';
 	    } else {
 		Sliobj.previewWin.close();
 		Sliobj.previewWin = null;
