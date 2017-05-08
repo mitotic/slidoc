@@ -999,7 +999,7 @@ def handle_proxy_response(response):
             errMsg = 'JSON parsing error: '+str(err)
 
     if errMsg or not respObj:
-        print("handle_proxy_response: Update ERROR:", errMsg, file=sys.stderr)
+        print("handle_proxy_response: Update ERROR (retry: %d of %d): %s" % (Global.cacheRetryCount, RETRY_MAX_COUNT, errMsg), file=sys.stderr)
         if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
             sheet_proxy_error('Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg))
             return
