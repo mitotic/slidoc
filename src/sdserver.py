@@ -1477,7 +1477,8 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in uploading session: '+str(excp))
 
                 if errMsg:
-                    self.render('upload.html', site_name=Options['site_name'], session_types=SESSION_TYPES, err_msg=errMsg)
+                    self.render('upload.html', site_name=Options['site_name'],
+                                upload_type=uploadType, session_number=sessionNumber, session_types=SESSION_TYPES, err_msg=errMsg)
                 elif uploadType != RAW_UPLOAD:
                     site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
                     self.redirect(site_prefix+'/_preview/index.html')

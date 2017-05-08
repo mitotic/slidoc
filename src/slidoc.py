@@ -3720,7 +3720,7 @@ Mathjax_js = r'''<script type="text/x-mathjax-config">
     %s
   });
 </script>
-<script src='https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML'></script>
 '''
 
 Skulpt_js_non_https = r'''

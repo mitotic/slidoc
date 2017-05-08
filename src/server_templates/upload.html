@@ -16,10 +16,12 @@
 </b>
 
 <div id="slidoc-upload-form">
+  <p></p>
+  <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}
-        Uploading session: <b>{{ upload_type }}{% if session_number.isdigit() %}{{ '%02d' % int(session_number) }}{% end %}</b>
+        Uploading session: <b>{{ upload_type }}{% if str(session_number).isdigit() %}{{ '%02d' % int(session_number) }}{% end %}</b>
         <input type="hidden" name="sessiontype" value="{{ upload_type }}">
       {% else %}
         <label for="sessiontype">Session type:</label><br>
@@ -61,7 +63,6 @@
      <input id="slidoc-upload-submit" type="submit" value="Upload">
     </div>
   </form>
-  <div class="slidoc-err-msg">{{err_msg}}</div>
 </div>
 
 </body>
