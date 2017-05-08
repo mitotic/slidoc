@@ -2814,7 +2814,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             fnumbers.append(fnumber)
 
     if not fnumbers:
-        message('All output files are newer than corresponding input files')
+        if not return_messages:
+            message('All output files are newer than corresponding input files')
         if not config.make_toc:
             return {'messages':messages}
     elif return_html and len(fnumbers) != 1 and config.separate:
@@ -3545,7 +3546,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
     if not config.dry_run:
         if not combined_file:
-            if not return_html:
+            if outfile_buffer:
                 message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
             for outname, outpath, fnumber, md_params, pre_html, tail, zipped_md in outfile_buffer:
                 if tail:

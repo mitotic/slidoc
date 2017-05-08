@@ -1111,7 +1111,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    if (Sliobj.closePopup)
 		Sliobj.closePopup();
 	    if (!result) {
-		var msg = 'Error in updating/saving edits :'+errMsg
+		var msg = errMsg || 'Error in updating/saving edits';
 		if (!params.sessionmodify && errMsg.indexOf('MODIFY_SESSION') >=0) {
 		    params.sessionmodify = 'yes';
 		    if (window.confirm(msg+'\n\n Retry save with modify_session switch enabled?')) {
@@ -1272,9 +1272,11 @@ Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
 		    retval = XHR.responseText;
 		}
             } else {
-		msg = 'Error in HTTP request: status='+XHR.status+': '+XHR.responseText;
+		msg = XHR.responseText+' (status='+XHR.status+ ')'
+		if (!msg.match(/^error/i))
+		    msg = 'Error in web request: ' + msg;
 		if (!nolog)
-		    Slidoc.log('ajaxRequest.Error: ', msg, XHR.responseText);
+		    Slidoc.log('ajaxRequest.Error: ', msg);
             }
 	    if (callback)
 		callback(retval, msg);

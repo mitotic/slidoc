@@ -72,7 +72,7 @@ function slidocUpdate(save, keystroke) {
                try {
                   retval = JSON.parse(xhr.responseText);
                   if (retval.result === 'error') {
-                     slidocStatus('Error in update: '+retval.error);
+                     slidocStatus(retval.error);
                      if (PreviewWin) {
                          PreviewWin.Slidoc = null;
                          PreviewWin.document.body.textContent = retval.error;
@@ -103,7 +103,7 @@ function slidocUpdate(save, keystroke) {
            }
 
         } else {
-          slidocStatus('Error in update: status='+xhr.status+': '+xhr.responseText);
+          slidocStatus(xhr.responseText+' (status='+xhr.status+')');
           if (PreviewWin) {
              PreviewWin.Slidoc = null;
              PreviewWin.document.body.textContent = xhr.responseText;

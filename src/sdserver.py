@@ -1675,7 +1675,10 @@ class ActionHandler(BaseHandler):
             self.previewClear(revert=True, original=True)
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, '', reload=False)
-            return 'Error:\n'+err.message+'\n'
+            temMsg = err.message+'\n'
+            if not temMsg.lower().startswith('error'):
+                temMsg = 'Error:\n' + temMsg
+            return temMsg
 
     def reloadPreview(self, slideNumber=0):
         previewingSession = self.previewActive()
@@ -2153,8 +2156,12 @@ class ActionHandler(BaseHandler):
             if prevPreviewState:
                 self.previewState.update(prevPreviewState)
 
+            if not errMsg.lower().startswith('error'):
+                errMsg = 'Error in editing session '+sessionName+': '+errMsg
+            else:
+                errMsg += ' (session: '+sessionName+')'
             if slideNumber or update:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in editing session %s: %s' % (sessionName, errMsg))
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
             self.render('edit.html', site_name=Options['site_name'], session_name=sessionName, session_text=sessionText, err_msg=errMsg)
             return
