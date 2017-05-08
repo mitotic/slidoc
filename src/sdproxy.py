@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.3f'
+VERSION = '0.97.4'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -96,6 +96,7 @@ MAXSCORE_ID = '_max_score'
 AVERAGE_ID = '_average'
 RESCALE_ID = '_rescale'
 TESTUSER_ID = '_test_user'
+DISCUSS_ID = '_discuss'
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
@@ -118,6 +119,8 @@ SKIP_ANSWER = 'skip'
 LATE_SUBMIT = 'late'
 
 FUTURE_DATE = 'future'
+
+DELETED_POST = '(deleted)'
 
 TRUNCATE_DIGEST = 8
 
@@ -280,9 +283,9 @@ def backupSheets(dirpath=''):
     # (synchronous)
     if Global.previewStatus:
         return [ 'Cannot freeze when previewing session '+Global.previewStatus['sessionName'] ]
-    dirpath = dirpath or Settings['backup_dir'] or '_backup'
+    dirpath = dirpath or Settings['backup_dir'] or '_BACKUPS'
     if dirpath.endswith('-'):
-        dirpath += sliauth.iso_date()[:16].replace(':','-')
+        dirpath += sliauth.iso_date(nosec=True).replace(':','-')
     if Settings['site_name']:
         dirpath += '/' + Settings['site_name']
     suspend_cache("backup")
@@ -293,18 +296,24 @@ def backupSheets(dirpath=''):
         if not os.path.exists(dirpath):
             os.makedirs(dirpath)
 
-        sessionNames = None
+        sessionAttributes = None
         for sheetName in BACKUP_SHEETS:
             rows = backupSheet(sheetName, dirpath, errorList, optional=True)
             if sheetName == INDEX_SHEET and rows and 'id' in rows[0]:
-                j = rows[0].index('id')
-                sessionNames = [row[j] for row in rows[1:]]
+                try:
+                    idCol = rows[0].index('id')
+                    attributesCol = rows[0].index('attributes')
+                    sessionAttributes = [(row[idCol], json.loads(row[attributesCol])) for row in rows[1:]]
+                except Exception, excp:
+                    errorList.append('Error: Session attributes not loadable %s' % excp)
 
-        if sessionNames is None:
-            errorList.append('Error: Index sheet %s not found' % INDEX_SHEET)
+        if sessionAttributes is None:
+            errorList.append('Error: Session attributes not found in index sheet %s' % INDEX_SHEET)
 
-        for sheetName in (sessionNames or []):
-            backupSheet(sheetName, dirpath, errorList)
+        for name, attributes in (sessionAttributes or []):
+            backupSheet(name, dirpath, errorList)
+            if attributes.get('discussSlides'):
+                backupSheet(name+'-discuss', dirpath, errorList, optional=True)
     except Exception, excp:
         errorList.append('Error in backup: '+str(excp))
 
@@ -439,6 +448,9 @@ def createSheet(sheetName, headers, rows=[]):
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
+    if sheetName in Sheet_cache:
+        raise Exception("Cannote create sheet %s because it is already present in the cache" % sheetName)
+
     keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
     Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=keyHeader, modTime=sliauth.epoch_ms())
     Sheet_cache[sheetName].modifiedSheet()
@@ -1029,7 +1041,7 @@ def sheetAction(params, notrace=False):
     # sheet: 'sheet name' (required)
     # admin: admin user name (optional)
     # token: authentication token
-    # actions: ''|'answer_stats'|'gradebook' (not for proxy)
+    # actions: ''|'discuss_posts'|'answer_stats'|'gradebook' (last two not for proxy)
     # headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     # name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     # id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -1072,8 +1084,6 @@ def sheetAction(params, notrace=False):
     returnMessages = []
 
     try:
-        if params.get('actions'):
-            raise Exception('Error:ACTION:Actions not supported by proxy')
         sheetName = params.get('sheet','')
         if not sheetName:
             raise Exception('Error:SHEETNAME:No sheet name specified')
@@ -1134,6 +1144,16 @@ def sheetAction(params, notrace=False):
         restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != SCORES_SHEET)
 
         loggingSheet = sheetName.endswith('_log')
+        discussionSheet = sheetName.endswith('-discuss')
+
+        performActions = params.get('actions', '')
+        if performActions:
+            if performActions == 'discuss_posts':
+                returnValues = getDiscussPosts(sheetName, params.get('slide', ''), paramId)
+                return {"result": "success", "value": returnValues, "headers": returnHeaders,
+                        "info": returnInfo, "messages": '\n'.join(returnMessages)}
+            else:
+                raise Exception('Error:ACTION:Actions %s not supported by proxy' % performActions)
 
         sessionEntries = None
         sessionAttributes = None
@@ -1143,6 +1163,7 @@ def sheetAction(params, notrace=False):
         dueDate = None
         gradeDate = None
         voteDate = None
+        discussableSession = None
         computeTotalScore = False
         curDate = createDate()
 
@@ -1235,7 +1256,7 @@ def sheetAction(params, notrace=False):
             if not modSheet.getLastColumn():
                 raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
-            if not restrictedSheet and not protectedSheet and not loggingSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET):
+            if not restrictedSheet and not protectedSheet and not loggingSheet and not discussionSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET):
                 # Indexed session
                 sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
                 sessionAttributes = json.loads(sessionEntries['attributes'])
@@ -1245,6 +1266,7 @@ def sheetAction(params, notrace=False):
                 dueDate = sessionEntries.get('dueDate')
                 gradeDate = sessionEntries.get('gradeDate')
                 voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
+                discussableSession = sessionAttributes.get('discussSlides') and len(sessionAttributes['discussSlides'])
 
                 if parseNumber(sessionEntries.get('scoreWeight')):
                     # Compute total score?
@@ -1348,11 +1370,14 @@ def sheetAction(params, notrace=False):
             voteSubmission = ''
             alterSubmission = False
             twitterSetting = False
-            releaseGrades = ''
+            discussionPost = None
             if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id':
                 if selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
                     qprefix = selectedUpdates[1][0].split('_')[0]
                     voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
+
+                if sheetName.endswith('-discuss') and selectedUpdates[1][0].startswith('discuss'):
+                    discussionPost = [sheetName[:-len('-discuss')], int(selectedUpdates[1][0][len('discuss'):])]
 
                 if selectedUpdates[1][0] == 'submitTimestamp':
                     alterSubmission = True
@@ -1360,10 +1385,7 @@ def sheetAction(params, notrace=False):
                 if selectedUpdates[1][0] == 'twitter' and sheetName == ROSTER_SHEET:
                     twitterSetting = True
 
-                if selectedUpdates[1][0] == 'gradeDate' and sheetName == INDEX_SHEET:
-                    releaseGrades = selectedUpdates[0][1]
-
-            if not adminUser and selectedUpdates and not voteSubmission and not twitterSetting:
+            if not adminUser and selectedUpdates and not voteSubmission and not discussionPost and not twitterSetting:
                 raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
             if importSession and not adminUser:
@@ -1802,6 +1824,10 @@ def sheetAction(params, notrace=False):
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
                         rowUpdates.append(None)
+                    if sheetName.endswith('-discuss'):
+                        displayName = params.get('name', '')
+                        rowUpdates[columnIndex['id']-1] = userId
+                        rowUpdates[columnIndex['name']-1] = displayName
 
             if not adminUser and freezeDate and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(freezeDate) and (newRow or rowUpdates or selectedUpdates):
                 raise Exception('Error::All sessions are frozen. No user modifications permitted');
@@ -1840,7 +1866,7 @@ def sheetAction(params, notrace=False):
                     if voteDate:
                         returnInfo['voteDate'] = voteDate
 
-                    if dueDate and not prevSubmitted and not voteSubmission and not alterSubmission and userId != MAXSCORE_ID:
+                    if dueDate and not prevSubmitted and not voteSubmission and not discussionPost and not alterSubmission and userId != MAXSCORE_ID:
                         # Check if past submission deadline
                         lateToken = ''
                         curTime = sliauth.epoch_ms(curDate)
@@ -2047,26 +2073,67 @@ def sheetAction(params, notrace=False):
                         modSheet.expire()
                         expireSheet(SCORES_SHEET)
 
-                    if paramId == TESTUSER_ID and sessionEntries and adminPaced:
+                    discussRowOffset = 2
+                    discussNameCol = 1
+                    discussIdCol = 2
+                    if sessionEntries and adminPaced and paramId == TESTUSER_ID:
                         lastSlideCol = columnIndex.get('lastSlide')
                         if lastSlideCol and rowValues[lastSlideCol-1]:
                             # Copy test user last slide number as new adminPaced value
-                            setValue(sheetName, 'adminPaced', rowValues[lastSlideCol-1], INDEX_SHEET)
+                            adminPaced = rowValues[lastSlideCol-1]
+                            setValue(sheetName, 'adminPaced', adminPaced, INDEX_SHEET)
+
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
                             submitTimestamp = rowValues[submitTimestampCol-1]
                             setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
+
+                            discussSheet = None
+                            discussRowCount = 0
+                            if discussableSession:
+                                # Create discussion sheet
+                                discussHeaders = ['name', 'id']
+                                discussRow = ['', DISCUSS_ID]
+                                for j in range(len(sessionAttributes['discussSlides'])):
+                                    slideNum = sessionAttributes['discussSlides'][j]
+                                    discussHeaders.append('access%03d' % slideNum)
+                                    discussHeaders.append('discuss%03d' % slideNum)
+                                    discussRow.append(0)
+                                    discussRow.append('')
+                                discussSheet = createSheet(sheetName+'-discuss', discussHeaders)
+                                discussSheet.insertRowBefore(2, keyValue=DISCUSS_ID)
+                                discussSheet.setSheetValues(2, 1, 1, len(discussRow), [discussRow])
+                                discussRowCount = discussRowOffset
+
+                            idRowIndex = indexRows(modSheet, columnIndex['id'])
                             idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
+                            nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows)
                             initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows)
                             for j in range(len(idColValues)):
                                 # Submit all other users who have started a session
                                 if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
-                                    setValue(idColValues[j], 'submitTimestamp', submitTimestamp, sheetName)
+                                    modSheet.setSheetValues(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1, [[submitTimestamp]])
 
+                                    if discussSheet:
+                                        # Add submitted user to discussion sheet
+                                        discussRowCount += 1
+                                        discussSheet.insertRowBefore(discussRowCount, keyValue=idColValues[j])
+                                        discussSheet.setSheetValues(discussRowCount, discussNameCol, 1, 1, [[nameColValues[j]]])
+
+                    elif sessionEntries and adminPaced and dueDate and discussableSession and params.get('submit'):
+                        discussSheet = getSheet(sheetName+'-discuss', optional=True)
+                        if discussSheet:
+                            discussRows = discussSheet.getLastRow()
+                            discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1)
+                            discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1)
+                            temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds, DISCUSS_ID)
+                            discussSheet.insertRowBefore(temRow, keyValue=userId)
+                            discussSheet.setSheetValues(temRow, discussNameCol, 1, 1, [[displayName]])
+                            
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
-                    if not forceSubmission and not voteSubmission and not twitterSetting:
+                    if not forceSubmission and not voteSubmission and not discussionPost and not twitterSetting:
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
@@ -2139,6 +2206,40 @@ def sheetAction(params, notrace=False):
                                         modSheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
                             modValue = colValue
 
+                        elif colHeader.startswith('discuss') and discussionPost:
+                            prevValue = rowValues[headerColumn-1]
+                            if colValue.lower().startswith('delete:'):
+                                # Delete post
+                                deleteLabel = 'Post:%03d:' % int(colValue[len('delete:'):])
+                                posts = prevValue.strip().split('\n\n')
+                                for j in range(len(posts)):
+                                    if posts[j].lstrip().startswith(deleteLabel):
+                                        # "Delete" post by prefixing it
+                                        comps = posts[j].lstrip().split(' ')
+                                        posts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
+                                        modValue = '\n\n'.join(posts) + '\n\n'
+                                        break
+                            else:
+                                # New post
+                                discussRow = lookupRowIndex(DISCUSS_ID, modSheet)
+                                if not discussRow:
+                                    raise Exception('Row with id %s not found in sheet %s' % (DISCUSS_ID, sheetName))
+
+                                # Update post count and last post time
+                                axsHeader = 'access%03d' % discussionPost[1]
+                                axsColumn = columnIndex[axsHeader]
+
+                                axsRange = modSheet.getRange(discussRow, axsColumn, 1, 1)
+
+                                postCount = (axsRange.getValues()[0][0] or 0) + 1
+                                axsRange.setValues([[ postCount ]])
+
+                                modValue = prevValue + '\n' if prevValue else ''
+                                modValue += 'Post:%03d:%s ' % (postCount, sliauth.iso_date(curDate, nosubsec=True))
+                                modValue += colValue
+                                if not colValue.endswith('\n'):
+                                    modValue += '\n'
+
                         elif colValue is None:
                             # Do not modify field
                             pass
@@ -2170,6 +2271,8 @@ def sheetAction(params, notrace=False):
                             rowValues[headerColumn-1] = modValue
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
+                    if discussionPost:
+                        returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], userId)
 
                 if len(teamCopyCols):
                     nCopyRows = numRows-numStickyRows
@@ -2187,7 +2290,7 @@ def sheetAction(params, notrace=False):
                             # Broadcast modified team values
                             teamCopy(modSheet, numStickyRows, userRow, teamCol, teamCopyCols[j])
 
-                if (paramId != TESTUSER_ID or prevSubmitted) and sessionEntries and adminPaced:
+                if (paramId != TESTUSER_ID or prevSubmitted or params.get('submit')) and sessionEntries and adminPaced:
                     returnInfo['adminPaced'] = adminPaced
 
                 # Return updated timestamp
@@ -2201,6 +2304,9 @@ def sheetAction(params, notrace=False):
                             returnValues[j] = None
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
+
+                if getRow and createRow and discussableSession and dueDate:
+                    returnInfo['discussStats'] = getDiscussStats(sheetName, userId)
 
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
@@ -3021,6 +3127,83 @@ def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
 def safeName(s, capitalize=False):
     s = re.sub(r'[^A-Za-z0-9-]', '_', s)
     return s.capitalize() if capitalize else s
+
+AXS_RE = re.compile(r'access(\d+)')
+def getDiscussStats(sessionName, userId):
+    # Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
+    sheetName = sessionName+'-discuss'
+    discussSheet = getSheet(sheetName)
+    discussStats = {}
+    if not discussSheet:
+        return discussStats
+
+    discussRow = lookupRowIndex(DISCUSS_ID, discussSheet)
+    if not discussRow:
+        raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+sheetName)
+    userRow = lookupRowIndex(userId, discussSheet)
+    if not userRow:
+        raise Exception('User with id '+userId+' not found in sheet '+sheetName)
+
+    ncols = discussSheet.getLastColumn()
+    headers = discussSheet.getSheetValues(1, 1, 1, ncols)[0]
+    topVals = discussSheet.getSheetValues(discussRow, 1, 1, ncols)[0]
+    userVals = discussSheet.getSheetValues(userRow, 1, 1, ncols)[0]
+    for j in range(ncols):
+        amatch = AXS_RE.match(headers[j])
+        if not amatch or not topVals[j]:
+            continue
+        if j == ncols-1 or headers[j+1] != 'discuss'+amatch.group(1):
+            continue
+        slideNum = int(amatch.group(1))
+        discussStats[slideNum] = [topVals[j], topVals[j]-(userVals[j] or 0)]
+        
+    return discussStats
+
+POST_RE = re.compile(r'(\d+):([-\d:T]+)(.*)$', flags=re.DOTALL)
+def getDiscussPosts(sessionName, slideNum, userId=None):
+    # Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
+    sheetName = sessionName+'-discuss'
+    discussSheet = getSheet(sheetName)
+    if not discussSheet:
+        raise Exception('Discuss sheet '+sessionName+'-discuss not found')
+    colIndex = indexColumns(discussSheet)
+    axsColName = 'access%03d' % slideNum
+    axsCol = colIndex.get(axsColName)
+    if not axsCol:
+        return []
+
+    if userId:
+        # Update last read post
+        lastPost = lookupValues(DISCUSS_ID, [axsColName], sheetName, True)[0]
+        lastReadPost = lookupValues(userId, [axsColName], sheetName, True)[0] or 0
+
+        if lastReadPost < lastPost:
+            setValue(userId, axsColName, lastPost, sheetName)
+    else:
+        lastReadPost = 0
+
+    idVals = getColumns('id', discussSheet)
+    nameVals = getColumns('name', discussSheet)
+    colVals = getColumns('discuss%03d' % slideNum, discussSheet)
+    allPosts = []
+    for j in range(len(colVals)):
+        if not idVals[j] or (idVals[j].startswith('_') and idVals[j] != TESTUSER_ID):
+            continue
+        userPosts = ('\n'+colVals[j]).split('\nPost:')
+        for k in range(len(userPosts)):
+            pmatch = POST_RE.match(userPosts[k])
+            if pmatch:
+                postNumber = int(pmatch.group(1))
+                postTimeStr = pmatch.group(2)
+                unreadFlag = postNumber > lastReadPost if userId else False
+                text = pmatch.group(3).strip()+'\n'
+                if text.startswith(DELETED_POST):
+                    # Hide text from deleted messages
+                    text = DELETED_POST
+                allPosts.append([postNumber, idVals[j], nameVals[j], postTimeStr, unreadFlag, text])
+
+    allPosts.sort()
+    return allPosts
 
 def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
     # Copy column value from user row to entire team

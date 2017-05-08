@@ -85,7 +85,7 @@ Options = {
     'allow_replies': None,
     'auth_key': '',
     'auth_type': '',
-    'backup_dir': '',
+    'backup_dir': '_BACKUPS',
     'backup_hhmm': '',
     'debug': False,
     'dry_run': False,
@@ -493,7 +493,11 @@ class SiteActionHandler(BaseHandler):
                 self.write(setup_html)
 
         elif action == '_backup':
-            backupSite()
+            errors = backupSite()
+            self.set_header('Content-Type', 'text/plain')
+            self.write('Backed up site %s to directory %s\n' % (Options['site_name'], Options['backup_dir']))
+            if errors:
+                self.write(errors)
 
         elif action == '_shutdown':
             self.clear_id()
@@ -776,7 +780,11 @@ class ActionHandler(BaseHandler):
             self.displayMessage('Clearing cache<br>')
 
         elif action == '_backup':
-            backupSite(subsubpath)
+            errors = backupSite(subsubpath)
+            self.set_header('Content-Type', 'text/plain')
+            self.write('Backed up site %s to directory %s\n' % (Options['site_name'], subsubpath or Options['backup_dir']))
+            if errors:
+                self.write(errors)
 
         elif action == '_lock':
             lockType = self.get_argument('type','')
@@ -840,8 +848,11 @@ class ActionHandler(BaseHandler):
             self.write(content)
 
         elif action in ('_sheet',):
+            allUsers = self.get_argument("allusers", '')
+            if sessionName.endswith('-discuss'):
+                allUsers = True
             self.displaySheet(sessionName, download=self.get_argument("download", ''),
-                               allUsers=self.get_argument("allusers", ''), keepHidden=self.get_argument("keephidden", ''))
+                               allUsers=allUsers, keepHidden=self.get_argument("keephidden", ''))
 
         elif action in ('_getcol', '_getrow'):
             subsubpath, sep, label = subsubpath.partition(';')
@@ -3740,12 +3751,9 @@ def backupSite(dirpath=''):
         for j, site in enumerate(Options['site_list']):
             relay_addr = Global.relay_list[j+1]
             retval = sendPrivateRequest(relay_addr, path='/'+site+'/_backup?root='+Options['server_key'])
+        return ''
     else:
-        errors = sdproxy.backupSheets(dirpath)
-        self.set_header('Content-Type', 'text/plain')
-        self.write('Backed up site %s to directory %s' % (Options['site_name'], sessionName))
-        if errors:
-            self.write(errors)
+        return sdproxy.backupSheets(dirpath)
 
 def shutdown_all():
     if Options['debug']:

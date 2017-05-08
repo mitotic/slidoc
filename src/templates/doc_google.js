@@ -227,7 +227,7 @@ var receiveDataCounter = 0;
 GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
 
-  if (data.actions || data.modify) {
+  if (data.modify || (data.actions && data.actions != 'discuss_posts')) {
       // Workaround for passthru actions; this could be done without a GSheet
       if (url.match(/_websocket$/))
 	  url = url.replace(/_websocket$/, '_proxy');
@@ -632,6 +632,8 @@ GoogleSheet.prototype.callback = function (userId, callbackType, outerCallback, 
 			}
 		    }
 
+		} else if (callbackType == 'actions') {
+		    retval = result.value;
 		} else {
 		    retval = (result.value.length == 0) ? {} : this.row2obj(result.value, result.headers);
 		}
@@ -697,9 +699,14 @@ GoogleSheet.prototype.obj2row = function(obj) {
     return row;
 }
 
-GoogleSheet.prototype.actions = function (actions, sheetName, callback) {
+GoogleSheet.prototype.actions = function (actions, opts, callback) {
     // Workaround for passthru actions; this could be done without a GSheet
-    var params = { actions: actions, sheet: sheetName||'' };
+    var params = {actions: actions};
+    var keys = Object.keys(opts);
+    for (var j=0; j<keys.length; j++) {
+	var key = keys[j];
+	params[key] = opts[key];
+    }
     this.callbackCounter += 1;
     this.send(params, 'actions', callback);
 }

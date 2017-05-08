@@ -75,7 +75,8 @@ ADMIN_PACE    = 3
 FUTURE_DATE = 'future'
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
-        'gear': '&#9881;', 'letters': '&#x1f520;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;', 'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
+        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
+        'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
@@ -266,7 +267,8 @@ class MathBlockGrammar(mistune.BlockGrammar):
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
-    slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)\n\s*(\n|$)', re.DOTALL)
+    slidoc_discuss=   re.compile(r'^ {0,3}(Discuss):(.*?)(\n|$)')
+    slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
     slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
     slidoc_extra  =   re.compile(r'^ {0,3}(Extra):\s*?((?=\S)|\n)')
@@ -278,7 +280,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_discuss', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -380,6 +382,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_answer(self, m):
          self.tokens.append({
             'type': 'slidoc_answer',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_discuss(self, m):
+         self.tokens.append({
+            'type': 'slidoc_discuss',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -569,6 +578,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
 
+    def output_slidoc_discuss(self):
+        return self.renderer.slidoc_discuss(self.token['name'], self.token['text'])
+
     def output_slidoc_tags(self):
         return self.renderer.slidoc_tags(self.token['name'], self.token['text'])
 
@@ -740,7 +752,7 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
+        self.sheet_attributes = {'discussSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
         self.slide_number = 0
         self.slide_images = []
 
@@ -798,6 +810,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_plugin_embeds = set()
         self.slide_images.append([])
         self.slide_img_tag = ''
+        self.slide_discuss = 'discuss_all' in self.options['config'].features
 
     def close_zip(self, md_content=None):
         # Create zipped content (only if there are any images)
@@ -909,6 +922,8 @@ class SlidocRenderer(MathRenderer):
 
             html += '''  <span class="%s" %s >%s</span>''' % (toggle_classes, attrs, icon)
             
+        html += '''  <span id="%s-toptoggle-discuss" class="slidoc-toptoggle-edit slidoc-edit-icon slidoc-nolocalpreview slidoc-discussonly slidoc-serveronly slidoc-toggle-hidden" style="display: none;">%s</span>''' % (slide_id, SYMS['bubble'])
+
         site_name = self.options['config'].site_name
         site_prefix = '/'+site_name if site_name else ''
 
@@ -931,7 +946,7 @@ class SlidocRenderer(MathRenderer):
         html += '\n<section id="%s" class="slidoc-slide %s-slide %s" %s> <!--slide start-->\n' % (slide_id, chapter_id, classes, style_str)
         return html
 
-    def slide_toggle_footer(self):
+    def slide_footer(self):
         slide_id = self.get_slide_id()
         header = self.cur_header or self.slide_img_tag or self.alt_header or ''
         if header and not header.startswith('<img '):
@@ -1037,6 +1052,24 @@ class SlidocRenderer(MathRenderer):
 
         return end_html + self.slide_prefix(new_slide_id, ' '.join(classes)) + concept_chain(new_slide_id, self.options['config'].server_url)
 
+    def discuss_footer(self):
+        html = ''
+        slide_id = self.get_slide_id()
+        if self.slide_discuss:
+            self.sheet_attributes['discussSlides'].append(self.slide_number)
+            html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-discussonly" style="display: none;">\n''' % (slide_id, )
+            html += '''  <span id="%s-discuss-show" class="slidoc-discuss-show slidoc-clickable" onclick="Slidoc.slideDiscuss('show','%s');">%s</span>\n''' % (slide_id, slide_id, SYMS['bubble'])
+            html += '''  <span id="%s-discuss-count" class="slidoc-discuss-count"></span>\n''' % (slide_id,)
+            html += '''  <div id="%s-discuss-container" class="slidoc-discuss-container" style="display: none;">\n''' % (slide_id, )
+            html += '''    <div id="%s-discuss-posts" class="slidoc-discuss-posts"></div>\n''' % (slide_id, )
+            html += '''    <div><button id="%s-discuss-post" class="slidoc-discuss-post" onclick="Slidoc.slideDiscuss('post','%s');">Post</button></div>\n''' % (slide_id, slide_id, )
+            html += '''    <textarea id="%s-discuss-textarea" class="slidoc-discuss-textarea"></textarea>\n''' % (slide_id,)
+            html += '''    <div><button id="%s-discuss-preview" class="slidoc-discuss-preview" onclick="Slidoc.slideDiscuss('preview','%s');">Preview</button></div>\n''' % (slide_id, slide_id, )
+            html += '''    <br><div id="%s-discuss-render" class="slidoc-discuss-render"></div>\n''' % (slide_id, )
+            html += '''  </div>\n'''
+            html += '''</div>\n'''
+        return html
+
     def end_slide(self, suffix_html='', last_slide=False):
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
             message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
@@ -1065,7 +1098,7 @@ class SlidocRenderer(MathRenderer):
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
 
-        return prefix_html+self.end_notes()+self.end_hide()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_toggle_footer()
+        return prefix_html+self.end_notes()+self.end_hide()+self.discuss_footer()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_footer()
 
     def list_item(self, text):
         """Rendering list item snippet. Like ``<li>``."""
@@ -1437,6 +1470,10 @@ class SlidocRenderer(MathRenderer):
     def slidoc_plugin(self, name, text):
         args, sep, content = text.partition('\n')
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
+
+    def slidoc_discuss(self, name, text):
+        self.slide_discuss = True
+        return ''
 
     def slidoc_answer(self, name, text):
         if self.qtypes[-1]:
@@ -2790,7 +2827,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                  'gradeFields': [], 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
-                 'releaseDate': '', 'dueDate': '',
+                 'releaseDate': '', 'dueDate': '', 'discussSlides': [],
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
                  'roster_sheet': ROSTER_SHEET, 'score_sheet': SCORE_SHEET,
                  'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
@@ -3163,6 +3200,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             js_params['gradeFields'] = []
             js_params['totalWeight'] = 0
 
+        js_params['discussSlides'] = renderer.sheet_attributes['discussSlides']
+
         if config.separate:
             plugin_list = list(renderer.plugin_embeds)
             plugin_list.sort()
@@ -3186,7 +3225,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         comb_plugin_embeds.update(renderer.plugin_embeds)
         if math_present:
             math_load = True
-        if renderer.render_markdown:
+        if renderer.render_markdown or renderer.sheet_attributes['discussSlides']:
             pagedown_load = True
         if renderer.load_python:
             skulpt_load = True
@@ -3228,7 +3267,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_present else '',
-                      'pagedown_js': Pagedown_js if renderer.render_markdown else '',
+                      'pagedown_js': Pagedown_js if pagedown_load else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
                       'body_class': 'slidoc-plain-page' if topnav_html else '',
                       'top_nav':  topnav_html,
@@ -3949,6 +3988,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
 #   disable_answering: Hide all answer buttons/input boxes (to generate closed book question sheets that are manually graded)
 #   delay_answers: Correct answers and score are hidden from users until session is graded
+#   discuss_all: Enable discussion for all slides
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
@@ -3970,7 +4010,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'disable_answering', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'disable_answering', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

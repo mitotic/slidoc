@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.3f';
+var VERSION = '0.97.4';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -123,6 +123,7 @@ var AVERAGE_ID = '_average';
 var RESCALE_ID = '_rescale';
 var TIMESTAMP_ID = '_timestamp';
 var TESTUSER_ID = '_test_user';
+var DISCUSS_ID = '_discuss';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
@@ -150,6 +151,8 @@ var SKIP_ANSWER = 'skip';
 var LATE_SUBMIT = 'late';
 
 var FUTURE_DATE = 'future';
+
+var DELETED_POST = '(deleted)';
 
 var TRUNCATE_DIGEST = 8;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
@@ -315,7 +318,7 @@ function sheetAction(params) {
     // sheet: 'sheet name' (required, except for proxy/action)
     // admin: admin user name (optional)
     // token: authentication token
-    // actions: ''|'answer_stats'|'gradebook' (may be carried out directly or after proxy cache updates have been applied)
+    // actions: ''|'discuss_posts'|'answer_stats'|'gradebook' (may be carried out directly or after proxy cache updates have been applied)
     // headers: ['name', 'id', 'email', 'altid', 'Timestamp', 'initTimestamp', 'submitTimestamp', 'field1', ...] (name and id required for sheet creation)
     // name: sortable name, usually 'Last name, First M.' (required if creating a row, and row parameter is not specified)
     // id: unique userID or lowercase email (required if creating or updating a row, and row parameter is not specified)
@@ -430,14 +433,20 @@ function sheetAction(params) {
 	var restrictedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != SCORES_SHEET);
 
 	var loggingSheet = sheetName.match(/_log$/);
+	var discussionSheet = sheetName.match(/-discuss$/);
 
 	var performActions = params.actions || '';
 	if (performActions) {
-	    if (!adminUser)
-		throw("Error:ACTION:Must be admin user to perform action on sheet "+sheetName);
-	    if (protectedSheet || restrictedSheet || loggingSheet)
-		throw('Error:ACTION:Action not allowed for sheet '+sheetName);
-
+            if (performActions == 'discuss_posts') {
+                returnValues = getDiscussPosts(sheetName, (params.slide || ''), paramId);
+                return {"result": "success", "value": returnValues, "headers": returnHeaders,
+                        "info": returnInfo, "messages": returnMessages.join('\n')};
+	    } else {
+		if (!adminUser)
+		    throw("Error:ACTION:Must be admin user to perform action on sheet "+sheetName);
+		if (protectedSheet || restrictedSheet || loggingSheet)
+		    throw('Error:ACTION:Action not allowed for sheet '+sheetName);
+	    }
 	} else if (!proxy && !sheetName) {
 	    throw('Error:SHEETNAME:No sheet name specified');
 	}
@@ -450,6 +459,7 @@ function sheetAction(params) {
 	var dueDate = null;
 	var gradeDate = null;
 	var voteDate = null;
+	var discussableSession = null;
 	var computeTotalScore = false;
 	var curDate = new Date();
 
@@ -679,7 +689,7 @@ function sheetAction(params) {
 	    if (!modSheet.getLastColumn())
 		throw("Error::No columns in sheet '"+sheetName+"'");
 
-	    if (!restrictedSheet && !protectedSheet && !loggingSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET)) {
+	    if (!restrictedSheet && !protectedSheet && !loggingSheet && !discussionSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET)) {
 		// Indexed session
 		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
@@ -689,6 +699,7 @@ function sheetAction(params) {
 		dueDate = sessionEntries.dueDate;
 		gradeDate = sessionEntries.gradeDate;
 		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
+		discussableSession = sessionAttributes.discussSlides && sessionAttributes.discussSlides.length;
 
 		if (parseNumber(sessionEntries.scoreWeight)) {
 		    // Compute total score?
@@ -811,11 +822,16 @@ function sheetAction(params) {
 	    var voteSubmission = '';
             var alterSubmission = false;
             var twitterSetting = false;
+	    var discussionPost = null;
 	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id') {
 		if (selectedUpdates[1][0].match(/_vote$/) && sessionAttributes.shareAnswers) {
 		    var qprefix = selectedUpdates[1][0].split('_')[0];
 		    voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
 		}
+
+                if (sheetName.match(/-discuss$/) && selectedUpdates[1][0].match(/^discuss/)) {
+                    discussionPost = [sheetName.slice(0, -('-discuss'.length)), parseInt(selectedUpdates[1][0].slice('discuss'.length) )];
+                }
 
 		if (selectedUpdates[1][0] == 'submitTimestamp')
 		    alterSubmission = true;
@@ -824,7 +840,7 @@ function sheetAction(params) {
 		    twitterSetting = true;
 	    }
 
-	    if (!adminUser && selectedUpdates && !voteSubmission && !twitterSetting)
+	    if (!adminUser && selectedUpdates && !voteSubmission && !discussionPost && !twitterSetting)
 		throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
             if (importSession && !adminUser)
@@ -1320,8 +1336,14 @@ function sheetAction(params) {
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
 		} else {
 		    rowUpdates = [];
-		    for (var j=0; j<columnHeaders.length; j++)
+		    for (var j=0; j<columnHeaders.length; j++) {
 			rowUpdates.push(null);
+		    }
+                    if (sheetName.match(/-discuss$/)) {
+                        displayName = params.name || '';
+                        rowUpdates[columnIndex['id']-1] = userId;
+                        rowUpdates[columnIndex['name']-1] = displayName;
+                    }
 		}
 	    }
 
@@ -1362,7 +1384,7 @@ function sheetAction(params) {
 		    if (voteDate)
 			returnInfo.voteDate = voteDate;
 
-                    if (dueDate && !prevSubmitted && !voteSubmission && !alterSubmission && userId != MAXSCORE_ID) {
+                    if (dueDate && !prevSubmitted && !voteSubmission && !discussionPost && !alterSubmission && userId != MAXSCORE_ID) {
                         // Check if past submission deadline
                         var lateToken = '';
 			var curTime = curDate.getTime();
@@ -1586,31 +1608,78 @@ function sheetAction(params) {
 		    // Save updated row
 		    userRange.setValues([rowValues]);
 
-                    if (paramId == TESTUSER_ID && sessionEntries && adminPaced) {
+                    var discussRowOffset = 2;
+                    var discussNameCol = 1;
+                    var discussIdCol = 2;
+                    if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
                         var lastSlideCol = columnIndex['lastSlide'];
                         if (lastSlideCol && rowValues[lastSlideCol-1]) {
                             // Copy test user last slide number as new adminPaced value
-                            setValue(sheetName, 'adminPaced', rowValues[lastSlideCol-1], INDEX_SHEET);
+			    adminPaced = rowValues[lastSlideCol-1];
+                            setValue(sheetName, 'adminPaced', adminPaced, INDEX_SHEET);
                         }
                         if (params.submit) {
                             // Use test user submission time as due date for admin-paced sessions
 			    var submitTimetamp = rowValues[submitTimestampCol-1];
                             setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
+
+			    var discussSheet = null;
+                            var discussRowCount = 0;
+                            if (discussableSession) {
+                                // Create discussion sheet
+                                var discussHeaders = ['name', 'id'];
+                                var discussRow = ['', DISCUSS_ID];
+                                for (var j=0; j<sessionAttributes['discussSlides'].length; j++) {
+				    var slideNum = sessionAttributes['discussSlides'][j];
+                                    discussHeaders.push('access'+zeroPad(slideNum,3));
+                                    discussHeaders.push('discuss'+zeroPad(slideNum,3));
+                                    discussRow.push(0);
+                                    discussRow.push('');
+                                }
+                                discussSheet = createSheet(sheetName+'-discuss', discussHeaders);
+				discussSheet.insertRowBefore(2)
+                                discussSheet.setSheetValues(2, 1, 1, discussRow.length, [discussRow]);
+                                discussRowCount = discussRowOffset;
+                            }
+
+                            var idRowIndex = indexRows(modSheet, columnIndex['id']);
                             var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
+                            var nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows);
                             var initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows);
                             for (var j=0; j < idColValues.length; j++) {
                                 // Submit all other users who have started a session
                                 if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
-                                    setValue(idColValues[j], 'submitTimestamp', submitTimetamp, sheetName);
+                                    modSheet.setSheetValues(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1, [[submitTimestamp]]);
+
+                                    if (discussSheet) {
+                                        // Add submitted user to discussion sheet
+                                        discussRowCount += 1;
+					discussSheet.insertRowBefore(discussRowCount);
+                                        discussSheet.setSheetValues(discussRowCount, discussIdCol, 1, 1, [[idColValues[j]]]);
+                                        discussSheet.setSheetValues(discussRowCount, discussNameCol, 1, 1, [[nameColValues[j]]]);
+                                    }
                                 }
                             }
                         }
+
+                    } else if (sessionEntries && adminPaced && dueDate && discussableSession && params.submit) {
+                        discussSheet = getSheet(sheetName+'-discuss');
+                        if (discussSheet) {
+                            var discussRows = discussSheet.getLastRow();
+                            var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1);
+                            var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1);
+                            var temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds, DISCUSS_ID);
+                            discussSheet.insertRowBefore(temRow);
+                            discussSheet.setSheetValues(temRow, discussIdCol, 1, 1, [[userId]]);
+                            discussSheet.setSheetValues(temRow, discussNameCol, 1, 1, [[displayName]]);
+                        }
+
                     }
 
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!forceSubmission && !voteSubmission && !twitterSetting) {
+		    if (!forceSubmission && !voteSubmission && !discussionPost && !twitterSetting) {
 			if (!adminUser)
 			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
@@ -1691,6 +1760,44 @@ function sheetAction(params) {
 				}
 				modValue = colValue;
 			    }
+                        } else if (colHeader.match(/^discuss/) && discussionPost) {
+                            var prevValue = rowValues[headerColumn-1];
+                            if (colValue.toLowerCase().match(/^delete:/)) {
+                                // Delete post
+                                var deleteLabel = 'Post:'+zeroPad( parseInt(colValue.slice('delete:'.length)), 3);
+                                var posts = prevValue.trim().split('\n\n');
+                                for (var j=0; j<posts.length; j++) {
+                                    if (posts[j].trim().slice(deleteLabel.length) == deleteLabel) {
+                                        // "Delete" post by prefixing it
+                                        var comps = posts[j].trim().split(' ');
+                                        posts[j] = comps[0]+' '+DELETED_POST+' '+comps.slice(1).join(' ');
+                                        modValue = posts.join('\n\n') + '\n\n';
+                                        break;
+                                    }
+                                }
+                            } else {
+                                // New post
+                                var discussRow = lookupRowIndex(DISCUSS_ID, modSheet);
+                                if (!discussRow) {
+                                    throw('Row with id '+DISCUSS_ID+' not found in sheet '+sheetName);
+                                }
+
+                                // Update post count and last post time
+                                var axsHeader = 'access' + zeroPad(discussionPost[1],3);
+                                var axsColumn = columnIndex[axsHeader];
+
+                                var axsRange = modSheet.getRange(discussRow, axsColumn, 1, 1);
+
+                                var postCount = (axsRange.getValues()[0][0] || 0) + 1;
+                                axsRange.setValues([[ postCount ]]);
+
+                                modValue = prevValue ? prevValue + '\n' : '';
+                                modValue += 'Post:'+zeroPad(postCount,3)+':'+curDate.toISOString().slice(0,19);
+                                modValue += colValue;
+                                if (!colValue.match(/\n$/)) {
+                                    modValue += '\n';
+                                }
+                            }
 			} else if (colValue == null) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
@@ -1717,6 +1824,10 @@ function sheetAction(params) {
 			}
 		    }
 
+                    if (discussionPost) {
+                        returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], userId);
+                    }
+
 		}
 
                 if (teamCopyCols.length) {
@@ -1740,7 +1851,7 @@ function sheetAction(params) {
                     }
                 }
 
-                if ((paramId != TESTUSER_ID || prevSubmitted) && sessionEntries && adminPaced)
+                if ((paramId != TESTUSER_ID || prevSubmitted || params.submit) && sessionEntries && adminPaced)
                     returnInfo['adminPaced'] = adminPaced;
 
 		// Return updated timestamp
@@ -1757,6 +1868,10 @@ function sheetAction(params) {
 		} else if (!adminUser && gradeDate) {
 		    returnInfo.gradeDate = gradeDate;
 		}
+
+                if (getRow && createRow && discussableSession && dueDate) {
+                    returnInfo['discussStats'] = getDiscussStats(sheetName, userId);
+                }
 
                 if (computeTotalScore && getRow) {
                     returnInfo['remoteAnswers'] = sessionAttributes.remoteAnswers;
@@ -2305,6 +2420,100 @@ function safeName(s, capitalize) {
 	return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
     else
 	return s;
+}
+
+var AXS_RE = /access(\d+)/;
+function getDiscussStats(sessionName, userId) {
+    // Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
+    var sheetName = sessionName+'-discuss';
+    var discussSheet = getSheet(sheetName);
+    var discussStats = {};
+    if (!discussSheet) {
+        return discussStats;
+    }
+
+    var discussRow = lookupRowIndex(DISCUSS_ID, discussSheet);
+    if (!discussRow) {
+        throw('Row with id '+DISCUSS_ID+' not found in sheet '+sheetName);
+    }
+    var userRow = lookupRowIndex(userId, discussSheet);
+    if (!userRow) {
+        throw('User with id '+userId+' not found in sheet '+sheetName);
+    }
+
+    var ncols = discussSheet.getLastColumn();
+    var headers = discussSheet.getSheetValues(1, 1, 1, ncols)[0];
+    var topVals = discussSheet.getSheetValues(discussRow, 1, 1, ncols)[0];
+    var userVals = discussSheet.getSheetValues(userRow, 1, 1, ncols)[0];
+    for (var j=0; j<ncols; j++) {
+        var amatch = AXS_RE.match(headers[j]);
+        if (!amatch || !topVals[j]) {
+            continue;
+        }
+        if (j == ncols-1 || headers[j+1] != 'discuss'+amatch[1]) {
+            continue;
+        }
+        var slideNum = parseInt(amatch[1]);
+        discussStats[slideNum] = [topVals[j], topVals[j]-(userVals[j] || 0)];
+    }
+
+    return discussStats;
+}
+
+var POST_RE = /(\d+):([-\d:T]+)([\s\S]*)$/;
+function getDiscussPosts(sessionName, slideNum, userId) {
+    // Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
+    var sheetName = sessionName+'-discuss';
+    var discussSheet = getSheet(sheetName);
+    if (!discussSheet) {
+        throw('Discuss sheet '+sessionName+'-discuss not found');
+    }
+    var colIndex = indexColumns(discussSheet);
+    var axsColName = 'access' + zeroPad(slideNum,3);
+    var axsCol = colIndex[axsColName];
+    if (!axsCol) {
+        return [];
+    }
+
+    if (userId) {
+        // Update last read post
+        var lastPost = lookupValues(DISCUSS_ID, [axsColName], sheetName, true)[0];
+        var lastReadPost = lookupValues(userId, [axsColName], sheetName, true)[0] || 0;
+
+        if (lastReadPost < lastPost) {
+            setValue(userId, axsColName, lastPost, sheetName);
+        }
+    } else {
+        lastReadPost = 0;
+    }
+
+    var idVals = getColumns('id', discussSheet);
+    var nameVals = getColumns('name', discussSheet);
+    var colVals = getColumns('discuss'+zeroPad(slideNum,3), discussSheet);
+    var allPosts = [];
+    for (var j=0; j<colVals.length; j++) {
+        if (!idVals[j] || (idVals[j].match(/^_/) && idVals[j] != TESTUSER_ID)) {
+            continue;
+        }
+        var userPosts = ('\n'+colVals[j]).split('\nPost:');
+        for (var k=0; k<userPosts.length; k++) {
+            var pmatch = POST_RE.exec(userPosts[k]);
+            if (pmatch) {
+                var postNumber = parseInt(pmatch[1]);
+                var postTimeStr = pmatch[2];
+                var unreadFlag = userId ? postNumber > lastReadPost : false;
+                var text = pmatch[3].trim()+'\n';
+                if (text.slice(DELETED_POST.length) == DELETED_POST) {
+                    // Hide text from deleted messages
+                    text = DELETED_POST;
+                }
+                allPosts.push([postNumber, idVals[j], nameVals[j], postTimeStr, unreadFlag, text]);
+            }
+        }
+    }
+
+    allPosts.sort();
+    return allPosts;
 }
 
 function teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol) {

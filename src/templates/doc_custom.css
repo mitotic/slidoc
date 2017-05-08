@@ -106,7 +106,7 @@ td.slidoc-clickable-sym { padding-left: 0.25em; padding-right: 0.25em; padding-t
 
 .slidoc-slide-nav-counter { opacity: 0.8; }
 
-body { font-family: "Gentium Basic", serif; }
+body { font-family: "Gentium Basic", Georgia, Cambria, "Times New Roman", serif;}
 
 h1, h2, h3, h4, h5, h6 { font-family: "Dosis", "Helvetica Neue", Helvetica, "Segoe UI", Arial, freesans, sans-serif;}
 
@@ -159,6 +159,17 @@ body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 14
   body.slidoc-slide-view .slidoc-nav-overlay { font-size: 160%; }
   body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 160%; }
 }
+
+/* Discussions */
+
+.slidoc-toptoggle-edit.slidoc-discuss-available.slidoc-discuss-unread { background: red; text-decoration: underline; }
+.slidoc-toptoggle-edit.slidoc-discuss-available { background: green; }
+
+.slidoc-discuss-displayed { background: green; }
+
+.slidoc-discuss-posts { margin-left: 2em; }
+.slidoc-discuss-post-timestamp { font-size: 60%; }
+.slidoc-discuss-post-delete { font-size: 60%; }
 
 /* Score tally */
 #slidoc-session-display,
