@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4';
+var VERSION = '0.97.4b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -152,14 +152,17 @@ var LATE_SUBMIT = 'late';
 
 var FUTURE_DATE = 'future';
 
-var DELETED_POST = '(deleted)';
-
 var TRUNCATE_DIGEST = 8;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
 var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
 
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
+
+var DELETED_POST = '(deleted)';
+var POST_PREFIX_RE = /^Post:(\d+):([-\d:T]+)(\s|$)/;
+var POST_NUM_RE = /'(\d+):([-\d:T]+)([\s\S]*)$/;
+var AXS_RE = /access(\d+)/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -1762,16 +1765,19 @@ function sheetAction(params) {
 			    }
                         } else if (colHeader.match(/^discuss/) && discussionPost) {
                             var prevValue = rowValues[headerColumn-1];
+			    if (prevValue && !POST_PREFIX_RE.exec(prevValue)) {
+                                throw('Invalid discussion post entry in column '+colHeader+' for session '+sheetName);
+                            }
                             if (colValue.toLowerCase().match(/^delete:/)) {
                                 // Delete post
-                                var deleteLabel = 'Post:'+zeroPad( parseInt(colValue.slice('delete:'.length)), 3);
-                                var posts = prevValue.trim().split('\n\n');
-                                for (var j=0; j<posts.length; j++) {
-                                    if (posts[j].trim().slice(deleteLabel.length) == deleteLabel) {
-                                        // "Delete" post by prefixing it
-                                        var comps = posts[j].trim().split(' ');
-                                        posts[j] = comps[0]+' '+DELETED_POST+' '+comps.slice(1).join(' ');
-                                        modValue = posts.join('\n\n') + '\n\n';
+				var userPosts = ('\n'+prevValue).split('\nPost:').slice(1);
+                                var deleteLabel = zeroPad( parseInt(colValue.slice('delete:'.length)), 3);
+                                for (var j=0; j<userPosts.length; j++) {
+                                    if (userPosts[j].slice(0,deleteLabel.length) == deleteLabel) {
+                                        // "Delete" post by prefixing it with (deleted)
+                                        var comps = userPosts[j].split(' ');
+                                        userPosts[j] = comps[0]+' '+DELETED_POST+' '+comps.slice(1).join(' ');
+                                        modValue = 'Post:' + userPosts.join('\nPost:');
                                         break;
                                     }
                                 }
@@ -1794,7 +1800,7 @@ function sheetAction(params) {
                                 modValue = prevValue ? prevValue + '\n' : '';
                                 modValue += 'Post:'+zeroPad(postCount,3)+':'+curDate.toISOString().slice(0,19);
                                 modValue += colValue;
-                                if (!colValue.match(/\n$/)) {
+                                if (!modValue.match(/\n$/)) {
                                     modValue += '\n';
                                 }
                             }
@@ -2422,7 +2428,6 @@ function safeName(s, capitalize) {
 	return s;
 }
 
-var AXS_RE = /access(\d+)/;
 function getDiscussStats(sessionName, userId) {
     // Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
     var sheetName = sessionName+'-discuss';
@@ -2460,7 +2465,6 @@ function getDiscussStats(sessionName, userId) {
     return discussStats;
 }
 
-var POST_RE = /(\d+):([-\d:T]+)([\s\S]*)$/;
 function getDiscussPosts(sessionName, slideNum, userId) {
     // Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
     var sheetName = sessionName+'-discuss';
@@ -2495,15 +2499,15 @@ function getDiscussPosts(sessionName, slideNum, userId) {
         if (!idVals[j] || (idVals[j].match(/^_/) && idVals[j] != TESTUSER_ID)) {
             continue;
         }
-        var userPosts = ('\n'+colVals[j]).split('\nPost:');
+        var userPosts = ('\n'+colVals[j]).split('\nPost:').slice(1);
         for (var k=0; k<userPosts.length; k++) {
-            var pmatch = POST_RE.exec(userPosts[k]);
+            var pmatch = POST_NUM_RE.exec(userPosts[k]);
             if (pmatch) {
                 var postNumber = parseInt(pmatch[1]);
                 var postTimeStr = pmatch[2];
                 var unreadFlag = userId ? postNumber > lastReadPost : false;
                 var text = pmatch[3].trim()+'\n';
-                if (text.slice(DELETED_POST.length) == DELETED_POST) {
+                if (text.slice(0,DELETED_POST.length) == DELETED_POST) {
                     // Hide text from deleted messages
                     text = DELETED_POST;
                 }

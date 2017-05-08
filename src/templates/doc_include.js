@@ -1039,7 +1039,8 @@ Slidoc.slideEditMenu = function() {
 }
 
 function winURL(win) {
-    return win.location.origin + win.location.pathname + win.location.search;
+    // Returns window HREF (without hash)
+    return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname + win.location.search;
 }
 
 function openWin(url, name) {
@@ -1050,7 +1051,7 @@ function openWin(url, name) {
    if (win) {
       var utemp = winURL(win);
       console.log("openWin", win.location.href, utemp, ' URL:', url, win);
-      if (utemp != url)
+      if (utemp != url && utemp != 'about:blank')
          win.location.href = 'about:blank';
    } else {
       win = window.open(url, name);
@@ -1103,7 +1104,8 @@ Slidoc.slideEdit = function(action, slideId) {
 	    params.rollover = 'rollover';
 
 	// Window opening must be triggered by user input
-	var previewURL = location.origin + Sliobj.sitePrefix+'/_preview/index.html?update=1#'+slideId;
+	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
+	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
 	if (!Sliobj.previewWin || Sliobj.previewWin.location.href != previewURL)
 	    Sliobj.previewWin = openWin(previewURL, Sliobj.params.siteName+'_preview');
 
@@ -1139,7 +1141,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    } else {
 		Sliobj.previewWin.close();
 		Sliobj.previewWin = null;
-		loadPath(Sliobj.sitePrefix+'/_preview/index.html', '#'+slideId);
+		loadPath(previewPath, '#'+slideId);
 	    }
 	}
 	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);

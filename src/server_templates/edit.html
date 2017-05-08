@@ -22,7 +22,8 @@ function slidocDiscard() {
 }
 
 function winURL(win) {
-    return win.location.origin + win.location.pathname + win.location.search;
+    // Returns window HREF (without hash)
+    return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname + win.location.search;
 }
 
 function openWin(url, name) {
@@ -33,7 +34,7 @@ function openWin(url, name) {
    if (win) {
       var utemp = winURL(win);
       console.log("openWin", win.location.href, utemp, ' URL:', url, win);
-      if (utemp != url)
+      if (utemp != url && utemp != 'about:blank')
          win.location.href = 'about:blank';
    } else {
       win = window.open(url, name);
@@ -53,14 +54,15 @@ document.onkeydown = function(evt) {
 
 function slidocUpdate(save, keystroke) {
    var xhr = new XMLHttpRequest();
-   var previewURL = location.origin + "{{site_prefix}}/_preview/index.html";
+   var previewPath = "{{site_prefix}}/_preview/index.html"
+   var previewURL = location.origin+previewPath+"?update=1";
    var previewName = "{{site_name}}_preview";
    var indexSession = ("{{session_name}}" == "index");
    slidocStatus('');
 
    // Window opening must be triggered by user input
    if (!save && (!PreviewWin || !keystroke))
-      PreviewWin = openWin(previewURL+"?update=1", previewName);
+      PreviewWin = openWin(previewURL, previewName);
 
    xhr.onreadystatechange = function () {
       var DONE = 4; // readyState 4 means the request is done.
@@ -89,7 +91,7 @@ function slidocUpdate(save, keystroke) {
                  PreviewWin.close();
                  PreviewWin = null;
                }
-               window.location = previewURL;
+               window.location = previewPath;
            } else {
               if (PreviewWin) {
                  if (PreviewWin.location.href == 'about:blank') {

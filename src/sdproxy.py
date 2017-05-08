@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4'
+VERSION = '0.97.4b'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -120,11 +120,14 @@ LATE_SUBMIT = 'late'
 
 FUTURE_DATE = 'future'
 
-DELETED_POST = '(deleted)'
-
 TRUNCATE_DIGEST = 8
 
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
+
+DELETED_POST = '(deleted)'
+POST_PREFIX_RE = re.compile(r'^Post:(\d+):([-\d:T]+)(\s|$)')
+POST_NUM_RE = re.compile(r'(\d+):([-\d:T]+)([\s\S]*)$')
+AXS_RE = re.compile(r'access(\d+)')
 
 class Dummy():
     pass
@@ -2208,16 +2211,18 @@ def sheetAction(params, notrace=False):
 
                         elif colHeader.startswith('discuss') and discussionPost:
                             prevValue = rowValues[headerColumn-1]
+                            if prevValue and not POST_PREFIX_RE.match(prevValue):
+                                raise Exception('Invalid discussion post entry in column '+colHeader+' for session '+sheetName)
                             if colValue.lower().startswith('delete:'):
                                 # Delete post
-                                deleteLabel = 'Post:%03d:' % int(colValue[len('delete:'):])
-                                posts = prevValue.strip().split('\n\n')
-                                for j in range(len(posts)):
-                                    if posts[j].lstrip().startswith(deleteLabel):
-                                        # "Delete" post by prefixing it
-                                        comps = posts[j].lstrip().split(' ')
-                                        posts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
-                                        modValue = '\n\n'.join(posts) + '\n\n'
+                                userPosts = ('\n'+prevValue).split('\nPost:')[1:]
+                                deleteLabel = '%03d:' % int(colValue[len('delete:'):])
+                                for j in range(len(userPosts)):
+                                    if userPosts[j].startswith(deleteLabel):
+                                        # "Delete" post by prefixing it with (deleted)
+                                        comps = userPosts[j].split(' ')
+                                        userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
+                                        modValue = 'Post:' + '\nPost:'.join(userPosts)
                                         break
                             else:
                                 # New post
@@ -2237,7 +2242,7 @@ def sheetAction(params, notrace=False):
                                 modValue = prevValue + '\n' if prevValue else ''
                                 modValue += 'Post:%03d:%s ' % (postCount, sliauth.iso_date(curDate, nosubsec=True))
                                 modValue += colValue
-                                if not colValue.endswith('\n'):
+                                if not modValue.endswith('\n'):
                                     modValue += '\n'
 
                         elif colValue is None:
@@ -3128,7 +3133,6 @@ def safeName(s, capitalize=False):
     s = re.sub(r'[^A-Za-z0-9-]', '_', s)
     return s.capitalize() if capitalize else s
 
-AXS_RE = re.compile(r'access(\d+)')
 def getDiscussStats(sessionName, userId):
     # Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
     sheetName = sessionName+'-discuss'
@@ -3159,7 +3163,6 @@ def getDiscussStats(sessionName, userId):
         
     return discussStats
 
-POST_RE = re.compile(r'(\d+):([-\d:T]+)(.*)$', flags=re.DOTALL)
 def getDiscussPosts(sessionName, slideNum, userId=None):
     # Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
     sheetName = sessionName+'-discuss'
@@ -3189,9 +3192,9 @@ def getDiscussPosts(sessionName, slideNum, userId=None):
     for j in range(len(colVals)):
         if not idVals[j] or (idVals[j].startswith('_') and idVals[j] != TESTUSER_ID):
             continue
-        userPosts = ('\n'+colVals[j]).split('\nPost:')
+        userPosts = ('\n'+colVals[j]).split('\nPost:')[1:]
         for k in range(len(userPosts)):
-            pmatch = POST_RE.match(userPosts[k])
+            pmatch = POST_NUM_RE.match(userPosts[k])
             if pmatch:
                 postNumber = int(pmatch.group(1))
                 postTimeStr = pmatch.group(2)
