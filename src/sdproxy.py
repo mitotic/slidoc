@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4d'
+VERSION = '0.97.4e'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -65,6 +65,7 @@ Settings = {
 
                           # Settings from SETTINGS_SLIDOC
     'freeze_date': '',    # Date when all user mods are disabled
+    'request_timeout': 75,  # Proxy update request timeout (sec)
     'require_login_token': True,
     'require_late_token': True,
     'share_averages': True, # Share class averages for tests etc.
@@ -82,7 +83,7 @@ COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
                     'backup_dir', 'debug', 'dry_run',
-                    'lock_proxy_url', 'min_wait_sec', 'server_url']
+                    'lock_proxy_url', 'min_wait_sec', 'request_timeout', 'server_url']
     
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
@@ -959,7 +960,7 @@ def update_remote_sheets(force=False, synchronous=False):
 
     json_data = json.dumps(modRequests, default=sliauth.json_default)
     if Settings['debug']:
-        print("update_remote_sheets: REQUEST %s nrequests=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), len(modRequests), len(json_data)), file=sys.stderr)
+        print("update_remote_sheets: REQUEST %s nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), len(modRequests), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
     ##    print("update_remote_sheets: REQUEST2", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
@@ -979,23 +980,22 @@ def update_remote_sheets(force=False, synchronous=False):
         handle_proxy_response(http_client.fetch(Settings['gsheet_url'], method='POST', headers=None, body=body))
         updates_current()
         return
-    http_client.fetch(Settings['gsheet_url'], handle_proxy_response, method='POST', headers=None, body=body)
+    request = tornado.httpclient.HTTPRequest(Settings['gsheet_url'], method='POST', headers=None, body=body,
+                                             connect_timeout=20, request_timeout=Settings['request_timeout'])
+    http_client.fetch(request, handle_proxy_response)
 
 def handle_proxy_response(response):
     Global.cacheResponseTime = sliauth.epoch_ms()
     Global.totalCacheResponseInterval += (Global.cacheResponseTime - Global.cacheRequestTime)
     Global.totalCacheResponseCount += 1
 
-    if Settings['debug']:
-        print("handle_proxy_response: RESPONSE", sliauth.iso_date(nosubsec=True), file=sys.stderr)
-
     errMsg = ""
     respObj = None
     if response.error:
-        errMsg = response.error
+        errMsg = str(response.error)  # Need to convert to string for later use
     else:
         if Settings['debug']:
-            print("handle_proxy_response: Update RESPONSE BODY", response.body[:256], file=sys.stderr)
+            print("handle_proxy_response: Update RESPONSE", sliauth.iso_date(nosubsec=True), response.body[:256], file=sys.stderr)
         try:
             respObj = json.loads(response.body)
             if respObj['result'] == 'error':
@@ -1033,7 +1033,7 @@ def handle_proxy_response(response):
             print("handle_proxy_response: Update LOCKED %s: %s" % (errSessionName, proxyErrMsg), file=sys.stderr)
 
         if Settings['debug']:
-            print("handle_proxy_response: UPDATED", Global.cacheUpdateTime, respObj, file=sys.stderr)
+            print("handle_proxy_response: UPDATED", sliauth.iso_date(nosubsec=True), Global.cacheUpdateTime, respObj, file=sys.stderr)
 
         updates_completed(Global.cacheRequestTime)
         schedule_update(0 if Global.suspended else Settings['min_wait_sec'])

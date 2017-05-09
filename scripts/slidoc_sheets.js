@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4d';
+var VERSION = '0.97.4e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -609,7 +609,7 @@ function sheetAction(params) {
 			}
 		    } else {
 			// Update keyed sheet
-			progressCall('updateSheet: '+updateSheetName);
+			///progressCall('updateSheet: '+updateSheetName);
 			var lastRowNum = updateSheet.getLastRow();
 			if (lastRowNum < 1)
 			    throw("Error:PROXY_DATA_ROWS:Sheet has no data rows '"+updateSheetName+"'");
@@ -669,7 +669,7 @@ function sheetAction(params) {
 				var prevVals = null;
 			    } else {
 				// Pre-existing row
-				var prevVals = updateRange.getValues();
+				var prevVals = updateRange.getValues()[0];
 				if (totalCol) {
 				    // Do not overwrite old totalCol formula value
 				    prevVals[totalCol-1] = updateSheet.getRange(modRow, totalCol, 1, 1).getFormula();
@@ -680,15 +680,22 @@ function sheetAction(params) {
 			    var modifiedCol = 0;
 			    for (var m=0; m<rowVals.length; m++) {
 				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
-				if (prevVals && prevVals[m] !== rowVals[m]) {
-				    diffCount += 1;
-				    modifiedCol = m+1;
+				if (prevVals) {
+				    if (timeColumn(updateHeaders[m])) {
+					var diff = !timeEqual(prevVals[m], rowVals[m]);
+				    } else {
+					var diff = (prevVals[m] !== rowVals[m]);
+				    }
+				    if (diff) {
+					diffCount += 1;
+					modifiedCol = m+1;
+				    }
 				}
 			    }
 
 			    if (newModRow || modifiedCol) {
 				// Only update if any values have changed (for efficiency)
-				progressCall(updateSheetName+':'+rowId+' '+modRow+' '+diffCount);
+				///progressCall(updateSheetName+':'+rowId+' '+modRow+' '+diffCount);
 				if (modifiedCol && diffCount == 1) {
 				    // Single column modified
 				    updateSheet.getRange(modRow, modifiedCol, 1, 1).setValue(rowVals[modifiedCol-1]);
@@ -2264,9 +2271,26 @@ function getNewDueDate(userId, siteName, sessionName, lateToken) {
     }
 }
     
+function timeColumn(header) {
+    return header.slice(-4).toLowerCase() == 'date' || header.slice(-4).toLowerCase() == 'time' || header.slice(-9) == 'Timestamp';
+}
+
+function timeEqual(a, b) {
+    // Compare timestamps (to within a second); also handle special value 'future'
+    if (!a && !b)
+	return true;
+    if ((typeof a) != (typeof b))
+	return false
+    if (typeof a == 'string')
+	return a == b;
+    if (a && b)
+	return a.toISOString().slice(0,19) == b.toISOString().slice(0,19);
+    return false;
+}
+
 function parseInput(value, headerName) {
     // Parse input date strings
-    if (value && (headerName.slice(-4).toLowerCase() == 'date' || headerName.slice(-4).toLowerCase() == 'time' || headerName.slice(-9) == 'Timestamp')) {
+    if (value && timeColumn(headerName)) {
 	try { return createDate(value); } catch (err) { }
     }
     return value;

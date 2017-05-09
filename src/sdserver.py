@@ -106,6 +106,7 @@ Options = {
     'proxy_wait': None,
     'public': False,
     'reload': False,
+    'request_timeout': 75,
     'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
     'server_start': None,
@@ -4139,6 +4140,7 @@ def main():
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("offline_sessions", default=Options["offline_sessions"], help="Pattern matching sessions that are offline assessments, default=(exam|quiz|test|midterm|final)")
+    define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")
