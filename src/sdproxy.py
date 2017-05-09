@@ -1004,16 +1004,16 @@ def handle_proxy_response(response):
             errMsg = 'JSON parsing error: '+str(err)
 
     if errMsg or not respObj:
-        if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
-            msg = 'Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg)
-            sheet_proxy_error(msg)
-            return
-
         retry_after = RETRY_WAIT_TIME
         if errMsg.find('Timeout') >= 0 or errMsg.find('timeout') >= 0:
             retry_after = 5 * retry_after
 
         print("handle_proxy_response: Update ERROR (tries %d of %d; retry_after=%s): %s" % (Global.cacheRetryCount, RETRY_MAX_COUNT, retry_after, errMsg), file=sys.stderr)
+
+        if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
+            msg = 'Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg)
+            sheet_proxy_error(msg)
+            return
 
         Global.cacheRequestTime = 0
         Global.cacheRetryCount += 1
