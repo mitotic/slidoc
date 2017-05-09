@@ -1615,8 +1615,9 @@ class ActionHandler(BaseHandler):
 
         if pacedSession(uploadType) and sessionName != 'index':
             # Lock proxy for preview
-            sdproxy.startPreview(sessionName)
-
+            temMsg = sdproxy.startPreview(sessionName)
+            if temMsg:
+                raise Exception('Unable to preview session: '+temMsg)
         try:
             images_zipdata = None
             if fext == '.pptx':

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4c';
+var VERSION = '0.97.4d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -648,8 +648,8 @@ function sheetAction(params) {
 			    var rowVals = updateRows[k][1];
 			    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 			    var modRow = temIndexRow[rowId];
-			    progressCall(updateSheetName+':'+rowId+' '+modRow);
-			    if (!modRow) {
+			    var newModRow = !modRow;
+			    if (newModRow) {
 				if (rowId == MAXSCORE_ID || updateSheet.getLastRow() == updateStickyRows) {
 				    // MaxScore or no rows
 				    modRow = updateStickyRows+1;
@@ -663,17 +663,40 @@ function sheetAction(params) {
 				}
 				updateSheet.insertRowBefore(modRow);
 				insertedRows += 1;
+			    }
+			    var updateRange = updateSheet.getRange(modRow, 1, 1, rowVals.length);
+			    if (newModRow) {
+				var prevVals = null;
 			    } else {
 				// Pre-existing row
+				var prevVals = updateRange.getValues();
 				if (totalCol) {
 				    // Do not overwrite old totalCol formula value
-				    rowVals[totalCol-1] = updateSheet.getRange(modRow, totalCol, 1, 1).getFormula();
+				    prevVals[totalCol-1] = updateSheet.getRange(modRow, totalCol, 1, 1).getFormula();
+				    rowVals[totalCol-1] = prevVals[totalCol-1];
 				}
 			    }
-			    for (var m=0; m<rowVals.length; m++)
+			    var diffCount = 0;
+			    var modifiedCol = 0;
+			    for (var m=0; m<rowVals.length; m++) {
 				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
+				if (prevVals && prevVals[m] !== rowVals[m]) {
+				    diffCount += 1;
+				    modifiedCol = m+1;
+				}
+			    }
 
-			    updateSheet.getRange(modRow, 1, 1, rowVals.length).setValues([rowVals]);
+			    if (newModRow || modifiedCol) {
+				// Only update if any values have changed (for efficiency)
+				progressCall(updateSheetName+':'+rowId+' '+modRow+' '+diffCount);
+				if (modifiedCol && diffCount == 1) {
+				    // Single column modified
+				    updateSheet.getRange(modRow, modifiedCol, 1, 1).setValue(rowVals[modifiedCol-1]);
+				} else {
+				    // Multiple columns modified
+				    updateRange.setValues([rowVals]);
+				}
+			    }
 			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowId+', '+rowVals);
 			}
 			if (totalCol && (deletedRows || insertedRows))

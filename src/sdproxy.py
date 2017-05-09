@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4c'
+VERSION = '0.97.4d'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
