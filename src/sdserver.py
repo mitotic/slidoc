@@ -131,6 +131,7 @@ SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', '
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
+
 class Dummy():
     pass
     
