@@ -4133,7 +4133,7 @@ def main():
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
-    define("private_port", Options["private_port"], help="Base private port for multiproxy)")
+    define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
@@ -4145,8 +4145,9 @@ def main():
     define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
-    define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("source_dir", default=Options["source_dir"], help="Path to source files directory (required for edit/upload)")
+    define("ssl", default="", help="SSLcertfile,SSLkeyfile")
+    define("start_delay", default=0, help="Delay at start (in sec) to cleanly restart for port binding etc.")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
     define("twitter_config", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret;...")
     define("xsrf", default=False, help="XSRF cookies for security")
@@ -4195,6 +4196,9 @@ def main():
 
     print >> sys.stderr, ''
     print >> sys.stderr, 'sdserver: Starting **********************************************'
+    if options.start_delay:
+        print >> sys.stderr, 'Start DELAY = %s sec ...' % options.start_delay
+        time.sleep(options.start_delay)
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_KEY', Options['server_key']
     if plugins:
