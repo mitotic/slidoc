@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4b'
+VERSION = '0.97.4c'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -660,19 +660,19 @@ class Sheet(object):
             raise Exception('Cannot modify index values for non-previewed session '+keyValue+' when previewing session '+Global.previewStatus['sessionName'])
         check_if_locked(self.name)
 
-    def setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
+    def _setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
         ##if Settings['debug']:
-        ##    print("setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
+        ##    print("_setSheetValues:", self.name, rowMin, colMin, rowCount, colCount, file=sys.stderr)
         if rowMin < 2:
             raise Exception('Cannot overwrite header row')
 
         self.checkRange(rowMin, colMin, rowCount, colCount)
         if rowCount != len(values):
-            raise Exception('Row count mismatch for setSheetValues %s: expected %d but found %d' % (self.name, rowCount, len(values)) )
+            raise Exception('Row count mismatch for _setSheetValues %s: expected %d but found %d' % (self.name, rowCount, len(values)) )
 
         for j, rowValues in enumerate(values):
             if colCount != len(rowValues):
-                raise Exception('Col count mismatch for setSheetValues %s in row %d: expected %d but found %d' % (self.name, j+rowMin, colCount, len(rowValues)) )
+                raise Exception('Col count mismatch for _setSheetValues %s in row %d: expected %d but found %d' % (self.name, j+rowMin, colCount, len(rowValues)) )
 
         self.check_lock_status(self.xrows[rowMin-1][self.keyCol-1] if self.keyCol and rowCount==1 else '')
 
@@ -733,7 +733,7 @@ class Range(object):
         return self.sheet.getSheetValues(*self.rng)
 
     def setValues(self, values):
-        self.sheet.setSheetValues(*(self.rng+[values]))
+        self.sheet._setSheetValues(*(self.rng+[values]))
 
 def getCacheStatus():
     out = 'Cache: version %s (%s)\n' % (VERSION, list(Global.remoteVersions))
@@ -874,6 +874,7 @@ def shutdown_loop():
     IOLoop.current().stop()
 
 def sheet_proxy_error(errMsg=''):
+    print('sheet_proxy_error: '+errMsg, file=sys.stderr)
     Global.proxyError = sliauth.iso_date() + ': ' + errMsg
 
 def proxy_error_status():
@@ -999,14 +1000,21 @@ def handle_proxy_response(response):
             errMsg = 'JSON parsing error: '+str(err)
 
     if errMsg or not respObj:
-        print("handle_proxy_response: Update ERROR (retry: %d of %d): %s" % (Global.cacheRetryCount, RETRY_MAX_COUNT, errMsg), file=sys.stderr)
         if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
-            sheet_proxy_error('Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg))
+            msg = 'Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg)
+            sheet_proxy_error(msg)
             return
+
+        retry_after = RETRY_WAIT_TIME
+        if errMsg.find('Timeout') >= 0 or errMsg.find('timeout') >= 0:
+            retry_after = 5 * retry_after
+
+        print("handle_proxy_response: Update ERROR (tries %d of %d; retry_after=%s): %s" % (Global.cacheRetryCount, RETRY_MAX_COUNT, retry_after, errMsg), file=sys.stderr)
+
         Global.cacheRequestTime = 0
         Global.cacheRetryCount += 1
         Global.totalCacheRetryCount += 1
-        Global.cacheWaitTime += RETRY_WAIT_TIME
+        Global.cacheWaitTime += retry_after
         schedule_update(Global.cacheWaitTime)
         return
     else:
@@ -1462,7 +1470,7 @@ def sheetAction(params, notrace=False):
                         pastSubmitDeadline = sliauth.epoch_ms(curDate) > sliauth.epoch_ms(effectiveDueDate)
                         if pastSubmitDeadline:
                             # Force submit
-                            modSheet.setSheetValues(j+1+numStickyRows, submitCol, 1, 1, [[curDate]])
+                            modSheet.getRange(j+1+numStickyRows, submitCol, 1, 1).setValues([[curDate]])
 
                 returnValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
             if sessionEntries:
@@ -2105,7 +2113,7 @@ def sheetAction(params, notrace=False):
                                     discussRow.append('')
                                 discussSheet = createSheet(sheetName+'-discuss', discussHeaders)
                                 discussSheet.insertRowBefore(2, keyValue=DISCUSS_ID)
-                                discussSheet.setSheetValues(2, 1, 1, len(discussRow), [discussRow])
+                                discussSheet.getRange(2, 1, 1, len(discussRow)).setValues([discussRow])
                                 discussRowCount = discussRowOffset
 
                             idRowIndex = indexRows(modSheet, columnIndex['id'])
@@ -2115,13 +2123,13 @@ def sheetAction(params, notrace=False):
                             for j in range(len(idColValues)):
                                 # Submit all other users who have started a session
                                 if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
-                                    modSheet.setSheetValues(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1, [[submitTimestamp]])
+                                    modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]])
 
                                     if discussSheet:
                                         # Add submitted user to discussion sheet
                                         discussRowCount += 1
                                         discussSheet.insertRowBefore(discussRowCount, keyValue=idColValues[j])
-                                        discussSheet.setSheetValues(discussRowCount, discussNameCol, 1, 1, [[nameColValues[j]]])
+                                        discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]])
 
                     elif sessionEntries and adminPaced and dueDate and discussableSession and params.get('submit'):
                         discussSheet = getSheet(sheetName+'-discuss', optional=True)
@@ -2131,7 +2139,7 @@ def sheetAction(params, notrace=False):
                             discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1)
                             temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds, DISCUSS_ID)
                             discussSheet.insertRowBefore(temRow, keyValue=userId)
-                            discussSheet.setSheetValues(temRow, discussNameCol, 1, 1, [[displayName]])
+                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[displayName]])
                             
                 elif selectedUpdates:
                     # Update selected row values
@@ -2712,7 +2720,7 @@ def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
                     scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers'])
                     newScore = scores.get('weightedCorrect', '')
                 if scoreValues[k][0] != newScore:
-                    modSheet.setSheetValues(startRow+k, columnIndex['q_scores'], 1, 1, [[newScore]])
+                    modSheet.getRange(startRow+k, columnIndex['q_scores'], 1, 1).setValues([[newScore]])
                     nUpdates += 1
     return nUpdates
 
@@ -3117,7 +3125,7 @@ def setValue(idValue, colName, colValue, sheetName):
         raise Exception('ID value '+idValue+' not found in index sheet '+sheetName)
     if colName not in indexColIndex:
         raise Exception('Column '+colName+' not found in index sheet '+sheetName)
-    indexSheet.setSheetValues(sessionRow, indexColIndex[colName], 1, 1, [[colValue]])
+    indexSheet.getRange(sessionRow, indexColIndex[colName], 1, 1).setValues([[colValue]])
 
 def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
     # Return row number before which new name/id combination should be inserted

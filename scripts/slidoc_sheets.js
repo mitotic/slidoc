@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4b';
+var VERSION = '0.97.4c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -112,6 +112,9 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 // Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
+
+// Enable for debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
+var CALL_LOG = false;
 
 var ADMIN_ROLE = 'admin';
 var GRADER_ROLE = 'grader';
@@ -439,9 +442,62 @@ function sheetAction(params) {
 	var discussionSheet = sheetName.match(/-discuss$/);
 
 	var performActions = params.actions || '';
+
+	var curDate = new Date();
+
+	if (CALL_LOG) {
+	    var callId = paramId;
+	    if (origUser && origUser != paramId)
+		callId += '/'+origUser;
+	    var callType = '';
+	    var callParams = 'sheet='+sheetName;
+	    if (params.get)
+		callParams += ', get';
+	    if (params.all)
+		callParams += ', all';
+	    if (params.create)
+		callParams += ', create';
+	    if (proxy) {
+		callType = 'proxy';
+		callParams += ', get='+params.get+', allUpdates='+params.allupdates;
+		if (params.allupdates)
+		    callParams += ', allupdates='+params.data.length;
+	    } else if (performActions) {
+		callType = 'actions';
+		callParams += ', actions='+performActions;
+	    } else if (params.update) {
+		callType = 'selectedUpdates';
+	    } else if (params.row) {
+		callType = 'rowUpdate';
+	    }
+	    var callHeaders = ['id', 'type', 'params', 'startTime', 'elapsed', 'status'];
+	    var callValues = [callId, callType, callParams, curDate];
+
+	    var callSheet = getSheet('call_log');
+	    if (!callSheet) {
+		callSheet = createSheet('call_log', callHeaders);
+	    }
+	    var callRows = callSheet.getLastRow();
+	    callSheet.insertRowBefore(callRows+1);
+	    callSheet.getRange(callRows+1, 1, 1, callValues.length).setValues([callValues]);
+	    var callEndRange = callSheet.getRange(callRows+1, callValues.length+1, 1, 2);
+	    function endCall(status) {
+		callEndRange.setValues([[(new Date()).getTime() - curDate.getTime(), status]]);
+	    }
+	    var progressCol = callHeaders.length + 1;
+	    function progressCall(msg) {
+		callSheet.getRange(callRows+1, progressCol, 1, 1).setValues([[msg]]);
+		progressCol += 1;
+	    }
+	} else {
+	    function endCall(status) {}
+	    function progressCall(msg) {}
+	}
+
 	if (performActions) {
             if (performActions == 'discuss_posts') {
                 returnValues = getDiscussPosts(sheetName, (params.slide || ''), paramId);
+		endCall('success');
                 return {"result": "success", "value": returnValues, "headers": returnHeaders,
                         "info": returnInfo, "messages": returnMessages.join('\n')};
 	    } else {
@@ -464,7 +520,6 @@ function sheetAction(params) {
 	var voteDate = null;
 	var discussableSession = null;
 	var computeTotalScore = false;
-	var curDate = new Date();
 
 	if (proxy && adminUser != ADMIN_ROLE)
 	    throw("Error::Must be admin user for proxy access to sheet '"+sheetName+"'");
@@ -554,6 +609,7 @@ function sheetAction(params) {
 			}
 		    } else {
 			// Update keyed sheet
+			progressCall('updateSheet: '+updateSheetName);
 			var lastRowNum = updateSheet.getLastRow();
 			if (lastRowNum < 1)
 			    throw("Error:PROXY_DATA_ROWS:Sheet has no data rows '"+updateSheetName+"'");
@@ -592,6 +648,7 @@ function sheetAction(params) {
 			    var rowVals = updateRows[k][1];
 			    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 			    var modRow = temIndexRow[rowId];
+			    progressCall(updateSheetName+':'+rowId+' '+modRow);
 			    if (!modRow) {
 				if (rowId == MAXSCORE_ID || updateSheet.getLastRow() == updateStickyRows) {
 				    // MaxScore or no rows
@@ -920,7 +977,7 @@ function sheetAction(params) {
                         var pastSubmitDeadline = curDate.getTime() > effectiveDueDate.getTime();
                         if (pastSubmitDeadline) {
                             // Force submit
-                            modSheet.setSheetValues(j+1+numStickyRows, submitCol, 1, 1, [[curDate]]);
+                            modSheet.getRange(j+1+numStickyRows, submitCol, 1, 1).setValues([[curDate]]);
                         }
                     }
                 }
@@ -1641,7 +1698,7 @@ function sheetAction(params) {
                                 }
                                 discussSheet = createSheet(sheetName+'-discuss', discussHeaders);
 				discussSheet.insertRowBefore(2)
-                                discussSheet.setSheetValues(2, 1, 1, discussRow.length, [discussRow]);
+                                discussSheet.getRange(2, 1, 1, discussRow.length).setValues([discussRow]);
                                 discussRowCount = discussRowOffset;
                             }
 
@@ -1652,14 +1709,14 @@ function sheetAction(params) {
                             for (var j=0; j < idColValues.length; j++) {
                                 // Submit all other users who have started a session
                                 if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
-                                    modSheet.setSheetValues(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1, [[submitTimestamp]]);
+                                    modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]]);
 
                                     if (discussSheet) {
                                         // Add submitted user to discussion sheet
                                         discussRowCount += 1;
 					discussSheet.insertRowBefore(discussRowCount);
-                                        discussSheet.setSheetValues(discussRowCount, discussIdCol, 1, 1, [[idColValues[j]]]);
-                                        discussSheet.setSheetValues(discussRowCount, discussNameCol, 1, 1, [[nameColValues[j]]]);
+                                        discussSheet.getRange(discussRowCount, discussIdCol, 1, 1).setValues([[idColValues[j]]]);
+                                        discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]]);
                                     }
                                 }
                             }
@@ -1673,8 +1730,8 @@ function sheetAction(params) {
                             var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1);
                             var temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds, DISCUSS_ID);
                             discussSheet.insertRowBefore(temRow);
-                            discussSheet.setSheetValues(temRow, discussIdCol, 1, 1, [[userId]]);
-                            discussSheet.setSheetValues(temRow, discussNameCol, 1, 1, [[displayName]]);
+                            discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
+                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[displayName]]);
                         }
 
                     }
@@ -1886,11 +1943,13 @@ function sheetAction(params) {
 	}
 
 	// return success results
+	endCall('success');
 	return {"result":"success", "value": returnValues, "headers": returnHeaders,
 		"info": returnInfo,
 		"messages": returnMessages.join('\n')};
     } catch(err){
 	// if error return this
+	endCall('error: '+err);
 	return {"result":"error", "error": ''+err, "value": null,
 		"info": returnInfo,
 		"messages": returnMessages.join('\n')};
@@ -3127,7 +3186,7 @@ function updateTotalScores(modSheet, sessionAttributes, questions, force) {
 		    newScore = scores.weightedCorrect || '';
 		}
 		if (scoreValues[k][0] != newScore) {
-                    modSheet.setSheetValues(startRow+k, columnIndex['q_scores'], 1, 1, [[newScore]]);
+                    modSheet.getRange(startRow+k, columnIndex['q_scores'], 1, 1).setValues([[newScore]]);
 		    nUpdates += 1;
 		}
 	    }
