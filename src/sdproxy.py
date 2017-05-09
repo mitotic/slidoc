@@ -952,21 +952,22 @@ def update_remote_sheets(force=False, synchronous=False):
 
     modRequests = specialMods + sessionMods
 
-    if Settings['debug']:
-            print("update_remote_sheets:B", modRequests is not None, file=sys.stderr)
     if not modRequests:
         # Nothing to update
         updates_current()
         return
 
+    json_data = json.dumps(modRequests, default=sliauth.json_default)
+    if Settings['debug']:
+        print("update_remote_sheets: REQUEST %s nrequests=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), len(modRequests), len(json_data)), file=sys.stderr)
+
     ##if Settings['debug']:
-    ##    print("update_remote_sheets:C", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
+    ##    print("update_remote_sheets: REQUEST2", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
 
     user = ADMINUSER_ID
     userToken = gen_proxy_token(user, ADMIN_ROLE)
 
     http_client = tornado.httpclient.HTTPClient() if synchronous else tornado.httpclient.AsyncHTTPClient()
-    json_data = json.dumps(modRequests, default=sliauth.json_default)
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
                   'data':  json_data}
     post_data['create'] = 'proxy'
@@ -1029,7 +1030,7 @@ def handle_proxy_response(response):
             print("handle_proxy_response: Update LOCKED %s: %s" % (errSessionName, proxyErrMsg), file=sys.stderr)
 
         if Settings['debug']:
-            print("handle_proxy_response:", Global.cacheUpdateTime, respObj, file=sys.stderr)
+            print("handle_proxy_response: UPDATED", sliauth.iso_date(nosubsec=True), Global.cacheUpdateTime, respObj, file=sys.stderr)
 
         updates_completed(Global.cacheRequestTime)
         schedule_update(0 if Global.suspended else Settings['min_wait_sec'])
