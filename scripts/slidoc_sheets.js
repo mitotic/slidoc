@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4e';
+var VERSION = '0.97.4f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -676,8 +676,9 @@ function sheetAction(params) {
 				    rowVals[totalCol-1] = prevVals[totalCol-1];
 				}
 			    }
+			    var diffStartCol = 1;
+			    var diffEndCol = 0;
 			    var diffCount = 0;
-			    var modifiedCol = 0;
 			    for (var m=0; m<rowVals.length; m++) {
 				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
 				if (prevVals) {
@@ -687,22 +688,19 @@ function sheetAction(params) {
 					var diff = (prevVals[m] !== rowVals[m]);
 				    }
 				    if (diff) {
+					diffEndCol = m+1;
 					diffCount += 1;
-					modifiedCol = m+1;
+				    } else {
+					if (diffStartCol == m+1)
+					    diffStartCol += 1;
 				    }
 				}
 			    }
 
-			    if (newModRow || modifiedCol) {
-				// Only update if any values have changed (for efficiency)
-				///progressCall(updateSheetName+':'+rowId+' '+modRow+' '+diffCount);
-				if (modifiedCol && diffCount == 1) {
-				    // Single column modified
-				    updateSheet.getRange(modRow, modifiedCol, 1, 1).setValue(rowVals[modifiedCol-1]);
-				} else {
-				    // Multiple columns modified
-				    updateRange.setValues([rowVals]);
-				}
+			    if (diffEndCol >= diffStartCol) {
+				// Only update range of values that have changed (for efficiency)
+				///progressCall(updateSheetName+':'+rowId+' '+modRow+' '+diffCount+' '+diffStartCol+' '+diffEndCol);
+				updateSheet.getRange(modRow, diffStartCol, 1, diffEndCol-diffStartCol+1).setValues([rowVals.slice(diffStartCol-1,diffEndCol)]);
 			    }
 			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowId+', '+rowVals);
 			}
