@@ -43,7 +43,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4f'
+VERSION = '0.97.4g'
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
@@ -60,6 +60,7 @@ Settings = {
     'debug': None,      
     'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
     'lock_proxy_url': '', # URL of proxy server to lock sheet
+    'log_call': 0,        # Enable call debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
     'server_url': '',     # Base URL of server (if any); e.g., http://example.com'
 
@@ -83,7 +84,7 @@ COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
                     'backup_dir', 'debug', 'dry_run',
-                    'lock_proxy_url', 'min_wait_sec', 'request_timeout', 'server_url']
+                    'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
     
 RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
@@ -736,6 +737,9 @@ class Range(object):
     def setValues(self, values):
         self.sheet._setSheetValues(*(self.rng+[values]))
 
+    def setValue(self, value):
+        self.sheet._setSheetValues(*(self.rng+[[[value]]]))
+
 def getCacheStatus():
     out = 'Cache: version %s (%s)\n' % (VERSION, list(Global.remoteVersions))
     out += '  Suspend status: <b>%s</b>\n' % Global.suspended
@@ -960,7 +964,7 @@ def update_remote_sheets(force=False, synchronous=False):
 
     json_data = json.dumps(modRequests, default=sliauth.json_default)
     if Settings['debug']:
-        print("update_remote_sheets: REQUEST %s nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), len(modRequests), len(json_data)), file=sys.stderr)
+        print("update_remote_sheets: REQUEST %s log=%s, nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), Settings['log_call'], len(modRequests), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
     ##    print("update_remote_sheets: REQUEST2", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
@@ -972,6 +976,9 @@ def update_remote_sheets(force=False, synchronous=False):
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
                   'data':  json_data}
     post_data['create'] = 'proxy'
+    if Settings['log_call']:
+        post_data['logcall'] = str(Settings['log_call'])
+
     body = urllib.urlencode(post_data)
     Global.totalCacheRequestBytes += len(json_data)
     Global.cacheRequestTime = cur_time
@@ -985,6 +992,13 @@ def update_remote_sheets(force=False, synchronous=False):
     http_client.fetch(request, handle_proxy_response)
 
 def handle_proxy_response(response):
+    try:
+        # Need to trap exception because it fails silently otherwise
+        return handle_proxy_response_aux(response)
+    except Exception, excp:
+        print("handle_proxy_response: Unexpected ERROR: %s" % excp, file=sys.stderr)
+        
+def handle_proxy_response_aux(response):
     Global.cacheResponseTime = sliauth.epoch_ms()
     Global.totalCacheResponseInterval += (Global.cacheResponseTime - Global.cacheRequestTime)
     Global.totalCacheResponseCount += 1
@@ -2343,7 +2357,7 @@ def sheetAction(params, notrace=False):
                   "info": returnInfo,
                   "messages": '\n'.join(returnMessages)}
 
-    if Settings['debug'] and not notrace:
+    if Settings['debug'] and not notrace and retObj['result'] != 'success':
         print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
     
     return retObj
@@ -2701,6 +2715,29 @@ def createUserRow(sessionName, userId, displayName='', lateToken='', source=''):
         if retval['result'] != 'success':
             raise Exception('Error in setting late token for user '+userId+': '+retval.get('error'))
 
+def timeColumn(header):
+    return header.lower().endswith('date') or header.lower().endswith('time') or header.endswith('Timestamp');
+
+def randomTime():
+    return datetime.datetime.fromtimestamp( sliauth.epoch_ms() * random.uniform(0.1, 1.05) )
+
+def unsafeTriggerUpdates(sessionName, modCols, startRow=3):
+    # WARNING: Destructive testing of sheet updates. Use only on test sessions, NEVER on production sessions
+    # Inserts random values in specified list of columns to trigger updates
+    print("WARNING:unsafeTestUpdates: Destructive testing of sheet updates", sessionName, modCols, file=sys.stderr)
+    testSheet = getSheet(sessionName)
+    headers = testSheet.getSheetValues(1, 1, 1, testSheet.getLastColumn())[0]
+    nrows = testSheet.getLastRow() - startRow
+    randCols = []
+    for j in range(len(modCols)):
+        modCol = modCols[j]
+        header = headers[modCol-1]
+        randCols.append(header)
+        for m in range(nrows):
+            randValue = randomTime() if timeColumn(header) else random.randint(0,100)
+            testSheet.getRange(startRow+m, modCol, 1, 1).setValue(randValue)
+    return randCols
+        
 def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
     # If not force, only update non-blank entries
     # Return number of rows updated

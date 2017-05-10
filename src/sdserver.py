@@ -96,6 +96,7 @@ Options = {
     'import_params': '',
     'insecure_cookie': False,
     'lock_proxy_url': '',
+    'log_call': 0,
     'min_wait_sec': 0,
     'missing_choice': '*',
     'no_auth': False,
@@ -106,7 +107,7 @@ Options = {
     'proxy_wait': None,
     'public': False,
     'reload': False,
-    'request_timeout': 75,
+    'request_timeout': 60,
     'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
     'server_start': None,
@@ -711,7 +712,12 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
 
-        if action == '_dash':
+        if action == '_unsafe_trigger_updates':
+            modCols = [int(x) for x in self.get_argument('modcols','').split(',')]
+            randCols = sdproxy.unsafeTriggerUpdates(sessionName, modCols)
+            self.displayMessage('Unsafe column updates triggered for session %s: %s' % (sessionName, randCols))
+
+        elif action == '_dash':
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
                         version=sdproxy.VERSION, interactive=WSHandler.getInteractiveSession())
 
@@ -1923,8 +1929,12 @@ class ActionHandler(BaseHandler):
         if sessionName != 'index':
             WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
         errMsgs = self.rebuild(uploadType, indexOnly=True)
+
         if errMsgs and any(errMsgs):
-            msgs = ['Saved changes to session '+sessionName] + [''] + errMsgs
+            sessionPath = privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName+'.html'
+            if Options['site_name']:
+                sessionPath = '/'+Options['site_name'] + sessionPath
+            msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
             self.displayMessage(msgs)
             return
 
@@ -3389,6 +3399,7 @@ def createApplication():
                       r"/(_submit/[-\w.:;]+)",
                       r"/(_twitter)",
                       r"/(_unlock/[-\w.]+)",
+                      r"/(_unsafe_trigger_updates/[-\w.]+)",
                       r"/(_upload)",
                       r"/(_upload/[-\w.]+)",
                       r"/(_lock/[-\w.]+)",
@@ -4128,6 +4139,7 @@ def main():
     define("gsheet_url", default="", help="Google sheet URL1;...")
     define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
+    define("log_call", default=0, help="Log selected calls to sheet 'call_log'")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")

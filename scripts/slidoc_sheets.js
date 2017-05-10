@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4f';
+var VERSION = '0.97.4g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -112,9 +112,6 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 // Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
-
-// Enable for debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
-var CALL_LOG = false;
 
 var ADMIN_ROLE = 'admin';
 var GRADER_ROLE = 'grader';
@@ -290,6 +287,9 @@ function getRosterEntry(userId) {
     }
 }
 
+// Comparison function for sorting
+function numSort(a,b) {return a-b;}
+
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 function doGet(evt){
   return handleResponse(evt);
@@ -353,7 +353,7 @@ function sheetAction(params) {
     // (User added columns are returned on gets and selective updates, but not row updates.)
     // delsheet: 1 to delete sheet (and any associated session index entry)
     // copysheet: name to copy sheet to new sheet (but not session index entry)
-    
+    // logcall: 0 or 1 or 2 to enable call debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
     // shortly after my original solution Google announced the LockService[1]
     // this prevents concurrent access overwritting data
     // [1] http://googleappsdeveloper.blogspot.co.uk/2011/10/concurrency-and-google-apps-script.html
@@ -445,7 +445,8 @@ function sheetAction(params) {
 
 	var curDate = new Date();
 
-	if (CALL_LOG) {
+	var logCall = params.logcall ? (parseInt(params.logcall) || 0) : 0;
+	if (logCall) {
 	    var callId = paramId;
 	    if (origUser && origUser != paramId)
 		callId += '/'+origUser;
@@ -569,12 +570,12 @@ function sheetAction(params) {
 	    returnValues = [];
 	    returnInfo.updateErrors = [];
 	    var data = JSON.parse(params.data);
-	    for (var j=0; j<data.length; j++) {
-		var updateSheetName = data[j][0];
-		var proxyActions = data[j][1];
-		var updateHeaders = data[j][2];
-		var updateKeys = data[j][3];
-		var updateRows = data[j][4];
+	    for (var isheet=0; isheet<data.length; isheet++) {
+		var updateSheetName = data[isheet][0];
+		var proxyActions = data[isheet][1];
+		var updateHeaders = data[isheet][2];
+		var updateKeys = data[isheet][3];
+		var updateRows = data[isheet][4];
 		//returnMessages.push('Debug::updateSheet, actions, keys, rows: '+updateSheetName+', '+proxyActions+', '+updateKeys+', '+updateRows.length);
 
 		try {
@@ -609,7 +610,8 @@ function sheetAction(params) {
 			}
 		    } else {
 			// Update keyed sheet
-			///progressCall('updateSheet: '+updateSheetName);
+			if (logCall >= 1)
+			    progressCall('updateSheet: '+updateSheetName);
 			var lastRowNum = updateSheet.getLastRow();
 			if (lastRowNum < 1)
 			    throw("Error:PROXY_DATA_ROWS:Sheet has no data rows '"+updateSheetName+"'");
@@ -642,14 +644,22 @@ function sheetAction(params) {
 			    }
 			}
 
+			var modRowVals = [];
+			var maxEndCol = 0;
 			for (var k=0; k<updateRows.length; k++) {
 			    // Update rows with pre-existing or new keys
 			    var rowId = updateRows[k][0];
 			    var rowVals = updateRows[k][1];
+
+			    for (var m=0; m<rowVals.length; m++) {
+				// Parse time strings in update values
+				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
+			    }
+
 			    var temIndexRow = indexRows(updateSheet, idCol, updateStickyRows+1);
 			    var modRow = temIndexRow[rowId];
-			    var newModRow = !modRow;
-			    if (newModRow) {
+
+			    if (!modRow) {
 				if (rowId == MAXSCORE_ID || updateSheet.getLastRow() == updateStickyRows) {
 				    // MaxScore or no rows
 				    modRow = updateStickyRows+1;
@@ -663,25 +673,22 @@ function sheetAction(params) {
 				}
 				updateSheet.insertRowBefore(modRow);
 				insertedRows += 1;
-			    }
-			    var updateRange = updateSheet.getRange(modRow, 1, 1, rowVals.length);
-			    if (newModRow) {
-				var prevVals = null;
+
+				var diffStartCol = 1;
+				var diffEndCol = rowVals.length;
+
 			    } else {
 				// Pre-existing row
-				var prevVals = updateRange.getValues()[0];
+				var diffStartCol = 1;
+				var diffEndCol = 0;
+
+				var prevVals = updateSheet.getRange(modRow, 1, 1, rowVals.length).getValues()[0];
 				if (totalCol) {
 				    // Do not overwrite old totalCol formula value
 				    prevVals[totalCol-1] = updateSheet.getRange(modRow, totalCol, 1, 1).getFormula();
 				    rowVals[totalCol-1] = prevVals[totalCol-1];
 				}
-			    }
-			    var diffStartCol = 1;
-			    var diffEndCol = 0;
-			    var diffCount = 0;
-			    for (var m=0; m<rowVals.length; m++) {
-				rowVals[m] = parseInput(rowVals[m], updateHeaders[m]);
-				if (prevVals) {
+				for (var m=0; m<rowVals.length; m++) {
 				    if (timeColumn(updateHeaders[m])) {
 					var diff = !timeEqual(prevVals[m], rowVals[m]);
 				    } else {
@@ -689,7 +696,6 @@ function sheetAction(params) {
 				    }
 				    if (diff) {
 					diffEndCol = m+1;
-					diffCount += 1;
 				    } else {
 					if (diffStartCol == m+1)
 					    diffStartCol += 1;
@@ -699,10 +705,48 @@ function sheetAction(params) {
 
 			    if (diffEndCol >= diffStartCol) {
 				// Only update range of values that have changed (for efficiency)
-				///progressCall(updateSheetName+':'+rowId+' '+modRow+' '+diffCount+' '+diffStartCol+' '+diffEndCol);
-				updateSheet.getRange(modRow, diffStartCol, 1, diffEndCol-diffStartCol+1).setValues([rowVals.slice(diffStartCol-1,diffEndCol)]);
+				maxEndCol = Math.max(maxEndCol, diffEndCol);
+				modRowVals.push([modRow, diffStartCol, diffEndCol, rowVals.slice(diffStartCol-1,diffEndCol)]);
 			    }
 			    //returnMessages.push('Debug::updateRow: '+modRow+', '+rowId+', '+rowVals);
+			}
+
+			if (modRowVals.length) {
+			    // Carry out updates in contiguous rectangular blocks (sorting numerically)
+			    modRowVals.sort(numSort);
+
+			    var startRow = 0;
+			    var endRow = 0;
+			    var startCol = 0;
+			    var endCol = 0;
+			    var blockRowVals = [];
+			    for (var k=0; k<modRowVals.length; k++) {
+				var row = modRowVals[k];
+				if (blockRowVals.length && (endRow+1 != row[0] || startCol != row[1] || endCol != row[2])) {
+				    if (logCall >= 2)
+					progressCall(updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+				    updateSheet.getRange(startRow, startCol, endRow-startRow+1, endCol-startCol+1).setValues(blockRowVals);
+				    blockRowVals = [];
+				}
+				// Continguous rectangular block to be updated
+				if (!blockRowVals.length) {
+				    startRow = row[0];
+				    startCol = row[1];
+				    endCol = row[2];
+				}
+				blockRowVals.push(row[3]);
+				endRow = row[0];
+			    }
+
+			    if (blockRowVals.length) {
+				if (logCall >= 2)
+				    progressCall(updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+				updateSheet.getRange(startRow, startCol, endRow-startRow+1, endCol-startCol+1).setValues(blockRowVals);
+			    }
+
+			} else {
+			    if (logCall >= 2)
+				progressCall(updateSheetName+':noblock '+deletedRows);
 			}
 			if (totalCol && (deletedRows || insertedRows))
 			    updateTotalFormula(updateSheet, lastRowNum+insertedRows-deletedRows);
@@ -1270,7 +1314,10 @@ function sheetAction(params) {
                         sortVals.push( [respSort, timeVal, j] );
                     }
 		}
-		sortVals.sort();
+		if (sortVotes || (voteParam && !explainOffset))
+		    sortVals.sort(numSort); // (sort numerically)
+		else
+		    sortVals.sort();
 
                 if (adminUser || paramId == TESTUSER_ID) {
                     var nameMap = lookupRoster('name');
@@ -2620,7 +2667,7 @@ function getDiscussPosts(sessionName, slideNum, userId) {
         }
     }
 
-    allPosts.sort();
+    allPosts.sort(numSort);  //  (sorting numerically)
     return allPosts;
 }
 
@@ -3788,7 +3835,7 @@ function updateScores(sessionNames, create, interactive) {
 
 		gradeCutoffs.push([parseNumber(cutoffStr), letter, parseNumber(numValueStr)]);
 	    }
-	    gradeCutoffs.sort();
+	    gradeCutoffs.sort(numSort);  //  (sorting numerically)
 	    gradeCutoffs.reverse();
 	}
 	var indexSheet = getSheet(INDEX_SHEET);
@@ -4378,7 +4425,7 @@ function MigrateSession0968a(sessionName, newFields, pacedCols, newDoc, altRoste
 	if (commentsCol && !('gweight' in questions[qno-1]))
 	    delCols.push(commentsCol);
     }
-    delCols.sort();
+    delCols.sort(numSort); //  (sorting numerically)
     delCols.reverse();
     Logger.log('MigrateSession0968a: '+sessionName+' '+delCols);
     for (var j=0; j<delCols.length; j++)
