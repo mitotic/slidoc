@@ -527,6 +527,7 @@ class ActionHandler(BaseHandler):
                      'other': dict(),
                      }
     fix_opts = set()
+    unsafe_code = [random.randint(1000,6999)]
 
     def previewActive(self):
         return self.previewState.get('name', '')
@@ -713,9 +714,17 @@ class ActionHandler(BaseHandler):
                 return
 
         if action == '_unsafe_trigger_updates':
-            modCols = [int(x) for x in self.get_argument('modcols','').split(',')]
-            randCols = sdproxy.unsafeTriggerUpdates(sessionName, modCols)
-            self.displayMessage('Unsafe column updates triggered for session %s: %s' % (sessionName, randCols))
+            ucode = int(self.get_argument('code','0'))
+            if not ucode or ucode != self.unsafe_code[0]:
+                tem_url = '/_unsafe_trigger_updates/%s?modcols=%s&code=%d' % (sessionName, self.get_argument('modcols',''), self.unsafe_code[0])
+                if Options['site_name']:
+                    tem_url = '/'+Options['site_name']+tem_url
+                self.displayMessage('Click <a href="%s">%s</a> to destructively modify columns in session %s' % (tem_url, tem_url, sessionName))
+            else:
+                self.unsafe_code[0] += 1
+                modCols = [int(x) for x in self.get_argument('modcols','').split(',')]
+                valTable = sdproxy.unsafeTriggerUpdates(sessionName, modCols)
+                self.displayMessage('Unsafe column updates triggered for session %s: <br><pre>%s</pre>' % (sessionName, valTable))
 
         elif action == '_dash':
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
