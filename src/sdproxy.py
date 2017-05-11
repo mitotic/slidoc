@@ -44,7 +44,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4h'
+VERSION = '0.97.4j'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -147,6 +147,7 @@ Global = Dummy()
 Global.remoteVersions = set()
 Global.shuttingDown = False
 Global.proxyError = ''
+Global.updatePartial = UPDATE_PARTIAL_ROWS
 
 def copyServerOptions(serverOptions):
     for key in COPY_FROM_SERVER:
@@ -512,7 +513,7 @@ class Sheet(object):
             self.keyMap = {}
             for j, row in enumerate(self.xrows[1:]):
                 key = row[self.keyCol-1] if self.keyCol else j+2
-                self.keyMap[key] = [modTime, 0, 0]
+                self.keyMap[key] = [modTime, 0, 0, 0]  # [modTime, minModCol, maxModCol, insertedFlag]
 
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
@@ -610,9 +611,9 @@ class Sheet(object):
             if keyValue in self.keyMap:
                 raise Exception('Duplicate key %s for row insertion in sheet %s' % (keyValue, self.name))
             newRow[self.keyCol-1] = keyValue
-            self.keyMap[keyValue] = [modTime, 1, self.nCols]
+            self.keyMap[keyValue] = [modTime, 1, self.nCols, 1]
         else:
-            self.keyMap[rowNum] = [modTime, 1, self.nCols]
+            self.keyMap[rowNum] = [modTime, 1, self.nCols, 1]
 
         self.xrows.insert(rowNum-1, newRow)
         self.modifiedSheet(modTime)
@@ -719,7 +720,7 @@ class Sheet(object):
             if diffCount:
                 # At least one column value not equal; update row
                 modTime = sliauth.epoch_ms()
-                self.keyMap[keyValue] = [modTime, diffMin+colMin-1, diffMax+colMin-1]
+                self.keyMap[keyValue] = [modTime, diffMin+colMin-1, diffMax+colMin-1, self.keyMap[keyValue][3]]
                 self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1] = rowValues
 
         if modTime:
@@ -749,17 +750,35 @@ class Sheet(object):
         else:
             keyRange = None
 
+        prevUpdate = None
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
 
-            if self.keyMap[key][0] > Global.cacheUpdateTime:
-                if UPDATE_PARTIAL_ROWS:
-                    diffMin, diffMax = self.keyMap[key][1:3]
-                    if not diffMin:
-                        raise Exception('Invalid partial cache update: zero update range for key %s in sheet %s' % (key, self.name))
-                    rows.append([key, diffMin, row[diffMin-1:diffMax]])
+            if self.keyMap[key][0] <= Global.cacheUpdateTime:
+                # No updates
+                prevUpdate = None
+                continue
+
+            if not Global.updatePartial or self.keyMap[key][3]:
+                # Non-partial or insert
+                rows.append([key], self.keyMap[key][3], 0, [row])
+                prevUpdate = None
+
+            else:
+                # Partial update
+                diffMin, diffMax = self.keyMap[key][1:3]
+                if not diffMin:
+                    raise Exception('Invalid partial cache update: zero update range for key %s in sheet %s' % (key, self.name))
+
+                curUpdate = [[key], 0, diffMin, [row[diffMin-1:diffMax]] ]
+
+                if prevUpdate and prevUpdate[2] == curUpdate[2] and len(prevUpdate[3][0]) == len(curUpdate[3][0]):
+                    # Contiguous update block
+                    prevUpdate[0].append(curUpdate[0][0])
+                    prevUpdate[3].append(curUpdate[3][0])
                 else:
-                    rows.append([key, 0, row])
+                    rows.append(curUpdate)
+                    prevUpdate = curUpdate
 
         return [actions, self.xrows[0], keyRange, rows]
                     
@@ -770,7 +789,7 @@ class Sheet(object):
 
             if self.keyMap[key][0] < updateTime:
                 # Row not updated since update request time; reset updated range
-                self.keyMap[key][1:3] = [0, 0]
+                self.keyMap[key][1:4] = [0, 0, 0]
 
 
 
@@ -1012,7 +1031,7 @@ def update_remote_sheets(force=False, synchronous=False):
 
     json_data = json.dumps(modRequests, default=sliauth.json_default)
     if Settings['debug']:
-        print("update_remote_sheets: REQUEST %s partial=%s, log=%s, nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), UPDATE_PARTIAL_ROWS, Settings['log_call'], len(modRequests), len(json_data)), file=sys.stderr)
+        print("update_remote_sheets: REQUEST %s partial=%s, log=%s, nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], len(modRequests), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
     ##    print("update_remote_sheets: REQUEST2", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
@@ -1024,6 +1043,8 @@ def update_remote_sheets(force=False, synchronous=False):
     post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
                   'data':  json_data}
     post_data['create'] = 'proxy'
+    if Global.cacheRetryCount:
+        post_data['retry'] = str(Global.cacheRetryCount)
     if Settings['log_call']:
         post_data['logcall'] = str(Settings['log_call'])
 
@@ -1067,8 +1088,12 @@ def handle_proxy_response_aux(response):
 
     if errMsg or not respObj:
         retry_after = RETRY_WAIT_TIME
-        if errMsg.find('Timeout') >= 0 or errMsg.find('timeout') >= 0:
+        if errMsg.lower().find('timeout') >= 0:
             retry_after = 5 * retry_after
+
+        if errMsg.find('PROXY_PARTIAL') >= 0:
+            # Disable partial row updates
+            Global.updatePartial = False
 
         if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
             msg = 'Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg)
@@ -2778,7 +2803,7 @@ def unsafeTriggerUpdates(sessionName, modCols, startRow=3):
     # Inserts random values in specified list of columns to trigger updates
     testSheet = getSheet(sessionName)
     headers = testSheet.getSheetValues(1, 1, 1, testSheet.getLastColumn())[0]
-    nrows = testSheet.getLastRow() - startRow
+    nrows = testSheet.getLastRow() - startRow + 1
     randCols = []
     randVals = [[]]
     for m in range(nrows):
