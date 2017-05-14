@@ -783,18 +783,19 @@ class ActionHandler(BaseHandler):
 
         elif action == '_twitter':
             if not Global.twitterStream:
-                self.displayMessage('No twitter stream active')
+                self.displayMessage('No twitter stream active', back_url=site_prefix+'/_actions')
             else:
                 self.displayMessage(['Twitter stream status: '+Global.twitterStream.status+'\n\n',
-                                     'Twitter stream log: '+'\n'.join(Global.twitterStream.log_buffer)+'\n'])
+                                     'Twitter stream log: '+'\n'.join(Global.twitterStream.log_buffer)+'\n'],
+                                     back_url=site_prefix+'/_actions')
 
         elif action == '_freeze':
             sdproxy.freezeCache(fill=True)
-            self.displayMessage('Freezing cache<br>')
+            self.displayMessage('Freezing cache<br>', back_url=site_prefix+'/_actions')
 
         elif action == '_clear':
             sdproxy.suspend_cache('clear')
-            self.displayMessage('Clearing cache<br>')
+            self.displayMessage('Clearing cache<br>', back_url=site_prefix+'/_actions')
 
         elif action == '_backup':
             errors = backupSite(subsubpath)

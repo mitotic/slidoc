@@ -35,6 +35,7 @@ import sys
 import time
 import urllib
 import urllib2
+import uuid
 
 from collections import defaultdict, OrderedDict
 
@@ -44,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4j'
+VERSION = '0.97.4k'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -89,9 +90,10 @@ COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
                     'backup_dir', 'debug', 'dry_run',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
     
-RETRY_WAIT_TIME = 5      # Minimum time (sec) before retrying failed Google Sheet requests
-RETRY_MAX_COUNT = 15     # Maximum number of failed Google Sheet requests
-CACHE_HOLD_SEC = 3600    # Maximum time (sec) to hold sheet in cache
+RETRY_WAIT_TIME = 5           # Minimum time (sec) before retrying failed Google Sheet requests
+RETRY_MAX_COUNT = 15          # Maximum number of failed Google Sheet requests
+CACHE_HOLD_SEC = 3600         # Maximum time (sec) to hold sheet in cache
+PROXY_UPDATE_ROW_LIMIT = 200  # Max. no of rows per sheet, per proxy update request
 
 ADMIN_ROLE = 'admin'
 GRADER_ROLE = 'grader'
@@ -174,12 +176,10 @@ def initCache():
     Lock_cache.clear()
     Lock_passthru.clear()
 
-    Global.cacheRequestTime = 0
+    Global.httpRequestId = ''
+
     Global.cacheResponseTime = 0
     Global.cacheUpdateTime = sliauth.epoch_ms()
-
-    Global.cacheRetryCount = 0
-    Global.cacheWaitTime = 0
 
     Global.totalCacheResponseInterval = 0
     Global.totalCacheResponseCount = 0
@@ -441,12 +441,20 @@ def downloadSheet(sheetName, backup=False):
     getParams = {'sheet': sheetName, 'proxy': '1', 'get': '1', 'all': '1', 'admin': user, 'token': userToken}
     if backup:
         getParams['formula'] = 1
+
+    if Settings['log_call'] > 1:
+        getParams['logcall'] = str(Settings['log_call'])
+
     if Settings['debug']:
         print("DEBUG:downloadSheet", sheetName, getParams, file=sys.stderr)
 
-    retval = sliauth.http_post(Settings['gsheet_url'], getParams) if Settings['gsheet_url'] else {'result': 'error', 'error': 'No Sheet URL'}
+    if Settings['gsheet_url']:
+        retval = sliauth.http_post(Settings['gsheet_url'], getParams, add_size_info=True)
+    else:
+        retval =  {'result': 'error', 'error': 'No Sheet URL'}
+
     if Settings['debug']:
-        print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('messages'), file=sys.stderr)
+        print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
 
     Global.remoteVersions.add( retval.get('info',{}).get('version','') )
 
@@ -477,12 +485,12 @@ class Sheet(object):
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
 
         self.actionsRequested = ''
-        self.actionsRequestTime = 0
 
         self.readOnly = isReadOnly(name)
         self.holdSec = CACHE_HOLD_SEC
 
         self.nCols = len(rows[0])
+
         for j, row in enumerate(rows[1:]):
             if len(row) != self.nCols:
                 raise Exception('Incorrect number of cols in row %d: expected %d but found %d' % (j+1, self.nCols, len(row)))
@@ -506,14 +514,14 @@ class Sheet(object):
                             row[j] = createDate(row[j])
 
         if keyMap is not None:
-            # Create 2-level copy of key map
-            self.keyMap = dict( (k, v[:]) for k, v in keyMap.items() )
+            # Create 3-level copy of key map
+            self.keyMap = dict( (k, [v[0], v[1], v[2].copy()]) for k, v in keyMap.items() )
         else:
             # New key map
             self.keyMap = {}
             for j, row in enumerate(self.xrows[1:]):
                 key = row[self.keyCol-1] if self.keyCol else j+2
-                self.keyMap[key] = [modTime, 0, 0, 0]  # [modTime, minModCol, maxModCol, insertedFlag]
+                self.keyMap[key] = [modTime, 0, set()]  # [modTime, insertedFlag, modColsSet]
 
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
@@ -530,7 +538,6 @@ class Sheet(object):
     def requestActions(self, actions=''):
         # Actions to be carried after cache updates to this sheet are completed
         self.actionsRequested = actions
-        self.actionsRequestTime = sliauth.epoch_ms()
 
     def export(self, keepHidden=False, allUsers=False, csvFormat=False, idRename='', altidRename=''):
         headers = self.xrows[0][:]
@@ -611,9 +618,9 @@ class Sheet(object):
             if keyValue in self.keyMap:
                 raise Exception('Duplicate key %s for row insertion in sheet %s' % (keyValue, self.name))
             newRow[self.keyCol-1] = keyValue
-            self.keyMap[keyValue] = [modTime, 1, self.nCols, 1]
+            self.keyMap[keyValue] = [modTime, 1, set()]
         else:
-            self.keyMap[rowNum] = [modTime, 1, self.nCols, 1]
+            self.keyMap[rowNum] = [modTime, 1, set()]
 
         self.xrows.insert(rowNum-1, newRow)
         self.modifiedSheet(modTime)
@@ -695,10 +702,7 @@ class Sheet(object):
                     if newKeyValue != keyValue:
                         raise Exception('Cannot alter key value %s to %s in sheet %s' % (keyValue, newKeyValue, self.name))
 
-            diffMin =  self.keyMap[keyValue][1]-(colMin-1) if self.keyMap[keyValue][1] else 0
-            diffMax =  self.keyMap[keyValue][2]-(colMin-1) if self.keyMap[keyValue][2] else 0
             diffCount = 0
-
             oldValues = self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1]
             for icol in range(len(oldValues)):
                 oldValue = oldValues[icol]
@@ -709,18 +713,14 @@ class Sheet(object):
                     isEqual = (newValue == oldValue)
 
                 if not isEqual:
-                    # Column value not equal; expand range of modified columns
+                    # Column value not equal; expand set of modified columns
+                    self.keyMap[keyValue][2].add(icol+colMin)
                     diffCount += 1
-                    diffMax = max(diffMax, icol+1)
-                    if diffMin:
-                        diffMin = min(diffMin, icol+1)
-                    else:
-                        diffMin = icol+1
 
             if diffCount:
                 # At least one column value not equal; update row
                 modTime = sliauth.epoch_ms()
-                self.keyMap[keyValue] = [modTime, diffMin+colMin-1, diffMax+colMin-1, self.keyMap[keyValue][3]]
+                self.keyMap[keyValue][0] = modTime
                 self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1] = rowValues
 
         if modTime:
@@ -731,66 +731,103 @@ class Sheet(object):
         self.accessTime = self.modTime
         IOLoop.current().add_callback(update_remote_sheets)
 
-    def get_updates(self):
+    def get_updates(self, row_limit=None):
         if Global.previewStatus and self.name in (Global.previewStatus['sessionName'], INDEX_SHEET):
             # Delay updates for preview session and index sheet
             return None
 
-        if self.actionsRequestTime >= Global.cacheUpdateTime:
-            actions = self.actionsRequested
-        else:
-            actions = ''
+        actions = self.actionsRequested
             
-        if self.modTime < Global.cacheUpdateTime and not actions:
-            return None
+        headers = self.xrows[0]
+        nameCol = 1+headers.index('name') if 'name' in headers else 0
 
-        rows = []
-        if self.keyCol:
-            keyRange = dict( (k, 1) for k, v in self.keyMap.items() )
-        else:
-            keyRange = None
+        updateKeys = []
+        updateColSet = set()
+        insertNames = []
+        insertRows = []
+        updateSel = []
+        updateElemCount = 0
 
-        prevUpdate = None
+        colSet, colList, curUpdate = None, None, None
+        allKeys = [] if self.keyCol else None
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
-
-            if self.keyMap[key][0] <= Global.cacheUpdateTime:
-                # No updates
-                prevUpdate = None
+            if not key:  # Do not update any non-key rows
                 continue
 
-            if not Global.updatePartial or self.keyMap[key][3]:
-                # Non-partial or insert
-                rows.append([key], self.keyMap[key][3], 0, [row])
-                prevUpdate = None
+            inserted = self.keyMap[key][1]
+            newColSet = self.keyMap[key][2]
+
+            if self.keyCol:
+                allKeys.append(key)
+
+            if not inserted and not newColSet:
+                # No updates for this unmodified row
+                # (Note: this condition will not be true for rows whose updating was skipped dur to request limits; see self.complete_update())
+                colSet, colList, curUpdate = None, None, None
+                continue
+
+            if row_limit and (len(insertRows) >= row_limit or updateElemCount >= 10*row_limit):
+                # Update request limit reached, with at least one update left; delay any actions
+                actions = ''
+                break
+
+            # Update (non-insert) key
+            updateKeys.append(key)
+
+            if Global.updatePartial and self.keyCol and not inserted:
+                # Partial update
+                if colSet is not None and colSet.issuperset(newColSet) and len(colSet)-len(newColSet) <= 2:
+                    # Extend "contiguous" block for modified/unmodified row; append to previous row update
+                    curUpdate[0].append(key)
+                    subRow = [row[jcol-1] for jcol in colList]
+                    curUpdate[2].append(subRow)
+
+                else:
+                    # New update block for modified row
+                    updateColSet.update(newColSet)
+                    colSet = newColSet
+                    colList = list(colSet)
+                    colList.sort()
+
+                    subRow = [row[jcol-1] for jcol in colList]
+                    curUpdate = [[key], colList, [subRow] ]   # [keysList, colList, [rowSelected]]
+                    updateSel.append(curUpdate)
+
+                updateElemCount += len(colSet)
 
             else:
-                # Partial update
-                diffMin, diffMax = self.keyMap[key][1:3]
-                if not diffMin:
-                    raise Exception('Invalid partial cache update: zero update range for key %s in sheet %s' % (key, self.name))
-
-                curUpdate = [[key], 0, diffMin, [row[diffMin-1:diffMax]] ]
-
-                if prevUpdate and prevUpdate[2] == curUpdate[2] and len(prevUpdate[3][0]) == len(curUpdate[3][0]):
-                    # Contiguous update block
-                    prevUpdate[0].append(curUpdate[0][0])
-                    prevUpdate[3].append(curUpdate[3][0])
+                # Full/insertion updates
+                colSet, colList, curUpdate = None, None, None
+                if inserted:
+                    # Insert row
+                    insertNames.append( [row[nameCol-1] if nameCol else '', key] )
+                    insertRows.append( row )
                 else:
-                    rows.append(curUpdate)
-                    prevUpdate = curUpdate
+                    # Non-partial or non-keyed; update full rows
+                    updateSel.append([key], None, [row])
 
-        return [actions, self.xrows[0], keyRange, rows]
+        if not insertRows and not updateSel and not actions:
+            # No updates
+            return None
+
+        # Send updateColList if non-null and non-full row
+        updateColList = sorted(list(updateColSet)) if (updateColSet and len(updateColSet) < self.nCols) else None
+
+        return [updateKeys, actions, headers, allKeys, insertNames, updateColList, insertRows, updateSel]
                     
-    def complete_update(self, updateTime):
+    def complete_update(self, updateKeys, actions):
         # Update sheet status after remote update has completed
+        if actions and actions == self.actionsRequested:
+            self.actionsRequested = ''
+        updateKeySet = set(updateKeys)
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
 
-            if self.keyMap[key][0] < updateTime:
-                # Row not updated since update request time; reset updated range
-                self.keyMap[key][1:4] = [0, 0, 0]
-
+            if key in updateKeySet:
+                # Row update completed
+                # (Note: Rows that were not updated due request limits being reached will not be subject to this reset)
+                self.keyMap[key][1:3] = [0, set()]
 
 
 class Range(object):
@@ -984,37 +1021,36 @@ def updates_current():
             print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
 def update_remote_sheets(force=False, synchronous=False):
-    ##if Settings['debug']:
-    ##    print("update_remote_sheets:A", Global.cacheRequestTime, file=sys.stderr)
-
     if not Settings['gsheet_url'] or Settings['dry_run']:
         # No updates if no sheet URL or dry run
-        updates_completed(sliauth.epoch_ms())
+        Global.cacheUpdateTime = sliauth.epoch_ms()
         updates_current()
         return
 
-    if Global.cacheRequestTime:
+    if Global.httpRequestId:
+        # Request currently active
         return
 
-    cur_time = sliauth.epoch_ms()
-    if not force and (cur_time - Global.cacheResponseTime) < 1000*Settings['min_wait_sec']:
-        schedule_update(cur_time-Global.cacheResponseTime)
+    curTime = sliauth.epoch_ms()
+    if not force and (curTime - Global.cacheResponseTime) < 1000*Settings['min_wait_sec']:
+        schedule_update(curTime-Global.cacheResponseTime)
         return
 
     specialMods = []
     sessionMods = []
-    curTime = sliauth.epoch_ms()
+    sheetUpdateInfo = {}
     for sheetName, sheet in Sheet_cache.items():
         # Check each cached sheet for updates
-        updates = sheet.get_updates()
+        updates = sheet.get_updates(row_limit=PROXY_UPDATE_ROW_LIMIT)
         if updates is None:
             if curTime-sheet.accessTime > 1000*sheet.holdSec and previewingSession() != sheetName:
                 # Cache entry has expired
                 del Sheet_cache[sheetName]
             continue
 
-        # sheet_name, actions, headers_list, keys_dictionary, modified_rows
-        modVals = [sheetName, updates[0], updates[1], updates[2], updates[3]]
+        # sheet_name, actions, headers_list, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
+        sheetUpdateInfo[sheetName] = updates[0:2]
+        modVals = [sheetName] + updates[1:]
 
         if sheetName.endswith('_slidoc'):
             # Update '*_slidoc' sheets before regular sessions (better for re-computing score totals etc.)
@@ -1030,111 +1066,149 @@ def update_remote_sheets(force=False, synchronous=False):
         return
 
     json_data = json.dumps(modRequests, default=sliauth.json_default)
+
     if Settings['debug']:
         print("update_remote_sheets: REQUEST %s partial=%s, log=%s, nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], len(modRequests), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
-    ##    print("update_remote_sheets: REQUEST2", [(x[0], [(y[0], y[1][:13]) for y in x[3]]) for x in modRequests], file=sys.stderr)
+    ##    print("update_remote_sheets: REQUEST2", [(x[0], x[4:]) for x in modRequests], file=sys.stderr)
 
-    user = ADMINUSER_ID
-    userToken = gen_proxy_token(user, ADMIN_ROLE)
+    proxy_updater = ProxyUpdater(sheetUpdateInfo, json_data, synchronous=synchronous)
+    proxy_updater.update(curTime)
 
-    http_client = tornado.httpclient.HTTPClient() if synchronous else tornado.httpclient.AsyncHTTPClient()
-    post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
-                  'data':  json_data}
-    post_data['create'] = 'proxy'
-    if Global.cacheRetryCount:
-        post_data['retry'] = str(Global.cacheRetryCount)
-    if Settings['log_call']:
-        post_data['logcall'] = str(Settings['log_call'])
 
-    body = urllib.urlencode(post_data)
-    Global.totalCacheRequestBytes += len(json_data)
-    Global.cacheRequestTime = cur_time
-    if synchronous:
-        # Updates completed synchronously
-        handle_proxy_response(http_client.fetch(Settings['gsheet_url'], method='POST', headers=None, body=body))
-        updates_current()
-        return
-    request = tornado.httpclient.HTTPRequest(Settings['gsheet_url'], method='POST', headers=None, body=body,
-                                             connect_timeout=20, request_timeout=Settings['request_timeout'])
-    http_client.fetch(request, handle_proxy_response)
+class ProxyUpdater(object):
+    def __init__(self, sheetUpdateInfo, json_data, synchronous=False):
+        self.sheetUpdateInfo = sheetUpdateInfo
+        self.json_data = json_data
+        self.synchronous = synchronous
 
-def handle_proxy_response(response):
-    try:
-        # Need to trap exception because it fails silently otherwise
-        return handle_proxy_response_aux(response)
-    except Exception, excp:
-        print("handle_proxy_response: Unexpected ERROR: %s" % excp, file=sys.stderr)
-        
-def handle_proxy_response_aux(response):
-    Global.cacheResponseTime = sliauth.epoch_ms()
-    Global.totalCacheResponseInterval += (Global.cacheResponseTime - Global.cacheRequestTime)
-    Global.totalCacheResponseCount += 1
+        user = ADMINUSER_ID
+        userToken = gen_proxy_token(user, ADMIN_ROLE)
 
-    errMsg = ""
-    respObj = None
-    if response.error:
-        errMsg = str(response.error)  # Need to convert to string for later use
-    else:
+        post_data = { 'proxy': '1', 'allupdates': '1', 'admin': user, 'token': userToken,
+                      'data':  self.json_data}
+        post_data['create'] = 'proxy'
+        post_data['requestid'] = Global.httpRequestId
+        if Global.updatePartial:
+            post_data['partialrows'] = '1'
+        if Settings['log_call']:
+            post_data['logcall'] = str(Settings['log_call'])
+
+        self.body = urllib.urlencode(post_data)
+
+        self.cacheRequestTime = 0
+        self.requestId = ''
+        self.httpRequest = None
+        if self.synchronous:
+            self.http_client = tornado.httpclient.HTTPClient()
+        else:
+            self.http_client = tornado.httpclient.AsyncHTTPClient()
+
+        self.cacheRetryCount = 0
+        self.cacheWaitTime = 0
+
+    def update(self, curTime):
+        self.cacheRequestTime = curTime
+        Global.totalCacheRequestBytes += len(self.json_data)
+
+        self.requestId = sliauth.iso_date(nosubsec=True)+'-'+uuid.uuid4().hex[:8]
+        Global.httpRequestId = self.requestId
+
         if Settings['debug']:
-            print("handle_proxy_response: Update RESPONSE", sliauth.iso_date(nosubsec=True), response.body[:256], file=sys.stderr)
+            print("ProxyUpdater.update: UPDATE requestid=%s, retry=%d" % (Global.httpRequestId, self.cacheRetryCount), file=sys.stderr)
+
+        if self.synchronous:
+            self.handle_proxy_response(self.http_client.fetch(Settings['gsheet_url'], method='POST', headers=None, body=self.body))
+            updates_current()
+        else:
+            self.httpRequest = tornado.httpclient.HTTPRequest(Settings['gsheet_url'], method='POST', headers=None, body=self.body,
+                                                 connect_timeout=20, request_timeout=Settings['request_timeout'])
+            self.async_fetch()
+
+    def async_fetch(self):
+        self.http_client.fetch(self.httpRequest, self.handle_proxy_response)
+    
+    def handle_proxy_response(self, response):
         try:
-            respObj = json.loads(response.body)
-            if respObj['result'] == 'error':
-                errMsg = respObj['error']
-        except Exception, err:
-            errMsg = 'JSON parsing error: '+str(err)
+            # Need to trap exception because it fails silently otherwise
+            return self.handle_proxy_response_aux(response)
+        except Exception, excp:
+            print("handle_proxy_response: Unexpected ERROR: %s" % excp, file=sys.stderr)
 
-    if errMsg or not respObj:
-        retry_after = RETRY_WAIT_TIME
-        if errMsg.lower().find('timeout') >= 0:
-            retry_after = 5 * retry_after
-
-        if errMsg.find('PROXY_PARTIAL') >= 0:
-            # Disable partial row updates
-            Global.updatePartial = False
-
-        if Global.suspended or Global.cacheRetryCount > RETRY_MAX_COUNT:
-            msg = 'Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg)
-            sheet_proxy_error(msg)
+    def handle_proxy_response_aux(self, response):
+        if self.requestId != Global.httpRequestId:
+            # Cache has been cleared since update request; ignore response
+            print("ProxyUpdater.handle_proxy_response_aux: DROPPED response to update request %s" % self.requestId, file=sys.stderr)
             return
 
-        Global.cacheRequestTime = 0
-        Global.cacheRetryCount += 1
-        Global.totalCacheRetryCount += 1
-        Global.cacheWaitTime += retry_after
+        errMsg = ''
+        errTrace = ''
+        respObj = None
+        if response.error:
+            errMsg = str(response.error)  # Need to convert to string for later use
+        else:
+            try:
+                respObj = json.loads(response.body)
+                if respObj['result'] == 'error':
+                    errMsg = respObj['error']
+                    errTrace = respObj.get('errtrace','')
+            except Exception, err:
+                errMsg = 'JSON parsing error: '+str(err)
 
-        print("handle_proxy_response: Update ERROR (tries %d of %d; retry_after=%ss): %s" % (Global.cacheRetryCount, RETRY_MAX_COUNT, Global.cacheWaitTime, errMsg), file=sys.stderr)
+            if Settings['debug']:
+                cachedResp = respObj['info'].get('cachedResponse', '') if respObj else ''
+                print("handle_proxy_response_aux: Update RESPONSE", sliauth.iso_date(nosubsec=True), cachedResp, errMsg, response.body[:256]+'\n', errTrace, file=sys.stderr)
 
-        schedule_update(Global.cacheWaitTime)
-        return
-    else:
-        # Update succeeded
+        if errMsg or not respObj:
+            # Handle update errors
+            retry_after = RETRY_WAIT_TIME
+            if errMsg.lower().find('timeout') >= 0:
+                retry_after = 5 * retry_after
+
+            if errMsg.find('PROXY_PARTIAL') >= 0:
+                # Disable partial row updates
+                Global.updatePartial = False
+
+            if Global.suspended or self.cacheRetryCount > RETRY_MAX_COUNT:
+                msg = 'Failed to update cache after %d tries: %s' % (RETRY_MAX_COUNT, errMsg)
+                sheet_proxy_error(msg)
+                return
+
+            self.cacheRetryCount += 1
+            self.cacheWaitTime += retry_after
+            Global.totalCacheRetryCount += 1
+
+            print("ProxyUpdater.handle_proxy_response_aux: Update ERROR (tries %d of %d; retry_after=%ss): %s" % (self.cacheRetryCount, RETRY_MAX_COUNT, self.cacheWaitTime, errMsg), file=sys.stderr)
+
+            # Retry same request after some time
+            IOLoop.current().call_later(self.cacheWaitTime, self.async_fetch)
+            return
+
+        # Update request succeeded
+        Global.httpRequestId = ''
+        Global.cacheUpdateTime = self.cacheRequestTime
+        Global.cacheResponseTime = sliauth.epoch_ms()
+
+        Global.totalCacheResponseInterval += (Global.cacheResponseTime - self.cacheRequestTime)
+        Global.totalCacheResponseCount += 1
         Global.totalCacheResponseBytes += len(response.body)
+
+        for sheetName, sheet in Sheet_cache.items():
+            if sheetName in self.sheetUpdateInfo:
+                sheet.complete_update(*self.sheetUpdateInfo[sheetName])
 
         for sheetName in respObj['info'].get('refreshSheets',[]):
             refreshSheet(sheetName)
 
-        for errSessionName, proxyErrMsg in respObj['info'].get('updateErrors',[]):
+        for errSessionName, proxyErrMsg, proxyErrTrace in respObj['info'].get('updateErrors',[]):
             Lock_cache[errSessionName] = proxyErrMsg
-            print("handle_proxy_response: Update LOCKED %s: %s" % (errSessionName, proxyErrMsg), file=sys.stderr)
+            print("ProxyUpdater.handle_proxy_response_aux: Update LOCKED %s: %s %s" % (errSessionName, proxyErrMsg, proxyErrTrace), file=sys.stderr)
 
         if Settings['debug']:
-            print("handle_proxy_response: UPDATED", sliauth.iso_date(nosubsec=True), Global.cacheUpdateTime, respObj, file=sys.stderr)
+            print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), respObj, file=sys.stderr)
 
-        updates_completed(Global.cacheRequestTime)
         schedule_update(0 if Global.suspended else Settings['min_wait_sec'])
-
-
-def updates_completed(updateTime):
-    for sheetName, sheet in Sheet_cache.items():
-        sheet.complete_update(updateTime)
-
-    Global.cacheUpdateTime = updateTime
-    Global.cacheRequestTime = 0
-    Global.cacheRetryCount = 0
-    Global.cacheWaitTime = 0
         
 
 def sheetAction(params, notrace=False):

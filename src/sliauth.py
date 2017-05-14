@@ -118,15 +118,18 @@ def json_default(obj):
         return iso_date(obj, utc=True)
     raise TypeError("%s not serializable" % type(obj))
 
-def http_post(url, params_dict=None):
+def http_post(url, params_dict=None, add_size_info=False):
     req = urllib2.Request(url, urllib.urlencode(params_dict)) if params_dict else urllib2.Request(url)
     try:
         response = urllib2.urlopen(req)
     except Exception, excp:
         raise Exception('ERROR in accessing URL %s: %s' % (url, excp))
     result = response.read()
+    result_bytes = len(result)
     try:
         result = json.loads(result)
+        if add_size_info:
+            result['bytes'] = result_bytes
     except Exception, excp:
         result = {'result': 'error', 'error': 'Error in http_post: result='+str(result)+': '+str(excp)}
     return result
