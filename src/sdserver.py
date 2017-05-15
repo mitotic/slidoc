@@ -978,7 +978,12 @@ class ActionHandler(BaseHandler):
             sheetName = sessionName + '-answers'
             sheet = sdproxy.getSheet(sheetName, optional=True)
             if not sheet:
-                self.displayMessage('Unable to retrieve sheet '+sheetName)
+                if json_return:
+                    self.set_header('Content-Type', 'application/json')
+                    retval = {'result': 'error', 'error': 'Unable to retrieve question difficulty stats'}
+                    self.write( json.dumps(retval) )
+                else:
+                    self.displayMessage('Unable to retrieve sheet '+sheetName)
                 return
             qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
             qaverages = []

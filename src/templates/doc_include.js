@@ -1038,6 +1038,23 @@ Slidoc.slideEditMenu = function() {
     Slidoc.showPopup(html);
 }
 
+Slidoc.printExamMenu = function () {
+    var html = '<h3>Print exam menu</h3>\n';
+    html += '<ul>\n';
+    html += '<li><span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span></li>\n';
+    html += '<hr>';
+    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName+'">Prefill user info</a></li>\n';
+    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
+    html += '<hr>';
+    html += '<li><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span></li>\n';
+    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span></li>\n';
+    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
+    html += '</ul>';
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showPopup(html);
+}
+
 function winURL(win) {
     // Returns window HREF (without hash)
     return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname + win.location.search;
@@ -1108,6 +1125,9 @@ Slidoc.slideEdit = function(action, slideId) {
 	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
 	if (!Sliobj.previewWin || Sliobj.previewWin.location.href != previewURL)
 	    Sliobj.previewWin = openWin(previewURL, Sliobj.params.siteName+'_preview');
+
+	if (Sliobj.previewWin && !Sliobj.previewWin.Slidoc && Sliobj.previewWin.document)
+	    Sliobj.previewWin.document.body.textContent = 'Processing ...';
 
 	function slideSaveAux(result, errMsg) {
 	    if (Sliobj.closePopup)
@@ -2686,6 +2706,10 @@ function showQDiffCallback(result, errMsg) {
 	alert('Error in retrieving answer stats :'+errMsg);
 	return;
     }
+    if (result.result != 'success') {
+	alert('Error in retrieving answer stats :'+result.error);
+	return;
+    }
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
@@ -3333,6 +3357,12 @@ function slidocSetupAux(session, feedback) {
 
     scoreSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
+
+    if ('assessment' in Sliobj.params.features) {
+	var printerElem = document.getElementById('slidoc-printer-display');
+	if (printerElem)
+	    printerElem.style.display = null;
+    }
 
     if (Sliobj.printExamView)
 	toggleClass(true, 'slidoc-assessment-view');

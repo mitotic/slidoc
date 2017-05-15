@@ -64,6 +64,9 @@ function slidocUpdate(save, keystroke) {
    if (!save && (!PreviewWin || !keystroke))
       PreviewWin = openWin(previewURL, previewName);
 
+   if (PreviewWin && !PreviewWin.Slidoc && PreviewWin.document) {
+    PreviewWin.document.body.textContent = 'Processing ...';
+   }
    xhr.onreadystatechange = function () {
       var DONE = 4; // readyState 4 means the request is done.
       if (xhr.readyState === DONE) {

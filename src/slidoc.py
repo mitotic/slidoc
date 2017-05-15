@@ -73,10 +73,11 @@ QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
 FUTURE_DATE = 'future'
+	
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
-        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
-        'phone': '&#128241;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
+        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
+        'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
 
 def parse_number(s):
@@ -3986,7 +3987,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
-#   assessment: Do not warn about concept coverage for assessment documents
+#   assessment: Do not warn about concept coverage for assessment documents (also displays print exam menu)
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
 #   disable_answering: Hide all answer buttons/input boxes (to generate closed book question sheets that are manually graded)
 #   delay_answers: Correct answers and score are hidden from users until session is graded

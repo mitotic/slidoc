@@ -213,14 +213,14 @@ def startPreview(sessionName):
         del Miss_cache[sessionName]
     sessionSheet = Sheet_cache.get(sessionName)
     if sessionSheet:
-        if sessionSheet.get_updates() is not None:
+        if not Settings['dry_run'] and sessionSheet.get_updates() is not None:
             return 'Pending updates for session '+sessionName+'; retry preview after 10-20 seconds'
     else:
         sessionSheet = getSheet(sessionName, optional=True)
 
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if indexSheet:
-        if indexSheet.get_updates() is not None:
+        if not Settings['dry_run'] and indexSheet.get_updates() is not None:
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
@@ -692,6 +692,7 @@ class Sheet(object):
 
         self.check_lock_status(self.xrows[rowMin-1][self.keyCol-1] if self.keyCol and rowCount==1 else '')
 
+        headers = self.xrows[0]
         modTime = 0
         for irow, rowValues in enumerate(values):
             if not self.keyCol:
@@ -706,6 +707,9 @@ class Sheet(object):
             diffCount = 0
             oldValues = self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1]
             for icol in range(len(oldValues)):
+                ##if headers[icol+colMin-1] == 'q_total' and keyValue != MAXSCORE_ID:
+                ##    # Ignore diffs in total formula results
+                ##    continue
                 oldValue = oldValues[icol]
                 newValue = rowValues[icol]
                 if isinstance(newValue, datetime.datetime) and isinstance(oldValue, datetime.datetime):

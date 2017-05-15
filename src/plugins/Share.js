@@ -202,14 +202,14 @@ Share = {
 		    checkResp = corrComps;
 		else
 		    Slidoc.log('Share.responseCallback: Error in correct numeric answer:'+this.correctAnswer);
-	    } else if (this.correctAnswer.length == 1) {
+	    } else if (this.qattributes.qtype == 'choice') {
 		checkResp = [this.correctAnswer];
 	    }
 	}
 
 	function checkIfCorrect(respVal) {
 	    if (checkResp.length == 1) {
-		return (checkResp[0] == respVal);
+		return (checkResp[0].indexOf(respVal) >= 0);
 	    } else if (checkResp.length == 2) {
 		try {
 		    return (Math.abs(parseFloat(respVal) - checkResp[0]) <= 1.001*checkResp[1]); 
