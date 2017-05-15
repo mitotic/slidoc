@@ -424,15 +424,12 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
 
 class HomeHandler(BaseHandler):
     def get(self):
-        if sdproxy.proxy_error_status():
-            self.write('<h3>Server error - restart required</h3> ('+sdproxy.proxy_error_status()+')')
-            return
         if Options['site_list'] and not Options['site_number']:
             # Primary server
             admin_roles = []
             for siteName in Options['site_list']:
                 admin_roles.append(self.get_id_from_cookie(role=True, for_site=siteName) == sdproxy.ADMIN_ROLE)
-            self.render('index.html', user=self.get_current_user(),
+            self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url,
                          sites=Options['site_list'], admin_roles=admin_roles, site_labels=Global.split_opts['site_label'],
                          site_titles=Global.split_opts['site_title'], site_restricteds=Global.split_opts['site_restricted'])
@@ -441,8 +438,12 @@ class HomeHandler(BaseHandler):
             # Not authenticated
             self.write(Options['_index_html'])
         else:
-            # Authenticated by static file handler, if need be
-            self.redirect("/"+Options['site_name']+"/index.html" if Options['site_number'] else "/index.html")
+            url = '/'+Options['site_name']+'/index.html' if Options['site_number'] else '/index.html'
+            if sdproxy.proxy_error_status():
+                self.write('Read-only mode; session modifications are disabled. Proceed to <a href="%s">Home Page</a>' % url)
+            else:
+                # Authenticated by static file handler, if need be
+                self.redirect(url)
 
 class SiteActionHandler(BaseHandler):
     def get(self, action='', subsubpath=''):
@@ -716,14 +717,15 @@ class ActionHandler(BaseHandler):
         if action == '_unsafe_trigger_updates':
             ucode = int(self.get_argument('code','0'))
             if not ucode or ucode != self.unsafe_code[0]:
-                tem_url = '/_unsafe_trigger_updates/%s?modcols=%s&code=%d' % (sessionName, self.get_argument('modcols',''), self.unsafe_code[0])
+                tem_url = '/_unsafe_trigger_updates/%s?modcols=%s&insertrows=%s&code=%d' % (sessionName, self.get_argument('modcols',''), self.get_argument('insertrows',''), self.unsafe_code[0])
                 if Options['site_name']:
                     tem_url = '/'+Options['site_name']+tem_url
                 self.displayMessage('Click <a href="%s">%s</a> to destructively modify columns in session %s' % (tem_url, tem_url, sessionName))
             else:
                 self.unsafe_code[0] += 1
-                modCols = [int(x) for x in self.get_argument('modcols','').split(',')]
-                valTable = sdproxy.unsafeTriggerUpdates(sessionName, modCols)
+                modCols = [int(x) for x in self.get_argument('modcols','').split(',') if x]
+                insertRows = [int(x) for x in self.get_argument('insertrows','').split(',') if x]
+                valTable = sdproxy.unsafeTriggerUpdates(sessionName, modCols, insertRows)
                 self.displayMessage('Unsafe column updates triggered for session %s: <br><pre>%s</pre>' % (sessionName, valTable))
 
         elif action == '_dash':
@@ -819,6 +821,10 @@ class ActionHandler(BaseHandler):
             if not sdproxy.unlockSheet(sessionName):
                 raise Exception('Failed to unlock sheet '+sessionName)
             self.displayMessage('Unlocked '+sessionName+('<p></p><a href="%s/_cache">Cache status</a><p></p>' % site_prefix))
+
+        elif action == '_reset_cache_updates':
+            sdproxy.next_cache_update(resetError=True)
+            self.displayMessage('Cache updates have been restarted')
 
         elif action in ('_manage',):
             sheet = sdproxy.getSheet(sessionName, optional=True)
@@ -2698,7 +2704,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.awaitBinary = None
 
         if Options['debug']:
-            print >> sys.stderr, "DEBUG: WSopen", self.pathUser
+            print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser
         if not self.userId:
             self.close()
 
@@ -3402,6 +3408,7 @@ def createApplication():
                       r"/(_reindex/[-\w.]+)",
                       r"/(_reloadpreview)",
                       r"/(_remoteupload/[-\w.]+)",
+                      r"/(_reset_cache_updates)",
                       r"/(_respond/[-\w.;]+)",
                       r"/(_roster)",
                       r"/(_sessions)",
@@ -3958,7 +3965,7 @@ def start_multiproxy():
             else:
                 # Root server
                 retval = Global.relay_list[0]
-            print >> sys.stderr, 'ABC: get_relay_addr_uri: ', self.request_uri, retval
+            print >> sys.stderr, 'ABC: get_relay_addr_uri: ', sliauth.iso_date(nosubsec=True), self.request_uri, retval
             return retval
 
     Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,

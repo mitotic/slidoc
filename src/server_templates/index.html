@@ -3,7 +3,7 @@
 <head>
 
 <!-- home index template for slidoc server --->
-<!-- index parameters: user, login_url, sites, admin_roles, site_labels, site_titles -->
+<!-- index parameters: user, status, login_url, logout_url, sites, admin_roles, site_labels, site_titles -->
 
 <title>Courses</title>
 <style>
@@ -57,6 +57,8 @@ body {
       </b></span>
     </div>
   </div>
+
+  <b>{{ status }}</b><br>
 
   <ul>
       {% for j, site in enumerate(sites) %}

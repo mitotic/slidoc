@@ -4426,6 +4426,8 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	}
 	Sliobj.errorRetries = 0;
 	if (retStatus && retStatus.info) {
+	    if (retStatus.info.proxyError)
+		alert(retStatus.info.proxyError);
 	    if (retStatus.info.gradeDate)
 		Sliobj.gradeDateStr = retStatus.info.gradeDate;
 

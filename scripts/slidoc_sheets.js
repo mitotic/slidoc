@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4k';
+var VERSION = '0.97.4l';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -22,7 +22,8 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 ['require_late_token', 'require', 'Non-null string for true'],
 			 ['share_averages', 'require', 'Non-null string for true'],
 		         ['total_formula', '', 'Formula for total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
-			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'] // Or A:180:4,B:160:3,...
+			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'], // Or A:180:4,B:160:3,...
+			 ['proxy_update_cache', '', 'Used to cache response to last update request (not user configured)']   
 		       ];
 
 // Add settings of the form 'session_assignment' = '--pace=2 ...'
@@ -168,8 +169,6 @@ var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property servi
 
 var Settings = {};
 
-var ProxyUpdateCache = null;
-
 function onInstall(evt) {
     return onOpen(evt);
 }
@@ -232,6 +231,7 @@ function defaultSettings(overwrite) {
     }
 }
 
+var ProxyCacheRange = null;
 function loadSettings() {
     var settingsSheet = getSheet(SETTINGS_SHEET);
     if (!settingsSheet)
@@ -240,6 +240,7 @@ function loadSettings() {
     for (var j=0; j<settingsData.length; j++) {
 	if (!settingsData[j].length || !settingsData[j][0].trim())
 	    continue;
+	var settingsName = settingsData[j][0].trim();
 	var settingsValue = (settingsData[j].length > 1) ? settingsData[j][1] : '';
 	if (typeof settingsValue == 'string')
 	    settingsValue = settingsValue.trim();
@@ -247,7 +248,17 @@ function loadSettings() {
 	    settingsValue = '' + settingsValue;
 	else
 	    settingsValue = '';
-	Settings[settingsData[j][0].trim()] = settingsValue;
+	Settings[settingsName] = settingsValue;
+	if (settingsName == 'proxy_update_cache') {
+	    ProxyCacheRange = settingsSheet.getRange(j+2, 2, 1, 1);
+	    if (settingsValue) {
+		try {
+		    Settings[settingsName] = JSON.parse(settingsValue);
+		} catch(err) {
+		    Settings[settingsName] = '';
+		}
+	    }
+	}
     }
 }
 
@@ -567,22 +578,27 @@ function sheetAction(params) {
 		}
 	    }
 
-	} else if (proxy && params.allupdates && ProxyUpdateCache && ProxyUpdateCache[0] == params.requestid) {
+	} else if (proxy && params.allupdates && params.requestid && Settings['proxy_update_cache'] && Settings['proxy_update_cache'][0] == params.requestid) {
 	    // Proxy update request already handled; return cached response
 	    returnValues = [];
-	    returnInfo.cachedResponse = ProxyUpdateCache[0];
-	    returnInfo.refreshSheets = ProxyUpdateCache[1];
-	    returnInfo.updateErrors = ProxyUpdateCache[2];
+	    returnInfo.cachedResponse = Settings['proxy_update_cache'][0];
+	    returnInfo.refreshSheets = Settings['proxy_update_cache'][1];
+	    returnInfo.updateErrors = Settings['proxy_update_cache'][2];
 
 	} else if (proxy && params.allupdates) {
 	    // Update multiple sheets from proxy
-	    ProxyUpdateCache = null;
+	    if (ProxyCacheRange) {
+		ProxyCacheRange.setValue('');
+	    }
 	    returnValues = [];
 	    var data = JSON.parse(params.data);
 	    var retval = handleProxyUpdates(data, params.create, returnMessages, logCall, progressCall);
 	    returnInfo.refreshSheets = retval[0];
 	    returnInfo.updateErrors = retval[1];
-	    ProxyUpdateCache = [params.requestid || '', retval[0], retval[1]];
+
+	    if (ProxyCacheRange) {
+		ProxyCacheRange.setValue( JSON.stringify([params.requestid || '', retval[0], retval[1]]) );
+	    }
 
         } else if (params.delsheet) {
 	    // Delete sheet (and session entry)
@@ -1871,7 +1887,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 	    }
 
 	    if (logCall >= 1)
-		progressCall('updateSheet: start '+updateSheetName+' '+updateSheet.getLastRow()+' '+updateSheet.getLastColumn()+' '+(proxyActions||''));
+		progressCall('updateSheet: start '+ProxyCacheRange+' '+updateSheetName+' '+updateSheet.getLastRow()+' '+updateSheet.getLastColumn()+' '+(proxyActions||''));
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
 	    if (updateHeaders.length != temHeaders.length)
