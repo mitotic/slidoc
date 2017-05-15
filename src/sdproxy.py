@@ -213,28 +213,35 @@ def startPreview(sessionName):
         del Miss_cache[sessionName]
     sessionSheet = Sheet_cache.get(sessionName)
     if sessionSheet:
-        if not Settings['dry_run'] and sessionSheet.get_updates() is not None:
+        if sessionSheet.get_updates() is not None:
             return 'Pending updates for session '+sessionName+'; retry preview after 10-20 seconds'
     else:
         sessionSheet = getSheet(sessionName, optional=True)
 
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if indexSheet:
-        if not Settings['dry_run'] and indexSheet.get_updates() is not None:
+        if indexSheet.get_updates() is not None:
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
 
     Global.previewStatus = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
                               'indexSheetOrig': indexSheet.copy()}
+
+    if Settings['debug']:
+        print("DEBUG:startPreview: %s " % sessionName, file=sys.stderr)
+
     return ''
 
 def endPreview():
     # End preview; enable upstream updates
     if not Global.previewStatus:
         return
+    if Settings['debug']:
+        print("DEBUG:endPreview: %s " % Global.previewStatus.get('sessionName'), file=sys.stderr)
     Global.previewStatus = {}
     schedule_update(force=True)
+
 
 def savePreview():
     # Save snapshot of preview (usually after compiling)
@@ -250,21 +257,22 @@ def savePreview():
     Global.previewStatus['sessionSheetSave'] = sessionSheet.copy()
     Global.previewStatus['indexSheetSave'] = indexSheet.copy()
 
-def revertPreview(original=False):
-    # Discard all changes to session sheet and session index sheet and revert to saved (or original) sheet values
+def revertPreview(saved=False):
+    # Discard all changes to session sheet and session index sheet and revert to original (or saved) sheet values
     # and end preview
     sessionName = Global.previewStatus.get('sessionName', '')
     if not sessionName:
         raise Exception('No preview session to revert')
-    if original:
+
+    if saved:
+        Sheet_cache[sessionName] = Global.previewStatus['sessionSheetSave']
+        Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetSave']
+    else:
         if Global.previewStatus['sessionSheetOrig']:
             Sheet_cache[sessionName] = Global.previewStatus['sessionSheetOrig']
         else:
             delSheet(sessionName)
         Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetOrig']
-    else:
-        Sheet_cache[sessionName] = Global.previewStatus['sessionSheetSave']
-        Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetSave']
 
     endPreview()
 
@@ -527,6 +535,11 @@ class Sheet(object):
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
 
+
+    def clear_update(self):
+        for j, row in enumerate(self.xrows[1:]):
+            key = row[self.keyCol-1] if self.keyCol else j+2
+            self.keyMap[key][1:3] = [0, set()]
 
     def copy(self):
         # Returns "shallow" copy
@@ -1036,6 +1049,8 @@ def update_remote_sheets_aux(force=False, synchronous=False):
     if not Settings['gsheet_url'] or Settings['dry_run']:
         # No updates if no sheet URL or dry run
         Global.cacheUpdateTime = sliauth.epoch_ms()
+        for sheetName, sheet in Sheet_cache.items():
+            sheet.clear_update()
         updates_current()
         return
 

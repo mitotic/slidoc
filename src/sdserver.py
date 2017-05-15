@@ -1673,7 +1673,7 @@ class ActionHandler(BaseHandler):
             if 'md_params' not in retval:
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
 
-            # Save current preview state
+            # Save current preview state (allowing user to navigate and answer questions, without saving those changes)
             if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
@@ -1703,7 +1703,7 @@ class ActionHandler(BaseHandler):
             if Options['debug']:
                 import traceback
                 traceback.print_exc()
-            self.previewClear(revert=True, original=True)
+            self.previewClear()
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, '', reload=False)
             temMsg = err.message+'\n'
@@ -1933,7 +1933,7 @@ class ActionHandler(BaseHandler):
                 self.extractFolder(self.previewState['image_zipfile'], self.previewState['web_dir'], folder=self.previewState['image_dir'])
 
         except Exception, excp:
-            self.previewClear(revert=True)   # Revert to start of preview
+            self.previewClear()   # Revert to original version
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving session %s: %s' % (sessionName, excp))
 
         redirectURL = ''
@@ -1945,7 +1945,9 @@ class ActionHandler(BaseHandler):
             redirectURL += privatePrefix(uploadType)+'/'+uploadType+'/index.html'
 
         rolloverParams = self.previewState['rollover']
-        self.previewClear(revert=True)   # Revert to start of preview
+
+        # Revert to saved version of preview (discarding any navigation/answer info); this may trigger proxy updates
+        self.previewClear(saved_version=True)   
 
         if sessionName != 'index':
             WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
@@ -1987,17 +1989,17 @@ class ActionHandler(BaseHandler):
     def discardPreview(self):
         if self.previewActive():
             sessionName = self.previewState['name']
-            self.previewClear(revert=True, original=True)
+            self.previewClear()
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
         self.displayMessage('Discarded changes')
 
-    def previewClear(self, revert=False, original=False):
+    def previewClear(self, saved_version=False, final_version=False):
         if sdproxy.previewingSession():
-            if revert:
-                sdproxy.revertPreview(original=original)
-            else:
+            if final_version:
                 sdproxy.endPreview()
+            else:
+                sdproxy.revertPreview(saved=saved_version)
         self.previewState.clear()
 
     def extract_slides(self, src_path, web_path):
@@ -2161,7 +2163,7 @@ class ActionHandler(BaseHandler):
                 self.previewState['image_zipfile'].close()
                 fbody2 = self.previewState['image_zipbytes'].getvalue()
                 fname2 = sessionName+'_images.zip'
-            self.previewClear()
+            self.previewClear()    # Revert to original version
         elif image_zipdata:
             fbody2 = image_zipdata
             fname2 = sessionName+'_images.zip'
