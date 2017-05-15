@@ -1041,11 +1041,13 @@ Slidoc.slideEditMenu = function() {
 Slidoc.printExamMenu = function () {
     var html = '<h3>Print exam menu</h3>\n';
     html += '<ul>\n';
-    html += '<li><span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span></li>\n';
-    html += '<hr>';
-    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName+'">Prefill user info</a></li>\n';
-    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
-    html += '<hr>';
+    if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
+	html += '<li><span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span></li>\n';
+	html += '<hr>';
+	html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName+'">Prefill user info</a></li>\n';
+	html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
+	html += '<hr>';
+    }
     html += '<li><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span></li>\n';
     html += '<li><span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span></li>\n';
     html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
