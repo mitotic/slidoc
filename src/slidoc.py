@@ -2828,7 +2828,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     js_params = {'siteName': '', 'fileName': '', 'chapterId': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'overwrite': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'gradeFields': [], 'topnavList': [], 'tocFile': '',
-                 'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0,
+                 'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0, 'timedSec': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '', 'discussSlides': [],
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
@@ -3111,6 +3111,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             js_params['lateCredit'] = file_config.late_credit or 0
             js_params['participationCredit'] = file_config.participation_credit or 0
             js_params['maxRetakes'] = file_config.retakes or 0
+            js_params['timedSec'] = file_config.timed or 0
                 
             topnav_opts = file_config.topnav or ''
             gd_sheet_url = file_config.gsheet_url or ''
@@ -4042,6 +4043,7 @@ Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) para
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 Conf_parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
 Conf_parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
+Conf_parser.add_argument('--timed', type=int, help='No. of seconds for timed sessions (default: 0 for untimed)')
 Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 
 alt_parser = argparse.ArgumentParser(parents=[Conf_parser], add_help=False)

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4m';
+var VERSION = '0.97.4n';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -113,6 +113,8 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 // Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
 // e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
 var ALT_DOC_IDS = { };
+
+var TIMED_GRACE_SEC = 15;           // Grace period for timed submissions (usually about 15 seconds)
 
 var ADMIN_ROLE = 'admin';
 var GRADER_ROLE = 'grader';
@@ -531,6 +533,7 @@ function sheetAction(params) {
 	var adminPaced = null;
 	var dueDate = null;
 	var gradeDate = null;
+	var timedSec = null;
 	var voteDate = null;
 	var discussableSession = null;
 	var computeTotalScore = false;
@@ -660,6 +663,7 @@ function sheetAction(params) {
 		adminPaced = sessionEntries.adminPaced;
 		dueDate = sessionEntries.dueDate;
 		gradeDate = sessionEntries.gradeDate;
+		timedSec = sessionAttributes['params'].timedSec || null;
 		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
 		discussableSession = sessionAttributes.discussSlides && sessionAttributes.discussSlides.length;
 
@@ -1431,6 +1435,21 @@ function sheetAction(params) {
 		var scoresCol = columnIndex['q_scores'] || 0;
 		var userRange = modSheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
+
+                if (!adminUser && timedSec && (createRow || rowUpdates)) {
+                    // Updating timed session
+                    var initTime = rowValues[columnIndex['initTimestamp']-1];
+                    if (initTime) {
+                        var timedSecLeft = timedSec - (curTime - initTime.getTime())/1000.
+                    } else {
+                        var timedSecLeft = timedSec;
+                    }
+                    if (timedSecLeft < -TIMED_GRACE_SEC) {
+                        throw('Error:TIMED_EXPIRED:Past deadline for timed session.');
+                    } else if (timedSecLeft >= 1) {
+                        returnInfo['timedSecLeft'] = parseInt(timedSecLeft);
+                    }
+                }
 
 		returnInfo.prevTimestamp = ('Timestamp' in columnIndex && rowValues[columnIndex['Timestamp']-1]) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;
 		if (returnInfo.prevTimestamp && params.timestamp && parseNumber(params.timestamp) && returnInfo.prevTimestamp > parseNumber(params.timestamp))

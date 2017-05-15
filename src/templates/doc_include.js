@@ -3058,6 +3058,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.discussSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
+    Sliobj.timedSecLeft = 0;
     Sliobj.remoteAnswers = '';
     Sliobj.discussStats = null;
     Sliobj.voteDate = null;
@@ -3175,6 +3176,12 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
 	}
     }
 
+    if (Sliobj.params.timedSec) {
+	if (!window.confirm('NOTE: This session is timed. You have '+Sliobj.params.timedSec+' seconds to complete all answers from the time you first started the session. If you have not already started the session, you may cancel now and start later.')) {
+	    window.location = Sliobj.sitePrefix;
+	    return;
+	}
+    }
     sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
 }
 
@@ -3226,11 +3233,22 @@ function slidocSetup(session, feedback) {
     return abortOnError(slidocSetupAux.bind(null, session, feedback));
 }
 
+function timedCloseFunc() {
+    Slidoc.log('timedCloseFunc:');
+    if (Sliobj.session.submitted)
+	return;
+    Slidoc.submitClick(null, false, true)
+}
+
 function slidocSetupAux(session, feedback) {
     Slidoc.log('slidocSetupAux:', session, feedback);
     Sliobj.session = session;
     Sliobj.feedback = feedback || null;
     var unhideChapters = false;
+
+    if (Sliobj.params.timedSec && Sliobj.timedSecLeft) {
+	setTimeout(timedCloseFunc, Sliobj.timedSecLeft*1000);
+    }
 
     if (Sliobj.gradableState && !Sliobj.session) {
 	sessionAbort('Admin user: session not found for user');
@@ -3908,7 +3926,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
     choiceBlock.dataset.shuffle = '';
     if (!shuffleStr)
 	return;
-    Slidoc.log('shuffleBlock: shuffleStr', slide_id, qnumber, ' ', shuffleStr);
+    ///Slidoc.log('shuffleBlock: shuffleStr', slide_id, qnumber, ' ', shuffleStr);
     var childNodes = choiceBlock.childNodes;
     var blankKey = ' ';
     var key = blankKey;
@@ -4460,6 +4478,10 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	if (retStatus && retStatus.info) {
 	    if (retStatus.info.proxyError)
 		alert(retStatus.info.proxyError);
+
+	    if (retStatus.info.timedSecLeft)
+		Sliobj.timedSecLeft = retStatus.info.timedSecLeft;
+
 	    if (retStatus.info.gradeDate)
 		Sliobj.gradeDateStr = retStatus.info.gradeDate;
 
@@ -5839,14 +5861,15 @@ function saveClickCallback(session, feedback) {
     Slidoc.log('Slidoc.saveClickCallback:', session, feedback);
 }
 	
-Slidoc.submitClick = function(elem, noFinalize) {
+Slidoc.submitClick = function(elem, noFinalize, force) {
     // Submit session after finalizing answers with checked choices and entered input values
-    Slidoc.log('Slidoc.submitClick:', elem, noFinalize);
+    Slidoc.log('Slidoc.submitClick:', elem, noFinalize, force);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
 
     if (!Sliobj.session || !Sliobj.session.paced || Sliobj.session.submitted) {
-	alert('Session appears to be already submitted');
+	if (!force)
+	    alert('Session appears to be already submitted');
 	return;
     }
 
@@ -5906,7 +5929,7 @@ Slidoc.submitClick = function(elem, noFinalize) {
 	    prompt = '';
     }
 
-    if (prompt) {
+    if (!force && prompt) {
 	if (!showDialog('confirm', 'submitDialog', prompt))
 	    return;
     }
@@ -6137,6 +6160,8 @@ Slidoc.startPaced = function () {
 	startMsg += '&nbsp;&nbsp;<em>There are '+unreadCount+' slides with UNREAD discussions.</em><br>';
     } else {
     var startMsg = 'Starting'+((Sliobj.params.paceLevel && ('slides_only' in Sliobj.params.features))?' strictly':'')+' paced session '+Sliobj.sessionName+':<br>';
+    if (Sliobj.timedSecLeft)
+	startMsg += '&nbsp;&nbsp;<b>You have  '+Sliobj.timedSecLeft+' seconds left to complete this timed session.</b><br>';
     if (!('slides_only' in Sliobj.params.features))
 	startMsg += '&nbsp;&nbsp;<em>You may switch between slide and document views using Escape key or Square icon at bottom left.</em><br>';
     if (Sliobj.params.questionsMax)

@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4m'
+VERSION = '0.97.4n'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -94,6 +94,8 @@ RETRY_WAIT_TIME = 5           # Minimum time (sec) before retrying failed Google
 RETRY_MAX_COUNT = 5           # Maximum number of failed Google Sheet requests
 CACHE_HOLD_SEC = 3600         # Maximum time (sec) to hold sheet in cache
 PROXY_UPDATE_ROW_LIMIT = 200  # Max. no of rows per sheet, per proxy update request
+
+TIMED_GRACE_SEC = 15          # Grace period for timed submissions (usually about 15 seconds)
 
 ADMIN_ROLE = 'admin'
 GRADER_ROLE = 'grader'
@@ -1374,10 +1376,12 @@ def sheetAction(params, notrace=False):
         adminPaced = None
         dueDate = None
         gradeDate = None
+        timedSec = None
         voteDate = None
         discussableSession = None
         computeTotalScore = False
         curDate = createDate()
+        curTime = sliauth.epoch_ms(curDate)
 
         if sheetName == SETTINGS_SHEET and adminUser != ADMIN_ROLE:
             raise Exception('Error::Must be admin user to access settings')
@@ -1477,6 +1481,7 @@ def sheetAction(params, notrace=False):
                 adminPaced = sessionEntries.get('adminPaced')
                 dueDate = sessionEntries.get('dueDate')
                 gradeDate = sessionEntries.get('gradeDate')
+                timedSec = sessionAttributes['params'].get('timedSec')
                 voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
                 discussableSession = sessionAttributes.get('discussSlides') and len(sessionAttributes['discussSlides'])
 
@@ -2084,7 +2089,6 @@ def sheetAction(params, notrace=False):
                     if dueDate and not prevSubmitted and not voteSubmission and not discussionPost and not alterSubmission and userId != MAXSCORE_ID:
                         # Check if past submission deadline
                         lateToken = ''
-                        curTime = sliauth.epoch_ms(curDate)
                         pastSubmitDeadline = curTime > sliauth.epoch_ms(dueDate)
                         if pastSubmitDeadline:
                             lateTokenCol = columnIndex.get('lateToken')
@@ -2152,6 +2156,18 @@ def sheetAction(params, notrace=False):
                 scoresCol = columnIndex.get('q_scores', 0)
                 userRange = modSheet.getRange(userRow, 1, 1, maxCol)
                 rowValues = userRange.getValues()[0]
+
+                if not adminUser and timedSec and (createRow or rowUpdates):
+                    # Updating timed session
+                    initTime = rowValues[columnIndex['initTimestamp']-1]
+                    if initTime:
+                        timedSecLeft = timedSec - (curTime - sliauth.epoch_ms(initTime))/1000.
+                    else:
+                        timedSecLeft = timedSec
+                    if timedSecLeft < -TIMED_GRACE_SEC:
+                        raise Exception('Error:TIMED_EXPIRED:Past deadline for timed session.')
+                    elif timedSecLeft >= 1:
+                        returnInfo['timedSecLeft'] = int(timedSecLeft)
 
                 returnInfo['prevTimestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex and rowValues[columnIndex['Timestamp']-1]) else None
                 if returnInfo['prevTimestamp'] and params.get('timestamp','') and parseNumber(params.get('timestamp','')) and returnInfo['prevTimestamp'] > 1+parseNumber(params.get('timestamp','')):
