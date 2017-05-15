@@ -539,7 +539,8 @@ class Sheet(object):
     def clear_update(self):
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
-            self.keyMap[key][1:3] = [0, set()]
+            if self.keyMap[key][1] or self.keyMap[key][2]:
+                self.keyMap[key][1:3] = [0, set()]
 
     def copy(self):
         # Returns "shallow" copy
