@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4l';
+var VERSION = '0.97.4m';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1612,7 +1612,7 @@ function sheetAction(params) {
                             var initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows);
                             for (var j=0; j < idColValues.length; j++) {
                                 // Submit all other users who have started a session
-                                if (initColValues[j] && idColValues[j] && idColValues != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
+                                if (initColValues[j] && idColValues[j] && idColValues[j] != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
                                     modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]]);
 
                                     if (discussSheet) {
@@ -1998,7 +1998,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			var insertCount = 0;
 
 			for (var kinsert=jinsert; kinsert<updateInsertNames.length; kinsert++) {
-			    if (updateInsertNames[kinsert][0] < nameValues[jrow] || (updateInsertNames[kinsert][0] == nameValues[jrow] && updateInsertNames[kinsert][1] < idValues[jrow]) ) {
+			    if (updateInsertNames[kinsert][0] < nameValues[jrow][0] || (updateInsertNames[kinsert][0] == nameValues[jrow][0] && updateInsertNames[kinsert][1] < idValues[jrow][0]) ) {
 				// Insert row should be located before current row
 				insertCount += 1;
 			    } else {
@@ -2022,10 +2022,11 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 		    if (jinsert < updateInsertNames.length) {
 			var afterRow = idValues.length+insertedRows+updateStickyRows;
 			var insertCount = updateInsertNames.length-jinsert;
+			insertedRows += insertCount;
 			updateSheet.insertRowsAfter(afterRow, insertCount);
 			updateSheet.getRange(afterRow+1, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
 			if (logCall >= 2)
-			    progressCall(updateSheetName+':afterRow '+' '+beforeRow+' '+insertCount);
+			    progressCall(updateSheetName+':afterRow '+afterRow+' '+insertCount);
 		    }
 		}
 
@@ -2037,20 +2038,23 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
 		}
 
+		if (logCall >= 2)
+		    progressCall(updateSheetName+':ids ['+updateKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
+
 		if (updateKeys.length !=  idValues.length)
 		    throw('Error:PROXY_UPDATE_MISMATCH:Mismatched id count '+updateKeys.length+' vs. '+idValues.length+' in sheet '+updateSheetName);
 
 		// Check that row ids match and names are in order
 		var modRowIndex = {};
 		for (var mrow=0; mrow<idValues.length; mrow++) {
-		    modRowIndex[idValues[mrow]] = mrow + 1 + updateStickyRows;
+		    modRowIndex[idValues[mrow][0]] = mrow + 1 + updateStickyRows;
 
-		    if (updateKeys[mrow] != idValues[mrow]) {
-			throw('Error:PROXY_UPDATE_MISMATCH:Mismatched row ids '+updateKeys[mrow]+' vs. '+idValues[mrow]+' in row '+(mrow+updateStickyRows)+' sheet '+updateSheetName);
+		    if (updateKeys[mrow] != idValues[mrow][0]) {
+			throw('Error:PROXY_UPDATE_MISMATCH:Mismatched row ids '+updateKeys[mrow]+' vs. '+idValues[mrow][0]+' in row '+(mrow+updateStickyRows)+' sheet '+updateSheetName);
 		    }
 
-		    if ((deletedRows || insertedRows) && mrow && (nameValues[mrow-1] > nameValues[mrow]  || (nameValues[mrow-1] == nameValues[mrow] && idValues[mrow-1] > idValues[mrow])))
-			throw('Error:PROXY_UPDATE_ORDER:Out of sequence name/id '+nameValues[mrow-1]+' >= '+nameValues[mrow])
+		    if ((deletedRows || insertedRows) && mrow && (nameValues[mrow-1][0] > nameValues[mrow][0]  || (nameValues[mrow-1][0] == nameValues[mrow][0] && idValues[mrow-1][0] > idValues[mrow][0])))
+			throw('Error:PROXY_UPDATE_ORDER:Out of sequence name/id '+nameValues[mrow-1][0]+' >= '+nameValues[mrow][0])
 
 		}
 
@@ -2093,18 +2097,6 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 		    if (!modStartRow)
 			throw('Error:PROXY_UPDATE_ERROR: Inconsistency error: start row id '+rowIds[0]+' not found!');
 
-		    if (totalCol) {
-			// Do not overwrite old totalCol formula value for pre-existing row (formula updated by updateTotalFormula)
-			var colOffset = rowCols.indexOf(totalCol);
-			if (colOffset >= 0) {
-			    var colNum = rowCols[colOffset];
-			    var totalFormulas = updateSheet.getRange(modStartRow, totalCol, nUpdateRows, 1).getFormulas();
-
-			    for (var mrow=0; mrow<nUpdateRows; mrow++)
-				rowSel[mrow][colNum-1] = totalFormulas[mrow];
-			}
-		    }
-
 		    if (rowPartial) {
 			// Pre-existing rows (partial update)
 			var pStartCol = rowCols[0];
@@ -2112,9 +2104,16 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 
 			var checkIdOffset = rowCols.indexOf(idCol);
 
+			var totalFormulas = null;
+			if (totalCol && totalCol >= pStartCol && totalCol <= pEndCol) {
+			    // Total column within range; get formula values
+			    totalFormulas = updateSheet.getRange(modStartRow, totalCol, nUpdateRows, 1).getFormulas();
+			}
+
 			// Update block
 			var modRange = updateSheet.getRange(modStartRow, pStartCol, nUpdateRows, pEndCol-pStartCol+1);
 			var modVals = modRange.getValues();
+
 			for (var mrow=0; mrow < nUpdateRows; mrow++) {
 			    var modRow = modVals[mrow];
 			    var newRow = rowSel[mrow];
@@ -2124,6 +2123,11 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 
 			    for (var mcol=0; mcol<nUpdateCols; mcol++) {
 				modRow[ rowCols[mcol]-pStartCol ] = newRow[mcol];
+			    }
+
+			    if (totalFormulas) {
+				// Do not overwrite old totalCol formula value for pre-existing row (formula updated by updateTotalFormula)
+				modRow[totalCol-pStartCol] = totalFormulas[mrow][0];
 			    }
 			}
 			modRange.setValues(modVals);
@@ -2135,10 +2139,16 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			if (nUpdateRows > 1)
 			    throw('Error:PROXY_PARTIAL_UPDATE:Unable to update multiple ids from '+rowIds[0]+' in sheet '+updateSheetName);
 			var curRow = rowSel[0];
+			var prevVals = updateSheet.getRange(modStartRow, 1, 1, curRow.length).getValues()[0];
+
+			if (totalCol) {
+			    // Do not overwrite old totalCol formula value for pre-existing row (formula updated by updateTotalFormula)
+			    prevVals[totalCol-1] = updateSheet.getRange(modStartRow, totalCol, 1, 1).getFormula();
+			    curRow[totalCol-1] = prevVals[totalCol-1];
+			}
+
 			var diffStartCol = 1;
 			var diffEndCol = 0;
-
-			var prevVals = updateSheet.getRange(modStartRow, 1, 1, curRow.length).getValues()[0];
 			for (var mcol=0; mcol<curRow.length; mcol++) {
 			    if (timeColumn(updateHeaders[mcol])) {
 				var diff = !timeEqual(prevVals[mcol], curRow[mcol]);

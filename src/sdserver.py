@@ -1291,7 +1291,7 @@ class ActionHandler(BaseHandler):
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+fname+'.md', web_prefix+'.html', web_prefix+'_images'
 
     def displaySheet(self, sessionName, download=False, allUsers=False, keepHidden=False):
-            sheet = sdproxy.getSheet(sessionName, optional=True)
+            sheet = sdproxy.getSheet(sessionName, optional=True, display=True)
             if not sheet:
                 self.displayMessage('Unable to retrieve sheet '+sessionName)
                 return

@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4l'
+VERSION = '0.97.4m'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -380,10 +380,11 @@ def backupSheet(name, dirpath, errorList, optional=False):
 def isReadOnly(sheetName):
     return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET)) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
 
-def getSheet(sheetName, optional=False, backup=False):
+def getSheet(sheetName, optional=False, backup=False, display=False):
     cached = sheetName in Sheet_cache
 
-    check_if_locked(sheetName, get=True, backup=backup, cached=cached)
+    if not display or not cached:
+        check_if_locked(sheetName, get=True, backup=backup, cached=cached)
 
     if cached:
         return Sheet_cache[sheetName]
