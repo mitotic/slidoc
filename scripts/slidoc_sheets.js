@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4n';
+var VERSION = '0.97.4p';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -383,6 +383,9 @@ function sheetAction(params) {
     try {
 	loadSettings();
 
+	var sheetName = params.sheet || '';
+	returnInfo['sheet'] = sheetName;
+
 	var freezeDate = createDate(Settings['freeze_date']) || null;
 
         var origUser = '';
@@ -445,7 +448,6 @@ function sheetAction(params) {
         }
 
 	var proxy = params.proxy || '';
-	var sheetName = params.sheet || '';
 
 	// Read-only sheets
 	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != INDEX_SHEET) || sheetName.match(/-answers$/) || sheetName.match(/-stats$/);
@@ -1331,6 +1333,8 @@ function sheetAction(params) {
 	    if (newRow && getRow && !rowUpdates) {
 		// Row does not exist; return empty list
 		returnValues = [];
+		if (!adminUser && timedSec)
+		    returnInfo['timedSecLeft'] = timedSec;
 
 	    } else if (newRow && selectedUpdates) {
 		throw('Error::Selected updates cannot be applied to new row');
@@ -1436,7 +1440,7 @@ function sheetAction(params) {
 		var userRange = modSheet.getRange(userRow, 1, 1, maxCol);
 		var rowValues = userRange.getValues()[0];
 
-                if (!adminUser && timedSec && (createRow || rowUpdates)) {
+                if (!adminUser && timedSec) {
                     // Updating timed session
                     var initTime = rowValues[columnIndex['initTimestamp']-1];
                     if (initTime) {
@@ -1444,10 +1448,11 @@ function sheetAction(params) {
                     } else {
                         var timedSecLeft = timedSec;
                     }
-                    if (timedSecLeft < -TIMED_GRACE_SEC) {
+		    if (timedSecLeft >= 1) {
+			if (!prevSubmitted)
+                            returnInfo['timedSecLeft'] = parseInt(timedSecLeft);
+                    } else if (timedSecLeft < -TIMED_GRACE_SEC && rowUpdates) {
                         throw('Error:TIMED_EXPIRED:Past deadline for timed session.');
-                    } else if (timedSecLeft >= 1) {
-                        returnInfo['timedSecLeft'] = parseInt(timedSecLeft);
                     }
                 }
 

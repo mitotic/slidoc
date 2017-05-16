@@ -1375,9 +1375,74 @@ function checkFileUpload(files, mimeRegex, extensionList) {
     return {file:file, filename:filename, head:head, extension:extn, mimeType:file.type}
 }
 
-//////////////////////////////////
-// Section 8c: Reload/upload
-//////////////////////////////////
+/////////////////////////////////////
+// Section 8c: Timed sessions
+/////////////////////////////////////
+
+Sliobj.timedSecLeft = 0;
+Sliobj.timedEnd = 0;
+Sliobj.timedClose = null;
+Sliobj.timedInterval = null;
+
+function timedInit() {
+    Slidoc.log('timedInit:');
+    var timeElem = document.getElementById('slidoc-timed-value');
+    if (timeElem)
+	timeElem.textContent = ''+Sliobj.timedSecLeft;
+    Sliobj.timedEnd = Date.now() + 1000*Sliobj.timedSecLeft;
+    Sliobj.timedClose = setTimeout(timedCloseFunc, Sliobj.timedSecLeft*1000);
+    Sliobj.timedInterval = setInterval(timedProgressFunc, 500);
+
+    window.addEventListener('beforeunload', function (evt) {
+	if (!Sliobj.timedClose)
+	    return;
+	var confirmationMessage = 'Are you sure you want leave this timed session without submitting?';
+
+	evt.returnValue = confirmationMessage;
+	return confirmationMessage;
+    });
+}
+
+function timedCloseFunc() {
+    Slidoc.log('timedCloseFunc:');
+    if (!Sliobj.timedClose)
+	return;
+    Sliobj.timedClose = null;
+    if (Sliobj.session.submitted)
+	return;
+    Slidoc.submitClick(null, false, true);
+}
+
+function timedProgressFunc() {
+    if (!Sliobj.timedInterval)
+	return;
+
+    var secsLeft = Math.floor((Sliobj.timedEnd - Date.now())/1000);
+    var timeElem = document.getElementById('slidoc-timed-value');
+    var labelElem = document.getElementById('slidoc-timed-label');
+    ///Slidoc.log('timedProgressFunc:', secsLeft);
+
+    if (!Sliobj.timedClose || secsLeft <= 0) {
+	timeElem.textContent = ' 0';
+	clearInterval(Sliobj.timedInterval);
+	Sliobj.timedInterval = null;
+    } else if (secsLeft > 30) {
+	if (secsLeft == 60)
+	    labelElem.classList.add('slidoc-amber');
+	if (!(secsLeft % 10))
+	    timeElem.textContent = ' '+secsLeft;
+    } else {
+	if (secsLeft == 30) {
+	    labelElem.classList.remove('slidoc-amber');
+	    labelElem.classList.add('slidoc-red');
+	}
+	timeElem.textContent = ' '+secsLeft;
+    }
+}
+
+/////////////////////////////////////
+// Section 8d: Reload/upload/unload
+/////////////////////////////////////
 
 function restoreScroll() {
     var hashVal = location.hash.slice(2);
@@ -3058,7 +3123,6 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.discussSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
-    Sliobj.timedSecLeft = 0;
     Sliobj.remoteAnswers = '';
     Sliobj.discussStats = null;
     Sliobj.voteDate = null;
@@ -3177,12 +3241,25 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
     }
 
     if (Sliobj.params.timedSec) {
-	if (!window.confirm('NOTE: This session is timed. You have '+Sliobj.params.timedSec+' seconds to complete all answers from the time you first started the session. If you have not already started the session, you may cancel now and start later.')) {
-	    window.location = Sliobj.sitePrefix;
-	    return;
+
+	function slidocTimedGetCallback(temSession, temFeedback) {
+	    Slidoc.log('slidocTimedGetCallback:', temSession, temFeedback);
+
+	    if (Sliobj.timedSecLeft && !temSession) {
+		
+		if (!window.confirm('NOTE: This session is timed. You have '+Sliobj.timedSecLeft+' seconds to complete all answers from the time you start. If you are not ready to start the session, you may cancel now and start later.')) {
+		window.location = Sliobj.sitePrefix;
+		return;
+		}
+	    }
+	    sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
 	}
+
+	sessionGet(null, Sliobj.sessionName, {}, slidocTimedGetCallback);
+
+    } else {
+	sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
     }
-    sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
 }
 
 ///////////////////////////////
@@ -3233,21 +3310,15 @@ function slidocSetup(session, feedback) {
     return abortOnError(slidocSetupAux.bind(null, session, feedback));
 }
 
-function timedCloseFunc() {
-    Slidoc.log('timedCloseFunc:');
-    if (Sliobj.session.submitted)
-	return;
-    Slidoc.submitClick(null, false, true)
-}
-
 function slidocSetupAux(session, feedback) {
     Slidoc.log('slidocSetupAux:', session, feedback);
     Sliobj.session = session;
     Sliobj.feedback = feedback || null;
     var unhideChapters = false;
 
-    if (Sliobj.params.timedSec && Sliobj.timedSecLeft) {
-	setTimeout(timedCloseFunc, Sliobj.timedSecLeft*1000);
+    if (Sliobj.session && !Sliobj.session.submitted && Sliobj.params.timedSec && Sliobj.timedSecLeft) {
+	toggleClass(true, 'slidoc-timed-view');
+	timedInit();
     }
 
     if (Sliobj.gradableState && !Sliobj.session) {
@@ -4475,7 +4546,8 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	    return;
 	}
 	Sliobj.errorRetries = 0;
-	if (retStatus && retStatus.info) {
+	if (retStatus && retStatus.info && retStatus.info.sheet && retStatus.info.sheet == Sliobj.sessionName) {
+	    // Update info for currently active session
 	    if (retStatus.info.proxyError)
 		alert(retStatus.info.proxyError);
 
@@ -6198,6 +6270,7 @@ Slidoc.startPaced = function () {
 }
 
 Slidoc.endPaced = function (reload) {
+    Sliobj.timedClose = null;
     Sliobj.delaySec = null;
     Slidoc.log('Slidoc.endPaced: ');
     if (!Sliobj.params.gd_sheet_url)       // For remote sessions, successful submission will complete session

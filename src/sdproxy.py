@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4n'
+VERSION = '0.97.4p'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -1302,6 +1302,8 @@ def sheetAction(params, notrace=False):
         if not sheetName:
             raise Exception('Error:SHEETNAME:No sheet name specified')
 
+        returnInfo['sheet'] = sheetName
+
         freezeDate = createDate(Settings['freeze_date']) or None
         
         origUser = ''
@@ -2063,6 +2065,8 @@ def sheetAction(params, notrace=False):
             if newRow and getRow and not rowUpdates:
                 # Row does not exist return empty list
                 returnValues = []
+                if not adminUser and timedSec:
+                    returnInfo['timedSecLeft'] = timedSec
 
             elif newRow and selectedUpdates:
                 raise Exception('Error::Selected updates cannot be applied to new row')
@@ -2157,17 +2161,19 @@ def sheetAction(params, notrace=False):
                 userRange = modSheet.getRange(userRow, 1, 1, maxCol)
                 rowValues = userRange.getValues()[0]
 
-                if not adminUser and timedSec and (createRow or rowUpdates):
+                if not adminUser and timedSec:
                     # Updating timed session
                     initTime = rowValues[columnIndex['initTimestamp']-1]
                     if initTime:
                         timedSecLeft = timedSec - (curTime - sliauth.epoch_ms(initTime))/1000.
                     else:
                         timedSecLeft = timedSec
-                    if timedSecLeft < -TIMED_GRACE_SEC:
+                        IOLoop.current().call_later(timedSecLeft+TIMED_GRACE_SEC+5, submit_timed_session, userId, sheetName)
+                    if timedSecLeft >= 1:
+                        if not prevSubmitted:
+                            returnInfo['timedSecLeft'] = int(timedSecLeft)
+                    elif timedSecLeft < -TIMED_GRACE_SEC and rowUpdates:
                         raise Exception('Error:TIMED_EXPIRED:Past deadline for timed session.')
-                    elif timedSecLeft >= 1:
-                        returnInfo['timedSecLeft'] = int(timedSecLeft)
 
                 returnInfo['prevTimestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex and rowValues[columnIndex['Timestamp']-1]) else None
                 if returnInfo['prevTimestamp'] and params.get('timestamp','') and parseNumber(params.get('timestamp','')) and returnInfo['prevTimestamp'] > 1+parseNumber(params.get('timestamp','')):
@@ -2566,6 +2572,26 @@ def sheetAction(params, notrace=False):
         print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
     
     return retObj
+
+def submit_timed_session(userId, sessionName):
+    sessionSheet = getSheet(sessionName)
+    if not sessionSheet:
+        return
+    userRow = lookupRowIndex(userId, sessionSheet)
+    if not userRow:
+        return
+    columnIndex = indexColumns(sessionSheet)
+    submitTimestampCol = columnIndex.get('submitTimestamp')
+    submittedRange = sessionSheet.getRange(userRow, submitTimestampCol, 1, 1)
+    if submittedRange.getValues()[0][0]:
+        return
+
+    # Submit session for user
+    submittedRange.setValues([[ createDate() ]])
+
+    if Settings['debug']:
+        print("DEBUG: submit_timed_session: SUBMITTED", userId, sessionName, file=sys.stderr)
+    
 
 def gen_proxy_token(username, role=''):
     prefixed = role in (ADMIN_ROLE, GRADER_ROLE)
