@@ -1550,7 +1550,7 @@ class SlidocRenderer(MathRenderer):
         if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
             answer_opts['share'] = opt_values['share'][2]
 
-        if not answer_opts['disabled'] and 'disable_answering' in self.options['config'].features:
+        if not answer_opts['disabled'] and 'direct_answers' in self.options['config'].features:
             answer_opts['disabled'] = opt_values['disabled'][0]
             
         slide_id = self.get_slide_id()
@@ -3127,6 +3127,9 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
                 abort('PACE-ERROR: shuffle_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
+            if js_params['paceLevel'] >= QUESTION_PACE and 'direct_answers' in file_config.features:
+                abort('PACE-ERROR: direct_answers feature not compatible with --pace='+str(js_params['paceLevel']))
+
         if not j or config.separate:
             # First file or separate files
             mathjax_config = ''
@@ -4001,8 +4004,8 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents (also displays print exam menu)
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
-#   disable_answering: Hide all answer buttons/input boxes (to generate closed book question sheets that are manually graded)
 #   delay_answers: Correct answers and score are hidden from users until session is graded
+#   direct_answers: Disable all answer buttons/input boxes (useful for immediate multiple choice answers during timed sessions, or for printed question sheets)
 #   discuss_all: Enable discussion for all slides
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
@@ -4025,7 +4028,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'disable_answering', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'direct_answers', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

@@ -1402,7 +1402,7 @@ function timedInit() {
     Slidoc.log('timedInit:');
     var timeElem = document.getElementById('slidoc-timed-value');
     if (timeElem)
-	timeElem.textContent = ''+Sliobj.timedSecLeft;
+	timeElem.textContent = ' '+Sliobj.timedSecLeft;
     Sliobj.timedEnd = Date.now() + 1000*Sliobj.timedSecLeft;
     Sliobj.timedClose = setTimeout(timedCloseFunc, Sliobj.timedSecLeft*1000);
     Sliobj.timedInterval = setInterval(timedProgressFunc, 500);
@@ -1440,15 +1440,18 @@ function timedProgressFunc() {
 	timeElem.textContent = ' 0';
 	clearInterval(Sliobj.timedInterval);
 	Sliobj.timedInterval = null;
+	labelElem.classList.remove('slidoc-gray');
+	labelElem.classList.remove('slidoc-amber');
+	labelElem.classList.add('slidoc-red');
     } else if (secsLeft > 30) {
 	if (secsLeft == 60)
-	    labelElem.classList.add('slidoc-amber');
+	    labelElem.classList.add('slidoc-gray');
 	if (!(secsLeft % 10))
 	    timeElem.textContent = ' '+secsLeft;
     } else {
 	if (secsLeft == 30) {
-	    labelElem.classList.remove('slidoc-amber');
-	    labelElem.classList.add('slidoc-red');
+	    labelElem.classList.remove('slidoc-gray');
+	    labelElem.classList.add('slidoc-amber');
 	}
 	timeElem.textContent = ' '+secsLeft;
     }
@@ -3211,6 +3214,7 @@ function slidocReadyAux2(auth) {
 
     Sliobj.session = null;
     Sliobj.feedback = null;
+    Sliobj.directAnswers = false;
 
     Slidoc.Random = LCRandom;
     sessionManage();
@@ -3335,6 +3339,9 @@ function slidocSetupAux(session, feedback) {
 	timedInit();
     }
 
+    if (Sliobj.params.features.direct_answers)
+	Sliobj.directAnswers = true;
+
     if (Sliobj.gradableState && !Sliobj.session) {
 	sessionAbort('Admin user: session not found for user');
     }
@@ -3370,7 +3377,7 @@ function slidocSetupAux(session, feedback) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
 	    slidesVisible(true, j+1, slides);
-    } else if (!Sliobj.batchMode && !Sliobj.printExamView && (Sliobj.session.paced >= QUESTION_PACE || (Sliobj.session.paced && !Sliobj.params.printable)) ) {
+    } else if (!Sliobj.batchMode && !Sliobj.printExamView && !Sliobj.directAnswers && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
@@ -4096,7 +4103,7 @@ function delayAnswers() {
 }
 
 function displayCorrect(qattrs) {
-    if (delayAnswers())
+    if (delayAnswers() || (Sliobj.directAnswers && (!Sliobj.session || !Sliobj.session.submitted)) )
 	return false;
     // If non-submitted admin-paced and answering question on last slide, do not display correct answer
     if (controlledPace() && Sliobj.session && !Sliobj.session.submitted && Sliobj.session.lastSlide <= qattrs.slide)
@@ -5193,12 +5200,23 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    choices[i].classList.remove("slidoc-choice-selected");
     }
 
-
     if (!setup) {
-	if (question_attrs.qtype == 'multichoice')
+	if (question_attrs.qtype == 'multichoice') {
 	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
-	else
+	} else {
+	    if (Sliobj.directAnswers && !Sliobj.timedClose) {
+		alert('Time expired');
+		return false;
+	    }
+
 	    elem.classList.add('slidoc-choice-selected');
+
+	    if (Sliobj.directAnswers) {
+		var ansElem = document.getElementById(slide_id+'-answer-click');
+		if (ansElem)
+		    Slidoc.answerClick(ansElem, slide_id, 'direct');
+	    }
+	}
 	if (Sliobj.session && question_attrs.team == 'setup')
 	    Slidoc.sendEvent(-1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
 
@@ -5235,7 +5253,7 @@ function forceQuit(force, msg) {
 Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect, pluginResp, qfeedback) {
     // Handle answer types: number, text
     // expect: should only be defined for setup
-    // force: '', 'setup', 'submit, 'finalize', 'controlled'
+    // force: '', 'setup', 'submit, 'finalize', 'controlled', 'direct'
     Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
@@ -5321,9 +5339,11 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries = 0;   // Only one try for choice response
 	}
-	for (var i=0; i < choices.length; i++) {
-	    choices[i].removeAttribute("onclick");
-	    choices[i].classList.remove("slidoc-clickable");
+	if (!Sliobj.directAnswers) {
+	    for (var i=0; i < choices.length; i++) {
+		choices[i].removeAttribute("onclick");
+		choices[i].classList.remove("slidoc-clickable");
+	    }
 	}
 
 	Slidoc.log("Slidoc.answerClick:choice", response);
@@ -5460,7 +5480,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 
     // Question has been answered
     var slideElem = document.getElementById(slide_id);
-    if (!Sliobj.printExamView)
+    if (!Sliobj.printExamView && (!Sliobj.directAnswers || (Sliobj.session && Sliobj.session.submitted)) )
 	slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
@@ -6403,7 +6423,7 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.PluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
     }
 
-    if (!setupOverride() && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
+    if (!setupOverride() && !Sliobj.directAnswers && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
 	// Unhide only viewed slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);

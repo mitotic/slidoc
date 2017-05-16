@@ -227,6 +227,7 @@ img.slidoc-img.slidoc-dragover
 
 .slidoc-red { background: red; }
 .slidoc-amber { background: #FFBF00; }
+.slidoc-gray { background: #BBBBBB; }
 
 /* Slide toggle/editbar */
 body:not(.slidoc-accordion-view) .slidoc-togglebar {display: none;}
