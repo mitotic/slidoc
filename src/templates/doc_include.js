@@ -1039,18 +1039,32 @@ Slidoc.slideEditMenu = function() {
 }
 
 Slidoc.printExamMenu = function () {
-    var html = '<h3>Print exam menu</h3>\n';
+    var html = '<h3>Assessment menu</h3>\n';
     html += '<ul>\n';
-    if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
+    if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url)
 	html += '<li><span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span></li>\n';
-	html += '<hr>';
-	html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName+'">Prefill user info</a></li>\n';
-	html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
-	html += '<hr>';
+
+    if (Sliobj.params.gd_sheet_url) {
+	if (Sliobj.gradableState) {
+	    html += '<hr>';
+	    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName+'">Prefill user info</a></li>\n';
+	    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
+	    html += '<hr>';
+	}
+
+	html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
+
+	if (Sliobj.gradableState) {
+	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span></li>\n';
+	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span></li>\n';
+	    html += '<hr>';
+	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"'"+');">View session scores</span></li>';
+	    if (!Sliobj.gradeDateStr)
+		html += '<li><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span></li>';
+	    else
+		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
+	}
     }
-    html += '<li><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span></li>\n';
-    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span></li>\n';
-    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
     html += '</ul>';
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -3054,7 +3068,7 @@ Slidoc.manageSession = function() {
 	if (!Sliobj.gradeDateStr)
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span><br>';
 	else
-	    html += 'Grades released to students at '+Sliobj.gradeDateStr+'<br>';
+	    html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	html += hr;
 	html += '<span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span><br>\n';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span><br>\n';
