@@ -3440,10 +3440,16 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
         toc_html.append('\n<ol class="slidoc-toc-list">\n' if 'sections' in config.strip else '\n<ul class="slidoc-toc-list" style="list-style-type: none;">\n')
 
+        reverse_toc = fprefix.lower().startswith('announce')
         toc_list = []
         if config.make_toc:
             # Create ToC using header info from .html files
-            for j, outpath in enumerate(orig_outpaths):
+            temlist = orig_outpaths[:]
+            if reverse_toc:
+                temlist.reverse()
+            for jfile, outpath in enumerate(temlist):
+                ifile = len(temlist) - jfile - 1 if reverse_toc else jfile
+
                 if outpath in out_index:
                     index_entries = read_index(io.BytesIO(out_index[outpath].encode('utf8')))
                 elif os.path.exists(outpath):
@@ -3463,10 +3469,10 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
                 doc_link = ''
                 if doc_str:
-                    doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[j], doc_str)
+                    doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[ifile], doc_str)
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_extra, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries
-                toc_list.append(orig_fnames[j])
+                toc_list.append(orig_fnames[ifile])
                 toc_list.append(fheader)
                 toc_list.append(doc_str)
                 toc_list.append(iso_due_str)
@@ -3474,7 +3480,12 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 toc_list.append('')
         else:
             # Create ToC using info from rendering
-            for ifile, felem in enumerate(flist):
+            temlist = flist[:]
+            if reverse_toc:
+                temlist.reverse()
+            for jfile, felem in enumerate(temlist):
+                ifile = len(temlist) - jfile - 1 if reverse_toc else jfile
+                    
                 fname, outname, release_date_str, fheader, file_toc = felem
                 if release_date_str == FUTURE_DATE:
                     # Future release files not accessible from ToC
