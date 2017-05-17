@@ -463,7 +463,7 @@ Slidoc.serverCookie = getServerCookie();
 if (Slidoc.serverCookie) {
     Sliobj.serverData = Slidoc.serverCookie.data || {};
 }
-Sliobj.printExamView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
+Sliobj.assessmentView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
 
@@ -1038,31 +1038,39 @@ Slidoc.slideEditMenu = function() {
     Slidoc.showPopup(html);
 }
 
-Slidoc.printExamMenu = function () {
+Slidoc.confirmLoad = function(path, msg) {
+    if (window.confirm(msg || 'Confirm action?'))
+	window.location = path;
+}
+
+Slidoc.assessmentMenu = function () {
+    var adminAccess = Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId;
     var html = '<h3>Assessment menu</h3>\n';
     html += '<ul>\n';
-    if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url)
-	html += '<li><span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span></li>\n';
+    if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
+	html += '<li><span class="slidoc-clickable" onclick="Slidoc.toggleAssessment();">'+(Sliobj.assessmentView?'End':'Begin')+' print view</span></li>\n';
+	html += '<hr>';
+    }
 
     if (Sliobj.params.gd_sheet_url) {
-	if (Sliobj.gradableState) {
-	    html += '<hr>';
-	    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName+'">Prefill user info</a></li>\n';
-	    html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
-	    html += '<hr>';
-	}
-
-	html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
+	if (adminAccess)
+	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
 
 	if (Sliobj.gradableState) {
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span></li>\n';
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span></li>\n';
 	    html += '<hr>';
-	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"'"+');">View session scores</span></li>';
 	    if (!Sliobj.gradeDateStr)
 		html += '<li><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span></li>';
 	    else
 		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
+	    if (adminAccess) {
+		var prefillUrl = Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName;
+		html += '<hr>';
+		html += '<li><span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"'"+');">View session scores</span></li>';
+		html += '<li><span class="slidoc-clickable" onclick="Slidoc.confirmLoad('+"'"+prefillUrl+"','Prefill user info?'"+');">Prefill user info</span></li>\n';
+		html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
+	    }
 	}
     }
     html += '</ul>';
@@ -1394,18 +1402,25 @@ function checkFileUpload(files, mimeRegex, extensionList) {
 /////////////////////////////////////
 
 Sliobj.timedSecLeft = 0;
-Sliobj.timedEnd = 0;
+Sliobj.timedEndTime = 0;
 Sliobj.timedClose = null;
-Sliobj.timedInterval = null;
+Sliobj.timedTick = null;
 
-function timedInit() {
-    Slidoc.log('timedInit:');
-    var timeElem = document.getElementById('slidoc-timed-value');
-    if (timeElem)
-	timeElem.textContent = ' '+Sliobj.timedSecLeft;
-    Sliobj.timedEnd = Date.now() + 1000*Sliobj.timedSecLeft;
-    Sliobj.timedClose = setTimeout(timedCloseFunc, Sliobj.timedSecLeft*1000);
-    Sliobj.timedInterval = setInterval(timedProgressFunc, 500);
+function timedInit(remainingSec) {
+    Slidoc.log('timedInit:', remainingSec);
+    if (Sliobj.timedClose)
+	return;
+    toggleClass(true, 'slidoc-timed-view');
+
+    Sliobj.timedEndTime = Date.now() + remainingSec*1000;
+    Sliobj.timedClose = setTimeout(timedCloseFunc, remainingSec*1000);
+
+    var delaySec = 0.2;
+    if (remainingSec > 2*60*60) {
+        // Display timer only if 2 hours or less left
+	delaySec = remainingSec - 2*60*60;
+    }
+    Sliobj.timedTick = setTimeout(timedProgressFunc, delaySec*1000);
 
     window.addEventListener('beforeunload', function (evt) {
 	if (!Sliobj.timedClose)
@@ -1422,39 +1437,52 @@ function timedCloseFunc() {
     if (!Sliobj.timedClose)
 	return;
     Sliobj.timedClose = null;
-    if (Sliobj.session.submitted)
-	return;
-    Slidoc.submitClick(null, false, true);
+
+    // Only auto-submit for timed sessions to avoid overload at dueTime
+    // (All non-timed sessions will be auto-submitted by proxy when Grading User accesses them.)
+    if (Sliobj.params.timedSec && !Sliobj.session.submitted)
+	Slidoc.submitClick(null, false, true);
 }
 
 function timedProgressFunc() {
-    if (!Sliobj.timedInterval)
+    if (!Sliobj.timedTick)
 	return;
+    Sliobj.timedTick = null;
 
-    var secsLeft = Math.floor((Sliobj.timedEnd - Date.now())/1000);
+    var secsLeft = Math.floor((Sliobj.timedEndTime - Date.now())/1000);
     var timeElem = document.getElementById('slidoc-timed-value');
-    var labelElem = document.getElementById('slidoc-timed-label');
+    var unitsElem = document.getElementById('slidoc-timed-units');
     ///Slidoc.log('timedProgressFunc:', secsLeft);
 
+    var delaySec = 0;
     if (!Sliobj.timedClose || secsLeft <= 0) {
-	timeElem.textContent = ' 0';
-	clearInterval(Sliobj.timedInterval);
-	Sliobj.timedInterval = null;
-	labelElem.classList.remove('slidoc-gray');
-	labelElem.classList.remove('slidoc-amber');
-	labelElem.classList.add('slidoc-red');
-    } else if (secsLeft > 30) {
-	if (secsLeft == 60)
-	    labelElem.classList.add('slidoc-gray');
-	if (!(secsLeft % 10))
-	    timeElem.textContent = ' '+secsLeft;
+	timeElem.textContent = '0';
+	unitsElem.textContent = 'sec';
+
+	unitsElem.classList.remove('slidoc-gray');
+	unitsElem.classList.remove('slidoc-amber');
+	unitsElem.classList.add('slidoc-red');
+
+    } else if (secsLeft > 180) {
+	var minsLeft = Math.floor(secsLeft/60);
+	timeElem.textContent = ''+minsLeft;
+	unitsElem.textContent = 'min';
+	delaySec = 30;
+
+    } else if (secsLeft > 60) {
+	timeElem.textContent = ''+(10*Math.floor(secsLeft/10));
+	unitsElem.textContent = 'sec';
+	unitsElem.classList.add('slidoc-gray');
+	delaySec = 5;
     } else {
-	if (secsLeft == 30) {
-	    labelElem.classList.remove('slidoc-gray');
-	    labelElem.classList.add('slidoc-amber');
-	}
-	timeElem.textContent = ' '+secsLeft;
+	timeElem.textContent = ''+secsLeft;
+	unitsElem.textContent = 'sec';
+	unitsElem.classList.remove('slidoc-gray');
+	unitsElem.classList.add('slidoc-amber');
+	delaySec = 0.5;
     }
+    if (delaySec)
+	Sliobj.timedTick = setTimeout(timedProgressFunc, delaySec*1000);
 }
 
 /////////////////////////////////////
@@ -2117,7 +2145,7 @@ Slidoc.handleKey = function (keyName) {
 	if (keyName == 'esc')   { Sliobj.chainActive[1](); return false; }
 	if (keyName == 'right') { Sliobj.chainActive[2](); return false; }
 
-    } else if (Sliobj.printExamView && keyName == 'down') {
+    } else if (Sliobj.assessmentView && keyName == 'down') {
 	window.print();
 	if (Sliobj.gradableState)
 	    Slidoc.nextUser(true);
@@ -2727,7 +2755,7 @@ function selectUserCallback(auth, userId, result, retStatus) {
     preAnswer();
     var infoElem = document.getElementById('slidoc-session-info');
     var footerElem = document.getElementById('slidoc-body-footer');
-    if (Sliobj.printExamView) {
+    if (Sliobj.assessmentView) {
 	if (infoElem)
 	    infoElem.textContent = (Sliobj.userGrades[userId].name || userId);
 	if (footerElem)
@@ -3062,7 +3090,7 @@ Slidoc.manageSession = function() {
 
     if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
 	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleExam();">'+(Sliobj.printExamView?'End':'Begin')+' print view</span><br>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleAssessment();">'+(Sliobj.assessmentView?'End':'Begin')+' print view</span><br>';
     }
 
     if (Sliobj.gradableState) {
@@ -3335,8 +3363,7 @@ function slidocSetupAux(session, feedback) {
     var unhideChapters = false;
 
     if (Sliobj.session && !Sliobj.session.submitted && Sliobj.params.timedSec && Sliobj.timedSecLeft) {
-	toggleClass(true, 'slidoc-timed-view');
-	timedInit();
+	timedInit(Sliobj.timedSecLeft);
     }
 
     if (Sliobj.params.features.direct_answers)
@@ -3377,7 +3404,7 @@ function slidocSetupAux(session, feedback) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
 	    slidesVisible(true, j+1, slides);
-    } else if (!Sliobj.batchMode && !Sliobj.printExamView && !Sliobj.directAnswers && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
+    } else if (!Sliobj.batchMode && !Sliobj.assessmentView && !Sliobj.directAnswers && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
@@ -3471,12 +3498,12 @@ function slidocSetupAux(session, feedback) {
     initSessionPlugins(Sliobj.session);
 
     if ('assessment' in Sliobj.params.features) {
-	var printerElem = document.getElementById('slidoc-printer-display');
-	if (printerElem)
-	    printerElem.style.display = null;
+	var assessElem = document.getElementById('slidoc-assessment-display');
+	if (assessElem)
+	    assessElem.style.display = null;
     }
 
-    if (Sliobj.printExamView)
+    if (Sliobj.assessmentView)
 	toggleClass(true, 'slidoc-assessment-view');
 
     if (Sliobj.reloadCheck)
@@ -3496,7 +3523,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
 
-    if (getUserId() == Sliobj.params.testUserId || Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId)
+    if (getUserId() == Sliobj.params.testUserId || (Sliobj.gradableState && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) )
 	toggleClass(true, 'slidoc-testuser-view');
 
     if (collapsibleAccess())
@@ -3534,7 +3561,7 @@ function slidocSetupAux(session, feedback) {
 
     showSubmitted();
 
-    if (Sliobj.printExamView) {
+    if (Sliobj.assessmentView) {
 	var infoElem = document.getElementById('slidoc-session-info');
 	if (infoElem)
 	    infoElem.textContent = 'user ('+Sliobj.session.randomSeed+')';
@@ -3595,7 +3622,7 @@ function slidocSetupAux(session, feedback) {
 
     if (Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') {
 	restoreScroll();
-    } else if ('slides_only' in Sliobj.params.features && !Sliobj.printExamView && !Sliobj.gradableState) {
+    } else if ('slides_only' in Sliobj.params.features && !Sliobj.assessmentView && !Sliobj.gradableState) {
 	Slidoc.slideViewStart();
     }
 
@@ -3931,28 +3958,30 @@ function scoreSession(session) {
 				Sliobj.params, Sliobj.remoteAnswers);
 }
 
-Slidoc.toggleExam = function () {
+Slidoc.toggleAssessment = function () {
     if (Slidoc.serverCookie && !Slidoc.serverCookie.siteRole)
 	return;
     if (!Sliobj.params.gd_sheet_url) {
 	var href = location.protocol+'//'+location.host+location.pathname;
-	if (!Sliobj.printExamView)
+	if (!Sliobj.assessmentView)
 	    href += '?print=1';
 	location.href = href;
 	return;
     }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    Sliobj.printExamView = !Sliobj.printExamView;
-    toggleClass(Sliobj.printExamView, 'slidoc-assessment-view');
-    if (Sliobj.printExamView) {
+    Sliobj.assessmentView = !Sliobj.assessmentView;
+    toggleClass(Sliobj.assessmentView, 'slidoc-assessment-view');
+    if (Sliobj.assessmentView) {
 	if (Sliobj.currentSlide)
 	    Slidoc.slideViewEnd();
-	if (Sliobj.gradableState)
-	    selectUser(GService.gprofile.auth);
 	toggleClassAll(false, 'slidoc-answered-slideview', 'slidoc-slide');
-	alert('Use Down Arrow to print and advance');
+	alert('Entered print view. Use Down Arrow to print and advance');
+    } else {
+	alert('Ended print view.');
     }
+    if (Sliobj.gradableState)
+	selectUser(GService.gprofile.auth);
 }
 
 function preAnswer() {
@@ -3972,7 +4001,7 @@ function preAnswer() {
 	    // Choice question
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var shuffleStr = Sliobj.session.questionShuffle[qnumber] || '';
-	    if (shuffleStr && Sliobj.gradableState && !Sliobj.printExamView && Sliobj.testOverride) {
+	    if (shuffleStr && Sliobj.gradableState && !Sliobj.assessmentView && Sliobj.testOverride) {
 		// Do not display shuffled choices for grading; simply display shuffle string
 		var shuffleDiv = document.getElementById(slide_id+'-choice-shuffle');
 		if (shuffleDiv)
@@ -3983,7 +4012,7 @@ function preAnswer() {
 	}
     }
 
-    if (Sliobj.printExamView)
+    if (Sliobj.assessmentView)
 	return;
     
     var keys = Object.keys(Sliobj.session.questionsAttempted);
@@ -4560,6 +4589,7 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
     var match = parse_msg_re.exec(err_msg || '');
     var err_type = match ? match[2] : '';
     var err_info = match ? match[3] : ''
+    var remainingSec = 0;
     if (session || nullReturn) {
 	// Successful get/put
 	if (retryOpts.reload) {
@@ -4587,8 +4617,14 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	    if (retStatus.info.voteDate)
 		try { Sliobj.voteDate = new Date(retStatus.info.voteDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error VOTE_DATE: '+retStatus.info.voteDate, err); }
 
-	    if (retStatus.info.dueDate)
-		try { Sliobj.dueDate = new Date(retStatus.info.dueDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err); }
+	    if (retStatus.info.dueDate) {
+		try {
+		    Sliobj.dueDate = new Date(retStatus.info.dueDate);
+		    remainingSec = Math.floor( (Sliobj.dueDate.getTime() - (new Date()).getTime())/1000 );
+		} catch(err) {
+		    Slidoc.log('sessionGetPutAux: Error DUE_DATE: '+retStatus.info.dueDate, err);
+		}
+	    }
 
 	    var limitSlides = (controlledPace() || (isController() && session && session.submitted));
 	    if (retStatus.info.adminPaced && limitSlides) {
@@ -4631,14 +4667,19 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		localPut('auth', GService.gprofile.auth); // Save auth info on successful start
 	}
 
+	if (Sliobj.params.paceLevel < ADMIN_PACE && remainingSec > 10) {
+	    timedInit(remainingSec);
+	}
+
 	if (retStatus && retStatus.messages) {
 	    var alerts = [];
 	    for (var j=0; j < retStatus.messages.length; j++) {
 		var match = parse_msg_re.exec(retStatus.messages[j]);
 		var msg_type = match ? match[2] : '';
 		if (msg_type == 'NEAR_SUBMIT_DEADLINE' || msg_type == 'PAST_SUBMIT_DEADLINE') {
-		    if (session && !session.submitted)
+		    if (session && !session.submitted) {
 			alerts.push('<em>Warning:</em><br>'+match[3]);
+		    }
 		} else if (msg_type == 'INVALID_LATE_TOKEN') {
 		    alerts.push('<em>Warning:</em><br>'+match[3]);
 		}
@@ -5204,7 +5245,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	if (question_attrs.qtype == 'multichoice') {
 	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
 	} else {
-	    if (Sliobj.directAnswers && !Sliobj.timedClose) {
+	    if (Sliobj.directAnswers && Sliobj.timedEndTime && !Sliobj.timedClose) {
 		alert('Time expired');
 		return false;
 	    }
@@ -5458,16 +5499,34 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     var notes_elem = document.getElementById(notes_id);
     if (notes_elem && dispCorrect) {
 	// Display of any notes associated with this question
-	if (question_attrs.qtype == 'choice' && response) {
-	    var choiceIndex = 1 + response.toUpperCase().charCodeAt(0) - 'A'.charCodeAt(0);
-	    if (choiceIndex > 0) {
-		// Display choice notes
-		var choiceNotesId = slide_id+"-choice-notes-"+response.toUpperCase();
-		Slidoc.classDisplay(choiceNotesId, 'block');
-		// Redisplay choiceNotes JS
-		var elems = document.getElementsByClassName(notes_id);
-		for (var j=0; j<elems.length; j++)
-		    expandInlineJS(elems[j], 'choiceNotes', choiceIndex);
+	if (question_attrs.qtype == 'choice') {
+	    // Display choice notes
+	    var idPrefix = slide_id+'-choice-notes-';
+	    var altChoice = shuffleStr && shuffleStr.charAt(0) != '0'
+	    if (altChoice && document.getElementById(idPrefix+'Q2'))
+		Slidoc.classDisplay(idPrefix+'Q2', 'block');
+	    else
+		Slidoc.classDisplay(idPrefix+'Q', 'block');
+
+	    if (response) {
+		var choiceSuffix = response.toUpperCase();
+		var choiceIndex = 1 + choiceSuffix.charCodeAt(0) - 'A'.charCodeAt(0);
+		if (choiceIndex > 0) {
+		    // Display choice notes
+
+		    // Display alternate notes, if present
+		    if (altChoice && document.getElementById(idPrefix+choiceSuffix+'2'))
+			Slidoc.classDisplay(idPrefix+choiceSuffix+'2', 'block');
+		    else
+			Slidoc.classDisplay(idPrefix+choiceSuffix, 'block');
+
+		    // Redisplay choiceNotes JS
+		    // defining function 'choiceNotes: function(n) {..}' in a plugin allows choice-dependent notes display
+		    // (Negative n for alt choice)
+		    var elems = document.getElementsByClassName(notes_id);
+		    for (var j=0; j<elems.length; j++)
+			expandInlineJS(elems[j], 'choiceNotes', (altChoice ? -choiceIndex : choiceIndex));
+		}
 	    }
 	}
 	Slidoc.idDisplay(notes_id);
@@ -5480,7 +5539,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 
     // Question has been answered
     var slideElem = document.getElementById(slide_id);
-    if (!Sliobj.printExamView && (!Sliobj.directAnswers || (Sliobj.session && Sliobj.session.submitted)) )
+    if (!Sliobj.assessmentView && (!Sliobj.directAnswers || (Sliobj.session && Sliobj.session.submitted)) )
 	slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
@@ -6267,7 +6326,7 @@ Slidoc.startPaced = function () {
     } else {
     var startMsg = 'Starting'+((Sliobj.params.paceLevel && ('slides_only' in Sliobj.params.features))?' strictly':'')+' paced session '+Sliobj.sessionName+':<br>';
     if (Sliobj.timedSecLeft)
-	startMsg += '&nbsp;&nbsp;<b>You have  '+Sliobj.timedSecLeft+' seconds left to complete this timed session.</b><br>';
+	startMsg += '&nbsp;&nbsp;<b>You have  '+Sliobj.timedSecLeft+' seconds left to complete this session.</b><br>';
     if (!('slides_only' in Sliobj.params.features))
 	startMsg += '&nbsp;&nbsp;<em>You may switch between slide and document views using Escape key or Square icon at bottom left.</em><br>';
     if (Sliobj.params.questionsMax)
@@ -6298,7 +6357,7 @@ Slidoc.startPaced = function () {
 	// Unhide all slides
 	slidesVisible(true);
 	restoreScroll();
-    } else if (!Sliobj.batchMode && !Sliobj.printExamView) {
+    } else if (!Sliobj.batchMode && !Sliobj.assessmentView) {
 	Slidoc.slideViewStart();
     }
 }

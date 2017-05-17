@@ -30,6 +30,7 @@ body:not(.slidoc-testuser-view) .slidoc-testuseronly,
 body:not(.slidoc-collapsible-view) .slidoc-collapsibleonly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
 body:not(.slidoc-assessment-view) .slidoc-assessmentonly,
+body:not(.slidoc-testuser-view):not(.slidoc-gradable-view) .slidoc-testgradableonly,
 body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
     display: none; }
 
@@ -56,7 +57,7 @@ body.slidoc-gradable-view section:not(.slidoc-answered-slideview) .slidoc-render
 body:not(.slidoc-gradable-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
 section.slidoc-answered-slideview:not(.slidoc-grading-slideview) .slidoc-render-button { display: none; }
 
-section:not(.slidoc-answered-slideview) .slidoc-choice-selected {background: #aaa; }
+section:not(.slidoc-answered-slideview) .slidoc-choice-selected {background: #ffbf00; }
 section.slidoc-answered-slideview .slidoc-choice-selected {text-decoration: line-through; }
 
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-input { display: none; }

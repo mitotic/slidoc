@@ -795,6 +795,7 @@ class SlidocRenderer(MathRenderer):
         self.choices = None
         self.choice_end = None
         self.choice_questions = 0
+        self.choice_notes = set()
         self.count_of_the_above = 0
         self.cur_qtype = ''
         self.cur_header = ''
@@ -1360,7 +1361,14 @@ class SlidocRenderer(MathRenderer):
         value = name if star else ''
         if self.notes_end:
             # Choice notes
-            return '''</p><p class="slidoc-choice-notes %s-choice-notes-%s" style="display: none;">''' % (self.get_slide_id(), name.upper())
+            notes_name = name.upper()
+            if notes_name not in self.choice_notes:
+                self.choice_notes.add(notes_name)
+            else:
+                notes_name += '2'
+                if notes_name in self.choice_notes:
+                    return '''</p><p>'''
+            return '''</p><p class="slidoc-choice-notes %s-choice-notes-%s" style="display: none;">''' % (self.get_slide_id(), notes_name)
 
         alt_choice = False
         if name == 'Q':

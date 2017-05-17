@@ -2431,11 +2431,12 @@ class ProxyHandler(BaseHandler):
 
         # Replace root-signed tokens with site-specific tokens
         modify_user_auth(args)
-        if (args.get('actions') or args.get('modify')) and Options['gsheet_url'] and not Options['dry_run']:
+        if (args.get('actions') or args.get('modify')) and Options['gsheet_url']:
             sessionName = args.get('sheet','')
-            actionSet = set(x.strip() for x in args.get('actions','').split(',') if x.strip())
             errMsg = ''
-            if args.get('modify'):
+            if Options['dry_run']:
+                errMsg = 'Actions/modify not permitted in dry run'
+            elif args.get('modify'):
                 if not sdproxy.startPassthru(sessionName):
                     errMsg = 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'
 
