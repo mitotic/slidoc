@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.4p'
+VERSION = '0.97.4q'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -132,6 +132,7 @@ FUTURE_DATE = 'future'
 TRUNCATE_DIGEST = 8
 
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
+QFIELD_MOD_RE = re.compile(r"^(q_other|q_comments|q(\d+)_(comments|grade))$")
 
 DELETED_POST = '(deleted)'
 POST_PREFIX_RE = re.compile(r'^Post:(\d+):([-\d:T]+)(\s|$)')
@@ -2485,7 +2486,7 @@ def sheetAction(params, notrace=False):
 
                         elif colHeader not in MIN_HEADERS and not colHeader.endswith('Timestamp'):
                             # Update row values for header (except for id, name, email, altid, *Timestamp)
-                            if not restrictedSheet and not twitterSetting and not importSession and (headerColumn <= fieldsMin or not re.match("^q\d+_(comments|grade)$", colHeader)):
+                            if not restrictedSheet and not twitterSetting and not importSession and (headerColumn <= fieldsMin or not QFIELD_MOD_RE.match(colHeader)):
                                 raise Exception("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'")
 
                             if colHeader.lower().endswith('date') or colHeader.lower().endswith('time'):
@@ -2498,7 +2499,7 @@ def sheetAction(params, notrace=False):
                                 if hmatch and (hmatch.group(2) == 'grade' or hmatch.group(2) == 'comments'):
                                     qno = int(hmatch.group(1))
                                     if rowValues[teamCol-1] and questions and qno <= len(questions) and questions[qno-1].get('team','') == 'response':
-                                        # Broadcast grade/comments to all team members
+                                        # Broadcast question grade/comments to all team members (q_other/q_comments are not broadcast)
                                         teamCopyCols.append(headerColumn)
 
                             modValue = colValue

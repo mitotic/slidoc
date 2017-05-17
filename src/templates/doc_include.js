@@ -2435,7 +2435,8 @@ Slidoc.PluginManager.invoke = function (pluginInstance, action) //... extra argu
     //    {name:pluginName, score:1/0/0.75/.../null, invalid: invalid_msg, output:output, tests:0/1/2}
 
     var extraArgs = Array.prototype.slice.call(arguments).slice(2);
-    Slidoc.log('Slidoc.PluginManager.invoke:', pluginInstance, action, extraArgs);
+    if (action != 'init')
+	Slidoc.log('Slidoc.PluginManager.invoke:', pluginInstance, action, extraArgs);
 
     if (!(action in pluginInstance)) {
 	Slidoc.log('ERROR Plugin action '+pluginInstance.name+'.'+action+' not defined');
@@ -2554,7 +2555,7 @@ function evalPluginArgs(pluginName, argStr, slide_id) {
 }
 
 function createPluginInstance(pluginName, nosession, slide_id, slideData) {
-    Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id);
+    ///Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id);
     var pluginDef = Slidoc.PluginDefs[pluginName];
     if (!pluginDef) {
 	Slidoc.log('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEndDef');
@@ -3845,7 +3846,7 @@ function responseAvailable(session, qnumber) { // qnumber is optional
 }
 
 function checkGradingCallback(userId, result, retStatus) {
-    Slidoc.log('checkGradingCallback:', userId, result, retStatus);
+    ///Slidoc.log('checkGradingCallback:', userId, result, retStatus);
     if (!result) {
 	sessionAbort('ERROR in checkGradingCallback: '+ retStatus.error);
     }
@@ -3854,7 +3855,7 @@ function checkGradingCallback(userId, result, retStatus) {
 }
 
 function checkGradingStatus(userId, session, feedback) {
-    Slidoc.log('checkGradingStatus:', userId);
+    ///Slidoc.log('checkGradingStatus:', userId);
     if (Sliobj.userGrades[userId].needGrading)
 	return;
 
@@ -3904,7 +3905,7 @@ function checkGradingStatus(userId, session, feedback) {
 	    }
 	}
     }
-    Slidoc.log('checkGradingStatus:B', need_grading, updates);
+    ///Slidoc.log('checkGradingStatus:B', need_grading, updates);
 
     if (!Object.keys(need_grading).length && !Sliobj.userGrades[userId].submitted)
 	Sliobj.userGrades[userId].needGrading = null;
@@ -4014,7 +4015,14 @@ function preAnswer() {
 
     if (Sliobj.assessmentView)
 	return;
-    
+
+    if (attr_vals.length) {
+	// Initialize q_other/q_comments display
+	var gradeValue = Sliobj.feedback ? (Sliobj.feedback.q_other || '') : '';
+	var commentsValue = Sliobj.feedback ? (Sliobj.feedback.q_comments || '') : '';
+	displayRemarks(commentsValue, gradeValue);
+    }
+
     var keys = Object.keys(Sliobj.session.questionsAttempted);
     for (var j=0; j<keys.length; j++) {
 	var qnumber = keys[j];
@@ -5235,7 +5243,7 @@ function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
 }
 
 Slidoc.choiceClick = function (elem, slide_id, choice_val) {
-    Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val);
+    ///Slidoc.log('Slidoc.choiceClick:', slide_id, choice_val);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
 	return;
@@ -5307,7 +5315,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
     // Handle answer types: number, text
     // expect: should only be defined for setup
     // force: '', 'setup', 'submit, 'finalize', 'controlled', 'direct'
-    Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
+    ///Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
 	return;
@@ -5399,7 +5407,6 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    }
 	}
 
-	Slidoc.log("Slidoc.answerClick:choice", response);
 	var corr_answer = expect || question_attrs.correct || '';
 	if (corr_answer  && corr_answer.indexOf('=') < 0 && displayCorrect(question_attrs)) {
 	    var choiceBlock = document.getElementById(slide_id+'-choice-block');
@@ -5450,7 +5457,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     // PluginResp: name:'...', score:1/0/null, correctAnswer: 'correct_ans',
     //  invalid: 'invalid_msg', output:'output', tests:0/1/2} The last three are for code execution
-    Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, expect, response, pluginResp);
+    ///Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, expect, response, pluginResp);
     expect = expect || '';
 
     if (!setup && Sliobj.session.paced)
@@ -5461,8 +5468,6 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     var corr_answer      = expect || question_attrs.correct || '';
     var corr_answer_html = expect ? expect : (question_attrs.correct_html || '');
     var dispCorrect = displayCorrect(question_attrs);
-
-    Slidoc.log('Slidoc.answerUpdate:', slide_id);
 
     var qscore = null;
     if (pluginResp) {
@@ -5687,7 +5692,7 @@ function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
     }
 
     var textValue = inputElem.value;
-    if (renderMarkdown) {
+    if (textValue && renderMarkdown) {
 	renderElem.innerHTML = MDConverter(textValue, true);
 	if (window.MathJax)
 	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, renderElem.id]);
@@ -5698,14 +5703,18 @@ function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
     
 Slidoc.renderText = function(elem, slide_id) {
     Slidoc.log("Slidoc.renderText:", elem, slide_id);
-    var question_attrs = getQuestionAttrs(slide_id);
-    if (Sliobj.gradableState) {
-	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
+    if (!slide_id) {
+	renderDisplay('slidoc-remarks', '-comments-textarea', '-comments-content', true);
     } else {
-	if (question_attrs.explain) {
-	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain.slice(-8) == 'markdown')
+	var question_attrs = getQuestionAttrs(slide_id);
+	if (Sliobj.gradableState) {
+	    renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
 	} else {
-	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
+	    if (question_attrs.explain) {
+		renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain.slice(-8) == 'markdown')
+	    } else {
+		renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
+	    }
 	}
     }
 }
@@ -5718,7 +5727,7 @@ Slidoc.renderText = function(elem, slide_id) {
 function scoreAnswer(response, qtype, corrAnswer) {
     // Handle answer types: choice, number, text
     // Returns null (unscored), or 0..1
-    Slidoc.log('Slidoc.scoreAnswer:', response, qtype, corrAnswer);
+    ///Slidoc.log('Slidoc.scoreAnswer:', response, qtype, corrAnswer);
 
     if (!corrAnswer)
         return null;
@@ -6223,7 +6232,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	displayCommentSuggestions(slide_id);
 
 	setAnswerElement(slide_id, '-grade-content', gradeValue);
-	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true)
+	renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
 
 	var gradeField = 'q'+question_attrs.qnumber+'_grade';
 	var commentsField = 'q'+question_attrs.qnumber+'_comments';
@@ -6300,6 +6309,104 @@ function gradeUpdateAux(userId, slide_id, qnumber, teamUpdate, callback, result,
 	}
     }
     Slidoc.reportTestAction('gradeUpdate');
+}
+
+
+function displayRemarks(commentsValue, gradeValue) {
+    Slidoc.log('displayRemarks: ', commentsValue, gradeValue);
+    var gradeInput = document.getElementById('slidoc-remarks-input');
+    var gradeDisplay = document.getElementById('slidoc-remarks-content');
+    var commentsArea = document.getElementById('slidoc-remarks-comments-textarea');
+    var commentsDisplay = document.getElementById('slidoc-remarks-comments-content');
+
+    if (gradeInput)
+	gradeInput.value = gradeValue || '';
+    if (gradeDisplay) {
+	gradeDisplay.style.display = gradeValue ? null : 'none';
+	gradeDisplay.textContent = gradeValue ? ('Extra points: '+gradeValue) : '';
+    }
+    if (commentsArea) {
+	commentsArea.value = commentsValue || '';
+	if (commentsDisplay) {
+	    commentsDisplay.style.display = commentsValue ? null : 'none';
+	    renderDisplay('slidoc-remarks', '-comments-textarea', '-comments-content', true);
+	}
+    }
+}
+
+Slidoc.remarksClick = function (elem) {
+    Slidoc.log("Slidoc.remarksClick:", elem);
+    if (Slidoc.sheetIsLocked()) {
+	alert(Slidoc.sheetIsLocked());
+	return;
+    }
+
+    var userId = GService.gprofile.auth.id;
+    if (!Sliobj.userGrades[userId].allowGrading) {
+	alert('User '+userId+' must submit before session can be graded');
+	return;
+    } else if (Sliobj.userGrades[userId].late) {
+	if (!window.confirm('Late submission. Do you still want to grade it?'))
+	    return;
+    }
+
+    var remarksStart = document.getElementById('slidoc-remarks-start-click');
+    var remarksEdit = document.getElementById('slidoc-remarks-edit');
+    var gradeInput = document.getElementById('slidoc-remarks-input');
+    var gradeDisplay = document.getElementById('slidoc-remarks-content');
+    var commentsArea = document.getElementById('slidoc-remarks-comments-textarea');
+    var commentsDisplay = document.getElementById('slidoc-remarks-comments-content');
+
+    var startGrading = !remarksStart.style.display;
+    if (startGrading) {
+	remarksStart.style.display = 'none';
+	remarksEdit.style.display = null;
+	gradeDisplay.style.display = 'none';
+	commentsDisplay.style.display = null;
+    } else {
+	remarksStart.style.display = null;
+	remarksEdit.style.display = 'none';
+	var gradeValue = gradeInput.value.trim();
+	var commentsValue = commentsArea.value.trim();
+	displayRemarks(commentsValue, gradeValue);
+
+	var gradeField = 'q_other';
+	var commentsField = 'q_comments';
+	if (!(gradeField in Sliobj.gradeFieldsObj))
+	    Slidoc.log('Slidoc.remarksClick: ERROR grade field '+gradeField+' not found in sheet');
+	var updates = {id: userId};
+	updates[gradeField] = gradeValue;
+	updates[commentsField] = commentsValue;
+	remarksUpdate(updates);
+    }
+}
+
+function remarksUpdate(updates, callback) {
+    Slidoc.log('remarksUpdate: ', updates, !!callback);
+    var updateObj = copyAttributes(updates);
+    updateObj.Timestamp = null;  // Ensure that Timestamp is updated
+
+    var gsheet = getSheet(Sliobj.sessionName);
+    var retryOpts = {type: 'gradeUpdate'};
+    retryOpts.call = remarksUpdate.bind(null, updates, callback);
+
+    try {
+	gsheet.updateRow(updateObj, {}, sessionGetPutAux.bind(null, null, 'update',
+		   remarksUpdateAux.bind(null, updateObj.id, callback), retryOpts) );
+    } catch(err) {
+	sessionAbort(''+err, err.stack);
+	return;
+    }
+
+    showPendingCalls();
+    
+    if (gsheet.pendingUpdates > 1)
+	return;
+}
+
+function remarksUpdateAux(userId, callback, result, retStatus) {
+    Slidoc.log('remarksUpdateAux: ', userId, !!callback, result, retStatus);
+    Slidoc.reportTestAction('remarksUpdate');
 }
 
 /////////////////////////////////////////
@@ -7134,7 +7241,7 @@ Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
 	for (var k=1; k<curElems.length; k++) {
 	    if (!curElems[k])
 		continue;
-	    if (k == curElems.length-1 && lastMarkdown && window.MDConverter)
+	    if (k == curElems.length-1 && lastMarkdown && window.PagedownConverter)
 		childNodes[k-1].innerHTML = MDConverter(curElems[k], true);
 	    else
 		childNodes[k-1].textContent = curElems[k];

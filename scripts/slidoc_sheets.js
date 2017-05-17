@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.4p';
+var VERSION = '0.97.4q';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -161,6 +161,7 @@ var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
 
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
+var QFIELD_MOD_RE = /^(q_other|q_comments|q(\d+)_(comments|grade))$/;
 
 var DELETED_POST = '(deleted)';
 var POST_PREFIX_RE = /^Post:(\d+):([-\d:T]+)(\s|$)/;
@@ -1793,13 +1794,13 @@ function sheetAction(params) {
 			    // Do not modify field
 			} else if (MIN_HEADERS.indexOf(colHeader) == -1 && colHeader.slice(-9) != 'Timestamp') {
 			    // Update row values for header (except for id, name, email, altid, *Timestamp)
-			    if (!restrictedSheet && !twitterSetting && !importSession && (headerColumn <= fieldsMin || !/^q\d+_(comments|grade)$/.exec(colHeader)) )
+			    if (!restrictedSheet && !twitterSetting && !importSession && (headerColumn <= fieldsMin || !QFIELD_MOD_RE.exec(colHeader)) )
 				throw("Error::Cannot selectively update user-defined column '"+colHeader+"' in sheet '"+sheetName+"'");
 			    var hmatch = QFIELD_RE.exec(colHeader);
                             if (hmatch && (hmatch[2] == 'grade' || hmatch[2] == 'comments')) {
                                 var qno = parseInt(hmatch[1]);
                                 if (rowValues[teamCol-1] && questions && qno <= questions.length && questions[qno-1].team == 'response') {
-                                    // Broadcast grade/comments to all team members
+                                    // Broadcast grade/comments to all team members (q_other/q_comments are not broadcast)
                                     teamCopyCols.push(headerColumn);
                                 }
                             }

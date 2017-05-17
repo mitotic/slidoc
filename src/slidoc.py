@@ -624,6 +624,9 @@ class MarkdownWithSlidoc(MarkdownWithMath):
 
         first_slide_pre = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
 
+        if self.renderer.options['config'].pace:
+            first_slide_pre += SlidocRenderer.remarks_template
+
         if self.renderer.qconcepts[0] or self.renderer.qconcepts[1]:
             # Include sorted list of concepts related to questions
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
@@ -677,6 +680,19 @@ class SlidocRenderer(MathRenderer):
     plugin_content_template = '''<div id="%(pluginId)s-content" class="%(pluginLabel)s-content slidoc-plugin-content slidoc-pluginonly" data-plugin="%(pluginName)s" data-number="%(pluginNumber)s" data-args="%(pluginInitArgs)s" data-button="%(pluginButton)s" data-slide-id="%(pluginSlideId)s">%(pluginContent)s</div><!--%(pluginId)s-content-->'''
 
     plugin_body_template = '''<div id="%(pluginId)s-body" class="%(pluginLabel)s-body slidoc-plugin-body slidoc-pluginonly">%(pluginBodyDef)s</div><!--%(pluginId)s-body-->'''
+
+    remarks_template = '''
+  <button id="slidoc-remarks-start-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly" onclick="Slidoc.remarksClick(this);">Edit remarks</button>
+  <div id="slidoc-remarks-edit" class="slidoc-grade-element slidoc-gradableonly" style="display: none;">
+    <button id="slidoc-remarks-save-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button" onclick="Slidoc.remarksClick(this);">Save remarks</button>
+    <span id="slidoc-remarksprefix" class="slidoc-grade slidoc-gradeprefix"><em>Extra points:</em></span>
+    <input id="slidoc-remarks-input" type="number" class="slidoc-grade-input"></input>
+    <textarea id="slidoc-remarks-comments-textarea" name="textarea" class="slidoc-comments-textarea" cols="60" rows="7" ></textarea>
+    <button id="slidoc-remarks-render-button" class="slidoc-clickable slidoc-button" onclick="Slidoc.renderText(this);">Render</button>
+  </div>
+  <div id="slidoc-remarks-comments-content" class="slidoc-comments slidoc-comments-content" style="display: none;"></div>
+  <span id="slidoc-remarks-content" class="slidoc-grade slidoc-grade-content" style="display: none;"></span>
+'''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(disabled)s" data-qnumber="%(qno)d">Answer:</span>'''
@@ -765,7 +781,7 @@ class SlidocRenderer(MathRenderer):
         self.block_test_counter = 0
         self.block_output_counter = 0
         self.toggle_slide_id = ''
-        self.render_markdown = False
+        self.render_markdown = 'markdown' in self.options['config'].features
         self.render_mathjax = False
         self.plugin_number = 0
         self.plugin_defs = {}
@@ -4019,6 +4035,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   grade_response: Grade text responses and explanations; provide comments
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
 #   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
+#   markdown: Use markdown for remarks, comments, explanations etc.
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
@@ -4036,7 +4053,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'direct_answers', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'direct_answers', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

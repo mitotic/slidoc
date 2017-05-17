@@ -2,7 +2,7 @@ Share = {
     // Simple share plugin
 
     init: function() {
-	Slidoc.log('Slidoc.Plugins.Share.init:', this);
+	///Slidoc.log('Slidoc.Plugins.Share.init:', this);
 	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
 	this.countElem = document.getElementById(this.pluginId+'-sharecount');
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
