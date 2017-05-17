@@ -5116,13 +5116,25 @@ Slidoc.allDisplay = function (elem) {
 }
 
 Slidoc.classDisplay = function (className, displayValue) {
-   // Set display value for all elements with class
+   // Set/toggle display value for all elements with class
     var elements = document.getElementsByClassName(className);
     for (var i=0; i < elements.length; i++) {
 	if (!displayValue && displayValue !== null)
 	    elements[i].style.display = (elements[i].style.display == 'none') ? null : 'none';
 	else
 	    elements[i].style.display = displayValue;
+    }
+   return false;
+}
+
+Slidoc.elemDisplay = function (elemId, displayValue) {
+    // Set/toggle display value for element with id (if present)
+    var elem = document.getElementById(elemId);
+    if (elem) {
+	if (!displayValue && displayValue !== null)
+	    elem.style.display = (elem.style.display == 'none') ? null : 'none';
+	else
+	    elem.style.display = displayValue;
     }
    return false;
 }
@@ -5502,11 +5514,11 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	if (question_attrs.qtype == 'choice') {
 	    // Display choice notes
 	    var idPrefix = slide_id+'-choice-notes-';
-	    var altChoice = shuffleStr && shuffleStr.charAt(0) != '0'
+	    var altChoice = shuffleStr && shuffleStr.charAt(0) != '0';
 	    if (altChoice && document.getElementById(idPrefix+'Q2'))
-		Slidoc.classDisplay(idPrefix+'Q2', 'block');
+		Slidoc.elemDisplay(idPrefix+'Q2', 'block');
 	    else
-		Slidoc.classDisplay(idPrefix+'Q', 'block');
+		Slidoc.elemDisplay(idPrefix+'Q', 'block');
 
 	    if (response) {
 		var choiceSuffix = response.toUpperCase();
@@ -5516,9 +5528,9 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 
 		    // Display alternate notes, if present
 		    if (altChoice && document.getElementById(idPrefix+choiceSuffix+'2'))
-			Slidoc.classDisplay(idPrefix+choiceSuffix+'2', 'block');
+			Slidoc.elemDisplay(idPrefix+choiceSuffix+'2', 'block');
 		    else
-			Slidoc.classDisplay(idPrefix+choiceSuffix, 'block');
+			Slidoc.elemDisplay(idPrefix+choiceSuffix, 'block');
 
 		    // Redisplay choiceNotes JS
 		    // defining function 'choiceNotes: function(n) {..}' in a plugin allows choice-dependent notes display

@@ -1368,7 +1368,7 @@ class SlidocRenderer(MathRenderer):
                 notes_name += '2'
                 if notes_name in self.choice_notes:
                     return '''</p><p>'''
-            return '''</p><p class="slidoc-choice-notes %s-choice-notes-%s" style="display: none;">''' % (self.get_slide_id(), notes_name)
+            return '''</p><p id="%s-choice-notes-%s" class="slidoc-choice-notes" style="display: none;">''' % (self.get_slide_id(), notes_name)
 
         alt_choice = False
         if name == 'Q':
