@@ -1517,7 +1517,6 @@ class SlidocRenderer(MathRenderer):
         text = opt_comps[0]
         if text and (text.split('=')[0].strip() in all_options):
              abort("    ****ANSWER-ERROR: %s: 'Answer: %s ...' is not a valid answer type. Insert semicolon before answer option in slide %s" % (self.options["filename"], text, self.slide_number))
-             return
 
         weight_answer = ''
         maxchars = 0           # Max. length (in characters) for textarea
@@ -1559,7 +1558,6 @@ class SlidocRenderer(MathRenderer):
                     opt_name = option_match.group(1)
                     if option_match.group(3) and option_match.group(3) not in opt_values[opt_name]:
                         abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting %s for slide %s" % (self.options["filename"], opt_name, option_match.group(3), '/'.join(opt_values[opt_name]), self.slide_number))
-                        return ''
 
                     answer_opts[opt_name] = option_match.group(3) or opt_values[opt_name][0]
                 else:
@@ -1583,14 +1581,23 @@ class SlidocRenderer(MathRenderer):
         plugin_arg = ''
         plugin_match = re.match(r'^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$', text)
         if plugin_match:
+            # [correct_answer_or_type]=Plugin_name.expect([n])
             text = plugin_match.group(1).strip()
             plugin_name = plugin_match.group(2)
             plugin_action = plugin_match.group(3)
             plugin_arg = plugin_match.group(4) or ''
 
+        valid_simple_types = ['choice', 'multichoice', 'number', 'text', 'point', 'line']
+        valid_all_types = valid_simple_types + ['text/x-code', 'text/markdown', 'text/multiline']
         qtype = ''
+        if '=' in text:
+            # Check if '[correct_answer]=answer_type'
+            text, _, qtype = text.rpartition('=')
+            if qtype not in valid_simple_types:
+                abort("    ****ANSWER-ERROR: %s: '%s' is not a valid answer type; expected %s in slide %s" % (self.options["filename"], qtype, '|'.join(valid_simple_types), self.slide_number))
+
         num_match = re.match(r'^([-+/\d\.eE\s%]+)$', text)
-        if num_match and text.lower() != 'e':
+        if num_match and text.lower() != 'e' and (not qtype or qtype == 'number'):
             # Numeric default answer
             text = num_match.group(1).strip()
             ans, error = '', ''
@@ -1607,36 +1614,37 @@ class SlidocRenderer(MathRenderer):
                 qtype = 'number'
                 text = ans + (' +/- '+error if error else '')
             else:
-                message("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number))
+                abort("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number))
 
-        elif text.lower() in ('choice', 'multichoice', 'number', 'text', 'text/x-code', 'text/markdown', 'text/multiline', 'point', 'line'):
-            # Unspecified answer
-            qtype = text.lower()
-            text = ''
-        elif not plugin_name:
-            tem_name, _, tem_args = text.partition('/')
-            tem_name = tem_name.strip()
-            tem_args = tem_args.strip()
+        elif not qtype:
+            if text.lower() in valid_all_types:
+                # Unspecified correct answer
+                qtype = text.lower()
+                text = ''
+            elif not plugin_name:
+                # Check if 'Plugin_name/arg'
+                tem_name, _, tem_args = text.partition('/')
+                tem_name = tem_name.strip()
+                tem_args = tem_args.strip()
 
-            arg_pattern = None
-            if tem_name in self.plugin_defs:
-                arg_pattern = self.plugin_defs[tem_name].get('ArgPattern', '')
-            elif tem_name in self.options['plugin_defs']:
-                arg_pattern = self.options['plugin_defs'][tem_name].get('ArgPattern', '')
+                arg_pattern = None
+                if tem_name in self.plugin_defs:
+                    arg_pattern = self.plugin_defs[tem_name].get('ArgPattern', '')
+                elif tem_name in self.options['plugin_defs']:
+                    arg_pattern = self.options['plugin_defs'][tem_name].get('ArgPattern', '')
 
-            if arg_pattern is not None:
-                plugin_name = tem_name
-                plugin_action = 'response'
-                if not arg_pattern:
-                    # Ignore argument
-                    qtype = plugin_name
-                    text = ''
-                elif re.match(arg_pattern, tem_args):
-                    qtype = plugin_name + '/' + tem_args
-                    text = ''
-                else:
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
-
+                if arg_pattern is not None:
+                    plugin_name = tem_name
+                    plugin_action = 'response'
+                    if not arg_pattern:
+                        # Ignore argument
+                        qtype = plugin_name
+                        text = ''
+                    elif re.match(arg_pattern, tem_args):
+                        qtype = plugin_name + '/' + tem_args
+                        text = ''
+                    else:
+                        abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
 
         if plugin_name:
             if 'inline_js' in self.options['config'].strip and plugin_action == 'expect':
@@ -1683,7 +1691,7 @@ class SlidocRenderer(MathRenderer):
             self.cur_qtype = qtype or 'text'
 
         elif qtype and qtype != self.cur_qtype:
-            message("    ****ANSWER-ERROR: %s: 'Answer: %s' line ignored; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number))
+            abort("    ****ANSWER-ERROR: %s: 'Answer: %s' line inconsistent; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number))
 
         if self.cur_qtype == 'Code/python':
             self.load_python = True
@@ -1705,7 +1713,7 @@ class SlidocRenderer(MathRenderer):
                 except Exception, excp:
                     import traceback
                     traceback.print_exc()
-                    message("    ****ANSWER-ERROR: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp))
+                    message("    ****ANSWER-WARNING: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp))
 
         multiline_answer = self.cur_qtype.startswith('text/')
         if multiline_answer:
@@ -1785,7 +1793,7 @@ class SlidocRenderer(MathRenderer):
         hide_answer = self.options['config'].pace or 'show_correct' not in self.options['config'].features 
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
-            message("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
+            abort("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
 
         if not hide_answer:
             # No hiding of correct answers
