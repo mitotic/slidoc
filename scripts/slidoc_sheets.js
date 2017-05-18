@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5';
+var VERSION = '0.97.5b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -306,6 +306,59 @@ function getRosterEntry(userId) {
 // Comparison function for sorting
 function numSort(a,b) {return a-b;}
 
+// Call tracking (level 0 => end of call)
+function trackCall(level, msg, endCall) {}
+
+function startCallTracking(logLevel, params, sheetName, origUser) {
+    var curDate = new Date();
+    var curTime = curDate.getTime();
+    var callId = params.id || 'ID';
+    if (origUser && origUser != callId)
+	callId += '/'+origUser;
+    var callType = '';
+    var callParams = 'sheet='+(sheetName||'');
+    if (params.get)
+	callParams += ', get';
+    if (params.all)
+	callParams += ', all';
+    if (params.create)
+	callParams += ', create';
+    if (params.proxy) {
+	callType = 'proxy';
+	if (params.allupdates)
+	    callParams += ', allupdates='+params.data.length;
+    } else if (params.actions) {
+	callType = 'actions';
+	callParams += ', actions='+params.actions;
+    } else if (params.update) {
+	callType = 'selectedUpdates';
+    } else if (params.row) {
+	callType = 'rowUpdate';
+    }
+    var callHeaders = ['id', 'type', 'params', 'startTime', 'elapsed', 'status'];
+    var callValues = [callId, callType, callParams, curDate];
+
+    var callSheet = getSheet('call_log');
+    if (!callSheet) {
+	callSheet = createSheet('call_log', callHeaders);
+    }
+    var callRows = callSheet.getLastRow();
+    callSheet.insertRowBefore(callRows+1);
+    callSheet.getRange(callRows+1, 1, 1, callValues.length).setValues([callValues]);
+    var callEndRange = callSheet.getRange(callRows+1, callValues.length+1, 1, 2);
+    var progressCol = callHeaders.length + 1;
+    function trackCallAux(level, msg, endCall) {
+	if (!level) {
+	    callEndRange.setValues([[(new Date()).getTime() - curTime, msg]]);
+	} else if (level <= logLevel) {
+	    callSheet.getRange(callRows+1, progressCol, 1, 1).setValues([[((new Date()).getTime() - curTime)+': '+msg]]);
+	    progressCol += 1;
+	}
+    }
+    trackCall = trackCallAux;
+}
+
+
 // If you don't want to expose either GET or POST methods you can comment out the appropriate function
 function doGet(evt){
   return handleResponse(evt);
@@ -465,58 +518,13 @@ function sheetAction(params) {
 	var curTime = curDate.getTime();
 
 	var logCall = params.logcall ? (parseInt(params.logcall) || 0) : 0;
-	if (logCall) {
-	    var callId = paramId;
-	    if (origUser && origUser != paramId)
-		callId += '/'+origUser;
-	    var callType = '';
-	    var callParams = 'sheet='+sheetName;
-	    if (params.get)
-		callParams += ', get';
-	    if (params.all)
-		callParams += ', all';
-	    if (params.create)
-		callParams += ', create';
-	    if (proxy) {
-		callType = 'proxy';
-		if (params.allupdates)
-		    callParams += ', allupdates='+params.data.length;
-	    } else if (performActions) {
-		callType = 'actions';
-		callParams += ', actions='+performActions;
-	    } else if (params.update) {
-		callType = 'selectedUpdates';
-	    } else if (params.row) {
-		callType = 'rowUpdate';
-	    }
-	    var callHeaders = ['id', 'type', 'params', 'startTime', 'elapsed', 'status'];
-	    var callValues = [callId, callType, callParams, curDate];
-
-	    var callSheet = getSheet('call_log');
-	    if (!callSheet) {
-		callSheet = createSheet('call_log', callHeaders);
-	    }
-	    var callRows = callSheet.getLastRow();
-	    callSheet.insertRowBefore(callRows+1);
-	    callSheet.getRange(callRows+1, 1, 1, callValues.length).setValues([callValues]);
-	    var callEndRange = callSheet.getRange(callRows+1, callValues.length+1, 1, 2);
-	    function endCall(status) {
-		callEndRange.setValues([[(new Date()).getTime() - curTime, status]]);
-	    }
-	    var progressCol = callHeaders.length + 1;
-	    function progressCall(msg) {
-		callSheet.getRange(callRows+1, progressCol, 1, 1).setValues([[((new Date()).getTime() - curTime)+': '+msg]]);
-		progressCol += 1;
-	    }
-	} else {
-	    function endCall(status) {}
-	    function progressCall(msg) {}
-	}
+	if (logCall)
+	    startCallTracking(logCall, params, sheetName, origUser);
 
 	if (performActions) {
             if (performActions == 'discuss_posts') {
                 returnValues = getDiscussPosts(sheetName, (params.slide || ''), paramId);
-		endCall('success');
+		trackCall(0, 'success');
                 return {"result": "success", "value": returnValues, "headers": returnHeaders,
                         "info": returnInfo, "messages": returnMessages.join('\n')};
 	    } else {
@@ -598,7 +606,7 @@ function sheetAction(params) {
 	    }
 	    returnValues = [];
 	    var data = JSON.parse(params.data);
-	    var retval = handleProxyUpdates(data, params.create, returnMessages, logCall, progressCall);
+	    var retval = handleProxyUpdates(data, params.create, returnMessages);
 	    returnInfo.refreshSheets = retval[0];
 	    returnInfo.updateErrors = retval[1];
 
@@ -1872,13 +1880,13 @@ function sheetAction(params) {
 	}
 
 	// return success results
-	endCall('success');
+	trackCall(0, 'success');
 	return {"result":"success", "value": returnValues, "headers": returnHeaders,
 		"info": returnInfo,
 		"messages": returnMessages.join('\n')};
     } catch(err){
 	// if error return this
-	endCall('error: '+err);
+	trackCall(0, 'error: '+err);
 	return {"result":"error", "error": ''+err, "errtrace": ''+(err.stack||''), "value": null,
 		"info": returnInfo,
 		"messages": returnMessages.join('\n')};
@@ -1888,7 +1896,7 @@ function sheetAction(params) {
 }
 
 
-function handleProxyUpdates(data, create, returnMessages, logCall, progressCall) {
+function handleProxyUpdates(data, create, returnMessages) {
     var refreshSheets = []
     var updateErrors = [];
     for (var isheet=0; isheet<data.length; isheet++) {
@@ -1911,8 +1919,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 		    throw("Error:PROXY_MISSING_SHEET:Sheet not found: '"+updateSheetName+"'");
 	    }
 
-	    if (logCall >= 1)
-		progressCall('updateSheet: start '+ProxyCacheRange+' '+updateSheetName+' '+updateSheet.getLastRow()+' '+updateSheet.getLastColumn()+' '+(proxyActions||''));
+	    trackCall(1, 'updateSheet: start '+ProxyCacheRange+' '+updateSheetName+' '+updateSheet.getLastRow()+' '+updateSheet.getLastColumn()+' '+(proxyActions||''));
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
 	    if (updateHeaders.length != temHeaders.length)
@@ -1995,8 +2002,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			}
 		    }
 
-		    ///if (logCall >= 1)
-			///progressCall('updateSheet: ids ['+idValues.join(',')+']');
+		    ///trackCall(1, 'updateSheet: ids ['+idValues.join(',')+']');
 		    var deletedIds = [];
 		    for (var rowNum=lastRowNum; rowNum > updateStickyRows; rowNum--) {
 			// Delete rows for which keys are not found (backwards)
@@ -2008,8 +2014,8 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			}
 		    }
 
-		    if (deletedIds.length && logCall >= 1)
-			progressCall('updateSheet: deleted ids '+deletedIds.length+' ['+deletedIds.join(',')+']');
+		    if (deletedIds.length)
+			trackCall(1, 'updateSheet: deleted ids '+deletedIds.length+' ['+deletedIds.join(',')+']');
 		}
 		lastRowNum = lastRowNum - deletedRows;
 
@@ -2034,8 +2040,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			    var beforeRow = jrow+1+insertedRows+updateStickyRows;
 			    updateSheet.insertRowsBefore(beforeRow, insertCount);
 			    updateSheet.getRange(beforeRow, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
-			    if (logCall >= 2)
-				progressCall(updateSheetName+':insertbefore '+' '+beforeRow+' '+insertCount);
+			    trackCall(2, updateSheetName+':insertbefore '+' '+beforeRow+' '+insertCount);
 
 			    insertedRows += insertCount;
 			    jinsert += insertCount;
@@ -2050,8 +2055,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			insertedRows += insertCount;
 			updateSheet.insertRowsAfter(afterRow, insertCount);
 			updateSheet.getRange(afterRow+1, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
-			if (logCall >= 2)
-			    progressCall(updateSheetName+':afterRow '+afterRow+' '+insertCount);
+			trackCall(1, updateSheetName+':afterRow '+afterRow+' '+insertCount);
 		    }
 		}
 
@@ -2063,8 +2067,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
 		}
 
-		if (logCall >= 2)
-		    progressCall(updateSheetName+':ids ['+updateKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
+		trackCall(2, updateSheetName+':ids ['+updateKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
 
 		if (updateKeys.length !=  idValues.length)
 		    throw('Error:PROXY_UPDATE_MISMATCH:Mismatched id count '+updateKeys.length+' vs. '+idValues.length+' in sheet '+updateSheetName);
@@ -2083,8 +2086,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 
 		}
 
-		if (logCall >= 2)
-		    progressCall(updateSheetName+':deleteinsert -'+deletedRows+', +'+insertedRows);
+		trackCall(2, updateSheetName+':deleteinsert -'+deletedRows+', +'+insertedRows);
 
 		var modBlocks = [];
 		var maxEndCol = 0;
@@ -2156,8 +2158,7 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 			    }
 			}
 			modRange.setValues(modVals);
-			if (logCall >= 2)
-			    progressCall(updateSheetName+':partial '+modStartRow+' '+nUpdateRows+' '+pStartCol+' '+pEndCol);
+			trackCall(2, updateSheetName+':partial '+modStartRow+' '+nUpdateRows+' '+pStartCol+' '+pEndCol);
 
 		    } else {
 			// Pre-existing row (full update)
@@ -2210,8 +2211,9 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 		    for (var k=0; k<modBlocks.length; k++) {
 			var row = modBlocks[k];
 			if (blockRowVals.length && (endRow+1 != row[0] || startCol != row[1] || endCol != row[2])) {
-			    if (logCall >= 2)
-				progressCall(updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+
+			    trackCall(2, updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+
 			    updateSheet.getRange(startRow, startCol, endRow-startRow+1, endCol-startCol+1).setValues(blockRowVals);
 			    blockRowVals = [];
 			}
@@ -2226,14 +2228,12 @@ function handleProxyUpdates(data, create, returnMessages, logCall, progressCall)
 		    }
 
 		    if (blockRowVals.length) {
-			if (logCall >= 2)
-			    progressCall(updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+			trackCall(2, updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
 			updateSheet.getRange(startRow, startCol, endRow-startRow+1, endCol-startCol+1).setValues(blockRowVals);
 		    }
 
 		}
-		if (logCall >= 2)
-		    progressCall(updateSheetName+':end');
+		trackCall(2, updateSheetName+':end');
 
 		if (totalCol && (deletedRows || insertedRows))
 		    updateTotalFormula(updateSheet, lastRowNum);

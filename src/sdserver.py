@@ -1249,7 +1249,7 @@ class ActionHandler(BaseHandler):
                 return
 
             file_list = []
-            for fname in os.listdir(fullpath):
+            for fname in sorted(os.listdir(fullpath)):
                 fpath = os.path.join(fullpath, fname)
                 fext = os.path.splitext(fname)[1]
                 subdirpath = os.path.join(filepath, fname)
@@ -2953,7 +2953,7 @@ class PluginManager(object):
         if not os.path.exists(fullpath):
             return []
         try:
-            fpaths = [os.path.join(fullpath, f) for f in os.listdir(fullpath) if os.path.isfile(os.path.join(fullpath, f))]
+            fpaths = [os.path.join(fullpath, f) for f in sorted(os.listdir(fullpath)) if os.path.isfile(os.path.join(fullpath, f))]
             return [ [fpath, fpath[len(Options['plugindata_dir']):]] for fpath in fpaths]
         except Exception, err:
             raise Exception('sdserver.PluginManager.dirFiles: ERROR in directory listing %s: %s' % (fullpath, err))
