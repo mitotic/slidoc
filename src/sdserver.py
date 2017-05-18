@@ -2433,7 +2433,10 @@ class ProxyHandler(BaseHandler):
         # Replace root-signed tokens with site-specific tokens
         modify_user_auth(args)
         if (args.get('actions') or args.get('modify')) and Options['gsheet_url']:
+            if Options['log_call']:
+                args['logcall'] = str(Options['log_call'])
             sessionName = args.get('sheet','')
+
             errMsg = ''
             if Options['dry_run']:
                 errMsg = 'Actions/modify not permitted in dry run'

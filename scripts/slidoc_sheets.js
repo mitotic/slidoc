@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5b';
+var VERSION = '0.97.5c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -301,6 +301,39 @@ function getRosterEntry(userId) {
 	    return ['#'+userId+', '+userId, userId, '', ''];
 	throw("Error:NEED_ROSTER_ENTRY:userID '"+userId+"' not found in roster");
     }
+}
+
+// Cached (read-only) sheets
+var SHEET_CACHING = true;
+
+function getSheetCache(sheetName) {
+    return SHEET_CACHING ? (new SheetCache(sheetName)) : getSheet(sheetName);
+}
+
+function SheetCache(sheetName) {
+    var sheet = getSheet(sheetName);
+    if (!sheet)
+	throw('SheetCache: sheet '+sheetName+' not found!');
+    this._nrows = sheet.getLastRow();
+    this._ncols = sheet.getLastColumn();
+    this._data = sheet.getSheetValues(1, 1, this._nrows, this._ncols);
+}
+
+SheetCache.prototype.getLastRow = function() {
+    return this._nrows;
+}
+
+SheetCache.prototype.getLastColumn = function() {
+    return this._ncols;
+}
+
+SheetCache.prototype.getSheetValues = function(startRow, startCol, nRows, nCols) {
+    var subrows = this._data.slice(startRow-1, startRow-1+nRows);
+    var vals = [];
+    for (var j=0; j<subrows.length; j++) {
+	vals.push(subrows[j].slice(startCol-1, startCol-1+nCols));
+    }
+    return vals;
 }
 
 // Comparison function for sorting
@@ -3061,7 +3094,7 @@ function sessionAnswerSheet() {
 
 function updateAnswers(sessionName, create) {
     try {
-	var sessionSheet = getSheet(sessionName);
+	var sessionSheet = getSheetCache(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found: '+sessionName);
 	if (!sessionSheet.getLastColumn())
@@ -3213,7 +3246,7 @@ function sessionCorrectSheet() {
 
 function updateCorrect(sessionName, create) {
     try {
-	var sessionSheet = getSheet(sessionName);
+	var sessionSheet = getSheetCache(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found: '+sessionName);
 	if (!sessionSheet.getLastColumn())
@@ -3325,7 +3358,7 @@ function sessionStatSheet() {
 function updateStats(sessionName, create) {
     try {
 	loadSettings();
-	var sessionSheet = getSheet(sessionName);
+	var sessionSheet = getSheetCache(sessionName);
 	if (!sessionSheet)
 	    throw('Sheet not found '+sessionName);
 	if (!sessionSheet.getLastColumn())
@@ -3967,7 +4000,10 @@ function actionHandler(actions, sheetName, create) {
 
 function updateScoreSession() {
     // Update scores sheet for current session
-    return updateSession(updateScoreAux);
+    ///startCallTracking(2, {}, 'SCORES');
+    retval = updateSession(updateScoreAux);
+    ///trackCall(0, 'success');
+    return retval;
 }
 
 function updateScoreAux(sessionName, create) {
@@ -4073,7 +4109,7 @@ function updateScores(sessionNames, create, interactive) {
 	for (var m=0; m<sessionNames.length; m++) {
 	    // Ensure all sessions exist
 	    var sessionName = sessionNames[m];
-	    var sessionSheet = getSheet(sessionName);
+	    var sessionSheet = getSheetCache(sessionName);
 	    if (!sessionSheet) {
 		SpreadsheetApp.getUi().alert('Sheet not found: '+sessionName);
 	    } else if (!sessionSheet.getLastColumn()) {
@@ -4104,7 +4140,7 @@ function updateScores(sessionNames, create, interactive) {
 	var avgStartRow = userStartRow;
 
 	// Copy user info from roster
-	var userInfoSheet = getSheet(ROSTER_SHEET);
+	var userInfoSheet = getSheetCache(ROSTER_SHEET);
 	var infoStartRow = rosterStartRow;
 	if (!userInfoSheet)  {              // Copy user info from last valid session
 	    userInfoSheet = validSheet;
@@ -4175,7 +4211,6 @@ function updateScores(sessionNames, create, interactive) {
 	    var sessionName = validNames[iSession];
 	    var sessionSheet = getSheet(sessionName);
 	    var sessionColIndex = indexColumns(sessionSheet);
-	    var sessionRowIndex = indexRows(sessionSheet, sessionColIndex['id'], 2);
 	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
 	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'paceLevel', 'sessionWeight', 'sessionRescale', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
@@ -4232,8 +4267,6 @@ function updateScores(sessionNames, create, interactive) {
 		}
 	    }
 	    // Session sheet columns
-	    var lateCol = sessionColIndex['lateToken'];
-
 	    var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
 	    var scoreColIndex = indexColumns(scoreSheet);
 	    var sessionColName = '_'+sessionName;
