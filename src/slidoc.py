@@ -1516,7 +1516,7 @@ class SlidocRenderer(MathRenderer):
         opt_comps = [x.strip() for x in text.split(';')]
         text = opt_comps[0]
         if text and (text.split('=')[0].strip() in all_options):
-             abort("    ****ANSWER-ERROR: %s: 'Answer: %s ...' is not a valid answer type. Insert semicolon before answer option in slide %s" % (self.options["filename"], text, self.slide_number))
+             abort("    ****ANSWER-ERROR: %s: Insert semicolon before answer option 'Answer: ;%s' in slide %s" % (self.options["filename"], text, self.slide_number))
 
         weight_answer = ''
         maxchars = 0           # Max. length (in characters) for textarea
@@ -1591,10 +1591,11 @@ class SlidocRenderer(MathRenderer):
         valid_all_types = valid_simple_types + ['text/x-code', 'text/markdown', 'text/multiline']
         qtype = ''
         if '=' in text:
-            # Check if '[correct_answer]=answer_type'
-            text, _, qtype = text.rpartition('=')
+            # Check if 'answer_type=correct_answer'
+            # (Either answer_type or correct_answer  may be omitted, along with =, if there is no ambiguity)
+            qtype, _, text = text.partition('=')
             if qtype not in valid_simple_types:
-                abort("    ****ANSWER-ERROR: %s: '%s' is not a valid answer type; expected %s in slide %s" % (self.options["filename"], qtype, '|'.join(valid_simple_types), self.slide_number))
+                abort("    ****ANSWER-ERROR: %s: %s is not a valid answer type; expected %s=answer in slide %s" % (self.options["filename"], qtype, '|'.join(valid_simple_types), self.slide_number))
 
         num_match = re.match(r'^([-+/\d\.eE\s%]+)$', text)
         if num_match and text.lower() != 'e' and (not qtype or qtype == 'number'):
@@ -1673,7 +1674,7 @@ class SlidocRenderer(MathRenderer):
                 if qtype == 'choice':
                     # Multiple answers for choice are allowed with a warning (to fix grading problems)
                     if len(text) > 1:
-                        message("    ****ANSWER-WARNING: %s: 'Answer: %s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
+                        message("    ****ANSWER-WARNING: %s: 'Answer: choice=%s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
                 elif not qtype:
                     qtype = 'multichoice' if len(text) > 1 else 'choice'
 
