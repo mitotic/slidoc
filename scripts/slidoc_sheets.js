@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5c';
+var VERSION = '0.97.5d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -4109,7 +4109,7 @@ function updateScores(sessionNames, create, interactive) {
 	for (var m=0; m<sessionNames.length; m++) {
 	    // Ensure all sessions exist
 	    var sessionName = sessionNames[m];
-	    var sessionSheet = getSheetCache(sessionName);
+	    var sessionSheet = getSheet(sessionName);
 	    if (!sessionSheet) {
 		SpreadsheetApp.getUi().alert('Sheet not found: '+sessionName);
 	    } else if (!sessionSheet.getLastColumn()) {

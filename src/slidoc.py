@@ -1841,7 +1841,7 @@ class SlidocRenderer(MathRenderer):
             html_template += self.grading_template
             html_template += self.comments_template_a
 
-        if self.render_markdown:
+        if self.render_markdown and (self.cur_qtype == 'text/plain' or answer_opts['explain']):
             html_template += self.render_template
 
         if multiline_answer or answer_opts['explain']:
