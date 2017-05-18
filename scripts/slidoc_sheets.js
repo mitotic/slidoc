@@ -4141,7 +4141,7 @@ function updateScores(sessionNames, create, interactive) {
 	    // Update session score sheet
 	    var nPrevIds = scoreSheet.getLastRow()-userStartRow+1;
 	    if (nUserIds != nPrevIds)
-		throw('Number of ids in score sheet ('+nPrevIds+') does not that in roster/session ('+nUserIds+'); re-create score sheet');
+		throw('Number of ids in score sheet ('+nPrevIds+') does not match that in roster/session ('+nUserIds+'); re-create score sheet');
 	    if (nUserIds) {
 		var infoIds = userInfoSheet.getSheetValues(infoStartRow, idCol, nUserIds, 1);
 		var prevIds = scoreSheet.getSheetValues(userStartRow, idCol, nUserIds, 1);

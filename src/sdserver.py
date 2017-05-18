@@ -2424,7 +2424,8 @@ class ProxyHandler(BaseHandler):
 
         args = {}
         for arg_name in self.request.arguments:
-            args[arg_name] = self.get_argument(arg_name)
+            if arg_name != 'prefix':
+                args[arg_name] = self.get_argument(arg_name)
 
         if Options['debug']:
             print >> sys.stderr, "DEBUG: URI", self.request.uri, args.get('sheet'), args.get('actions'), args.get('modify')
@@ -2445,7 +2446,7 @@ class ProxyHandler(BaseHandler):
             else:
                 http_client = tornado.httpclient.AsyncHTTPClient()
                 body = urllib.urlencode(args)
-                response = yield http_client.fetch(Options['gsheet_url'], method='POST', headers=None, body=body)
+                response = yield http_client.fetch(Options['gsheet_url'], method='POST', headers=None, body=body, request_timeout=90)
                 if response.error:
                     retObj = {'result': 'error', 'error': 'Error in passthru: '+str(response.error) }
                 else:

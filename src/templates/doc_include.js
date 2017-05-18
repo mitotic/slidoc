@@ -3125,7 +3125,7 @@ Slidoc.sessionActions = function(actions, sessionName) {
 	var sheetName = '';
     else
 	var sheetName = sessionName || Sliobj.sessionName;
-    if (!window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'?'))
+    if (!window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'? (may take a minute or longer)'))
 	return;
     var opts = {sheet: sheetName}
     Sliobj.indexSheet.actions(actions, opts, sheetActionsCallback.bind(null, actions, sheetName));
@@ -5230,7 +5230,7 @@ function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
     if (setup) {
 	if (explain != null && textareaElem && question_attrs.explain) {
 	    textareaElem.value = explain;
-	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
+	    renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
 	}
     } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim() && getUserId() != Sliobj.params.testUserId) {
 	if (force != 'controlled') {
@@ -5563,10 +5563,10 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', dispCorrect && qscore !== 1);
 
     if (question_attrs.qtype.match(/^(text|Code)\//)) {
-	renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
+	renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
     } else {
 	if (question_attrs.explain)
-	    renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain == 'markdown');
+	    renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
 	setAnswerElement(slide_id, '-response-span', disp_response);
     }
 
@@ -5711,9 +5711,9 @@ Slidoc.renderText = function(elem, slide_id) {
 	    renderDisplay(slide_id, '-comments-textarea', '-comments-content', true);
 	} else {
 	    if (question_attrs.explain) {
-		renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.explain.slice(-8) == 'markdown')
+		renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown)
 	    } else {
-		renderDisplay(slide_id, '-answer-textarea', '-response-div', question_attrs.qtype.slice(-8) == 'markdown');
+		renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
 	    }
 	}
     }
@@ -7324,7 +7324,7 @@ function MDPreBlockGamut(text, runBlockGamut) {
 }
 
 function MDConverter(mdText, stripOuter) {
-    var html = PagedownConverter ? PagedownConverter.makeHtml(mdText) : '<pre>'+escapeHtml(mdText)+'</pre>';
+    var html = window.PagedownConverter ? window.PagedownConverter.makeHtml(mdText) : '<pre>'+escapeHtml(mdText)+'</pre>';
     if (stripOuter && html.substr(0,3) == "<p>" && html.substr(html.length-4) == "</p>") {
 	    html = html.substr(3, html.length-7);
     }

@@ -781,8 +781,8 @@ class SlidocRenderer(MathRenderer):
         self.block_test_counter = 0
         self.block_output_counter = 0
         self.toggle_slide_id = ''
-        self.render_markdown = 'markdown' in self.options['config'].features
-        self.render_mathjax = False
+        self.render_markdown = 'no_markdown' not in self.options['config'].features
+        self.render_mathjax = 'math_input' in self.options['config'].features
         self.plugin_number = 0
         self.plugin_defs = {}
         self.plugin_tops = []
@@ -1522,8 +1522,8 @@ class SlidocRenderer(MathRenderer):
         maxchars = 0           # Max. length (in characters) for textarea
         noshuffle = 0          # If n > 0, do not randomly shuffle last n choices
         retry_counts = [0, 0]  # Retry count, retry delay
-        opt_values = { 'disabled': ('yes',),               # Disable answering for this question
-                       'explain': ('text', 'markdown'),    # Require text/markdown explanation
+        opt_values = { 'disabled': ('yes',),     # Disable answering for this question
+                       'explain': ('yes', ),    # Require explanation for answer
                        'share': ('after_due_date', 'after_answering', 'after_grading'),
                        'team': ('response', 'setup'),
                        'vote': ('show_completed', 'show_live') }
@@ -1588,7 +1588,7 @@ class SlidocRenderer(MathRenderer):
             plugin_arg = plugin_match.group(4) or ''
 
         valid_simple_types = ['choice', 'multichoice', 'number', 'text', 'point', 'line']
-        valid_all_types = valid_simple_types + ['text/x-code', 'text/markdown', 'text/multiline']
+        valid_all_types = valid_simple_types + ['text/x-code', 'text/markdown', 'text/multiline', 'text/plain'] # markdown, multiline for legacy
         qtype = ''
         if '=' in text:
             # Check if 'answer_type=correct_answer'
@@ -1687,6 +1687,9 @@ class SlidocRenderer(MathRenderer):
                 # Ignore choice options
                 self.choices = None
                 
+        if qtype in ('text/markdown', 'text/multiline'):  # Legacy support
+            qtype = 'text/plain'
+
         if not self.cur_qtype:
             # Default answer type is 'text'
             self.cur_qtype = qtype or 'text'
@@ -1800,8 +1803,6 @@ class SlidocRenderer(MathRenderer):
             # No hiding of correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+' '+correct_html+'<p></p>\n'
 
-        slide_markdown = (self.cur_qtype == 'text/markdown' or answer_opts['explain'] == 'markdown')
-
         ans_classes = ''
         if multiline_answer:
             ans_classes += ' slidoc-multiline-answer'
@@ -1840,8 +1841,7 @@ class SlidocRenderer(MathRenderer):
             html_template += self.grading_template
             html_template += self.comments_template_a
 
-        if slide_markdown:
-            self.render_markdown = True
+        if self.render_markdown:
             html_template += self.render_template
 
         if multiline_answer or answer_opts['explain']:
@@ -3203,7 +3203,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                                                         filedir=filedir, plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id, zip_content=config.preview,
                                                         images_zipdata=images_zipdict.get(fname))
-        math_present = renderer.render_markdown or renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
+        math_present = renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
 
         if len(fnumbers) == 1 and config.separate and config.extract:
             md_extract = md_defaults + ''.join(md_params['md_slides'][config.extract-1:])
@@ -3265,7 +3265,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         comb_plugin_embeds.update(renderer.plugin_embeds)
         if math_present:
             math_load = True
-        if renderer.render_markdown or renderer.sheet_attributes['discussSlides']:
+        if renderer.render_markdown:
             pagedown_load = True
         if renderer.load_python:
             skulpt_load = True
@@ -3307,7 +3307,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_present else '',
-                      'pagedown_js': Pagedown_js if pagedown_load else '',
+                      'pagedown_js': Pagedown_js if renderer.render_markdown else '',
                       'skulpt_js': Skulpt_js if renderer.load_python else '',
                       'body_class': 'slidoc-plain-page' if topnav_html else '',
                       'top_nav':  topnav_html,
@@ -4044,7 +4044,8 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   grade_response: Grade text responses and explanations; provide comments
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
 #   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
-#   markdown: Use markdown for remarks, comments, explanations etc.
+#   math_input: Render math in user input (not needed if session text already contains math)
+#   no_markdown: Do not render markdown for remarks, comments, explanations etc.
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
@@ -4062,7 +4063,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'direct_answers', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'direct_answers', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
