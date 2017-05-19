@@ -143,7 +143,7 @@ document.onreadystatechange = function(event) {
 <body>
 
 <tt><div id="slidoc-err-msg">{{err_msg}}</div></tt>
-
+<p></p>
 <form action="{{site_prefix}}/_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
   {% module xsrf_form_html() %}
   <div>
@@ -154,6 +154,9 @@ document.onreadystatechange = function(event) {
   <fieldset>
     <label for="sessionname">Session:</label>
     <input type="text" id="sessionname" readonly="yes" name="sessionname" value="{{session_name}}"></input>
+    &nbsp;&nbsp;
+    <label for="sessionmodify">Modify question types?</label>
+    <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
     <p></p>
     <textarea id="sessiontext" name="sessiontext" style="width: 90%;">{{session_text}}</textarea>
   </fieldset>

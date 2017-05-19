@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5e'
+VERSION = '0.97.5f'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -646,6 +646,8 @@ class Sheet(object):
 
     def appendColumns(self, headers):
         self.check_lock_status()
+        if self.modifiedHeaders:
+            raise Exception('Cannot append columns now while updating sheet '+self.name)
         self.nCols += len(headers)
         self.xrows[0] += headers
         for j in range(1, len(self.xrows)):
@@ -656,6 +658,9 @@ class Sheet(object):
 
     def trimColumns(self, ncols):
         self.check_lock_status()
+        if self.modifiedHeaders:
+            raise Exception('Cannot trim columns now while updating sheet '+self.name)
+
         modTime = sliauth.epoch_ms()
         self.nCols -= ncols
         self.xrows[0] = self.xrows[0][:-ncols]
@@ -833,19 +838,23 @@ class Sheet(object):
                     # Non-partial or non-keyed; update full rows
                     updateSel.append([key], None, [row])
 
-        if not insertRows and not updateSel and not actions:
+        if not insertRows and not updateSel and not actions and not self.modifiedHeaders:
             # No updates
             return None
 
         # Send updateColList if non-null and non-full row
         updateColList = sorted(list(updateColSet)) if (updateColSet and len(updateColSet) < self.nCols) else None
 
-        return [updateKeys, actions, headers, self.modifiedHeaders, allKeys, insertNames, updateColList, insertRows, updateSel]
+        return [updateKeys, actions, self.modifiedHeaders, headers, allKeys, insertNames, updateColList, insertRows, updateSel]
                     
-    def complete_update(self, updateKeys, actions):
+    def complete_update(self, updateKeys, actions, modifiedHeaders):
         # Update sheet status after remote update has completed
         if actions and actions == self.actionsRequested:
             self.actionsRequested = ''
+
+        if modifiedHeaders:
+            self.modifiedHeaders = False
+
         updateKeySet = set(updateKeys)
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
@@ -1092,8 +1101,8 @@ def update_remote_sheets_aux(force=False, synchronous=False):
                 del Sheet_cache[sheetName]
             continue
 
-        # sheet_name, actions, headers_list, modified_headers, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
-        sheetUpdateInfo[sheetName] = updates[0:2]
+        # sheet_name, actions, modified_headers, headers_list, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
+        sheetUpdateInfo[sheetName] = updates[0:3]
         modVals = [sheetName] + updates[1:]
 
         if sheetName.endswith('_slidoc'):

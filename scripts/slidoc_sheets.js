@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5e';
+var VERSION = '0.97.5f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1935,8 +1935,8 @@ function handleProxyUpdates(data, create, returnMessages) {
     for (var isheet=0; isheet<data.length; isheet++) {
 	var updateSheetName   = data[isheet][0];
 	var proxyActions      = data[isheet][1];
-	var updateHeaders     = data[isheet][2];
-	var modifiedHeaders   = data[isheet][3];
+	var modifiedHeaders   = data[isheet][2];
+	var updateHeaders     = data[isheet][3];
 	var updateKeys        = data[isheet][4];
 	var updateInsertNames = data[isheet][5];
 	var updateCols        = data[isheet][6];
@@ -2089,6 +2089,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			if (rowCount) {
 			    // Overwrite contiguous "insert" block
 			    updateSheet.getRange(startRow, 1, rowCount, updateHeaders.length).setValues(updateInsertRows.slice(kinsert-rowCount,kinsert));
+			    trackCall(2, updateSheetName+':insertoverwrite '+' '+startRow+' '+rowCount);
 			    startRow = 0;
 			    rowCount = 0;
 			}

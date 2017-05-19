@@ -2201,7 +2201,8 @@ class ActionHandler(BaseHandler):
             if slideNumber or update:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
-            self.render('edit.html', site_name=Options['site_name'], session_name=sessionName, session_text=sessionText, err_msg=errMsg)
+            self.set_header('Content-Type', 'application/json')
+            self.write( json.dumps( {'result': 'error', 'error':errMsg} ) )
             return
 
         self.previewState['modimages'] = modimages
@@ -2433,7 +2434,9 @@ class ProxyHandler(BaseHandler):
 
         # Replace root-signed tokens with site-specific tokens
         modify_user_auth(args)
-        if (args.get('actions') or args.get('modify')) and Options['gsheet_url']:
+        if (args.get('actions') and args['actions'] != 'discuss_posts') and Options['gsheet_url']:
+            # NOTE: No longer proxy passthru for args.get('modify') (to allow revert preview)
+
             if Options['log_call']:
                 args['logcall'] = str(Options['log_call'])
             sessionName = args.get('sheet','')
