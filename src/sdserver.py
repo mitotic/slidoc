@@ -1677,6 +1677,14 @@ class ActionHandler(BaseHandler):
             if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
+            if uploadType == TOP_LEVEL:
+                sessionPath = '/'+sessionName+'.html'
+            else:
+                sessionPath = privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName+'.html'
+
+            if Options['site_name']:
+                sessionPath = '/' + Options['site_name'] + sessionPath
+
             self.previewState['md'] = fbody1
             self.previewState['md_defaults'] = retval['md_params'].get('md_defaults', '')
             self.previewState['md_slides'] = retval['md_params'].get('md_slides', [])
@@ -1687,6 +1695,7 @@ class ActionHandler(BaseHandler):
             self.previewState['type'] = uploadType
             self.previewState['number'] = sessionNumber
             self.previewState['name'] = sessionName
+            self.previewState['path'] = sessionPath
             self.previewState['src_dir'] = src_dir
             self.previewState['web_dir'] = web_dir
             self.previewState['image_dir'] = image_dir
@@ -1936,14 +1945,7 @@ class ActionHandler(BaseHandler):
             self.previewClear()   # Revert to original version
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving session %s: %s' % (sessionName, excp))
 
-        redirectURL = ''
-        if Options['site_name']:
-            redirectURL += '/' + Options['site_name']
-        if uploadType == TOP_LEVEL:
-            redirectURL += '/' + sessionName + '.html'
-        else:
-            redirectURL += privatePrefix(uploadType)+'/'+uploadType+'/index.html'
-
+        sessionPath = self.previewState['path']
         rolloverParams = self.previewState['rollover']
 
         # Revert to saved version of preview (discarding any navigation/answer info); this may trigger proxy updates
@@ -1954,15 +1956,12 @@ class ActionHandler(BaseHandler):
         errMsgs = self.rebuild(uploadType, indexOnly=True)
 
         if errMsgs and any(errMsgs):
-            sessionPath = privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName+'.html'
-            if Options['site_name']:
-                sessionPath = '/'+Options['site_name'] + sessionPath
             msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
-            self.displayMessage(msgs)
+            self.displayMessage(msgs, back_url=sessionPath)
             return
 
         if not rolloverParams:
-            self.redirect(redirectURL)
+            self.redirect(sessionPath)
             return
 
         # Truncate previous rolled over session
@@ -1978,7 +1977,7 @@ class ActionHandler(BaseHandler):
         if errMsg:
             if self.previewState:
                 self.discardPreview()
-            self.displayMessage('Error in truncating rolled over session '+sessionName+': '+errMsg)
+            self.displayMessage('Error in truncating rolled over session '+sessionName+': '+errMsg, back_url=sessionPath)
             return
 
         self.previewState['modimages'] = 'clear'
@@ -1987,12 +1986,14 @@ class ActionHandler(BaseHandler):
 
 
     def discardPreview(self):
+        sessionPath = ''
         if self.previewActive():
             sessionName = self.previewState['name']
+            sessionPath = self.previewState['path']
             self.previewClear()
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
-        self.displayMessage('Discarded changes')
+        self.displayMessage('Discarded changes', back_url=sessionPath)
 
     def previewClear(self, saved_version=False, final_version=False):
         if sdproxy.previewingSession():
@@ -2438,9 +2439,13 @@ class ProxyHandler(BaseHandler):
             sessionName = args.get('sheet','')
 
             errMsg = ''
-            if Options['dry_run']:
-                errMsg = 'Actions/modify not permitted in dry run'
-            elif args.get('modify'):
+            if args.get('actions'):
+                if Options['dry_run']:
+                    errMsg = 'Actions/modify not permitted in dry run'
+                elif sdproxy.previewingSession():
+                    errMsg = 'Actions/modify not permitted during session preview'
+
+            if not errMsg and args.get('modify'):
                 if not sdproxy.startPassthru(sessionName):
                     errMsg = 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'
 

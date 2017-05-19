@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5d'
+VERSION = '0.97.5e'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -495,6 +495,7 @@ class Sheet(object):
         self.keyHeader = keyHeader
         self.modTime = modTime
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
+        self.modifiedHeaders = False
 
         self.actionsRequested = ''
 
@@ -645,24 +646,26 @@ class Sheet(object):
 
     def appendColumns(self, headers):
         self.check_lock_status()
-        if Settings['gsheet_url'] and not Settings['dry_run']:
-            # Proxy caching currently does not work with varying columns
-            raise Exception("Cannot append columns for session '"+self.name+"' via proxy; use direct URL")
         self.nCols += len(headers)
         self.xrows[0] += headers
         for j in range(1, len(self.xrows)):
             self.xrows[j] += ['']*len(headers)
+
+        self.modifiedHeaders = True
         self.modifiedSheet()
 
     def trimColumns(self, ncols):
         self.check_lock_status()
-        if Settings['gsheet_url'] and not Settings['dry_run']:
-            # Proxy caching currently does not work with varying columns
-            raise Exception("Cannot delete columns for session '"+self.name+"' via proxy; use direct URL")
+        modTime = sliauth.epoch_ms()
         self.nCols -= ncols
-        for j in range(len(self.xrows)):
+        self.xrows[0] = self.xrows[0][:-ncols]
+        for j in range(1, len(self.xrows)):
             self.xrows[j] = self.xrows[j][:-ncols]
-        self.modifiedSheet()
+            key = self.xrows[j][self.keyCol-1] if self.keyCol else j+1
+            self.keyMap[key] = [modTime, 1, set()]  # Pretend all rows are newly "inserted", to force complete update
+
+        self.modifiedHeaders = True
+        self.modifiedSheet(modTime)
 
     def checkRange(self, rowMin, colMin, rowCount, colCount):
         if rowMin < 1 or rowMin > len(self.xrows):
@@ -721,6 +724,10 @@ class Sheet(object):
                     if newKeyValue != keyValue:
                         raise Exception('Cannot alter key value %s to %s in sheet %s' % (keyValue, newKeyValue, self.name))
 
+            if self.keyMap[keyValue][1]:
+                # Inserting
+                continue
+
             diffCount = 0
             oldValues = self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1]
             for icol in range(len(oldValues)):
@@ -751,7 +758,7 @@ class Sheet(object):
     def modifiedSheet(self, modTime=None):
         self.modTime = sliauth.epoch_ms() if modTime is None else modTime
         self.accessTime = self.modTime
-        IOLoop.current().add_callback(update_remote_sheets)
+        need_update()
 
     def get_updates(self, row_limit=None):
         if Global.previewStatus and self.name in (Global.previewStatus['sessionName'], INDEX_SHEET):
@@ -782,7 +789,7 @@ class Sheet(object):
 
             if not inserted and not newColSet:
                 # No updates for this unmodified row
-                # (Note: this condition will not be true for rows whose updating was skipped dur to request limits; see self.complete_update())
+                # (Note: this condition will not be true for rows whose updating was skipped due to request limits; see self.complete_update())
                 colSet, colList, curUpdate = None, None, None
                 continue
 
@@ -833,7 +840,7 @@ class Sheet(object):
         # Send updateColList if non-null and non-full row
         updateColList = sorted(list(updateColSet)) if (updateColSet and len(updateColSet) < self.nCols) else None
 
-        return [updateKeys, actions, headers, allKeys, insertNames, updateColList, insertRows, updateSel]
+        return [updateKeys, actions, headers, self.modifiedHeaders, allKeys, insertNames, updateColList, insertRows, updateSel]
                     
     def complete_update(self, updateKeys, actions):
         # Update sheet status after remote update has completed
@@ -979,6 +986,12 @@ def get_locked():
     locked.sort()
     return locked
 
+def need_update():
+    # Schedule an update if one not already scheduled
+    if Global.cachePendingUpdate:
+        return
+    Global.cachePendingUpdate = IOLoop.current().add_callback(update_remote_sheets)
+
 def schedule_update(waitSec=0, force=False, synchronous=False):
     if Global.cachePendingUpdate:
         IOLoop.current().remove_timeout(Global.cachePendingUpdate)
@@ -1079,7 +1092,7 @@ def update_remote_sheets_aux(force=False, synchronous=False):
                 del Sheet_cache[sheetName]
             continue
 
-        # sheet_name, actions, headers_list, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
+        # sheet_name, actions, headers_list, modified_headers, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
         sheetUpdateInfo[sheetName] = updates[0:2]
         modVals = [sheetName] + updates[1:]
 
@@ -1581,7 +1594,7 @@ def sheetAction(params, notrace=False):
                     columnIndex = indexColumns(modSheet)
 
             if updatingMaxScoreRow and computeTotalScore:
-                if updateTotalScores(modSheet, sessionAttributes, questions, True):
+                if updateTotalScores(modSheet, sessionAttributes, questions, True) and not Settings['dry_run']:
                     modSheet.requestActions('answer_stats,gradebook,correct')
 
             userId = None

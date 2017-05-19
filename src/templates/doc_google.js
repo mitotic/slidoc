@@ -441,7 +441,7 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,              adminToken];
 	    var graderKeys   = ['',                           adminToken,              '',                            ''];
 	    var authRoles   = [siteRole,                       siteRole,              '',                            ''];
-	    var userOptions = ['Admin view (for testing/pacing/editing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
+	    var userOptions = ['Admin view (for editing/testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5d';
+var VERSION = '0.97.5e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1933,14 +1933,15 @@ function handleProxyUpdates(data, create, returnMessages) {
     var refreshSheets = []
     var updateErrors = [];
     for (var isheet=0; isheet<data.length; isheet++) {
-	var updateSheetName = data[isheet][0];
-	var proxyActions = data[isheet][1];
-	var updateHeaders = data[isheet][2];
-	var updateKeys = data[isheet][3];
-	var updateInsertNames = data[isheet][4];
-	var updateCols = data[isheet][5];
-	var updateInsertRows = data[isheet][6];
-	var updateRows = data[isheet][7];
+	var updateSheetName   = data[isheet][0];
+	var proxyActions      = data[isheet][1];
+	var updateHeaders     = data[isheet][2];
+	var modifiedHeaders   = data[isheet][3];
+	var updateKeys        = data[isheet][4];
+	var updateInsertNames = data[isheet][5];
+	var updateCols        = data[isheet][6];
+	var updateInsertRows  = data[isheet][7];
+	var updateRows        = data[isheet][8];
 	//returnMessages.push('Debug::updateSheet, actions, keys, rows: '+updateSheetName+', '+proxyActions+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length);
 
 	try {
@@ -1955,15 +1956,29 @@ function handleProxyUpdates(data, create, returnMessages) {
 	    trackCall(1, 'updateSheet: start '+ProxyCacheRange+' '+updateSheetName+' '+updateSheet.getLastRow()+' '+updateSheet.getLastColumn()+' '+(proxyActions||''));
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
-	    if (updateHeaders.length != temHeaders.length)
-		throw("Error:PROXY_HEADER_COUNT:Number of headers does not equal that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
 
-	    var allColNums = [];
-	    for (var m=0; m<updateHeaders.length; m++) {
-		allColNums.push(m+1);
-		if (updateHeaders[m] != temHeaders[m])
-		    throw("Error:PROXY_HEADER_NAMES:Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
+	    if (modifiedHeaders) {
+		// Modify headers
+		if (updateHeaders.length > temHeaders.length)
+		    updateSheet.insertColumnsAfter(temHeaders.length, updateHeaders.length - temHeaders.length);
+
+		else if (updateHeaders.length < temHeaders.length)
+		    updateSheet.deleteColumns(updateHeaders.length+1, temHeaders.length - updateHeaders.length);
+
+		updateSheet.getRange(1, 1, 1, updateHeaders.length).setValues([updateHeaders]);
+
+	    } else {
+		if (updateHeaders.length != temHeaders.length)
+		    throw("Error:PROXY_HEADER_COUNT:Number of headers does not equal that present in sheet '"+updateSheetName+"'; delete it or edit headers.");
+
+		for (var m=0; m<updateHeaders.length; m++) {
+		    if (updateHeaders[m] != temHeaders[m])
+			throw("Error:PROXY_HEADER_NAMES:Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
+		}
 	    }
+	    var allColNums = [];
+	    for (var m=0; m<updateHeaders.length; m++)
+		allColNums.push(m+1);
 
 	    if (updateKeys === null) {
 		// Update non-keyed sheet
@@ -2055,15 +2070,45 @@ function handleProxyUpdates(data, create, returnMessages) {
 		if (updateInsertNames.length) {
 		    idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, lastRowNum-updateStickyRows, 1);
 		    var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
-		    var jinsert = 0;
-		    var insertCount = 0;
 
+		    var idRow = {}
+		    for (var jrow=0; jrow<idValues.length; jrow++)
+			idRow[idValues[jrow][0]] = jrow+1;
+
+		    var startRow = 0;
+		    var rowCount = 0;
+		    for (var kinsert=0; kinsert<=updateInsertNames.length; kinsert++) {
+			// NOTE: Loop termination condition is UNUSUAL
+			// Check if row to be inserted is pre-existing row
+			var preRow = (kinsert<updateInsertNames.length) ? idRow[updateInsertNames[kinsert][1]] : 0;
+			if (preRow && rowCount && preRow == startRow+rowCount) {
+			    // Contiguous block
+			    rowCount += 1;
+			    continue;
+			}
+			if (rowCount) {
+			    // Overwrite contiguous "insert" block
+			    updateSheet.getRange(startRow, 1, rowCount, updateHeaders.length).setValues(updateInsertRows.slice(kinsert-rowCount,kinsert));
+			    startRow = 0;
+			    rowCount = 0;
+			}
+			if (preRow) {
+			    // New block
+			    startRow = preRow;
+			    rowCount = 1;
+			}
+		    }
+
+		    var jinsert = 0;
 		    for (var jrow=0; jrow<idValues.length; jrow++) {
 			var insertCount = 0;
 
 			for (var kinsert=jinsert; kinsert<updateInsertNames.length; kinsert++) {
+			    if (idRow[updateInsertNames[kinsert][1]])  // Skip pre-existing row (handled earlier)
+				break;
+
 			    if (updateInsertNames[kinsert][0] < nameValues[jrow][0] || (updateInsertNames[kinsert][0] == nameValues[jrow][0] && updateInsertNames[kinsert][1] < idValues[jrow][0]) ) {
-				// Insert row should be located before current row
+				// New row to be inserted (should be located before current row)
 				insertCount += 1;
 			    } else {
 				break;

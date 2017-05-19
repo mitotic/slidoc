@@ -72,6 +72,15 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
 
 .slidoc-answer-disabled { display: none; }
 
+/* Text selection */
+
+.slidoc-unselectable {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
 /* Headers */
 p.slidoc-header { font-weight: bold; }
 

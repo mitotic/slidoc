@@ -3450,6 +3450,9 @@ function slidocSetupAux(session, feedback) {
 	    document.body.classList.remove(bodyClasses[j]);
     }
 
+    if (!Sliobj.gradableState && ('slides_only' in Sliobj.params.features) && getUserId() != Sliobj.params.testUserId)
+	document.body.classList.add('slidoc-unselectable');
+    
     var chapters = document.getElementsByClassName('slidoc-reg-chapter');
     for (var j=0; j<chapters.length; j++) {
 	if (unhideChapters) {
@@ -4088,7 +4091,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
     }
 
     if (Object.keys(choiceElems).length != shuffleStr.length) {
-	Slidoc.log("slidocSetupAux: ERROR Incorrect number of choice elements for shuffling: Expected "+(shuffleStr.length-1)+" but found "+(Object.keys(choiceElems).length-1));
+	Slidoc.log("shuffleBlock: ERROR Incorrect number of choice elements for shuffling: Expected "+(shuffleStr.length-1)+" but found "+(Object.keys(choiceElems).length-1));
 	return;
     }
 
