@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5g'
+VERSION = '0.97.5h'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -79,12 +79,13 @@ Settings = {
     'site_title': '',
     'admin_users': '',
     'grader_users': '',
-    'guest_users': ''
+    'guest_users': '',
+    'total_column': ''
     }
 
 COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
                    'share_averages', 'site_label', 'site_title',
-                   'admin_users', 'grader_users', 'guest_users']
+                   'admin_users', 'grader_users', 'guest_users', 'total_column']
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
                     'backup_dir', 'debug', 'dry_run',
@@ -517,7 +518,7 @@ class Sheet(object):
                 raise Exception('Must specify at least header row for keyed sheet')
 
             headers = self.xrows[0]
-            self.keyCol= 1 + headers.index(self.keyHeader)
+            self.keyCol = 1 + headers.index(self.keyHeader)
 
             for j, colName in enumerate(headers):
                 if colName.endswith('Timestamp') or colName.lower().endswith('date') or colName.lower().endswith('time'):
@@ -525,6 +526,11 @@ class Sheet(object):
                         if row[j] and not isinstance(row[j], datetime.datetime):
                             # Parse time string
                             row[j] = createDate(row[j])
+
+        self.update_total_formula()
+        if self.totalCols:
+            for rowNum in range(2,len(self.xrows)):
+                self.update_total(rowNum)
 
         if keyMap is not None:
             # Create 3-level copy of key map
@@ -539,6 +545,33 @@ class Sheet(object):
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
 
+    def update_total_formula(self):
+        self.totalCols = []
+        self.totalColSet = set()
+        if not self.keyCol:
+            return
+        headers = self.xrows[0]
+        if Settings['total_column'] and Settings['total_column'] in headers:
+            totalCol = 1+headers.index(Settings['total_column'])
+            self.totalCols = [ totalCol ]
+            for j, header in enumerate(headers[totalCol:]):
+                if header in ('q_scores', 'q_other') or QFIELD_RE.match(header):
+                    self.totalCols.append(j+totalCol+1)
+            self.totalColSet = set(self.totalCols)
+
+    def update_total(self, rowNum):
+        totalCol = self.totalCols[0]
+        row = self.xrows[rowNum-1]     # Not a copy!
+
+        if not row[self.keyCol-1]:
+            # Only update totals for rows with keys
+            row[totalCol-1] = ''
+            return
+
+        try:
+            row[totalCol-1] = sum(row[j-1] for j in self.totalCols[1:] if row[j-1])
+        except Exception, excp:
+            row[totalCol-1] = ''
 
     def clear_update(self):
         for j, row in enumerate(self.xrows[1:]):
@@ -632,6 +665,7 @@ class Sheet(object):
 
         modTime = sliauth.epoch_ms()
         newRow = ['']*self.nCols
+
         if self.keyHeader:
             if keyValue is None:
                 raise Exception('Must specify key for row insertion in sheet '+self.name)
@@ -642,6 +676,9 @@ class Sheet(object):
         else:
             self.keyMap[rowNum] = [modTime, 1, set()]
 
+        if self.totalCols:
+            newRow[self.totalCols[0]-1] = 0
+            
         self.xrows.insert(rowNum-1, newRow)
         self.modifiedSheet(modTime)
 
@@ -654,6 +691,7 @@ class Sheet(object):
         for j in range(1, len(self.xrows)):
             self.xrows[j] += ['']*len(headers)
 
+        self.update_total_formula()
         self.modifiedHeaders = True
         self.modifiedSheet()
 
@@ -670,6 +708,7 @@ class Sheet(object):
             key = self.xrows[j][self.keyCol-1] if self.keyCol else j+1
             self.keyMap[key] = [modTime, 1, set()]  # Pretend all rows are newly "inserted", to force complete update
 
+        self.update_total_formula()
         self.modifiedHeaders = True
         self.modifiedSheet(modTime)
 
@@ -721,8 +760,9 @@ class Sheet(object):
         headers = self.xrows[0]
         modTime = 0
         for irow, rowValues in enumerate(values):
+            rowNum = irow+rowMin
             if not self.keyCol:
-                keyValue = irow+rowMin
+                keyValue = rowNum
             else:
                 keyValue = self.xrows[irow+rowMin-1][self.keyCol-1]
                 if self.keyCol >= colMin and self.keyCol <= colMin+colCount-1:
@@ -732,8 +772,11 @@ class Sheet(object):
 
             if self.keyMap[keyValue][1]:
                 # Inserting
+                if self.totalCols:
+                    self.update_total(rowNum)
                 continue
 
+            updateTotal = False
             diffCount = 0
             oldValues = self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1]
             for icol in range(len(oldValues)):
@@ -749,14 +792,24 @@ class Sheet(object):
 
                 if not isEqual:
                     # Column value not equal; expand set of modified columns
-                    self.keyMap[keyValue][2].add(icol+colMin)
                     diffCount += 1
+                    diffCol = icol+colMin
+                    self.keyMap[keyValue][2].add(diffCol)
+                    if diffCol in self.totalColSet:
+                        updateTotal = True
 
             if diffCount:
                 # At least one column value not equal; update row
                 modTime = sliauth.epoch_ms()
                 self.keyMap[keyValue][0] = modTime
-                self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1] = rowValues
+                self.xrows[rowNum-1][colMin-1:colMin+colCount-1] = rowValues
+
+                if updateTotal:
+                    totalCol = self.totalCols[0]
+                    prevTotal = self.xrows[rowNum-1][totalCol-1]
+                    self.update_total(rowNum)
+                    if prevTotal != self.xrows[rowNum-1][totalCol-1]:
+                        self.keyMap[keyValue][2].add(totalCol)
 
         if modTime:
             self.modifiedSheet(modTime)

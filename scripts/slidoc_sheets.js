@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5g';
+var VERSION = '0.97.5h';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -21,7 +21,8 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require', 'Non-null string for true'],
 			 ['share_averages', 'require', 'Non-null string for true'],
-		         ['total_formula', '', 'Formula for total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
+		         ['total_column', '', 'session total column name (specify "q_total" to avoid formula in session sheet)'],
+		         ['total_formula', '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
 			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'], // Or A:180:4,B:160:3,...
 			 ['proxy_update_cache', '', 'Used to cache response to last update request (not user configured)']   
 		       ];
@@ -1546,7 +1547,7 @@ function sheetAction(params) {
 			    // Retakes are always updated separately
 			} else if (colHeader == 'q_total') {
 			    // Modify only for max score; otherwise leave blank (to be overwritten by array formula)
-			    if (userId == MAXSCORE_ID && totalCol)
+			    if (!Settings['total_column'] && userId == MAXSCORE_ID && totalCol)
 				rowValues[j] = gradesFormula(columnHeaders, totalCol+1, numRows);
 			    else
 				rowValues[j] = '';
@@ -1942,7 +1943,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var updateCols        = data[isheet][6];
 	var updateInsertRows  = data[isheet][7];
 	var updateRows        = data[isheet][8];
-	returnMessages.push('Debug::updateSheet, actions, modHeaders, updateKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length);
+	//returnMessages.push('Debug::updateSheet, actions, modHeaders, updateKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length);
 
 	try {
 	    var updateSheet = getSheet(updateSheetName);
@@ -1953,7 +1954,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    throw("Error:PROXY_MISSING_SHEET:Sheet not found: '"+updateSheetName+"'");
 	    }
 
-	    trackCall(1, 'updateSheet: start '+ProxyCacheRange+' '+updateSheetName+' '+updateSheet.getLastRow()+' '+updateSheet.getLastColumn()+' '+(proxyActions||''));
+	    trackCall(1, 'updateSheet: start total_col='+Settings['total_column']+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn()+', '+(proxyActions||''));
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
 
@@ -2214,10 +2215,10 @@ function handleProxyUpdates(data, create, returnMessages) {
 
 			var checkIdOffset = rowCols.indexOf(idCol);
 
-			var totalFormulas = null;
-			if (totalCol && totalCol >= pStartCol && totalCol <= pEndCol) {
+			var totalColFormulas = null;
+			if (!Settings['total_column'] && totalCol && totalCol >= pStartCol && totalCol <= pEndCol) {
 			    // Total column within range; get formula values
-			    totalFormulas = updateSheet.getRange(modStartRow, totalCol, nUpdateRows, 1).getFormulas();
+			    totalColFormulas = updateSheet.getRange(modStartRow, totalCol, nUpdateRows, 1).getFormulas();
 			}
 
 			// Update block
@@ -2235,9 +2236,9 @@ function handleProxyUpdates(data, create, returnMessages) {
 				modRow[ rowCols[mcol]-pStartCol ] = newRow[mcol];
 			    }
 
-			    if (totalFormulas) {
+			    if (totalColFormulas) {
 				// Do not overwrite old totalCol formula value for pre-existing row (formula updated by updateTotalFormula)
-				modRow[totalCol-pStartCol] = totalFormulas[mrow][0];
+				modRow[totalCol-pStartCol] = totalColFormulas[mrow][0];
 			    }
 			}
 			modRange.setValues(modVals);
@@ -2250,7 +2251,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var curRow = rowSel[0];
 			var prevVals = updateSheet.getRange(modStartRow, 1, 1, curRow.length).getValues()[0];
 
-			if (totalCol) {
+			if (!Settings['total_column'] && totalCol) {
 			    // Do not overwrite old totalCol formula value for pre-existing row (formula updated by updateTotalFormula)
 			    prevVals[totalCol-1] = updateSheet.getRange(modStartRow, totalCol, 1, 1).getFormula();
 			    curRow[totalCol-1] = prevVals[totalCol-1];
@@ -2318,7 +2319,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		}
 		trackCall(2, updateSheetName+':end');
 
-		if (totalCol && (deletedRows || insertedRows))
+		if (!Settings['total_column'] && totalCol && (deletedRows || insertedRows))
 		    updateTotalFormula(updateSheet, lastRowNum);
 
 		if (proxyActions) {
@@ -3553,6 +3554,8 @@ function gradesFormula(columnHeaders, startCol, lastRow) {
 }
 
 function updateTotalFormula(modSheet, nRows) {
+    if (Settings['total_column'])  // Totals handled by proxy
+	return;
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
     var totalCol = columnIndex['q_total'];
