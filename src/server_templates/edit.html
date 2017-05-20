@@ -58,7 +58,7 @@ function slidocUpdate(save, keystroke) {
    var previewURL = location.origin+previewPath+"?update=1";
    var previewName = "{{site_name}}_preview";
    var indexSession = ("{{session_name}}" == "index");
-   slidocStatus('');
+   slidocStatus('Processing ...');
 
    // Window opening must be triggered by user input
    if (!save && (!PreviewWin || !keystroke))
@@ -70,17 +70,19 @@ function slidocUpdate(save, keystroke) {
    xhr.onreadystatechange = function () {
       var DONE = 4; // readyState 4 means the request is done.
       if (xhr.readyState === DONE) {
-
          if (xhr.status === 200) {
+
             if (xhr.getResponseHeader('Content-Type') === 'application/json') {
                var retval = null;
                try {
                   retval = JSON.parse(xhr.responseText);
+
                   if (retval.result === 'error') {
-                     slidocStatus(retval.error);
+                     var errMsg = ''+retval.error;
+                     slidocStatus(errMsg);
                      if (PreviewWin) {
                          PreviewWin.Slidoc = null;
-                         PreviewWin.document.body.textContent = retval.error;
+                         PreviewWin.document.body.textContent = errMsg;
                      }
                      return;
                   }
@@ -108,10 +110,14 @@ function slidocUpdate(save, keystroke) {
            }
 
         } else {
-          slidocStatus(xhr.responseText+' (status='+xhr.status+')');
+          var errMsg = xhr.responseText+' (status='+xhr.status+')';
+          if (errMsg.indexOf('MODIFY_SESSION') >=0) {
+              errMsg = 'Retry with Modify ... option checked. ' + errMsg;
+          }
+          slidocStatus(errMsg);
           if (PreviewWin) {
              PreviewWin.Slidoc = null;
-             PreviewWin.document.body.textContent = xhr.responseText;
+             PreviewWin.document.body.textContent = errMsg;
           }
         }
 
@@ -155,7 +161,7 @@ document.onreadystatechange = function(event) {
     <label for="sessionname">Session:</label>
     <input type="text" id="sessionname" readonly="yes" name="sessionname" value="{{session_name}}"></input>
     &nbsp;&nbsp;
-    <label for="sessionmodify">Modify question types?</label>
+    <label for="sessionmodify">Modify question numbers/types?</label>
     <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
     <p></p>
     <textarea id="sessiontext" name="sessiontext" style="width: 90%;">{{session_text}}</textarea>

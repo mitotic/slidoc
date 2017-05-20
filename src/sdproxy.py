@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5f'
+VERSION = '0.97.5g'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -488,16 +488,16 @@ def createSheet(sheetName, headers, rows=[]):
 
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
-    def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None):
+    def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', modifiedHeaders=False):
         if not rows:
             raise Exception('Must specify at least header row for sheet')
         self.name = name
         self.keyHeader = keyHeader
         self.modTime = modTime
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
-        self.modifiedHeaders = False
 
-        self.actionsRequested = ''
+        self.actionsRequested = actions
+        self.modifiedHeaders = modifiedHeaders
 
         self.readOnly = isReadOnly(name)
         self.holdSec = CACHE_HOLD_SEC
@@ -548,7 +548,8 @@ class Sheet(object):
 
     def copy(self):
         # Returns "shallow" copy
-        return Sheet(self.name, self.xrows, keyHeader=self.keyHeader, modTime=self.modTime, accessTime=self.accessTime, keyMap=self.keyMap)
+        return Sheet(self.name, self.xrows, keyHeader=self.keyHeader, modTime=self.modTime, accessTime=self.accessTime, keyMap=self.keyMap,
+                     actions=self.actionsRequested, modifiedHeaders=self.modifiedHeaders)
 
     def expire(self):
         # Delete after any updates are processed

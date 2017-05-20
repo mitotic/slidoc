@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5f';
+var VERSION = '0.97.5g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1942,7 +1942,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var updateCols        = data[isheet][6];
 	var updateInsertRows  = data[isheet][7];
 	var updateRows        = data[isheet][8];
-	//returnMessages.push('Debug::updateSheet, actions, keys, rows: '+updateSheetName+', '+proxyActions+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length);
+	returnMessages.push('Debug::updateSheet, actions, modHeaders, updateKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length);
 
 	try {
 	    var updateSheet = getSheet(updateSheetName);
@@ -2039,14 +2039,16 @@ function handleProxyUpdates(data, create, returnMessages) {
 
 		var headerOffset = 1;
 		var idValues = updateSheet.getSheetValues(1+headerOffset, idCol, lastRowNum-headerOffset, 1);
+		var nameValues = updateSheet.getSheetValues(1+headerOffset, nameCol, lastRowNum-headerOffset, 1);
+
 		var updateStickyRows = lastRowNum;
 		if (lastRowNum > 1) {
-		    // Determine number of sticky rows
+		    // Determine number of sticky rows (header row plus any rows with no ids)
 		    for (var k=0; k < idValues.length; k++) {
 			// Locate first non-null key
 			if (idValues[k][0]) {
-			    updateStickyRows = k+1;
-			    break
+			    updateStickyRows = k+headerOffset;
+			    break;
 			}
 		    }
 
@@ -2067,13 +2069,16 @@ function handleProxyUpdates(data, create, returnMessages) {
 		}
 		lastRowNum = lastRowNum - deletedRows;
 
-		if (updateInsertNames.length) {
+		if (updateStickyRows > headerOffset || deletedRows) {
+		    // Refresh row ids and names
 		    idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, lastRowNum-updateStickyRows, 1);
-		    var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
+		    nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
+		}
 
+		if (updateInsertNames.length) {
 		    var idRow = {}
 		    for (var jrow=0; jrow<idValues.length; jrow++)
-			idRow[idValues[jrow][0]] = jrow+1;
+			idRow[idValues[jrow][0]] = jrow+updateStickyRows;
 
 		    var startRow = 0;
 		    var rowCount = 0;
@@ -2139,11 +2144,10 @@ function handleProxyUpdates(data, create, returnMessages) {
 		}
 
 		lastRowNum += insertedRows;
-		if (updateStickyRows > 1 || deletedRows || insertedRows) {
-		    // Refresh row ids (and possibly names)
+		if (insertedRows) {
+		    // Refresh row ids and names
 		    idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, lastRowNum-updateStickyRows, 1);
-		    if (deletedRows || insertedRows)
-			nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
+		    nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
 		}
 
 		trackCall(2, updateSheetName+':ids ['+updateKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);

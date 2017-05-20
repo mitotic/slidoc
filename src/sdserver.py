@@ -2198,12 +2198,7 @@ class ActionHandler(BaseHandler):
                 errMsg = 'Error in editing session '+sessionName+': '+errMsg
             else:
                 errMsg += ' (session: '+sessionName+')'
-            if slideNumber or update:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
-
-            self.set_header('Content-Type', 'application/json')
-            self.write( json.dumps( {'result': 'error', 'error':errMsg} ) )
-            return
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
         self.previewState['modimages'] = modimages
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
