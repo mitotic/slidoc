@@ -2374,7 +2374,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     return (due_date_str, modify_questions)
 
 
-def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=None):
+def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modify_session=None):
     modify_col = 0
     user = TESTUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user) if hmac_key else ''
@@ -2401,9 +2401,13 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
         row_count = 2
 
     if modify_session == 'overwrite':
-        modify_col = len(prev_headers) + 1
+        # Extend/truncate grade columns
+        modify_col = len(Manage_fields)+len(Session_fields)+1
+        if pace_level:
+            modify_col += len(Score_fields)
 
     elif modify_session == 'truncate':
+        # Truncate columns
         if len(headers) < len(prev_headers):
             modify_col = len(headers) + 1
 
@@ -2864,7 +2868,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
     js_params = {'siteName': '', 'fileName': '', 'chapterId': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'overwrite': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
-                 'gradeFields': [], 'topnavList': [], 'tocFile': '',
+                 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0, 'timedSec': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '', 'discussSlides': [],
@@ -3324,7 +3328,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
-            max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields,
+            max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
                                                                      modify_session=modify_session)
             mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                  file_config.session_weight, file_config.session_rescale, release_date_str, due_date_str, file_config.media_url, js_params['paceLevel'],
