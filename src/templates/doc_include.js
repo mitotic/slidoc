@@ -1080,9 +1080,25 @@ Slidoc.assessmentMenu = function () {
 }
 
 function winURL(win) {
-    // Returns window HREF (without hash)
-    return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname + win.location.search;
+    // Returns window HREF (without hash), or null string on error
+    if (!win)
+       return '';
+    try {
+        return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname +
+win.location.search;
+    } catch (err) {
+        return '';
+    }
 }
+
+function checkPreviewWin() {
+   var url = winURL(Sliobj.previewWin);
+   if (!url)
+      Sliobj.previewWin = null;
+   return url;
+}
+
+Sliobj.previewWin = null;
 
 function openWin(url, name) {
    // Open named window, if not already open
@@ -1091,7 +1107,7 @@ function openWin(url, name) {
 
    if (win) {
       var utemp = winURL(win);
-      console.log("openWin", win.location.href, utemp, ' URL:', url, win);
+      console.log("openWin", utemp, ' URL:', url, win);
       if (utemp != url && utemp != 'about:blank')
          win.location.href = 'about:blank';
    } else {
@@ -1100,8 +1116,6 @@ function openWin(url, name) {
    }
    return win;
 }
-
-Sliobj.previewWin = null;
 
 Slidoc.slideEdit = function(action, slideId) {
     Slidoc.log('slideEdit:', action, slideId);
@@ -1135,9 +1149,9 @@ Slidoc.slideEdit = function(action, slideId) {
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
 
-    } else if (action == 'update' || action == 'save' || action == 'delete' || action == 'rollover') {
+    } else if (action == 'open' || action == 'update' || action == 'save' || action == 'delete' || action == 'rollover') {
 	params.sessiontext = editArea.value;
-	if (action == 'update')
+	if (action == 'open' || action == 'update')
 	    params.update = '1';
 	if (action == 'delete')
 	    params.deleteslide = 'delete';
@@ -1147,10 +1161,16 @@ Slidoc.slideEdit = function(action, slideId) {
 	// Window opening must be triggered by user input
 	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
 	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
-	if (!Sliobj.previewWin || Sliobj.previewWin.location.href != previewURL)
-	    Sliobj.previewWin = openWin(previewURL, Sliobj.params.siteName+'_preview');
 
-	if (Sliobj.previewWin && !Sliobj.previewWin.Slidoc && Sliobj.previewWin.document)
+	if (action == 'open' || (action == 'update' && !checkPreviewWin())) {
+	    if (!window.confirm('This will open a separate "live" preview window, which can be updated automatically. If you do not want live preview in a separate window, cancel now and use Save to preview in this window. (You can use Control-Enter keystoke to trigger live updates.)')) {
+		return false;
+	    }
+
+	    Sliobj.previewWin = openWin(previewURL, Sliobj.params.siteName+'_preview');
+	}
+
+	if (checkPreviewWin() && !Sliobj.previewWin.Slidoc && Sliobj.previewWin.document)
 	    Sliobj.previewWin.document.body.textContent = 'Processing ...';
 
 	function slideSaveAux(result, errMsg) {
@@ -1170,20 +1190,24 @@ Slidoc.slideEdit = function(action, slideId) {
 			Sliobj.previewWin.Slidoc = null;
 			Sliobj.previewWin.document.body.textContent = msg;
 		    }
+		    alert(msg);
 		}
 		return;
 	    }
 
-	    if (action == 'update') {
-                if (Sliobj.previewWin.location.href == 'about:blank') {
-                    Sliobj.previewWin.location = previewURL;
-		} else if (!Sliobj.params.fileName || !Sliobj.previewWin.Slidoc) {
-		    // Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket
-		    Sliobj.previewWin.location.reload(true);
+	    if (action == 'open' || action == 'update') {
+		if (checkPreviewWin()) {
+                    if (checkPreviewWin()== 'about:blank') {
+			Sliobj.previewWin.location = previewURL;
+		    } else if (!Sliobj.params.fileName || !Sliobj.previewWin.Slidoc) {
+			// Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket
+			Sliobj.previewWin.location.reload(true);
+		    }
+		    statusElem.textContent = 'Updated preview window';
 		}
-		statusElem.textContent = 'Updated preview window';
 	    } else {
-		Sliobj.previewWin.close();
+		if (checkPreviewWin())
+		    Sliobj.previewWin.close();
 		Sliobj.previewWin = null;
 		loadPath(previewPath, '#'+slideId);
 	    }
@@ -2336,6 +2360,49 @@ Slidoc.interact = function() {
     Slidoc.showPopup(html);
 }
 
+Slidoc.resetQuestion = function(userId) {
+    var slide_id = Slidoc.getCurrentSlideId();
+    if (!slide_id) {
+	alert('No current slide');
+	return;
+    }
+    var question_number = getQuestionNumber(slide_id);
+    if (!question_number) {
+	alert('Not a question slide');
+    }
+
+    if (Sliobj.session && Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
+	alert('Must unsubmit session(s) before resetting response to questions');
+	return;
+    }
+    if (!window.confirm('Reset (erase) '+(userId||'all users')+' response to question '+question_number+'?'))
+	return;
+    
+    if (Sliobj.currentSlide == Sliobj.session.lastSlide && Sliobj.params.paceLevel >= ADMIN_PACE) {
+	// AdminPaced last slide; no need to confirm twice
+    } else {
+    if (!window.confirm('Resetting question '+question_number+' is not reversible. Proceed anyway?'))
+	return;
+    }
+    GService.requestWS('reset_question', [question_number, userId||''], resetQCallback);
+}
+
+function resetQCallback(retObj, errMsg) {
+    Slidoc.log('resetQCallback:', retObj, errMsg);
+    var msg = '';
+    if (retObj && retObj.result == 'success') {
+	msg = 'Question has been successfully reset. Reload page.';
+    } else {
+	if (retObj && retObj.error) {
+	    msg += retObj.error;
+	}
+	if (errMsg) {
+	    msg += retObj.error;
+	}
+    }
+    alert(msg || 'Unknown error in question reset');
+}
+
 Slidoc.toggleInteract = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -2357,6 +2424,7 @@ function enableInteract(active) {
     if (qattrs && qattrs.qnumber in Sliobj.session.questionsAttempted)
 	qattrs = null;
     GService.requestWS('interact', [lastSlideId, qattrs], interactCallback);
+    // Note: Closing websocket will disable interactivity
 }
 
 function interactCallback() {
@@ -5966,17 +6034,30 @@ Slidoc.submitStatus = function () {
 	    }
 	}
     }
+    if (Sliobj.gradableState || getUserId() == Sliobj.params.testUserId) {
+	var userId = getUserId() || '';
+	if (!Sliobj.gradableState)
+	    userId = '';
+        if (Sliobj.currentSlide && Sliobj.questionSlide) {
+	    var elemAttrs = 'class="slidoc-clickable" onclick="Slidoc.resetQuestion('+"'"+userId+"'"+');"'
+	} else {
+	    var elemAttrs = 'class="slidoc-disabled"';
+	}
+	html += '<br><span '+elemAttrs+'>Reset '+(userId?'user':'ALL')+' responses to current question</span><br>';
+    }
+
     if (Sliobj.session.submitted || Sliobj.gradableState)
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.uploadFile();">Late file upload</span>';
 
     if (Sliobj.gradableState) {
 	if (Sliobj.session.submitted && Sliobj.session.submitted != 'GRADING') {
 	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(false);">Unsubmit session for user (and clear late token)</span>';
-	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll(false);">Unsubmit session for ALL users (and clear late token)</span>';
 	} else {
 	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmit(true);">Force submit session for user</span><br>';
-	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll(true);">Force submit session for ALL users</span>';
 	}
+	html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll(true);">Force submit session for ALL users</span>';
+	html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll(false);">Unsubmit session for ALL users (and clear late token)</span>';
+
 	if (Sliobj.gradeDateStr)
 	    html += '<hr>Grades released to students at '+Sliobj.gradeDateStr;
 	else
@@ -5986,23 +6067,28 @@ Slidoc.submitStatus = function () {
 }
 
 Slidoc.forceSubmitAll = function(submitAction) {
-    var submitIds = [];
+    var modIds = [];
     for (var j=0; j<Sliobj.userList.length; j++) {
 	var userId = Sliobj.userList[j];
 	var submitted = Sliobj.userGrades[userId].submitted && Sliobj.userGrades[userId].submitted != 'GRADING';
 	if (submitAction && !submitted)
-	    submitIds.push(userId);
+	    modIds.push(userId);
 	else if (!submitAction && submitted)
-	    submitIds.push(userId);
+	    modIds.push(userId);
     }
-    if (!submitIds.length) {
-	alert('No unsubmitted users!');
+    if (!modIds.length) {
+	alert('No '+(submitAction?'unsubmitted':'submitted') +' users!');
+	return;
+    }
+
+    if (!submitAction && Slidoc.PluginManager.pastDueDate()) {
+	alert('Cannot unsubmit when there may be past due entries (due to auto-submission for grading). Please remove/change session due date');
 	return;
     }
 	
-    if (!window.confirm('Force '+(submitAction?'submit':'unsubmit')+' for '+submitIds.length+' users: '+submitIds.join(',')))
+    if (!window.confirm('Force '+(submitAction?'submit':'unsubmit')+' for '+modIds.length+' users: '+modIds.join(',')))
 	return;
-    var remainingCount = submitIds.length;
+    var remainingCount = modIds.length;
     var errorCount = 0;
     var pendingElem = document.getElementById("slidoc-pending-display");
     if (pendingElem)
@@ -6021,8 +6107,8 @@ Slidoc.forceSubmitAll = function(submitAction) {
 	}
     }
     var gsheet = getSheet(Sliobj.sessionName);
-    for (var j=0; j<submitIds.length; j++)
-	gsheet.updateRow({id: submitIds[j], submitTimestamp: (submitAction ? null : '')}, {}, forceSubmitAllCallback);
+    for (var j=0; j<modIds.length; j++)
+	gsheet.updateRow({id: modIds[j], submitTimestamp: (submitAction ? null : '')}, {}, forceSubmitAllCallback);
 }
 
 Slidoc.forceSubmit = function(submit) {

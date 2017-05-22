@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5h';
+var VERSION = '0.97.5j';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -341,7 +341,7 @@ SheetCache.prototype.getSheetValues = function(startRow, startCol, nRows, nCols)
 function numSort(a,b) {return a-b;}
 
 // Call tracking (level 0 => end of call)
-function trackCall(level, msg, endCall) {}
+function trackCall(level, msg) {}
 
 function startCallTracking(logLevel, params, sheetName, origUser) {
     var curDate = new Date();
@@ -381,7 +381,7 @@ function startCallTracking(logLevel, params, sheetName, origUser) {
     callSheet.getRange(callRows+1, 1, 1, callValues.length).setValues([callValues]);
     var callEndRange = callSheet.getRange(callRows+1, callValues.length+1, 1, 2);
     var progressCol = callHeaders.length + 1;
-    function trackCallAux(level, msg, endCall) {
+    function trackCallAux(level, msg) {
 	if (!level) {
 	    callEndRange.setValues([[(new Date()).getTime() - curTime, msg]]);
 	} else if (level <= logLevel) {
@@ -796,7 +796,7 @@ function sheetAction(params) {
                                 for (var j=0; j < nCols; j++) {
 				    for (var k=0; k < modRows; k++) {
                                         if (values[k][j] != '') {
-					    throw( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName );
+					    throw( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName+" (modcol="+modifyStartCol+")");
                                         }
 				    }
                                 }
@@ -907,13 +907,13 @@ function sheetAction(params) {
                 returnValues = [];
             } else {
                 if (sessionEntries && dueDate) {
-                    // Force submit all non-sticky rows past effective due date
+                    // Force submit all non-sticky regular user rows past effective due date
                     var idCol = columnIndex.id;
                     var submitCol = columnIndex.submitTimestamp;
                     var lateTokenCol = columnIndex.lateToken;
                     var allValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, columnHeaders.length);
                     for (var j=0; j<allValues.length; j++) {
-                        if (allValues[j][submitCol-1] || allValues[j][idCol-1] == MAXSCORE_ID) {
+                        if (allValues[j][submitCol-1] || allValues[j][idCol-1] == MAXSCORE_ID || allValues[j][idCol-1] == TESTUSER_ID) {
                             continue;
                         }
                         var lateToken = allValues[j][lateTokenCol-1];
@@ -1383,7 +1383,7 @@ function sheetAction(params) {
 		throw('Error::Selected updates cannot be applied to new row');
 	    } else {
 		var pastSubmitDeadline = false;
-		var forceSubmission = false;
+		var autoSubmission = false;
 		var fieldsMin = columnHeaders.length;
 		var submitTimestampCol = columnIndex['submitTimestamp'];
 		var prevSubmitted = null;
@@ -1430,7 +1430,7 @@ function sheetAction(params) {
                             if (pastSubmitDeadline) {
                                 if (getRow && !(newRow || rowUpdates || selectedUpdates)) {
                                     // Reading existing row; force submit
-                                    forceSubmission = true;
+                                    autoSubmission = true;
                                     selectedUpdates = [ ['id', userId], ['Timestamp', null], ['submitTimestamp', null] ];
                                     returnMessages.push("Warning:FORCED_SUBMISSION:Forced submission for user '"+(displayName || "")+"' to session '"+sheetName+"'");
                                 } else {
@@ -1643,6 +1643,7 @@ function sheetAction(params) {
                     var discussNameCol = 1;
                     var discussIdCol = 2;
                     if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
+			// AdminPaced test user row update
                         var lastSlideCol = columnIndex['lastSlide'];
                         if (lastSlideCol && rowValues[lastSlideCol-1]) {
                             // Copy test user last slide number as new adminPaced value
@@ -1710,7 +1711,7 @@ function sheetAction(params) {
 		} else if (selectedUpdates) {
 		    // Update selected row values
 		    // Timestamp is updated only if specified in list
-		    if (!forceSubmission && !voteSubmission && !discussionPost && !twitterSetting) {
+		    if (!autoSubmission && !voteSubmission && !discussionPost && !twitterSetting) {
 			if (!adminUser)
 			    throw("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'");
 
@@ -1754,7 +1755,7 @@ function sheetAction(params) {
 				modValue = curDate;
 			    }
 			} else if (colHeader == 'submitTimestamp') {
-                            if (forceSubmission) {
+                            if (autoSubmission) {
 				modValue = curDate;
 			    } else if (alterSubmission) {
                                 if (colValue == null) {
@@ -1762,9 +1763,12 @@ function sheetAction(params) {
                                 } else if (colValue) {
                                     modValue = createDate(colValue);
                                 } else {
-                                    // Unsubmit if blank value (also clear lateToken)
+                                    // Unsubmit if blank value (also clear lateToken and due date, if admin paced)
                                     modValue = '';
                                     modSheet.getRange(userRow, columnIndex['lateToken'], 1, 1).setValues([[ '' ]]);
+				    if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
+					setValue(sheetName, 'dueDate', '', INDEX_SHEET);
+				    }
                                 }
                                 if (modValue) {
                                     returnInfo['submitTimestamp'] = modValue;
@@ -1943,7 +1947,10 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var updateCols        = data[isheet][6];
 	var updateInsertRows  = data[isheet][7];
 	var updateRows        = data[isheet][8];
-	//returnMessages.push('Debug::updateSheet, actions, modHeaders, updateKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length);
+
+	var debugMsg = 'Debug::updateSheet, actions, modHeaders, headers, updateKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
+	trackCall(1, debugMsg);
+	//returnMessages.push(debugMsg);
 
 	try {
 	    var updateSheet = getSheet(updateSheetName);
@@ -1954,7 +1961,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    throw("Error:PROXY_MISSING_SHEET:Sheet not found: '"+updateSheetName+"'");
 	    }
 
-	    trackCall(1, 'updateSheet: start total_col='+Settings['total_column']+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn()+', '+(proxyActions||''));
+	    trackCall(1, 'updateSheet: start total_col='+Settings['total_column']+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn());
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
 
@@ -2079,7 +2086,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		if (updateInsertNames.length) {
 		    var idRow = {}
 		    for (var jrow=0; jrow<idValues.length; jrow++)
-			idRow[idValues[jrow][0]] = jrow+updateStickyRows;
+			idRow[idValues[jrow][0]] = jrow+1+updateStickyRows;
 
 		    var startRow = 0;
 		    var rowCount = 0;
@@ -2108,11 +2115,15 @@ function handleProxyUpdates(data, create, returnMessages) {
 
 		    var jinsert = 0;
 		    for (var jrow=0; jrow<idValues.length; jrow++) {
+			var prevCount = 0;
 			var insertCount = 0;
 
 			for (var kinsert=jinsert; kinsert<updateInsertNames.length; kinsert++) {
-			    if (idRow[updateInsertNames[kinsert][1]])  // Skip pre-existing row (handled earlier)
+			    if (idRow[updateInsertNames[kinsert][1]])  {
+				// Skip pre-existing row (handled earlier)
+				prevCount += 1;
 				break;
+			    }
 
 			    if (updateInsertNames[kinsert][0] < nameValues[jrow][0] || (updateInsertNames[kinsert][0] == nameValues[jrow][0] && updateInsertNames[kinsert][1] < idValues[jrow][0]) ) {
 				// New row to be inserted (should be located before current row)
@@ -2129,9 +2140,10 @@ function handleProxyUpdates(data, create, returnMessages) {
 
 			    insertedRows += insertCount;
 			    jinsert += insertCount;
-			    if (jinsert >= updateInsertNames.length)
-				break;
 			}
+			jinsert += prevCount;
+			if (jinsert >= updateInsertNames.length)
+			    break;
 		    }
 
 		    if (jinsert < updateInsertNames.length) {
@@ -3568,20 +3580,23 @@ function updateTotalFormula(modSheet, nRows) {
 	maxTotalRange.setValue(totalGradesFormula);
 }
 
-function updateTotalScores(modSheet, sessionAttributes, questions, force) {
+function updateTotalScores(modSheet, sessionAttributes, questions, force, startRow, nRows) {
     // If not force, only update non-blank entries
     // Return number of rows updated
+    if (!questions) {
+        return 0;
+    }
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
     var nUpdates = 0;
-    var startRow = 2;
-    var nRows = modSheet.getLastRow()-startRow+1;
+    var startRow = startRow || 2;
+    var nRows = nRows || modSheet.getLastRow()-startRow+1;;
     if (nRows > 0) {
         // Update total scores
         var idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1);
         var scoreValues = modSheet.getSheetValues(startRow, columnIndex['q_scores'], nRows, 1);
         for (var k=0; k < nRows; k++) {
-            if (idVals[k][0] != MAXSCORE_ID && questions && (force || scoreValues[k][0] != '')) {
+            if (idVals[k][0] != MAXSCORE_ID && (force || scoreValues[k][0] != '')) {
 		var temRowVals = modSheet.getSheetValues(startRow+k, 1, 1, columnHeaders.length)[0];
 		var savedSession = unpackSession(columnHeaders, temRowVals);
 		var newScore = '';
@@ -3597,6 +3612,78 @@ function updateTotalScores(modSheet, sessionAttributes, questions, force) {
 	}
     }
     return nUpdates;
+}
+
+
+function clearQuestionResponses(sessionName, questionNumber, userId) {
+    var sessionSheet = getSheet(sessionName);
+    if (!sessionSheet) {
+        throw('Session '+sessionName+' not found');
+    }
+
+    var columnHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
+    var columnIndex = indexColumns(sessionSheet);
+
+    if (userId) {
+        var idRowIndex = indexRows(sessionSheet, columnIndex['id']);
+        var startRow = idRowIndex[userId];
+        if (!startRow) {
+            throw('User id '+userId+' not found in session '+sessionName);
+        }
+        var nRows = 1;
+    } else {
+        startRow = 3;
+        var nRows = sessionSheet.getLastRow()-startRow+1;
+    }
+
+    var submitTimestampCol = columnIndex.submitTimestamp;
+    var submits = sessionSheet.getSheetValues(startRow, submitTimestampCol, nRows, 1);
+    for (var j=0; j<submits.length; j++) {
+        if (submits[j][0]) {
+            throw('Cannot clear question response for submitted sessions');
+        }
+    }
+
+    var blanks = [];
+    for (var k=0; k<nRows; k++) {
+        blanks.push(['']);
+    }
+
+    var qprefix = 'q'+(questionNumber);
+    var clearedResponse = false;
+    for (var j=0; j<columnHeaders.length; j++) {
+        var header = columnHeaders[j];
+        if (header.split('_')[0] == qprefix) {
+            clearedResponse = true;
+            sessionSheet.getRange(startRow, j+1, nRows, 1).setValues(blanks);
+        }
+    }
+
+    if (!clearedResponse) {
+        var sessionCol = columnIndex.session_hidden;
+        for (var k=0; k<nRows; k++) {
+            var sessionRange = sessionSheet.getRange(k+startRow, sessionCol, 1, 1);
+            var session_hidden = sessionRange.getValue();
+            if (!session_hidden) {
+                continue;
+            }
+            var session = loadSession(session_hidden);
+            if ('questionsAttempted' in session && questionNumber in session['questionsAttempted']) {
+		clearedResponse = true;
+                delete session['questionsAttempted'][questionNumber];
+                sessionRange.setValue(JSON.stringify(session));
+            }
+        }
+    }
+
+    if (clearedResponse) {
+	// Update total score and answer stats
+	var sessionEntries = lookupValues(sessionName, ['questions', 'attributes'], INDEX_SHEET);
+	var sessionAttributes = JSON.parse(sessionEntries['attributes']);
+	var questions = JSON.parse(sessionEntries['questions']);
+	updateTotalScores(sessionSheet, sessionAttributes, questions, true, startRow, nRows);
+	actionHandler('answer_stats', sessionName);
+    }
 }
 
 
@@ -4025,26 +4112,28 @@ function actionHandler(actions, sheetName, create) {
     var sessions = sheetName ? [sheetName] : getSessionNames();
     var actionList = actions.split(',');
     var refreshSheets = []
-    for (var j=0; j<actionList.length; j++) {
-	if (actionList[j] == 'answer_stats') {
+    for (var k=0; k<actionList.length; k++) {
+	var action = actionList[k];
+	trackCall(2, 'actionHandler: '+action);
+	if (action == 'answer_stats') {
 	    for (var j=0; j<sessions.length; j++) {
 		updateAnswers(sessions[j], create);
 		updateStats(sessions[j], create);
 		refreshSheets.push(sessions[j]+'-answers');
 		refreshSheets.push(sessions[j]+'-stats');
 	    }
-	} else if (actionList[j] == 'correct') {
+	} else if (action == 'correct') {
 	    for (var j=0; j<sessions.length; j++) {
 		updateCorrect(sessions[j], create);
 		refreshSheets.push(sessions[j]+'-correct');
 	    }
-	} else if (actionList[j] == 'gradebook') {
+	} else if (action == 'gradebook') {
 	    var retval = updateScores(sessions, create);
 	    if (!retval.length && sessions.length)
 		throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
 	    refreshSheets.push(SCORES_SHEET);
 	} else {
-	    throw('Error:ACTION:Invalid action '+actionList[j]+' for session(s) '+sessions);
+	    throw('Error:ACTION:Invalid action '+action+' for session(s) '+sessions);
 	}
     }
     return refreshSheets;

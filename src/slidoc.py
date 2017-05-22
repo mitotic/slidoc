@@ -949,9 +949,13 @@ class SlidocRenderer(MathRenderer):
         html += '''  </span>\n'''
         html += '''</div>\n'''
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-img-drop slidoc-noprint" style="display: none;">\n''' % (slide_id,)
-        html += '''  <button id="%s-togglebar-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Open/update preview</button> <br>\n''' % (slide_id, slide_id)
         html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
-        html += '''  <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button><br>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
+        html += '''  <div>\n'''
+        html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
+        html += '''  </div><div>\n'''
+        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
+        html += '''  </div>\n'''
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img slidoc-previewonly">''' % (slide_id,)
         html += '''    <span id="%s-togglebar-edit-imgname" class="slidoc-togglebar-edit-imgname" data-imgname=""></span><img id="%s-togglebar-edit-imgdisp" class="slidoc-togglebar-edit-imgdisp" src="">\n''' % (slide_id, slide_id)
@@ -2397,7 +2401,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, modify_session=No
         row_count = 2
 
     if modify_session == 'overwrite':
-        modify_col = len(Manage_fields)+len(Session_fields)+1
+        modify_col = len(prev_headers) + 1
 
     elif modify_session == 'truncate':
         if len(headers) < len(prev_headers):
@@ -4050,8 +4054,8 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
 #   remote_answers: Correct answers and score are stored remotely until session is graded
-#   share_all: share responses for all questions
-#   share_answers: share answers for all questions after completion (e.g., an exam)
+#   share_all: share responses for all questions after end of lecture etc.
+#   share_answers: share answers for all questions after grading (e.g., after an exam)
 #   show_correct: show correct answers for non-paced sessions
 #   shuffle_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly

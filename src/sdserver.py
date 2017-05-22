@@ -1705,6 +1705,7 @@ class ActionHandler(BaseHandler):
 
             self.previewState['overwrite'] = overwrite
             self.previewState['modimages'] = ''
+            self.previewState['rollover_log'] = ''
             self.previewState['rollover'] = None
             return ''
 
@@ -1955,10 +1956,16 @@ class ActionHandler(BaseHandler):
             WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
         errMsgs = self.rebuild(uploadType, indexOnly=True)
 
+        prevMsgs = ''
         if errMsgs and any(errMsgs):
-            msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
-            self.displayMessage(msgs, back_url=sessionPath)
-            return
+            # Search for string 'error' in messages
+            for msg in errMsgs:
+                if 'error' in msg.lower():
+                    msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
+                    self.displayMessage(msgs, back_url=sessionPath)
+                    return
+            # Previous "error" messages
+            prevMsgs = '\n'.join(errMsgs)+'\n\n'
 
         if not rolloverParams:
             self.redirect(sessionPath)
@@ -1981,6 +1988,8 @@ class ActionHandler(BaseHandler):
             return
 
         self.previewState['modimages'] = 'clear'
+        self.previewState['rollover_log'] = prevMsgs
+        # Termination condition
         if not rollover:
             self.acceptPreview(rollover=True)
 
@@ -2230,7 +2239,7 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to access rollover testuser entry for session '+sessionName)
 
         if not lastSlide:
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid last slide entry to rollover session '+sessionName)
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Zero last slide entry to rollover session '+sessionName)
 
         _, md_slides, __ = self.extract_slides(src_path, web_path)
 
@@ -2292,8 +2301,7 @@ class ActionHandler(BaseHandler):
         if errMsg:
             if self.previewState:
                 self.discardPreview()
-            self.displayMessage('Error in rolling over session '+sessionNext+': '+errMsg)
-            return
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in rolling over session '+sessionNext+': '+errMsg)
 
         self.previewState['rollover'] = rolloverParams
         self.previewState['modimages'] = 'clear'
@@ -2479,7 +2487,7 @@ class ConnectionList(list):
 
 class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     _connections = defaultdict(functools.partial(defaultdict,ConnectionList))
-    _interactiveSession = (None, None, None)
+    _interactiveSession = (None, None, None, None)
     _interactiveErrors = {}
     @classmethod
     def get_connections(cls, sessionName=''):
@@ -2500,14 +2508,15 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     @classmethod
     def getInteractiveSession(cls):
-        if cls._interactiveSession[1]:
-            return UserIdMixin.get_path_base(cls._interactiveSession[0])
+        # Return name of interactive session (if any)
+        if cls._interactiveSession[2]:
+            return UserIdMixin.get_path_base(cls._interactiveSession[1])
         else:
             return ''
 
     @classmethod
-    def setupInteractive(cls, path, slideId='', questionAttrs=None):
-        cls._interactiveSession = (path, slideId, questionAttrs)
+    def setupInteractive(cls, connection, path, slideId='', questionAttrs=None):
+        cls._interactiveSession = (connection, path, slideId, questionAttrs)
         cls._interactiveErrors = {}
         if Options['debug']:
             print >> sys.stderr, 'sdserver.setupInteractive:', cls._interactiveSession
@@ -2543,11 +2552,18 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
 
     @classmethod
+    def closeSessionConnections(cls, sessionName):
+        # Close all socket connections for specified session
+        for userId, connections in cls.get_connections(sessionName).items():
+            for connection in connections:
+                connection.close()
+
+    @classmethod
     def processMessage(cls, fromUser, fromRole, fromName, message, allStatus=False, source=''):
         # Return null string on success or error message
         print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromRole, fromName, message
 
-        path, slideId, questionAttrs = cls._interactiveSession
+        conn, path, slideId, questionAttrs = cls._interactiveSession
         if not path or not slideId:
             msg = 'Message from '+fromUser+' discarded. No active session'
             if Options['debug']:
@@ -2569,7 +2585,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 break
 
         if not admin_found:
-            cls._interactiveSession = (None, None, None)
+            cls._interactiveSession = (None, None, None, None)
             msg = 'Message from '+fromUser+' discarded. No active controller for session '+sessionName
             if Options['debug']:
                 print >> sys.stderr, 'sdserver.processMessage:', msg
@@ -2739,6 +2755,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 del self._connections[self.pathUser[0]][self.pathUser[1]]
             if not self._connections[self.pathUser[0]]:
                 del self._connections[self.pathUser[0]]
+
+            if self._interactiveSession[0] is self:
+                # Disable interactivity associated with this connection
+                self._interactiveSession = (None, None, None, None)
+
         except Exception, err:
             pass
 
@@ -2806,9 +2827,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             callback_index = obj[0]
             method = obj[1]
             args = obj[2]
-            retObj = None
+            retObj = {"result":"success"}
             if Options['debug']:
                 print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
+
+            sessionName = self.get_path_base(self.pathUser[0])
             if method == 'close':
                 self.close()
 
@@ -2829,7 +2852,15 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
             elif method == 'interact':
                 if self.userRole == sdproxy.ADMIN_ROLE:
-                    self.setupInteractive(self.pathUser[0], args[0], args[1])
+                    self.setupInteractive(self, self.pathUser[0], args[0], args[1])
+
+            elif method == 'reset_question':
+                if self.userRole == sdproxy.ADMIN_ROLE:
+                    # Do not accept interactive responses
+                    WSHandler.setupInteractive(None, None, None, None)
+                    sdproxy.clearQuestionResponses(sessionName, args[0], args[1])
+                    # Close all session websockets (forcing reload)
+                    IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
 
             elif method == 'plugin':
                 if len(args) < 2:
@@ -2838,7 +2869,6 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 pluginMethod = self.getPluginMethod(pluginName, pluginMethodName)
 
                 params = {'pastDue': ''}
-                sessionName = self.get_path_base(self.pathUser[0])
                 userId = self.pathUser[1]
                 if sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
                     sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)

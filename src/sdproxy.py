@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5h'
+VERSION = '0.97.5j'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -218,7 +218,9 @@ def startPreview(sessionName):
     sessionSheet = Sheet_cache.get(sessionName)
     if sessionSheet:
         if sessionSheet.get_updates() is not None:
-            return 'Pending updates for session '+sessionName+'; retry preview after 10-20 seconds'
+            if Global.cacheUpdateError:
+                return 'Cache update error (%s); need to restart server' % Global.cacheUpdateError
+            return 'Pending updates for session %s; retry preview after 10-20 seconds (reqid=%s)' % (sessionName, Global.httpRequestId)
     else:
         sessionSheet = getSheet(sessionName, optional=True)
 
@@ -591,6 +593,7 @@ class Sheet(object):
     def requestActions(self, actions=''):
         # Actions to be carried after cache updates to this sheet are completed
         self.actionsRequested = actions
+        need_update(self.name)
 
     def export(self, keepHidden=False, allUsers=False, csvFormat=False, idRename='', altidRename=''):
         headers = self.xrows[0][:]
@@ -771,35 +774,35 @@ class Sheet(object):
                         raise Exception('Cannot alter key value %s to %s in sheet %s' % (keyValue, newKeyValue, self.name))
 
             if self.keyMap[keyValue][1]:
-                # Inserting
-                if self.totalCols:
-                    self.update_total(rowNum)
-                continue
+                # Newly inserted row; assume all columns are being updated
+                updateSheet = True
+                updateTotal = bool(self.totalCols)
 
-            updateTotal = False
-            diffCount = 0
-            oldValues = self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1]
-            for icol in range(len(oldValues)):
-                ##if headers[icol+colMin-1] == 'q_total' and keyValue != MAXSCORE_ID:
-                ##    # Ignore diffs in total formula results
-                ##    continue
-                oldValue = oldValues[icol]
-                newValue = rowValues[icol]
-                if isinstance(newValue, datetime.datetime) and isinstance(oldValue, datetime.datetime):
-                    isEqual = (sliauth.iso_date(newValue, nosubsec=True) == sliauth.iso_date(oldValue, nosubsec=True))
-                else:
-                    isEqual = (newValue == oldValue)
+            else:
+                # Keep track of which columns are being updated
+                updateSheet = False
+                updateTotal = False
+                oldValues = self.xrows[irow+rowMin-1][colMin-1:colMin+colCount-1]
+                for icol in range(len(oldValues)):
+                    oldValue = oldValues[icol]
+                    newValue = rowValues[icol]
 
-                if not isEqual:
-                    # Column value not equal; expand set of modified columns
-                    diffCount += 1
-                    diffCol = icol+colMin
-                    self.keyMap[keyValue][2].add(diffCol)
-                    if diffCol in self.totalColSet:
-                        updateTotal = True
+                    if isinstance(newValue, datetime.datetime) and isinstance(oldValue, datetime.datetime):
+                        isEqual = (sliauth.iso_date(newValue, nosubsec=True) == sliauth.iso_date(oldValue, nosubsec=True))
+                    else:
+                        isEqual = (newValue == oldValue)
 
-            if diffCount:
-                # At least one column value not equal; update row
+                    if not isEqual:
+                        # Column value not equal; expand set of modified columns
+                        updateSheet = True
+                        diffCol = icol+colMin
+                        self.keyMap[keyValue][2].add(diffCol)
+                        if diffCol in self.totalColSet:
+                            # Column affecting total being updated
+                            updateTotal = True
+
+            if updateSheet:
+                # At least one column value not equal or inserted row; update row
                 modTime = sliauth.epoch_ms()
                 self.keyMap[keyValue][0] = modTime
                 self.xrows[rowNum-1][colMin-1:colMin+colCount-1] = rowValues
@@ -808,7 +811,9 @@ class Sheet(object):
                     totalCol = self.totalCols[0]
                     prevTotal = self.xrows[rowNum-1][totalCol-1]
                     self.update_total(rowNum)
-                    if prevTotal != self.xrows[rowNum-1][totalCol-1]:
+
+                    if not self.keyMap[keyValue][1] and prevTotal != self.xrows[rowNum-1][totalCol-1]:
+                        # Not inserting and total column updated
                         self.keyMap[keyValue][2].add(totalCol)
 
         if modTime:
@@ -817,7 +822,7 @@ class Sheet(object):
     def modifiedSheet(self, modTime=None):
         self.modTime = sliauth.epoch_ms() if modTime is None else modTime
         self.accessTime = self.modTime
-        need_update()
+        need_update(self.name)
 
     def get_updates(self, row_limit=None):
         if Global.previewStatus and self.name in (Global.previewStatus['sessionName'], INDEX_SHEET):
@@ -926,6 +931,9 @@ class Range(object):
 
     def getValues(self):
         return self.sheet.getSheetValues(*self.rng)
+
+    def getValue(self):
+        return self.sheet.getSheetValues(*self.rng)[0][0]
 
     def setValues(self, values):
         self.sheet._setSheetValues(*(self.rng+[values]))
@@ -1049,7 +1057,7 @@ def get_locked():
     locked.sort()
     return locked
 
-def need_update():
+def need_update(sheetName):
     # Schedule an update if one not already scheduled
     if Global.cachePendingUpdate:
         return
@@ -1134,12 +1142,13 @@ def update_remote_sheets_aux(force=False, synchronous=False):
         updates_current()
         return
 
-    if Global.httpRequestId or Global.cacheUpdateError:
+    if Global.cacheUpdateError or (Global.httpRequestId and not synchronous):
         # Request currently active/disabled
+        # (synchronous request will supersede any active previous request)
         return
 
     curTime = sliauth.epoch_ms()
-    if not force and (curTime - Global.cacheResponseTime) < 1000*Settings['min_wait_sec']:
+    if not force and not synchronous and (curTime - Global.cacheResponseTime) < 1000*Settings['min_wait_sec']:
         schedule_update(curTime-Global.cacheResponseTime)
         return
 
@@ -1639,7 +1648,7 @@ def sheetAction(params, notrace=False):
                                 for j in range(nCols):
                                     for k in range(modRows):
                                         if values[k][j] != '':
-                                            raise Exception( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+str(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName )
+                                            raise Exception( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+str(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName+" (modcol="+str(modifyStartCol)+")")
 
                         modSheet.trimColumns( nCols )
                         ##modSheet.deleteColumns(startCol, nCols)
@@ -1737,13 +1746,13 @@ def sheetAction(params, notrace=False):
                 returnValues = []
             else:
                 if sessionEntries and dueDate:
-                    # Force submit all non-sticky rows past effective due date
+                    # Force submit all non-sticky regular user rows past effective due date
                     idCol = columnIndex.get('id')
                     submitCol = columnIndex.get('submitTimestamp')
                     lateTokenCol = columnIndex.get('lateToken')
                     allValues = modSheet.getSheetValues(1+numStickyRows, 1, modSheet.getLastRow()-numStickyRows, len(columnHeaders))
                     for j in range(len(allValues)):
-                        if allValues[j][submitCol-1] or allValues[j][idCol-1] == MAXSCORE_ID:
+                        if allValues[j][submitCol-1] or allValues[j][idCol-1] == MAXSCORE_ID or allValues[j][idCol-1] == TESTUSER_ID:
                             continue
                         lateToken = allValues[j][lateTokenCol-1]
                         if lateToken == LATE_SUBMIT:
@@ -2149,7 +2158,7 @@ def sheetAction(params, notrace=False):
                 raise Exception('Error::Selected updates cannot be applied to new row')
             else:
                 pastSubmitDeadline = False
-                forceSubmission = False
+                autoSubmission = False
                 fieldsMin = len(columnHeaders)
                 submitTimestampCol = columnIndex.get('submitTimestamp')
 
@@ -2193,7 +2202,7 @@ def sheetAction(params, notrace=False):
                             if pastSubmitDeadline:
                                 if getRow and not (newRow or rowUpdates or selectedUpdates):
                                     # Reading existing row; force submit
-                                    forceSubmission = True
+                                    autoSubmission = True
                                     selectedUpdates = [ ['id', userId], ['Timestamp', None], ['submitTimestamp', None] ]
                                     returnMessages.append("Warning:FORCED_SUBMISSION:Forced submission for user '"+(displayName or "")+"' to session '"+sheetName+"'")
                                 else:
@@ -2382,8 +2391,8 @@ def sheetAction(params, notrace=False):
                     # Save updated row
                     userRange.setValues([rowValues])
 
-                    if userId == MAXSCORE_ID:
-                        # Refresh sheet cache if max score row is updated
+                    if userId == MAXSCORE_ID and not Settings['total_column']:
+                        # Refresh sheet cache if max score row is updated (for re-computed totals)
                         modSheet.expire()
                         expireSheet(SCORES_SHEET)
 
@@ -2391,6 +2400,7 @@ def sheetAction(params, notrace=False):
                     discussNameCol = 1
                     discussIdCol = 2
                     if sessionEntries and adminPaced and paramId == TESTUSER_ID:
+                        # AdminPaced test user row update
                         lastSlideCol = columnIndex.get('lastSlide')
                         if lastSlideCol and rowValues[lastSlideCol-1]:
                             # Copy test user last slide number as new adminPaced value
@@ -2447,7 +2457,7 @@ def sheetAction(params, notrace=False):
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
-                    if not forceSubmission and not voteSubmission and not discussionPost and not twitterSetting:
+                    if not autoSubmission and not voteSubmission and not discussionPost and not twitterSetting:
                         if not adminUser:
                             raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
 
@@ -2488,7 +2498,7 @@ def sheetAction(params, notrace=False):
                                 modValue = curDate
 
                         elif colHeader == 'submitTimestamp':
-                            if forceSubmission:
+                            if autoSubmission:
                                 modValue = curDate
                             elif alterSubmission:
                                 if colValue is None:
@@ -2496,9 +2506,11 @@ def sheetAction(params, notrace=False):
                                 elif colValue:
                                     modValue = createDate(colValue)
                                 else:
-                                    # Unsubmit if blank value (also clear lateToken)
+                                    # Unsubmit if blank value (also clear lateToken and due date, if admin paced)
                                     modValue = ''
                                     modSheet.getRange(userRow, columnIndex['lateToken'], 1, 1).setValues([[ '' ]])
+                                    if sessionEntries and adminPaced and paramId == TESTUSER_ID:
+                                        setValue(sheetName, 'dueDate', '', INDEX_SHEET)
                                 if modValue:
                                     returnInfo['submitTimestamp'] = modValue
                             elif adminUser and colValue:
@@ -3070,14 +3082,17 @@ def unsafeTriggerUpdates(sessionName, modCols, insertRows, startRow=3):
 
     return retval
         
-def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
+def updateTotalScores(modSheet, sessionAttributes, questions, force, startRow=0, nRows=0):
     # If not force, only update non-blank entries
     # Return number of rows updated
+    if not questions:
+        return 0
     columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
     columnIndex = indexColumns(modSheet)
     nUpdates = 0
-    startRow = 2
-    nRows = modSheet.getLastRow()-startRow+1
+    startRow = startRow or 2
+    nRows = nRows or modSheet.getLastRow()-startRow+1
+
     if Settings['debug']:
         print("DEBUG:updateTotalScores", nRows)
     if nRows > 0:
@@ -3085,7 +3100,7 @@ def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
         idVals = modSheet.getSheetValues(startRow, columnIndex['id'], nRows, 1)
         scoreValues = modSheet.getSheetValues(startRow, columnIndex['q_scores'], nRows, 1)
         for k in range(nRows):
-            if idVals[k][0] != MAXSCORE_ID and questions and (force or scoreValues[k][0] != ''):
+            if idVals[k][0] != MAXSCORE_ID and (force or scoreValues[k][0] != ''):
                 temRowVals = modSheet.getSheetValues(startRow+k, 1, 1, len(columnHeaders))[0]
                 savedSession = unpackSession(columnHeaders, temRowVals)
                 newScore = '';
@@ -3096,6 +3111,68 @@ def updateTotalScores(modSheet, sessionAttributes, questions, force=False):
                     modSheet.getRange(startRow+k, columnIndex['q_scores'], 1, 1).setValues([[newScore]])
                     nUpdates += 1
     return nUpdates
+
+
+def clearQuestionResponses(sessionName, questionNumber, userId=''):
+    if Settings['debug']:
+        print("DEBUG:clearResponse", sessionName, questionNumber, userId, file=sys.stderr)
+    sessionSheet = getSheet(sessionName, optional=True)
+    if not sessionSheet:
+        raise Exception('Session '+sessionName+' not found')
+
+    columnHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0]
+    columnIndex = indexColumns(sessionSheet)
+
+    if userId:
+        idRowIndex = indexRows(sessionSheet, columnIndex['id'])
+        startRow = idRowIndex.get(userId)
+        if not startRow:
+            raise Exception('User id '+userId+' not found in session '+sessionName)
+        nRows = 1
+    else:
+        startRow = 3
+        nRows = sessionSheet.getLastRow()-startRow+1
+
+    submitTimestampCol = columnIndex.get('submitTimestamp')
+    submits = sessionSheet.getSheetValues(startRow, submitTimestampCol, nRows, 1)
+    for j in range(len(submits)):
+        if submits[j][0]:
+            raise Exception('Cannot clear question response for submitted sessions');
+
+    blanks = []
+    for k in range(nRows):
+        blanks.append([''])
+
+    qprefix = 'q'+str(questionNumber)
+    clearedResponse = False
+    for j in range(len(columnHeaders)):
+        header = columnHeaders[j]
+        if header.split('_')[0] == qprefix:
+            clearedResponse = True
+            sessionSheet.getRange(startRow, j+1, nRows, 1).setValues(blanks)
+
+    if not clearedResponse:
+        sessionCol = columnIndex.get('session_hidden')
+        for k in range(nRows):
+            sessionRange = sessionSheet.getRange(k+startRow, sessionCol, 1, 1)
+            session_hidden = sessionRange.getValue()
+            if not session_hidden:
+                continue
+            if session_hidden[0] != '{':
+                session_hidden = base64.b64decode(session_hidden)
+            session = loadSession(session_hidden)
+            if 'questionsAttempted' in session and questionNumber in session['questionsAttempted']:
+                clearedResponse = True
+                del session['questionsAttempted'][questionNumber]
+                sessionRange.setValue(json.dumps(session))
+
+    if clearedResponse:
+        # Update total score and answer stats
+        sessionEntries = lookupValues(sessionName, ['questions', 'attributes'], INDEX_SHEET)
+        sessionAttributes = json.loads(sessionEntries['attributes'])
+        questions = json.loads(sessionEntries['questions'])
+        updateTotalScores(sessionSheet, sessionAttributes, questions, True, startRow, nRows)
+        sessionSheet.requestActions('answer_stats')
 
 
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):

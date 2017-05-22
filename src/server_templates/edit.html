@@ -13,17 +13,31 @@ function slidocDiscard() {
    if (!window.confirm('Discard changes?')) {
      return false;
    }
-   if (PreviewWin) {
+   if (winURL(PreviewWin)) {
       PreviewWin.close();
-      PreviewWin = null;
    }
+   PreviewWin = null;
    window.location = '{{site_prefix}}/_discard';
    return false;
 }
 
 function winURL(win) {
-    // Returns window HREF (without hash)
-    return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname + win.location.search;
+    // Returns window HREF (without hash), or null string on error
+    if (!win)
+       return '';
+    try {
+        return (win.location.origin == "null" ? 'about:' : win.location.origin) + win.location.pathname +
+win.location.search;
+    } catch (err) {
+        return '';
+    }
+}
+
+function checkPreviewWin() {
+   var url = winURL(PreviewWin);
+   if (!url)
+      PreviewWin = null;
+   return url;
 }
 
 function openWin(url, name) {
@@ -33,7 +47,7 @@ function openWin(url, name) {
 
    if (win) {
       var utemp = winURL(win);
-      console.log("openWin", win.location.href, utemp, ' URL:', url, win);
+      console.log("openWin", utemp, ' URL:', url, win);
       if (utemp != url && utemp != 'about:blank')
          win.location.href = 'about:blank';
    } else {
@@ -47,25 +61,29 @@ document.onkeydown = function(evt) {
    if ((evt.keyCode == 10 || evt.keyCode == 13) && evt.ctrlKey) {
       evt.stopPropagation();
       evt.preventDefault();
-      slidocUpdate(false, true);
+      slidocUpdate('update');
       return false;
    }
 }
 
-function slidocUpdate(save, keystroke) {
+function slidocUpdate(action) {
    var xhr = new XMLHttpRequest();
    var previewPath = "{{site_prefix}}/_preview/index.html"
    var previewURL = location.origin+previewPath+"?update=1";
    var previewName = "{{site_name}}_preview";
    var indexSession = ("{{session_name}}" == "index");
-   slidocStatus('Processing ...');
 
    // Window opening must be triggered by user input
-   if (!save && (!PreviewWin || !keystroke))
+   if (action == 'open' || (action == 'update' && !checkPreviewWin())) {
+      if (!window.confirm('This will open a separate "live" preview window, which can be updated automatically. If you do not want live preview in a separate window, cancel now and use Save to preview in this window. (You can use Control-Enter keystoke to trigger live updates.)')) {
+         return false;
+      }
       PreviewWin = openWin(previewURL, previewName);
+   }
 
-   if (PreviewWin && !PreviewWin.Slidoc && PreviewWin.document) {
-    PreviewWin.document.body.textContent = 'Processing ...';
+   slidocStatus('Processing ...');
+   if (checkPreviewWin() && !PreviewWin.Slidoc && PreviewWin.document) {
+      PreviewWin.document.body.textContent = 'Processing ...';
    }
    xhr.onreadystatechange = function () {
       var DONE = 4; // readyState 4 means the request is done.
@@ -80,7 +98,7 @@ function slidocUpdate(save, keystroke) {
                   if (retval.result === 'error') {
                      var errMsg = ''+retval.error;
                      slidocStatus(errMsg);
-                     if (PreviewWin) {
+                     if (checkPreviewWin()) {
                          PreviewWin.Slidoc = null;
                          PreviewWin.document.body.textContent = errMsg;
                      }
@@ -91,15 +109,16 @@ function slidocUpdate(save, keystroke) {
                console.log('retval=', retval);
             }
 
-           if (save) {
-              if (PreviewWin) {
+           if (action == 'save') {
+              if (checkPreviewWin()) {
                  PreviewWin.close();
-                 PreviewWin = null;
                }
+               PreviewWin = null;
+               slidocStatus('');
                window.location = previewPath;
            } else {
-              if (PreviewWin) {
-                 if (PreviewWin.location.href == 'about:blank') {
+              if (checkPreviewWin()) {
+                 if (checkPreviewWin() == 'about:blank') {
                     PreviewWin.location = previewURL;
                  } else if (indexSession || !PreviewWin.Slidoc) {
                     // Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket 
@@ -115,7 +134,7 @@ function slidocUpdate(save, keystroke) {
               errMsg = 'Retry with Modify ... option checked. ' + errMsg;
           }
           slidocStatus(errMsg);
-          if (PreviewWin) {
+          if (checkPreviewWin()) {
              PreviewWin.Slidoc = null;
              PreviewWin.document.body.textContent = errMsg;
           }
@@ -125,7 +144,7 @@ function slidocUpdate(save, keystroke) {
    };
 
    var data = new FormData(document.getElementById("slidoc-edit-form"));
-   if (!save)
+   if (action != 'save')
       data.append('update', 1);
    xhr.open('POST', "{{site_prefix}}/_edit", true);
    xhr.send(data);
@@ -145,6 +164,12 @@ document.onreadystatechange = function(event) {
 }
 </script>
 
+<style>
+.slidoc-edit-preview {
+    float: right;
+}
+</style>
+
 </head>
 <body>
 
@@ -153,9 +178,10 @@ document.onreadystatechange = function(event) {
 <form action="{{site_prefix}}/_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
   {% module xsrf_form_html() %}
   <div>
-    <button type="button" onclick="slidocUpdate()">Open/update preview</button>
-    <button type="button" onclick="slidocUpdate(true)">Save</button>
+    <button type="button" onclick="slidocUpdate('save')">Save</button>
     <button type="button" onclick="slidocDiscard()">Discard</button>
+    <button type="button" onclick="slidocUpdate('update')" class="slidoc-edit-preview">Update preview</button>
+    <button type="button" onclick="slidocUpdate('open')" class="slidoc-edit-preview">Open preview</button>
   </div>
   <fieldset>
     <label for="sessionname">Session:</label>
