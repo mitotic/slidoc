@@ -3213,6 +3213,8 @@ def deleteSlide(sessionName, slideNumber):
             setValue(sessionName, 'adminPaced', adminPaced-1, INDEX_SHEET)
         else:
             maxLastSlide = adminPaced
+    else:
+        raise Exception('Delete slide only implemented for admin-paced sessions')
 
     # Reset last slide value
     setColumnMax(sessionSheet, 3, columnIndex.get('lastSlide'), maxLastSlide)

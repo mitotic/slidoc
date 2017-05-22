@@ -1028,8 +1028,10 @@ Slidoc.slideEditMenu = function() {
     if (Sliobj.currentSlide) {
 	var slideId = Slidoc.getCurrentSlideId();
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit','"+slideId+"');"+'">Edit current slide</span></li><p></p>\n';
-	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
-	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('rollover','"+slideId+"');"+'">Rollover remaining slides to next session</span></li><p></p>\n';
+	if (Sliobj.adminPaced) {
+	    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
+	    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('rollover','"+slideId+"');"+'">Rollover remaining slides to next session</span></li><p></p>\n';
+	}
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li>\n';
