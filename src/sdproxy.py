@@ -3175,6 +3175,61 @@ def clearQuestionResponses(sessionName, questionNumber, userId=''):
         sessionSheet.requestActions('answer_stats')
 
 
+def deleteSlide(sessionName, slideNumber):
+    # Return deleted question number or 0
+    if Settings['debug']:
+        print("DEBUG:deleteSlide", sessionName, slideNumber, file=sys.stderr)
+    sessionSheet = getSheet(sessionName, optional=True)
+    if not sessionSheet:
+        raise Exception('Session '+sessionName+' not found')
+
+    columnHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0]
+    columnIndex = indexColumns(sessionSheet)
+    idRowIndex = indexRows(sessionSheet, columnIndex['id'])
+
+    testRow = idRowIndex.get(TESTUSER_ID)
+    if testRow:
+        testSubmitted = sessionSheet.getSheetValues(testRow, columnIndex['submitTimestamp'], 1, 1)[0][0]
+    else:
+        testSubmitted = ''
+
+    sessionEntries = lookupValues(sessionName, ['adminPaced', 'questions', 'attributes'], INDEX_SHEET)
+    adminPaced = sessionEntries.get('adminPaced')
+    questions = json.loads(sessionEntries['questions'])
+    sessionAttributes = json.loads(sessionEntries['attributes'])
+
+    maxLastSlide = sessionAttributes['params']['pacedSlides'] - 1
+
+    if not maxLastSlide:
+        raise Exception('Cannot delete sole slide in session')
+    
+    if adminPaced:
+        if slideNumber <= adminPaced and testSubmitted:
+            raise Exception('Cannot delete viewed slide from submitted admin-paced session')
+
+        if slideNumber == adminPaced:
+            # Deleting last viewed slide
+            maxLastSlide = adminPaced-1
+            setValue(sessionName, 'adminPaced', adminPaced-1, INDEX_SHEET)
+        else:
+            maxLastSlide = adminPaced
+
+    # Reset last slide value
+    setColumnMax(sessionSheet, 3, columnIndex.get('lastSlide'), maxLastSlide)
+
+    delete_qno = 0
+    for qno in range(1,len(questions)+1):
+        if questions[qno-1].get('slide') == slideNumber:
+            delete_qno = qno
+            break
+
+    if delete_qno:
+        # Deleting question slide; Clear any responses
+        clearQuestionResponses(sessionName, delete_qno)
+
+    return delete_qno
+
+
 def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDate=None, source=''):
     # answers = {1:{'response':, 'explain':},...}
     # If source == "prefill", only row creation occurs
@@ -3530,6 +3585,21 @@ def getColumnMax(sheet, startRow, colNum):
     return maxVal
 
 
+def setColumnMax(sheet, startRow, colNum, maxValue):
+    vrange = sheet.getRange(startRow, colNum, sheet.getLastRow()-startRow+1, 1)
+    values = vrange.getValues()
+
+    modified = False
+    for j in range(len(values)):
+        if values[j][0] and values[j][0] > maxValue:
+            values[j][0] = maxValue
+            modified = True
+
+    if modified:
+        vrange.setValues(values)
+
+    return modified
+
 def lookupRowIndex(idValue, sheet, startRow=2):
     # Return row number for idValue in sheet or return 0
     # startRow defaults to 2
@@ -3547,7 +3617,7 @@ def lookupValues(idValue, colNames, sheetName, listReturn=False):
     # Return parameters in list colNames for idValue from sheet
     indexSheet = getSheet(sheetName)
     if not indexSheet:
-        raise Exception('Index sheet '+sheetName+' not found')
+        raise Exception('Lookup sheet '+sheetName+' not found')
     indexColIndex = indexColumns(indexSheet)
     indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2)
     sessionRow = indexRowIndex.get(idValue)

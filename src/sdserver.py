@@ -1342,9 +1342,11 @@ class ActionHandler(BaseHandler):
             else:
                 newNumber = None
 
-            rollover = self.get_argument('rollover', '')
-            if rollover:
+            if self.get_argument('rollover',''):
                 return self.rollover(sessionName, slideNumber)
+
+            if self.get_argument('truncate',''):
+                return self.rollover(sessionName, slideNumber, truncateOnly=True)
 
             sessionText = self.get_argument('sessiontext', '')
             fromSession = self.get_argument('fromsession', '')
@@ -1579,7 +1581,7 @@ class ActionHandler(BaseHandler):
             topnavList = ['index.html'] + topnavList
         return topnavList
 
-    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None):
+    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, deleteSlideNum=0):
         # Return null string on success or error message
         if self.previewActive():
             raise Exception('Already previewing session')
@@ -1647,6 +1649,12 @@ class ActionHandler(BaseHandler):
             temMsg = sdproxy.startPreview(sessionName)
             if temMsg:
                 raise Exception('Unable to preview session: '+temMsg)
+
+            if deleteSlideNum:
+                delete_qno = sdproxy.deleteSlide(sessionName, deleteSlideNum)
+                if delete_qno:
+                    modify = 'overwrite'
+
         try:
             images_zipdata = None
             if fext == '.pptx':
@@ -1705,7 +1713,6 @@ class ActionHandler(BaseHandler):
 
             self.previewState['overwrite'] = overwrite
             self.previewState['modimages'] = ''
-            self.previewState['rollover_log'] = ''
             self.previewState['rollover'] = None
             return ''
 
@@ -1913,7 +1920,7 @@ class ActionHandler(BaseHandler):
                 f.write(zfile.read(name))
             
 
-    def acceptPreview(self, rollover=False):
+    def acceptPreview(self):
         sessionName = self.previewState['name']
         uploadType = self.previewState['type']
 
@@ -1956,24 +1963,25 @@ class ActionHandler(BaseHandler):
             WSHandler.lockSessionConnections(sessionName, 'Session modified. Reload page', reload=True)
         errMsgs = self.rebuild(uploadType, indexOnly=True)
 
-        prevMsgs = ''
+        msgs = []
         if errMsgs and any(errMsgs):
-            # Search for string 'error' in messages
-            for msg in errMsgs:
-                if 'error' in msg.lower():
-                    msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
-                    self.displayMessage(msgs, back_url=sessionPath)
-                    return
-            # Previous "error" messages
-            prevMsgs = '\n'.join(errMsgs)+'\n\n'
+            msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
 
-        if not rolloverParams:
+        if rolloverParams:
+            self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs)
+        elif msgs:
+            self.displayMessage(msgs, back_url=sessionPath)
+        else:
             self.redirect(sessionPath)
-            return
 
-        # Truncate previous rolled over session
+
+    def truncateSession(self, truncateParams, prevSessionName='', prevMsgs=[]):
+        # Truncate session (possibly after rollover)
+        sessionName = truncateParams['sessionName']
+        sessionPath = getSessionPath(sessionName, site_prefix=True)
+
         try:
-            errMsg = self.uploadSession(rolloverParams['uploadType'], rolloverParams['sessionNumber'], rolloverParams['sessionName']+'.md', rolloverParams['sessionText'], rolloverParams['fname2'], rolloverParams['fbody2'], modify='truncate')
+            errMsg = self.uploadSession(truncateParams['uploadType'], truncateParams['sessionNumber'], truncateParams['sessionName']+'.md', truncateParams['sessionText'], truncateParams['fname2'], truncateParams['fbody2'], modify='truncate')
 
         except Exception, excp:
             if Options['debug']:
@@ -1984,14 +1992,27 @@ class ActionHandler(BaseHandler):
         if errMsg:
             if self.previewState:
                 self.discardPreview()
-            self.displayMessage('Error in truncating rolled over session '+sessionName+': '+errMsg, back_url=sessionPath)
+            if prevSessionName:
+                self.displayMessage('Error in truncating rolled over session '+sessionName+': '+errMsg, back_url=sessionPath)
+            else:
+                self.set_header('Content-Type', 'application/json')
+                retval = {'result': 'error', 'error': errMsg}
+                self.write( json.dumps(retval) )
             return
 
         self.previewState['modimages'] = 'clear'
-        self.previewState['rollover_log'] = prevMsgs
-        # Termination condition
-        if not rollover:
-            self.acceptPreview(rollover=True)
+
+        previewPath = '/_preview/index.html'
+        if Options['site_name']:
+            previewPath = '/'+Options['site_name']+previewPath
+
+        if prevSessionName:
+            msg = 'Rolled over %s slides from session %s to session %s. Proceed to preview of truncated session <a href="%s">%s</a>' % (truncateParams['slidesRolled'], sessionName, prevSessionName, previewPath, sessionName)
+            self.displayMessage( [msg] + prevMsgs )
+        else:
+            self.set_header('Content-Type', 'application/json')
+            retval = {'result': 'success'}
+            self.write( json.dumps(retval) )
 
 
     def discardPreview(self):
@@ -2100,6 +2121,7 @@ class ActionHandler(BaseHandler):
 
         slide_images_zip = None
         image_zipdata = ''
+        deleteSlideNum = 0
         if slideNumber:
             # Editing slide
             if self.previewState:
@@ -2130,6 +2152,7 @@ class ActionHandler(BaseHandler):
 
             elif deleteSlide:
                 # Delete slide
+                deleteSlideNum = slideNumber
                 del md_slides[slideNumber-1]
                 splice_slides(md_slides, slideNumber-2)
 
@@ -2192,7 +2215,7 @@ class ActionHandler(BaseHandler):
             fname2 = sessionName+'_images.zip'
 
         try:
-            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify)
+            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify, deleteSlideNum=deleteSlideNum)
         except Exception, excp:
             if Options['debug']:
                 import traceback
@@ -2217,7 +2240,7 @@ class ActionHandler(BaseHandler):
         self.write( json.dumps( {'result': 'success'} ) )
 
 
-    def rollover(self, sessionName, slideNumber=None):
+    def rollover(self, sessionName, slideNumber=None, truncateOnly=False):
         sessionName = md2md.stringify(sessionName)
         if self.previewState:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted in preview state')
@@ -2227,12 +2250,13 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for top-level sessions')
 
         sessionEntries = sdproxy.lookupValues(sessionName, ['paceLevel'], sdproxy.INDEX_SHEET)
+        adminPaced = (sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE)
 
         lastSlide = None
+        submitted = ''
         try:
             userEntries = sdproxy.lookupValues(sdproxy.TESTUSER_ID, ['submitTimestamp', 'lastSlide'], sessionName)
-            if sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE and not userEntries['submitTimestamp']:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for unsubmitted admin-paced session '+sessionName)
+            submitted = userEntries['submitTimestamp']
             lastSlide = userEntries['lastSlide']
         except Exception, excp:
             print >> sys.stderr, 'sdserver.rollover', excp
@@ -2243,26 +2267,44 @@ class ActionHandler(BaseHandler):
 
         _, md_slides, __ = self.extract_slides(src_path, web_path)
 
-        if lastSlide >= len(md_slides):
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:No slides left to rollover session '+sessionName)
+        slideNumber = slideNumber or lastSlide
+        end_slide = slideNumber if truncateOnly else lastSlide
+        start_slide = min(slideNumber+1, lastSlide+1)
 
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:rollover', sessionName, slideNumber, lastSlide, len(md_slides)
 
-        truncate_defaults, truncateText, truncate_images_zip, _ = self.extract_slide_range(src_path, web_path, start_slide=1, end_slide=lastSlide, renumber=1, session_name=sessionName)
+        if end_slide >= len(md_slides):
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:No slides left to rollover/truncate session '+sessionName)
+
+        if adminPaced:
+            if truncateOnly:
+                if end_slide != lastSlide:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Truncation only allowed at end for admin-paced session '+sessionName)
+                
+            elif not submitted:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for unsubmitted admin-paced session '+sessionName)
+
+        truncate_defaults, truncateText, truncate_images_zip, _ = self.extract_slide_range(src_path, web_path, start_slide=1, end_slide=end_slide, renumber=1, session_name=sessionName)
 
         truncateText = truncate_defaults + strip_slide(truncateText)
         rolloverParams = {'uploadType': uploadType,
                           'sessionNumber': sessionNumber,
                           'sessionName': sessionName,
                           'sessionText': truncateText,
+                          'slidesCut': len(md_slides)-end_slide,
+                          'slidesRolled': len(md_slides)-start_slide+1,
                           'fname2': '',
                           'fbody2': ''}
         if truncate_images_zip:
             rolloverParams['fbody2'] = truncate_images_zip
             rolloverParams['fname2'] = sessionName+'_images.zip'
 
-        start_slide = min(slideNumber+1, lastSlide+1) if slideNumber else lastSlide+1
+        if truncateOnly:
+            self.truncateSession(rolloverParams)
+            return
+
+        # Rollover slides to next session
         _, rolloverText, rollover_images_zip, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=start_slide, renumber=1, session_name=sessionName)
 
         sessionNext = SESSION_NAME_FMT % (uploadType, sessionNumber+1)

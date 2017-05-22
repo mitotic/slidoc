@@ -1030,6 +1030,7 @@ Slidoc.slideEditMenu = function() {
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit','"+slideId+"');"+'">Edit current slide</span></li><p></p>\n';
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('rollover','"+slideId+"');"+'">Rollover remaining slides to next session</span></li><p></p>\n';
+	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li>\n';
     html += '</ul>';
@@ -1149,7 +1150,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
 
-    } else if (action == 'open' || action == 'update' || action == 'save' || action == 'delete' || action == 'rollover') {
+    } else if (action == 'open' || action == 'update' || action == 'save' || action == 'delete' || action == 'rollover' || action == 'truncate') {
 	params.sessiontext = editArea.value;
 	if (action == 'open' || action == 'update')
 	    params.update = '1';
@@ -1157,6 +1158,8 @@ Slidoc.slideEdit = function(action, slideId) {
 	    params.deleteslide = 'delete';
 	if (action == 'rollover')
 	    params.rollover = 'rollover';
+	if (action == 'truncate')
+	    params.truncate = 'truncate';
 
 	// Window opening must be triggered by user input
 	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
@@ -1176,9 +1179,14 @@ Slidoc.slideEdit = function(action, slideId) {
 	function slideSaveAux(result, errMsg) {
 	    if (Sliobj.closePopup)
 		Sliobj.closePopup();
+	    var msg = '';
 	    if (!result) {
-		var msg = errMsg || 'Error in updating/saving edits';
-		if (!params.sessionmodify && errMsg.indexOf('MODIFY_SESSION') >=0) {
+		msg = errMsg || 'Error in updating/saving edits';
+	    } else if (result.result == 'error') {
+		msg = result.error;
+	    }
+	    if (msg) {
+		if (!params.sessionmodify && msg.indexOf('MODIFY_SESSION') >=0) {
 		    params.sessionmodify = 'yes';
 		    if (window.confirm(msg+'\n\n Retry save with modify_session switch enabled?')) {
 			if (window.confirm('CONFIRM that you want to modify the number/order of questions?'))
