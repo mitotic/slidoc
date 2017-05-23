@@ -2,12 +2,13 @@
 <html>
 <head>
 <!-- sessions template for slidoc server --->
-<!-- sessions parameters: site_name, session_props, message -->
+<!-- sessions parameters: site_name, session_types, session_props, message -->
 
 {% include "base.html" %}
 
 <style>
 .clickable { padding: 0.2em 0 0 1em; }
+.session-present { opacity: 0.6; }
 </style>
 
 <script>
@@ -57,6 +58,30 @@ window.location = url;
 
   <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Upload
   <p></p>
+
+  <a href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add session type</a>
+  <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
+    <fieldset>
+    <label for="sessiontype">Session type:</label><br>
+    <table>
+      {% set session_dirs = [x[0] for x in session_props] %}
+      {% for session_type, session_label in session_types %}
+        {% if session_type != 'top' %}
+        <tr {% if session_type in session_dirs %}class="session-present"{% end %}><td><input type="radio" name="sessiontype" value="{{session_type}}" {% if session_type in session_dirs %}disabled{% end %}> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+        {% end %}
+      {% end %}
+      </table>
+    {% module xsrf_form_html() %}
+
+    <input type="hidden" name="sessioncreate" value="sessions">
+
+    <div>
+      <input id="session-upload-submit" type="submit" value="Create session">
+    </div>
+    </fieldset>
+  </form>
+
+  <p></p>
   <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Rebuild All
   <p></p>
   <label for="rebuildforce">Force re-builds</label>
@@ -85,7 +110,7 @@ window.location = url;
         <pre style="display: none;">{{ logs }}</pre>
         {% end %}
       </div>
-      {% if sessions %}
+      {% if sessions is not None %}
       <table style="display: none;">
         {% for session in sessions %}
 	<tr>
@@ -105,8 +130,8 @@ window.location = url;
           </td>
         </tr>
         {% end %}
-        {% set last =''.join(x for x in sessions[-1] if x.isdigit()) %}
-        {% set next = '%s%02d' % (sessions[-1][:-len(last)], int(last or '0')+1) %}
+        {% set last = (''.join(x for x in sessions[-1] if x.isdigit())) if sessions else '0'%}
+        {% set next = '%s%02d' % (dirname, int(last or '0')+1) %}
         <tr><td> &nbsp;<a class="clickable larger" href="{{ site_prefix }}/_upload/{{ next }}"><b>+</b></a></td></tr>
       </table>
       {% end %}

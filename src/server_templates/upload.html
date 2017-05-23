@@ -34,16 +34,16 @@
         Session names will be of the form <tt>sessionType??</tt>, e.g., <tt>lecture01</tt>
       {% end %}
      <br>
-     {% if upload_type == 'top' %}
-     <input type="hidden" name="sessionnumber" value="">
+     {% if upload_type == 'top' or str(session_number).isdigit() %}
+     <input type="hidden" name="sessionnumber" value="{{ session_number }}">
      {% else %}
      <label for="sessionnumber">Session number:</label>
-     <input type="number" id="sessionnumber" name="sessionnumber" value="{{ session_number }}">
-     (needed only for non-top/raw cases; specify 0 to upload ToC header)<br>
+     <input type="number" id="sessionnumber" name="sessionnumber" value="">
+     (needed only for non-top/raw cases; special value 0 denotes ToC header)<br>
      {% end %}
      <p></p>
      <label for="sessioncreate">Create blank session?</label>
-     <input type="checkbox" id="sessioncreate" name="sessioncreate" value="create">
+     <input type="checkbox" id="sessioncreate" name="sessioncreate" value="upload">
      <p></p>
      <label for="sessionmodify">Modify questions?</label>
      <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
@@ -61,7 +61,7 @@
    {% module xsrf_form_html() %}
    <div>
      <input id="slidoc-upload-submit" type="submit" value="Upload">
-    </div>
+   </div>
   </form>
 </div>
 

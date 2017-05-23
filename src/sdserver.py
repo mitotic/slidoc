@@ -1157,7 +1157,8 @@ class ActionHandler(BaseHandler):
                                     sessionParamDict.get(sessionType, ['','','']),
                                     '\n'.join(buildMsgs.get(sessionType, []))] )
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        self.render('sessions.html', site_name=Options['site_name'], session_props=session_props, message=msg)
+        self.render('sessions.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
+
 
     def browse(self, filepath, delete='', download='', uploadName='', uploadContent=''):
         if '..' in filepath:
@@ -1453,35 +1454,14 @@ class ActionHandler(BaseHandler):
                 # Import two files
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-                sessionCreate = self.get_argument('sessioncreate', '')
 
                 uploadType = self.get_argument('sessiontype', '')
-
-                sessionNumber = self.get_argument('sessionnumber')
-                if uploadType in (RAW_UPLOAD, TOP_LEVEL):
-                    sessionNumber = 0
-                    sessionName = uploadType
-                else:
-                    if uploadType not in SESSION_TYPE_SET:
-                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Unrecognized session type: '+uploadType)
-
-                    if not sessionNumber.isdigit():
-                        self.displayMessage('Invalid session number!')
-                        return
-
-                    sessionNumber = int(sessionNumber)
-                    sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
-
-                sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
-                    
+                sessionCreate = self.get_argument('sessioncreate', '')
                 fname1 = ''
                 fbody1 = ''
                 fname2 = ''
                 fbody2 = ''
-                if sessionCreate:
-                    fname1 = sessionName + '.md'
-                    fbody1 = 'BLANK SESSION'
-                else:
+                if not sessionCreate:
                     if 'upload1' not in self.request.files and 'upload2' not in self.request.files:
                         self.displayMessage('No session file(s) to upload!')
                         return
@@ -1496,6 +1476,33 @@ class ActionHandler(BaseHandler):
                         fname2 = fileinfo2['filename']
                         fbody2 = fileinfo2['body']
 
+                sessionNumber = self.get_argument('sessionnumber', '0')
+                if uploadType == RAW_UPLOAD:
+                    if sessionCreate:
+                        raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot create blank raw; upload a file')
+                    sessionNumber = 0
+                    sessionName = ''
+                elif uploadType == TOP_LEVEL:
+                    if sessionCreate:
+                        raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot create blank top session; upload a file')
+                    sessionNumber = 0
+                    sessionName = os.path.basename(fname1 or fname2).splitext()[0] # Need to change this to read session name
+                else:
+                    if uploadType not in SESSION_TYPE_SET:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Unrecognized session type: '+uploadType)
+
+                    if not sessionNumber.isdigit():
+                        self.displayMessage('Invalid session number!')
+                        return
+
+                    sessionNumber = int(sessionNumber)
+                    sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
+                    if sessionCreate:
+                        fname1 = sessionName + '.md'
+                        fbody1 = 'BLANK SESSION'
+
+                sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
+                    
                 if Options['debug']:
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 
@@ -1554,7 +1561,7 @@ class ActionHandler(BaseHandler):
 
         fnames = []
         for fname in set(os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_src_dir+'/*/*.md')):
-            if self.get_md_list(fname):
+            if os.path.exists(os.path.join(self.site_src_dir, fname, 'index.md')) or self.get_md_list(fname):
                 fnames.append(fname)
         fnames.sort()
         return fnames
@@ -1762,14 +1769,15 @@ class ActionHandler(BaseHandler):
             sessionName = ''
 
         filePaths = self.get_md_list(uploadType, newSession=sessionName)
-        if not filePaths:
+        if not filePaths and src_path and sessionName != 'index':
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Empty session folder '+uploadType)
 
         if uploadType != TOP_LEVEL:
             if sessionName == 'index':
                 configOpts['toc_header'] = io.BytesIO(contentText)
             else:
-                ind_path = os.path.join(os.path.dirname(filePaths[0]), 'index.md')
+                src_dir = os.path.dirname(filePaths[0]) if filePaths else self.site_src_dir + '/' + uploadType
+                ind_path = os.path.join(src_dir, 'index.md')
                 if os.path.exists(ind_path):
                     configOpts['toc_header'] = ind_path
 

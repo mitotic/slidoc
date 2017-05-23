@@ -2855,8 +2855,10 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             # (Always process return_html or index.md file)
             fnumbers.append(fnumber)
 
+    fprefix = fprefix or ''
+    
     if not fnumbers:
-        if not return_messages:
+        if not return_messages and input_files:
             message('All output files are newer than corresponding input files')
         if not config.make_toc:
             return {'messages':messages}
@@ -2891,7 +2893,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     js_params_fmt = '\n<script>\nvar JS_PARAMS_OBJ=%s;\n</script>\n'
     toc_js_params = js_params_fmt % json.dumps(js_params)
 
-    combined_name = config.all or orig_fnames[0]
+    combined_name = config.all or (orig_fnames[0] if orig_fnames else 'combined')
     combined_file = '' if config.separate else combined_name+'.html'
 
     # Reset config properties that will be overridden for separate files
@@ -4137,7 +4139,7 @@ alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for u
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
 cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
-cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
+cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.FileType('r'), nargs=argparse.ZERO_OR_MORE)
 
 # Some arguments need to be set explicitly to '' by default, rather than staying as None
 Cmd_defaults = {'css': '', 'dest_dir': '', 'hide': '', 'image_dir': '_images', 'image_url': '',
@@ -4191,8 +4193,8 @@ if __name__ == '__main__':
             continue
         input_files.append(fhandle)
 
-    if not input_files:
-        sys.exit('No --publish files to process!')
+    if not input_files and not cmd_args.make_toc:
+        cmd_parser.error('No files to process!')
 
     if skipped:
         print('\n******Skipped non-publish files: %s\n' % ', '.join(skipped), file=sys.stderr)
