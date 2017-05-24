@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5j';
+var VERSION = '0.97.5k';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -138,6 +138,8 @@ var SETTINGS_SHEET = 'settings_slidoc';
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
 var SCORES_SHEET = 'scores_slidoc';
+
+var RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats'];
 
 var ANSWERS_DOC = 'answers_slidoc';
 var STATS_DOC = 'stats_slidoc';
@@ -546,6 +548,18 @@ function sheetAction(params) {
 	var loggingSheet = sheetName.match(/_log$/);
 	var discussionSheet = sheetName.match(/-discuss$/);
 
+	var getRow = params.get || '';
+	var createRow = params.create || '';
+	var allRows = params.all || '';
+
+	var nooverwriteRow = params.nooverwrite || '';
+	var delRow = params.delrow || '';
+	var resetRow = params.resetrow || '';
+
+	var getShare = params.getshare || '';
+	var importSession = params.import || '';
+	var seedRow = adminUser ? (params.seed || null) : null;
+	    
 	var performActions = params.actions || '';
 
 	var curDate = new Date();
@@ -663,6 +677,13 @@ function sheetAction(params) {
                     indexSheet.deleteRow(delRowCol);
 	    }
 	    deleteSheet(sheetName);
+
+	    // Delete any related sheets
+            for (var j=0; j<RELATED_SHEETS.length; j++) {
+                if (getSheet(sheetName+'-'+RELATED_SHEETS[j])) {
+                    deleteSheet(sheetName+'-'+RELATED_SHEETS[j]);
+                }
+	    }
         } else if (params.copysheet) {
 	    // Copy sheet (but not session entry)
 	    returnValues = [];
@@ -724,16 +745,6 @@ function sheetAction(params) {
 	    }
 
 	    // Check parameter consistency
-	    var getRow = params.get || '';
-	    var getShare = params.getshare || '';
-	    var allRows = params.all || '';
-	    var createRow = params.create || '';
-	    var seedRow = adminUser ? (params.seed || null) : null;
-	    var nooverwriteRow = params.nooverwrite || '';
-	    var delRow = params.delrow || '';
-	    var resetRow = params.resetrow || '';
-	    var importSession = params.import || '';
-	    
 	    var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
 	    var columnIndex = indexColumns(modSheet);
 	    
@@ -1668,6 +1679,8 @@ function sheetAction(params) {
                                     discussRow.push(0);
                                     discussRow.push('');
                                 }
+				if (getSheet(sheetName+'-discuss'))
+				    throw('Discussions already posted for session '+sheetName+'; delete session to overwrite');
                                 discussSheet = createSheet(sheetName+'-discuss', discussHeaders);
 				discussSheet.insertRowBefore(2)
                                 discussSheet.getRange(2, 1, 1, discussRow.length).setValues([discussRow]);
@@ -1695,7 +1708,7 @@ function sheetAction(params) {
                         }
 
                     } else if (sessionEntries && adminPaced && dueDate && discussableSession && params.submit) {
-                        discussSheet = getSheet(sheetName+'-discuss');
+                        var discussSheet = getSheet(sheetName+'-discuss');
                         if (discussSheet) {
                             var discussRows = discussSheet.getLastRow();
                             var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1);
@@ -1908,6 +1921,7 @@ function sheetAction(params) {
 		}
 
                 if (getRow && createRow && discussableSession && dueDate) {
+		    // Accessing submitted discussable session
                     returnInfo['discussStats'] = getDiscussStats(sheetName, userId);
                 }
 
@@ -1916,6 +1930,16 @@ function sheetAction(params) {
                 }
 	    }
 	}
+
+        if (sessionEntries && getRow && (allRows || (createRow && paramId == TESTUSER_ID))) {
+            // Getting all session rows or test user row (with creation); return related sheet names
+            returnInfo['sheetsAvailable'] = [];
+            for (var j=0; j<RELATED_SHEETS.length; j++) {
+                if (getSheet(sheetName+'-'+RELATED_SHEETS[j])) {
+                    returnInfo['sheetsAvailable'].push(RELATED_SHEETS[j]);
+                }
+            }
+        }
 
 	// return success results
 	trackCall(0, 'success');

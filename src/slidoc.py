@@ -2809,7 +2809,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     orig_flinks = []
 
     fnumbers = []
-    fprefix = None
+    fprefix = config.session_type or None
     nfiles = len(input_files)
     for j, inpath in enumerate(input_paths):
         fext = os.path.splitext(os.path.basename(inpath))[1]
@@ -2868,7 +2868,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     if config.pace and config.all is not None :
         abort('slidoc: Error: --pace option incompatible with --all')
 
-    js_params = {'siteName': '', 'fileName': '', 'chapterId': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
+    js_params = {'siteName': '', 'fileName': '', 'chapterId': '',
+                 'sessionType': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'overwrite': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
                  'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0, 'timedSec': 0,
@@ -2882,6 +2883,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                  'adminUserId': ADMINUSER_ID, 'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
 
     js_params['siteName'] = config.site_name
+    js_params['sessionType'] = config.session_type
     js_params['overwrite'] = 1 if config.overwrite else 0
     js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
@@ -3586,7 +3588,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
             if toc_insert:
                 toc_insert += '<br>'
-            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=False)+header_insert+Toc_header+toc_insert+''.join(toc_html)+'</article>\n'
+            toc_output = chapter_prefix(0, 'slidoc-toc-container slidoc-noslide', hide=False)+(header_insert or Toc_header)+toc_insert+''.join(toc_html)+'</article>\n'
             if combined_file:
                 all_container_prefix  = '<div id="slidoc-all-container" class="slidoc-all-container">\n'
                 left_container_prefix = '<div id="slidoc-left-container" class="slidoc-left-container">\n'
@@ -4129,6 +4131,7 @@ alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_ur
 alt_parser.add_argument('--resource_dir', help='Absolute web path to load .js and .css files from')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
+alt_parser.add_argument('--session_type', metavar='TYPE', help='Session type, e.g., assignment, exam, ... (default: "")')
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')

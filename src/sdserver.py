@@ -225,6 +225,8 @@ def getSessionType(sessionName):
 
 def getSessionPath(sessionName, site_prefix=False):
     # Return path to session HTML file, including '/' prefix and optionally site_prefix
+    if sessionName == 'index':
+        raise Exception('No path to session index')
     sessionType, sessionNumber = getSessionType(sessionName)
     path = '/' + sessionName+'.html'
     if sessionType != TOP_LEVEL:
@@ -568,6 +570,7 @@ class ActionHandler(BaseHandler):
             defaultOpts['strip'] = 'chapters,contents'
         else:
             configOpts['make_toc'] = True
+            configOpts['session_type'] = uploadType
 
         if text:
             fileOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, {}, first_line=True))
@@ -687,10 +690,11 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to edit')
                 if not sessionName:
                     sessionName = self.get_argument('sessionname', '')
+                sessionType = self.get_argument('sessiontype', '')
                 if previewingSession and previewingSession != sessionName:
                     self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
                     return
-                return self.editSession(sessionName, start=True)
+                return self.editSession(sessionName, sessionType=sessionType, start=True)
             elif action == '_discard':
                 return self.discardPreview()
             elif action == '_reloadpreview':
@@ -1332,6 +1336,7 @@ class ActionHandler(BaseHandler):
             if previewingSession and previewingSession != sessionName:
                 self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
                 return
+            sessionType = self.get_argument('sessiontype', '')
             slideNumber = self.get_argument('slide', '')
             newNumber = self.get_argument('move', '')
             if slideNumber.isdigit():
@@ -1356,7 +1361,7 @@ class ActionHandler(BaseHandler):
             sessionModify = sessionName if self.get_argument('sessionmodify', '') else ''
             update = self.get_argument('update', '')
 
-            return self.editSession(sessionName, update=update, sessionText=sessionText, fromSession=fromSession, fromSite=fromSite,
+            return self.editSession(sessionName, sessionType=sessionType, update=update, sessionText=sessionText, fromSession=fromSession, fromSite=fromSite,
                                     slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide, modify=sessionModify)
 
         elif action == '_imageupload':
@@ -1499,7 +1504,7 @@ class ActionHandler(BaseHandler):
                     sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
                     if sessionCreate:
                         fname1 = sessionName + '.md'
-                        fbody1 = 'BLANK SESSION'
+                        fbody1 = '**Table of Contents**\n' if sessionName == 'index' else 'BLANK SESSION\n'
 
                 sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
                     
@@ -1692,10 +1697,13 @@ class ActionHandler(BaseHandler):
             if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
+            sessionLabel = sessionName
             if uploadType == TOP_LEVEL:
                 sessionPath = '/'+sessionName+'.html'
             else:
                 sessionPath = privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName+'.html'
+                if sessionName == 'index':
+                    sessionLabel = uploadType+'/index'
 
             if Options['site_name']:
                 sessionPath = '/' + Options['site_name'] + sessionPath
@@ -1711,6 +1719,7 @@ class ActionHandler(BaseHandler):
             self.previewState['number'] = sessionNumber
             self.previewState['name'] = sessionName
             self.previewState['path'] = sessionPath
+            self.previewState['label'] = sessionLabel
             self.previewState['src_dir'] = src_dir
             self.previewState['web_dir'] = web_dir
             self.previewState['image_dir'] = image_dir
@@ -1943,6 +1952,11 @@ class ActionHandler(BaseHandler):
                 self.extractFolder(self.previewState['image_zipfile'], self.previewState['src_dir'], folder=self.previewState['image_dir'],
                                    clear=(self.previewState['modimages'] == 'clear'))
 
+        except Exception, excp:
+            self.previewClear()   # Revert to original version
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to source directory %s: %s' % (sessionName, self.previewState['src_dir'], excp))
+
+        try:
             if not os.path.exists(self.previewState['web_dir']):
                 os.makedirs(self.previewState['web_dir'])
 
@@ -1959,12 +1973,13 @@ class ActionHandler(BaseHandler):
 
         except Exception, excp:
             self.previewClear()   # Revert to original version
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving session %s: %s' % (sessionName, excp))
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to web directory %s: %s' % (sessionName, self.previewState['web_dir'], excp))
 
         sessionPath = self.previewState['path']
+        sessionLabel = self.previewState['label']
         rolloverParams = self.previewState['rollover']
 
-        # Revert to saved version of preview (discarding any navigation/answer info); this may trigger proxy updates
+        # Success. Revert to saved version of preview (discarding any navigation/answer info); this may trigger proxy updates
         self.previewClear(saved_version=True)   
 
         if sessionName != 'index':
@@ -1973,7 +1988,7 @@ class ActionHandler(BaseHandler):
 
         msgs = []
         if errMsgs and any(errMsgs):
-            msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionName)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
+            msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionLabel)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
 
         if rolloverParams:
             self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs)
@@ -2061,12 +2076,12 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:'+str(excp))
 
 
-    def editSession(self, sessionName, sessionText='', start=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide=''):
+    def editSession(self, sessionName, sessionType='', sessionText='', start=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide=''):
         # sessiontext may be modified text for all slides or just a single slide, depending upon slideNumber
         sessionName, sessionText, fromSession, fromSite = md2md.stringify(sessionName, sessionText, fromSession, fromSite)
 
         if Options['debug']:
-            print >> sys.stderr, 'ActionHandler:editSession: session=%s, start=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, start, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
+            print >> sys.stderr, 'ActionHandler:editSession: session=%s, type=%s, start=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, sessionType, start, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
 
         slideNumber = self.get_argument('slide', '')
         if slideNumber.isdigit():
@@ -2074,9 +2089,12 @@ class ActionHandler(BaseHandler):
         else:
             slideNumber = None
 
-        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+        sessionLabel = sessionName
+        temSessionName = sessionType+'00' if sessionName == 'index' and sessionType else sessionName
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(temSessionName)
         if uploadType != TOP_LEVEL and not sessionNumber:
             sessionName = 'index'
+            sessionLabel = uploadType+'/index'
 
         sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
 
@@ -2121,7 +2139,7 @@ class ActionHandler(BaseHandler):
                         sessionText = sessionText.encode('utf-8')
 
                 # Edit all slides
-                self.render('edit.html', site_name=Options['site_name'], session_name=sessionName,
+                self.render('edit.html', site_name=Options['site_name'], session_name=temSessionName, session_label=sessionLabel,
                             session_text=sessionText, discard_url='_preview/index.html', err_msg='')
                 return
 
@@ -3103,6 +3121,10 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Use %s/%s to view session %s' % (Options['site_name'], preview_url, ActionHandler.previewState['name']))
                 else:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Session not currently accessible')
+
+        if self.request.path.endswith('.md'):
+            # Failsafe - no direct web access to *.md files
+            raise tornado.web.HTTPError(404)
 
         if self.request.path.startswith('/'+ADMIN_PATH):
             # Admin path accessible only to dry_run (preview) or wet run using proxy_url

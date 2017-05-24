@@ -95,6 +95,7 @@ Sliobj.params = JS_PARAMS_OBJ;
 
 Sliobj.sitePrefix = Sliobj.params.siteName ? '/'+Sliobj.params.siteName : '';
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.fileName : '';
+Sliobj.sessionLabel = (!Sliobj.params.fileName && Sliobj.params.sessionType) ? Sliobj.params.sessionType+'/index' : Sliobj.params.fileName;
 
 Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
@@ -261,6 +262,8 @@ function setupCache(auth, callback) {
 	    Sliobj.maxLastSlide = Math.min(retStatus.info.maxLastSlide, Sliobj.params.pacedSlides);
 	if (retStatus.info.remoteAnswers)
 	    Sliobj.remoteAnswers = retStatus.info.remoteAnswers;
+	if (retStatus.info.sheetsAvailable)
+	    Sliobj.sheetsAvailable = retStatus.info.sheetsAvailable;
 	if (allRows) {
 	    gsheet.initCache(allRows);
 	    GService.gprofile.auth.validated = 'allCallback';
@@ -574,6 +577,9 @@ Slidoc.pageSetup = function() {
     var match = location.pathname.match(/\/_preview\b/);
     if (match) {
 	Sliobj.previewState = true;
+	var labelElem = document.getElementById('slidoc-preview-label');
+	if (labelElem)
+	    labelElem.textContent = 'Previewing '+Sliobj.sessionLabel;
 	previewMessages(true);
 	if (!Sliobj.params.fileName)
 	    toggleClass(true, 'slidoc-preview-view');
@@ -1056,25 +1062,27 @@ Slidoc.assessmentMenu = function () {
     }
 
     if (Sliobj.params.gd_sheet_url) {
-	if (adminAccess)
-	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span></li>\n';
+	var prefillUrl = Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName;
+	html += '<li>' + clickableSpan('Prefill user info', "Slidoc.confirmLoad('"+prefillUrl+"','Prefill user info?');", !adminAccess) + '</li>\n';
 
 	if (Sliobj.gradableState) {
-	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span></li>\n';
-	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span></li>\n';
 	    html += '<hr>';
+	    html += '<li>' + clickableLink('Import responses', Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName, !adminAccess) + '</li>\n';
+
+	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	    html += '<li>' + clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '</li>\n';
+
+	    var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	    html += '<li>' + clickableSpan('View response statistics', "Slidoc.showStats();", disabled) + '</li>\n';
+            html += '<hr>';
+	    html += '<li>' + clickableSpan('View session scores', "Slidoc.viewSheet('"+Sliobj.sessionName+"');", !adminAccess) + '</li>';
 	    if (!Sliobj.gradeDateStr)
-		html += '<li><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span></li>';
+		html += '<li>' + clickableSpan('Release grades to students', "Slidoc.releaseGrades();" ) + '</li>';
 	    else
 		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
-	    if (adminAccess) {
-		var prefillUrl = Sliobj.sitePrefix+'/_prefill/'+Sliobj.params.fileName;
-		html += '<hr>';
-		html += '<li><span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"'"+');">View session scores</span></li>';
-		html += '<li><span class="slidoc-clickable" onclick="Slidoc.confirmLoad('+"'"+prefillUrl+"','Prefill user info?'"+');">Prefill user info</span></li>\n';
-		html += '<li><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName+'">Import responses</a></li>\n';
-	    }
 	}
+	var disabled = !(adminAccess && Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
+	html += '<li>' + clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '</li>\n';
     }
     html += '</ul>';
     if (Sliobj.closePopup)
@@ -1135,7 +1143,7 @@ Slidoc.slideEdit = function(action, slideId) {
     var editArea = document.getElementById(slideId+'-togglebar-edit-area');
     var statusElem = document.getElementById(slideId+'-togglebar-edit-status');
     var imageNameElem = document.getElementById(slideId+'-togglebar-edit-imgname');
-    var params = {slide: slideNum, sessionname: Sliobj.params.fileName};
+    var params = {slide: slideNum, sessionname: Sliobj.params.fileName, sessiontype: Sliobj.params.sessionType};
     statusElem.textContent = '';
 
     if (action == 'clear') {
@@ -2043,6 +2051,17 @@ Slidoc.slideViewIncrement = function () {
 	toggleClass(false, 'slidoc-incremental-view');
 
     return false;
+}
+
+function clickableSpan(text, jsCode, disabled) {
+    return '<span ' + (disabled ? 'class="slidoc-disabled"' : 'class="slidoc-clickable" onclick="'+jsCode+'"') + '>' + text + '</span>';
+}
+
+function clickableLink(text, url, disabled) {
+    if (disabled)
+	return clickableSpan(text, '', disabled);
+    else
+	return '<a class="slidoc-clickable" href="'+url+'">' + text + '</a>';
 }
 
 ///////////////////////////////
@@ -3180,11 +3199,18 @@ Slidoc.manageSession = function() {
 	else
 	    html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	html += hr;
-	html += '<span class="slidoc-clickable" onclick="Slidoc.showStats();">View response statistics</span><br>\n';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.showQDiff();">View question difficulty</span><br>\n';
+
+	var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	html += clickableSpan('View response statistics', "Slidoc.showStats();", disabled) + '<br>\n';
+
+	var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
+	html += clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '<br>\n';
+
 	if (Sliobj.fullAccess) {
 	    html += hr;
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'answer_stats'"+');">Update session answers/stats</span><br>\n';
+	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	    html += clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '<br>\n';
+
 	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
 	    html += hr;
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');">Post scores from this session to gradebook</span><br>';
@@ -3249,6 +3275,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.gradeDateStr = '';
     Sliobj.remoteAnswers = '';
     Sliobj.discussStats = null;
+    Sliobj.sheetsAvailable = null;
     Sliobj.voteDate = null;
 
     if (Sliobj.params.gd_sheet_url) {
@@ -4703,6 +4730,9 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	    if (retStatus.info.discussStats)
 		Sliobj.discussStats = retStatus.info.discussStats;
 
+	    if (retStatus.info.sheetsAvailable)
+		Sliobj.sheetsAvailable = retStatus.info.sheetsAvailable;
+
 	    if (retStatus.info.voteDate)
 		try { Sliobj.voteDate = new Date(retStatus.info.voteDate); } catch(err) { Slidoc.log('sessionGetPutAux: Error VOTE_DATE: '+retStatus.info.voteDate, err); }
 
@@ -6048,12 +6078,9 @@ Slidoc.submitStatus = function () {
 	var userId = getUserId() || '';
 	if (!Sliobj.gradableState)
 	    userId = '';
-        if (Sliobj.currentSlide && Sliobj.questionSlide) {
-	    var elemAttrs = 'class="slidoc-clickable" onclick="Slidoc.resetQuestion('+"'"+userId+"'"+');"'
-	} else {
-	    var elemAttrs = 'class="slidoc-disabled"';
-	}
-	html += '<br><span '+elemAttrs+'>Reset '+(userId?'user':'ALL')+' responses to current question</span><br>';
+        var disabled = (!Sliobj.currentSlide || !Sliobj.questionSlide);
+	html += '<p></p>' + clickableSpan('Reset '+(userId?'user':'ALL')+' responses to current question',
+			  	       "Slidoc.resetQuestion('"+"'"+userId+"'"+"');", disabled) + '<br>';
     }
 
     if (Sliobj.session.submitted || Sliobj.gradableState)

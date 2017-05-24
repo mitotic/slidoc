@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5j'
+VERSION = '0.97.5k'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -94,6 +94,7 @@ COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
 RETRY_WAIT_TIME = 5           # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 5           # Maximum number of failed Google Sheet requests
 CACHE_HOLD_SEC = 3600         # Maximum time (sec) to hold sheet in cache
+MISS_RETRY_SEC = 5            # Time period between attempts to access missed optional sheets
 PROXY_UPDATE_ROW_LIMIT = 200  # Max. no of rows per sheet, per proxy update request
 
 TIMED_GRACE_SEC = 15          # Grace period for timed submissions (usually about 15 seconds)
@@ -119,6 +120,8 @@ ROSTER_SHEET = 'roster_slidoc'
 SCORES_SHEET = 'scores_slidoc'
 
 BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, SCORES_SHEET]
+
+RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats']
 
 BASIC_PACE    = 1
 QUESTION_PACE = 2
@@ -403,8 +406,8 @@ def getSheet(sheetName, optional=False, backup=False, display=False):
     if cached:
         return Sheet_cache[sheetName]
     elif optional and sheetName in Miss_cache:
-        # If optional sheets are later created, will need to clear cache
-        if not backup and (sliauth.epoch_ms() - Miss_cache[sheetName]) < 0.5*1000*CACHE_HOLD_SEC:
+        # Wait for minimum time before re-checking for optional sheets
+        if not backup and (sliauth.epoch_ms() - Miss_cache[sheetName]) < 1000*MISS_RETRY_SEC:
             return None
         # Retry retrieving optional sheet
         del Miss_cache[sheetName]
@@ -1448,7 +1451,20 @@ def sheetAction(params, notrace=False):
         loggingSheet = sheetName.endswith('_log')
         discussionSheet = sheetName.endswith('-discuss')
 
+        getRow = params.get('get','')
+        createRow = params.get('create', '')
+        allRows = params.get('all','')
+
+        nooverwriteRow = params.get('nooverwrite','')
+        delRow = params.get('delrow','')
+        resetRow = params.get('resetrow','')
+
+        getShare = params.get('getshare', '')
+        importSession = params.get('import','')
+        seedRow = params.get('seed', None) if adminUser else None
+
         performActions = params.get('actions', '')
+
         if performActions:
             if performActions == 'discuss_posts':
                 returnValues = getDiscussPosts(sheetName, params.get('slide', ''), paramId)
@@ -1507,6 +1523,10 @@ def sheetAction(params, notrace=False):
 
             delSheet(sheetName)
                     
+            for j in range(len(RELATED_SHEETS)):
+                if getSheet(sheetName+'-'+RELATED_SHEETS[j], optional=True):
+                    delSheet(sheetName+'-'+RELATED_SHEETS[j])
+
             if Settings['gsheet_url'] and not Settings['dry_run']:
                 user = ADMINUSER_ID
                 userToken = gen_proxy_token(user, ADMIN_ROLE)
@@ -1582,16 +1602,6 @@ def sheetAction(params, notrace=False):
                         computeTotalScore = True
 
             # Check parameter consistency
-            getRow = params.get('get','')
-            getShare = params.get('getshare', '')
-            allRows = params.get('all','')
-            createRow = params.get('create', '')
-            seedRow = params.get('seed', None) if adminUser else None
-            nooverwriteRow = params.get('nooverwrite','')
-            delRow = params.get('delrow','')
-            resetRow = params.get('resetrow','')
-            importSession = params.get('import','')
-
             columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
             columnIndex = indexColumns(modSheet)
 
@@ -2634,10 +2644,18 @@ def sheetAction(params, notrace=False):
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
 
                 if getRow and createRow and discussableSession and dueDate:
+                    # Accessing submitted discussable session
                     returnInfo['discussStats'] = getDiscussStats(sheetName, userId)
 
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
+
+        if sessionEntries and getRow and (allRows or (createRow and paramId == TESTUSER_ID)):
+            # Getting all session rows or test user row (with creation); return related sheet names
+            returnInfo['sheetsAvailable'] = []
+            for j in range(len(RELATED_SHEETS)):
+                if getSheet(sheetName+'-'+RELATED_SHEETS[j], optional=True):
+                    returnInfo['sheetsAvailable'].append(RELATED_SHEETS[j])
 
         if getRow and createRow and proxy_error_status():
             returnInfo['proxyError'] = 'Read-only mode; session modifications are disabled'

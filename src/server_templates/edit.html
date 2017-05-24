@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- edit parameters: site_name, session_name, session_text, err_msg -->
+<!-- edit parameters: site_name, session_name, session_label, session_text, err_msg -->
 
 {% include "base.html" %}
 
@@ -184,8 +184,8 @@ document.onreadystatechange = function(event) {
     <button type="button" onclick="slidocUpdate('open')" class="slidoc-edit-preview">Open preview</button>
   </div>
   <fieldset>
-    <label for="sessionname">Session:</label>
-    <input type="text" id="sessionname" readonly="yes" name="sessionname" value="{{session_name}}"></input>
+    <label for="sessionname">Session:</label> <b>{{ session_label }}</b>
+    <input type="hidden" id="sessionname" name="sessionname" value="{{session_name}}"></input>
     &nbsp;&nbsp;
     <label for="sessionmodify">Modify question numbers/types?</label>
     <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
