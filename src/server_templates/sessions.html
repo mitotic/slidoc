@@ -15,31 +15,36 @@
 function togglebelow(elem, open) {
    var belowElem = elem.parentNode.parentNode.nextElementSibling;
    console.log('togglebelow', open, elem, belowElem);
- if (open) {
- elem.style.display = 'none';
- elem.nextElementSibling.style.display = null;
-if (belowElem)
-belowElem.style.display = null;
-} else {
- elem.style.display = 'none';
- elem.previousElementSibling.style.display = null;
-if (belowElem)
-belowElem.style.display = 'none';
+   if (open) {
+      elem.style.display = 'none';
+      elem.nextElementSibling.style.display = null;
+      if (belowElem)
+         belowElem.style.display = null;
+   } else {
+      elem.style.display = 'none';
+      elem.previousElementSibling.style.display = null;
+      if (belowElem)
+         belowElem.style.display = 'none';
+   }
 }
-}
+
 function action(actionName, sessionName, sessionPrefix, checkboxId) {
-var msg = 'Confirm '+actionName+' '+(sessionPrefix||'')+(sessionName||'');
-if (!window.confirm(msg+'?'))
-return;
-var url = '{{ site_prefix }}'+'/_'+actionName;
-if (sessionName)
-  url += '/' + sessionName;
-if (checkboxId) {
-  var checkElem = document.getElementById(checkboxId);
-  if (checkElem && checkElem.checked)
-    url += '?'+checkboxId+'=1';
-}
-window.location = url;
+   var msg = 'Confirm '+actionName+' '+(sessionPrefix||'')+(sessionName||'');
+   if (!window.confirm(msg+'?'))
+      return;
+   if (actionName == 'delete') {
+      if (!window.confirm('Delete operation is irreversible. Are you sure?'))
+         return;
+   }
+   var url = '{{ site_prefix }}'+'/_'+actionName;
+   if (sessionName)
+      url += '/' + sessionName;
+   if (checkboxId) {
+      var checkElem = document.getElementById(checkboxId);
+      if (checkElem && checkElem.checked)
+      url += '?'+checkboxId+'=1';
+   }
+   window.location = url;
 }
 </script>
 
