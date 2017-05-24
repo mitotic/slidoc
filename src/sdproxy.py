@@ -463,16 +463,16 @@ def downloadSheet(sheetName, backup=False):
     if Settings['log_call'] > 1:
         getParams['logcall'] = str(Settings['log_call'])
 
-    if Settings['debug']:
-        print("DEBUG:downloadSheet", sheetName, getParams, file=sys.stderr)
+    ##if Settings['debug']:
+    ##    print("DEBUG:downloadSheet", sheetName, getParams, file=sys.stderr)
 
     if Settings['gsheet_url']:
         retval = sliauth.http_post(Settings['gsheet_url'], getParams, add_size_info=True)
     else:
         retval =  {'result': 'error', 'error': 'No Sheet URL'}
 
-    if Settings['debug']:
-        print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
+    ##if Settings['debug']:
+    ##    print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
 
     Global.remoteVersions.add( retval.get('info',{}).get('version','') )
 

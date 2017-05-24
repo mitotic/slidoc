@@ -992,6 +992,8 @@ class SlidocRenderer(MathRenderer):
             if suffix.isdigit():
                 self.slide_maximage = max(self.slide_maximage, int(suffix))
 
+        tem_msg = ''
+        img_found = False
         new_src = src
         img_content = None
         copy_image = self.content_zip or self.options['config'].dest_dir
@@ -999,16 +1001,19 @@ class SlidocRenderer(MathRenderer):
         if url_type == 'rel_path':
             # Image link is a relative filepath
             if self.images_zipfile:
+                # Check for image in zip archive
                 if basename in self.images_map:
+                    img_found = True
                     if copy_image:
                         img_content = self.images_zipfile.read(self.images_map[basename])
                 else:
-                    raise Exception('File %s not found in zip archive' % basename)
-            else:
-                # Check for image file
+                   tem_msg = ' and file %s not found in zip archive' % basename
+
+            if not img_found:
+                # Check for local image file
                 new_src = md2md.find_image_path(src, filename=self.options['filename'], filedir=self.options['filedir'], image_dir=self.options['config'].image_dir)
                 if not new_src:
-                    raise Exception('Image file %s not found in %s' % (src, self.options['filedir']))
+                    raise Exception('Image file %s not found in %s%s' % (src, self.options['filedir'], tem_msg))
 
                 if copy_image:
                     filepath = self.options['filedir']+'/'+new_src if self.options['filedir'] else new_src

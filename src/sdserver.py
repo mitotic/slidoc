@@ -1593,10 +1593,13 @@ class ActionHandler(BaseHandler):
             topnavList = ['index.html'] + topnavList
         return topnavList
 
-    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, deleteSlideNum=0):
+    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, modimages='', deleteSlideNum=0):
         # Return null string on success or error message
         if self.previewActive():
             raise Exception('Already previewing session')
+
+        if Options['debug']:
+            print >> sys.stderr, 'sdserver.uploadSession:', uploadType, sessionNumber, fname1, len(fbody1 or ''), fname2, len(fbody2 or ''), modify, modimages, deleteSlideNum
 
         zfile = None
         if fname2:
@@ -1728,7 +1731,7 @@ class ActionHandler(BaseHandler):
             self.previewState['image_paths'] = dict( (os.path.basename(fpath), fpath) for fpath in self.previewState['image_zipfile'].namelist() if os.path.basename(fpath)) if images_zipdata else {}
 
             self.previewState['overwrite'] = overwrite
-            self.previewState['modimages'] = ''
+            self.previewState['modimages'] = modimages
             self.previewState['rollover'] = None
             return ''
 
@@ -1859,6 +1862,8 @@ class ActionHandler(BaseHandler):
         imagePath = sessionName+'_images/' + imageFile
         self.previewState['image_zipfile'].writestr(imagePath, fbody)
         self.previewState['image_paths'][imageFile] = imagePath
+        self.previewState['modimages'] = 'append'
+
         self.set_header('Content-Type', 'application/json')
         self.write( json.dumps( {'result': 'success'} ) )
 
@@ -2217,17 +2222,18 @@ class ActionHandler(BaseHandler):
 
         fbody2 = ''
         fname2 = ''
+        modimages = ''
         if self.previewState:
             if self.previewState['image_zipbytes']:
                 self.previewState['image_zipfile'].close()
                 fbody2 = self.previewState['image_zipbytes'].getvalue()
                 fname2 = sessionName+'_images.zip'
+                modimages = self.previewState['modimages']
             self.previewClear()    # Revert to original version
         elif image_zipdata:
             fbody2 = image_zipdata
             fname2 = sessionName+'_images.zip'
 
-        modimages = ''
         if slide_images_zip:
             # Append new slide images
             modimages = 'append'
@@ -2241,7 +2247,7 @@ class ActionHandler(BaseHandler):
             fname2 = sessionName+'_images.zip'
 
         try:
-            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify, deleteSlideNum=deleteSlideNum)
+            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify, modimages=modimages, deleteSlideNum=deleteSlideNum)
         except Exception, excp:
             if Options['debug']:
                 import traceback
