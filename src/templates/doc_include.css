@@ -5,6 +5,7 @@ body.slidoc-all-view .slidoc-noall,
 body.slidoc-fullscreen-view .slidoc-nofullscreen,
 body.slidoc-paced-view .slidoc-nopaced,
 body.slidoc-localpreview-view .slidoc-nolocalpreview,
+body.slidoc-update-view .slidoc-noupdate,
 body.slidoc-remote-view .slidoc-noremote,
 body.slidoc-simple-view .slidoc-nosimple,
 body.slidoc-slide-view .slidoc-noslide,
@@ -21,6 +22,7 @@ body:not(.slidoc-timed-view) .slidoc-timedonly,
 body:not(.slidoc-discuss-view) .slidoc-discussonly,
 body:not(.slidoc-localpreview-view) .slidoc-localpreviewonly,
 body:not(.slidoc-preview-view) .slidoc-previewonly,
+body:not(.slidoc-update-view) .slidoc-updateonly,
 body:not(.slidoc-proxy-view) .slidoc-proxyonly,
 body:not(.slidoc-remote-view) .slidoc-remoteonly,
 body:not(.slidoc-server-view) .slidoc-serveronly,
@@ -230,7 +232,7 @@ img.slidoc-img
     border: 1px solid transparent;
 }
 
-img.slidoc-img.slidoc-dragover
+img.slidoc-img-drop.slidoc-dragover
 {
     border: 1px dashed gray;
 }
@@ -250,22 +252,42 @@ body:not(.slidoc-dragdrop-view) .slidoc-dropbar {display: none;}
 
 .slidoc-togglebar-edit-area { outline: none; width: 90%; }
 
-.slidoc-togglebar,
-.slidoc-togglebar-edit
+
+/* Drag-drop */
+
+div.slidoc-img-droparea {
+    min-height: 25px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+    border: 1px solid gray;
+}
+
+.slidoc-imgupload-imgdisp {
+    max-width: 80px;
+    max-height: 60px;
+}
+
+.slidoc-toptoggle-header img {
+    max-width: 64px;
+    max-height: 48px;
+    vertical-align: middle;
+}
+
+.slidoc-droppable
 {
     margin: 0;
     border: 2px dashed transparent;
 }
 
-.slidoc-togglebar-edit.slidoc-dragover {
+.slidoc-droppable.slidoc-dragover {
     border: 2px dashed gray;
 }
 
-.slidoc-togglebar.slidoc-dragovertop {
+.slidoc-droppable.slidoc-dragovertop {
     border-top-color: gray;
 }
 
-.slidoc-togglebar.slidoc-dragoverbottom {
+.slidoc-droppable.slidoc-dragoverbottom {
     border-bottom-color: gray;
 }
 
@@ -285,17 +307,6 @@ body.slidoc-accordion-view .slidoc-chapter-accordion .slidoc-toggle-visible {dis
 
 .slidoc-togglebar:not(.slidoc-toggle-hide) .slidoc-toggle-hidden {display: none;}
 .slidoc-togglebar.slidoc-toggle-hide .slidoc-toggle-visible {display: none;}
-
-.slidoc-togglebar-edit-imgdisp {
-    max-width: 64px;
-    max-height: 48px;
-}
-
-.slidoc-toptoggle-header img {
-    max-width: 64px;
-    max-height: 48px;
-    vertical-align: middle;
-}
 
 /* Progress bar */
 #slidoc-progressbar-container {

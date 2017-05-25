@@ -691,10 +691,11 @@ class ActionHandler(BaseHandler):
                 if not sessionName:
                     sessionName = self.get_argument('sessionname', '')
                 sessionType = self.get_argument('sessiontype', '')
+                startPreview = self.get_argument('preview', '')
                 if previewingSession and previewingSession != sessionName:
                     self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
                     return
-                return self.editSession(sessionName, sessionType=sessionType, start=True)
+                return self.editSession(sessionName, sessionType=sessionType, start=True, startPreview=startPreview)
             elif action == '_discard':
                 return self.discardPreview()
             elif action == '_reloadpreview':
@@ -1371,7 +1372,7 @@ class ActionHandler(BaseHandler):
             fname = fileinfo['filename']
             fbody = fileinfo['body']
             sessionName = self.get_argument("sessionname")
-            imageFile = self.get_argument("imagefile")
+            imageFile = self.get_argument("imagefile", "")
             return self.imageUpload(sessionName, imageFile, fname, fbody)
 
         if action in ('_sheet',):
@@ -1856,6 +1857,9 @@ class ActionHandler(BaseHandler):
             print >> sys.stderr, 'ActionHandler:imageUpload', sessionName, imageFile, fname, len(fbody)
         if not self.previewActive():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
+        if not imageFile:
+            imageFile = (md2md.IMAGE_FMT % self.previewState['new_image_number']) + os.path.splitext(fname)[1].lower()
+            self.previewState['new_image_number'] += 1
         if not self.previewState['image_zipfile']:
             self.previewState['image_zipbytes'] = io.BytesIO()
             self.previewState['image_zipfile'] = zipfile.ZipFile(self.previewState['image_zipbytes'], 'a')
@@ -1865,7 +1869,8 @@ class ActionHandler(BaseHandler):
         self.previewState['modimages'] = 'append'
 
         self.set_header('Content-Type', 'application/json')
-        self.write( json.dumps( {'result': 'success'} ) )
+        self.write( json.dumps( {'result': 'success', 'imageFile': imageFile} ) )
+
 
     def displayPreview(self, filepath=None):
         if not self.previewActive():
@@ -2081,12 +2086,12 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:'+str(excp))
 
 
-    def editSession(self, sessionName, sessionType='', sessionText='', start=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide=''):
+    def editSession(self, sessionName, sessionType='', sessionText='', start=False, startPreview=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide=''):
         # sessiontext may be modified text for all slides or just a single slide, depending upon slideNumber
         sessionName, sessionText, fromSession, fromSite = md2md.stringify(sessionName, sessionText, fromSession, fromSite)
 
         if Options['debug']:
-            print >> sys.stderr, 'ActionHandler:editSession: session=%s, type=%s, start=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, sessionType, start, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
+            print >> sys.stderr, 'ActionHandler:editSession: session=%s, type=%s, start=%s, startPreview=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, sessionType, start, startPreview, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
 
         slideNumber = self.get_argument('slide', '')
         if slideNumber.isdigit():
@@ -2106,7 +2111,7 @@ class ActionHandler(BaseHandler):
         if self.previewState and sessionName != self.previewState['name']:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Edit session %s does not match preview session %s' % (sessionName, self.previewState['name']))
 
-        if start:
+        if start or startPreview:
             if slideNumber:
                 if self.previewState:
                     if self.previewState['md_slides'] is None:
@@ -2116,17 +2121,18 @@ class ActionHandler(BaseHandler):
                     new_image_number = self.previewState['new_image_number']
                     if slideNumber > len(md_slides):
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
-                    slideText = md_slides[slideNumber-1]
+                    sessionText = md_slides[slideNumber-1]
 
                 else:
-                    md_defaults, slideText, _, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
+                    md_defaults, sessionText, _, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
 
-                slideText = strip_slide(slideText)
-                # Edit single slide
-                retval = {'slideText': slideText, 'newImageName': md2md.IMAGE_FMT % new_image_number}
-                self.set_header('Content-Type', 'application/json')
-                self.write( json.dumps(retval) )
-                return
+                sessionText = strip_slide(sessionText)
+                if not startPreview:
+                    # Edit single slide
+                    retval = {'slideText': sessionText, 'newImageName': md2md.IMAGE_FMT % new_image_number}
+                    self.set_header('Content-Type', 'application/json')
+                    self.write( json.dumps(retval) )
+                    return
 
             else:
                 if self.previewState:
@@ -2143,10 +2149,11 @@ class ActionHandler(BaseHandler):
                     if isinstance(sessionText, unicode):
                         sessionText = sessionText.encode('utf-8')
 
-                # Edit all slides
-                self.render('edit.html', site_name=Options['site_name'], session_name=temSessionName, session_label=sessionLabel,
-                            session_text=sessionText, discard_url='_preview/index.html', err_msg='')
-                return
+                if not startPreview:
+                    # Edit all slides
+                    self.render('edit.html', site_name=Options['site_name'], session_name=temSessionName, session_label=sessionLabel,
+                                session_text=sessionText, discard_url='_preview/index.html', err_msg='')
+                    return
 
         prevPreviewState = self.previewState.copy() if self.previewState else None
 
@@ -2268,8 +2275,12 @@ class ActionHandler(BaseHandler):
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         if update:
             self.reloadPreview(slideNumber)
-        self.set_header('Content-Type', 'application/json')
-        self.write( json.dumps( {'result': 'success'} ) )
+        if startPreview:
+            site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+            self.redirect(site_prefix+'/_preview/index.html')
+        else:
+            self.set_header('Content-Type', 'application/json')
+            self.write( json.dumps( {'result': 'success'} ) )
 
 
     def rollover(self, sessionName, slideNumber=None, truncateOnly=False):

@@ -633,7 +633,7 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
         classes =  'slidoc-single-column' if 'two_column' in self.renderer.options['config'].features else ''
-        return self.renderer.slide_prefix(self.renderer.first_id, classes)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)+html+self.renderer.end_slide(last_slide=True)
+        return SlidocRenderer.image_drop_template+self.renderer.slide_prefix(self.renderer.first_id, classes)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)+html+self.renderer.end_slide(last_slide=True)
 
     
 class MathRenderer(mistune.Renderer):
@@ -680,6 +680,8 @@ class SlidocRenderer(MathRenderer):
     plugin_content_template = '''<div id="%(pluginId)s-content" class="%(pluginLabel)s-content slidoc-plugin-content slidoc-pluginonly" data-plugin="%(pluginName)s" data-number="%(pluginNumber)s" data-args="%(pluginInitArgs)s" data-button="%(pluginButton)s" data-slide-id="%(pluginSlideId)s">%(pluginContent)s</div><!--%(pluginId)s-content-->'''
 
     plugin_body_template = '''<div id="%(pluginId)s-body" class="%(pluginLabel)s-body slidoc-plugin-body slidoc-pluginonly">%(pluginBodyDef)s</div><!--%(pluginId)s-body-->'''
+
+    image_drop_template = '''<div id="slidoc-imgupload-container" class="slidoc-previewonly slidoc-updateonly"><div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop">Drop image here<br><code id="slidoc-imgupload-imglink" class="slidoc-imgupload-imglink"></code></div><img id="slidoc-imgupload-imgdisp" class="slidoc-imgupload-imgdisp slidoc-img-drop" src="" style="display: none;"></div>'''
 
     remarks_template = '''
   <button id="slidoc-remarks-start-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly" onclick="Slidoc.remarksClick(this);">Edit remarks</button>
@@ -924,12 +926,12 @@ class SlidocRenderer(MathRenderer):
         chapter_id, sep, slideNumStr = slide_id.partition('-')
         slide_number = int(slideNumStr)
         prefix = str(slide_number)+'. ' if 'untitled_number' not in self.options['config'].features else ''
-        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
+        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
         html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
         html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, '&#x27A4;')
         right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
         for action, icon in right_list:
-            toggle_classes = 'slidoc-toptoggle-edit slidoc-edit-icon slidoc-testuseronly slidoc-nolocalpreview slidoc-serveronly'
+            toggle_classes = 'slidoc-toptoggle-edit slidoc-edit-icon slidoc-testuseronly slidoc-nolocalpreview slidoc-noupdate slidoc-serveronly'
             attrs = ''
             if action == 'drag':
                 attrs += ' draggable="true" data-slide="%d"' % slide_number
@@ -948,7 +950,7 @@ class SlidocRenderer(MathRenderer):
         html += '''    <span id="%s-toptoggle-header" class="slidoc-toptoggle-header slidoc-toggle-hidden slidoc-toggle-draggable" draggable="true" data-slide="%d">%s</span>''' % (slide_id, slide_number, prefix)
         html += '''  </span>\n'''
         html += '''</div>\n'''
-        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-img-drop slidoc-noprint" style="display: none;">\n''' % (slide_id,)
+        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="display: none;">\n''' % (slide_id, slide_id)
         html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
         html += '''  <div>\n'''
         html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
@@ -957,8 +959,9 @@ class SlidocRenderer(MathRenderer):
         html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
         html += '''  </div>\n'''
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
-        html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img slidoc-previewonly">''' % (slide_id,)
-        html += '''    <span id="%s-togglebar-edit-imgname" class="slidoc-togglebar-edit-imgname" data-imgname=""></span><img id="%s-togglebar-edit-imgdisp" class="slidoc-togglebar-edit-imgdisp" src="">\n''' % (slide_id, slide_id)
+        html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img  slidoc-previewonly">''' % (slide_id,)
+        html += '''    <div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop" data-slide-id="%s">Drop image here<br><code id="%s-imgupload-imglink" class="slidoc-imgupload-imglink"></code></div>\n''' % (slide_id, slide_id)
+        html += '''    <img id="%s-imgupload-imgdisp" class="slidoc-imgupload-imgdisp slidoc-img-drop" src="" style="display: none;">\n''' % (slide_id,)
         html += '''  </div>'''
         html += '''</div>\n'''
 
@@ -2699,7 +2702,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
     topnav_html += '<li id="gradelink" style="display: none;"><a href="%s_grades" target="_blank">%s</a></li>' % (site_prefix, '&#x1f520;')
-    topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
+    topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html

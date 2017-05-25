@@ -94,7 +94,7 @@ COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
 RETRY_WAIT_TIME = 5           # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 5           # Maximum number of failed Google Sheet requests
 CACHE_HOLD_SEC = 3600         # Maximum time (sec) to hold sheet in cache
-MISS_RETRY_SEC = 5            # Time period between attempts to access missed optional sheets
+MISS_RETRY_SEC = 1800         # Time period between attempts to access missed optional sheets
 PROXY_UPDATE_ROW_LIMIT = 200  # Max. no of rows per sheet, per proxy update request
 
 TIMED_GRACE_SEC = 15          # Grace period for timed submissions (usually about 15 seconds)
