@@ -64,6 +64,13 @@ document.onkeydown = function(evt) {
       slidocUpdate('update');
       return false;
    }
+   if ((evt.keyCode == 10 || evt.keyCode == 13) && evt.altKey) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      if (PreviewWin && PreviewWin.Slidoc && PreviewWin.Slidoc.imageLink)
+         document.getElementById('sessiontext').value += '\n\n' + PreviewWin.Slidoc.imageLink;
+      return false;
+   }
 }
 
 function slidocUpdate(action) {
@@ -75,7 +82,7 @@ function slidocUpdate(action) {
 
    // Window opening must be triggered by user input
    if (action == 'open' || (action == 'update' && !checkPreviewWin())) {
-      if (!window.confirm('This will open a separate "live" preview window, which can be updated automatically. If you do not want live preview in a separate window, cancel now and use Save to preview in this window. (You can use Control-Enter keystoke to trigger live updates.)')) {
+      if (!window.confirm('This will open a separate "live" preview window, which can be updated automatically. If you do not want live preview in a separate window, cancel now and use Save to preview in this window. (You can use Control-Enter keystoke to trigger live updates and Alt-Enter to copy image links.)')) {
          return false;
       }
       PreviewWin = openWin(previewURL, previewName);

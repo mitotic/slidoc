@@ -1407,7 +1407,7 @@ Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
     }
 
     if (!nolog)
-	Slidoc.log('ajaxRequest.send:', method, urlEncodedData.length, url);
+	Slidoc.log('ajaxRequest.send:', method, (urlEncodedData?urlEncodedData.length:0), url);
     if (method == 'GET') {
 	if (urlEncodedData)
 	    XHR.open('GET', url+'?'+urlEncodedData);
