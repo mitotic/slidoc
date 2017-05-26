@@ -2979,7 +2979,7 @@ function showQDiffCallback(result, errMsg) {
 	    header = footer_elem.textContent;
 	if (concept_elem)
 	    tags = ' [' + concept_elem.textContent.trim() + ']';
-	html += '<tr><td>'+(result.qcorrect[j][0]*100).toFixed(0)+'%:</td><td><a href="#'+slide_id+'" target="_blank">'+header+'</a></td><td>'+tags+'</td></tr>\n';
+	html += '<tr><td>'+(result.qcorrect[j][0]*100).toFixed(0)+'%:</td><td><span class="slidoc-clickable" onClick="Slidoc.slideViewGo(true,'+question_attrs.slide+');">'+header+'</span></td><td>'+tags+'</td></tr>\n';
     }
     html += '</table>\n';
     Slidoc.showPopup(html, '', true);;

@@ -267,6 +267,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
+    slidoc_options =  re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_discuss=   re.compile(r'^ {0,3}(Discuss):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
@@ -281,7 +282,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_answer', 'slidoc_discuss', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_answer', 'slidoc_discuss', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -378,6 +379,13 @@ class MathBlockLexer(mistune.BlockLexer):
             'type': 'slidoc_header',
             'name': m.group(2).lower(),
             'text': m.group(3).strip()
+        })
+
+    def parse_slidoc_options(self, m):
+         self.tokens.append({
+            'type': 'slidoc_options',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
         })
 
     def parse_slidoc_answer(self, m):
@@ -575,6 +583,9 @@ class MarkdownWithMath(mistune.Markdown):
 
     def output_slidoc_header(self):
         return self.renderer.slidoc_header(self.token['name'], self.token['text'])
+
+    def output_slidoc_options(self):
+        return self.renderer.slidoc_options(self.token['name'], self.token['text'])
 
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
@@ -1377,6 +1388,9 @@ class SlidocRenderer(MathRenderer):
         hdr.set('class', hdr_class)
         return prev_slide_end + pre_header + ElementTree.tostring(hdr) + '\n' + post_header
 
+    def slidoc_options(self, name, text):
+        return ''
+
     def slidoc_header(self, name, text):
         if name == "type" and text:
             params = text.split()
@@ -1525,8 +1539,16 @@ class SlidocRenderer(MathRenderer):
 
         all_options = ('explain', 'retry', 'share', 'team', 'vote', 'weight')
 
-        opt_comps = [x.strip() for x in text.split(';')]
-        text = opt_comps[0]
+        # Syntax
+        #   Answer: [(answer_type=answer_value|answer_type|answer_value)] [; option[=value] [option2[=value2]] ...]
+        text, _, opt_text = text.partition(';')
+
+        if ';' in opt_text:
+            # Backwards compatibility (where semicolons are used as separators)
+            opt_comps = [x.strip() for x in opt_text.split(';')]
+        else:
+            opt_comps = shlex.split(opt_text) if opt_text else []
+
         if text and (text.split('=')[0].strip() in all_options):
              abort("    ****ANSWER-ERROR: %s: Insert semicolon before answer option 'Answer: ;%s' in slide %s" % (self.options["filename"], text, self.slide_number))
 
@@ -1543,7 +1565,7 @@ class SlidocRenderer(MathRenderer):
             # Change default share value for admin pace
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
         answer_opts = { 'disabled': '', 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
-        for opt in opt_comps[1:]:
+        for opt in opt_comps:
             num_match = re.match(r'^(maxchars|noshuffle|participation|retry|weight)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
             if num_match:
                 try:
@@ -2145,7 +2167,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
     match = DEFAULTS_RE.match(md_slides[0])
     if match:
-        md_defaults = match.group(0)
+        md_defaults = 'Slidoc: ' + (match.group(3) or match.group(4) or '')
         md_slides[0] = md_slides[0][len(match.group(0)):]
     else:
         md_defaults = ''
@@ -3828,14 +3850,14 @@ def read_first_line(file):
     file.seek(0)
     return first_line
 
-DEFAULTS_RE = re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*?\n')
+DEFAULTS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*$')
 def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
     # Read file args and merge with command line args, with command line args being final
     # If default_args_dict is specified, it is updated with file args
     if first_line:
         match = DEFAULTS_RE.match(args_text)
         if match:
-            args_text = match.group(1).strip()
+            args_text = (match.group(3) or match.group(4) or '').strip()
         else:
             args_text = ''
     else:
@@ -3843,7 +3865,8 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
 
     try:
         if args_text:
-            line_args_list = shlex.split(args_text)
+            # '--' prefix for args is optional
+            line_args_list = [arg if arg.startswith('-') else '--'+arg for arg in shlex.split(args_text)]
             line_args_dict = vars(parser.parse_args(line_args_list))
         else:
             line_args_dict = dict([(arg_name, None) for arg_name in include_args]) if include_args else {}
@@ -4198,7 +4221,7 @@ if __name__ == '__main__':
     skipped = []
     for fhandle in fhandles:
         first_line = read_first_line(fhandle)
-        if cmd_args.publish and (not first_line.strip().startswith('<!--slidoc-defaults') or '--publish' not in first_line):
+        if cmd_args.publish and (not DEFAULTS_RE.match(first_line) or 'publish' not in first_line):
             # Skip files without --publish option in the first line
             skipped.append(fhandle.name)
             continue

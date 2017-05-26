@@ -1,4 +1,4 @@
-<!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number,incremental_slides -->
+Slidoc: features=equation_number,incremental_slides
 
 # Slidoc: A slide-oriented document management system using Markdown
 
@@ -679,13 +679,20 @@ These options include:
 Default options for the `slidoc.py` command can be specified in the first
 line of the first file using the following format:
 
-    <!--slidoc-defaults --hide="[Aa]nswer" --features=equation_number -->
+    Slidoc: features=equation_number
 
 The above line appears as the first line of this README file. (These
 options can be overridden by explicity specifying options in the
 command line.)
 
 Tags: command line, options: options, default
+
+Notes: The default options may also be specified using a first line of
+the form
+
+    <!--slidoc-options features=equation_number -->
+
+to make the file conform to standard Markdown syntax.
 
 ---
 

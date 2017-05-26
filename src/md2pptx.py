@@ -27,7 +27,7 @@ import md2md
 
 class MDParser(object):
     newline_norm_re =  re.compile(r'\r\n|\r')
-    defaults_re =      re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*$')
+    defaults_re =      re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*$')
     header_re =        re.compile(r'^##[^#]')
     split_re =         re.compile(r'^(Extra|Notes|PluginDef|Tags):')
     notes_re =         re.compile(r'^Notes: *(.*)$')
@@ -110,7 +110,8 @@ class MDParser(object):
                 if dmatch:
                     # Defaults
                     if len(self.slide_buffer) == 1:
-                        self.cur_slide['defaults'] = dmatch.group(0)
+                        # First slide
+                        self.cur_slide['defaults'] = 'Slidoc: ' + (dmatch.group(3) or dmatch.group(4) or '')
                     continue
                     
                 imatch = self.reflink_re.match(line)

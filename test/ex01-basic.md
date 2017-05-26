@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=2 --retakes=2 --features=grade_response,quote_response -->
+Slidoc: pace=2 retakes=2 features=grade_response,quote_response
 # Basic questions
 
 Slidoc supports a simple format for framing interactive questions.
@@ -56,7 +56,7 @@ C.. Letter C
 
 D.. Letter D
 
-Answer: ;explain; maxchars=140
+Answer: ; explain maxchars=140
 
 Tags: questions, interactive: questions, multiple-choice
 
@@ -186,7 +186,7 @@ spaces will be expected in the user response.
 
 Write a python function to add two numbers.
 
-Answer: text/x-code; weight=1,4; maxchars=210
+Answer: text/x-code; weight=1,4 maxchars=210
 
 Tags: questions, text response 
 
@@ -236,7 +236,7 @@ being correct.
 
 What number is the answer to the Ultimate Question of Life, the Universe and Everything?
 
-Answer: number; explain; weight=0,2
+Answer: number; explain weight=0,2
 
 Notes: All answers are assumed correct.
 

@@ -1,4 +1,4 @@
-<!--slidoc-defaults -->
+<!--slidoc-options -->
 # Slidoc: Additional documentation
 
 - Plugins

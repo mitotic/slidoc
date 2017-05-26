@@ -11,8 +11,9 @@ unless the string 'Answer:' occurs in the text of the slide at the start of a li
 All the text in the notes portion of a Powerpoint slide is appended to the text in the main slide.
 (Explicitly use Notes: to delineate the notes portion of a Slidoc slide.)
 
-If a line containing just 'Slidoc:' is encountered, all the text prior to that line is
+If a line beginning with 'Slidoc:' is encountered, all the text prior to that line is
 essentially ignored and saved as the 'Extra:' portion of the slide. All the following text is retained.
+For the first slide, any options after Slidoc: are retained. This allows multiple versions of a slide: a ppt version and a slidoc version
  
 Use ![image0](image_name) to embed the slide itself as an image (after saving slides as .png/.jpg/.jpeg)
 Use ![image1](image_name 'height=200') to embed specific image from main slide (can also specify height in title)
@@ -44,7 +45,7 @@ import md2md
 
 
 class PPTXParser(object):
-    defaults_re = re.compile(r'^ {0,3}<!--slidoc-defaults\s+(.*?)-->\s*$')
+    defaults_re = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*$')
     choice_re   = re.compile(r'^([A-P]\.\.)', re.IGNORECASE)
     image_re    = re.compile(r'''^ {0,3}!\[image(\d+)\]\(\s*([^'"]*?)(?:\s*(['"].*?['"]))?\s*\) *$''')
     notes_re    = re.compile(r'^Notes: *(.*)$')
@@ -226,12 +227,10 @@ class PPTXParser(object):
             for line in slide_lines:
                 dmatch = self.defaults_re.match(line)
                 if dmatch:
-                    # Defaults
-                    if not defaults_text:
-                        defaults_text = line
-                    continue
-
-                if line.startswith('Slidoc:'):
+                    # Settings line
+                    if not j and not defaults_text:
+                        # First slide; retain default settings
+                        defaults_text = dmatch.group(3) or dmatch.group(4) or ''
                     # "discard" all text prior to Slidoc: (i.e., save as extra)
                     extra_text = ''.join(md_lines)
                     md_lines = []
@@ -282,7 +281,7 @@ class PPTXParser(object):
  
             md_text = self.force_para_break(''.join(md_lines))
             if defaults_text:
-                md_text = defaults_text + '\n' + md_text
+                md_text = 'Slidoc: '+defaults_text + '\n' + md_text
             if extra_text:
                 md_text += 'Extra:\n'+extra_text+'\n\n'
 
