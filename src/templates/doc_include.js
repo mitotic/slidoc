@@ -101,6 +101,8 @@ Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
 
+Sliobj.ajaxRequestActive = null;
+
 Sliobj.interactive = false;
 Sliobj.gradableState = null;
 Sliobj.firstTime = true;
@@ -1100,7 +1102,7 @@ Slidoc.assessmentMenu = function () {
 	    else
 		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	}
-	var disabled = !(adminAccess && Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
+	var disabled = adminAccess && !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
 	html += '<li>' + clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '</li>\n';
     }
     html += '</ul>';
@@ -1360,6 +1362,7 @@ Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
 	var DONE = 4; // readyState 4 means the request is done.
 	var OK = 200; // status 200 is a successful return.
 	if (XHR.readyState === DONE) {
+	    Sliobj.ajaxRequestActive = null;
 	    var retval = null;
 	    var msg = '';
             if (XHR.status === OK) {
@@ -1408,6 +1411,7 @@ Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
 
     if (!nolog)
 	Slidoc.log('ajaxRequest.send:', method, (urlEncodedData?urlEncodedData.length:0), url);
+
     if (method == 'GET') {
 	if (urlEncodedData)
 	    XHR.open('GET', url+'?'+urlEncodedData);
@@ -1426,6 +1430,7 @@ Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
 	    XHR.send(urlEncodedData);
 	}
     }
+    Sliobj.ajaxRequestActive = XHR;
 }
 
 
@@ -3163,9 +3168,12 @@ Slidoc.manageSession = function() {
     var html = '<b>Settings</b><p></p>';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
+    var userRole = userId;
+    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole)
+	userRole += '/'+Slidoc.serverCookie.siteRole;
     if (Sliobj.sessionName) {
 	if (userId) {
-	    html += 'User: <b>'+userId+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userProfile();">profile</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	    html += 'User: <b>'+userRole+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userProfile();">profile</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
 	    if (Sliobj.session) {
 		if (Sliobj.session.displayName)
 		    html += 'Name: '+Sliobj.session.displayName;
@@ -3253,7 +3261,7 @@ Slidoc.manageSession = function() {
 	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
 	    html += clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '<br>\n';
 
-	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
+	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-correct'"+');">correct</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
 	    html += hr;
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');">Post scores from this session to gradebook</span><br>';
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook', 'all'"+');">Post scores from all sessions to gradebook</span>';
@@ -4715,6 +4723,9 @@ function showPendingCalls() {
 	for (var j=0; j<gsheet.callbackCounter; j++)
 	    hourglasses += '&#x29D7;'
     }
+    if (Sliobj.ajaxRequestActive)
+	hourglasses += '&#x29D6;'
+	
     var pendingElem = document.getElementById("slidoc-pending-display");
     pendingElem.innerHTML = hourglasses;
 }
@@ -7365,6 +7376,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 	}
 	
 	closeElem.onclick = Sliobj.closePopup;
+	overlayElem.onclick = Sliobj.closePopup;
 	if (autoCloseMillisec)
 	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }

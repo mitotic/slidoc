@@ -73,6 +73,7 @@ Settings = {
     'request_timeout': 75,  # Proxy update request timeout (sec)
     'require_login_token': True,
     'require_late_token': True,
+    'root_users': [],
     'share_averages': True, # Share class averages for tests etc.
     'site_label': '',
     'site_restricted': '',
@@ -87,7 +88,7 @@ COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
                    'share_averages', 'site_label', 'site_title',
                    'admin_users', 'grader_users', 'guest_users', 'total_column']
     
-COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name',
+COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
                     'backup_dir', 'debug', 'dry_run',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
     
@@ -111,6 +112,8 @@ DISCUSS_ID = '_discuss'
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
+
+HIDE_HEADERS = ['attributes', 'questions', 'questionConcepts']
 
 TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']
 
@@ -608,7 +611,7 @@ class Sheet(object):
         hideCols = []
         if not keepHidden:
             for k, header in enumerate(headers):
-                if header.lower().endswith('hidden'):
+                if header.lower().endswith('hidden') or header in HIDE_HEADERS:
                     hideCols.append(k)
         skipName = None
         if not allUsers and 'name' in headers:
@@ -2714,10 +2717,14 @@ def getSiteRole(siteName, siteRoles):
     return None
 
 def isSpecialUser(userId):
+    if userId in Settings['root_users']:
+        return True
+
     for key in ('admin_users', 'grader_users', 'guest_users'):
         idList = [x.strip() for x in Settings[key].strip().split(',')]
         if userId in idList:
             return True
+
     return False
 
 def getRosterEntry(userId):

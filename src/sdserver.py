@@ -108,6 +108,7 @@ Options = {
     'public': False,
     'reload': False,
     'request_timeout': 60,
+    'root_users': [],
     'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
     'server_start': None,
@@ -333,6 +334,20 @@ class UserIdMixin(object):
         self.clear_cookie(USER_COOKIE_SECURE)
         self.clear_cookie(SERVER_COOKIE)
 
+    def revert_to_plain_user(self):
+        username = self.get_id_from_cookie()
+        role, sites = Global.userRoles.id_role_sites(username)
+        if role:
+            # Global role; switch to guest in all sites
+            plainSites = ','.join(Options['site_list'])
+        else:
+            # Site roles; switch to guest in sites
+            plainSites = ','.join(site.split('+')[0] for site in sites.split(','))
+
+        name = self.get_id_from_cookie(name=True)
+        data = self.get_id_from_cookie(data=True)
+        self.set_id(username, displayName=name, role='', sites=plainSites, email=self.get_id_from_cookie(email=True), data=data)
+
     def check_access(self, username, token, role=''):
         return token == gen_proxy_auth_token(username, role, root=True)
 
@@ -428,12 +443,12 @@ class HomeHandler(BaseHandler):
     def get(self):
         if Options['site_list'] and not Options['site_number']:
             # Primary server
-            admin_roles = []
+            site_roles = []
             for siteName in Options['site_list']:
-                admin_roles.append(self.get_id_from_cookie(role=True, for_site=siteName) == sdproxy.ADMIN_ROLE)
+                site_roles.append(self.get_id_from_cookie(role=True, for_site=siteName) in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE))
             self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url,
-                         sites=Options['site_list'], admin_roles=admin_roles, site_labels=Global.split_opts['site_label'],
+                         sites=Options['site_list'], site_roles=site_roles, site_labels=Global.split_opts['site_label'],
                          site_titles=Global.split_opts['site_title'], site_restricteds=Global.split_opts['site_restricted'])
             return
         elif Options.get('_index_html'):
@@ -978,36 +993,6 @@ class ActionHandler(BaseHandler):
                 count += 1
                 sdproxy.importUserAnswers(sessionName, userId, name, source='prefill')
             self.displayMessage('Prefilled session '+sessionName+' with '+str(count)+' users')
-
-        elif action in ('_qstats',):
-            sheetName = sessionName + '-answers'
-            sheet = sdproxy.getSheet(sheetName, optional=True)
-            if not sheet:
-                if json_return:
-                    self.set_header('Content-Type', 'application/json')
-                    retval = {'result': 'error', 'error': 'Unable to retrieve question difficulty stats'}
-                    self.write( json.dumps(retval) )
-                else:
-                    self.displayMessage('Unable to retrieve sheet '+sheetName)
-                return
-            qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
-            qaverages = []
-            for j, header in enumerate(qrows[0]):
-                qmatch = re.match(r'^q(\d+)_score', header)
-                if qmatch:
-                    qaverages.append([float(qrows[1][j]), int(qmatch.group(1))])
-            qaverages.sort()
-            if json_return:
-                self.set_header('Content-Type', 'application/json')
-                retval = {'result': 'success', 'qcorrect': qaverages}
-                self.write( json.dumps(retval) )
-            else:
-                lines = []
-                for j, qavg in enumerate(qaverages):
-                    lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
-                    if j%5 == 4:
-                        lines.append('')
-                self.displayMessage(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
 
         elif action == '_refresh':
             if subsubpath:
@@ -2451,7 +2436,47 @@ class UserActionHandler(ActionHandler):
             self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], session_grades=sessionGrades)
             return
 
+        elif action in ('_plainuser',):
+            self.revert_to_plain_user()
+            self.displayMessage('Now logged in as a plain user')
+            return
+
+        elif action in ('_qstats',):
+            self.qstats(subsubpath)
+            return
+
         raise tornado.web.HTTPError(404)
+
+    def qstats(self, sessionName):
+        json_return = self.get_argument('json', '')
+        sheetName = sessionName + '-answers'
+        sheet = sdproxy.getSheet(sheetName, optional=True)
+        if not sheet:
+            if json_return:
+                self.set_header('Content-Type', 'application/json')
+                retval = {'result': 'error', 'error': 'Unable to retrieve question difficulty stats'}
+                self.write( json.dumps(retval) )
+            else:
+                self.displayMessage('Unable to retrieve sheet '+sheetName)
+            return
+        qrows = sheet.getSheetValues(1, 1, 2, sheet.getLastColumn())
+        qaverages = []
+        for j, header in enumerate(qrows[0]):
+            qmatch = re.match(r'^q(\d+)_score', header)
+            if qmatch:
+                qaverages.append([float(qrows[1][j]), int(qmatch.group(1))])
+        qaverages.sort()
+        if json_return:
+            self.set_header('Content-Type', 'application/json')
+            retval = {'result': 'success', 'qcorrect': qaverages}
+            self.write( json.dumps(retval) )
+        else:
+            lines = []
+            for j, qavg in enumerate(qaverages):
+                lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
+                if j%5 == 4:
+                    lines.append('')
+            self.displayMessage(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
 
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
@@ -3513,6 +3538,8 @@ def createApplication():
                       (pathPrefix+r"/(_dash)", AuthActionHandler),
                       (pathPrefix+r"/(_grades)", UserActionHandler),
                       (pathPrefix+r"/(_grades/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_plainuser)", UserActionHandler),
+                      (pathPrefix+r"/(_qstats/[-\w.]+)", UserActionHandler),
                       ]
 
         patterns= [   r"/(_(backup|cache|clear|freeze))",
@@ -3536,7 +3563,6 @@ def createApplication():
                       r"/(_manage/[-\w.]+)",
                       r"/(_prefill/[-\w.]+)",
                       r"/(_preview/[-\w./]+)",
-                      r"/(_qstats/[-\w.]+)",
                       r"/(_rebuild/[-\w.]+)",
                       r"/(_refresh/[-\w.]+)",
                       r"/(_reindex/[-\w.]+)",
@@ -4019,6 +4045,8 @@ class UserRoles(object):
                     admin_user = userId
 
                 self.root_role[userId] = userRole
+                if userId not in Options['root_users']:
+                    Options['root_users'].append(userId)
 
             print >> sys.stderr, 'USER %s: %s -> %s:%s:' % (user_map, origId, userId, userRole)
 

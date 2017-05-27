@@ -2570,7 +2570,7 @@ def extract_slides(src_path, web_path):
 
     md_source = preprocess(source).strip()
     if sliauth.digest_hex(md_source) != sessionIndexParams['md_digest']:
-        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-create session HTML file %s by editing all slides and saving' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
+        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-create session HTML file %s by previewing all slides and saving' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
     md_slides = []
 
     base = len(sessionIndexParams['md_defaults'])
