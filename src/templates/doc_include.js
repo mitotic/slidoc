@@ -596,7 +596,7 @@ Slidoc.pageSetup = function() {
     }
 
     if (Slidoc.serverCookie) {
-	if (Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) {
+	if (Slidoc.serverCookie.siteRole == Sliobj.params.adminRole || Slidoc.serverCookie.siteRole == Sliobj.params.graderRole) {
 	    toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
 	    var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
 	    [].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
@@ -618,7 +618,7 @@ Slidoc.pageSetup = function() {
     var gradeElem = document.getElementById('gradelink');
     if (gradeElem)
 	gradeElem.style.display = null;
-    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) {
+    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem) {
 	    dashElem.style.display = null;
@@ -1074,7 +1074,7 @@ Slidoc.confirmLoad = function(path, msg) {
 }
 
 Slidoc.assessmentMenu = function () {
-    var adminAccess = Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId;
+    var adminAccess = Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole;
     var html = '<h3>Assessment menu</h3>\n';
     html += '<ul>\n';
     if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
@@ -3144,6 +3144,9 @@ function userProfileCallback(userId, result, retStatus) {
     html += 'Name: '+escapeHtml(result.name)+'<br>\n';
     html += 'Email: '+escapeHtml(result.email)+'<br>\n';
     html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.modifyUserProfile();">modify</span>)<br>\n';
+    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
+	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_plainuser">Revert to plain user</a>)<br>\n';
+    }
     Slidoc.showPopup(html);
 }
 
@@ -3685,7 +3688,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
 
-    if (getUserId() == Sliobj.params.testUserId || (Sliobj.gradableState && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminUserId) )
+    if (getUserId() == Sliobj.params.testUserId || (Sliobj.gradableState && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) )
 	toggleClass(true, 'slidoc-testuser-view');
 
     if (collapsibleAccess())

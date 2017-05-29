@@ -437,9 +437,9 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    if (userRole || userSites)
 		regularUserToken = userName+adminToken;
 
-	    var userIds     = ['_test_user',                 '_grader',               userName,                      ''];
-	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,              adminToken];
-	    var graderKeys   = ['',                           adminToken,              '',                            ''];
+	    var userIds     = ['_test_user',                  '_grader',              userName,                      ''];
+	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,      adminToken];
+	    var graderKeys  = ['',                           adminToken,              '',                            ''];
 	    var authRoles   = [siteRole,                       siteRole,              '',                            ''];
 	    var userOptions = ['Admin view (for editing/testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
@@ -473,7 +473,10 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 		pickRole(indx);
 	    }
 
-	    if (siteRole && (testMode || userData.batch)) {
+	    if (!getParameter('grading')) {
+		// For non-grading mode, test user if admin else normal user otherwise
+		pickRole( (siteRole == 'admin') ? 1 : 3)
+	    } else if (siteRole && (testMode || userData.batch)) {
 		// For test/batch mode, test user if admin else normal user if grader
 		pickRole( (siteRole == 'admin') ? 1 : 3)
 	    } else if (siteRole == 'admin') {

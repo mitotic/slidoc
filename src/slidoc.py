@@ -54,6 +54,7 @@ except ImportError:
 from xml.etree import ElementTree
 
 ADMIN_ROLE = 'admin'
+GRADER_ROLE = 'grader'
 
 ADMINUSER_ID = 'admin'
 TESTUSER_ID = '_test_user'
@@ -2910,7 +2911,9 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                  'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
-                 'adminUserId': ADMINUSER_ID, 'testUserId': TESTUSER_ID, 'authType': '', 'features': {} }
+                 'adminUserId': ADMINUSER_ID, 'testUserId': TESTUSER_ID,
+                 'adminRole': ADMIN_ROLE, 'graderRole': GRADER_ROLE,
+                 'authType': '', 'features': {} }
 
     js_params['siteName'] = config.site_name
     js_params['sessionType'] = config.session_type
@@ -3547,7 +3550,10 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
                 doc_link = ''
                 if doc_str:
-                    doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (orig_fnames[ifile], doc_str)
+                    doc_link = '''(<a class="slidoc-clickable" href="%s.html" target="_blank">%s</a>)''' % (orig_fnames[ifile], doc_str)
+                    if doc_str != 'view':
+                        doc_link += '''<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>''' % (orig_fnames[ifile], 'grading view')
+
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_extra, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries
                 toc_list.append(orig_fnames[ifile])
