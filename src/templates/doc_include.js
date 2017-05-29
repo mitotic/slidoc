@@ -102,6 +102,7 @@ for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
 
 Sliobj.ajaxRequestActive = null;
+Sliobj.twitterMessages = [];
 
 Sliobj.interactive = false;
 Sliobj.gradableState = null;
@@ -2382,6 +2383,14 @@ Sliobj.eventReceiver = function(eventMessage) {
     } else if (eventName == 'ReloadPage') {
 	statefulReload(eventArgs.length ? eventArgs[0] : '');
 
+    } else if (eventName == 'TwitterMessage') {
+	console.log('TwitterMessage:', eventArgs[0]);
+	Sliobj.twitterMessages.unshift(eventArgs[0]);
+	if (Sliobj.twitterMessages.length > 100)
+	    delete Sliobj.twitterMessages[100];
+	if (Sliobj.closePopup)
+	    Sliobj.closePopup(null, eventName);
+
     } else if (eventName == 'LiveResponse') {
 	if (!(eventArgs[0] in Sliobj.liveResponses))
 	    Sliobj.liveResponses[eventArgs[0]] = [];
@@ -2430,6 +2439,7 @@ Slidoc.interact = function() {
 	}
 	html += '<li>Browser: <a href="'+interactURL+'" target="_blank"><code>'+interactURL+'</code></a></li>';
 	html += '</ul>';
+	html += clickableSpan('Live message display', 'twitterMessageDisplay();', !Sliobj.interactive)+'<p></p>';
     }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -2948,6 +2958,53 @@ function nextUserAux(gradingUser, needGradingOnly) {
     return true;
 }
 
+Slidoc.linkTwitter = function () {
+    if (!Sliobj.params.gd_sheet_url)
+	return;
+    var value = window.prompt('Twitter Name:');
+    if (!value || !value.trim())
+	return;
+    var twitterName = value.trim();
+    if (!Sliobj.closePopup)
+	Slidoc.showPopup('Linking twitter name @'+twitterName+' ...');
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_twitterlink/'+twitterName, {json: 1}, linkTwitterCallback.bind(null, twitterName), true);
+}
+
+function linkTwitterCallback(twitterName, result, errMsg) {
+    console.log('linkTwitterCallback', result, errMsg);
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    if (!result) {
+	alert('Error in linking @'+twitterName+' :'+errMsg);
+	return;
+    }
+    if (result.result != 'success') {
+	alert('Error in linking @'+twitterName+' :'+result.error);
+	return;
+    }
+    var value = window.prompt('You should have received a validation code via Direct Message for @'+twitterName+'. Please enter the code:');
+    if (!value || !value.trim())
+	return;
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_twitterverify/'+value, {json: 1}, linkVerifyCallback.bind(null, twitterName), true);
+}
+
+function linkVerifyCallback(twitterName, result, errMsg) {
+    console.log('linkVerifyCallback', result, errMsg);
+    if (!result) {
+	alert('Error in verifying @'+twitterName+' :'+errMsg);
+	return;
+    }
+    if (result.result != 'success') {
+	alert('Error in verifying @'+twitterName+' :'+result.error);
+	return;
+    }
+    if (result.message) {
+	alert(result.message);
+    } else {
+	Slidoc.userProfile();
+    }
+}
+
 Slidoc.showQDiff = function () {
     if (!Sliobj.params.gd_sheet_url)
 	return;
@@ -3123,6 +3180,19 @@ function showGradesCallback(userId, result, retStatus) {
     Slidoc.showPopup(html);
 }
 
+function twitterMessageDisplay(eventArgs) {
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    var html = 'Live messages: <p></p>\n';
+    html += '<ul class="slidoc-direct-message-list">';
+    for (var j=0; j<Sliobj.twitterMessages.length; j++) {
+	var msg = Sliobj.twitterMessages[j];
+	html += '<li><em>'+escapeHtml(msg['name'])+'</em> (<code>@'+escapeHtml(msg['sender'])+'</code>): '+escapeHtml(msg['text'])+'</li>';
+    }
+    html += '</ul>';
+    Slidoc.showPopup(html, null, true, 0, 'TwitterMessage', twitterMessageDisplay);
+}
+
 Slidoc.userProfile = function() {
     if (!Sliobj.params.gd_sheet_url)
 	return;
@@ -3143,28 +3213,11 @@ function userProfileCallback(userId, result, retStatus) {
     var html = 'Profile for user <b>'+userId+'</b><p></p>';
     html += 'Name: '+escapeHtml(result.name)+'<br>\n';
     html += 'Email: '+escapeHtml(result.email)+'<br>\n';
-    html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.modifyUserProfile();">modify</span>)<br>\n';
+    html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">modify</span>)<br>\n';
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
 	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_plainuser">Revert to plain user</a>)<br>\n';
     }
     Slidoc.showPopup(html);
-}
-
-Slidoc.modifyUserProfile = function() {
-    var value = window.prompt('Twitter ID:');
-    if (value && value.trim()) {
-	var userId = getUserId();
-	var updates = {id: userId, twitter: value.trim()};
-	Sliobj.rosterSheet.updateRow(updates, {}, modifyUserProfileCallback.bind(null, userId));
-    }
-}
-
-function modifyUserProfileCallback(userId, result, retStatus) {
-    if (!result) {
-	alert('Error in modifying info for user '+userId+': '+retStatus.error);
-	return;
-    }
-    Slidoc.userProfile();
 }
 
 Slidoc.manageSession = function() {

@@ -180,12 +180,14 @@ class TwitterStreamReader(object):
             traceback.print_exc()
             return
 
-        if parsed_msg:
-            self.log_msg("handle_stream: message="+str(parsed_msg))
+        if not parsed_msg:
+            return
+
+        self.log_msg("handle_stream: message="+str(parsed_msg))
 
         status = None
         try:
-            if parsed_msg and self.tweet_callback:
+            if self.tweet_callback:
                 status = self.tweet_callback(parsed_msg)
         except Exception, err:
             import traceback
@@ -223,7 +225,7 @@ def condense_twitter_content(content):
     return content
 
 def parse_tweet(content, user_name=None):
-    # Returns {sender: userid, name: display_name, text: message_text, type:'tweet'/'direct'} or None on error
+    # Returns {sender: userid, name: display_name, text: message_text, type:'tweet'/'direct'} or {} to skip or None on error
     print >> sys.stderr, "sdstream.parse_tweet: condensed_content = %s" % condense_twitter_content(content)
 
     sender_info = None
@@ -236,6 +238,9 @@ def parse_tweet(content, user_name=None):
         sender_info = msg["sender"]
         message_text = msg.get("text", "")
         message_id = msg.get("id", 0)
+        from_user_name = msg["sender"]["screen_name"]
+        if from_user_name == user_name:
+            return {}
         to_user_name = msg["recipient"]["screen_name"]
         if to_user_name and user_name is not None:
             if to_user_name != user_name:
@@ -258,11 +263,11 @@ def parse_tweet(content, user_name=None):
     elif "friends" in content:
         # List of friends
         friends = content["friends"]
-        return None
+        return {}
 
     else:
         # Unknown content
-        return None
+        return {}
 
     message_text = message_text[:MAX_MSG_TEXT]
     sender_name = sender_info['screen_name']
@@ -327,13 +332,21 @@ def twitter_request(twitter_config, path, get_args={}, post_args=None,
                                                   streaming_callback=streaming_callback)
     return http_request
 
-def twitter_task(twitter_config, action, target_name="", text="", callback=None):
+def twitter_task(twitter_config, action, target_name="", target_id="", text="", callback=None):
     get_args = {}
     post_args = None
     if action == "friends":
         path = "/friends/ids"
+        get_args = {"count": 1000}
+    elif action == "getuserid":
+        path = "/users/lookup"
+        get_args = {"screen_name": target_name}
+    elif action == "getscreenname":
+        path = "/users/lookup"
+        get_args = {"user_id": target_id}
     elif action == "followers":
         path = "/followers/ids"
+        get_args = {"count": 1000}
     elif action == "follow":
         path = "/friendships/create"
         post_args = {"screen_name": target_name}

@@ -150,6 +150,9 @@ Global.proxy_server = None
 Global.session_options = {}
 
 Global.twitterStream = None
+Global.twitterSpecial = {}
+Global.twitterVerify = {}
+
 Global.split_opts = {}
 
 PLUGINDATA_PATH = '_plugindata'
@@ -2415,6 +2418,7 @@ class AuthActionHandler(ActionHandler):
 
 class UserActionHandler(ActionHandler):
     @tornado.web.authenticated
+    @tornado.gen.coroutine
     def get(self, subpath=''):
         action, sep, subsubpath = subpath.partition('/')
         if action == '_grades':
@@ -2443,6 +2447,14 @@ class UserActionHandler(ActionHandler):
 
         elif action in ('_qstats',):
             self.qstats(subsubpath)
+            return
+
+        elif action in ('_twitterlink',):
+            yield self.twitter_link(subsubpath)
+            return
+
+        elif action in ('_twitterverify',):
+            yield self.twitter_verify(subsubpath)
             return
 
         raise tornado.web.HTTPError(404)
@@ -2477,6 +2489,132 @@ class UserActionHandler(ActionHandler):
                 if j%5 == 4:
                     lines.append('')
             self.displayMessage(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+
+    @tornado.gen.coroutine
+    def twitter_link(self, twitterName):
+        twitterName = twitterName.lower()
+        userId = self.get_id_from_cookie()
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: twitter_link:', twitterName, userId
+
+        try:
+            twitterVals = getColumns('twitter', sdproxy.getSheet(sdproxy.ROSTER_SHEET))
+            if twitterName in twitterVals:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Twitter name %s already linked' % twitterName)
+        except tornado.web.HTTPError:
+            raise
+        except Exception, excp:
+            pass
+
+        retval = None
+        try:
+            import sdstream
+
+            response = yield tornado.gen.Task(sdstream.twitter_task, Global.twitter_params, "getuserid", target_name=twitterName)
+            retval = json.loads(response.body)
+            twitter_id = retval[0]['id']
+            retval = None
+
+            response = yield tornado.gen.Task(sdstream.twitter_task, Global.twitter_params, "followers")
+            retval = json.loads(response.body)
+            followers = retval['ids']
+            retval = None
+
+            ##if Options['debug']:
+            ##    print >> sys.stderr, 'DEBUG: twitter_link2:', twitter_id, followers
+
+            if twitter_id not in followers:
+                self.set_header('Content-Type', 'application/json')
+                retval = {'result': 'error', 'error': '@%s should be following @%s for interaction' % (twitterName, Global.twitter_params['screen_name'])}
+                self.write( json.dumps(retval) )
+
+            response = yield tornado.gen.Task(sdstream.twitter_task, Global.twitter_params, "friends")
+            retval = json.loads(response.body)
+            friends = retval['ids']
+            retval = None
+
+            ##if Options['debug']:
+            ##    print >> sys.stderr, 'DEBUG: twitter_link3:', friends
+
+            if twitter_id not in friends:
+                response = yield tornado.gen.Task(sdstream.twitter_task, Global.twitter_params, "follow", target_name=twitterName)
+                retval = json.loads(response.body)
+                if twitterName != retval.get('screen_name'):
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to follow @%s: %s' % (twitterName, retval.get('errors')) )
+                retval = None
+
+            verifyCode = str(random.randint(100001,999999))
+            Global.twitterVerify[userId] = (twitterName, verifyCode)
+            text = 'Your verification code is '+verifyCode
+            if Options['site_name']:
+                text += ' for site '+Options['site_name']
+            response = yield tornado.gen.Task(sdstream.twitter_task, Global.twitter_params, "direct", target_name=twitterName,
+                                              text=text)
+            retval = json.loads(response.body)
+            if retval.get('errors'):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to follow @%s: %s' % (twitterName, retval.get('errors')) )
+            retval = None
+
+        except tornado.web.HTTPError:
+            raise
+        except Exception, excp:
+            if retval and retval.get('errors'):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in twitter setup for @%s: %s' % (twitterName, retval.get('errors')) )
+            else:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in twitter setup for @%s: %s' % (twitterName, excp))
+
+        self.set_header('Content-Type', 'application/json')
+        retval = {'result': 'success'}
+        self.write( json.dumps(retval) )
+
+    @tornado.gen.coroutine
+    def twitter_verify(self, verifyCode):
+        userId = self.get_id_from_cookie()
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: twitter_verify:', verifyCode, userId
+
+        if userId not in Global.twitterVerify or Global.twitterVerify[userId][1] != verifyCode.strip():
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid or unknown twitter verification code for user '+userId)
+
+        twitterName = Global.twitterVerify[userId][0]
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: twitter_verify:', twitterName, userId
+
+        message = ''
+        try:
+            retval = sdproxy.getUserRow(sdproxy.ROSTER_SHEET, userId, '', opts={'getheaders': '1'})
+            if retval.get('values'):
+                rosterHeaders = retval.get('headers')
+
+                if 'twitter' not in rosterHeaders:
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:No twitter column in roster')
+
+                updateObj = {'id': userId, 'twitter': twitterName}
+                retobj = sdproxy.updateUserRow(sdproxy.ROSTER_SHEET, rosterHeaders, updateObj, {})
+
+                if retobj.get('result') != 'success':
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in twitter setup for @%s: %s' % (twitterName, retobj.get('error')) )
+
+            elif Global.userRoles.is_known_user(userId):
+                Global.twitterSpecial[twitterName] = userId
+                message = 'User %s temporarily linked to @%s' % (userId, twitterName)
+
+            else:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:User %s not found in roster' % (userId,))
+
+            retval = None
+
+        except tornado.web.HTTPError:
+            raise
+        except Exception, excp:
+            if retval and retval.get('errors'):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in twitter setup for @%s: %s' % (twitterName, retval.get('errors')) )
+            else:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in twitter setup for @%s: %s' % (twitterName, excp))
+
+        self.set_header('Content-Type', 'application/json')
+        retval = {'result': 'success', 'message': message}
+        self.write( json.dumps(retval) )
 
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
@@ -2689,10 +2827,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
         session_connections = cls._connections.get(path)
         admin_found = ''
-        for connId, connections in session_connections.items():
-            if connections.sd_role == sdproxy.ADMIN_ROLE:
-                admin_found = connId
-                break
+        if session_connections:
+            for connId, connections in session_connections.items():
+                if connections.sd_role == sdproxy.ADMIN_ROLE:
+                    admin_found = connId
+                    break
 
         if not admin_found:
             cls._interactiveSession = (None, None, None, None)
@@ -3540,6 +3679,8 @@ def createApplication():
                       (pathPrefix+r"/(_grades/[-\w.]+)", UserActionHandler),
                       (pathPrefix+r"/(_plainuser)", UserActionHandler),
                       (pathPrefix+r"/(_qstats/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_twitterlink/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_twitterverify/[-\w.]+)", UserActionHandler),
                       ]
 
         patterns= [   r"/(_(backup|cache|clear|freeze))",
@@ -3618,7 +3759,17 @@ def createApplication():
 
 def processTwitterMessage(msg):
     # Return null string on success or error message
-    print >> sys.stderr, 'sdserver.processTwitterMessage:', msg
+    interactiveSession = WSHandler.getInteractiveSession()
+    print >> sys.stderr, 'sdserver.processTwitterMessage:', interactiveSession, msg
+
+    if interactiveSession:
+        sessionPath = getSessionPath(interactiveSession, site_prefix=True)
+        sessionConnections = WSHandler.get_connections(interactiveSession)
+        for user, connections_list in sessionConnections.items():
+            if Global.userRoles.id_role(user, for_site=Options['site_name']) == sdproxy.ADMIN_ROLE:
+                for connection in connections_list:
+                    connection.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, ['', -1, 'TwitterMessage', [msg]])
+
     fromUser = msg['sender']
     fromName = msg['name']
     message = msg['text']
@@ -3628,14 +3779,14 @@ def processTwitterMessage(msg):
         status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter')
     else:
         idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
-        if not idMap:
-            status = 'Error - no twitter entries in roster. Message from '+fromUser+' dropped'
+        userId = idMap.get(fromUser.lower())
+        if not userId:
+            userId = Global.twitterSpecial.get(fromUser.lower())
+
+        if userId:
+            status = WSHandler.processMessage(userId, fromRole, sdproxy.lookupRoster('name', userId), message, source='twitter')
         else:
-            userId = idMap.get(fromUser.lower())
-            if userId:
-                status = WSHandler.processMessage(userId, fromRole, sdproxy.lookupRoster('name', userId), message, source='twitter')
-            else:
-                status = 'Error - twitter ID '+fromUser+' not found in roster'
+            status = 'Error - twitter ID '+fromUser+' not found in roster'
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
 
