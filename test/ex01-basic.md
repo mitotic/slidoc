@@ -257,8 +257,6 @@ Notes: All answers are assumed correct.
 
 Solution to open response question
 
-=Submit()
-
 Notes: Notes on answer to
 open response question
 

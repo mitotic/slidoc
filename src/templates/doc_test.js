@@ -256,7 +256,7 @@ TestScript.prototype.eventAction = function(commands) {
 		document.getElementById(slide_id+'-answer-click').onclick();
 	    break;
 	case 'submitSession':
-	    document.getElementById(slide_id+'-plugin-Submit-submitbutton').onclick();
+	    Slidoc.submitClick();
 	    break;
 	case 'switchUser':
 	    var switchElem = document.getElementById('slidoc-switch-user');

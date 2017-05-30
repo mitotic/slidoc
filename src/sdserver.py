@@ -2421,7 +2421,7 @@ class UserActionHandler(ActionHandler):
     @tornado.gen.coroutine
     def get(self, subpath=''):
         action, sep, subsubpath = subpath.partition('/')
-        if not actions.startswith('_user_'):
+        if not action.startswith('_user_'):
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid user action %s' % action)
         if action == '_user_grades':
             if self.check_admin_access():
