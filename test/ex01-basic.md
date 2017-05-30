@@ -32,10 +32,11 @@ TestScripts.basic = [
   ['answerTally', 5, 500, 'input', ['T. Rex']],
   ['answerTally', 6, 500, 'input', ['100, 35,0, -40']],
   ['answerTally', 7, 500, 'textarea', ['def add(a,b):\n    return a+b\n']],
-  ['answerTally', 9, 500, 'choice', [randChoice()]],
+  ['answerTally', 8, 500, 'next'],
+  ['nextEvent', 9, 500, 'choice', [randChoice()]],
   ['answerTally', 10, 500, 'input', [42, 'According to Douglas Adams']],
   ['answerTally', 11, 500, 'input', ['To be ...']],
-  ['answerTally', 13, 0, 'submitSession'],
+  ['answerTally', 12, 0, 'submitSession'],
   ['+lastSlideDialog', 0, 0, 'dialogReturn', [true]],
   ['endPaced', 0, 0, 'end']
   ];
@@ -255,6 +256,8 @@ Notes: All answers are assumed correct.
 ### Open text response question answer
 
 Solution to open response question
+
+=Submit()
 
 Notes: Notes on answer to
 open response question

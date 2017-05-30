@@ -2421,7 +2421,9 @@ class UserActionHandler(ActionHandler):
     @tornado.gen.coroutine
     def get(self, subpath=''):
         action, sep, subsubpath = subpath.partition('/')
-        if action == '_grades':
+        if not actions.startswith('_user_'):
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid user action %s' % action)
+        if action == '_user_grades':
             if self.check_admin_access():
                 if not subsubpath:
                     self.redirect(('/'+Options['site_name'] if Options['site_name'] else '') + '/_roster')
@@ -2440,20 +2442,20 @@ class UserActionHandler(ActionHandler):
             self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], session_grades=sessionGrades)
             return
 
-        elif action in ('_plainuser',):
+        elif action in ('_user_plain',):
             self.revert_to_plain_user()
             self.displayMessage('Now logged in as a plain user')
             return
 
-        elif action in ('_qstats',):
+        elif action in ('_user_qstats',):
             self.qstats(subsubpath)
             return
 
-        elif action in ('_twitterlink',):
+        elif action in ('_user_twitterlink',):
             yield self.twitter_link(subsubpath)
             return
 
-        elif action in ('_twitterverify',):
+        elif action in ('_user_twitterverify',):
             yield self.twitter_verify(subsubpath)
             return
 
@@ -3396,7 +3398,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 # Check userId appears in roster
                 if sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
-
+                    
             return userId
 
         if not Options['auth_key']:
@@ -3478,9 +3480,9 @@ class AuthLoginHandler(BaseHandler):
             generateToken = True
 
         role = ''
-        if username == sdproxy.ADMINUSER_ID:
+        if username == sdproxy.ADMIN_ROLE:
             role = sdproxy.ADMIN_ROLE
-        if username == 'grader':
+        elif username == sdproxy.GRADER_ROLE:
             role = sdproxy.GRADER_ROLE
 
         if generateToken:
@@ -3675,12 +3677,12 @@ def createApplication():
                       (pathPrefix+r"/interact", AuthMessageHandler),
                       (pathPrefix+r"/interact/(.*)", AuthMessageHandler),
                       (pathPrefix+r"/(_dash)", AuthActionHandler),
-                      (pathPrefix+r"/(_grades)", UserActionHandler),
-                      (pathPrefix+r"/(_grades/[-\w.]+)", UserActionHandler),
-                      (pathPrefix+r"/(_plainuser)", UserActionHandler),
-                      (pathPrefix+r"/(_qstats/[-\w.]+)", UserActionHandler),
-                      (pathPrefix+r"/(_twitterlink/[-\w.]+)", UserActionHandler),
-                      (pathPrefix+r"/(_twitterverify/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_grades)", UserActionHandler),
+                      (pathPrefix+r"/(_user_grades/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_plain)", UserActionHandler),
+                      (pathPrefix+r"/(_user_qstats/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_twitterlink/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_twitterverify/[-\w.]+)", UserActionHandler),
                       ]
 
         patterns= [   r"/(_(backup|cache|clear|freeze))",
@@ -4393,7 +4395,7 @@ def setup_site_server(sheetSettings):
 
         if sheetSettings:
             sdproxy.copySheetOptions(sheetSettings)
-        else:
+        elif Options['host'] != 'localhost':
             Options['site_restricted'] = 'restricted'
 
         Global.session_options = {}

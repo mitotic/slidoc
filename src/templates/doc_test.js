@@ -169,7 +169,7 @@ TestScript.prototype.eventAction = function(commands) {
 	var testkey   = Slidoc.getParameter('testkey') || '';
 	var testtoken = Slidoc.getParameter('testtoken') || '';
 	if (testkey && !testtoken)
-	    testtoken = (testuser == 'grader') ? testkey :  genAuthToken(testkey, testuser);
+	    testtoken = (testuser == '_test_user') ? testkey :  genAuthToken(testkey, testuser);
 	var testlate  = Slidoc.getParameter('testlate') || '';
 
 	switch (action) {

@@ -3010,7 +3010,12 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 if user_id:
                     label = '%s/%s' % (script, user_id)
                     query += '&testuser=%s&testkey=%s' % (user_id, gd_hmac_key)
-                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == ADMINUSER_ID else sliauth.gen_auth_token(gd_hmac_key, user_id))
+                    userRole = ''
+                    if user_id == GRADER_ROLE:
+                        userRole = GRADER_ROLE
+                        query += '&grading=1'
+
+                    proxy_query = '?username=%s&token=%s' % (user_id, gd_hmac_key if user_id == ADMIN_ROLE else sliauth.gen_auth_token(gd_hmac_key, user_id, role=userRole))
                 else:
                     label = script
                 test_params.append([label, query, proxy_query])

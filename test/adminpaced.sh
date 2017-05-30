@@ -22,7 +22,7 @@ run=0
 if [ $# -ge 1 ]; then
 
     if [ "$1" == "-d" ]; then
-        sdstream.py --twitter_stream=$TWSTREAM2 --dm $*
+        sdstream.py --twitter_config=$TWSTREAM2 --dm $*
         exit 0
     fi
     if [ "$1" == "-r" ]; then
@@ -31,7 +31,7 @@ if [ $# -ge 1 ]; then
 	curl "http://localhost:${PORT}/_shutdown?token=${SHEET_KEY}"
         sleep 2
 
-        cmd="sdserver.py --auth_key=$SHEET_KEY --twitter_stream=$TWSTREAM1 --static_dir=. --proxy_wait=0 --port=$PORT --no_auth --debug"
+        cmd="sdserver.py --auth_key=$SHEET_KEY --twitter_config=$TWSTREAM1 --static_dir=. --proxy_wait=0 --port=$PORT --no_auth --debug"
         echo $cmd
         $cmd &
 
@@ -49,7 +49,7 @@ SHEET_NAME=$1
 slidoc.py --pace=3 --remote_logging=2 --auth_key=$SHEET_KEY --gsheet_url=$PROXY_URL --proxy_url=/_websocket --test_script=1 --debug ${SHEET_NAME}.md
 
 if [ $run -gt 0 ]; then
-   users=(_test_user bbb ccc)
+   users=(admin bbb ccc)
    browsers=(Safari 'Google Chrome' Firefox)
 
    for i in 0 1 2; do

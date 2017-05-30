@@ -437,6 +437,7 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    if (userRole || userSites)
 		regularUserToken = userName+adminToken;
 
+	    console.log("promptUserInfo:", testMode, userName, userRole, userSites);
 	    var userIds     = ['_test_user',                  '_grader',              userName,                      ''];
 	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,      adminToken];
 	    var graderKeys  = ['',                           adminToken,              '',                            ''];
@@ -477,8 +478,8 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 		// For non-grading mode, test user if admin else normal user otherwise
 		pickRole( (siteRole == 'admin') ? 1 : 3)
 	    } else if (siteRole && (testMode || userData.batch)) {
-		// For test/batch mode, test user if admin else normal user if grader
-		pickRole( (siteRole == 'admin') ? 1 : 3)
+		// For test/batch mode, test user if admin else grader
+		pickRole( (siteRole == 'admin') ? 1 : 2)
 	    } else if (siteRole == 'admin') {
 		userOffset = 0;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset),

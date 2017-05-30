@@ -2,6 +2,7 @@
 # Test grading/explain options
 
 <script>
+// Run grader script after two executions of basic script to create two user entries
 var TestScripts = {};
 TestScripts.basic = [
   ['-ready'],
@@ -20,6 +21,7 @@ TestScripts.grader = [
   ['initSession', 0, 0, 'switchUser', [0]],
   ['-selectUser'],
   ['initSlideView', 2, 500, 'gradeStart'],
+  ['-selectUser'],
   ['gradeStart',   0, 500, 'gradeUpdate', [3.1416, 'My comments1']],
   ['gradeUpdate', 0, 0, 'switchUser', [1]],
   ['selectUser',  0, 500, 'gradeStart'],
@@ -69,7 +71,7 @@ the two arguments.
 
 Provide a numeric answer.
 
-Answer: 1.5 +/- 0.5; explain=markdown; weight=0,5
+Answer: 1.5 +/- 0.5; explain weight=0,5
 
 Tags: questions, text response 
 

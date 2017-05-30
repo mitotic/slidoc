@@ -6,7 +6,7 @@
 var choices = ['A', 'B', 'C', 'D'];
 function randChoice() {return choices[Math.floor(Math.random()*choices.length)];}
 var TestScripts = {};
-TestScripts._test_user = [
+TestScripts.admin = [
   ['-ready'],
   ['-initSession'],
   ['initSlideView', 0, 5000, 'next'],

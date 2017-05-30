@@ -555,7 +555,7 @@ function onreadystateaux() {
 	} else {
 	    if (!Slidoc.serverCookie)
 		Slidoc.reportTestAction('loginPrompt');
-	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.params.fileName, Sliobj.previewState, Sliobj.params.authType);
+	    GService.gprofile.promptUserInfo(Sliobj.params.siteName, Sliobj.params.fileName, Sliobj.previewState||Sliobj.testScript, Sliobj.params.authType);
 	}
     } else {
 	Slidoc.slidocReady(null);
@@ -2850,6 +2850,7 @@ function setAnswerElement(slide_id, suffix, textValue, htmlValue) {
 }
 
 function switchUser() {
+    ///console.log('switchUser:', this.options.length, this.selectedIndex);
     var userId = this.options[this.selectedIndex].value;
     Sliobj.gradingUser = Sliobj.userGrades[userId].index;
     Slidoc.log('switchUser:', userId);
@@ -2967,7 +2968,7 @@ Slidoc.linkTwitter = function () {
     var twitterName = value.trim();
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Linking twitter name @'+twitterName+' ...');
-    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_twitterlink/'+twitterName, {json: 1}, linkTwitterCallback.bind(null, twitterName), true);
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_twitterlink/'+twitterName, {json: 1}, linkTwitterCallback.bind(null, twitterName), true);
 }
 
 function linkTwitterCallback(twitterName, result, errMsg) {
@@ -2985,7 +2986,7 @@ function linkTwitterCallback(twitterName, result, errMsg) {
     var value = window.prompt('You should have received a validation code via Direct Message for @'+twitterName+'. Please enter the code:');
     if (!value || !value.trim())
 	return;
-    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_twitterverify/'+value, {json: 1}, linkVerifyCallback.bind(null, twitterName), true);
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_twitterverify/'+value, {json: 1}, linkVerifyCallback.bind(null, twitterName), true);
 }
 
 function linkVerifyCallback(twitterName, result, errMsg) {
@@ -3010,7 +3011,7 @@ Slidoc.showQDiff = function () {
 	return;
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Retrieving answer stats...');
-    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_qstats/'+Sliobj.sessionName, {json: 1}, showQDiffCallback, true);
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_qstats/'+Sliobj.sessionName, {json: 1}, showQDiffCallback, true);
 }
 
 function showQDiffCallback(result, errMsg) {
@@ -3215,7 +3216,7 @@ function userProfileCallback(userId, result, retStatus) {
     html += 'Email: '+escapeHtml(result.email)+'<br>\n';
     html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">modify</span>)<br>\n';
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
-	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_plainuser">Revert to plain user</a>)<br>\n';
+	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain user</a>)<br>\n';
     }
     Slidoc.showPopup(html);
 }
@@ -7432,7 +7433,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 	}
 	
 	closeElem.onclick = Sliobj.closePopup;
-	overlayElem.onclick = Sliobj.closePopup;
+	///overlayElem.onclick = Sliobj.closePopup;
 	if (autoCloseMillisec)
 	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }

@@ -9,7 +9,7 @@ function randChoice() {return choices[Math.floor(Math.random()*choices.length)];
 var numbers = [7, 33, 42];
 function randNumber() {return numbers[Math.floor(Math.random()*numbers.length)];}
 var TestScripts = {};
-TestScripts._test_user = [
+TestScripts.admin = [
   ['-ready'],
   ['-initSession'],
   ['initSlideView', 0, 5000, 'next'],
@@ -76,7 +76,7 @@ Answer: 42 ; explain
 
 What is the answer to the ultimate question?
 
-Answer: 42 ; explain=markdown; weight=1,0,1; vote=show_live
+Answer: 42 ; explain weight=1,0,1 vote=show_live
 
 
 ---
