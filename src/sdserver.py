@@ -4444,7 +4444,7 @@ def setup_site_server(sheetSettings):
         IOLoop.current().call_at(backupTimeSec, start_backup)
 
     if Options['twitter_config']:
-        comps = Options['twitter_config'].split(',')
+        comps = [x.strip() for x in Options['twitter_config'].split(',')]
         Global.twitter_params = {
             'screen_name': comps[0],
             'consumer_token': {'consumer_key': comps[1], 'consumer_secret': comps[2]},

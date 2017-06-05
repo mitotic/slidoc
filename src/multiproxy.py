@@ -309,7 +309,9 @@ class ProxyServer(object):
             sock.setblocking(0)
             sock.bind((self.host, port))
             if self.ssl_options:
-                sock = ssl.wrap_socket(sock, server_side=True,
+                # SSL handshake for non-blocking socket will be handled by tornado
+                # See https://stackoverflow.com/questions/26531146/truly-non-blocking-https-server-in-python
+                sock = ssl.wrap_socket(sock, server_side=True, do_handshake_on_connect=False,
                                        **self.ssl_options)
             sock.listen(128)
             self.io_loop.add_handler(sock.fileno(),
@@ -392,7 +394,8 @@ class ProxyServer(object):
             external_stream = stream_class(connection, io_loop=self.io_loop,
                                            chunk_timeout=self.idle_timeout,
                                            read_chunk_size=READ_CHUNK_SIZE,
-                                           max_buffer_size=MAX_BUFFER_SIZE)
+                                           max_buffer_size=MAX_BUFFER_SIZE,
+                                           ssl_options=self.ssl_options)
 
             # Initiate connect handler
             pipeline = Pipeline(server_type, external_stream, address, self)
