@@ -517,6 +517,8 @@ document.onreadystatechange = function(event) {
     if (!Sliobj.params.fileName || (Sliobj.params.fileName == 'index' && !Sliobj.previewState)) {
 	// Just a simple web page
 	toggleClass(true, 'slidoc-simple-view');
+	if (Sliobj.params.gd_sheet_url)
+	    toggleClass(true, 'slidoc-remote-view');
 	return;
     }
     Slidoc.reportTestAction('ready');

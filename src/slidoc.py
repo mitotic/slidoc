@@ -2724,7 +2724,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
-    topnav_html += '<li id="gradelink" style="display: none;"><a href="%s_grades" target="_blank">%s</a></li>' % (site_prefix, '&#x1f520;')
+    topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
     topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'

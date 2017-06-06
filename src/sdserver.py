@@ -4298,13 +4298,13 @@ def start_server(site_number=0, restart=False):
         # Redirect plain HTTP to HTTPS
         handlers = [ (r'/', PlainHTTPHandler) ]
         plain_http_app = tornado.web.Application(handlers)
-        plain_http_app.listen(80)
+        plain_http_app.listen(80, address=Options['host'])
         print >> sys.stderr, "Listening on HTTP port"
 
     if not Options['site_list']:
         # Start single site server
-        Global.http_server.listen(Options['port'])
-        print >> sys.stderr, "Listening on port", Options['port'], Options['site_name']
+        print >> sys.stderr, "Listening on host, port:", Options['host'], Options['port'], Options['site_name']
+        Global.http_server.listen(Options['port'], address=Options['host'])
     else:
         relay_addr = Global.relay_list[site_number]
         if isinstance(relay_addr, tuple):
@@ -4351,7 +4351,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         for key in SPLIT_OPTS[1:]:
             if key in sheetSettings:
                 Global.split_opts[key][site_number-1] = sheetSettings[key]
-    else:
+    elif gsheet_url:
         Global.split_opts['site_restricted'][site_number-1] = 'restricted'
 
     Global.userRoles.update_site_roles(site_name, sheetSettings.get('admin_users',''), sheetSettings.get('grader_users',''), sheetSettings.get('guest_users','') )
@@ -4395,7 +4395,7 @@ def setup_site_server(sheetSettings):
 
         if sheetSettings:
             sdproxy.copySheetOptions(sheetSettings)
-        elif Options['host'] != 'localhost':
+        elif Options['gsheet_url'] and Options['host'] != 'localhost':
             Options['site_restricted'] = 'restricted'
 
         Global.session_options = {}
