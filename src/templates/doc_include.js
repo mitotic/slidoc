@@ -2226,8 +2226,8 @@ document.onkeydown = function(evt) {
     return Slidoc.handleKey(Key_codes[evt.keyCode]);
 }
 
-Slidoc.handleKey = function (keyName) {
-    Slidoc.log('Slidoc.handleKey:', keyName);
+Slidoc.handleKey = function (keyName, swipe) {
+    Slidoc.log('Slidoc.handleKey:', keyName, swipe);
     if (keyName == 'right' && Slidoc.advanceStep())
 	return false;
 
@@ -2257,8 +2257,8 @@ Slidoc.handleKey = function (keyName) {
 
 	if (keyName == 'reset') { Slidoc.resetPaced(); return false; }
 	
-	if (keyName == 'left') { Slidoc.accordionView(true); return false; }
-	if (keyName == 'right') { Slidoc.accordionView(false); return false; }
+	if (keyName == 'left' && !swipe) { Slidoc.accordionView(true); return false; }
+	if (keyName == 'right' && !swipe) { Slidoc.accordionView(false); return false; }
 	
 	if (Sliobj.curChapterId) {
 	    var chapNum = parseSlideId(Sliobj.curChapterId)[1];
@@ -7731,10 +7731,10 @@ function onTouchEnd(evt) {
             // Handle swipe end
             if ( touchDiffX > 0 ) {
 		/* right swipe (leftward motion) */
-		Slidoc.handleKey('left');
+		Slidoc.handleKey('left', true);
             } else {
 		/* left swipe (right motion) */ 
-		Slidoc.handleKey('right');
+		Slidoc.handleKey('right', true);
 	    }
         } else if (touchSort) {
             // Handle sort end
@@ -7811,10 +7811,10 @@ function handleTouchEnd(evt) {
 	    /* ignore */
         } else if ( xDiff > 0 ) {
             /* left swipe (right motion) */ 
-            return Slidoc.handleKey('right');
+            return Slidoc.handleKey('right', true);
         } else {
             /* right swipe (leftward motion) */
-            return Slidoc.handleKey('left');
+            return Slidoc.handleKey('left', true);
         }                       
     } else {
 	if (Math.abs(yDiff) < swipeThreshold) {

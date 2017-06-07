@@ -534,14 +534,14 @@ class MathInlineLexer(mistune.InlineLexer):
         if not header_ref:
             header_ref = text_key
         if not header_ref:
-            message('REF-ERROR: Null reference')
+            message('REF-WARNING: Null reference')
             return None
 
         # Slidoc-specific hash reference handling
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         ref_class = ''
         if ref_id in Global.ref_tracker:
-            message('    ****REF-ERROR: Duplicate reference #%s (#%s)' % (ref_id, key))
+            message('    ****REF-WARNING: Duplicate reference #%s (#%s)' % (ref_id, key))
             ref_id += '-duplicate-'+md2md.generate_random_label()
         else:
             num_label = '??'
@@ -1313,7 +1313,7 @@ class SlidocRenderer(MathRenderer):
         if ref_id in Global.ref_tracker:
             if ref_id not in Global.dup_ref_tracker:
                 Global.dup_ref_tracker.add(ref_id)
-                message('    ****REF-ERROR: %s: Duplicate reference #%s in slide %s' % (self.options["filename"], header_ref, self.slide_number))
+                message('    ****REF-WARNING: %s: Duplicate reference #%s in slide %s' % (self.options["filename"], header_ref, self.slide_number))
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
