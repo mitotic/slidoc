@@ -387,16 +387,17 @@ class ProxyServer(object):
                 return
 
             if self.ssl_options:
-                stream_class = ChunkySSLIOStream
+                external_stream = ChunkySSLIOStream(connection, io_loop=self.io_loop,
+                                            chunk_timeout=self.idle_timeout,
+                                            read_chunk_size=READ_CHUNK_SIZE,
+                                            max_buffer_size=MAX_BUFFER_SIZE,
+                                            ssl_options=self.ssl_options)
             else:
-                stream_class = ChunkyIOStream
-
-            external_stream = stream_class(connection, io_loop=self.io_loop,
-                                           chunk_timeout=self.idle_timeout,
-                                           read_chunk_size=READ_CHUNK_SIZE,
-                                           max_buffer_size=MAX_BUFFER_SIZE,
-                                           ssl_options=self.ssl_options)
-
+                external_stream = ChunkyIOStream(connection, io_loop=self.io_loop,
+                                            chunk_timeout=self.idle_timeout,
+                                            read_chunk_size=READ_CHUNK_SIZE,
+                                            max_buffer_size=MAX_BUFFER_SIZE)
+    
             # Initiate connect handler
             pipeline = Pipeline(server_type, external_stream, address, self)
             pipeline.start()
