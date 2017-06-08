@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5k';
+var VERSION = '0.97.5l';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -171,6 +171,8 @@ var POST_PREFIX_RE = /^Post:(\d+):([-\d:T]+)(\s|$)/;
 var POST_NUM_RE = /'(\d+):([-\d:T]+)([\s\S]*)$/;
 var AXS_RE = /access(\d+)/;
 
+var ACTION_FORMULAS = false;
+
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
 var Settings = {};
@@ -310,6 +312,7 @@ function getRosterEntry(userId) {
 var SHEET_CACHING = true;
 
 function getSheetCache(sheetName) {
+    // Create cached sheet, creating it if need be
     return SHEET_CACHING ? (new SheetCache(sheetName)) : getSheet(sheetName);
 }
 
@@ -1330,7 +1333,7 @@ function sheetAction(params) {
 		    var savedSession = unpackSession(columnHeaders, origVals);
 		    if (savedSession && Object.keys(savedSession.questionsAttempted).length && computeTotalScore) {
 			var scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers']);
-			var lastTake = ''+(scores.weightedCorrect || 0);
+			var lastTake = str(scores.weightedCorrect || 0);
                     } else {
 			var lastTake = '0';
 		    }
@@ -1802,7 +1805,7 @@ function sheetAction(params) {
 				    // Tally newly added vote
 				    var qshare = sessionAttributes.shareAnswers[colHeader.split('_')[0]];
 				    if (qshare) {
-					rowValues[otherCol-1] = ''+(parseInt(rowValues[otherCol-1] || 0) + (qshare.voteWeight || 0));
+					rowValues[otherCol-1] = str( (parseInt(rowValues[otherCol-1] || 0) + (qshare.voteWeight || 0)) );
 					modSheet.getRange(userRow, otherCol, 1, 1).setValues([[ rowValues[otherCol-1] ]])
 				    }
 				}
@@ -2590,6 +2593,8 @@ function getUserRow(sessionName, userId, displayName, opts) {
 
 ////// Utility functions
 
+function str(x) { return x+''; }
+
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
 function parseNumber(x) {
@@ -3147,36 +3152,52 @@ function getSessionName(prompt) {
     }
 }
 
-function updateSession(actionFunc) {
-    // Update action for current session
+function getNormalUserRow(sessionSheet, sessionStartRow) {
+    // Returns starting row number for rows with non-special users (i.e., names not starting with # and id's not starting with _)
+    var normalRow = sessionStartRow;
 
-    var sessionName = getSessionName(true);
-
-    var lock = LockService.getPublicLock();
-    lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
-
-    try {
-	loadSettings();
-	if (sessionName != 'all') {
-	    var sessionSheet = getSheet(sessionName);
-	    if (!sessionSheet)
-		throw('Sheet not found: '+sessionName);
-	    if (!sessionSheet.getLastColumn())
-		throw('No columns in sheet: '+sessionName);
-	    if (sessionSheet.getLastRow() < 2)
-		throw('No data rows in sheet: '+sessionName);
+    var sessionColIndex = indexColumns(sessionSheet);
+    var nids = sessionSheet.getLastRow()-sessionStartRow+1;
+    if (nids) {
+	var temIds = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], nids, 1);
+	var temNames = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['name'], nids, 1);
+	for (var j=0; j<nids; j++) {
+	    // Skip any initial row(s) in the roster with test user or ID/names starting with underscore/hash
+	    // when computing averages and other stats
+	    if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^_/) || temNames[j][0].match(/^#/))
+		normalRow += 1;
+	    else
+		break;
 	}
-	return actionFunc(sessionName, true);
-    } finally { //release lock
-	lock.releaseLock();
     }
-
+    return normalRow;
 }
 
-function sessionAnswerSheet() {
-    // Create session answers sheet
-    var sheetName = updateSession(updateAnswers);
-    notify('Created sheet :'+sheetName, 'Slidoc Answers');
+function updateColumnAvg(sheet, colNum, avgRow, startRow, countBlanks) {
+    var avgCell = sheet.getRange(avgRow, colNum, 1, 1);
+    if (ACTION_FORMULAS) {
+	var avgFormula = '=AVERAGE('+colIndexToChar(colNum)+'$'+startRow+':'+colIndexToChar(colNum)+')';
+	avgCell.setValue(avgFormula);
+	return;
+    }
+    var nRows = sheet.getLastRow()-startRow+1;
+    if (!nRows)
+	return;
+    var colVals = sheet.getSheetValues(startRow, colNum, nRows, 1);
+    var accum = 0;
+    var count = nRows;
+    for (var j=0; j<nRows; j++) {
+	if (isNumber(colVals[j][0])) {
+	    accum += colVals[j][0];
+	} else if (!countBlanks) {
+	    count -= 1;
+	}
+    }
+    if (count) {
+	avgCell.setValue(accum/count);
+    } else {
+	avgCell.setValue('');
+    }
 }
 
 function updateAnswers(sessionName, create) {
@@ -3240,6 +3261,7 @@ function updateAnswers(sessionName, create) {
 	var sessionStartRow = SESSION_START_ROW;
 
 	// Answers sheet columns
+	var answerAvgRow = 2;
 	var answerStartRow = 3;
 
 	// Session answers headers
@@ -3252,18 +3274,12 @@ function updateAnswers(sessionName, create) {
 
 	answerHeaderRange.setWrap(true);
 	answerSheet.getRange('1:1').setFontWeight('bold');
-	answerSheet.getRange('2:2').setFontStyle('italic');
-	answerSheet.getRange(2, ansColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
-	answerSheet.getRange(2, ansColIndex['Timestamp'], 1, 1).setValues([[new Date()]]);
+	answerSheet.getRange(str(answerAvgRow)+':'+str(answerAvgRow)).setFontStyle('italic');
+	answerSheet.getRange(answerAvgRow, ansColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
+	answerSheet.getRange(answerAvgRow, ansColIndex['Timestamp'], 1, 1).setValues([[new Date()]]);
 
-	for (var ansCol=baseCols+1; ansCol<=answerHeaders.length; ansCol++) {
-	    if (answerHeaders[ansCol-1].slice(-6) == '_score') {
-		var ansAvgRange = answerSheet.getRange(2, ansCol, 1, 1);
-		ansAvgRange.setNumberFormat('0.###');
-		ansAvgRange.setValues([['=AVERAGE('+colIndexToChar(ansCol)+'$'+answerStartRow+':'+colIndexToChar(ansCol)+')']]);
-	    }
-	}
-
+	var avgStartRow = answerStartRow + getNormalUserRow(sessionSheet, sessionStartRow) - sessionStartRow;
+	
 	// Number of ids
 	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
 
@@ -3316,20 +3332,20 @@ function updateAnswers(sessionName, create) {
 		}
 	    }
 	    qRows.push(rowVals.slice(baseCols));
-
 	}
 	answerSheet.getRange(answerStartRow, baseCols+1, nids, answerHeaders.length-baseCols).setValues(qRows);
+
+	for (var ansCol=baseCols+1; ansCol<=answerHeaders.length; ansCol++) {
+	    if (answerHeaders[ansCol-1].slice(-6) == '_score') {
+		answerSheet.getRange(answerAvgRow, ansCol, 1, 1).setNumberFormat('0.###');
+		updateColumnAvg(answerSheet, ansCol, answerAvgRow, avgStartRow);
+	    }
+	}
     } finally {
     }
     return answerSheetName;
 }
 
-
-function sessionCorrectSheet() {
-    // Create session correct sheet
-    var sheetName = updateSession(updateCorrect);
-    notify('Created sheet :'+sheetName, 'Slidoc Correct');
-}
 
 function updateCorrect(sessionName, create) {
     try {
@@ -3436,12 +3452,6 @@ function updateCorrect(sessionName, create) {
     return correctSheetName;
 }
 
-function sessionStatSheet() {
-    // Create session stats sheet
-    var sheetName = updateSession(updateStats);
-    notify('Created sheet :'+sheetName, 'Slidoc Stats');
-}
-
 function updateStats(sessionName, create) {
     try {
 	loadSettings();
@@ -3483,24 +3493,13 @@ function updateStats(sessionName, create) {
 	var nconcepts = p_concepts.length + s_concepts.length;
 
 	// Stats sheet columns
+	var statAvgRow = 2;
 	var statStartRow = 3; // Leave blank row for formulas
 	var statQuestionCol = sessionCopyCols.length+1;
 	var nqstats = statExtraCols.length;
 	var statConceptsCol = statQuestionCol + nqstats;
 
-	var avgStartRow = statStartRow;
-	if (nids) {
-	    var temIds = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], nids, 1);
-	    var temNames = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['name'], nids, 1);
-	    for (var j=0; j<nids; j++) {
-		// Skip any initial row(s) in the roster with test user or ID/names starting with underscore/hash
-		// when computing averages and other stats
-		if (temIds[j][0] == TESTUSER_ID || temIds[j][0].match(/^_/) || temNames[j][0].match(/^#/))
-		    avgStartRow += 1;
-		else
-		    break;
-	    }
-	}
+	var avgStartRow = statStartRow + getNormalUserRow(sessionSheet, sessionStartRow) - sessionStartRow;
 
 	// New stat sheet
 	statSheet.clear()
@@ -3508,17 +3507,13 @@ function updateStats(sessionName, create) {
 	statHeaderRange.setValues([statHeaders]);
 	statHeaderRange.setWrap(true);
 	statSheet.getRange('1:1').setFontWeight('bold');
-	var statAvgList = [];
-	for (var avgCol=sessionCopyCols.length+1; avgCol<=statHeaders.length; avgCol++)
-	    statAvgList.push('=AVERAGE('+colIndexToChar(avgCol)+'$'+avgStartRow+':'+colIndexToChar(avgCol)+')');
-	var statAvgRange = statSheet.getRange(2, sessionCopyCols.length+1, 1, statHeaders.length-sessionCopyCols.length);
-	statAvgRange.setValues([statAvgList]);
-	statAvgRange.setNumberFormat('0.###');
+
+	statSheet.getRange(statAvgRow, sessionCopyCols.length+1, 1, statHeaders.length-sessionCopyCols.length).setNumberFormat('0.###');
 
 	var statColIndex = indexColumns(statSheet);
-	statSheet.getRange(2, statColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
-	statSheet.getRange(2, statColIndex['Timestamp'], 1, 1).setValues([[new Date()]]);
-	statSheet.getRange('2:2').setFontStyle('italic');
+	statSheet.getRange(statAvgRow, statColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
+	statSheet.getRange(statAvgRow, statColIndex['Timestamp'], 1, 1).setValues([[new Date()]]);
+	statSheet.getRange(str(statAvgRow)+':'+str(statAvgRow)).setFontStyle('italic');
 
 	for (var j=0; j<sessionCopyCols.length; j++) {
 	    var colHeader = sessionCopyCols[j];
@@ -3556,6 +3551,10 @@ function updateStats(sessionName, create) {
 	statSheet.getRange(statStartRow, statQuestionCol, nids, nqstats).setValues(questionTallies);
 	if (nconcepts)
 	    statSheet.getRange(statStartRow, statConceptsCol, nids, nconcepts).setValues(conceptTallies);
+
+	for (var avgCol=sessionCopyCols.length+1; avgCol<=statHeaders.length; avgCol++) {
+	    updateColumnAvg(statSheet, avgCol, statAvgRow, avgStartRow);
+	}
     } finally {
     }
 
@@ -4164,6 +4163,50 @@ function actionHandler(actions, sheetName, create) {
 }
 
 
+function updateSession(actionFunc) {
+    // Update action for current session
+
+    var sessionName = getSessionName(true);
+
+    var lock = LockService.getPublicLock();
+    lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
+
+    try {
+	loadSettings();
+	if (sessionName != 'all') {
+	    var sessionSheet = getSheet(sessionName);
+	    if (!sessionSheet)
+		throw('Sheet not found: '+sessionName);
+	    if (!sessionSheet.getLastColumn())
+		throw('No columns in sheet: '+sessionName);
+	    if (sessionSheet.getLastRow() < 2)
+		throw('No data rows in sheet: '+sessionName);
+	}
+	return actionFunc(sessionName, true);
+    } finally { //release lock
+	lock.releaseLock();
+    }
+
+}
+
+function sessionAnswerSheet() {
+    // Create session answers sheet
+    var sheetName = updateSession(updateAnswers);
+    notify('Created sheet :'+sheetName, 'Slidoc Answers');
+}
+
+function sessionCorrectSheet() {
+    // Create session correct sheet
+    var sheetName = updateSession(updateCorrect);
+    notify('Created sheet :'+sheetName, 'Slidoc Correct');
+}
+
+function sessionStatSheet() {
+    // Create session stats sheet
+    var sheetName = updateSession(updateStats);
+    notify('Created sheet :'+sheetName, 'Slidoc Stats');
+}
+
 function updateScoreSession() {
     // Update scores sheet for current session
     ///startCallTracking(2, {}, 'SCORES');
@@ -4330,7 +4373,7 @@ function updateScores(sessionNames, create, interactive) {
 	    scoreSheet.getRange(rescaleRow, idCol, 1, 1).setValues([[RESCALE_ID]]);
 	    scoreSheet.getRange(timestampRow, idCol, 1, 1).setValues([[TIMESTAMP_ID]]);
 	    scoreSheet.getRange(scoreAvgRow, idCol, 1, 1).setValues([[AVERAGE_ID]]);
-	    scoreSheet.getRange(rescaleRow+':'+scoreAvgRow).setFontStyle('italic');
+	    scoreSheet.getRange(str(rescaleRow)+':'+str(scoreAvgRow)).setFontStyle('italic');
 
 	    scoreSheet.getRange(maxWeightOrigRow, idCol, 1, 1).setValues([[MAXSCOREORIG_ID]]);
 	    scoreSheet.getRange(maxWeightRow, idCol, 1, 1).setValues([[MAXSCORE_ID]]);

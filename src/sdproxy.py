@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5k'
+VERSION = '0.97.5l'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -400,6 +400,10 @@ def backupSheet(name, dirpath, errorList, optional=False):
 def isReadOnly(sheetName):
     return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET)) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
 
+def getSheetCache(sheetName):
+    # Create cached sheet, creating it if need be (for Google Sheets compatibility)
+    return getSheet(sheetName, optional=True)
+
 def getSheet(sheetName, optional=False, backup=False, display=False):
     cached = sheetName in Sheet_cache
 
@@ -732,7 +736,16 @@ class Sheet(object):
         if colCount < 0 or colCount > self.nCols-colMin+1:
             raise Exception('Invalid col count for range %s in sheet %s' % (colCount, self.name))
 
-    def getRange(self, rowMin, colMin, rowCount, colCount):
+    def getRange(self, rowMin, colMin=None, rowCount=None, colCount=None):
+        if isinstance(rowMin, (str, unicode)):
+            # 'row1:row2' range string
+            comps = rowMin.split(':')
+            if len(comps) != 2 or not comps[0].isdigit() or not comps[1].isdigit():
+                raise Exception('Invalid range "%s"' % rowMin)
+            rowMin = int(comps[0])
+            rowCount = int(comps[1]) - rowMin + 1
+            colMin = 1
+            colCount = self.nCols
         self.checkRange(rowMin, colMin, rowCount, colCount)
         return Range(self, rowMin, colMin, rowCount, colCount)
 
@@ -946,6 +959,15 @@ class Range(object):
 
     def setValue(self, value):
         self.sheet._setSheetValues(*(self.rng+[[[value]]]))
+
+    def setFontStyle(self, *args, **kwargs):
+        pass
+
+    def setFontWeight(self, *args, **kwargs):
+        pass
+
+    def setNumberFormat(self, *args, **kwargs):
+        pass
 
 def getCacheStatus():
     out = 'Cache: version %s (%s)\n' % (VERSION, list(Global.remoteVersions))
