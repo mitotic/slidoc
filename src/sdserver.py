@@ -850,7 +850,7 @@ class ActionHandler(BaseHandler):
             self.displayMessage('Cache updates have been restarted')
 
         elif action in ('_manage',):
-            sheet = sdproxy.getSheet(sessionName, optional=True)
+            sheet = sdproxy.getSheet(sessionName)
             if not sheet:
                 self.displayMessage('No such session: '+sessionName)
                 return
@@ -903,7 +903,7 @@ class ActionHandler(BaseHandler):
 
         elif action in ('_getcol', '_getrow'):
             subsubpath, sep, label = subsubpath.partition(';')
-            sheet = sdproxy.getSheet(subsubpath, optional=True)
+            sheet = sdproxy.getSheet(subsubpath)
             if not sheet:
                 self.displayMessage('Unable to retrieve sheet '+subsubpath)
             else:
@@ -1010,7 +1010,7 @@ class ActionHandler(BaseHandler):
             if not sessionName:
                 self.displayMessage('Please specify /_respond/session name')
                 return
-            sheet = sdproxy.getSheet(sessionName, optional=True)
+            sheet = sdproxy.getSheet(sessionName)
             if not sheet:
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
@@ -1039,7 +1039,7 @@ class ActionHandler(BaseHandler):
             sessionName = comps[0]
             userId = comps[1] if len(comps) >= 2 else ''
             dateStr = comps[2] if len(comps) >= 3 else ''
-            sheet = sdproxy.getSheet(sessionName, optional=True)
+            sheet = sdproxy.getSheet(sessionName)
             if not sheet:
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
@@ -1290,7 +1290,7 @@ class ActionHandler(BaseHandler):
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+fname+'.md', web_prefix+'.html', web_prefix+'_images'
 
     def displaySheet(self, sessionName, download=False, allUsers=False, keepHidden=False):
-            sheet = sdproxy.getSheet(sessionName, optional=True, display=True)
+            sheet = sdproxy.getSheet(sessionName, display=True)
             if not sheet:
                 self.displayMessage('Unable to retrieve sheet '+sessionName)
                 return
@@ -2464,7 +2464,7 @@ class UserActionHandler(ActionHandler):
     def qstats(self, sessionName):
         json_return = self.get_argument('json', '')
         sheetName = sessionName + '-answers'
-        sheet = sdproxy.getSheet(sheetName, optional=True)
+        sheet = sdproxy.getSheet(sheetName)
         if not sheet:
             if json_return:
                 self.set_header('Content-Type', 'application/json')
@@ -2687,7 +2687,7 @@ class ProxyHandler(BaseHandler):
 
         # Replace root-signed tokens with site-specific tokens
         modify_user_auth(args)
-        if (args.get('actions') and args['actions'] != 'discuss_posts') and Options['gsheet_url']:
+        if (args.get('actions') and args['actions'] not in  ('discuss_posts', 'answer_stats', 'correct')) and Options['gsheet_url']:
             # NOTE: No longer proxy passthru for args.get('modify') (to allow revert preview)
 
             if Options['log_call']:
@@ -3121,7 +3121,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
                 params = {'pastDue': ''}
                 userId = self.pathUser[1]
-                if sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True):
+                if sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET):
                     sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['dueDate']:
                         # Check if past due date
@@ -3344,7 +3344,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 releaseDate = None
                 sessionType, _ = getSessionType(sessionName)
                 if pacedSession(sessionType):
-                    indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET, optional=True)
+                    indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET)
                     if not indexSheet:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:No index sheet for paced session '+sessionName)
                     try:
@@ -3396,7 +3396,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:User not pre-authorized to access site')
 
                 # Check userId appears in roster
-                if sdproxy.getSheet(sdproxy.ROSTER_SHEET, optional=True) and not sdproxy.lookupRoster('id', userId):
+                if sdproxy.getSheet(sdproxy.ROSTER_SHEET) and not sdproxy.lookupRoster('id', userId):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
                     
             return userId

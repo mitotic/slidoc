@@ -227,7 +227,7 @@ var receiveDataCounter = 0;
 GService.sendData = function (data, url, callback, useJSONP) {
   /// callback(result_obj, optional_err_msg)
 
-  if (data.modify || (data.actions && data.actions != 'discuss_posts')) {
+  if (data.modify || (data.actions && data.actions == 'gradebook')) {
       // Workaround for passthru actions; this could be done without a GSheet
       if (url.match(/_websocket$/))
 	  url = url.replace(/_websocket$/, '_proxy');

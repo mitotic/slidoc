@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5l';
+var VERSION = '0.97.5m';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -21,7 +21,6 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require', 'Non-null string for true'],
 			 ['share_averages', 'require', 'Non-null string for true'],
-		         ['total_column', '', 'session total column name (specify "q_total" to avoid formula in session sheet)'],
 		         ['total_formula', '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
 			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'], // Or A:180:4,B:160:3,...
 			 ['proxy_update_cache', '', 'Used to cache response to last update request (not user configured)']   
@@ -111,9 +110,8 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 //   - "Update scores for session" menu action will only update session columns with lookup formulas.
 //   - If you add new user rows, then you can simply copy the lookup formula from existing rows.
 
-// Define document IDs to create/access roster/scores/answers/stats/log sheet in separate documents
-// e.g., {roster_slidoc: 'ID1', scores_slidoc: 'ID2', answers_slidoc: 'ID3', stats_slidoc: 'ID4', slidoc_log: 'ID5'}
-var ALT_DOC_IDS = { };
+var ACTION_FORMULAS = false;
+var TOTAL_COLUMN = 'q_total';       // session total column name (to avoid formula in session sheet)
 
 var TIMED_GRACE_SEC = 15;           // Grace period for timed submissions (usually about 15 seconds)
 
@@ -141,9 +139,6 @@ var SCORES_SHEET = 'scores_slidoc';
 
 var RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats'];
 
-var ANSWERS_DOC = 'answers_slidoc';
-var STATS_DOC = 'stats_slidoc';
-
 var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
@@ -170,8 +165,6 @@ var DELETED_POST = '(deleted)';
 var POST_PREFIX_RE = /^Post:(\d+):([-\d:T]+)(\s|$)/;
 var POST_NUM_RE = /'(\d+):([-\d:T]+)([\s\S]*)$/;
 var AXS_RE = /access(\d+)/;
-
-var ACTION_FORMULAS = false;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
 
@@ -312,7 +305,7 @@ function getRosterEntry(userId) {
 var SHEET_CACHING = true;
 
 function getSheetCache(sheetName) {
-    // Create cached sheet, creating it if need be
+    // Return cached sheet, if present
     return SHEET_CACHING ? (new SheetCache(sheetName)) : getSheet(sheetName);
 }
 
@@ -473,6 +466,7 @@ function sheetAction(params) {
     var returnHeaders = null;
     var returnInfo = {version: VERSION};
     var returnMessages = [];
+    var completeActions = [];
     try {
 	loadSettings();
 
@@ -838,7 +832,11 @@ function sheetAction(params) {
 	    }
 	    
 	    if (updatingMaxScoreRow && computeTotalScore) {
-		updateTotalScores(modSheet, sessionAttributes, questions, true);
+		completeActions.push('answer_stats');
+		completeActions.push('correct');
+		if (updateTotalScores(modSheet, sessionAttributes, questions, true)) {
+		    completeActions.push('gradebook');
+		}
 	    }
 
 	    var userId = null;
@@ -1561,7 +1559,7 @@ function sheetAction(params) {
 			    // Retakes are always updated separately
 			} else if (colHeader == 'q_total') {
 			    // Modify only for max score; otherwise leave blank (to be overwritten by array formula)
-			    if (!Settings['total_column'] && userId == MAXSCORE_ID && totalCol)
+			    if (!TOTAL_COLUMN && userId == MAXSCORE_ID && totalCol)
 				rowValues[j] = gradesFormula(columnHeaders, totalCol+1, numRows);
 			    else
 				rowValues[j] = '';
@@ -1944,6 +1942,10 @@ function sheetAction(params) {
             }
         }
 
+	if (completeActions.length) {
+	    returnInfo.refreshSheets = returnInfo.refreshSheets.concat(actionHandler(completeActions.join(','), sheetName));
+	}
+
 	// return success results
 	trackCall(0, 'success');
 	return {"result":"success", "value": returnValues, "headers": returnHeaders,
@@ -1988,7 +1990,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    throw("Error:PROXY_MISSING_SHEET:Sheet not found: '"+updateSheetName+"'");
 	    }
 
-	    trackCall(1, 'updateSheet: start total_col='+Settings['total_column']+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn());
+	    trackCall(1, 'updateSheet: start total_col='+TOTAL_COLUMN+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn());
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
 
@@ -2255,7 +2257,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var checkIdOffset = rowCols.indexOf(idCol);
 
 			var totalColFormulas = null;
-			if (!Settings['total_column'] && totalCol && totalCol >= pStartCol && totalCol <= pEndCol) {
+			if (!TOTAL_COLUMN && totalCol && totalCol >= pStartCol && totalCol <= pEndCol) {
 			    // Total column within range; get formula values
 			    totalColFormulas = updateSheet.getRange(modStartRow, totalCol, nUpdateRows, 1).getFormulas();
 			}
@@ -2290,7 +2292,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var curRow = rowSel[0];
 			var prevVals = updateSheet.getRange(modStartRow, 1, 1, curRow.length).getValues()[0];
 
-			if (!Settings['total_column'] && totalCol) {
+			if (!TOTAL_COLUMN && totalCol) {
 			    // Do not overwrite old totalCol formula value for pre-existing row (formula updated by updateTotalFormula)
 			    prevVals[totalCol-1] = updateSheet.getRange(modStartRow, totalCol, 1, 1).getFormula();
 			    curRow[totalCol-1] = prevVals[totalCol-1];
@@ -2358,7 +2360,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		}
 		trackCall(2, updateSheetName+':end');
 
-		if (!Settings['total_column'] && totalCol && (deletedRows || insertedRows))
+		if (!TOTAL_COLUMN && totalCol && (deletedRows || insertedRows))
 		    updateTotalFormula(updateSheet, lastRowNum);
 
 		if (proxyActions) {
@@ -2728,17 +2730,11 @@ function validateHMAC(token, key) {
     return genHmacToken(key, message) == signature;
 }
 
-function getSheet(sheetName, docName, create) {
-    // Return sheet in external document, or in current document. If create, create as needed.
-    var docId = ALT_DOC_IDS[docName||''] || ALT_DOC_IDS[sheetName] || null;
-    var doc = docId ? SpreadsheetApp.openById(docId) : null;
-    if (!doc)
-	doc = getDoc();
+function getSheet(sheetName) {
+    // Return sheet in current document, if present.
+    var doc = getDoc();
 
-    var sheet = doc.getSheetByName(sheetName);
-    if (!sheet && create)
-	sheet = doc.insertSheet(sheetName);
-    return sheet;
+    return doc.getSheetByName(sheetName);
 }
 
 function deleteSheet(sheetName) {
@@ -2750,10 +2746,27 @@ function deleteSheet(sheetName) {
     return true;
 }
 
-function createSheet(sheetName, headers) {
-    var sheet = getSheet(sheetName, null, true);
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+function createSheet(sheetName, headers, overwrite) {
+    if (!headers) {
+	throw("Must specify headers to create sheet "+sheetName);
+    }
+
+    var doc = getDoc();
+    var sheet = doc.getSheetByName(sheetName);
+
+    if (!sheet) {
+	sheet = doc.insertSheet(sheetName);
+    } else if (overwrite) {
+	sheet.clear();
+    } else {
+	throw('Cannot overwrite sheet '+sheetName);
+    }
+
+    var headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+    headerRange.setWrap(true);
     sheet.getRange('1:1').setFontWeight('bold');
+
     for (var j=0; j<headers.length; j++) {
 	if (headers[j].slice(-6).toLowerCase() == 'hidden')
 	    sheet.hideColumns(j+1);
@@ -2762,11 +2775,13 @@ function createSheet(sheetName, headers) {
 	    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
 	}
     }
+
     if (sheetName == INDEX_SHEET) {
 	var protection = sheet.protect().setDescription('protected');
 	protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
 	protection.setDomainEdit(false);
     }
+
     return sheet;
 }
 	    
@@ -3184,7 +3199,7 @@ function updateColumnAvg(sheet, colNum, avgRow, startRow, countBlanks) {
     if (!nRows)
 	return;
     var colVals = sheet.getSheetValues(startRow, colNum, nRows, 1);
-    var accum = 0;
+    var accum = 0.0;
     var count = nRows;
     for (var j=0; j<nRows; j++) {
 	if (isNumber(colVals[j][0])) {
@@ -3209,8 +3224,8 @@ function updateAnswers(sessionName, create) {
 	    throw('No columns in sheet: '+sessionName);
 
 	var answerSheetName = sessionName+'-answers';
-	var answerSheet = getSheet(answerSheetName, ANSWERS_DOC, create);
-	if (!answerSheet)
+	var answerSheet = getSheet(answerSheetName);
+	if (!answerSheet && !create)
 	    return '';
 	
 	var sessionColIndex = indexColumns(sessionSheet);
@@ -3222,8 +3237,8 @@ function updateAnswers(sessionName, create) {
 	var qtypes = [];
 	var answers = [];
 	for (var j=0; j<questions.length; j++) {
-	    qtypes[j] = questions[j].qtype||'';
-	    answers[j] = questions[j].correct;
+	    qtypes.push(questions[j].qtype||'');
+	    answers.push(questions[j].correct);
 	}
 
 	// Copy columns from session sheet
@@ -3234,7 +3249,7 @@ function updateAnswers(sessionName, create) {
 	var respCols = [];
 	var extraCols = ['expect', 'score', 'plugin', 'hints'];
 	for (var j=0; j<qtypes.length; j++) {
-	    var qprefix = 'q'+(j+1);
+	    var qprefix = 'q'+str(j+1);
 	    var pluginMatch = PLUGIN_RE.exec(answers[j] || '');
 	    var pluginAction = pluginMatch ? pluginMatch[3] : '';
 	    var respColName = qprefix;
@@ -3255,7 +3270,6 @@ function updateAnswers(sessionName, create) {
 	    if (sessionAttributes.hints && sessionAttributes.hints[qprefix])
 		answerHeaders.push(qprefix+'_hints');
 	}
-	//Logger.log('ansHeaders: '+answerHeaders);
 
 	// Session sheet columns
 	var sessionStartRow = SESSION_START_ROW;
@@ -3267,13 +3281,9 @@ function updateAnswers(sessionName, create) {
 	// Session answers headers
 
 	// New answers sheet
-	answerSheet.clear()
-	var answerHeaderRange = answerSheet.getRange(1, 1, 1, answerHeaders.length);
-	answerHeaderRange.setValues([answerHeaders]);
+	answerSheet = createSheet(answerSheetName, answerHeaders, true);
 	var ansColIndex = indexColumns(answerSheet);
 
-	answerHeaderRange.setWrap(true);
-	answerSheet.getRange('1:1').setFontWeight('bold');
 	answerSheet.getRange(str(answerAvgRow)+':'+str(answerAvgRow)).setFontStyle('italic');
 	answerSheet.getRange(answerAvgRow, ansColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
 	answerSheet.getRange(answerAvgRow, ansColIndex['Timestamp'], 1, 1).setValues([[new Date()]]);
@@ -3310,7 +3320,7 @@ function updateAnswers(sessionName, create) {
 	    for (var k=0; k<questions.length; k++) {
 		var qno = k+1;
 		if (qAttempted[qno]) {
-		    var qprefix = 'q'+qno;
+		    var qprefix = 'q'+str(qno);
 		    // Copy responses
 		    rowVals[respCols[qno-1]-1] = (qAttempted[qno].response || '');
 		    if (qAttempted[qno].explain)
@@ -3356,8 +3366,8 @@ function updateCorrect(sessionName, create) {
 	    throw('No columns in sheet: '+sessionName);
 
 	var correctSheetName = sessionName+'-correct';
-	var correctSheet = getSheet(correctSheetName, '', create);
-	if (!correctSheet)
+	var correctSheet = getSheet(correctSheetName);
+	if (!correctSheet && !create)
 	    return '';
 
 	var sessionColIndex = indexColumns(sessionSheet);
@@ -3369,8 +3379,8 @@ function updateCorrect(sessionName, create) {
 	var qtypes = [];
 	var answers = [];
 	for (var j=0; j<questions.length; j++) {
-	    qtypes[j] = questions[j].qtype||'';
-	    answers[j] = questions[j].correct;
+	    qtypes.push(questions[j].qtype||'');
+	    answers.push(questions[j].correct);
 	}
 
 	// Copy columns from session sheet
@@ -3379,7 +3389,7 @@ function updateCorrect(sessionName, create) {
 	var baseCols = correctHeaders.length;
 
 	for (var j=0; j<questions.length; j++) {
-	    correctHeaders.push('q'+(j+1));
+	    correctHeaders.push('q'+str(j+1));
 	}
 
 	// Session sheet columns
@@ -3389,13 +3399,9 @@ function updateCorrect(sessionName, create) {
 	var correctStartRow = 3;
 
 	// New correct sheet
-	correctSheet.clear()
-	var correctHeaderRange = correctSheet.getRange(1, 1, 1, correctHeaders.length);
-	correctHeaderRange.setValues([correctHeaders]);
+	correctSheet = createSheet(correctSheetName, correctHeaders, true);
 	var corrColIndex = indexColumns(correctSheet);
 
-	correctHeaderRange.setWrap(true);
-	correctSheet.getRange('1:1').setFontWeight('bold');
 	correctSheet.getRange('2:2').setFontStyle('italic');
 	correctSheet.getRange(2, corrColIndex['id'], 1, 1).setValues([[AVERAGE_ID]]);
 	correctSheet.getRange(2, corrColIndex['Timestamp'], 1, 1).setValues([[new Date()]]);
@@ -3462,8 +3468,8 @@ function updateStats(sessionName, create) {
 	    throw('No columns in sheet '+sessionName);
 
 	var statSheetName = sessionName+'-stats';
-	var statSheet = getSheet(statSheetName, STATS_DOC, create);
-	if (!statSheet)
+	var statSheet = getSheet(statSheetName);
+	if (!statSheet && !create)
 	    return '';
 
 	var sessionColIndex = indexColumns(sessionSheet);
@@ -3502,11 +3508,7 @@ function updateStats(sessionName, create) {
 	var avgStartRow = statStartRow + getNormalUserRow(sessionSheet, sessionStartRow) - sessionStartRow;
 
 	// New stat sheet
-	statSheet.clear()
-	var statHeaderRange = statSheet.getRange(1, 1, 1, statHeaders.length);
-	statHeaderRange.setValues([statHeaders]);
-	statHeaderRange.setWrap(true);
-	statSheet.getRange('1:1').setFontWeight('bold');
+	statSheet = createSheet(statSheetName, statHeaders, true);
 
 	statSheet.getRange(statAvgRow, sessionCopyCols.length+1, 1, statHeaders.length-sessionCopyCols.length).setNumberFormat('0.###');
 
@@ -3527,7 +3529,8 @@ function updateStats(sessionName, create) {
 	var questionTallies = [];
 	var conceptTallies = [];
 	var nullConcepts = [];
-	for (var j=0; j<nconcepts; j++) nullConcepts.push('');
+	for (var j=0; j<nconcepts; j++)
+	    nullConcepts.push('');
 
 	for (var j=0; j<nids; j++) {
 	    var rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, sessionColHeaders.length)[0];
@@ -3542,7 +3545,7 @@ function updateStats(sessionName, create) {
 		var missedFraction = [];
 		for (var m=0; m<missedConcepts.length; m++)
 		    for (var k=0; k<missedConcepts[m].length; k++)
-			missedFraction.push(missedConcepts[m][k][0]/Math.max(1,missedConcepts[m][k][1]));
+			missedFraction.push(missedConcepts[m][k][0]/(1.0*Math.max(1,missedConcepts[m][k][1])));
 		conceptTallies.push(missedFraction);
 	    } else {
 		conceptTallies.push(nullConcepts);
@@ -3559,6 +3562,41 @@ function updateStats(sessionName, create) {
     }
 
     return statSheetName;
+}
+
+
+function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
+    // Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
+    var missedConcepts = [ [], [] ];
+    if (allQuestionConcepts.length != 2)
+	return missedConcepts;
+
+    for (var m=0; m<2; m++) {
+	for (var k=0; k<allQuestionConcepts[m].length; k++) {
+	    missedConcepts[m].push([0,0]);
+	}
+    }
+
+    for (var qnumber=1; qnumber<=qscores.length; qnumber++) {
+	var qConcepts = questionConcepts[qnumber-1];
+	if (qscores[qnumber-1] === null || !qConcepts.length || (!qConcepts[0].length && !qConcepts[1].length))
+	    continue;
+	var missed = qscores[qnumber-1] < 1;
+
+	for (var m=0; m<2; m++) {
+            // Primary/secondary concept
+	    for (var j=0; j<qConcepts[m].length; j++) {
+		for (var k=0; k < allQuestionConcepts[m].length; k++) {
+		    if (qConcepts[m][j] == allQuestionConcepts[m][k]) {
+			if (missed)
+			    missedConcepts[m][k][0] += 1;    // Missed count
+			missedConcepts[m][k][1] += 1;        // Attempted count
+		    }
+		}
+	    }
+	}
+    }
+    return missedConcepts;
 }
 
 function gradesFormula(columnHeaders, startCol, lastRow) {
@@ -3589,7 +3627,7 @@ function gradesFormula(columnHeaders, startCol, lastRow) {
 }
 
 function updateTotalFormula(modSheet, nRows) {
-    if (Settings['total_column'])  // Totals handled by proxy
+    if (TOTAL_COLUMN)  // Totals handled by proxy
 	return;
     var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
     var columnIndex = indexColumns(modSheet);
@@ -3705,7 +3743,9 @@ function clearQuestionResponses(sessionName, questionNumber, userId) {
 	var sessionAttributes = JSON.parse(sessionEntries['attributes']);
 	var questions = JSON.parse(sessionEntries['questions']);
 	updateTotalScores(sessionSheet, sessionAttributes, questions, true, startRow, nRows);
-	actionHandler('answer_stats', sessionName);
+	return true;
+    } else {
+	return false;
     }
 }
 
@@ -3945,39 +3985,6 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAns
              'questionsCorrect': questionsCorrect, 'weightedCorrect': weightedCorrect,
              'questionsSkipped': questionsSkipped, 'correctSequence': correctSequence, 'skipToSlide': skipToSlide,
              'correctSequence': correctSequence, 'lastSkipRef': lastSkipRef, 'qscores': qscores};
-}
-
-function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
-    // Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
-    var missedConcepts = [ [], [] ];
-    if (allQuestionConcepts.length != 2)
-	return;
-    for (var m=0; m<2; m++) {
-	for (var k=0; k<allQuestionConcepts[m].length; k++) {
-	    missedConcepts[m].push([0,0]);
-	}
-    }
-
-    for (var qnumber=1; qnumber<=qscores.length; qnumber++) {
-	var qConcepts = questionConcepts[qnumber-1];
-	if (qscores[qnumber-1] === null || !qConcepts.length || (!qConcepts[0].length && !qConcepts[1].length))
-	    continue;
-	var missed = qscores[qnumber-1] < 1;
-
-	for (var m=0; m<2; m++) {
-            // Primary/secondary concept
-	    for (var j=0; j<qConcepts[m].length; j++) {
-		for (var k=0; k < allQuestionConcepts[m].length; k++) {
-		    if (qConcepts[m][j] == allQuestionConcepts[m][k]) {
-			if (missed)
-			    missedConcepts[m][k][0] += 1;    // Missed count
-			missedConcepts[m][k][1] += 1;        // Attempted count
-		    }
-		}
-	    }
-	}
-    }
-    return missedConcepts;
 }
 
 function emailTokens() {
@@ -4363,13 +4370,10 @@ function updateScores(sessionNames, create, interactive) {
 	var scoreHeaders = MIN_HEADERS.concat(extraHeaders);
 	if (!scoreSheet) {
 	    // Create session score sheet
-	    scoreSheet = getSheet(SCORES_SHEET, null, true);
+	    var temHeaders = userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length)[0].concat(extraHeaders);
+	    scoreSheet = createSheet(SCORES_SHEET, temHeaders);
 
 	    // Score sheet headers
-	    scoreSheet.getRange(1, 1, 1, MIN_HEADERS.length).setValues(userInfoSheet.getSheetValues(1, 1, 1, MIN_HEADERS.length));
-	    scoreSheet.getRange(1, MIN_HEADERS.length+1, 1, extraHeaders.length).setValues([extraHeaders]);
-	    scoreSheet.getRange('1:1').setFontWeight('bold');
-
 	    scoreSheet.getRange(rescaleRow, idCol, 1, 1).setValues([[RESCALE_ID]]);
 	    scoreSheet.getRange(timestampRow, idCol, 1, 1).setValues([[TIMESTAMP_ID]]);
 	    scoreSheet.getRange(scoreAvgRow, idCol, 1, 1).setValues([[AVERAGE_ID]]);

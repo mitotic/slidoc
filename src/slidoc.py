@@ -2370,7 +2370,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     # Extending
                     pass
             elif row_count == 1:
-                abort('ERROR:: Delete test user entry to modify questions in session '+session_name)
+                abort('ERROR:: Delete test user entry, or check modify box, to modify questions in session '+session_name)
             elif mod_question:
                 abort('ERROR:MODIFY_SESSION: Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
             else:

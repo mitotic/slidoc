@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5l'
+VERSION = '0.97.5m'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -80,18 +80,20 @@ Settings = {
     'site_title': '',
     'admin_users': '',
     'grader_users': '',
-    'guest_users': '',
-    'total_column': ''
+    'guest_users': ''
     }
 
 COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
                    'share_averages', 'site_label', 'site_title',
-                   'admin_users', 'grader_users', 'guest_users', 'total_column']
+                   'admin_users', 'grader_users', 'guest_users']
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
                     'backup_dir', 'debug', 'dry_run',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
-    
+
+ACTION_FORMULAS = False
+TOTAL_COLUMN = 'q_total'      # session total column name (to avoid formula in session sheet)
+
 RETRY_WAIT_TIME = 5           # Minimum time (sec) before retrying failed Google Sheet requests
 RETRY_MAX_COUNT = 5           # Maximum number of failed Google Sheet requests
 CACHE_HOLD_SEC = 3600         # Maximum time (sec) to hold sheet in cache
@@ -126,6 +128,10 @@ BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, SCORES_SHEET]
 
 RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats']
 
+ROSTER_START_ROW = 2
+SESSION_MAXSCORE_ROW = 2                                # Set to zero, if no MAXSCORE row
+SESSION_START_ROW = 3 if SESSION_MAXSCORE_ROW else 2
+
 BASIC_PACE    = 1
 QUESTION_PACE = 2
 ADMIN_PACE    = 3
@@ -138,6 +144,7 @@ FUTURE_DATE = 'future'
 
 TRUNCATE_DIGEST = 8
 
+PLUGIN_RE = re.compile(r"^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$")
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
 QFIELD_MOD_RE = re.compile(r"^(q_other|q_comments|q(\d+)_(comments|grade))$")
 
@@ -228,7 +235,7 @@ def startPreview(sessionName):
                 return 'Cache update error (%s); need to restart server' % Global.cacheUpdateError
             return 'Pending updates for session %s; retry preview after 10-20 seconds (reqid=%s)' % (sessionName, Global.httpRequestId)
     else:
-        sessionSheet = getSheet(sessionName, optional=True)
+        sessionSheet = getSheet(sessionName)
 
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if indexSheet:
@@ -236,6 +243,8 @@ def startPreview(sessionName):
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
+        if not indexSheet:
+            return 'Index sheet '+INDEX_SHEET+' not found!'
 
     Global.previewStatus = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
                               'indexSheetOrig': indexSheet.copy()}
@@ -298,12 +307,12 @@ def freezeCache(fill=False):
         # Fill cache
         sessionNames = []
         for sheetName in BACKUP_SHEETS:
-            sheet = getSheet(sheetName, optional=True)
+            sheet = getSheet(sheetName)
             if sheet and sheetName == INDEX_SHEET:
                 sessionNames = getColumns('id', sheet)
 
         for sheetName in sessionNames:
-            sessionSheet = getSheet(sheetName, optional=True)
+            sessionSheet = getSheet(sheetName)
     suspend_cache('freeze')
 
 
@@ -398,13 +407,22 @@ def backupSheet(name, dirpath, errorList, optional=False):
 
 
 def isReadOnly(sheetName):
-    return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET)) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
+    return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
 
 def getSheetCache(sheetName):
-    # Create cached sheet, creating it if need be (for Google Sheets compatibility)
-    return getSheet(sheetName, optional=True)
+    # Return cached sheet, if present (for Google Sheets compatibility)
+    return getSheet(sheetName)
 
-def getSheet(sheetName, optional=False, backup=False, display=False):
+
+def getKeyHeader(sheetName):
+    if sheetName.startswith('settings_') or sheetName.endswith('_log'):
+        return ''
+    comps = sheetName.split('-')
+    if len(comps) > 1 and comps[-1] in ('answers', 'correct', 'stats'):
+        return ''
+    return 'id'
+
+def getSheet(sheetName, require=False, backup=False, display=False):
     cached = sheetName in Sheet_cache
 
     if not display or not cached:
@@ -412,11 +430,11 @@ def getSheet(sheetName, optional=False, backup=False, display=False):
 
     if cached:
         return Sheet_cache[sheetName]
-    elif optional and sheetName in Miss_cache:
-        # Wait for minimum time before re-checking for optional sheets
+    elif not require and sheetName in Miss_cache:
+        # Wait for minimum time before re-checking for sheet
         if not backup and (sliauth.epoch_ms() - Miss_cache[sheetName]) < 1000*MISS_RETRY_SEC:
             return None
-        # Retry retrieving optional sheet
+        # Retry retrieving sheet
         del Miss_cache[sheetName]
 
     if Settings['lock_proxy_url'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
@@ -443,7 +461,7 @@ def getSheet(sheetName, optional=False, backup=False, display=False):
     retval = downloadSheet(sheetName)
 
     if retval['result'] != 'success':
-        if optional and retval['error'].startswith('Error:NOSHEET:'):
+        if not require and retval['error'].startswith('Error:NOSHEET:'):
             Miss_cache[sheetName] = sliauth.epoch_ms()
             return None
         else:
@@ -451,8 +469,8 @@ def getSheet(sheetName, optional=False, backup=False, display=False):
     rows = retval.get('value')
     if not rows:
         raise Exception("Empty sheet '%s'" % sheetName)
-    keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
-    Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=keyHeader)
+
+    Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=getKeyHeader(sheetName))
     return Sheet_cache[sheetName]
 
 def downloadSheet(sheetName, backup=False):
@@ -485,16 +503,16 @@ def downloadSheet(sheetName, backup=False):
 
     return retval
 
-def createSheet(sheetName, headers, rows=[]):
+def createSheet(sheetName, headers, overwrite=False, rows=[]):
     check_if_locked(sheetName)
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
-    if sheetName in Sheet_cache:
+
+    if sheetName in Sheet_cache and not overwrite:
         raise Exception("Cannote create sheet %s because it is already present in the cache" % sheetName)
 
-    keyHeader = '' if sheetName.startswith('settings_') or sheetName.endswith('_log') else 'id'
-    Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=keyHeader, modTime=sliauth.epoch_ms())
+    Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=getKeyHeader(sheetName), modTime=sliauth.epoch_ms())
     Sheet_cache[sheetName].modifiedSheet()
     return Sheet_cache[sheetName]
 
@@ -563,8 +581,8 @@ class Sheet(object):
         if not self.keyCol:
             return
         headers = self.xrows[0]
-        if Settings['total_column'] and Settings['total_column'] in headers:
-            totalCol = 1+headers.index(Settings['total_column'])
+        if TOTAL_COLUMN and TOTAL_COLUMN in headers:
+            totalCol = 1+headers.index(TOTAL_COLUMN)
             self.totalCols = [ totalCol ]
             for j, header in enumerate(headers[totalCol:]):
                 if header in ('q_scores', 'q_other') or QFIELD_RE.match(header):
@@ -746,6 +764,14 @@ class Sheet(object):
             rowCount = int(comps[1]) - rowMin + 1
             colMin = 1
             colCount = self.nCols
+
+        if not self.keyHeader:
+            # For unkeyed sheets, append blank rows as needed to create range
+            rowMax = rowMin+rowCount-1
+            if rowMax > len(self.xrows):
+                for rowNum in range(len(self.xrows)+1, rowMax+1):
+                    self.insertRowBefore(rowNum)
+
         self.checkRange(rowMin, colMin, rowCount, colCount)
         return Range(self, rowMin, colMin, rowCount, colCount)
 
@@ -1410,6 +1436,7 @@ def sheetAction(params, notrace=False):
     returnHeaders = None
     returnInfo = {'version': VERSION}
     returnMessages = []
+    completeActions = []
 
     try:
         sheetName = params.get('sheet','')
@@ -1495,8 +1522,13 @@ def sheetAction(params, notrace=False):
                 returnValues = getDiscussPosts(sheetName, params.get('slide', ''), paramId)
                 return {"result": "success", "value": returnValues, "headers": returnHeaders,
                         "info": returnInfo, "messages": '\n'.join(returnMessages)}
-            else:
+            elif performActions not in ('answer_stats', 'correct'):
                 raise Exception('Error:ACTION:Actions %s not supported by proxy' % performActions)
+            else:
+                if not adminUser:
+                    raise Exception("Error:ACTION:Must be admin user to perform action on sheet "+sheetName)
+                if protectedSheet or restrictedSheet or loggingSheet:
+                    raise Exception('Error:ACTION:Action not allowed for sheet '+sheetName)
 
         sessionEntries = None
         sessionAttributes = None
@@ -1519,7 +1551,7 @@ def sheetAction(params, notrace=False):
             raise Exception("Error::Must be admin/grader user to access sheet '"+sheetName+"'")
 
         rosterValues = []
-        rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+        rosterSheet = getSheet(ROSTER_SHEET)
         if rosterSheet and not adminUser:
             # Check user access
             if not paramId:
@@ -1531,7 +1563,12 @@ def sheetAction(params, notrace=False):
         returnInfo['timestamp'] = None
         processed = False
 
-        if params.get('delsheet'):
+        if performActions:
+            actionHandler(performActions, sheetName, True)
+            processed = True
+            returnValues = []
+
+        elif params.get('delsheet'):
             # Delete sheet (and session entry)
             processed = True
             returnValues = []
@@ -1539,7 +1576,7 @@ def sheetAction(params, notrace=False):
                 raise Exception("Error:DELSHEET:Only admin can delete sheet "+sheetName)
             if sheetName.endswith('_slidoc'):
                 raise Exception("Error:DELSHEET:Cannot delete special sheet "+sheetName)
-            indexSheet = getSheet(INDEX_SHEET, optional=True)
+            indexSheet = getSheet(INDEX_SHEET)
             if indexSheet:
                 # Delete session entry
                 delRowCol = lookupRowIndex(sheetName, indexSheet, 2)
@@ -1549,7 +1586,7 @@ def sheetAction(params, notrace=False):
             delSheet(sheetName)
                     
             for j in range(len(RELATED_SHEETS)):
-                if getSheet(sheetName+'-'+RELATED_SHEETS[j], optional=True):
+                if getSheet(sheetName+'-'+RELATED_SHEETS[j]):
                     delSheet(sheetName+'-'+RELATED_SHEETS[j])
 
             if Settings['gsheet_url'] and not Settings['dry_run']:
@@ -1567,18 +1604,18 @@ def sheetAction(params, notrace=False):
             returnValues = []
             if not adminUser:
                 raise Exception("Error:COPYSHEET:Only admin can copy sheet "+sheetName)
-            modSheet = getSheet(sheetName, optional=True)
+            modSheet = getSheet(sheetName)
             if not modSheet:
                 raise Exception("Error:COPYSHEET:Source sheet "+sheetName+" not found!")
 
             newName = params.get('copysheet')
-            indexSheet = getSheet(INDEX_SHEET, optional=True)
+            indexSheet = getSheet(INDEX_SHEET)
             if indexSheet:
                 newRowCol = lookupRowIndex(newName, indexSheet, 2)
                 if newRowCol:
                     raise Exception("Error:COPYSHEET:Destination session entry "+newName+" already exists!")
 
-            if newName in Sheet_cache or getSheet(newName, optional=True):
+            if newName in Sheet_cache or getSheet(newName):
                 raise Exception("Error:COPYSHEET:Destination sheet "+newName+" already exists!")
             if Settings['gsheet_url'] and not Settings['dry_run']:
                 user = ADMINUSER_ID
@@ -1595,7 +1632,7 @@ def sheetAction(params, notrace=False):
             # Update/access single sheet
             headers = json.loads(params.get('headers','')) if params.get('headers','') else None
 
-            modSheet = getSheet(sheetName, optional=True)
+            modSheet = getSheet(sheetName)
             if not modSheet:
                 if adminUser and headers is not None:
                     modSheet = createSheet(sheetName, headers)
@@ -1701,8 +1738,10 @@ def sheetAction(params, notrace=False):
                     columnIndex = indexColumns(modSheet)
 
             if updatingMaxScoreRow and computeTotalScore:
+                completeActions.append('answer_stats')
+                completeActions.append('correct')
                 if updateTotalScores(modSheet, sessionAttributes, questions, True) and not Settings['dry_run']:
-                    modSheet.requestActions('answer_stats,gradebook,correct')
+                    modSheet.requestActions('gradebook')
 
             userId = None
             displayName = None
@@ -1833,7 +1872,7 @@ def sheetAction(params, notrace=False):
                 returnMessages.append("Warning:SHARE_NO_ROWS:")
                 returnValues = []
             elif sessionAttributes and sessionAttributes['params']['features'].get('share_answers'):
-                answerSheet = getSheet(sheetName+'-answers', optional=True)
+                answerSheet = getSheet(sheetName+'-answers')
                 if not answerSheet:
                     raise Exception('Error::Sharing not possible without answer sheet '+sheetName+'-answers')
                 ansColumnHeaders = answerSheet.getSheetValues(1, 1, 1, answerSheet.getLastColumn())[0]
@@ -2426,7 +2465,7 @@ def sheetAction(params, notrace=False):
                     # Save updated row
                     userRange.setValues([rowValues])
 
-                    if userId == MAXSCORE_ID and not Settings['total_column']:
+                    if userId == MAXSCORE_ID and not TOTAL_COLUMN:
                         # Refresh sheet cache if max score row is updated (for re-computed totals)
                         modSheet.expire()
                         expireSheet(SCORES_SHEET)
@@ -2480,7 +2519,7 @@ def sheetAction(params, notrace=False):
                                         discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]])
 
                     elif sessionEntries and adminPaced and dueDate and discussableSession and params.get('submit'):
-                        discussSheet = getSheet(sheetName+'-discuss', optional=True)
+                        discussSheet = getSheet(sheetName+'-discuss')
                         if discussSheet:
                             discussRows = discussSheet.getLastRow()
                             discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1)
@@ -2679,11 +2718,14 @@ def sheetAction(params, notrace=False):
             # Getting all session rows or test user row (with creation); return related sheet names
             returnInfo['sheetsAvailable'] = []
             for j in range(len(RELATED_SHEETS)):
-                if getSheet(sheetName+'-'+RELATED_SHEETS[j], optional=True):
+                if getSheet(sheetName+'-'+RELATED_SHEETS[j]):
                     returnInfo['sheetsAvailable'].append(RELATED_SHEETS[j])
 
         if getRow and createRow and proxy_error_status():
             returnInfo['proxyError'] = 'Read-only mode; session modifications are disabled'
+
+        if completeActions:
+            actionHandler(','.join(completeActions), sheetName);
 
         # return json success results
         retObj = {"result": "success", "value": returnValues, "headers": returnHeaders,
@@ -2899,7 +2941,7 @@ def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayN
     rowVals[headers.index('source')] = source
     rowVals[headers.index('session_hidden')] = json.dumps(session)
 
-    rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+    rosterSheet = getSheet(ROSTER_SHEET)
     if rosterSheet:
         rosterValues = getRosterEntry(userId)
 
@@ -3163,7 +3205,7 @@ def updateTotalScores(modSheet, sessionAttributes, questions, force, startRow=0,
 def clearQuestionResponses(sessionName, questionNumber, userId=''):
     if Settings['debug']:
         print("DEBUG:clearResponse", sessionName, questionNumber, userId, file=sys.stderr)
-    sessionSheet = getSheet(sessionName, optional=True)
+    sessionSheet = getSheet(sessionName)
     if not sessionSheet:
         raise Exception('Session '+sessionName+' not found')
 
@@ -3214,19 +3256,21 @@ def clearQuestionResponses(sessionName, questionNumber, userId=''):
                 sessionRange.setValue(json.dumps(session))
 
     if clearedResponse:
-        # Update total score and answer stats
+        # Update total score
         sessionEntries = lookupValues(sessionName, ['questions', 'attributes'], INDEX_SHEET)
         sessionAttributes = json.loads(sessionEntries['attributes'])
         questions = json.loads(sessionEntries['questions'])
         updateTotalScores(sessionSheet, sessionAttributes, questions, True, startRow, nRows)
-        sessionSheet.requestActions('answer_stats')
+        return True
+    else:
+        return False
 
 
 def deleteSlide(sessionName, slideNumber):
     # Return deleted question number or 0
     if Settings['debug']:
         print("DEBUG:deleteSlide", sessionName, slideNumber, file=sys.stderr)
-    sessionSheet = getSheet(sessionName, optional=True)
+    sessionSheet = getSheet(sessionName)
     if not sessionSheet:
         raise Exception('Session '+sessionName+' not found')
 
@@ -3274,7 +3318,9 @@ def deleteSlide(sessionName, slideNumber):
 
     if delete_qno:
         # Deleting question slide; Clear any responses
-        clearQuestionResponses(sessionName, delete_qno)
+        if clearQuestionResponses(sessionName, delete_qno):
+            # Update answer stats
+            sessionSheet.requestActions('answer_stats')
 
     return delete_qno
 
@@ -3284,7 +3330,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     # If source == "prefill", only row creation occurs
     if Settings['debug']:
         print("DEBUG:importUserAnswers", userId, displayName, sessionName, len(answers), submitDate, file=sys.stderr)
-    if not getSheet(sessionName, optional=True):
+    if not getSheet(sessionName):
         raise Exception('Session '+sessionName+' not found')
     sessionEntries = lookupValues(sessionName, ['dueDate', 'paceLevel', 'adminPaced', 'attributes'], INDEX_SHEET)
     sessionAttributes = json.loads(sessionEntries['attributes'])
@@ -3411,10 +3457,10 @@ def createRoster(headers, rows):
         
     rosterRows.sort()
     rosterRows.insert(0, test_user_row)
-    rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+    rosterSheet = getSheet(ROSTER_SHEET)
     if rosterSheet:
         raise Exception('Roster sheet already present; delete it before importing')
-    return createSheet(ROSTER_SHEET, headers, rosterRows)
+    return createSheet(ROSTER_SHEET, headers, rows=rosterRows)
         
 def getRowMap(sheetName, colName, regular=False, startRow=2):
     # Return dict of id->value in sheet (if regular, only for names defined and not starting with #)
@@ -3439,7 +3485,7 @@ def getRowMap(sheetName, colName, regular=False, startRow=2):
     return rowMap
 
 def lookupRoster(field, userId=None):
-    rosterSheet = getSheet(ROSTER_SHEET, optional=True)
+    rosterSheet = getSheet(ROSTER_SHEET)
     if not rosterSheet:
         return None
 
@@ -3466,7 +3512,7 @@ def lookupRoster(field, userId=None):
 
 AGGREGATE_COL_RE = re.compile(r'\b(_\w+)_(avg|normavg|sum)(_(\d+))?$', re.IGNORECASE)
 def lookupGrades(userId):
-    scoreSheet = getSheet(SCORES_SHEET, optional=True)
+    scoreSheet = getSheet(SCORES_SHEET)
     if not scoreSheet:
         return None
 
@@ -3505,7 +3551,7 @@ def lookupGrades(userId):
     return grades
 
 def lookupSessions(colNames):
-    indexSheet = getSheet(INDEX_SHEET, optional=True)
+    indexSheet = getSheet(INDEX_SHEET)
     if not indexSheet:
         return []
 
@@ -4077,3 +4123,420 @@ def tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAnswers)
                 'questionsCorrect': questionsCorrect, 'weightedCorrect': weightedCorrect,
                 'questionsSkipped': questionsSkipped, 'correctSequence': correctSequence, 'skipToSlide': skipToSlide,
                 'correctSequence': correctSequence, 'lastSkipRef': lastSkipRef, 'qscores': qscores}
+
+
+def getSessionNames():
+    indexSheet = getSheet(INDEX_SHEET)
+    if not indexSheet:
+        raise Exception('Session index sheet not found: '+INDEX_SHEET)
+
+    return getColumns('id', indexSheet)
+
+def actionHandler(actions, sheetName='', create=False):
+    sessions = [sheetName]  if sheetName else getSessionNames()
+    actionList = actions.split(',')
+    refreshSheets = []
+    for k in range(0,len(actionList)):
+        action = actionList[k]
+        if action == 'answer_stats':
+            for j in range(0,len(sessions)):
+                updateAnswers(sessions[j], create)
+                updateStats(sessions[j], create)
+                refreshSheets.append(sessions[j]+'-answers')
+                refreshSheets.append(sessions[j]+'-stats')
+        elif action == 'correct':
+            for j in range(0,len(sessions)):
+                updateCorrect(sessions[j], create)
+                refreshSheets.append(sessions[j]+'-correct')
+        elif action == 'gradebook':
+            raise Exception('Error:ACTION:gradebook action not implemented in proxy')
+        else:
+            raise Exception('Error:ACTION:Invalid action '+action+' for session(s) '+sessions)
+    return refreshSheets
+
+def getNormalUserRow(sessionSheet, sessionStartRow):
+    # Returns starting row number for rows with non-special users (i.get('e')., names not starting with # and id's not starting with _)
+    normalRow = sessionStartRow
+
+    sessionColIndex = indexColumns(sessionSheet)
+    nids = sessionSheet.getLastRow()-sessionStartRow+1
+    if nids:
+        temIds = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['id'], nids, 1)
+        temNames = sessionSheet.getSheetValues(sessionStartRow, sessionColIndex['name'], nids, 1)
+        for j in range(0,nids):
+            # Skip any initial row(s) in the roster with test user or ID/names starting with underscore/hash
+            # when computing averages and other stats
+            if temIds[j][0] == TESTUSER_ID or temIds[j][0].startswith('_') or temNames[j][0].startswith('#'):
+                normalRow += 1
+            else:
+                break
+    return normalRow
+
+def updateColumnAvg(sheet, colNum, avgRow, startRow, countBlanks=False):
+    avgCell = sheet.getRange(avgRow, colNum, 1, 1)
+    if ACTION_FORMULAS:
+        avgFormula = '=AVERAGE('+colIndexToChar(colNum)+'$'+startRow+':'+colIndexToChar(colNum)+')'
+        avgCell.setValue(avgFormula)
+        return
+    nRows = sheet.getLastRow()-startRow+1
+    if not nRows:
+        return
+    colVals = sheet.getSheetValues(startRow, colNum, nRows, 1)
+    accum = 0.0
+    count = nRows
+    for j in range(0,nRows):
+        if isNumber(colVals[j][0]):
+            accum += colVals[j][0]
+        elif not countBlanks:
+            count -= 1
+    if count:
+        avgCell.setValue(accum/count)
+    else:
+        avgCell.setValue('')
+
+def updateAnswers(sessionName, create):
+    try:
+        sessionSheet = getSheetCache(sessionName)
+        if not sessionSheet:
+            raise Exception('Sheet not found: '+sessionName)
+        if not sessionSheet.getLastColumn():
+            raise Exception('No columns in sheet: '+sessionName)
+
+        answerSheetName = sessionName+'-answers'
+        answerSheet = getSheet(answerSheetName)
+        if not answerSheet and not create:
+            return ''
+
+        sessionColIndex = indexColumns(sessionSheet)
+        sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0]
+
+        sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET)
+        sessionAttributes = json.loads(sessionEntries.get('attributes'))
+        questions = json.loads(sessionEntries.get('questions'))
+        qtypes = []
+        answers = []
+        for j in range(0,len(questions)):
+            qtypes.append(questions[j].get('qtype', ''))
+            answers.append(questions[j].get('correct'))
+
+        # Copy columns from session sheet
+        sessionCopyCols = ['name', 'id', 'Timestamp']
+        answerHeaders = sessionCopyCols + []
+        baseCols = len(answerHeaders)
+
+        respCols = []
+        extraCols = ['expect', 'score', 'plugin', 'hints']
+        for j in range(0,len(qtypes)):
+            qprefix = 'q'+str(j+1)
+            pluginMatch = PLUGIN_RE.match(answers[j] or '')
+            pluginAction = pluginMatch[3]  if pluginMatch  else ''
+            respColName = qprefix
+            if answers[j] and pluginAction != 'expect':
+                if qtypes[j] == 'choice':
+                    respColName += '_'+answers[j]
+                elif qtypes[j] == 'number':
+                    respColName += '_'+answers[j].replace(' +/- ','_pm_').replace('+/-','_pm_').replace('%','pct').replace(' ','_')
+            answerHeaders.append(respColName)
+            respCols.append(len(answerHeaders))
+            if pluginAction == 'expect':
+                answerHeaders.append(qprefix+'_expect')
+            if answers[j] or pluginAction == 'response':
+                answerHeaders.append(qprefix+'_score')
+            if pluginAction == 'response':
+                answerHeaders.append(qprefix+'_plugin')
+            if sessionAttributes.get('hints') and sessionAttributes.get('hints')[qprefix]:
+                answerHeaders.append(qprefix+'_hints')
+
+        # Session sheet columns
+        sessionStartRow = SESSION_START_ROW
+
+        # Answers sheet columns
+        answerAvgRow = 2
+        answerStartRow = 3
+
+        # Session answers headers
+
+        # New answers sheet
+        answerSheet = createSheet(answerSheetName, answerHeaders, True)
+        ansColIndex = indexColumns(answerSheet)
+
+        answerSheet.getRange(str(answerAvgRow)+':'+str(answerAvgRow)).setFontStyle('italic')
+        answerSheet.getRange(answerAvgRow, ansColIndex['id'], 1, 1).setValues([[AVERAGE_ID]])
+        answerSheet.getRange(answerAvgRow, ansColIndex['Timestamp'], 1, 1).setValues([[createDate()]])
+
+        avgStartRow = answerStartRow + getNormalUserRow(sessionSheet, sessionStartRow) - sessionStartRow
+
+        # Number of ids
+        nids = sessionSheet.getLastRow()-sessionStartRow+1
+
+        # Copy session values
+        for j in range(0,len(sessionCopyCols)):
+            colHeader = sessionCopyCols[j]
+            sessionCol = sessionColIndex[colHeader]
+            ansCol = ansColIndex[colHeader]
+            answerSheet.getRange(answerStartRow, ansCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1))
+
+        # Get hidden session values
+        hiddenSessionCol = sessionColIndex['session_hidden']
+        hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1)
+        qRows = []
+
+        for j in range(0,nids):
+            rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, len(sessionColHeaders))[0]
+            savedSession = unpackSession(sessionColHeaders, rowValues)
+            qAttempted = savedSession.get('questionsAttempted')
+            qHints = savedSession.get('hintsUsed')
+            scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
+
+            rowVals = []
+            for k in range(0,len(answerHeaders)):
+                rowVals.append('')
+
+            for k in range(0,len(questions)):
+                qno = k+1
+                if qAttempted.get(qno):
+                    qprefix = 'q'+str(qno)
+                    # Copy responses
+                    rowVals[respCols[qno-1]-1] = (qAttempted[qno].get('response') or '')
+                    if qAttempted[qno].get('explain'):
+                        rowVals[respCols[qno-1]-1] += '\nEXPLANATION: ' + qAttempted[qno].get('explain')
+                    # Copy extras
+                    for m in range(0,len(extraCols)):
+                        attr = extraCols[m]
+                        qcolName = qprefix+'_'+attr
+                        if qcolName in ansColIndex:
+                            if attr == 'hints':
+                                rowVals[ansColIndex[qcolName]-1] = qHints[qno] or ''
+                            elif attr == 'score':
+                                rowVals[ansColIndex[qcolName]-1] = scores.get('qscores')[qno-1] or 0
+                            elif attr in qAttempted[qno]:
+                                rowVals[ansColIndex[qcolName]-1] = '' if (qAttempted[qno][attr]==None)  else qAttempted[qno][attr]
+            qRows.append(rowVals[baseCols:])
+        answerSheet.getRange(answerStartRow, baseCols+1, nids, len(answerHeaders)-baseCols).setValues(qRows)
+
+        for ansCol in range(baseCols+1,len(answerHeaders)+1):
+            if answerHeaders[ansCol-1][-6:] == '_score':
+                answerSheet.getRange(answerAvgRow, ansCol, 1, 1).setNumberFormat('0.###')
+                updateColumnAvg(answerSheet, ansCol, answerAvgRow, avgStartRow)
+    finally:
+        pass
+    return answerSheetName
+
+
+def updateCorrect(sessionName, create):
+    try:
+        sessionSheet = getSheetCache(sessionName)
+        if not sessionSheet:
+            raise Exception('Sheet not found: '+sessionName)
+        if not sessionSheet.getLastColumn():
+            raise Exception('No columns in sheet: '+sessionName)
+
+        correctSheetName = sessionName+'-correct'
+        correctSheet = getSheet(correctSheetName)
+        if not correctSheet and not create:
+            return ''
+
+        sessionColIndex = indexColumns(sessionSheet)
+        sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0]
+
+        sessionEntries = lookupValues(sessionName, ['attributes', 'questions'], INDEX_SHEET)
+        sessionAttributes = json.loads(sessionEntries.get('attributes'))
+        questions = json.loads(sessionEntries.get('questions'))
+        qtypes = []
+        answers = []
+        for j in range(0,len(questions)):
+            qtypes.append(questions[j].get('qtype', ''))
+            answers.append(questions[j].get('correct'))
+
+        # Copy columns from session sheet
+        sessionCopyCols = ['name', 'id', 'Timestamp']
+        correctHeaders = sessionCopyCols + ['randomSeed']
+        baseCols = len(correctHeaders)
+
+        for j in range(0,len(questions)):
+            correctHeaders.append('q'+str(j+1))
+
+        # Session sheet columns
+        sessionStartRow = SESSION_START_ROW
+
+        # Correct sheet columns
+        correctStartRow = 3
+
+        # New correct sheet
+        correctSheet = createSheet(correctSheetName, correctHeaders, True)
+        corrColIndex = indexColumns(correctSheet)
+
+        correctSheet.getRange('2:2').setFontStyle('italic')
+        correctSheet.getRange(2, corrColIndex['id'], 1, 1).setValues([[AVERAGE_ID]])
+        correctSheet.getRange(2, corrColIndex['Timestamp'], 1, 1).setValues([[createDate()]])
+
+        # Number of ids
+        nids = sessionSheet.getLastRow()-sessionStartRow+1
+
+        # Copy session values
+        for j in range(0,len(sessionCopyCols)):
+            colHeader = sessionCopyCols[j]
+            sessionCol = sessionColIndex[colHeader]
+            corrCol = corrColIndex[colHeader]
+            correctSheet.getRange(correctStartRow, corrCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1))
+
+        # Get hidden session values
+        hiddenSessionCol = sessionColIndex['session_hidden']
+        hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1)
+        qRows = []
+        randomSeeds = []
+
+        for j in range(0,nids):
+            rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, len(sessionColHeaders))[0]
+            savedSession = unpackSession(sessionColHeaders, rowValues)
+            qAttempted = savedSession.get('questionsAttempted')
+            qShuffle = savedSession.get('questionShuffle')
+            randomSeeds.append([savedSession.get('randomSeed')])
+
+            rowVals = []
+
+            for k in range(0,len(questions)):
+                qno = k+1
+                correctAns = answers[k]
+                if qno in qShuffle and correctAns:
+                    if correctAns.upper() in qShuffle[qno]:
+                        correctAns = chr(ord('A') + qShuffle[qno].index(correctAns.upper()) - 1)
+                    else:
+                        correctAns = 'X'
+                elif qAttempted.get('expect'):
+                    correctAns = qAttempted.get('expect')
+                elif qAttempted.get('pluginResp') and 'correctAnswer' in qAttempted.get('pluginResp'):
+                    correctAns = qAttempted.get('pluginResp').get('correctAnswer')
+                rowVals.append(correctAns)
+            qRows.append(rowVals)
+
+        correctSheet.getRange(correctStartRow, baseCols+1, nids, len(questions)).setValues(qRows)
+        correctSheet.getRange(correctStartRow, corrColIndex['randomSeed'], nids, 1).setValues(randomSeeds)
+    finally:
+        pass
+    return correctSheetName
+
+def updateStats(sessionName, create):
+    try:
+        sessionSheet = getSheetCache(sessionName)
+        if not sessionSheet:
+            raise Exception('Sheet not found '+sessionName)
+        if not sessionSheet.getLastColumn():
+            raise Exception('No columns in sheet '+sessionName)
+
+        statSheetName = sessionName+'-stats'
+        statSheet = getSheet(statSheetName)
+        if not statSheet and not create:
+            return ''
+
+        sessionColIndex = indexColumns(sessionSheet)
+        sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0]
+
+        # Session sheet columns
+        sessionStartRow = SESSION_START_ROW
+        nids = sessionSheet.getLastRow()-sessionStartRow+1
+
+        sessionEntries = lookupValues(sessionName, ['attributes', 'questions', 'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts'], INDEX_SHEET)
+        sessionAttributes = json.loads(sessionEntries.get('attributes'))
+        questions = json.loads(sessionEntries.get('questions'))
+        questionConcepts = json.loads(sessionEntries.get('questionConcepts'))
+        p_concepts = sessionEntries.get('primary_qconcepts').split('; ')  if sessionEntries.get('primary_qconcepts')  else []
+        s_concepts = sessionEntries.get('secondary_qconcepts').split('; ')  if sessionEntries.get('secondary_qconcepts')  else []
+        allQuestionConcepts = [p_concepts, s_concepts]
+
+        # Session stats headers
+        sessionCopyCols = ['name', 'id', 'Timestamp', 'lateToken', 'lastSlide']
+        statExtraCols = ['weightedCorrect', 'correct', 'count', 'skipped']
+
+        statHeaders = sessionCopyCols + statExtraCols
+        for j in range(0,len(p_concepts)):
+            statHeaders.append('p:'+p_concepts[j])
+        for j in range(0,len(s_concepts)):
+            statHeaders.append('s:'+s_concepts[j])
+        nconcepts = len(p_concepts) + len(s_concepts)
+
+        # Stats sheet columns
+        statAvgRow = 2
+        statStartRow = 3# Leave blank row for formulas
+        statQuestionCol = len(sessionCopyCols)+1
+        nqstats = len(statExtraCols)
+        statConceptsCol = statQuestionCol + nqstats
+
+        avgStartRow = statStartRow + getNormalUserRow(sessionSheet, sessionStartRow) - sessionStartRow
+
+        # New stat sheet
+        statSheet = createSheet(statSheetName, statHeaders, True)
+
+        statSheet.getRange(statAvgRow, len(sessionCopyCols)+1, 1, len(statHeaders)-len(sessionCopyCols)).setNumberFormat('0.###')
+
+        statColIndex = indexColumns(statSheet)
+        statSheet.getRange(statAvgRow, statColIndex['id'], 1, 1).setValues([[AVERAGE_ID]])
+        statSheet.getRange(statAvgRow, statColIndex['Timestamp'], 1, 1).setValues([[createDate()]])
+        statSheet.getRange(str(statAvgRow)+':'+str(statAvgRow)).setFontStyle('italic')
+
+        for j in range(0,len(sessionCopyCols)):
+            colHeader = sessionCopyCols[j]
+            sessionCol = sessionColIndex[colHeader]
+            statCol = statColIndex[colHeader]
+            statSheet.getRange(statStartRow, statCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1))
+
+        hiddenSessionCol = sessionColIndex['session_hidden']
+        hiddenVals = sessionSheet.getSheetValues(sessionStartRow, hiddenSessionCol, nids, 1)
+        questionTallies = []
+        conceptTallies = []
+        nullConcepts = []
+        for j in range(0,nconcepts):
+            nullConcepts.append('')
+
+        for j in range(0,nids):
+            rowValues = sessionSheet.getSheetValues(j+sessionStartRow, 1, 1, len(sessionColHeaders))[0]
+            savedSession = unpackSession(sessionColHeaders, rowValues)
+            scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
+
+            questionTallies.append([scores.get('weightedCorrect'), scores.get('questionsCorrect'), scores.get('questionsCount'), scores.get('questionsSkipped')])
+
+            qscores = scores.get('qscores')
+            missedConcepts = trackConcepts(scores.get('qscores'), questionConcepts, allQuestionConcepts)
+            if len(missedConcepts[0]) or len(missedConcepts[1]):
+                missedFraction = []
+                for m in range(0,len(missedConcepts)):
+                    for k in range(0,len(missedConcepts[m])):
+                        missedFraction.append(missedConcepts[m][k][0]/(1.0*max(1,missedConcepts[m][k][1])))
+                conceptTallies.append(missedFraction)
+            else:
+                conceptTallies.append(nullConcepts)
+        statSheet.getRange(statStartRow, statQuestionCol, nids, nqstats).setValues(questionTallies)
+        if nconcepts:
+            statSheet.getRange(statStartRow, statConceptsCol, nids, nconcepts).setValues(conceptTallies)
+
+        for avgCol in range(len(sessionCopyCols)+1,len(statHeaders)+1):
+            updateColumnAvg(statSheet, avgCol, statAvgRow, avgStartRow)
+    finally:
+        pass
+
+    return statSheetName
+
+def trackConcepts(qscores, questionConcepts, allQuestionConcepts):
+    # Track missed concepts:  missedConcepts = [ [ [missed,total], [missed,total], ...], [...] ]
+    missedConcepts = [ [], [] ]
+    if len(allQuestionConcepts) != 2:
+        return missedConcepts
+    for m in range(0,2):
+        for k in range(0,len(allQuestionConcepts[m])):
+            missedConcepts[m].append([0,0])
+
+    for qnumber in range(1,len(qscores)+1):
+        qConcepts = questionConcepts[qnumber-1]
+        if qscores[qnumber-1] == None or not len(qConcepts) or (not len(qConcepts[0]) and not len(qConcepts[1])):
+            continue
+        missed = qscores[qnumber-1] < 1
+
+        for m in range(0,2):
+            # Primary/secondary concept
+            for j in range(0,len(qConcepts[m])):
+                for k in range(0, len(allQuestionConcepts[m])):
+                    if qConcepts[m][j] == allQuestionConcepts[m][k]:
+                        if missed:
+                            missedConcepts[m][k][0] += 1# Missed count
+                        missedConcepts[m][k][1] += 1# Attempted count
+    return missedConcepts
