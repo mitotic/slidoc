@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5m'
+VERSION = '0.97.5n'
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -902,8 +902,8 @@ class Sheet(object):
                 colSet, colList, curUpdate = None, None, None
                 continue
 
-            if row_limit and (len(insertRows) >= row_limit or updateElemCount >= 10*row_limit):
-                # Update request limit reached, with at least one update left; delay any actions
+            if self.keyCol and row_limit and (len(insertRows) >= row_limit or updateElemCount >= 10*row_limit):
+                # Update request limit reached, with at least one update left; delay any actions (for keyed sheets only)
                 actions = ''
                 break
 
@@ -934,13 +934,17 @@ class Sheet(object):
             else:
                 # Full/insertion updates
                 colSet, colList, curUpdate = None, None, None
-                if inserted:
-                    # Insert row
+                if self.keyCol and inserted:
+                    # Insert keyed row
                     insertNames.append( [row[nameCol-1] if nameCol else '', key] )
                     insertRows.append( row )
+                elif not self.keyCol and updateSel and updateSel[-1][0][-1] == key-1:
+                    # Consecutive non-keyed row
+                    updateSel[-1][0].append(key)
+                    updateSel[-1][2].append(row)
                 else:
                     # Non-partial or non-keyed; update full rows
-                    updateSel.append([key], None, [row])
+                    updateSel.append( [[key], None, [row]] )
 
         if not insertRows and not updateSel and not actions and not self.modifiedHeaders:
             # No updates
@@ -949,7 +953,7 @@ class Sheet(object):
         # Send updateColList if non-null and non-full row
         updateColList = sorted(list(updateColSet)) if (updateColSet and len(updateColSet) < self.nCols) else None
 
-        return [updateKeys, actions, self.modifiedHeaders, headers, allKeys, insertNames, updateColList, insertRows, updateSel]
+        return [updateKeys, actions, self.modifiedHeaders, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
                     
     def complete_update(self, updateKeys, actions, modifiedHeaders):
         # Update sheet status after remote update has completed
@@ -1218,7 +1222,7 @@ def update_remote_sheets_aux(force=False, synchronous=False):
                 del Sheet_cache[sheetName]
             continue
 
-        # sheet_name, actions, modified_headers, headers_list, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
+        # sheet_name, actions, modified_headers, headers_list, last_row, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
         sheetUpdateInfo[sheetName] = updates[0:3]
         modVals = [sheetName] + updates[1:]
 

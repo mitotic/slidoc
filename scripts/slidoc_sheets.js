@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5m';
+var VERSION = '0.97.5n';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1971,13 +1971,14 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var proxyActions      = data[isheet][1];
 	var modifiedHeaders   = data[isheet][2];
 	var updateHeaders     = data[isheet][3];
-	var updateKeys        = data[isheet][4];
-	var updateInsertNames = data[isheet][5];
-	var updateCols        = data[isheet][6];
-	var updateInsertRows  = data[isheet][7];
-	var updateRows        = data[isheet][8];
+	var updateLastRow     = data[isheet][4];
+	var updateAllKeys     = data[isheet][5];
+	var updateInsertNames = data[isheet][6];
+	var updateCols        = data[isheet][7];
+	var updateInsertRows  = data[isheet][8];
+	var updateRows        = data[isheet][9];
 
-	var debugMsg = 'Debug::updateSheet, actions, modHeaders, headers, updateKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+updateKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
+	var debugMsg = 'Debug::updateSheet, actions, modHeaders, headers, updateAllKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+updateAllKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
 	trackCall(1, debugMsg);
 	//returnMessages.push(debugMsg);
 
@@ -2017,21 +2018,38 @@ function handleProxyUpdates(data, create, returnMessages) {
 	    for (var m=0; m<updateHeaders.length; m++)
 		allColNums.push(m+1);
 
-	    if (updateKeys === null) {
+	    if (updateAllKeys === null) {
 		// Update non-keyed sheet
+
+		if (updateInsertNames.length)
+		    throw('Error: Update cannot insert rows for non-keyed sheet '+updateSheetName);
+
+		var lastRowNum = updateSheet.getLastRow();
+
+		if (lastRowNum > updateLastRow) {
+		    // Delete excess rows
+		    updateSheet.deleteRows(updateLastRow+1, lastRowNum-updateLastRow);
+		    lastRowNum = updateLastRow;
+
+		} else if (lastRowNum < updateLastRow) {
+		    // Insert extra rows
+		    updateSheet.insertRowsAfter(lastRowNum, updateLastRow-lastRowNum);
+		    lastRowNum = updateLastRow;
+		}
+
 		for (var krow=0; krow<updateRows.length; krow++) {
 		    var rowNums = updateRows[krow][0];
 		    var rowCols = updateRows[krow][1];
-		    var rowSel = updateRows[krow][2];
+		    var rowSel  = updateRows[krow][2];
 
 		    var nUpdateCols = updateHeaders.length;
 		    var nUpdateRows = rowSel.length;
 
 		    if (rowCols)
-			throw('Error: Non-keyed sheet update must include all columns');
+			throw('Error::Update must include all columns for non-keyed sheet '+updateSheetName);
 
 		    if (rowNums.length != nUpdateRows)
-			throw('Error:PROXY_UPDATE_NUMS:No. of ids '+rowNums.length+' differs from no. of rows '+nUpdateRows);
+			throw('Error:PROXY_UPDATE_NUMS:No. of ids '+rowNums.length+' differs from no. of rows '+nUpdateRows+' for sheet '+updateSheetName);
 
 		    // Parse time strings in update values
 		    for (var mcol=0; mcol<nUpdateCols; mcol++) {
@@ -2046,11 +2064,6 @@ function handleProxyUpdates(data, create, returnMessages) {
 			}
 		    }
 		    updateSheet.getRange(rowNums[0], 1, nUpdateRows, nUpdateCols).setValues(rowSel);
-		}
-		if (updateInsertNames.length) {
-		    var lastRowNum = updateSheet.getLastRow();
-		    updateSheet.insertRowsAfter(lastRowNum, updateInsertNames.length);
-		    updateSheet.getRange(lastRowNum+1, 1, updateInsertNames.length, updateInsertRows[0].length).setValues(updateInsertRows);
 		}
 
 	    } else {
@@ -2071,8 +2084,8 @@ function handleProxyUpdates(data, create, returnMessages) {
 		var deletedRows = 0;
 		var insertedRows = 0;
 		var updateKeysObj = {};
-		for (var k=0; k < updateKeys.length; k++)
-		    updateKeysObj[updateKeys[k]] = k+1;
+		for (var k=0; k < updateAllKeys.length; k++)
+		    updateKeysObj[updateAllKeys[k]] = k+1;
 
 		var headerOffset = 1;
 		var idValues = updateSheet.getSheetValues(1+headerOffset, idCol, lastRowNum-headerOffset, 1);
@@ -2192,18 +2205,18 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
 		}
 
-		trackCall(2, updateSheetName+':ids ['+updateKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
+		trackCall(2, updateSheetName+':ids ['+updateAllKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
 
-		if (updateKeys.length !=  idValues.length)
-		    throw('Error:PROXY_UPDATE_MISMATCH:Mismatched id count '+updateKeys.length+' vs. '+idValues.length+' in sheet '+updateSheetName);
+		if (updateAllKeys.length !=  idValues.length)
+		    throw('Error:PROXY_UPDATE_MISMATCH:Mismatched id count '+updateAllKeys.length+' vs. '+idValues.length+' in sheet '+updateSheetName);
 
 		// Check that row ids match and names are in order
 		var modRowIndex = {};
 		for (var mrow=0; mrow<idValues.length; mrow++) {
 		    modRowIndex[idValues[mrow][0]] = mrow + 1 + updateStickyRows;
 
-		    if (updateKeys[mrow] != idValues[mrow][0]) {
-			throw('Error:PROXY_UPDATE_MISMATCH:Mismatched row ids '+updateKeys[mrow]+' vs. '+idValues[mrow][0]+' in row '+(mrow+updateStickyRows)+' sheet '+updateSheetName);
+		    if (updateAllKeys[mrow] != idValues[mrow][0]) {
+			throw('Error:PROXY_UPDATE_MISMATCH:Mismatched row ids '+updateAllKeys[mrow]+' vs. '+idValues[mrow][0]+' in row '+(mrow+updateStickyRows)+' sheet '+updateSheetName);
 		    }
 
 		    if ((deletedRows || insertedRows) && mrow && (nameValues[mrow-1][0] > nameValues[mrow][0]  || (nameValues[mrow-1][0] == nameValues[mrow][0] && idValues[mrow-1][0] > idValues[mrow][0])))

@@ -3338,7 +3338,7 @@ Slidoc.sessionActions = function(actions, sessionName) {
 	var sheetName = '';
     else
 	var sheetName = sessionName || Sliobj.sessionName;
-    if (!window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'? (may take a minute or longer)'))
+    if (!window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'? (may take some time)'))
 	return;
     var opts = {sheet: sheetName}
     Sliobj.indexSheet.actions(actions, opts, sheetActionsCallback.bind(null, actions, sheetName));
