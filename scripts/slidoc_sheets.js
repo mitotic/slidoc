@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.5n';
+var VERSION = '0.97.5p';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -2024,17 +2024,13 @@ function handleProxyUpdates(data, create, returnMessages) {
 		if (updateInsertNames.length)
 		    throw('Error: Update cannot insert rows for non-keyed sheet '+updateSheetName);
 
-		var lastRowNum = updateSheet.getLastRow();
-
-		if (lastRowNum > updateLastRow) {
+		if (updateSheet.getLastRow() > updateLastRow) {
 		    // Delete excess rows
-		    updateSheet.deleteRows(updateLastRow+1, lastRowNum-updateLastRow);
-		    lastRowNum = updateLastRow;
+		    updateSheet.deleteRows(updateLastRow+1, updateSheet.getLastRow()-updateLastRow);
 
-		} else if (lastRowNum < updateLastRow) {
+		} else if (updateLastRow > updateSheet.getMaxRows()) {
 		    // Insert extra rows
-		    updateSheet.insertRowsAfter(lastRowNum, updateLastRow-lastRowNum);
-		    lastRowNum = updateLastRow;
+		    updateSheet.insertRowsAfter(updateSheet.getMaxRows(), updateLastRow-updateSheet.getMaxRows());
 		}
 
 		for (var krow=0; krow<updateRows.length; krow++) {
@@ -2192,7 +2188,9 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var afterRow = idValues.length+insertedRows+updateStickyRows;
 			var insertCount = updateInsertNames.length-jinsert;
 			insertedRows += insertCount;
-			updateSheet.insertRowsAfter(afterRow, insertCount);
+			var temInsertCount = afterRow+insertCount - updateSheet.getMaxRows();
+			if (temInsertCount > 0)
+			    updateSheet.insertRowsAfter(afterRow, temInsertCount);
 			updateSheet.getRange(afterRow+1, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
 			trackCall(1, updateSheetName+':afterRow '+afterRow+' '+insertCount);
 		    }
@@ -2769,15 +2767,15 @@ function createSheet(sheetName, headers, overwrite) {
 
     if (!sheet) {
 	sheet = doc.insertSheet(sheetName);
+	if (sheet.getMaxRows() > 50)
+	    sheet.deleteRows(51, sheet.getMaxRows()-50);
     } else if (overwrite) {
 	sheet.clear();
     } else {
 	throw('Cannot overwrite sheet '+sheetName);
     }
 
-    var headerRange = sheet.getRange(1, 1, 1, headers.length);
-    headerRange.setValues([headers]);
-    headerRange.setWrap(true);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange('1:1').setFontWeight('bold');
 
     for (var j=0; j<headers.length; j++) {
@@ -3522,6 +3520,7 @@ function updateStats(sessionName, create) {
 
 	// New stat sheet
 	statSheet = createSheet(statSheetName, statHeaders, true);
+	statSheet.getRange(1, 1, 1, statHeaders.length).setWrap(true);
 
 	statSheet.getRange(statAvgRow, sessionCopyCols.length+1, 1, statHeaders.length-sessionCopyCols.length).setNumberFormat('0.###');
 
