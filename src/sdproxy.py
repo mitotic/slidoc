@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.5p'
+VERSION = '0.97.6'
 
 UPDATE_PARTIAL_ROWS = True
 

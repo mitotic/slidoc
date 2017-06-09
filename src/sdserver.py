@@ -4542,9 +4542,9 @@ def main():
         importlib.import_module('plugins.'+pluginName)
 
     print >> sys.stderr, ''
-    print >> sys.stderr, 'sdserver: Starting **********************************************'
+    print >> sys.stderr, 'sdserver: Version %s **********************************************' % sdproxy.VERSION
     if options.start_delay:
-        print >> sys.stderr, 'Start DELAY = %s sec ...' % options.start_delay
+        print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
         time.sleep(options.start_delay)
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_KEY', Options['server_key']
