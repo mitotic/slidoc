@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.6';
+var VERSION = '0.97.6c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -9,7 +9,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
                          ['site_name', '', 'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
 			 ['site_label', 'Site name', 'Site label, e.g., Calculus 101'],
 			 ['site_title', 'Site description', 'Descriptive site title'],
-			 ['site_restricted', '', 'Restrict site access to admins only'],
+			 ['site_access', '', "'' OR 'adminonly' OR 'adminguest' OR 'readonly'"],
                          ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
 			 [],
 			 ['admin_users', '', 'User IDs or email addresses with admin access'],
@@ -473,8 +473,6 @@ function sheetAction(params) {
 	var sheetName = params.sheet || '';
 	returnInfo['sheet'] = sheetName;
 
-	var freezeDate = createDate(Settings['freeze_date']) || null;
-
         var origUser = '';
         var adminUser = '';
 	var readOnlyAccess = false;
@@ -561,6 +559,9 @@ function sheetAction(params) {
 
 	var curDate = new Date();
 	var curTime = curDate.getTime();
+
+	var freezeDate = createDate(Settings['freeze_date']) || null;
+	var frozenSessions = Settings['freeze_date'] == 'readonly' || (freezeDate && curDate.getTime() > freezeDate.getTime());
 
 	var logCall = params.logcall ? (parseInt(params.logcall) || 0) : 0;
 	if (logCall)
@@ -1373,7 +1374,7 @@ function sheetAction(params) {
 		}
 	    }
 
-	    if (!adminUser && freezeDate && curDate.getTime() > freezeDate.getTime() && (newRow || rowUpdates || selectedUpdates))
+	    if (!adminUser && frozenSessions && (newRow || rowUpdates || selectedUpdates))
 		throw('Error::All sessions are frozen. No user modifications permitted');
 	    
 	    var teamCol = columnIndex.team;
@@ -3869,7 +3870,7 @@ function scoreAnswer(response, qtype, corrAnswer) {
         }
     } else {
         // Check if non-numeric answer is correct (all spaces are removed before comparison)
-	response = '' + response;
+	response = '' + str(response);
         var normResp = response.trim().toLowerCase();
 	// For choice, allow multiple correct answers (to fix grading problems)
         var correctOptions = (qtype == 'choice') ? corrAnswer.split('') : corrAnswer.split(' OR ');

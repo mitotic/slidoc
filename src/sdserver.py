@@ -116,8 +116,8 @@ Options = {
     'site_name': '',         # E.g., calc101
     'site_label': '',        # E.g., Calculus 101
     'site_list': [],         # List of site names
-    'site_restricted': '',
     'site_title': '',        # E.g., Elementary Calculus, Fall 2000
+    'site_restrictions': '',
     'site_number': 0,
     'sites': '',             # Comma separated list of site names
     'socket_dir': '',
@@ -130,7 +130,7 @@ Options = {
     }
 
 OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'start_date']
-SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_restricted', 'site_title']
+SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title', 'site_restrictions']
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
@@ -448,11 +448,11 @@ class HomeHandler(BaseHandler):
             # Primary server
             site_roles = []
             for siteName in Options['site_list']:
-                site_roles.append(self.get_id_from_cookie(role=True, for_site=siteName) in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE))
+                site_roles.append(self.get_id_from_cookie(role=True, for_site=siteName))
             self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url,
                          sites=Options['site_list'], site_roles=site_roles, site_labels=Global.split_opts['site_label'],
-                         site_titles=Global.split_opts['site_title'], site_restricteds=Global.split_opts['site_restricted'])
+                         site_titles=Global.split_opts['site_title'], site_restrictions=Global.split_opts['site_restrictions'])
             return
         elif Options.get('_index_html'):
             # Not authenticated
@@ -3314,8 +3314,17 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
 
-        if Options['site_restricted'] and not siteRole:
+        if Options['site_restrictions'] and siteRole is None:
             raise tornado.web.HTTPError(404)
+
+        if sdproxy.Settings['site_access'] and sdproxy.Settings['site_access'] != 'readonly':
+            if sdproxy.Settings['site_access'] == 'adminguest':
+                # Guest/admin access
+                if siteRole is None:
+                    raise tornado.web.HTTPError(404)
+            elif not siteRole:
+                # Admin/grader access
+                raise tornado.web.HTTPError(404)
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
@@ -3352,8 +3361,12 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                         gradeDate = sessionEntries['gradeDate']
                         releaseDate = sessionEntries['releaseDate']
                     except Exception, excp:
-                        print >> sys.stderr, "AuthStaticFileHandler.get_current_user", str(excp)
-                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
+                        excpMsg = str(excp)
+                        print >> sys.stderr, "AuthStaticFileHandler.get_current_user: ERROR", excpMsg
+                        if ':SUSPENDED:' in excpMsg and sdproxy.Global.suspended == 'version_mismatch':
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Proxy version mismatch for site %s' % Options['site_name'])
+                        else:
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
                 if Options['start_date']:
                     startDate = sliauth.epoch_ms(Options['start_date'])
@@ -3387,8 +3400,8 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 # Check if site is explicitly authorized (user has global admin/grader role, or has explicit site listed, including guest users)
                 preAuthorized = siteRole is not None
             else:
-                # Single site: check if userid is known
-                preAuthorized = Global.userRoles.is_known_user(userId)
+                # Single site: check if userid is special (admin/grader/guest)
+                preAuthorized = Global.userRoles.is_special_user(userId)
 
             if not preAuthorized:
                 if Global.login_domain and '@' in userId:
@@ -4141,14 +4154,17 @@ class UserRoles(object):
         self.alias_map = {}
         self.root_role = {}
         self.external_users = set()
-        self.site_known_users = set()
+        self.site_special_users = set()
         self.site_roles = {}
 
     def map_user(self, username):
         return self.alias_map.get(username, username)
             
     def is_known_user(self, userId):
-        return userId in self.root_role or userId in self.external_users or userId in self.site_known_users
+        return userId in self.root_role or userId in self.site_special_users or userId in self.external_users
+
+    def is_special_user(self, userId):
+        return userId in self.root_role or userId in self.site_special_users
 
     def update_root_roles(self, auth_users):
         # Process list of special authorized users
@@ -4224,7 +4240,7 @@ class UserRoles(object):
                     print >> sys.stderr, 'WARNING: User %s already has site %s role in %s' % (userId, self.site_roles[siteName][userId], siteName)
                     continue
                 self.site_roles[siteName][userId] = role
-                self.site_known_users.add(userId)   # At present there is no way to delete userIds from this set (but static file preAuthorization check should handle it)
+                self.site_special_users.add(userId)   # At present there is no UI to delete userIds from this set (perhaps static file preAuthorization check should handle it)
 
     def id_role_sites(self, userId):
         # Return (role, sites)
@@ -4351,8 +4367,10 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         for key in SPLIT_OPTS[1:]:
             if key in sheetSettings:
                 Global.split_opts[key][site_number-1] = sheetSettings[key]
+        Global.split_opts['site_restrictions'][site_number-1] = sheetSettings.get('site_access','')
     elif gsheet_url:
-        Global.split_opts['site_restricted'][site_number-1] = 'restricted'
+        # No sheet settings; admin access only
+        Global.split_opts['site_restrictions'][site_number-1] = 'adminonly'
 
     Global.userRoles.update_site_roles(site_name, sheetSettings.get('admin_users',''), sheetSettings.get('grader_users',''), sheetSettings.get('guest_users','') )
 
@@ -4384,11 +4402,11 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
         BaseHandler.site_data_dir = Options['plugindata_dir'] + '/' + site_name + '/' + PLUGINDATA_PATH
-        setup_site_server(sheetSettings)
+        setup_site_server(sheetSettings, site_number)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
 
-def setup_site_server(sheetSettings):
+def setup_site_server(sheetSettings, site_number):
     if Options['proxy_wait'] is not None:
         # Copy options to proxy
         sdproxy.copyServerOptions(Options)
@@ -4396,7 +4414,18 @@ def setup_site_server(sheetSettings):
         if sheetSettings:
             sdproxy.copySheetOptions(sheetSettings)
         elif Options['gsheet_url'] and Options['host'] != 'localhost':
-            Options['site_restricted'] = 'restricted'
+            # No sheet settings; admin access only
+            sheetSettings = {'site_access': 'adminonly'}
+        else:
+            sheetSettings = {}
+
+        sdproxy.copySheetOptions(sheetSettings)
+
+        if sheetSettings:
+            # Override site restrictions with sheet values
+            Options['site_restrictions'] = sheetSettings.get('site_access','')
+            if site_number:
+                Global.split_opts['site_restrictions'][site_number-1] = Options['site_restrictions']
 
         Global.session_options = {}
         for key in sheetSettings:
@@ -4488,7 +4517,7 @@ def main():
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")
-    define("site_restricted", default='', help="Site restricted")
+    define("site_restrictions", default='', help="Site restrictions")
     define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
@@ -4602,7 +4631,7 @@ def main():
             for key in SPLIT_OPTS[1:]:
                 if key in sheetSettings:
                     Options[key] = sheetSettings[key]
-        setup_site_server(sheetSettings)
+        setup_site_server(sheetSettings, 0)
         start_server()
 
 if __name__ == "__main__":

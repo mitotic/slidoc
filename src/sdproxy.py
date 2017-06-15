@@ -45,7 +45,11 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.6'
+VERSION = '0.97.6c'
+
+def sub_version(version):
+    # Returns portion of version that should match
+    return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
 
 UPDATE_PARTIAL_ROWS = True
 
@@ -76,7 +80,7 @@ Settings = {
     'root_users': [],
     'share_averages': True, # Share class averages for tests etc.
     'site_label': '',
-    'site_restricted': '',
+    'site_access': '',      # '' OR 'adminonly' OR 'adminguest' OR 'readonly'
     'site_title': '',
     'admin_users': '',
     'grader_users': '',
@@ -84,7 +88,7 @@ Settings = {
     }
 
 COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
-                   'share_averages', 'site_label', 'site_title',
+                   'share_averages', 'site_label', 'site_title', 'site_access',
                    'admin_users', 'grader_users', 'guest_users']
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
@@ -499,7 +503,10 @@ def downloadSheet(sheetName, backup=False):
     ##if Settings['debug']:
     ##    print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
 
-    Global.remoteVersions.add( retval.get('info',{}).get('version','') )
+    remoteVersion = retval.get('info',{}).get('version','')
+    if sub_version(VERSION) != sub_version(remoteVersion):
+        suspend_cache('version_mismatch')
+    Global.remoteVersions.add(remoteVersion)
 
     return retval
 
@@ -1100,7 +1107,7 @@ def check_if_locked(sheetName, get=False, backup=False, cached=False):
         return True
 
     if Global.suspended:
-        raise Exception('Cannot access sheet %s when suspended (%s)' % (sheetName, Global.suspended))
+        raise Exception('Error:SUSPENDED:Cannot access sheet %s when suspended (%s)' % (sheetName, Global.suspended))
 
     return True
 
@@ -1307,6 +1314,9 @@ class ProxyUpdater(object):
             # Need to trap exception because it fails silently otherwise
             return self.handle_proxy_response_aux(response)
         except Exception, excp:
+            if Settings['debug']:
+                import traceback
+                traceback.print_exc()
             sheet_proxy_error('Unexpected error in handle_proxy_response: %s' % excp)
 
     def handle_proxy_response_aux(self, response):
@@ -1331,7 +1341,7 @@ class ProxyUpdater(object):
 
             if Settings['debug']:
                 cachedResp = respObj['info'].get('cachedResponse', '') if respObj else ''
-                print("handle_proxy_response_aux: Update RESPONSE", sliauth.iso_date(nosubsec=True), cachedResp, errMsg, response.body[:256]+'\n', errTrace, file=sys.stderr)
+                print("handle_proxy_response_aux: Update RESPONSE", sliauth.iso_date(nosubsec=True), cachedResp, errMsg, respObj, response.body[:256]+'\n', errTrace, file=sys.stderr)
 
         if errMsg or not respObj:
             # Handle update errors
@@ -1378,7 +1388,7 @@ class ProxyUpdater(object):
             print("ProxyUpdater.handle_proxy_response_aux: Update LOCKED %s: %s %s" % (errSessionName, proxyErrMsg, proxyErrTrace), file=sys.stderr)
 
         if Settings['debug']:
-            print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), respObj, file=sys.stderr)
+            print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), file=sys.stderr)
 
         next_cache_update(0 if Global.suspended else Settings['min_wait_sec'])
 
@@ -1449,8 +1459,6 @@ def sheetAction(params, notrace=False):
 
         returnInfo['sheet'] = sheetName
 
-        freezeDate = createDate(Settings['freeze_date']) or None
-        
         origUser = ''
         adminUser = ''
         readOnlyAccess = False
@@ -1547,6 +1555,10 @@ def sheetAction(params, notrace=False):
         computeTotalScore = False
         curDate = createDate()
         curTime = sliauth.epoch_ms(curDate)
+
+        freezeDate = createDate(Settings['freeze_date']) or None
+        
+        frozenSessions = Settings['freeze_date'] == 'readonly' or (freezeDate and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(freezeDate))
 
         if sheetName == SETTINGS_SHEET and adminUser != ADMIN_ROLE:
             raise Exception('Error::Must be admin user to access settings')
@@ -2216,7 +2228,7 @@ def sheetAction(params, notrace=False):
                 # Modifying sheet
                 if Global.cacheUpdateError:
                     raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
-                elif not adminUser and freezeDate and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(freezeDate):
+                elif not adminUser and frozenSessions:
                     raise Exception('Error::All sessions are frozen. No user modifications permitted');
                         
             teamCol = columnIndex.get('team')
@@ -4013,7 +4025,7 @@ def scoreAnswer(response, qtype, corrAnswer):
 
     else:
         # Check if non-numeric answer is correct (all spaces are removed before comparison)
-        response = '' + response
+        response = '' + str(response)
         normResp = response.strip().lower()
         # For choice, allow multiple correct answers (to fix grading problems)
         correctOptions = list(corrAnswer) if (qtype == 'choice')  else corrAnswer.split(' OR ')

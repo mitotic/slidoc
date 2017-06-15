@@ -3,7 +3,7 @@
 <head>
 
 <!-- home index template for slidoc server --->
-<!-- index parameters: user, status, login_url, logout_url, sites, site_roles, site_labels, site_titles -->
+<!-- index parameters: user, status, login_url, logout_url, sites, site_roles, site_labels, site_titles, site_restrictions -->
 
 <title>Courses</title>
 <style>
@@ -60,10 +60,8 @@ body {
 
   <ul>
       {% for j, site in enumerate(sites) %}
-        {% if not site_restricteds[j] %}
-        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {{ site_titles[j] }}</li>
-        {% elif site_roles[j] %}
-        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: (restricted) {{ site_titles[j] }}</li>
+        {% if not site_restrictions[j] or site_restrictions[j] == 'readonly' or site_roles[j] is not None %}
+        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}</li>
         {% end %}
       <p></p>
       {% end %}
