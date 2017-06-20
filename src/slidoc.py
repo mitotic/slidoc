@@ -2385,7 +2385,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
 
     row_values = [session_name, session_name, revision, None, session_weight, session_rescale, release_date_str, due_date_str, None, media_url, pace_level, admin_paced,
                 score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
-                json.dumps(sheet_attributes), json.dumps(questions), json.dumps(question_concepts),
+                sliauth.ordered_stringify(sheet_attributes), sliauth.ordered_stringify(questions), sliauth.ordered_stringify(question_concepts),
                 '; '.join(sort_caseless(list(p_concepts))),
                 '; '.join(sort_caseless(list(s_concepts)))
                  ]
@@ -2926,7 +2926,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
     js_params['remoteLogLevel'] = config.remote_logging
 
     js_params_fmt = '\n<script>\nvar JS_PARAMS_OBJ=%s;\n</script>\n'
-    toc_js_params = js_params_fmt % json.dumps(js_params)
+    toc_js_params = js_params_fmt % sliauth.ordered_stringify(js_params)
 
     combined_name = config.all or (orig_fnames[0] if orig_fnames else 'combined')
     combined_file = '' if config.separate else combined_name+'.html'
@@ -3449,7 +3449,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             else:
                 file_plugin_defs = base_plugin_defs.copy()
                 file_plugin_defs.update(renderer.plugin_defs)
-                file_head_html = (js_params_fmt % json.dumps(js_params)) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
+                file_head_html = (js_params_fmt % sliauth.ordered_stringify(js_params)) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
                 pre_html = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment

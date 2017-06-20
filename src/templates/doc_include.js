@@ -1643,8 +1643,6 @@ Slidoc.localMessages = function(optional) {
 // Section 9: Utility functions
 //////////////////////////////////
 
-function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1; }
-
 function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
 
 function parseNumber(x) {
@@ -1676,6 +1674,44 @@ function parseDate(dateStr) {
     } catch(err) {
     }
     return null;
+}
+
+function isArray(a) {
+    return Array.isArray(a);
+};
+
+function isObject(a) { // Works for object literals only (not custom objects, Date etc.)
+    return (!!a) && (a.constructor === Object);
+};
+
+
+function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1; }
+
+function keyCmp(a,b) {
+    // Compare keys, with numeric keys always being less than non-numeric keys
+    if (isNumber(a) && !isNumber(b))
+	return -1;
+    if (!isNumber(a) && isNumber(b))
+	return 1;
+    if (a == b) return 0; else return (a > b) ? 1 : -1;
+}
+
+function sortObject(obj) {
+    return Object.keys(obj).sort(keyCmp).reduce(function (result, key) {
+        result[key] = obj[key];
+        return result;
+    }, {});
+}
+
+function orderedReplacer(key, value) {
+    if (!key && isObject(value))
+	return sortObject(value);
+    else
+	return value;
+}
+
+Slidoc.orderedStringify = function (value, space) {
+    return JSON.stringify(value, orderedReplacer, space);
 }
 
 function zeroPad(num, pad) {
@@ -4522,7 +4558,7 @@ function packSession(session) {
 		    if (!rowValue && hmatch[2] == 'response')
 			rowValue = SKIP_ANSWER;
 		    if (rowValue && hmatch[2] == 'plugin')
-			rowValue = JSON.stringify(rowValue);
+			rowValue = Slidoc.orderedStringify(rowValue);
 		    rowObj[header] = rowValue;
 
 		    delete sessionCopy.questionsAttempted[qnumber][hmatch[2]];
@@ -4536,12 +4572,12 @@ function packSession(session) {
 	}
     }
     // Break up Base64 version of object-json into lines (commented out; does not work with JSONP)
-    ///var base64str = btoa(JSON.stringify(sessionCopy));
+    ///var base64str = btoa(Slidoc.orderedStringify(sessionCopy));
     ///var comps = [];
     ///for (var j=0; j < base64str.length; j+=80)
     ///    comps.push(base64str.slice(j,j+80));
     ///comps.join('')+'';
-    rowObj.session_hidden = JSON.stringify(sessionCopy);
+    rowObj.session_hidden = Slidoc.orderedStringify(sessionCopy);
     return rowObj;
 }
 

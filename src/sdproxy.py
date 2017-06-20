@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.6c'
+VERSION = '0.97.6d'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -2955,7 +2955,7 @@ def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayN
             rowVals[j] = session[header]
 
     rowVals[headers.index('source')] = source
-    rowVals[headers.index('session_hidden')] = json.dumps(session)
+    rowVals[headers.index('session_hidden')] = sliauth.ordered_stringify(session)
 
     rosterSheet = getSheet(ROSTER_SHEET)
     if rosterSheet:
@@ -3269,7 +3269,7 @@ def clearQuestionResponses(sessionName, questionNumber, userId=''):
             if 'questionsAttempted' in session and questionNumber in session['questionsAttempted']:
                 clearedResponse = True
                 del session['questionsAttempted'][questionNumber]
-                sessionRange.setValue(json.dumps(session))
+                sessionRange.setValue(sliauth.ordered_stringify(session))
 
     if clearedResponse:
         # Update total score
@@ -3404,7 +3404,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         if q_grade in headers and 'grade' in answer:
             rowValues[headerCols[q_grade]-1] = answer['grade']
 
-    rowValues[sessionCol-1] = json.dumps(session)
+    rowValues[sessionCol-1] = sliauth.ordered_stringify(session)
     for j, header in enumerate(headers):
         if header.endswith('Timestamp'):
             rowValues[j] = None             # Do not modify (most) timestamps

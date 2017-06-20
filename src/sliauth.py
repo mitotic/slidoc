@@ -56,6 +56,11 @@ def safe_quote(value):
 def safe_unquote(value):
     return urllib.unquote(value)
 
+def ordered_stringify(value, default=None):
+    # json.dumps with sorted keys for dicts.
+    # (compatible with Javscript object key ordering provided there are no keys of string type consisting solely of digits)
+    return json.dumps(value, default=default, sort_keys=True)
+
 def get_utc_date(date_time_str):
     """Convert local date string of the form yyyy-mm-ddThh:mm to UTC (unless it already ends with 'Z')"""
     if date_time_str and not date_time_str.endswith('Z'):

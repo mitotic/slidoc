@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.6c';
+var VERSION = '0.97.6d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -2562,7 +2562,7 @@ function createSessionRow(sessionName, fieldsMin, params, questions, userId, dis
 	    rowVals[j] = session[header];
     }
     rowVals[headers.indexOf('source')] = source || '';
-    rowVals[headers.indexOf('session_hidden')] = JSON.stringify(session);
+    rowVals[headers.indexOf('session_hidden')] = orderedStringify(session);
 
     var rosterSheet = getSheet(ROSTER_SHEET);
     if (rosterSheet) {
@@ -2624,6 +2624,44 @@ function parseNumber(x) {
     } catch(err) {
     }
     return null;
+}
+
+function isArray(a) {
+    return Array.isArray(a);
+};
+
+function isObject(a) { // Works for object literals only (not custom objects, Date etc.)
+    return (!!a) && (a.constructor === Object);
+};
+
+
+function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1; }
+
+function keyCmp(a,b) {
+    // Compare keys, with numeric keys always being less than non-numeric keys
+    if (isNumber(a) && !isNumber(b))
+	return -1;
+    if (!isNumber(a) && isNumber(b))
+	return 1;
+    if (a == b) return 0; else return (a > b) ? 1 : -1;
+}
+
+function sortObject(obj) {
+    return Object.keys(obj).sort(keyCmp).reduce(function (result, key) {
+        result[key] = obj[key];
+        return result;
+    }, {});
+}
+
+function orderedReplacer(key, value) {
+    if (!key && isObject(value))
+	return sortObject(value);
+    else
+	return value;
+}
+
+function orderedStringify(value, space) {
+    return orderedStringify(value, orderedReplacer, space);
 }
 
 function normalizeText(s) {
@@ -3745,7 +3783,7 @@ function clearQuestionResponses(sessionName, questionNumber, userId) {
             if ('questionsAttempted' in session && questionNumber in session['questionsAttempted']) {
 		clearedResponse = true;
                 delete session['questionsAttempted'][questionNumber];
-                sessionRange.setValue(JSON.stringify(session));
+                sessionRange.setValue(orderedStringify(session));
             }
         }
     }
