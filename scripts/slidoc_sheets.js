@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.6d';
+var VERSION = '0.97.6e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -130,7 +130,7 @@ var DISCUSS_ID = '_discuss';
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
 
-var TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', ''];
+var TESTUSER_ROSTER = {'name': '#user, test', 'id': TESTUSER_ID, 'email': '', 'altid': '', 'extratime': ''};
 
 var SETTINGS_SHEET = 'settings_slidoc';
 var INDEX_SHEET = 'sessions_slidoc';
@@ -293,10 +293,11 @@ function getRosterEntry(userId) {
         return TESTUSER_ROSTER;
     try {
 	// Copy user info from roster
-	return lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, true);
+	return lookupValues(userId, Object.keys(TESTUSER_ROSTER), ROSTER_SHEET, false, true);
     } catch(err) {
-	if (isSpecialUser(userId))
-	    return ['#'+userId+', '+userId, userId, '', ''];
+	if (isSpecialUser(userId)) {
+	    return {'name': '#'+userId+', '+userId, 'id': userId};
+	}
 	throw("Error:NEED_ROSTER_ENTRY:userID '"+userId+"' not found in roster");
     }
 }
@@ -590,9 +591,9 @@ function sheetAction(params) {
 	var adminPaced = null;
 	var dueDate = null;
 	var gradeDate = null;
-	var timedSec = null;
 	var voteDate = null;
 	var discussableSession = null;
+	var timedSec = null;
 	var computeTotalScore = false;
 
 	if (proxy && adminUser != ADMIN_ROLE)
@@ -604,7 +605,7 @@ function sheetAction(params) {
 	if (restrictedSheet && !adminUser)
 	    throw("Error::Must be admin/grader user to access restricted sheet '"+sheetName+"'");
 
-	var rosterValues = [];
+	var rosterValues = null;
 	var rosterSheet = getSheet(ROSTER_SHEET);
 	if (rosterSheet && !adminUser) {
 	    // Check user access
@@ -727,9 +728,15 @@ function sheetAction(params) {
 		adminPaced = sessionEntries.adminPaced;
 		dueDate = sessionEntries.dueDate;
 		gradeDate = sessionEntries.gradeDate;
-		timedSec = sessionAttributes['params'].timedSec || null;
 		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
 		discussableSession = sessionAttributes.discussSlides && sessionAttributes.discussSlides.length;
+		timedSec = sessionAttributes['params'].timedSec || null;
+		if (timedSec && rosterValues) {
+                    var extraTime = parseNumber(rosterValues.extratime || '');
+                    if (extraTime) {
+			timedSec = timedSec * (1.0 + extraTime);
+		    }
+		}
 
 		if (parseNumber(sessionEntries.scoreWeight)) {
 		    // Compute total score?
@@ -1296,7 +1303,7 @@ function sheetAction(params) {
 		// Locate unique ID row (except for log files)
 		userRow = lookupRowIndex(userId, modSheet, 1+numStickyRows);
 	    }
-	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues);
+	    //returnMessages.push('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+str(rosterValues));
 	    var newRow = !userRow;
 
 	    if ((readOnlyAccess || adminUser) && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
@@ -1645,9 +1652,10 @@ function sheetAction(params) {
 			}
 		    }
 		    // Copy user info from roster (if available)
-		    for (var j=0; j<rosterValues.length; j++)
-			rowValues[j] = rosterValues[j];
-
+		    if (rosterValues) {
+			for (var j=0; j<MIN_HEADERS.length; j++)
+			    rowValues[j] = rosterValues[MIN_HEADERS[j]] || '';
+		    }
 		    //returnMessages.push("Debug:ROW_VALUES:"+rowValues);
 		    // Save updated row
 		    userRange.setValues([rowValues]);
@@ -2568,9 +2576,11 @@ function createSessionRow(sessionName, fieldsMin, params, questions, userId, dis
     if (rosterSheet) {
 	var rosterValues = getRosterEntry(userId);
 
-	for (var j=0; j<rosterValues.length; j++) {
-	    if (rosterValues[j])
-		rowVals[j] = rosterValues[j];
+	if (rosterValues) {
+	    for (var j=0; j<MIN_HEADERS.length; j++) {
+		if (rosterValues[MIN_HEADERS[j]])
+		    rowValues[j] = rosterValues[MIN_HEADERS[j]];
+	    }
 	}
     }
 
@@ -2909,8 +2919,9 @@ function lookupRowIndex(idValue, sheet, startRow) {
     return 0;
 }
 
-function lookupValues(idValue, colNames, sheetName, listReturn) {
+function lookupValues(idValue, colNames, sheetName, listReturn, blankValues) {
     // Return parameters in list colNames for idValue from sheet
+    // If blankValues, return blanks for columns not found
     var indexSheet = getSheet(sheetName);
     if (!indexSheet)
 	throw('Index sheet '+sheetName+' not found');
@@ -2922,9 +2933,13 @@ function lookupValues(idValue, colNames, sheetName, listReturn) {
     var retVals = {};
     var listVals = [];
     for (var j=0; j < colNames.length; j++) {
-	if (!(colNames[j] in indexColIndex))
+	var colValue = '';
+	if (colNames[j] in indexColIndex) {
+	    colValue = indexSheet.getSheetValues(sessionRow, indexColIndex[colNames[j]], 1, 1)[0][0];
+	} else if (!blankValues) {
 	    throw('Column '+colNames[j]+' not found in index sheet '+sheetName);
-	retVals[colNames[j]] = indexSheet.getSheetValues(sessionRow, indexColIndex[colNames[j]], 1, 1)[0][0];
+	}
+	retVals[colNames[j]] = colValue;
 	listVals.push(retVals[colNames[j]]);
     }
     return listReturn ? listVals : retVals;

@@ -306,6 +306,10 @@ class UserIdMixin(object):
             return None
         return basename
 
+    def is_web_view(self):
+        # Check if web view (for locked access)
+        return re.search(r';\s*wv', self.request.headers['User-Agent'], re.IGNORECASE)
+
     def set_id(self, username, role='', sites='', displayName='', email='', altid='', data={}):
         if Options['debug']:
             print >> sys.stderr, 'sdserver.UserIdMixin.set_id', username, role, sites, displayName, email, altid, data
@@ -350,6 +354,9 @@ class UserIdMixin(object):
         name = self.get_id_from_cookie(name=True)
         data = self.get_id_from_cookie(data=True)
         self.set_id(username, displayName=name, role='', sites=plainSites, email=self.get_id_from_cookie(email=True), data=data)
+
+    def check_locked(self, username, token, site, session):
+        return token == sliauth.gen_locked_token(sliauth.gen_site_key(Options['root_auth_key'], site), username, site, session)
 
     def check_access(self, username, token, role=''):
         return token == gen_proxy_auth_token(username, role, root=True)
@@ -444,6 +451,11 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
 
 class HomeHandler(BaseHandler):
     def get(self):
+        if self.is_web_view():
+            # For embedded browsers ("web views"), Google login does not work; use token authentication
+            self.redirect('/_auth/login/')
+            return
+            
         if Options['site_list'] and not Options['site_number']:
             # Primary server
             site_roles = []
@@ -1068,6 +1080,7 @@ class ActionHandler(BaseHandler):
             userMap = {}
             for j in range(len(idVals)):
                 userMap[idVals[j][0]] = (lastSlides[j][0], submitTimes[j][0], lateTokens[j][0])
+
             lines = ['<ul>\n']
             for idVal, name in nameMap.items():
                 labels = []
@@ -1086,11 +1099,28 @@ class ActionHandler(BaseHandler):
                     if lateToken:
                         labels.append('<em>token=%s</em>' % lateToken[:16])
                     labels.append('''(<a href="javascript:submit('session','%s;%s')">allow late</a>)''' % (sessionName, idVal) )
+                    labels.append(''' [<a href="%s/_lockcode/%s;%s">lockdown access</a>]''' % (site_prefix, sessionName, idVal) )
+
                 lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
 
             lines.append('</ul>\n')
             self.render('submissions.html', site_name=Options['site_name'], submissions_label='Late submission',
                          submissions_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
+
+        elif action == '_lockcode':
+            comps = sessionName.split(';')
+            sessionName = comps[0]
+            userId = comps[1] if len(comps) >= 2 else ''
+            if not userId:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Invalid lockcode userid %s' % userId)
+            sheet = sdproxy.getSheet(sessionName)
+            if not sheet:
+                self.displayMessage('Unable to retrieve session '+sessionName)
+                return
+            token = sliauth.gen_locked_token(Options['auth_key'], userId, Options['site_name'], sessionName)
+            img_data_uri = sliauth.gen_qr_code( '%s:%s' % (userId, token))
+            self.displayMessage('<h3>Lock code for user %s, session "%s"</h3><img class="slidoc-lockcode" src="%s">' % (userId, sessionName, img_data_uri) )
+            return
 
         elif action == '_submit':
             self.render('submit.html', site_name=Options['site_name'], session_name=sessionName)
@@ -3079,8 +3109,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             method = obj[1]
             args = obj[2]
             retObj = {"result":"success"}
-            if Options['debug']:
-                print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
+            ##if Options['debug']:
+            ##    print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
 
             sessionName = self.get_path_base(self.pathUser[0])
             if method == 'close':
@@ -3277,6 +3307,19 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
         sessionName = self.get_path_base(self.request.path)
         userId = self.get_id_from_cookie() or None
         siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])  # May be None
+        cookieData = self.get_id_from_cookie(data=True) or {}
+        lockedAccess = False
+        if cookieData.get('locked_access'):
+            if cookieData['locked_access'] == '/'+Options['site_name']:
+                # Allow locked site access
+                pass
+            elif sessionName and cookieData['locked_access'] == getSessionPath(sessionName, site_prefix=True):
+                # Allow locked session access
+                lockedAccess = True
+            else:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to %s only' % cookieData['locked_access'])
+        elif self.is_web_view():
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to locked sessions only')
 
         if Options['debug']:
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId, repr(siteRole), Options['site_number'], sessionName, self.request.path, self.request.query, Options['dry_run'], Options['lock_proxy_url']
@@ -3378,7 +3421,9 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 if siteRole != sdproxy.ADMIN_ROLE:
                     # Non-admin access
                     # (Admin has access regardless of release date, allowing delayed release of live lectures and exams)
-                    if isinstance(releaseDate, datetime.datetime):
+                    if lockedAccess:
+                        return userId
+                    elif isinstance(releaseDate, datetime.datetime):
                         # Check release date for session
                         if sliauth.epoch_ms() < sliauth.epoch_ms(sessionEntries['releaseDate']):
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s not yet available' % sessionName)
@@ -3390,9 +3435,9 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     if offlineCheck:
                         # Failsafe check to prevent premature release of offline exams etc.
                         if gradeDate or (Options['start_date'] and releaseDate):
+                            # Valid gradeDate or (start_date & release_date) must be specified to access offline session
                             pass
                         else:
-                            # Valid gradeDate or (start_date & release_date) must be specified to access offline session
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Session '+sessionName+' not yet released')
                             
             # Check if pre-authorized for site access
@@ -3470,14 +3515,24 @@ class AuthLoginHandler(BaseHandler):
         error_msg = self.get_argument("error", "")
         username = str(self.get_argument("username", ""))
         token = str(self.get_argument("token", ""))
+        usertoken = str(self.get_argument("usertoken", ""))
         next = self.get_argument("next", "/")
+        if not error_msg and ':' in usertoken:
+            username, _, token = usertoken.partition(':')
+        
+        locked_access_link = None
+        if self.is_web_view():
+            cookieData = self.get_id_from_cookie(data=True) or {}
+            locked_access_link = cookieData.get('locked_access', '')
+
         if Options['debug']:
-            print >> sys.stderr, "AuthLoginHandler.get", username, token, next, error_msg
+            print >> sys.stderr, "AuthLoginHandler.get", username, token, usertoken, next, error_msg
         if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
             self.render("login.html", error_msg=error_msg, next=next, login_label=Options['site_label'],
-                        login_url=Global.login_url, password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
+                        login_url='/_auth/login/', locked_access_link=locked_access_link,
+                        password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
 
     def post(self):
         self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
@@ -3501,9 +3556,27 @@ class AuthLoginHandler(BaseHandler):
         if generateToken:
             token = gen_proxy_auth_token(username, role=role)
 
-        auth = self.check_access(username, token, role=role)
+        data = {}
+        comps = token.split(':')
+        if not role and (self.is_web_view() or len(comps) > 1):
+            if len(comps) != 3:
+                self.redirect('/_auth/login/' + '?error=' + tornado.escape.url_escape('Invalid locked access token. Expecting site:session:code'))
+                return
+            siteName, sessionName, _ = comps
+            if not sessionName:
+                # Locked site access
+                next = '/' + siteName
+            else:
+                # Locked session access
+                next = getSessionPath(sessionName)
+                if siteName:                         # Because this is root site
+                    next = '/' + siteName + next
+            data['locked_access'] = next
+            auth = self.check_locked(username, token, siteName, sessionName)
+        else:
+            auth = self.check_access(username, token, role=role)
+
         if auth:
-            data = {}
             if Global.twitter_params:
                 data['site_twitter'] = Global.twitter_params['screen_name']
             self.set_id(username, data=data, role=role)
@@ -3526,6 +3599,10 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
 
     @tornado.gen.coroutine
     def get(self):
+        if self.is_web_view():
+            # For embedded browsers ("web views"), Google login does not work; use token authentication
+            self.redirect('/_auth/login/')
+            return
         if self.get_argument('code', False):
             user = yield self.get_authenticated_user(
                 redirect_uri=self.settings['google_oauth']['redirect_uri'],
@@ -3715,6 +3792,7 @@ def createApplication():
                       r"/(_import/[-\w.]+)",
                       r"/(_lock)",
                       r"/(_lock/[-\w.]+)",
+                      r"/(_lockcode/[-\w.;]+)",
                       r"/(_logout)",
                       r"/(_manage/[-\w.]+)",
                       r"/(_prefill/[-\w.]+)",

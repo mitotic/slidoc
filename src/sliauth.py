@@ -11,6 +11,7 @@ import base64
 import datetime
 import hashlib
 import hmac
+import io
 import json
 import sys
 import time
@@ -35,6 +36,38 @@ def gen_auth_token(key, user_id, role='', sites='', prefixed=False):
     prefix = gen_auth_prefix(user_id, role, sites)
     token = gen_hmac_token(key, prefix)
     return prefix+':'+token if prefixed else token
+
+def gen_locked_token(key, user_id, site, session):
+    token = gen_hmac_token(key, 'locked:%s:%s:%s' % (user_id, site, session))
+    return '%s:%s:%s' % (site, session, token)
+
+def gen_qr_code(text, border=4, pixel=15, raw_image=False):
+    try:
+        import qrcode
+    except ImportError:
+        raise Exception('Please install pillow and qrcode packages, e.g., conda install pillow; pip install qrcode')
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=pixel,
+        border=border,
+        )
+
+    qr.add_data(text)
+    qr.make(fit=True)
+
+    img = qr.make_image()
+
+    img_io = io.BytesIO()
+    img.save(img_io, "png")
+    img_io.seek(0)
+    img_data = img_io.getvalue()
+
+    if raw_image:
+        return img_data
+    else:
+        return "data:image/gif;base64,"+img_data.encode("base64")
 
 def gen_site_key(key, site):
     return gen_hmac_token(key, 'site:'+site)
@@ -170,7 +203,9 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Generate slidoc HMAC authentication tokens')
-    parser.add_argument('-a', '--auth_key', help='Digest authentication key (required)')
+    parser.add_argument('-a', '--auth_key', help='Root authentication key')
+    parser.add_argument('-k', '--site_auth_key', help='Site authentication key')
+    parser.add_argument('-q', '--qrcode', help='write QR code for locked token to stdout', action='store_true')
     parser.add_argument('-r', '--role', help='Role admin/grader')
     parser.add_argument('-s', '--session', help='Session name')
     parser.add_argument('-t', '--site', help='Site name')
@@ -178,19 +213,27 @@ if __name__ == '__main__':
     parser.add_argument('user', help='user name(s)', nargs=argparse.ZERO_OR_MORE)
     cmd_args = parser.parse_args()
 
-    if not cmd_args.auth_key:
-        sys.exit('Must specify digest authentication key')
+    if not cmd_args.auth_key and not cmd_args.site_auth_key:
+        sys.exit('Must specify either root authentication key or site authentication key')
 
-    auth_key = cmd_args.auth_key
-    if cmd_args.site:
-        auth_key = gen_site_key(auth_key, cmd_args.site)
+    if cmd_args.site_auth_key:
+        auth_key = cmd_args.site_auth_key
+    elif cmd_args.site:
+        auth_key = gen_site_key(cmd_args.auth_key, cmd_args.site)
+    else:
+        auth_key = cmd_args.auth_key
 
     if not cmd_args.user:
-        print((cmd_args.site or '')+' auth key =', auth_key)
+        print((cmd_args.site or '')+' auth key =', auth_key, file=sys.stderr)
 
     for user in cmd_args.user:
         if cmd_args.due_date:
             token = gen_late_token(auth_key, user, cmd_args.site or '', cmd_args.session, get_utc_date(cmd_args.due_date))
+        elif cmd_args.session:
+            token = gen_locked_token(auth_key, user, cmd_args.site or '', cmd_args.session)
+            if cmd_args.qrcode:
+                print(gen_qr_code(token, raw_image=True))
         else:
             token = gen_auth_token(auth_key, user, cmd_args.role or '', prefixed=cmd_args.role)
-        print(user+' token =',  token)
+
+        print(user+' token =',  token, file=sys.stderr)

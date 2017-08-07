@@ -472,6 +472,7 @@ if (Slidoc.serverCookie) {
     Sliobj.serverData = Slidoc.serverCookie.data || {};
 }
 Sliobj.assessmentView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
+Sliobj.lockedView = !!Sliobj.serverData.locked_access;
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
 
@@ -1989,43 +1990,56 @@ function retakesRemaining() {
     return Sliobj.params.maxRetakes - retakesCount;
 }
 
-Slidoc.resetPaced = function () {
-    Slidoc.log('Slidoc.resetPaced:');
+Slidoc.resetPaced = function (delRow) {
+    Slidoc.log('Slidoc.resetPaced:', delRow);
+    var label = delRow ? 'delete' : 'reset';
     var userId = getUserId();
 
-    if (!retakesRemaining() && Sliobj.params.gd_sheet_url) {
+    if ((delRow || !retakesRemaining()) && Sliobj.params.gd_sheet_url) {
 	if (!Sliobj.gradableState && userId != Sliobj.params.testUserId) {
-	    alert('Unable to reset session linked to Google Docs');
+	    alert('Unable to '+label+' session linked to Google Docs');
 	    return false;
 	}
     }
 
-    if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely delete all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
+    if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely '+label+' all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
 	return false;
     
     if (Sliobj.params.gd_sheet_url) {
-	if (Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session.submitted) {
+	if (!delRow && Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session.submitted) {
 	    alert('Cannot reset submitted instructor-paced session');
 	    return false;
 	}
 
-	if (!Slidoc.testingActive() && !window.confirm('Re-confirm session reset for user '+userId+'?'))
+	if (!Slidoc.testingActive() && !window.confirm('Re-confirm session '+label+' for user '+userId+'?'))
 	    return false;
 	var gsheet = getSheet(Sliobj.sessionName);
-	gsheet.getRow(userId, {resetrow: 1}, resetSessionCallback); // Will reload page after reset
+
+	// Will reload page after reset
+	if (delRow) {
+	    gsheet.delRow(userId, resetSessionCallback.bind(null, delRow));
+	} else {
+	    gsheet.getRow(userId, {resetrow: 1}, resetSessionCallback.bind(null, delRow));
+	}
 
     } else {
-	Sliobj.session = createSession();
-	Sliobj.feedback = null;
-	sessionPut();
+	if (delRow) {
+	    var sessionObj = localGet('sessions');
+	    delete sessionObj[Sliobj.params.fileName];
+	    localPut('sessions', sessionObj);
+	} else {
+	    Sliobj.session = createSession();
+	    Sliobj.feedback = null;
+	    sessionPut();
+	}
 	if (!Slidoc.testingActive())
 	    location.reload(true);
     }
 
 }
 
-function resetSessionCallback(result, retStatus) {
-    Slidoc.log('resetSessionCallback:', result, retStatus);
+function resetSessionCallback(delRow, result, retStatus) {
+    Slidoc.log('resetSessionCallback:', delRow, result, retStatus);
     if (!result) {
 	alert('Error in resetting session: '+retStatus.error);
     } else {
@@ -2067,10 +2081,10 @@ Slidoc.showConcepts = function (submitMsg) {
 	    html += '/'+Sliobj.params.questionsMax;
 	html += '<br>\n';
     }
-    if (Sliobj.session.submitted && Sliobj.params.scoreWeight && !delayAnswers())
+    if (!delayAnswers() && Sliobj.session.submitted && Sliobj.params.scoreWeight)
 	html += 'Weighted score (max score): '+Sliobj.scores.weightedCorrect+' ('+Sliobj.params.scoreWeight+')<br>\n';
 
-    if (Sliobj.allQuestionConcepts.length && !controlledPace()) {
+    if (!delayAnswers() && Sliobj.session.submitted && Sliobj.allQuestionConcepts.length && !controlledPace()) {
 	html += '<p></p>';
 	var labels = ['<h3>Primary concepts missed</h3>', '<h3>Secondary concepts missed</h3>'];
 	for (var m=0; m<labels.length; m++)
@@ -3315,8 +3329,11 @@ Slidoc.manageSession = function() {
 	    html += 'User: <b>'+(userId || Slidoc.serverCookie.user)+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
     }
 
-    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && !Sliobj.params.timedSec && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
 	html += formatHelp(['', 'reset', 'Reset paced session' + (retakesRemaining()?' for re-takes':'')]) + hr;
+
+    if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced session</span>';
 
     if (Sliobj.fullAccess) {
 	if (Sliobj.params.releaseDate) {
@@ -3613,15 +3630,12 @@ function slidocSetupAux(session, feedback) {
     Sliobj.feedback = feedback || null;
     var unhideChapters = false;
 
-    if (Sliobj.session && !Sliobj.session.submitted && Sliobj.params.timedSec && Sliobj.timedSecLeft) {
-	timedInit(Sliobj.timedSecLeft);
-    }
-
     if (Sliobj.params.features.direct_answers)
 	Sliobj.directAnswers = true;
 
     if (Sliobj.gradableState && !Sliobj.session) {
 	sessionAbort('Admin user: session not found for user');
+	return;
     }
 
     if (Sliobj.session.version != Sliobj.params.sessionVersion) {
@@ -3660,7 +3674,7 @@ function slidocSetupAux(session, feedback) {
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
     } else {
-	// Not paced or admin-paced; unhide all slides
+	// Not paced or admin-paced, or direct answers; unhide all slides
 	slidesVisible(true);
     }
 
@@ -3700,6 +3714,11 @@ function slidocSetupAux(session, feedback) {
 	    document.body.classList.remove(bodyClasses[j]);
     }
 
+    if (Sliobj.session && !Sliobj.session.submitted && Sliobj.params.timedSec && Sliobj.timedSecLeft) {
+	timedInit(Sliobj.timedSecLeft);
+    }
+
+    // Make slide text unselectable, if slides_only
     if (!Sliobj.gradableState && ('slides_only' in Sliobj.params.features) && getUserId() != Sliobj.params.testUserId)
 	document.body.classList.add('slidoc-unselectable');
     
@@ -3759,6 +3778,9 @@ function slidocSetupAux(session, feedback) {
 
     if (Sliobj.assessmentView)
 	toggleClass(true, 'slidoc-assessment-view');
+
+    if (Sliobj.lockedView)
+	toggleClass(true, 'slidoc-locked-view');
 
     if (Sliobj.reloadCheck)
 	toggleClass(true, 'slidoc-localpreview-view');
@@ -4391,8 +4413,8 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 }
 
 function delayAnswers() {
-    // Always display correct answers for submitted and graded sessions
-    return ('delay_answers' in Sliobj.params.features || 'remote_answers' in Sliobj.params.features) && !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr);
+    // Always display correct answers for submitted and graded sessions (except for locked views)
+    return ('delay_answers' in Sliobj.params.features || 'remote_answers' in Sliobj.params.features) && (Sliobj.lockedView || !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr) );
 }
 
 function displayCorrect(qattrs) {
@@ -5527,6 +5549,11 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	if (question_attrs.qtype == 'multichoice') {
 	    toggleClass(!elem.classList.contains("slidoc-choice-selected"), "slidoc-choice-selected", elem);
 	} else {
+	    if (Sliobj.session && Sliobj.session.submitted) {
+		alert('Already submitted');
+		return false;
+	    }
+	    
 	    if (Sliobj.directAnswers && Sliobj.timedEndTime && !Sliobj.timedClose) {
 		alert('Time expired');
 		return false;
@@ -6200,6 +6227,52 @@ function showSubmitted() {
     }
 }
 
+Slidoc.responseTable = function () {
+    Slidoc.log('responseTable:');
+    var firstSlideId = getVisibleSlides()[0].id;
+    var attr_vals = getChapterAttrs(firstSlideId);
+    var chapter_id = parseSlideId(firstSlideId)[0];
+    var html = '<b>Responses for session '+Sliobj.sessionName+'</b>';
+    html += '<br><em>user:</em> '+getUserId();
+    if (Sliobj.session.submitted)
+	html += '<br><em>Submitted:</em> '+parseDate(Sliobj.session.submitted);
+    html += '<p></p><pre><table class="slidoc-slide-help-table"><tr>';
+    
+    for (var j=0; j<attr_vals.length; j++) {
+	var question_attrs = attr_vals[j];
+	var qnumber = j+1;
+	var question_attrs = attr_vals[qnumber-1];
+	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
+	html += '<td>' + zeroPad(qnumber,2) + '. ';
+	if (!qAttempted) {
+	    // No response
+	} else if (question_attrs.qtype == 'choice') {
+	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	    var shuffleStr = Sliobj.session.questionShuffle[qnumber] || '';
+	    var choice = (qAttempted.response && shuffleStr) ? choiceShuffle(qAttempted.response, shuffleStr): qAttempted.response;
+	    html += '<b>' + choice + '</b>';
+	} else {
+	    html += qAttempted.response;
+	}
+	html += '</td>';
+	if (!(qnumber % 5)) {
+	    html += '</tr><tr>';
+	}
+	if (!(qnumber % 20)) {
+	    html += '</tr><td>&nbsp;</td><tr>';
+	}
+    }
+    html += '</tr></table></pre>';
+    html += '<br><em>Seed:</em> '+Sliobj.session.randomSeed;
+    if (Sliobj.lockedView)
+	html += '<p></p><span class="slidoc-clickable" onclick="Android.printPage();">Print</span>';
+    else
+	html += '<p></p><span class="slidoc-clickable" onclick="window.print();">Print</span>';
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showPopup(html, null, 'printable');
+}
+
 Slidoc.submitStatus = function () {
     Slidoc.log('Slidoc.submitStatus: ');
     var html = '<b>Submit status</b><p></p>\n';
@@ -6218,13 +6291,16 @@ Slidoc.submitStatus = function () {
 	    html += '</ul>';
 	    if (Sliobj.dueDate)
 		html += 'Due: <em>'+Sliobj.dueDate+'</em><br>';
-	    if (Sliobj.session && Sliobj.params.maxRetakes) {
+	    if (Sliobj.session && Sliobj.params.maxRetakes && !Sliobj.params.timedSec) {
 		html += 'Retakes remaining: <code>'+retakesRemaining()+'</code><br>';
 		if (retakesRemaining())
 		    html += '<span class="slidoc-clickable" onclick="Slidoc.resetPaced();">Reset paced session for re-takes</span><br>'
 	    }
 	}
     }
+    if (Sliobj.session && Object.keys(Sliobj.session.questionsAttempted).length)
+	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.responseTable();">Table of responses</span>';
+
     if (Sliobj.gradableState || getUserId() == Sliobj.params.testUserId) {
 	var userId = getUserId() || '';
 	if (!Sliobj.gradableState)
@@ -6764,11 +6840,11 @@ Slidoc.endPaced = function (reload) {
     Slidoc.log('Slidoc.endPaced: ');
     if (!Sliobj.params.gd_sheet_url)       // For remote sessions, successful submission will complete session
 	Sliobj.session.submitted = ''+(new Date());
-    if (Sliobj.params.paceLevel <= BASIC_PACE) {
+    ///if (Sliobj.params.paceLevel <= BASIC_PACE) {
 	// If pace can end, unpace
-	document.body.classList.remove('slidoc-paced-view');
-	Sliobj.session.paced = 0;
-    }
+	///document.body.classList.remove('slidoc-paced-view');
+	///Sliobj.session.paced = 0;
+    ///}
     Slidoc.reportTestAction('endPaced');
     if (Sliobj.interactive)
 	enableInteract(false);
@@ -7475,6 +7551,7 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 	if (autoCloseMillisec)
 	    setTimeout(Sliobj.closePopup, autoCloseMillisec);
     }
+    toggleClass((wide == 'printable'), 'slidoc-printable-overlay', overlayElem);
     window.scrollTo(0,1);
     return contentElem;
 }

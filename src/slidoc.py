@@ -79,7 +79,7 @@ FUTURE_DATE = 'future'
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;'}
+        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'lock': '&#x1f512;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -3145,7 +3145,10 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             ##    message('slides_only feature suppressed by --printable option')
 
             if 'keep_extras' in file_config.features and config.gsheet_url:
-                abort('PACE-ERROR: --features=keep_extras incompatible with -gsheet_url')
+                abort('PACE-ERROR: --features=keep_extras incompatible with --gsheet_url')
+
+            if file_config.retakes and file_config.timed:
+                abort('PACE-ERROR: --retakes=... incompatible with --timed=...')
 
             file_config_vars = vars(file_config)
             settings_list = []

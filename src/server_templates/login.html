@@ -3,7 +3,7 @@
 <head>
 
 <!-- login template for slidoc server --->
-<!-- login parameters: login_label, login_url, password, error_msg, next-->
+<!-- login parameters: login_label, login_url, password, error_msg, next, locked_access_link-->
 
 <style>
 body {
@@ -13,6 +13,28 @@ body {
 
 </head>
 <body>
+
+{% if locked_access_link is not None %}
+  <script>
+    function openAndroidBarcodeScanner() {
+      Android.openBarcodeScanner();
+    }
+    </script>
+    <p></p>
+    <h2>Slidoc (locked mode)</h2>
+    <p></p>&nbsp;
+    <p></p>&nbsp;
+    {% if locked_access_link %}
+      <b> <a href="/_auth/logout/">Logout</a> </b>
+      <p></p>&nbsp;
+      <p></p>&nbsp;
+      <p></p>&nbsp;
+      <p></p>
+      <h3><a href="{{locked_access_link}}">Return to locked session</a></h3>
+    {% else %}
+      <h3><a href="javascript:openAndroidBarcodeScanner();">Scan QR code for locked access</a></h3>
+    {% end %}
+{% else %}
 
 <div id="main-container">
   <h2><a href="/">{{ login_label or 'Home' }}</a></h2>
@@ -42,6 +64,8 @@ body {
   <a href="/">Home</a>
   </div>
 </div>
+
+{% end %}
 
 </body>
 </html>

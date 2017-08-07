@@ -6,6 +6,7 @@ body.slidoc-fullscreen-view .slidoc-nofullscreen,
 body.slidoc-paced-view .slidoc-nopaced,
 body.slidoc-localpreview-view .slidoc-nolocalpreview,
 body.slidoc-update-view .slidoc-noupdate,
+body.slidoc-locked-view .slidoc-nolocked,
 body.slidoc-remote-view .slidoc-noremote,
 body.slidoc-simple-view .slidoc-nosimple,
 body.slidoc-slide-view .slidoc-noslide,
@@ -24,6 +25,7 @@ body:not(.slidoc-localpreview-view) .slidoc-localpreviewonly,
 body:not(.slidoc-preview-view) .slidoc-previewonly,
 body:not(.slidoc-update-view) .slidoc-updateonly,
 body:not(.slidoc-proxy-view) .slidoc-proxyonly,
+body:not(.slidoc-locked-view) .slidoc-lockedonly,
 body:not(.slidoc-remote-view) .slidoc-remoteonly,
 body:not(.slidoc-server-view) .slidoc-serveronly,
 body:not(.slidoc-controller-view) .slidoc-controlleronly,
@@ -206,7 +208,8 @@ body.slidoc-sidebar-view .slidoc-all-container {
 
 .slidoc-render-text { border: 1px solid maroon; padding: 5px;}
 
-.slidoc-shareable-hide { opacity: 0.3; }
+body:not(.slidoc-testuser-view) .slidoc-shareable-hide { display: none; }
+body.slidoc-testuser-view .slidoc-shareable-hide { opacity: 0.3; }
 
 button:disabled.slidoc-button,
 input[type="button"]:disabled.slidoc-button {
@@ -338,8 +341,10 @@ code.slidoc-plugin-share-resp-prefix {
     height: 100%;
 }
 
-#slidoc-generic-overlay { z-index: 2000; opacity: 0.7; }
 #gdoc-login-overlay { z-index: 3000; opacity: 1.0; }
+#slidoc-generic-overlay { z-index: 2000; opacity: 0.7; }
+
+#slidoc-generic-overlay.slidoc-printable-overlay { background: #fff; opacity: 1.0; }
 
 .slidoc-popup {
     display: none;

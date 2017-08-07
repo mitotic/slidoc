@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.6d'
+VERSION = '0.97.6e'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -121,7 +121,7 @@ COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
 
 HIDE_HEADERS = ['attributes', 'questions', 'questionConcepts']
 
-TESTUSER_ROSTER = ['#user, test', TESTUSER_ID, '', '']
+TESTUSER_ROSTER = {'name': '#user, test', 'id': TESTUSER_ID, 'email': '', 'altid': '', 'extratime': ''}
 
 SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
@@ -1443,8 +1443,8 @@ def sheetAction(params, notrace=False):
     # [1] http://googleappsdeveloper.blogspot.co.uk/2011/10/concurrency-and-google-apps-script.html
     # we want a public lock, one that locks for all invocations
 
-    if Settings['debug'] and not notrace:
-        print("DEBUG: sheetAction PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
+    ##if Settings['debug'] and not notrace:
+    ##    print("DEBUG: sheetAction PARAMS", params.get('sheet'), params.get('id'), file=sys.stderr)
 
     returnValues = None
     returnHeaders = None
@@ -1549,9 +1549,10 @@ def sheetAction(params, notrace=False):
         adminPaced = None
         dueDate = None
         gradeDate = None
-        timedSec = None
         voteDate = None
         discussableSession = None
+        timedSec = None
+
         computeTotalScore = False
         curDate = createDate()
         curTime = sliauth.epoch_ms(curDate)
@@ -1566,7 +1567,7 @@ def sheetAction(params, notrace=False):
         if restrictedSheet and not adminUser:
             raise Exception("Error::Must be admin/grader user to access sheet '"+sheetName+"'")
 
-        rosterValues = []
+        rosterValues = None
         rosterSheet = getSheet(ROSTER_SHEET)
         if rosterSheet and not adminUser:
             # Check user access
@@ -1667,9 +1668,13 @@ def sheetAction(params, notrace=False):
                 adminPaced = sessionEntries.get('adminPaced')
                 dueDate = sessionEntries.get('dueDate')
                 gradeDate = sessionEntries.get('gradeDate')
-                timedSec = sessionAttributes['params'].get('timedSec')
                 voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
                 discussableSession = sessionAttributes.get('discussSlides') and len(sessionAttributes['discussSlides'])
+                timedSec = sessionAttributes['params'].get('timedSec')
+                if timedSec and rosterValues:
+                    extraTime = parseNumber(rosterValues.get('extratime',''))
+                    if extraTime:
+                        timedSec = timedSec * (1.0 + extraTime)
 
                 if parseNumber(sessionEntries.get('scoreWeight')):
                     # Compute total score?
@@ -2153,7 +2158,7 @@ def sheetAction(params, notrace=False):
                 # Locate unique ID row (except for log files)
                 userRow = lookupRowIndex(userId, modSheet, 1+numStickyRows)
 
-            ##returnMessages.append('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+rosterValues)
+            ##returnMessages.append('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+str(rosterValues))
             newRow = (not userRow)
 
             if (readOnlyAccess or adminUser) and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
@@ -2475,8 +2480,9 @@ def sheetAction(params, notrace=False):
                             rowValues[scoresCol-1] = scores.get('weightedCorrect', '')
 
                     # Copy user info from roster (if available)
-                    for j in range(len(rosterValues)):
-                        rowValues[j] = rosterValues[j]
+                    if rosterValues:
+                        for j in range(len(MIN_HEADERS)):
+                            rowValues[j] = rosterValues.get(MIN_HEADERS[j], '')
 
                     # Save updated row
                     userRange.setValues([rowValues])
@@ -2812,10 +2818,10 @@ def getRosterEntry(userId):
         return TESTUSER_ROSTER
     try:
         # Copy user info from roster
-        return lookupValues(userId, MIN_HEADERS, ROSTER_SHEET, listReturn=True)
+        return lookupValues(userId, TESTUSER_ROSTER.keys(), ROSTER_SHEET, False, True)
     except Exception, err:
         if isSpecialUser(userId):
-            return ['#'+userId+', '+userId, userId, '', '']
+            return {'name': '#'+userId+', '+userId, 'id': userId}
         raise Exception("Error:NEED_ROSTER_ENTRY:userID '"+userId+"' not found in roster")
 
 class LCRandomClass(object):
@@ -2961,9 +2967,10 @@ def createSessionRow(sessionName, fieldsMin, params, questions, userId, displayN
     if rosterSheet:
         rosterValues = getRosterEntry(userId)
 
-        for j in range(len(rosterValues)):
-            if rosterValues[j]:
-                rowVals[j] = rosterValues[j]
+        if rosterValues:
+            for j in range(len(MIN_HEADERS)):
+                if rosterValues.get(MIN_HEADERS[j]):
+                    rowVals[j] = rosterValues[MIN_HEADERS[j]]
 
     # Management fields
     rowVals[idCol-1] = userId
@@ -3724,8 +3731,9 @@ def lookupRowIndex(idValue, sheet, startRow=2):
     return 0
 
 
-def lookupValues(idValue, colNames, sheetName, listReturn=False):
+def lookupValues(idValue, colNames, sheetName, listReturn=False, blankValues=False):
     # Return parameters in list colNames for idValue from sheet
+    # If blankValues, return blanks for columns not found
     indexSheet = getSheet(sheetName)
     if not indexSheet:
         raise Exception('Lookup sheet '+sheetName+' not found')
@@ -3737,9 +3745,12 @@ def lookupValues(idValue, colNames, sheetName, listReturn=False):
     retVals = {}
     listVals = []
     for colName in colNames:
-        if colName not in indexColIndex:
+        colValue = ''
+        if colName in indexColIndex:
+            colValue = indexSheet.getSheetValues(sessionRow, indexColIndex[colName], 1, 1)[0][0]
+        elif not blankValues:
             raise Exception('Column '+colName+' not found in index sheet '+sheetName)
-        retVals[colName] = indexSheet.getSheetValues(sessionRow, indexColIndex[colName], 1, 1)[0][0]
+        retVals[colName] = colValue
         listVals.append(retVals[colName])
 
     return listVals if listReturn else retVals
