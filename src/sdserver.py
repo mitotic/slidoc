@@ -3305,6 +3305,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
     def get_current_user(self):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         sessionName = self.get_path_base(self.request.path)
+        filename = self.get_path_base(self.request.path, special=True)
         userId = self.get_id_from_cookie() or None
         siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])  # May be None
         cookieData = self.get_id_from_cookie(data=True) or {}
@@ -3313,11 +3314,16 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             if cookieData['locked_access'] == '/'+Options['site_name']:
                 # Allow locked site access
                 pass
-            elif sessionName and cookieData['locked_access'] == getSessionPath(sessionName, site_prefix=True):
-                # Allow locked session access
-                lockedAccess = True
             else:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to %s only' % cookieData['locked_access'])
+                expectSession = os.path.splitext(cookieData['locked_access'].split('/')[-1])[0]
+                if ('/'+RESTRICTED_PATH) in self.request.path and (filename.startswith(expectSession+'-') or siteRole == sdproxy.ADMIN_ROLE):
+                    # Restricted content for locked session
+                    pass
+                elif sessionName and cookieData['locked_access'] == getSessionPath(sessionName, site_prefix=True):
+                    # Allow locked session access
+                    lockedAccess = True
+                else:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to %s only' % cookieData['locked_access'])
         elif self.is_web_view():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to locked sessions only')
 
@@ -3382,7 +3388,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 return "noauth"
             elif not userId:
                 return None
-            elif sessionName and sessionName.endswith('-'+userId) or siteRole == sdproxy.ADMIN_ROLE:
+            elif filename.endswith('-'+userId) or siteRole == sdproxy.ADMIN_ROLE:
                 return userId
             raise tornado.web.HTTPError(404)
 

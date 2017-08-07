@@ -6251,8 +6251,10 @@ Slidoc.responseTable = function () {
 	    var shuffleStr = Sliobj.session.questionShuffle[qnumber] || '';
 	    var choice = (qAttempted.response && shuffleStr) ? choiceShuffle(qAttempted.response, shuffleStr): qAttempted.response;
 	    html += '<b>' + choice + '</b>';
-	} else {
+	} else if (question_attrs.qtype == 'number') {
 	    html += qAttempted.response;
+	} else if (qAttempted.response) {
+	    html += '*';
 	}
 	html += '</td>';
 	if (!(qnumber % 5)) {
