@@ -53,6 +53,9 @@ except ImportError:
 
 from xml.etree import ElementTree
 
+LIBRARIES_URL = 'https://mitotic.github.io/slidoc/_libraries'
+RESOURCE_PATH = '_resource'
+
 ADMIN_ROLE = 'admin'
 GRADER_ROLE = 'grader'
 
@@ -2820,12 +2823,14 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 os.makedirs(config.backup_dir)
             backup_dir = config.backup_dir + '/'
 
+    libraries_params = {'libraries_link': (config.libraries_url or LIBRARIES_URL)+''}
+
     def insert_resource(filename):
         if filename.endswith('.js'):
-            return ('<script src="%s/%s"></script>\n' % (config.resource_dir, filename)) if config.resource_dir else ('\n<script>\n%s</script>\n' % templates[filename])
+            return ('<script src="%s/%s"></script>\n' % ('/'+RESOURCE_PATH, filename)) if config.unbundle else ('\n<script>\n%s</script>\n' % templates[filename])
 
         if filename.endswith('.css'):
-            return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % (config.resource_dir, filename)) if config.resource_dir else ('\n<style>\n%s</style>\n' % templates[filename])
+            return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % ('/'+RESOURCE_PATH, filename)) if config.unbundle else ('\n<style>\n%s</style>\n' % templates[filename])
         raise Exception('Invalid filename for insert_resource: '+filename)
 
     start_date = None
@@ -3360,8 +3365,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
 
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_present else '',
-                      'pagedown_js': Pagedown_js if renderer.render_markdown else '',
-                      'skulpt_js': Skulpt_js if renderer.load_python else '',
+                      'pagedown_js': (Pagedown_js % libraries_params) if renderer.render_markdown else '',
+                      'skulpt_js': (Skulpt_js % libraries_params) if renderer.load_python else '',
                       'body_class': 'slidoc-plain-page' if topnav_html else '',
                       'top_nav':  topnav_html,
                       'top_nav_hide': ' slidoc-topnav-hide' if topnav_html else ''}
@@ -3768,8 +3773,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         js_params['plugins'] = plugin_list
         comb_params = {'session_name': combined_name,
                        'math_js': math_inc if math_load else '',
-                       'pagedown_js': Pagedown_js if pagedown_load else '',
-                       'skulpt_js': Skulpt_js if skulpt_load else '',
+                       'pagedown_js': (Pagedown_js % libraries_params) if pagedown_load else '',
+                       'skulpt_js': (Skulpt_js % libraries_params) if skulpt_load else '',
                        'plugin_tops': '',
                        'body_class': '',
                        'top_nav': '',
@@ -3814,9 +3819,9 @@ Toc_header = '''
 
 # Need latest version of Markdown for hooks
 Pagedown_js = r'''
-<script src='https://dl.dropboxusercontent.com/u/72208800/Pagedown/Markdown.Converter.js'></script>
-<script src='https://dl.dropboxusercontent.com/u/72208800/Pagedown/Markdown.Sanitizer.js'></script>
-<script src='https://dl.dropboxusercontent.com/u/72208800/Pagedown/Markdown.Extra.js'></script>
+<script src='%(libraries_link)s/Pagedown/Markdown.Converter.js'></script>
+<script src='%(libraries_link)s/Pagedown/Markdown.Sanitizer.js'></script>
+<script src='%(libraries_link)s/Pagedown/Markdown.Extra.js'></script>
 '''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
@@ -3835,9 +3840,9 @@ Skulpt_js_non_https = r'''
 '''
 
 Skulpt_js = r'''
-<script src="https://dl.dropboxusercontent.com/u/72208800/Skulpt/jquery.min.js" type="text/javascript"></script> 
-<script src="https://dl.dropboxusercontent.com/u/72208800/Skulpt/skulpt.min.js" type="text/javascript"></script> 
-<script src="https://dl.dropboxusercontent.com/u/72208800/Skulpt/skulpt-stdlib.js" type="text/javascript"></script> 
+<script src="%(libraries_link)s/Skulpt/jquery.min.js" type="text/javascript"></script> 
+<script src="%(libraries_link)s/Skulpt/skulpt.min.js" type="text/javascript"></script> 
+<script src="%(libraries_link)s/Skulpt/skulpt-stdlib.js" type="text/javascript"></script> 
 '''
 
 
@@ -4165,6 +4170,7 @@ alt_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Ext
 alt_parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='client_id,api_key (authenticate via Google; not used)')
 alt_parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 alt_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
+alt_parser.add_argument('--libraries_url', metavar='URL', help='URL for library files; default: %s' % LIBRARIES_URL)
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Sessions with questions to be modified')
@@ -4173,7 +4179,6 @@ alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', act
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
-alt_parser.add_argument('--resource_dir', help='Absolute web path to load .js and .css files from')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 alt_parser.add_argument('--session_type', metavar='TYPE', help='Session type, e.g., assignment, exam, ... (default: "")')
@@ -4183,6 +4188,7 @@ alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCR
 alt_parser.add_argument('--start_date', metavar='DATE', help="Date after which all session releases must start yyyy-mm-dd[Thh:mm]")
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
+alt_parser.add_argument('--unbundle', help='Unbundle resource files from session files', action="store_true", default=None)
 alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for uploading to remote server')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 

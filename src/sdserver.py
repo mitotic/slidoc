@@ -24,6 +24,7 @@ Command arguments:
     proxy: Enable proxy mode (cache copies of Google Sheets)
     sites: Site names, e.g., 'chem101,math101,...'
     site_label: Site label, e.g., 'MATH101'
+    libraries_dir: path to shared libraries directory
     source_dir: path to static files directory containing Slidoc .md files (default='source')
     static_dir: path to static files directory containing Slidoc html files (default='static')
     xsrf: Enable XSRF cookies for security
@@ -108,6 +109,7 @@ Options = {
     'public': False,
     'reload': False,
     'request_timeout': 60,
+    'libraries_dir': '',
     'root_users': [],
     'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
@@ -158,6 +160,8 @@ Global.split_opts = {}
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
+LIBRARIES_PATH = '_libraries'
+RESOURCE_PATH = '_resource'
 
 ADMIN_PATH = 'admin'
 
@@ -546,6 +550,14 @@ class SiteActionHandler(BaseHandler):
                 if Global.backup:
                     Global.backup.stop()
                     Global.backup = None
+                    
+                if Global.twitterStream:
+                    try:
+                        Global.twitterStream.end_stream()
+                        Global.twitterStream = None
+                    except Exception, err:
+                        pass
+
                 sdproxy.suspend_cache('shutdown')
         else:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid home action '+action)
@@ -622,6 +634,9 @@ class ActionHandler(BaseHandler):
 
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
+
+        if Options['libraries_dir']:
+            configOpts.update(libraries_url='/'+LIBRARIES_PATH)
 
         return configOpts, defaultOpts
 
@@ -794,7 +809,7 @@ class ActionHandler(BaseHandler):
                 firstNames = firstMap.values()
                 firstNames.sort()
 
-                qwheel_link = 'http://code.mitotic.org/wheel/?session=' + urllib.quote_plus(Options['site_name'])
+                qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(Options['site_name'])
                 qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x) for x in firstNames)
 
                 self.render('roster.html', site_name=Options['site_name'],
@@ -3288,6 +3303,12 @@ class PluginManager(object):
         except Exception, err:
             raise Exception('sdserver.PluginManager.writeFile: ERROR in writing file %s: %s' % (fullpath, err))
 
+class CachedStaticFileHandler(tornado.web.StaticFileHandler):
+    def set_extra_headers(self, path):
+        # Cacheable static files
+        self.set_header('Server', SERVER_NAME)
+        self.set_header('Cache-Control', 'public, max-age=900')
+    
 class BaseStaticFileHandler(tornado.web.StaticFileHandler):
     def set_extra_headers(self, path):
         # Force validation of cache
@@ -3708,6 +3729,10 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|reload|setup|shutdown|update))", SiteActionHandler) ]
+        home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {"path": os.path.join(scriptdir,'templates')}) ]
+        if Options['libraries_dir']:
+            home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {"path": Options['libraries_dir']}) ]
+
     else:
         # Site server
         home_handlers += [ (pathPrefix+r"/(_shutdown)", SiteActionHandler) ]
@@ -4230,6 +4255,7 @@ def shutdown_server():
             Global.server_socket.close()
         except Exception, excp:
             print >> sys.stderr, 'sdserver.shutdown_server: ERROR', sexcp
+            
     if Options['debug']:
         print >> sys.stderr, 'sdserver.shutdown_server:'
     
@@ -4598,6 +4624,7 @@ def main():
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("offline_sessions", default=Options["offline_sessions"], help="Pattern matching sessions that are offline assessments, default=(exam|quiz|test|midterm|final)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
+    define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")

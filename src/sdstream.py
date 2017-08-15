@@ -94,10 +94,6 @@ class TwitterStreamReader(object):
 
         print >> sys.stderr, 'TwitterStreamReader.end_stream*********END TWITTER USER STREAM'
 
-        if self.http_client:
-            self.http_client.shutdown()
-            self.http_client = None
-
         if self.restart_cb:
             IOLoop.current().remove_timeout(self.restart_cb)
             self.restart_cb = None
@@ -113,14 +109,14 @@ class TwitterStreamReader(object):
 
         ##print >> sys.stderr, 'TwitterStreamReader.start', self.twitter_config
 
-        self.http_client = tornado.httpclient.AsyncHTTPClient()
+        if not self.http_client:
+            self.http_client = tornado.httpclient.AsyncHTTPClient()
         self.http_client.fetch(self.http_request, self.handle_stream_response)
 
     def handle_stream_response(self, response):
         if self.closed:
             return
         
-        self.http_client = None
         self.opened = False
 
         resp_code = getattr(response, "code", 0)

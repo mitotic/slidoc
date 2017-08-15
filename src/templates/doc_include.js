@@ -3345,7 +3345,7 @@ Slidoc.manageSession = function() {
 	}
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
 	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
-	html += '<p></p><a class="slidoc-clickable" target="_blank" href="http://code.mitotic.org/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="https://mitotic.github.io/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
     }
 
     if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
@@ -6265,6 +6265,7 @@ Slidoc.responseTable = function () {
 	}
     }
     html += '</tr></table></pre>';
+
     html += '<br><em>Seed:</em> '+Sliobj.session.randomSeed;
     if (Sliobj.lockedView)
 	html += '<p></p><span class="slidoc-clickable" onclick="Android.printPage();">Print</span>';
