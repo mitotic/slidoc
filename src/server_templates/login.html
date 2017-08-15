@@ -17,7 +17,7 @@ body {
 {% if locked_access_link is not None %}
   <script>
     function openAndroidBarcodeScanner() {
-      Android.openBarcodeScanner();
+      Android.openBarcodeScanner('deviceid='+Android.getUniqueIdentifier());
     }
     </script>
     <p></p>

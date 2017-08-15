@@ -3539,11 +3539,12 @@ class AuthMessageHandler(BaseHandler):
 
 class AuthLoginHandler(BaseHandler):
     def get(self):
-        error_msg = self.get_argument("error", "")
-        username = str(self.get_argument("username", ""))
-        token = str(self.get_argument("token", ""))
-        usertoken = str(self.get_argument("usertoken", ""))
-        next = self.get_argument("next", "/")
+        error_msg = self.get_argument('error', '')
+        username = str(self.get_argument('username', ''))
+        token = str(self.get_argument('token', ''))
+        usertoken = str(self.get_argument('usertoken', ''))
+        device_id = str(self.get_argument('deviceid', ''))
+        next = self.get_argument('next', '/')
         if not error_msg and ':' in usertoken:
             username, _, token = usertoken.partition(':')
         
@@ -3553,7 +3554,7 @@ class AuthLoginHandler(BaseHandler):
             locked_access_link = cookieData.get('locked_access', '')
 
         if Options['debug']:
-            print >> sys.stderr, "AuthLoginHandler.get", username, token, usertoken, next, error_msg
+            print >> sys.stderr, "AuthLoginHandler.get", username, token, usertoken, next, 'devid='+device_id, error_msg
         if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
