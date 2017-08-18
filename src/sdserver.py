@@ -4426,6 +4426,7 @@ def start_server(site_number=0, restart=False):
     if Options['ssl_options'] and not site_number:
         # Redirect plain HTTP to HTTPS
         handlers = [ (r'/', PlainHTTPHandler) ]
+        handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
         plain_http_app = tornado.web.Application(handlers)
         plain_http_app.listen(80, address=Options['host'])
         print >> sys.stderr, "Listening on HTTP port"
