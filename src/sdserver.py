@@ -160,8 +160,9 @@ Global.split_opts = {}
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
-LIBRARIES_PATH = '_libraries'
 RESOURCE_PATH = '_resource'
+LIBRARIES_PATH = '_libraries'
+ACME_PATH = '.well-known/acme-challenge'
 
 ADMIN_PATH = 'admin'
 
@@ -3730,9 +3731,10 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|reload|setup|shutdown|update))", SiteActionHandler) ]
-        home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {"path": os.path.join(scriptdir,'templates')}) ]
+        home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
+        home_handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
         if Options['libraries_dir']:
-            home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {"path": Options['libraries_dir']}) ]
+            home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {'path': Options['libraries_dir']}) ]
 
     else:
         # Site server
@@ -3864,10 +3866,10 @@ def createApplication():
                 dir = Options['plugindata_dir'] + pathPrefix
             else:
                 dir = Options['static_dir'] + pathPrefix
-            site_handlers += [ (r'/%s(%s/.*)' % (sprefix, path), file_handler, {"path": dir}) ]
+            site_handlers += [ (r'/%s(%s/.*)' % (sprefix, path), file_handler, {'path': dir}) ]
 
         # Default static path
-        site_handlers += [ (r'/%s([^_].*)' % sprefix, file_handler, {"path": Options['static_dir']+pathPrefix}) ]
+        site_handlers += [ (r'/%s([^_].*)' % sprefix, file_handler, {'path': Options['static_dir']+pathPrefix}) ]
 
     if Options['site_list']:
         if not Options['site_number']:
