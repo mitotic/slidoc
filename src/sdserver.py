@@ -4428,7 +4428,7 @@ def start_server(site_number=0, restart=False):
         handlers = [ (r'/', PlainHTTPHandler) ]
         handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
         plain_http_app = tornado.web.Application(handlers)
-        plain_http_app.listen(80, address=Options['host'])
+        plain_http_app.listen(80 + (options.port - (options.port % 1000)), address=Options['host'])
         print >> sys.stderr, "Listening on HTTP port"
 
     if not Options['site_list']:
