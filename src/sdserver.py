@@ -4667,9 +4667,9 @@ def main():
         Global.userRoles.update_root_roles(options.auth_users)
 
     Options['ssl_options'] = None
-    if options.port == 443:
+    if options.port % 1000 == 443:
         if not options.ssl:
-            sys.exit('SSL options must be specified for port 443')
+            sys.exit('SSL options must be specified for http port ending in 443')
         certfile, keyfile = options.ssl.split(',')
         Options['ssl_options'] = {"certfile": certfile, "keyfile": keyfile}
 

@@ -1106,6 +1106,7 @@ Slidoc.assessmentMenu = function () {
 	    else
 		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	}
+	html += '<li><a class="slidoc-clickable" href="'+ Sliobj.sitePrefix + '/_submissions/' + Sliobj.sessionName + '">View submissions</a></li>\n';
 	var disabled = adminAccess && !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
 	html += '<li>' + clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '</li>\n';
     }
