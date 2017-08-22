@@ -3717,7 +3717,7 @@ class PlainHTTPHandler(tornado.web.RequestHandler):
 
     def prepare(self):
         if self.request.protocol == 'http':
-            self.redirect('https://' + self.request.host, permanent=False)
+            self.redirect('https:'+self.request.full_url()[len("http:"):], permanent=False)
 
     def get(self):
         self.write("Hello, world")
@@ -4425,11 +4425,11 @@ def start_server(site_number=0, restart=False):
 
     if Options['ssl_options'] and not site_number:
         # Redirect plain HTTP to HTTPS
-        handlers = [ (r'/', PlainHTTPHandler) ]
-        handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
+        handlers = [ (r'/'+ACME_PATH+'/(.*)', BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
+        handlers += [ (r'/.*', PlainHTTPHandler) ]
         plain_http_app = tornado.web.Application(handlers)
         plain_http_app.listen(80 + (options.port - (options.port % 1000)), address=Options['host'])
-        print >> sys.stderr, "Listening on HTTP port"
+        print >> sys.stderr, 'Listening on HTTP port'
 
     if not Options['site_list']:
         # Start single site server
