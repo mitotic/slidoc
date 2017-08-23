@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.6e'
+VERSION = '0.97.7'
 
 def sub_version(version):
     # Returns portion of version that should match
