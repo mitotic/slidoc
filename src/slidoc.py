@@ -82,7 +82,7 @@ FUTURE_DATE = 'future'
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'lock': '&#x1f512;'}
+        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'lock': '&#x1f512;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):

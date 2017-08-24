@@ -419,16 +419,16 @@ function getCookieValue(a, stripQuote) {
     return stripQuote ? c.replace(/"/g,'') : c;
 }
 
-function getSiteRole(siteName, siteRoles) {
+function getSiteRole(siteName, siteRoles, checkGuest) {
     // Return role for site or null
     var scomps = siteRoles.split(',');
     for (var j=0; j<scomps.length; j++) {
 	var smatch = /^([^\+]+)(\+(\w+))?$/.exec(scomps[j]);
 	if (smatch && smatch[1] == siteName) {
-	    return smatch[3] || '';
+	    return checkGuest ? 'guest' : (smatch[3] || '');
 	}
-	return null;
     }
+    return null;
 }
 
 function getServerCookie() {
@@ -3250,9 +3250,15 @@ function twitterMessageDisplay(eventArgs) {
 Slidoc.userProfile = function() {
     if (!Sliobj.params.gd_sheet_url)
 	return;
+    var userId = getUserId();
+    if (!userId) {
+	if (Sliobj.closePopup)
+	    Sliobj.closePopup();
+	Slidoc.showPopup('<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>');
+	return;
+    }
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Looking up user info...');
-    var userId = getUserId();
     Sliobj.rosterSheet.getRow(userId, {}, userProfileCallback.bind(null, userId));
 }
 
@@ -3260,16 +3266,15 @@ function userProfileCallback(userId, result, retStatus) {
     Slidoc.log('userProfileCallback:', userId, result, retStatus);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    if (!result) {
-	alert('No info found for user '+userId);
-	return;
+    var html = '<span class="slidoc-clickable" onclick="Slidoc.userLogout();">Logout</span><hr>';
+    html += 'User: <b>'+userId+'</b><br>';
+    if (result) {
+	html += 'Name: '+escapeHtml(result.name)+'<br>\n';
+	html += 'Email: '+escapeHtml(result.email)+'<br>\n';
+	html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">modify</span>)<br>\n';
     }
-    var html = 'Profile for user <b>'+userId+'</b><p></p>';
-    html += 'Name: '+escapeHtml(result.name)+'<br>\n';
-    html += 'Email: '+escapeHtml(result.email)+'<br>\n';
-    html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">modify</span>)<br>\n';
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
-	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain user</a>)<br>\n';
+	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain/guest user</a>)<br>\n';
     }
     Slidoc.showPopup(html);
 }
@@ -3281,9 +3286,11 @@ Slidoc.manageSession = function() {
     var userRole = userId;
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole)
 	userRole += '/'+Slidoc.serverCookie.siteRole;
+    else if (Slidoc.serverCookie && Slidoc.serverCookie.sites && getSiteRole(Sliobj.params.siteName, Slidoc.serverCookie.sites, true))
+	userRole += ' (guest)';
     if (Sliobj.sessionName) {
 	if (userId) {
-	    html += 'User: <b>'+userRole+'</b> (<span class="slidoc-clickable" onclick="Slidoc.userProfile();">profile</span>, <span class="slidoc-clickable" onclick="Slidoc.userLogout();">logout</span>)<br>';
+	    html += 'User: <b>'+userRole+'</b><br>';
 	    if (Sliobj.session) {
 		if (Sliobj.session.displayName)
 		    html += 'Name: '+Sliobj.session.displayName;

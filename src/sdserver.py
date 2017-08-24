@@ -2575,6 +2575,7 @@ class UserActionHandler(ActionHandler):
                 self.set_header('Content-Type', 'application/json')
                 retval = {'result': 'error', 'error': '@%s should be following @%s for interaction' % (twitterName, Global.twitter_params['screen_name'])}
                 self.write( json.dumps(retval) )
+                return
 
             response = yield tornado.gen.Task(sdstream.twitter_task, Global.twitter_params, "friends")
             retval = json.loads(response.body)
@@ -2600,7 +2601,7 @@ class UserActionHandler(ActionHandler):
                                               text=text)
             retval = json.loads(response.body)
             if retval.get('errors'):
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to follow @%s: %s' % (twitterName, retval.get('errors')) )
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to send direct message to @%s: %s' % (twitterName, retval.get('errors')) )
             retval = None
 
         except tornado.web.HTTPError:
@@ -2655,6 +2656,9 @@ class UserActionHandler(ActionHandler):
         except tornado.web.HTTPError:
             raise
         except Exception, excp:
+            if Options['debug']:
+                import traceback
+                traceback.print_exc()
             if retval and retval.get('errors'):
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in twitter setup for @%s: %s' % (twitterName, retval.get('errors')) )
             else:

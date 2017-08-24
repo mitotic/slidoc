@@ -661,7 +661,7 @@ class Sheet(object):
             writer = csv.writer(memfile)
             writer.writerow(headers)
             for row in dataRows:
-                writer.writerow(row)
+                writer.writerow([backupCell(x) for x in row])
             content = memfile.getvalue()
             memfile.close()
             return content
