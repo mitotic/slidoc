@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.7';
+var VERSION = '0.97.7b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1470,16 +1470,13 @@ function sheetAction(params) {
 		    // New user; insert row in sorted order of name (except for log files)
 		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
-                    if (userId == MAXSCORE_ID) {
-			userRow = numStickyRows+1;
-                    } else if (userId == TESTUSER_ID && !loggingSheet) {
-                        // Test user always appears after max score
-			var maxScoreRow = lookupRowIndex(MAXSCORE_ID, modSheet, numStickyRows+1);
-                        userRow = maxScoreRow ? maxScoreRow+1 : numStickyRows+1
-		    } else if (numRows > numStickyRows && !loggingSheet) {
+			
+		    if (numRows > numStickyRows && !loggingSheet) {
 			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], numRows-numStickyRows, 1);
 			var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], numRows-numStickyRows, 1);
-			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID);
+			userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds);
+			if (userId == MAXSCORE_ID && userRow != numStickyRows+1)
+			    throw('Error::Inconsistent _maxscore row insert in row '+str(userRow)+' in sheet '+sheetName);
 		    } else {
 			userRow = numRows+1;
 		    }
@@ -1723,7 +1720,7 @@ function sheetAction(params) {
                             var discussRows = discussSheet.getLastRow();
                             var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1);
                             var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1);
-                            var temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds, DISCUSS_ID);
+                            var temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds);
                             discussSheet.insertRowBefore(temRow);
                             discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
                             discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[displayName]]);
@@ -2961,13 +2958,11 @@ function setValue(idValue, colName, colValue, sheetName) {
     indexSheet.getRange(sessionRow, indexColIndex[colName], 1, 1).setValue(colValue);
 }
 
-function locateNewRow(newName, newId, nameValues, idValues, skipId) {
+function locateNewRow(newName, newId, nameValues, idValues) {
     // Return row number before which new name/id combination should be inserted
     for (var j=0; j<nameValues.length; j++) {
-	if (skipId && skipId == idValues[j][0])
-	    continue;
 	if (nameValues[j][0] > newName || (nameValues[j][0] == newName && idValues[j][0] > newId)) {
-	    // Sort by name and then by id
+	    // Sort by name and then by id (blank names will be first)
 	    return j+1;
 	}
     }

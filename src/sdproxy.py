@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.7'
+VERSION = '0.97.7b'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -2312,16 +2312,12 @@ def sheetAction(params, notrace=False):
                     if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
                         raise Exception('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName)
 
-                    if userId == MAXSCORE_ID:
-                        userRow = numStickyRows+1
-                    elif userId == TESTUSER_ID and not loggingSheet:
-                        # Test user always appears after max score
-                        maxScoreRow = lookupRowIndex(MAXSCORE_ID, modSheet, numStickyRows+1)
-                        userRow = maxScoreRow+1 if maxScoreRow else numStickyRows+1
-                    elif numRows > numStickyRows and not loggingSheet:
+                    if numRows > numStickyRows and not loggingSheet:
                         displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], numRows-numStickyRows, 1)
                         userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], numRows-numStickyRows, 1)
-                        userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds, TESTUSER_ID)
+                        userRow = numStickyRows + locateNewRow(displayName, userId, displayNames, userIds)
+                        if userId == MAXSCORE_ID and userRow != numStickyRows+1:
+                            raise Exception('Error::Inconsistent _maxscore row insert in row '+str(userRow)+' in sheet '+sheetName)
                     else:
                         userRow = numRows+1
 
@@ -2546,7 +2542,7 @@ def sheetAction(params, notrace=False):
                             discussRows = discussSheet.getLastRow()
                             discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1)
                             discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1)
-                            temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds, DISCUSS_ID)
+                            temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds)
                             discussSheet.insertRowBefore(temRow, keyValue=userId)
                             discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[displayName]])
                             
@@ -3769,13 +3765,11 @@ def setValue(idValue, colName, colValue, sheetName):
         raise Exception('Column '+colName+' not found in index sheet '+sheetName)
     indexSheet.getRange(sessionRow, indexColIndex[colName], 1, 1).setValues([[colValue]])
 
-def locateNewRow(newName, newId, nameValues, idValues, skipId=None):
+def locateNewRow(newName, newId, nameValues, idValues):
     # Return row number before which new name/id combination should be inserted
     for j in range(len(nameValues)):
-        if skipId and skipId == idValues[j][0]:
-            continue
         if nameValues[j][0] > newName or (nameValues[j][0] == newName and idValues[j][0] > newId):
-            # Sort by name and then by id
+            # Sort by name and then by id (blank names will be first)
             return j+1
     return len(nameValues)+1
 
