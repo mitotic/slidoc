@@ -419,16 +419,25 @@ function getCookieValue(a, stripQuote) {
     return stripQuote ? c.replace(/"/g,'') : c;
 }
 
-function getSiteRole(siteName, siteRoles, checkGuest) {
+function getSiteRole(siteName, siteRoles, checkIfGuest) {
     // Return role for site or null
     var scomps = siteRoles.split(',');
     for (var j=0; j<scomps.length; j++) {
 	var smatch = /^([^\+]+)(\+(\w+))?$/.exec(scomps[j]);
 	if (smatch && smatch[1] == siteName) {
-	    return checkGuest ? 'guest' : (smatch[3] || '');
+	    return checkIfGuest ? 'guest' : (smatch[3] || '');
 	}
     }
     return null;
+}
+
+function getUserRole(checkIfGuest) {
+    var userRole = '';
+    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole)
+	userRole = Slidoc.serverCookie.siteRole;
+    else if (Slidoc.serverCookie && Slidoc.serverCookie.sites && checkIfGuest && getSiteRole(Sliobj.params.siteName, Slidoc.serverCookie.sites, true))
+	userRole = 'guest';
+    return userRole;
 }
 
 function getServerCookie() {
@@ -3272,10 +3281,17 @@ function userProfileCallback(userId, result, retStatus) {
 	html += 'Name: '+escapeHtml(result.name)+'<br>\n';
 	html += 'Email: '+escapeHtml(result.email)+'<br>\n';
 	html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">modify</span>)<br>\n';
+    } else {
+	if (Sliobj.session.displayName)
+	    html += 'Name: '+escapeHtml(Sliobj.session.displayName);
+	if (Sliobj.session.email)
+	    html += ' ('+escapeHtml(Sliobj.session.email)+')';
+	html += '<br>\n';
     }
-    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
-	html += 'Site role: '+Slidoc.serverCookie.siteRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain/guest user</a>)<br>\n';
-    }
+    var userRole = getUserRole(true);
+    if (userRole)
+	html += 'Role: '+userRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain/guest user</a>)<br>\n';
+
     Slidoc.showPopup(html);
 }
 
@@ -3283,25 +3299,10 @@ Slidoc.manageSession = function() {
     var html = '<b>Settings</b><p></p>';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
-    var userRole = userId;
-    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole)
-	userRole += '/'+Slidoc.serverCookie.siteRole;
-    else if (Slidoc.serverCookie && Slidoc.serverCookie.sites && getSiteRole(Sliobj.params.siteName, Slidoc.serverCookie.sites, true))
-	userRole += ' (guest)';
+    var userRole = getUserRole();
+    if (userRole)
+	html += 'Role: <b>'+userRole+'</b><br>';
     if (Sliobj.sessionName) {
-	if (userId) {
-	    html += 'User: <b>'+userRole+'</b><br>';
-	    if (Sliobj.session) {
-		if (Sliobj.session.displayName)
-		    html += 'Name: '+Sliobj.session.displayName;
-		if (Sliobj.session.email)
-		    html += ' ('+Sliobj.session.email;+')';
-		html += '<br>\n';
-	    }
-	} else if (window.GService) {
-	    html += '<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>\n';
-	}
-
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
 	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';

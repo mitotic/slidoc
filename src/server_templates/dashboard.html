@@ -17,22 +17,14 @@
   <b>(Slidoc version {{version}})</b>
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_upload">Upload files</a></b>
-  <p></p>
-
-  <b><a class="clickable" href="{{ site_prefix }}/_actions">Site actions</a></b>
-  <p></p>
-
-  <b><a class="clickable" href="{{ site_prefix }}/_sessions">Manage sessions</a></b>
-  <p></p>
-
-  <hr>
-
-  <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>
-
-  <hr>
-
   Current interactive session: {% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}
+  <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_sessions">Create and manage sessions</a></b>
+  <p></p>
+
+  <hr>
+  <em>Available actions</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;), Browse folder (&#x1F4C2;)
   <p></p>
 
   Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
@@ -43,8 +35,15 @@
   <a class="clickable" href="{{ site_prefix }}/_sheet/scores_slidoc" >&#9783;</a>
   <p></p>
 
-  Browse site files: <a class="clickable" href="{{ site_prefix }}/_browse">&#x1F4C2;</a> 
+  All site files: <a class="clickable" href="{{ site_prefix }}/_browse">&#x1F4C2;</a> 
   <p></p>
+
+  <hr>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>
+  <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_actions">Other site actions</a></b>
 
 </body>
 </html>

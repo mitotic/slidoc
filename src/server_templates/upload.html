@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- upload template for slidoc server --->
-<!-- upload parameters: site_name, session_types, upload_type, session_number, err_msg -->
+<!-- upload parameters: site_name, session_types, upload_type, session_name, session_number, err_msg -->
 
 {% include "base.html" %}
 
@@ -21,8 +21,11 @@
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}
-        Uploading session: <b>{{ upload_type }}{% if str(session_number).isdigit() %}{{ '%02d' % int(session_number) }}{% end %}</b>
+        Uploading: <b>{{ upload_type }}{% if str(session_number).isdigit() %}{{ '%02d' % int(session_number) }}{% end %}</b>
         <input type="hidden" name="sessiontype" value="{{ upload_type }}">
+        {% if upload_type == 'top' %}
+        <input type="hidden" name="topname" value="{{ session_name }}">
+        {% end %}
       {% else %}
         <label for="sessiontype">Session type:</label><br>
         <table>
@@ -34,7 +37,7 @@
         Session names will be of the form <tt>sessionType??</tt>, e.g., <tt>lecture01</tt>
       {% end %}
      <br>
-     {% if upload_type == 'top' or str(session_number).isdigit() %}
+     {% if upload_type in ('raw', 'top') or str(session_number).isdigit() %}
      <input type="hidden" name="sessionnumber" value="{{ session_number }}">
      {% else %}
      <label for="sessionnumber">Session number:</label>
@@ -42,21 +45,32 @@
      (needed only for non-top/raw cases; special value 0 denotes ToC header)<br>
      {% end %}
      <p></p>
-     <label for="sessioncreate">Create blank session?</label>
+
+     {% if session_name == 'index' or upload_type not in ('raw', 'top') %}
+     <label for="sessioncreate">Create blank content?</label>
      <input type="checkbox" id="sessioncreate" name="sessioncreate" value="upload">
      <p></p>
+     {% end %}
+	
+     {% if session_number  and (not str(session_number).isdigit() or int(session_number)) %}
      <label for="sessionmodify">Modify questions?</label>
      <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
      <p></p>
-     <label for="upload1">Session file markdown (.md) or powerpoint (.pptx):</label><br>
+     {% end %}
+
+     <label for="upload1">Markdown (.md) or powerpoint (.pptx) file:</label><br>
      <input type="file" id="upload1" name="upload1"  accept=".md,.pptx" value="file1">
      <p></p>
      <label for="upload2">Zip archive with Markdown, images, HTML or data (.zip):</label><br>
      <input type="file" id="upload2" name="upload2"  accept=".zip" value="file2">
      <p></p>
-     Images in the zip archive should have names of the form
-     <code>sessionName/*.jpg</code> for <code>.pptx</code> files and of the
-     form <code>sessionName_images/*.jpg</code> for <code>.md</code> files
+     Sessions as well as raw/Markdown top-level web content may be uploaded as zip
+     archives. For sessions, images in the zip archive should have names of the form
+     <code>sessionName/*.jpg</code> for pixelized <code>.pptx</code> files and of the
+     form <code>sessionName_images/*.jpg</code> for embedding in <code>.md</code> files,
+     The Markdown content may optionally be included in the archive, with the name <code>content.md</code>,
+     instead of being provided as a separate file. For top-level
+     content, the zip archive filename will be used as the "session name".
    </fieldset>
    {% module xsrf_form_html() %}
    <div>

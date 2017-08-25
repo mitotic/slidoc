@@ -159,6 +159,7 @@ Global.split_opts = {}
 
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
+RAWPRIVATE_PATH = '_rawprivate'
 RESTRICTED_PATH = '_restricted'
 RESOURCE_PATH = '_resource'
 LIBRARIES_PATH = '_libraries'
@@ -1007,16 +1008,21 @@ class ActionHandler(BaseHandler):
             if smatch:
                 upload_type = smatch.group(1)
                 session_number = smatch.group(2)
+            elif sessionName == RAW_UPLOAD:
+                upload_type = RAW_UPLOAD
+                session_number = ''
             else:
                 upload_type = TOP_LEVEL if sessionName else ''
                 session_number = ''
             self.render('upload.html', site_name=Options['site_name'],
-                        upload_type=upload_type, session_number=session_number, session_types=SESSION_TYPES, err_msg='')
+                        upload_type=upload_type, session_name=sessionName, session_number=session_number, session_types=SESSION_TYPES, err_msg='')
 
         elif action == '_prefill':
             if sdproxy.getRowMap(sessionName, 'Timestamp', regular=True):
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s already filled' % sessionName)
             nameMap = sdproxy.lookupRoster('name')
+            if not nameMap:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s has no roster for prefill' % sessionName)
             count = 0
             for userId, name in nameMap.items():
                 if not name or name.startswith('#'):
@@ -1073,6 +1079,9 @@ class ActionHandler(BaseHandler):
                 return
             sessionConnections = WSHandler.get_connections(sessionName)
             nameMap = sdproxy.lookupRoster('name')
+            if not nameMap:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s has no roster for submissions' % sessionName)
+    
             if userId:
                 if not dateStr:
                     self.displayMessage('Please specify date')
@@ -1490,12 +1499,14 @@ class ActionHandler(BaseHandler):
                              errMsg += '\n'.join(errors)+'\n'
                         if errMsg:
                             self.displayMessage('<pre>'+errMsg+'</pre>')
+
             elif action in ('_upload',):
                 # Import two files
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
 
                 uploadType = self.get_argument('sessiontype', '')
+                topName = self.get_argument('topname', '')
                 sessionCreate = self.get_argument('sessioncreate', '')
                 fname1 = ''
                 fbody1 = ''
@@ -1503,7 +1514,7 @@ class ActionHandler(BaseHandler):
                 fbody2 = ''
                 if not sessionCreate:
                     if 'upload1' not in self.request.files and 'upload2' not in self.request.files:
-                        self.displayMessage('No session file(s) to upload!')
+                        self.displayMessage('No file(s) to upload!')
                         return
 
                     if 'upload1' in self.request.files:
@@ -1524,9 +1535,12 @@ class ActionHandler(BaseHandler):
                     sessionName = ''
                 elif uploadType == TOP_LEVEL:
                     if sessionCreate:
-                        raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot create blank top session; upload a file')
+                        if not topName:
+                            raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot create blank top session; upload a file' )
+                        fname1 = topName + '.md'
+                        fbody1 = topName + ' Markdown content'
                     sessionNumber = 0
-                    sessionName = os.path.basename(fname1 or fname2).splitext()[0] # Need to change this to read session name
+                    sessionName = os.path.splitext(os.path.basename(fname1 or fname2))[0]
                 else:
                     if uploadType not in SESSION_TYPE_SET:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Unrecognized session type: '+uploadType)
@@ -1547,7 +1561,7 @@ class ActionHandler(BaseHandler):
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 
                 try:
-                    errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify)
+                    errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify, create=sessionCreate)
                 except Exception, excp:
                     if Options['debug']:
                         import traceback
@@ -1556,7 +1570,7 @@ class ActionHandler(BaseHandler):
 
                 if errMsg:
                     self.render('upload.html', site_name=Options['site_name'],
-                                upload_type=uploadType, session_number=sessionNumber, session_types=SESSION_TYPES, err_msg=errMsg)
+                                upload_type=uploadType, session_name=sessionName, session_number=(sessionNumber or ''), session_types=SESSION_TYPES, err_msg=errMsg)
                 elif uploadType != RAW_UPLOAD:
                     site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
                     self.redirect(site_prefix+'/_preview/index.html')
@@ -1628,7 +1642,7 @@ class ActionHandler(BaseHandler):
             topnavList = ['index.html'] + topnavList
         return topnavList
 
-    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, modimages='', deleteSlideNum=0):
+    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, create=False, modimages='', deleteSlideNum=0):
         # Return null string on success or error message
         if self.previewActive():
             raise Exception('Already previewing session')
@@ -1696,7 +1710,7 @@ class ActionHandler(BaseHandler):
 
         if pacedSession(uploadType) and sessionName != 'index':
             # Lock proxy for preview
-            temMsg = sdproxy.startPreview(sessionName)
+            temMsg = sdproxy.startPreview(sessionName, create=create)
             if temMsg:
                 raise Exception('Unable to preview session: '+temMsg)
 
@@ -3418,11 +3432,13 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                 return userId
             raise tornado.web.HTTPError(404)
 
-        elif ('/'+PRIVATE_PATH) in self.request.path:
-            # Paths containing '/'+PRIVATE_PATH are always protected
+        elif ('/'+PRIVATE_PATH) in self.request.path or ('/'+RAWPRIVATE_PATH) in self.request.path:
+            # Paths containing '/'+PRIVATE_PATH are always protected and used for session-related content
+            # '/'+RAWPRIVATE_PATH is used to restrict non-session content to users with access to the site
             if not userId:
                 return None
-            if sessionName and sessionName != 'index':
+
+            if ('/'+PRIVATE_PATH) in self.request.path and sessionName and sessionName != 'index':
                 # Session access checks
                 gradeDate = None
                 releaseDate = None
@@ -3485,7 +3501,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
                     # External user
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:User not pre-authorized to access site')
 
-                # Check userId appears in roster
+                # Check if userId appears in roster
                 if sdproxy.getSheet(sdproxy.ROSTER_SHEET) and not sdproxy.lookupRoster('id', userId):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
                     
@@ -3863,7 +3879,7 @@ def createApplication():
     if Options['static_dir']:
         sprefix = Options['site_name']+'/' if Options['site_name'] else ''
         # Handle special paths
-        for path in [PRIVATE_PATH, RESTRICTED_PATH, PLUGINDATA_PATH]:
+        for path in [RAWPRIVATE_PATH, PRIVATE_PATH, RESTRICTED_PATH, PLUGINDATA_PATH]:
             if path == PLUGINDATA_PATH:
                 if not Options['plugindata_dir']:
                     continue

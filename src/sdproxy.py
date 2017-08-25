@@ -219,7 +219,7 @@ initCache()
 def previewingSession():
     return Global.previewStatus.get('sessionName', '')
 
-def startPreview(sessionName):
+def startPreview(sessionName, create=False):
     # Initiate/end preview of session
     # (Delay upstream updates to session sheet and index sheet; also lock all index sheet rows except for this session)
     # Return error message or null string
@@ -249,11 +249,11 @@ def startPreview(sessionName):
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
-        if not indexSheet:
+        if not indexSheet and not create:
             return 'Index sheet '+INDEX_SHEET+' not found!'
 
     Global.previewStatus = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
-                              'indexSheetOrig': indexSheet.copy()}
+                              'indexSheetOrig': indexSheet.copy() if indexSheet else None}
 
     if Settings['debug']:
         print("DEBUG:startPreview: %s " % sessionName, file=sys.stderr)
@@ -300,7 +300,10 @@ def revertPreview(saved=False, noupdate=False):
             Sheet_cache[sessionName] = Global.previewStatus['sessionSheetOrig']
         else:
             delSheet(sessionName)
-        Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetOrig']
+        if Global.previewStatus['indexSheetOrig']:
+            Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetOrig']
+        else:
+            delSheet(INDEX_SHEET)
 
     endPreview(noupdate=noupdate)
 

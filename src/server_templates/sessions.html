@@ -61,10 +61,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   Status: <tt>{{ message }}</tt>
   <p></p>
 
-  <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Upload
-  <p></p>
-
-  <a href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add session type</a>
+  <a href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Create session type</a>
   <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
     <label for="sessiontype">Session type:</label><br>
@@ -81,17 +78,14 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
     <input type="hidden" name="sessioncreate" value="sessions">
 
     <div>
-      <input id="session-upload-submit" type="submit" value="Create session">
+      <input id="session-upload-submit" type="submit" value="Create session type">
     </div>
     </fieldset>
   </form>
+  <p></p>
 
   <p></p>
-  <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Rebuild All
-  <p></p>
-  <label for="rebuildforce">Force re-builds</label>
-  <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
-  <p></p>
+  <h3>Session directory</h3>
   <ul>
     {% for dirname, private, sessions, dates, logs in session_props %}
     <li>
@@ -143,6 +137,41 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
     </li>
     {% end %}
   </ul>
+  <p></p>
+  <em>Directory actions</em>: View spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
+  Rebuild (&#x21BA;), Delete (&#x1F5D1;), New session (<b>+</b>)
+  <p></p>
+
+  <a href="{{ site_prefix }}/_upload/top">Upload top-level Markdown content</a>
+  <p></p>
+
+  <a href="{{ site_prefix }}/_upload/raw">Upload top-level raw web content</a>
+  <p></p>
+
+  Notes:
+  <ul>
+    <li><code>index</code> is the home page of the web site</li>
+    <li>Rebuilding generates HTML web pages from Markdown content</li>
+  </ul>
+  <p></p>
+
+  <a href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced options</a>
+  <div id="advanced-opts" style="display: none; border: 1px solid;">
+  <p></p>
+  <em>Advanced options:</em><p></p>
+  <p></p>
+  &nbsp;<label for="rebuildforce">Force re-build of unmodified sessions</label>
+  <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
+  <hr>
+  <p></p>
+  <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Rebuild all sessions 
+  <p></p>
+  <span class="clickable" onclick="action('reindex','all','for ');">&#x2336;</span>: Reindex all sessions 
+  <p></p>
+  <hr>
+  <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Flexible file upload 
+  <p></p>
+  </div>
 
 </body>
 </html>

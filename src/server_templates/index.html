@@ -34,7 +34,7 @@ body {
   text-align: right;
 }
 
-.home-user a {
+a.clickable {
   color: #ffa500;
    text-decoration: none;
 }
@@ -48,9 +48,9 @@ body {
     <h2 class="home-title">Slidoc sites</h2>
 
     <div class="home-user">
-      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/privileged{% end %}</b> (<a href="{{ logout_url }}">logout</a>)
+      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/privileged{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a>)
       {% else %}
-      <a href="{{ login_url }}">Login</a>
+      <a class="clickable" href="{{ login_url }}">Login</a>
       {% end %}
       </b></span>
     </div>
@@ -61,7 +61,7 @@ body {
   <ul>
       {% for j, site in enumerate(sites) %}
         {% if not site_restrictions[j] or site_restrictions[j] == 'readonly' or site_roles[j] is not None %}
-        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}</li>
+        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a>{% end %}</li>
         {% end %}
       <p></p>
       {% end %}
