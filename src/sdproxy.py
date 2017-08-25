@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.7b'
+VERSION = '0.97.7c'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -96,15 +96,17 @@ COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
 
 ACTION_FORMULAS = False
-TOTAL_COLUMN = 'q_total'      # session total column name (to avoid formula in session sheet)
+TOTAL_COLUMN = 'q_total'        # session total column name (to avoid formula in session sheet)
 
-RETRY_WAIT_TIME = 5           # Minimum time (sec) before retrying failed Google Sheet requests
-RETRY_MAX_COUNT = 5           # Maximum number of failed Google Sheet requests
-CACHE_HOLD_SEC = 3600         # Maximum time (sec) to hold sheet in cache
-MISS_RETRY_SEC = 1800         # Time period between attempts to access missed optional sheets
-PROXY_UPDATE_ROW_LIMIT = 200  # Max. no of rows per sheet, per proxy update request
+RETRY_WAIT_TIME = 5             # Minimum time (sec) before retrying failed Google Sheet requests
+RETRY_MAX_COUNT = 5             # Maximum number of failed Google Sheet requests
+CACHE_HOLD_SEC = 3600           # Maximum time (sec) to hold sheet in cache
+MISS_RETRY_SEC = 1800           # Time period between attempts to access missed optional sheets
+TIMED_GRACE_SEC = 15            # Grace period for timed submissions (usually about 15 seconds)
 
-TIMED_GRACE_SEC = 15          # Grace period for timed submissions (usually about 15 seconds)
+PROXY_UPDATE_ROW_LIMIT = 200    # Max. no of rows per sheet, per proxy update request
+# (Set to 0 for no limit to update row count, approximating transactional behavior for databases,
+#  because remote cache updates occur between web requests, except when shutting down.)
 
 ADMIN_ROLE = 'admin'
 GRADER_ROLE = 'grader'
@@ -258,14 +260,15 @@ def startPreview(sessionName):
 
     return ''
 
-def endPreview():
+def endPreview(noupdate=False):
     # End preview; enable upstream updates
     if not Global.previewStatus:
         return
     if Settings['debug']:
         print("DEBUG:endPreview: %s " % Global.previewStatus.get('sessionName'), file=sys.stderr)
     Global.previewStatus = {}
-    schedule_update(force=True)
+    if not noupdate:
+        schedule_update(force=True)
 
 
 def savePreview():
@@ -282,7 +285,7 @@ def savePreview():
     Global.previewStatus['sessionSheetSave'] = sessionSheet.copy()
     Global.previewStatus['indexSheetSave'] = indexSheet.copy()
 
-def revertPreview(saved=False):
+def revertPreview(saved=False, noupdate=False):
     # Discard all changes to session sheet and session index sheet and revert to original (or saved) sheet values
     # and end preview
     sessionName = Global.previewStatus.get('sessionName', '')
@@ -299,13 +302,13 @@ def revertPreview(saved=False):
             delSheet(sessionName)
         Sheet_cache[INDEX_SHEET] = Global.previewStatus['indexSheetOrig']
 
-    endPreview()
+    endPreview(noupdate=noupdate)
 
 def freezeCache(fill=False):
     # Freeze cache (clear when done)
     if Global.previewStatus:
         raise Exception('Cannot freeze when previewing session '+Global.previewStatus['sessionName'])
-    if Global.suspended == "freeze":
+    if Global.suspended == 'freeze':
         return
     if fill:
         # Fill cache
@@ -330,7 +333,7 @@ def backupSheets(dirpath=''):
         dirpath += sliauth.iso_date(nosec=True).replace(':','-')
     if Settings['site_name']:
         dirpath += '/' + Settings['site_name']
-    suspend_cache("backup")
+    suspend_cache('backup')
     if Settings['debug']:
         print("DEBUG:backupSheets: %s started %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
     errorList = []
@@ -371,7 +374,7 @@ def backupSheets(dirpath=''):
         if errors:
             print(errors, file=sys.stderr)
         print("DEBUG:backupSheets: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
-    suspend_cache("")
+    suspend_cache('')
     return errors
 
 
@@ -1138,12 +1141,15 @@ def schedule_update(waitSec=0, force=False, synchronous=False):
     else:
         update_remote_sheets(force=True, synchronous=synchronous)
 
-def suspend_cache(action="shutdown"):
-    if Global.suspended == "freeze" and action != "clear":
-        raise Exception("Must clear after freeze")
+def suspend_cache(action=''):
+    # action=shutdown must be called from a stand-alone request as it triggers non-transactional synchronous updates
+    if Global.suspended == 'freeze' and action != 'clear':
+        raise Exception('Must clear after freeze')
 
     Global.suspended = action
-    if action == "shutdown":
+    if action == 'shutdown':
+        if previewingSession():
+            revertPreview(noupdate=True)
         schedule_update(force=True, synchronous=True)
     elif action:
         print("Suspended for", action, file=sys.stderr)
@@ -1164,34 +1170,36 @@ def updates_current():
     if not Global.suspended:
         return
 
-    if Global.suspended == "freeze":
+    if Global.suspended == 'freeze':
         return
 
-    if Global.suspended == "clear":
+    if Global.suspended == 'clear':
         initCache()
         print("Cleared cache", file=sys.stderr)
-    elif Global.suspended == "shutdown":
+    elif Global.suspended == 'shutdown':
         if not Global.shuttingDown:
             Global.shuttingDown = True
             IOLoop.current().add_callback(shutdown_loop)
-    elif Global.suspended == "reload":
+    elif Global.suspended == 'reload':
         try:
             os.utime(scriptdir+'/reload.py', None)
             print("Reloading...", file=sys.stderr)
         except Exception, excp:
             print("Reload failed: "+str(excp), file=sys.stderr)
-    elif Global.suspended == "update":
+    elif Global.suspended == 'update':
         try:
             if os.environ.get('SUDO_USER'):
-                cmd = ["sudo", "-u", os.environ['SUDO_USER'], "git", "pull"]
+                cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
             else:
-                cmd = ["git", "pull"]
+                cmd = ['git', 'pull']
             print("Updating: %s" % cmd, file=sys.stderr)
             subprocess.check_call(cmd, cwd=scriptdir)
         except Exception, excp:
             print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
 def update_remote_sheets(force=False, synchronous=False):
+    if synchronous and previewingSession():
+        sheet_proxy_error('update_remote_sheets: Exit preview session %s before synchronous updates' % previewingSession())
     try:
         # Need to trap exception because it fails silently otherwise
         return update_remote_sheets_aux(force=force, synchronous=synchronous)
@@ -3352,10 +3360,13 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
     if not getSheet(sessionName):
         raise Exception('Session '+sessionName+' not found')
     sessionEntries = lookupValues(sessionName, ['dueDate', 'paceLevel', 'adminPaced', 'attributes'], INDEX_SHEET)
-    sessionAttributes = json.loads(sessionEntries['attributes'])
     dueDate = sessionEntries.get('dueDate')
     paceLevel = sessionEntries.get('paceLevel')
     adminPaced = sessionEntries.get('adminPaced')
+    sessionAttributes = json.loads(sessionEntries['attributes'])
+    timedSec = sessionAttributes['params'].get('timedSec')
+    if timedSec and source == "prefill":
+        raise Exception('Cannot prefill timed session '+sessionName)
 
     if submitDate == 'dueDate':
         submitDate = dueDate or None
