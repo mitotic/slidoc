@@ -5,6 +5,8 @@
 
 {% include "base.html" %}
 
+{% set regular_session = session_number and (not str(session_number).isdigit() or int(session_number)) %}
+
 </head>
 <body>
 
@@ -21,7 +23,7 @@
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}
-        Uploading: <b>{{ upload_type }}{% if str(session_number).isdigit() %}{{ '%02d' % int(session_number) }}{% end %}</b>
+        Uploading: <b>{{ upload_type }}{% if regular_session %}{{ '%02d' % int(session_number) }}{% else %}/index{% end %}</b>
         <input type="hidden" name="sessiontype" value="{{ upload_type }}">
         {% if upload_type == 'top' %}
         <input type="hidden" name="topname" value="{{ session_name }}">
@@ -52,7 +54,7 @@
      <p></p>
      {% end %}
 	
-     {% if session_number  and (not str(session_number).isdigit() or int(session_number)) %}
+     {% if regular_session %}
      <label for="sessionmodify">Modify questions?</label>
      <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
      <p></p>
@@ -64,15 +66,17 @@
      <label for="upload2">Zip archive with Markdown, images, HTML or data (.zip):</label><br>
      <input type="file" id="upload2" name="upload2"  accept=".zip" value="file2">
      <p></p>
-     Sessions as well as raw/Markdown top-level web content may be uploaded as zip
+     Sessions as well as raw/Markdown top-level web pages may be uploaded as zip
      archives. For sessions, images in the zip archive should have names of the form
      <code>sessionName/*.jpg</code> for pixelized <code>.pptx</code> files and of the
      form <code>sessionName_images/*.jpg</code> for embedding in <code>.md</code> files,
      The Markdown content may optionally be included in the archive, with the name <code>content.md</code>,
-     instead of being provided as a separate file. For top-level
-     content, the zip archive filename will be used as the "session name".
+     instead of being provided as a separate file.
+     <p></p>
+     For top-level pages, the filename will be used as the link for navigation.
    </fieldset>
    {% module xsrf_form_html() %}
+   <p></p>
    <div>
      <input id="slidoc-upload-submit" type="submit" value="Upload">
    </div>

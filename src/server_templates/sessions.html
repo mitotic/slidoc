@@ -7,7 +7,8 @@
 {% include "base.html" %}
 
 <style>
-.clickable { padding: 0.2em 0 0 1em; }
+.clickable { padding: 0.2em 0 0 0.8em; }
+.nested { padding: 0.2em 0 0 2em; }
 .session-present { opacity: 0.6; }
 </style>
 
@@ -51,17 +52,17 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
 </head>
 <body>
 
-  <h2>{{site_name}} Sessions </h2>
-
+  <h2>{{site_name}} Content</h2>
   <b>
   {% include "linkback.html" %}
   </b>
   <p></p>
+  <h3>Create and modify source content</h3>
 
   Status: <tt>{{ message }}</tt>
   <p></p>
 
-  <a href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Create session type</a>
+  <a href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add session type</a>
   <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
     <label for="sessiontype">Session type:</label><br>
@@ -78,29 +79,42 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
     <input type="hidden" name="sessioncreate" value="sessions">
 
     <div>
-      <input id="session-upload-submit" type="submit" value="Create session type">
+      <input id="session-upload-submit" type="submit" value="Add session type">
     </div>
     </fieldset>
   </form>
   <p></p>
 
   <p></p>
-  <h3>Session directory</h3>
+  <em>Directory/file actions</em>: View spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
+  Publish (&#x21BA;), Delete (&#x1F5D1;), New session (<b>+</b>)
+  <p></p>
+  <div style="border: 1px solid; padding: 4px;">
+  <b>Session directory</b>
   <ul>
     {% for dirname, private, sessions, dates, logs in session_props %}
     <li>
       <div>
         <div>
-          <span class="clickable" onclick="togglebelow(this,true);" style="{% if sessions is None %}visibility: hidden;{% end %}">&#x27A4;</span>
-          <span class="clickable smaller" onclick="togglebelow(this,false);" style="display: none; {% if sessions is None %}visibility: hidden;{% end %}">&#9660;</span>
-	  <a class="clickable" href="{{ site_prefix }}{% if private %}/_private{% end %}/{{ dirname }}{% if sessions is not None %}/index{% end %}.html">{{ dirname }}</a>
-	  <a class="clickable" href="{{ site_prefix }}/_edit/{{ dirname }}{% if sessions is not None %}00{% end %}" >&#9998;</a>
-	  <a class="clickable" href="{{ site_prefix }}/_upload/{{ dirname }}{% if sessions is not None %}00{% end %}">&#x21EA;</a>
-	  {% if sessions is not None %}
+
+	  {% if sessions is None %}
+          <span class="clickable" onclick="togglebelow(this,true);" style="visibility: hidden;">&#x27A4;</span>
+          <span class="clickable smaller" onclick="togglebelow(this,false);" style="display: none; visibility: hidden;">&#9660;</span>
+	  <a class="altclickable" href="{{ site_prefix }}{% if private %}/_private{% end %}/{{ dirname }}.html">{{ dirname }}</a>
+	  <a class="clickable" href="{{ site_prefix }}/_edit/{{ dirname }}" >&#9998;</a>
+	  <a class="clickable" href="{{ site_prefix }}/_upload/{{ dirname }}">&#x21EA;</a>
+
+          {% else %}
+          <span class="clickable" onclick="togglebelow(this,true);" style="">&#x27A4;</span>
+          <span class="clickable smaller" onclick="togglebelow(this,false);" style="display: none;">&#9660;</span>
+	  {{ dirname }}
 	  <a class="clickable" href="{{ site_prefix }}/_rebuild/{{ dirname }}00">&#x21BA;</a>
           {% end %}
+
+
 	  <span class="clickable" onclick="action('delete','{{ dirname }}{% if sessions is not None %}00{% end %}','folder ');" >&#x1F5D1;</span>
         </div>
+
 	{% if logs %}
         <ul class="amber"><li>
 	  <span class="clickable" onclick="togglebelow(this,true)">&#9776;</span>
@@ -109,8 +123,23 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
         <pre style="display: none;">{{ logs }}</pre>
         {% end %}
       </div>
+
       {% if sessions is not None %}
-      <table style="display: none;">
+      <table class="nested" style="display: none;">
+	<tr>
+          <td>
+	    <a class="clickable" href="{{ site_prefix }}{% if private %}/_private{% end %}/{{ dirname }}/index.html">index</a>
+	    <a class="clickable" href="{{ site_prefix }}/_edit/{{ dirname }}00">&#9998;</a>
+	    <a class="clickable" href="{{ site_prefix }}/_upload/{{ dirname }}00">&#x21EA;</a>
+          </td>
+          <td>
+          {% if dates[1] %}due: {{ dates[1] }}{% end %}
+          </td>
+          <td>
+          {% if dates[2] %}graded: {{ dates[2] }}{% end %}
+          </td>
+        </tr>
+
         {% for session in sessions %}
 	<tr>
           <td>
@@ -134,44 +163,60 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
         <tr><td> &nbsp;<a class="clickable larger" href="{{ site_prefix }}/_upload/{{ next }}"><b>+</b></a></td></tr>
       </table>
       {% end %}
+
     </li>
     {% end %}
   </ul>
-  <p></p>
-  <em>Directory actions</em>: View spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
-  Rebuild (&#x21BA;), Delete (&#x1F5D1;), New session (<b>+</b>)
+  </div>
   <p></p>
 
-  <a href="{{ site_prefix }}/_upload/top">Upload top-level Markdown content</a>
+  <a href="{{ site_prefix }}/_upload/top">Upload top-level Markdown page content</a>
   <p></p>
 
   <a href="{{ site_prefix }}/_upload/raw">Upload top-level raw web content</a>
   <p></p>
 
-  Notes:
-  <ul>
-    <li><code>index</code> is the home page of the web site</li>
-    <li>Rebuilding generates HTML web pages from Markdown content</li>
-  </ul>
+  <a href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced content actions</a>
+  <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
+  <b>Advanced content actions:</b><p></p>
   <p></p>
-
-  <a href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced options</a>
-  <div id="advanced-opts" style="display: none; border: 1px solid;">
-  <p></p>
-  <em>Advanced options:</em><p></p>
-  <p></p>
-  &nbsp;<label for="rebuildforce">Force re-build of unmodified sessions</label>
+  &nbsp;<label for="rebuildforce">Force publishing of unmodified sessions:</label>
   <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
   <hr>
   <p></p>
-  <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Rebuild all sessions 
+  <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Publish all content 
+  (generate HTML files from Markdown)
   <p></p>
-  <span class="clickable" onclick="action('reindex','all','for ');">&#x2336;</span>: Reindex all sessions 
+  <span class="clickable" onclick="action('reindex','all','for ');">&#x2336;</span>: Reindex all content 
+  (regenerate Table of Contents)
   <p></p>
   <hr>
   <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Flexible file upload 
   <p></p>
   </div>
+
+<p></p>
+ Sample source directory structure:
+<blockquote><code><pre>
+index.md
+syllabus.md
+
+exam/index.md
+exam/exam01.md
+
+lecture/index.md
+lecture/lecture01.md  
+lecture/lecture02.md  
+</pre></code></blockquote>
+  
+<p></p>
+  Notes:
+  <ul>
+    <li><code>index</code> is the (Markdown) home page of the web site.</li><p></p>
+    <li>Other Markdown pages may also appear at the top-level.</li><p></p>
+    <li>Top-level Markdown/HTML content will be automatically listed in the navigation bar.</li><p></p>
+    <li><em>Publishing</em> generates HTML web pages from Markdown content.</li>
+  </ul>
 
 </body>
 </html>

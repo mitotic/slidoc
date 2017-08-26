@@ -11,7 +11,7 @@
 </head>
 <body>
 
-  <h2>{{site_name}} Site actions </h2>
+  <h2>{{site_name}} Advanced site actions </h2>
 
   <b>
   {% include "linkback.html" %}
@@ -20,24 +20,19 @@
   <p></p>
   <h3><span id="slidoc-action-status"></span></h3>
 
-  <ul>
-    <li><a href="javascript:slidocAction('twitter')">twitter</a>: View twitter stream status</li>
-    <hr>
-    <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
-    {% if not site_name %}
-    <hr>
-    <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
-    {% end %}
-  </ul>
   Suspend status: <b>{{suspended or 'none'}}</b><br>
   <p></p>
 
-  <a href="#" onclick="document.getElementById('slidoc-dash-advanced').style.display=null;this.style.display='none'">Show advanced options</a>
-  <ul id="slidoc-dash-advanced" style="display: none;">
+  <ul>
+    <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
+    <hr>
     <li><a href="javascript:slidocAction('cache')">proxy status</a>: Status of proxy cache and active connections</li>
     <hr>
     <li><a href="javascript:slidocConfirmAction('freeze')">freeze</a>: Freeze all cached sessions (clear to cancel freeze)</li>
     <li><a href="javascript:slidocConfirmAction('clear')">clear</a>: Clear all cached sessions</li>
+    {% if not site_name %}
+    <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
+    {% end %}
     <hr>
     <li><a href="javascript:slidocSheetAction('sheet')">sheet</a>: Display sheet</li>
     <li><a href="javascript:slidocSheetAction('getrow')">getrow</a>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>

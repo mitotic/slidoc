@@ -108,13 +108,17 @@ document.onreadystatechange = function(event) {
 {% include "linkback.html" %}
 </b>
 
-<h3><em>Directory</em>: {{ browse_path }}</h3>
+<h3><em>Browse directory</em>: {{ browse_path }}</h3>
 
 <b>Status:</b> <b id="status-line">{{ status }}</b>
 <p></p>
 
 {% if browse_path %}
-<a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;</a>
+<a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
+(upload)</a>
+
+<hr>
+
 <form id="upload-form" style="display: none;" action="{{site_prefix }}/_browse/{{ browse_path }}" method="post" enctype="multipart/form-data" >
   <fieldset>
     <label for="upload">File (or .zip archive) to upload:</label><br>
@@ -129,12 +133,13 @@ document.onreadystatechange = function(event) {
 <p></p>
 
 {% if browse_path %}
-<a class="clickable" href="{{ site_prefix }}/_browse"><b>~</b></a>
-<br>
+<a class="clickable" href="{{ site_prefix }}/_browse"><b>~ (root)</b></a>
+<p></p>
 {% end %}
 
 {% if up_path %}
-<a class="clickable" href="{{ site_prefix }}/_browse/{{ up_path }}"><b>..</b></a>
+<a class="clickable" href="{{ site_prefix }}/_browse/{{ up_path }}"><b>.. (parent)</b></a>
+<p></p>
 {% end %}
 
 <div id="dropzone" class="dropzone">
@@ -143,7 +148,7 @@ document.onreadystatechange = function(event) {
 {% for fname, subpath, isfile, viewpath in file_list %}
   <tr class="rowhover">
     <td>
-    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">&#x27A4;</a>{% end %}
+    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">&#x1F4C2;</a>{% end %}
     </td>
     <td id="file-{{ fname }}">
     {% if viewpath %}
@@ -163,5 +168,17 @@ document.onreadystatechange = function(event) {
 </table>
 </div>
 
+{% if not up_path %}
+<p></p>
+Notes:
+  <ul>
+    <li><em>Directory/file actions</em>: Traverse (&#x1F4C2;), Download (&#x21E9;), Delete (&#x1F5D1;)</li><p></p>
+    <li><code>source</code> contains top-level and session Markdown files (along with embedded image files).</li><p></p>
+    <li><code>web</code> contains HTML files published from
+     Markdown files and any raw files uploaded to the web site by admin.</li><p></p>
+    <li><code>data</code> contains files submitted/uploaded
+  by users.</li>
+  </ul>
+{% end %}
 </body>
 </html>

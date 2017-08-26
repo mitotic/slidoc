@@ -10,6 +10,15 @@
 .clickable { padding: 0.2em 0 0 1em; }
 </style>
 
+<script>
+ function action(actionName) {
+   if (!window.confirm('Confirm '+actionName+'?'))
+      return;
+   var url = '{{ site_prefix }}/_' + actionName;
+   window.location = url;
+}
+</script>
+
 </head>
 <body>
 
@@ -20,12 +29,16 @@
   Current interactive session: {% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_sessions">Create and manage sessions</a></b>
+  <b><a class="clickable" href="{{ site_prefix }}/_sessions">Create and modify source content</a></b>
+  <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_actions">Advanced site actions</a></b>
+  <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>
   <p></p>
 
   <hr>
-  <em>Available actions</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;), Browse folder (&#x1F4C2;)
-  <p></p>
 
   Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
   <a class="clickable" href="{{ site_prefix }}/_sheet/roster_slidoc" >&#9783;</a>
@@ -35,15 +48,24 @@
   <a class="clickable" href="{{ site_prefix }}/_sheet/scores_slidoc" >&#9783;</a>
   <p></p>
 
-  All site files: <a class="clickable" href="{{ site_prefix }}/_browse">&#x1F4C2;</a> 
+  <em>Available actions</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;)
   <p></p>
 
   <hr>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>
+  <a href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced dashboard actions</a>
+
+  <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
+  <b>Advanced dashboard actions:</b><p></p>
+
+  <a class="clickable" href="{{ site_prefix }}/_twitter">View Twitter stream status</a>
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_actions">Other site actions</a></b>
+  <a class="clickable" href="{{ site_prefix }}/_browse">Browse/upload
+  all site files (<em>Use with care!</em>)</a>
+  <p></p>
+
+  </div>
 
 </body>
 </html>
