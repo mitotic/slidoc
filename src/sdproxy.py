@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.7c'
+VERSION = '0.97.8'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -214,7 +214,43 @@ def initCache():
     Global.suspended = ''
     Global.previewStatus = {}
 
+    Global.transactSessions = {}
+
 initCache()
+
+def startTransactSession(sessionName):
+    # (Delay upstream updates to session sheet; also lock index sheet row for the session)
+    if Global.suspended:
+        return 'Cannot transact when cache is suspended'
+
+    if sessionName == previewingSession():
+        return 'Cannot transact when previewing session '+sessionName
+
+    sessionSheet = getSheet(sessionName)
+    if not sessionSheet:
+        raise Exception('Transact sheet %s not in cache' % sessionName)
+    Global.transactSessions[sessionName] = sessionSheet.copy()
+    if Settings['debug']:
+        print("DEBUG:startTransactSession: %s " % sessionName, file=sys.stderr)
+
+def rollbackTransactSession(sessionName, noupdate=False):
+    # Revert to session state at start of transaction
+    if sessionName not in Global.transactSessions:
+        return
+    Sheet_cache[sessionName] = Global.transactSessions[sessionName]
+    endTransactSession(sessionName, noupdate=True)
+    if Settings['debug']:
+        print("DEBUG:rollbackTransactSession: %s " % sessionName, file=sys.stderr)
+
+def endTransactSession(sessionName, noupdate=False):
+    # End transaction and schedule cache updates (unless noupdate is True)
+    if sessionName not in Global.transactSessions:
+        return
+    del Global.transactSessions[sessionName]
+    if not noupdate:
+        need_update(sessionName)
+    if Settings['debug']:
+        print("DEBUG:endTransactSession: %s " % sessionName, file=sys.stderr)
 
 def previewingSession():
     return Global.previewStatus.get('sessionName', '')
@@ -226,6 +262,9 @@ def startPreview(sessionName, create=False):
     if not sessionName:
         raise Exception('Null session name for preview')
 
+    if sessionName in Global.transactSessions:
+        return 'Cannot preview during transact session'
+    
     if Global.suspended:
         return 'Cannot preview when cache is suspended'
 
@@ -253,7 +292,7 @@ def startPreview(sessionName, create=False):
             return 'Index sheet '+INDEX_SHEET+' not found!'
 
     Global.previewStatus = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
-                              'indexSheetOrig': indexSheet.copy() if indexSheet else None}
+                            'indexSheetOrig': indexSheet.copy() if indexSheet else None}
 
     if Settings['debug']:
         print("DEBUG:startPreview: %s " % sessionName, file=sys.stderr)
@@ -269,7 +308,6 @@ def endPreview(noupdate=False):
     Global.previewStatus = {}
     if not noupdate:
         schedule_update(force=True)
-
 
 def savePreview():
     # Save snapshot of preview (usually after compiling)
@@ -311,6 +349,9 @@ def freezeCache(fill=False):
     # Freeze cache (clear when done)
     if Global.previewStatus:
         raise Exception('Cannot freeze when previewing session '+Global.previewStatus['sessionName'])
+    elif Global.transactSessions:
+        raise Exception('Cannot freeze when transacting sessions '+str(Global.transactSessions.keys()))
+
     if Global.suspended == 'freeze':
         return
     if fill:
@@ -330,7 +371,7 @@ def backupSheets(dirpath=''):
     # Returns null string on success or error string list
     # (synchronous)
     if Global.previewStatus:
-        return [ 'Cannot freeze when previewing session '+Global.previewStatus['sessionName'] ]
+        return [ 'Cannot backup when previewing session '+Global.previewStatus['sessionName'] ]
     dirpath = dirpath or Settings['backup_dir'] or '_BACKUPS'
     if dirpath.endswith('-'):
         dirpath += sliauth.iso_date(nosec=True).replace(':','-')
@@ -798,8 +839,14 @@ class Sheet(object):
     def check_lock_status(self, keyValue=None):
         if self.readOnly:
             raise Exception('Cannot modify read only sheet '+self.name)
-        if self.name == INDEX_SHEET and keyValue and Global.previewStatus and keyValue != Global.previewStatus['sessionName']:
-            raise Exception('Cannot modify index values for non-previewed session '+keyValue+' when previewing session '+Global.previewStatus['sessionName'])
+
+        if self.name == INDEX_SHEET:
+            if keyValue and Global.previewStatus and keyValue != Global.previewStatus['sessionName']:
+                raise Exception('Cannot modify index values for non-previewed session '+keyValue+' when previewing session '+Global.previewStatus['sessionName'])
+
+            if keyValue in Global.transactSessions:
+                raise Exception('Cannot modify index values for transactional session '+keyValue)
+
         check_if_locked(self.name)
 
     def _setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
@@ -883,16 +930,28 @@ class Sheet(object):
         need_update(self.name)
 
     def get_updates(self, row_limit=None):
-        if Global.previewStatus and self.name in (Global.previewStatus['sessionName'], INDEX_SHEET):
-            # Delay updates for preview session and index sheet
-            return None
+        if Global.previewStatus and self.name in (INDEX_SHEET, Global.previewStatus['sessionName']):
+            if self.name == INDEX_SHEET:
+                origSheet = Global.previewStatus['indexSheetOrig']
+            else:
+                origSheet = Global.previewStatus['sessionSheetOrig']
+            
+            # Obtain updates for preview session from original sheet
+            if origSheet:
+                return origSheet.get_updates()
+            else:
+                return None
+
+        if self.name in Global.transactSessions:
+            # Obtain updates for transact session from original sheet
+            return Global.transactSessions[self.name].get_updates()
 
         actions = self.actionsRequested
             
         headers = self.xrows[0]
         nameCol = 1+headers.index('name') if 'name' in headers else 0
 
-        updateKeys = []
+        updateRows = {}
         updateColSet = set()
         insertNames = []
         insertRows = []
@@ -920,8 +979,8 @@ class Sheet(object):
                 actions = ''
                 break
 
-            # Update (non-insert) key
-            updateKeys.append(key)
+            # Update key and modtime
+            updateRows[key] = self.keyMap[key][0]
 
             if Global.updatePartial and self.keyCol and not inserted:
                 # Partial update
@@ -966,9 +1025,9 @@ class Sheet(object):
         # Send updateColList if non-null and non-full row
         updateColList = sorted(list(updateColSet)) if (updateColSet and len(updateColSet) < self.nCols) else None
 
-        return [updateKeys, actions, self.modifiedHeaders, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
+        return [updateRows, actions, self.modifiedHeaders, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
                     
-    def complete_update(self, updateKeys, actions, modifiedHeaders):
+    def complete_update(self, updateRows, actions, modifiedHeaders):
         # Update sheet status after remote update has completed
         if actions and actions == self.actionsRequested:
             self.actionsRequested = ''
@@ -976,12 +1035,11 @@ class Sheet(object):
         if modifiedHeaders:
             self.modifiedHeaders = False
 
-        updateKeySet = set(updateKeys)
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
 
-            if key in updateKeySet:
-                # Row update completed
+            if key in updateRows and updateRows[key] == self.keyMap[key][0]:
+                # Row update completed for row not modified since update
                 # (Note: Rows that were not updated due request limits being reached will not be subject to this reset)
                 self.keyMap[key][1:3] = [0, set()]
 
@@ -1048,6 +1106,8 @@ def getCacheStatus():
 
 def lockSheet(sheetName, lockType='user'):
     # Returns True if lock is immediately effective; False if it will take effect later
+    if sheetName in Global.transactSessions:
+        raise Exception('Cannot lock when transacting session '+sheetName)
     if sheetName == Global.previewStatus.get('sessionName'):
         return False
     if sheetName not in Lock_cache and not isReadOnly(sheetName):
@@ -1235,9 +1295,10 @@ def update_remote_sheets_aux(force=False, synchronous=False):
         # Check each cached sheet for updates
         updates = sheet.get_updates(row_limit=PROXY_UPDATE_ROW_LIMIT)
         if updates is None:
-            if curTime-sheet.accessTime > 1000*sheet.holdSec and previewingSession() != sheetName:
+            previewSession = previewingSession()
+            if curTime-sheet.accessTime > 1000*sheet.holdSec and sheetName not in Lock_cache and sheetName not in Global.transactSessions and (not previewSession or sheetName not in (INDEX_SHEET, previewSession)):
                 # Cache entry has expired
-                del Sheet_cache[sheetName]
+                delSheet(sheetName)
             continue
 
         # sheet_name, actions, modified_headers, headers_list, last_row, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
@@ -1390,6 +1451,14 @@ class ProxyUpdater(object):
         for sheetName, sheet in Sheet_cache.items():
             if sheetName in self.sheetUpdateInfo:
                 sheet.complete_update(*self.sheetUpdateInfo[sheetName])
+
+            if sheetName in Global.transactSessions:
+                Global.transactSessions[sheetName].complete_update(*self.sheetUpdateInfo[sheetName])
+
+            if sheetName == previewingSession():
+                origSheet = Global.previewStatus['sessionSheetOrig']
+                if origSheet:
+                    origSheet.complete_update(*self.sheetUpdateInfo[sheetName])
 
         for sheetName in respObj['info'].get('refreshSheets',[]):
             refreshSheet(sheetName)

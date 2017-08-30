@@ -136,6 +136,7 @@ SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title', 'site_
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
+TRANSACT_INTERACTIVE = False    # If true, transactionalize interactive sessions (suspending upstream cache updates between question slides)
 
 class Dummy():
     pass
@@ -2829,11 +2830,39 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             return ''
 
     @classmethod
-    def setupInteractive(cls, connection, path, slideId='', questionAttrs=None):
-        cls._interactiveSession = (connection, path, slideId, questionAttrs)
-        cls._interactiveErrors = {}
+    def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None):
+        interactiveSession = UserIdMixin.get_path_base(cls._interactiveSession[1]) if cls._interactiveSession[1] else ''
+        basePath = UserIdMixin.get_path_base(path) if path else ''
+        if action == 'start':
+            if interactiveSession:
+                raise Exception('There is already an interactive session: '+interactiveSession)
+            if not basePath:
+                return
+            cls._interactiveSession = (connection, path, slideId, questionAttrs)
+            cls._interactiveErrors = {}
+            if TRANSACT_INTERACTIVE:
+                sdproxy.startTransactSession(basePath)
+
+        elif action in ('rollback', 'end'):
+            if not interactiveSession:
+                return
+            cls._interactiveSession = (None, '', '', None)
+            cls._interactiveErrors = {}
+            if TRANSACT_INTERACTIVE:
+                if action == 'rollback':
+                    sdproxy.rollbackTransactSession(interactiveSession)
+                else:
+                    sdproxy.endTransactSession(interactiveSession)
+
+        elif action == 'answered':
+            if not interactiveSession:
+                return
+            if TRANSACT_INTERACTIVE:
+                sdproxy.endTransactSession(interactiveSession)
+                sdproxy.startTransactSession(interactiveSession)
+
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.setupInteractive:', cls._interactiveSession
+            print >> sys.stderr, 'sdserver.setupInteractive:', action, cls._interactiveSession
 
     @classmethod
     def closeConnections(cls, path, userIdList, excludeId=None):
@@ -3166,13 +3195,25 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     self.closeConnections(self.pathUser[0], teamModifiedIds, excludeId=self.userId)
 
             elif method == 'interact':
+                # args: action, slideId, questionAttrs
                 if self.userRole == sdproxy.ADMIN_ROLE:
-                    self.setupInteractive(self, self.pathUser[0], args[0], args[1])
+                    self.setupInteractive(self, self.pathUser[0], args[0], args[1], args[2])
+
+            elif method == 'rollback':
+                # args:
+                if self.userRole == sdproxy.ADMIN_ROLE:
+                    # Rollback interactive session to the slide of the last answered question (or start slide)
+                    if not TRANSACT_INTERACTIVE:
+                        raise Exception('Transactions not enabled')
+                    WSHandler.setupInteractive(None, '', 'rollback', '', None)
+                    # Close all session websockets (forcing reload)
+                    IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
 
             elif method == 'reset_question':
+                # args: qno, userid 
                 if self.userRole == sdproxy.ADMIN_ROLE:
                     # Do not accept interactive responses
-                    WSHandler.setupInteractive(None, None, None, None)
+                    WSHandler.setupInteractive(None, '', 'end', '', None)
                     sdproxy.clearQuestionResponses(sessionName, args[0], args[1])
                     # Close all session websockets (forcing reload)
                     IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
@@ -3218,6 +3259,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
             elif method == 'event':
+                # args: evTarget, evType, evName, evArgs
                 self.sendEvent(self.pathUser[0], self.pathUser[1], self.userRole, args)
 
             if callback_index:
@@ -3226,10 +3268,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if Options['debug']:
                 import traceback
                 traceback.print_exc()
-                raise Exception('Error in response: '+err.message)
-            elif callback_index:
-                    retObj = {"result":"error", "error": err.message, "value": None, "messages": ""}
-                    return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
+                ##raise Exception('Error in response: '+err.message)
+            if callback_index:
+                retObj = {"result":"error", "error": err.message, "value": None, "messages": ""}
+                return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
 
 class PluginManager(object):
     _managers = {}

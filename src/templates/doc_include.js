@@ -2508,6 +2508,28 @@ Slidoc.interact = function() {
     Slidoc.showPopup(html);
 }
 
+Slidoc.rollbackInteractive = function() {
+    if (!window.confirm('Rollback interactive session to last answered question slide (or start slide)?'))
+	return;
+    GService.requestWS('rollback', [], rollbackCallback);
+}
+
+function rollbackCallback(retObj, errMsg) {
+    Slidoc.log('rollbackCallback:', retObj, errMsg);
+    var msg = '';
+    if (retObj && retObj.result == 'success') {
+	msg = 'Interactive session has been rolledback. Reload page.';
+    } else {
+	if (retObj && retObj.error) {
+	    msg += retObj.error;
+	}
+	if (errMsg) {
+	    msg += retObj.error;
+	}
+    }
+    alert(msg || 'Unknown error in rollback');
+}
+
 Slidoc.resetQuestion = function(userId) {
     var slide_id = Slidoc.getCurrentSlideId();
     if (!slide_id) {
@@ -2562,7 +2584,7 @@ function enableInteract(active) {
     Sliobj.interactive = active;
     toggleClass(active, 'slidoc-interact-view');
     if (!Sliobj.interactive) {
-	GService.requestWS('interact', ['', null], interactCallback);
+	GService.requestWS('interact', ['end', '', null], interactCallback);
 	return;
     }
     if (!isController() || Sliobj.session.submitted)
@@ -2571,7 +2593,7 @@ function enableInteract(active) {
     var qattrs = getQuestionAttrs(lastSlideId);
     if (qattrs && qattrs.qnumber in Sliobj.session.questionsAttempted)
 	qattrs = null;
-    GService.requestWS('interact', [lastSlideId, qattrs], interactCallback);
+    GService.requestWS('interact', ['start', lastSlideId, qattrs], interactCallback);
     // Note: Closing websocket will disable interactivity
 }
 
@@ -7038,7 +7060,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
     if (Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
-	if (!setupOverride('Enable test user override to proceed without answering?')) {
+	if (!setupOverride('Enable test user override to skip ahead?')) {
 	    showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	    return false;
 	}
@@ -7060,7 +7082,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		var ansElem = document.getElementById(prev_slide_id+'-answer-click');
 		if (ansElem)
 		    Slidoc.answerClick(ansElem, prev_slide_id, 'controlled');
-
+		GService.requestWS('interact', ['answered', prev_slide_id, question_attrs]);
 	    } else  {
 		if (!setupOverride('Enable test user override to proceed without answering?')) {
 		    var tryCount = (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
