@@ -934,11 +934,13 @@ class Sheet(object):
             else:
                 origSheet = Global.previewStatus['sessionSheetOrig']
             
-            # Obtain updates for preview session from original sheet
-            if origSheet:
-                return origSheet.get_updates()
-            else:
+            if not origSheet:
+                # Delay all cache updates for preview/transactional sheet
                 return None
+
+            if origSheet is not self:
+                # Obtain updates for preview session from original sheet
+                return origSheet.get_updates()
 
         if self.name in Global.transactSessions:
             # Obtain updates for transact session from original sheet
@@ -1265,6 +1267,9 @@ def update_remote_sheets(force=False, synchronous=False):
         # Need to trap exception because it fails silently otherwise
         return update_remote_sheets_aux(force=force, synchronous=synchronous)
     except Exception, excp:
+        if Settings['debug']:
+            import traceback
+            traceback.print_exc()
         sheet_proxy_error('Unexpected error in update_remote_sheets: %s' % excp)
 
 def update_remote_sheets_aux(force=False, synchronous=False):
