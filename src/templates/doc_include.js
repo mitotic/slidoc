@@ -3677,7 +3677,7 @@ function slidocSetupAux(session, feedback) {
 	alert('Slidoc: Revised session '+Sliobj.params.sessionRevision+' (discarded previous revision '+Sliobj.session.revision+')');
 	Sliobj.session = null;
 
-    } else if (!Sliobj.params.paceLevel && Sliobj.session.paced) {
+    } else if (!Sliobj.params.paceLevel && Sliobj.session && Sliobj.session.paced) {
 	// Pacing cancelled for previously paced session
 	Sliobj.session.paced = 0;
 
@@ -3901,7 +3901,7 @@ function slidocSetupAux(session, feedback) {
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
 	// Table of contents included in file
-	var slideHash = (!Sliobj.session.paced && location.hash) ? location.hash : "#slidoc00";
+	var slideHash = (!(Sliobj.session && Sliobj.session.paced) && location.hash) ? location.hash : "#slidoc00";
 	if (parseSlideId(slideHash)[0])
 	    goSlide(slideHash, false, true);
 	if (slideHash.match(/^#slidoc-index-concept/)) {
@@ -5368,7 +5368,7 @@ Slidoc.contentsDisplay = function() {
     lines.push('<ul class="slidoc-contents-list">');
     var slideElems = getVisibleSlides();
     var nSlides = slideElems.length;
-    if (Sliobj.session.paced || Sliobj.params.paceLevel >= QUESTION_PACE)
+    if ((Sliobj.session && Sliobj.session.paced) || Sliobj.params.paceLevel >= QUESTION_PACE)
 	nSlides = Math.min(nSlides, Math.max(1,Sliobj.session.lastSlide));
     var headers = [];
     for (var j=0; j<nSlides; j++) {
@@ -5388,7 +5388,7 @@ Slidoc.contentsDisplay = function() {
 }
 
 Slidoc.sidebarDisplay = function (elem) {
-    if (Sliobj.session.paced || !document.getElementById("slidoc00"))
+    if ((Sliobj.session && Sliobj.session.paced) || !document.getElementById("slidoc00"))
 	return false;
     if (document.getElementById("slidoc-topnav"))
 	return false;
@@ -5406,7 +5406,7 @@ Slidoc.sidebarDisplay = function (elem) {
 }
 
 function sidebarDisplayAux(show) {
-    if (Sliobj.session.paced)
+    if (Sliobj.session && Sliobj.session.paced)
 	return false;
     var toc_elem = document.getElementById("slidoc00");
     if (!toc_elem)
@@ -5422,7 +5422,7 @@ function sidebarDisplayAux(show) {
 
 Slidoc.allDisplay = function (elem) {
     // Display all "chapters"
-    if (Sliobj.session.paced)
+    if (Sliobj.session && Sliobj.session.paced)
 	return false;
     Slidoc.hide(elem);
     Sliobj.showAll = !Sliobj.showAll;
@@ -5537,7 +5537,7 @@ Slidoc.PluginRetry = function (msg) {
 }
 
 function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
-    if (!setup && !force && Sliobj.session.paced && !Sliobj.currentSlide) {
+    if (!setup && !force && Sliobj.session && Sliobj.session.paced && !Sliobj.currentSlide) {
 	alert('To answer questions in paced mode, please switch to slide view (Escape key or Square icon at bottom left)');
 	return false;
     }
@@ -5699,7 +5699,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 				Slidoc.answerUpdate.bind(null, setup, slide_id, expect),
 			        responseArg);
 	}
-	if (setup || !Sliobj.session.paced || !Sliobj.session.remainingTries)
+	if (setup || !Sliobj.session || !Sliobj.session.paced || !Sliobj.session.remainingTries)
 	    Slidoc.PluginMethod(pluginName, slide_id, 'disable');
 
 	return false;
@@ -5752,12 +5752,12 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 		    if (forceQuit(force, 'Expecting a numeric value as answer'))
 			return false;
 		    response = '';
-		} else if (Sliobj.session.paced) {
+		} else if (Sliobj.session && Sliobj.session.paced) {
 		    if (!response) {
 			if (forceQuit(force, 'Expecting a non-null answer'))
 			    return false;
 			response = '';
-		    } else if (Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
+		    } else if (Sliobj.session && Sliobj.session.paced && Sliobj.lastInputValue && Sliobj.lastInputValue == response) {
 			if (forceQuit(force, 'Please try a different answer this time!'))
 			    return false;
 		    }
@@ -5766,7 +5766,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 		if (Sliobj.session.remainingTries > 0)
 		    Sliobj.session.remainingTries -= 1;
 	    }
-	    if (setup || !Sliobj.session.paced || !Sliobj.session.remainingTries)
+	    if (setup || !Sliobj.session || !Sliobj.session.paced || !Sliobj.session.remainingTries)
 		inpElem.disabled = 'disabled';
 	}
 
@@ -5782,7 +5782,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     ///Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, expect, response, pluginResp);
     expect = expect || '';
 
-    if (!setup && Sliobj.session.paced)
+    if (!setup && Sliobj.session && Sliobj.session.paced)
 	Sliobj.session.lastTries += 1;
 
     var question_attrs = getQuestionAttrs(slide_id);
@@ -5933,7 +5933,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     } else {
 	toggleClassAll(true, 'slidoc-forward-link-allowed', Sliobj.scores.lastSkipRef);
 
-	if (Sliobj.session.paced) {
+	if (Sliobj.session && Sliobj.session.paced) {
 	    Sliobj.session.remainingTries = 0;
 	    document.body.classList.remove('slidoc-expect-answer-state');
 	    
@@ -6892,7 +6892,7 @@ Slidoc.endPaced = function (reload) {
 }
 
 Slidoc.answerPacedAllow = function () {
-    if (!Sliobj.session.paced)
+    if (!Sliobj.session || !Sliobj.session.paced)
 	return true;
 
     if (Sliobj.session.tryDelay && Sliobj.session.lastTries > 0) {
@@ -6951,7 +6951,7 @@ Slidoc.slideViewStart = function () {
 	startSlide = parseSlideId(location.hash.slice(1))[2];
     } else if (Sliobj.updateView) {
 	startSlide = 1;
-   } else if (Sliobj.session.paced) {
+   } else if (Sliobj.session && Sliobj.session.paced) {
        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
    } else {
        startSlide = getCurrentlyVisibleSlide(slides) || 1;
@@ -7028,7 +7028,7 @@ Slidoc.slideViewEnd = function() {
 }
 
 Slidoc.slideViewGoLast = function () {
-    if (Sliobj.session.paced) {
+    if (Sliobj.session && Sliobj.session.paced) {
 	Slidoc.slideViewGo(false, Sliobj.session.lastSlide);
     } else {
 	var slides = getVisibleSlides();
@@ -7060,7 +7060,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     if (!slides || slide_num < 1 || slide_num > slides.length)
 	return false;
 
-    if (Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
+    if (Sliobj.session && Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
 	if (!setupOverride('Enable test user override to skip ahead?')) {
 	    showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
@@ -7072,7 +7072,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     var question_attrs = getQuestionAttrs(slide_id);  // New slide
     Sliobj.lastInputValue = null;
 
-    if (Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
+    if (Sliobj.session && Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
 
@@ -7194,7 +7194,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
 	}
     } else {
-	if (Sliobj.session.paced && slide_num < Sliobj.session.lastSlide && !Sliobj.questionSlide && Sliobj.delaySec) {
+	if (Sliobj.session && Sliobj.session.paced && slide_num < Sliobj.session.lastSlide && !Sliobj.questionSlide && Sliobj.delaySec) {
 	    // Not last paced slide, not question slide, delay active
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
 	    if (delta < Sliobj.delaySec) {
@@ -7202,7 +7202,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		return false;
 	    }
 	}
-	if (Sliobj.session.paced && Sliobj.session.showTime)
+	if (Sliobj.session && Sliobj.session.paced && Sliobj.session.showTime)
 	    Sliobj.session.showTime.back.slice(-1)[0].push( [slide_num, Date.now()-Sliobj.session.showTime.initTime] );
 
 	Sliobj.questionSlide = question_attrs;
@@ -7212,7 +7212,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	}
     }
 
-    if (Sliobj.session.paced) {
+    if (Sliobj.session && Sliobj.session.paced) {
 	toggleClass(Sliobj.questionSlide && Sliobj.params.paceLevel == QUESTION_PACE && !Sliobj.scores.correctSequence, 'slidoc-incorrect-answer-state');
 	toggleClass(slide_num == Sliobj.session.lastSlide, 'slidoc-paced-last-slide');
 	toggleClass(Sliobj.session.remainingTries, 'slidoc-expect-answer-state');
@@ -7273,7 +7273,7 @@ function singleChapterView(newChapterId) {
     if (!Sliobj.curChapterId) {
 	// Switch to single chapter view
 	document.body.classList.remove('slidoc-all-view');
-    } else if (Sliobj.session.paced) {
+    } else if (Sliobj.session && Sliobj.session.paced) {
 	alert('Slidoc: InternalError: cannot switch chapters in paced mode');
 	return false;
     }
@@ -7302,7 +7302,7 @@ function goSlide(slideHash, chained, singleChapter) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
     Slidoc.log("goSlide:", slideHash, chained);
-    if (Sliobj.session.paced && ('slides_only' in Sliobj.params.features) && !Sliobj.currentSlide && !singleChapter && (getUserId() != Sliobj.params.testUserId)) {
+    if (Sliobj.session && Sliobj.session.paced && ('slides_only' in Sliobj.params.features) && !Sliobj.currentSlide && !singleChapter && (getUserId() != Sliobj.params.testUserId)) {
 	alert('Slidoc: InternalError: strict paced mode without slideView');
 	return false;
     }
@@ -7378,7 +7378,7 @@ function goSlide(slideHash, chained, singleChapter) {
       Slidoc.log('goSlide: Error - slideshow slide not in view:', slideId);
       return false;
 
-   } else if (Sliobj.session.paced) {
+   } else if (Sliobj.session && Sliobj.session.paced) {
        var slide_num = parseSlideId(slideId)[2];
        if (!slide_num || slide_num > Sliobj.session.lastSlide) {
 	   Slidoc.log('goSlide: Warning - Paced slide not reached:', slide_num, Sliobj.session.lastSlide);
@@ -7394,7 +7394,7 @@ function goSlide(slideHash, chained, singleChapter) {
 
    goElement.scrollIntoView(true); // Redundant?
 
-    if (!tocSlide && !Sliobj.currentSlide && !Sliobj.session.paced && !Sliobj.sidebar && !Sliobj.showedFirstSideBar &&
+    if (!tocSlide && !Sliobj.currentSlide && !(Sliobj.session && Sliobj.session.paced) && !Sliobj.sidebar && !Sliobj.showedFirstSideBar &&
 	window.matchMedia("screen and (min-width: 800px) and (min-device-width: 960px)").matches) {
 	// Non-slide/nonpaced scroll view; show sidebar once to make user aware of sidebar
 	Sliobj.showedFirstSideBar = true;
