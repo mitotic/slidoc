@@ -1539,7 +1539,7 @@ class ActionHandler(BaseHandler):
                         if not topName:
                             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot create blank top session; upload a file' )
                         fname1 = topName + '.md'
-                        fbody1 = topName + ' Markdown content'
+                        fbody1 = '*Markdown* content'
                     sessionNumber = 0
                     sessionName = os.path.splitext(os.path.basename(fname1 or fname2))[0]
                 else:
