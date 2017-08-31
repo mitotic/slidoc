@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.8';
+var VERSION = '0.97.8b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -2093,25 +2093,26 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    updateKeysObj[updateAllKeys[k]] = k+1;
 
 		var headerOffset = 1;
-		var idValues = updateSheet.getSheetValues(1+headerOffset, idCol, lastRowNum-headerOffset, 1);
-		var nameValues = updateSheet.getSheetValues(1+headerOffset, nameCol, lastRowNum-headerOffset, 1);
+		trackCall(2, 'updateSheet: keyed update '+headerOffset+' '+lastRowNum+' '+idCol+' '+nameCol)
 
 		var updateStickyRows = lastRowNum;
-		if (lastRowNum > 1) {
+		if (lastRowNum > headerOffset) {
 		    // Determine number of sticky rows (header row plus any rows with no ids)
-		    for (var k=0; k < idValues.length; k++) {
+		    var temIdVals = updateSheet.getSheetValues(1+headerOffset, idCol, lastRowNum-headerOffset, 1);
+
+		    for (var k=0; k < temIdVals.length; k++) {
 			// Locate first non-null key
-			if (idValues[k][0]) {
+			if (temIdVals[k][0]) {
 			    updateStickyRows = k+headerOffset;
 			    break;
 			}
 		    }
 
-		    ///trackCall(1, 'updateSheet: ids ['+idValues.join(',')+']');
+		    ///trackCall(1, 'updateSheet: ids ['+temIdVals.join(',')+']');
 		    var deletedIds = [];
 		    for (var rowNum=lastRowNum; rowNum > updateStickyRows; rowNum--) {
 			// Delete rows for which keys are not found (backwards)
-			var idValue = idValues[rowNum-1-headerOffset][0];
+			var idValue = temIdVals[rowNum-1-headerOffset][0];
 			if (!(idValue in updateKeysObj)) {
 			    updateSheet.deleteRow(rowNum);
 			    deletedRows += 1;
@@ -2124,10 +2125,13 @@ function handleProxyUpdates(data, create, returnMessages) {
 		}
 		lastRowNum = lastRowNum - deletedRows;
 
-		if (updateStickyRows > headerOffset || deletedRows) {
-		    // Refresh row ids and names
-		    idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, lastRowNum-updateStickyRows, 1);
-		    nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
+		// Row ids and names
+		if (lastRowNum > updateStickyRows) {
+		    var idValues = updateSheet.getSheetValues(1+updateStickyRows, idCol, lastRowNum-updateStickyRows, 1);
+		    var nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
+		} else {
+		    var idValues = [];
+		    var nameValues= [];
 		}
 
 		if (updateInsertNames.length) {
@@ -2148,8 +2152,8 @@ function handleProxyUpdates(data, create, returnMessages) {
 			}
 			if (rowCount) {
 			    // Overwrite contiguous "insert" block
-			    updateSheet.getRange(startRow, 1, rowCount, updateHeaders.length).setValues(updateInsertRows.slice(kinsert-rowCount,kinsert));
 			    trackCall(2, updateSheetName+':insertoverwrite '+' '+startRow+' '+rowCount);
+			    updateSheet.getRange(startRow, 1, rowCount, updateHeaders.length).setValues(updateInsertRows.slice(kinsert-rowCount,kinsert));
 			    startRow = 0;
 			    rowCount = 0;
 			}
@@ -2182,8 +2186,8 @@ function handleProxyUpdates(data, create, returnMessages) {
 			if (insertCount) {
 			    var beforeRow = jrow+1+insertedRows+updateStickyRows;
 			    updateSheet.insertRowsBefore(beforeRow, insertCount);
-			    updateSheet.getRange(beforeRow, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
 			    trackCall(2, updateSheetName+':insertbefore '+' '+beforeRow+' '+insertCount);
+			    updateSheet.getRange(beforeRow, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
 
 			    insertedRows += insertCount;
 			    jinsert += insertCount;
@@ -2198,10 +2202,10 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var insertCount = updateInsertNames.length-jinsert;
 			insertedRows += insertCount;
 			var temInsertCount = afterRow+insertCount - updateSheet.getMaxRows();
+			trackCall(1, updateSheetName+':afterRow '+afterRow+' '+insertCount+' '+temInsertCount);
 			if (temInsertCount > 0)
 			    updateSheet.insertRowsAfter(afterRow, temInsertCount);
 			updateSheet.getRange(afterRow+1, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
-			trackCall(1, updateSheetName+':afterRow '+afterRow+' '+insertCount);
 		    }
 		}
 

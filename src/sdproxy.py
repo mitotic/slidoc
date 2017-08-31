@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.8'
+VERSION = '0.97.8b'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -1350,6 +1350,7 @@ class ProxyUpdater(object):
         if Settings['log_call']:
             post_data['logcall'] = str(Settings['log_call'])
 
+        print("ABCpost_data", post_data)
         self.body = urllib.urlencode(post_data)
 
         self.cacheRequestTime = 0
