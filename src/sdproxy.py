@@ -1348,7 +1348,6 @@ class ProxyUpdater(object):
         if Settings['log_call']:
             post_data['logcall'] = str(Settings['log_call'])
 
-        print("ABCpost_data", post_data)
         self.body = urllib.urlencode(post_data)
 
         self.cacheRequestTime = 0

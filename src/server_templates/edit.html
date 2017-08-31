@@ -82,12 +82,8 @@ function slidocUpdate(action) {
 
    // Window opening must be triggered by user input
    if (action == 'open' || (action == 'update' && !checkPreviewWin())) {
-      if (!window.confirm('This will open a separate "live" preview
-   window/tab, which can be updated automatically. If you do not want live
-   preview in a separate window, cancel now and use Save to preview in
-   this window.\nYou can use Control-Enter keystoke to trigger live
-   updates and Alt-Enter to append image links.\nIf a tab is opened, you
-   may want to drag it out and place it side-by-side with the edit window.')) {
+      var msg = 'This will open a separate "live" preview  window/tab, which can be updated automatically. If you do not want live preview in a separate window, cancel now and use Save to preview in  this window.\nYou can use Control-Enter keystoke to trigger live updates and Alt-Enter to append image links.\nIf a tab is opened, you may want to drag it out and place it side-by-side with the edit window.';
+      if (!window.confirm(msg)) {
          return false;
       }
       PreviewWin = openWin(previewURL, previewName);
