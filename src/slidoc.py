@@ -714,7 +714,7 @@ class SlidocRenderer(MathRenderer):
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(disabled)s" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
-  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly %(disabled)s" data-qnumber="%(qno)d">Answer:</span>
+  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly" data-qnumber="%(qno)d">Answer:</span>
   <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-noanswered slidoc-noprint %(disabled)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
   <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
@@ -724,7 +724,7 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-partcorrect-mark" class="slidoc-partcorrect-answer"></span>
     <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
     <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
-    <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer"></span>
+    <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer %(disabled)s"></span>
   </span>
   %(explain)s %(boxlabel)s
   <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" %(boxsize)s ></textarea>
@@ -1451,7 +1451,7 @@ class SlidocRenderer(MathRenderer):
             prefix += '</p><blockquote id="%(id)s-choice-block" data-shuffle=""><div id="%(id)s-chart-header" class="slidoc-chart-header" style="display: none;"></div><p>\n'
             self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
 
-        hide_answer = self.options['config'].pace or 'show_correct' not in self.options['config'].features
+        hide_answer = self.options['config'].pace or not self.options['config'].show_score
         if name != 'Q' and hide_answer:
             prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
 
@@ -1560,8 +1560,8 @@ class SlidocRenderer(MathRenderer):
         maxchars = 0           # Max. length (in characters) for textarea
         noshuffle = 0          # If n > 0, do not randomly shuffle last n choices
         retry_counts = [0, 0]  # Retry count, retry delay
-        opt_values = { 'disabled': ('yes',),     # Disable answering for this question
-                       'explain': ('yes', ),    # Require explanation for answer
+        opt_values = { 'disabled': ('all','choice'),  # Disable all answering or correct choice display for this question
+                       'explain': ('yes', ),          # Require explanation for answer
                        'share': ('after_due_date', 'after_answering', 'after_grading'),
                        'team': ('response', 'setup'),
                        'vote': ('show_completed', 'show_live') }
@@ -1607,12 +1607,9 @@ class SlidocRenderer(MathRenderer):
             elif 'share_answers' in self.options['config'].features:
                 answer_opts['share'] = opt_values['share'][-1]
 
-        if answer_opts['share'] and 'delay_answers' in self.options['config'].features:
+        if answer_opts['share'] and self.options['config'].show_score == 'after_grading':
             answer_opts['share'] = opt_values['share'][2]
 
-        if not answer_opts['disabled'] and 'direct_answers' in self.options['config'].features:
-            answer_opts['disabled'] = opt_values['disabled'][0]
-            
         slide_id = self.get_slide_id()
         plugin_name = ''
         plugin_action = ''
@@ -1761,6 +1758,10 @@ class SlidocRenderer(MathRenderer):
         if multiline_answer:
             answer_opts['explain'] = ''      # Explain not compatible with textarea input
 
+        # For choice questions, hide answer button if not scoring immediately
+        if not answer_opts['disabled'] and self.options['config'].show_score != 'after_answering' and self.cur_qtype == 'choice':
+            answer_opts['disabled'] = opt_values['disabled'][0]
+            
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
         qnumber = len(self.questions)
@@ -1824,15 +1825,18 @@ class SlidocRenderer(MathRenderer):
         id_str = self.get_slide_id()
         ans_params = { 'sid': id_str, 'qno': len(self.questions), 'disabled': ''}
         if answer_opts['disabled']:
-            ans_params['disabled'] = 'slidoc-answer-disabled'
             if self.options['config'].pace > BASIC_PACE:
                 abort("    ****ANSWER-ERROR: %s: 'Answer disabling incompatible with pace value: slide %s" % (self.options["filename"], self.slide_number))
+            if answer_opts['disabled'] == 'choice':
+                ans_params['disabled'] = 'slidoc-answer-disabled-choice'
+            else:
+                ans_params['disabled'] = 'slidoc-answer-disabled'
 
         if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
-        hide_answer = self.options['config'].pace or 'show_correct' not in self.options['config'].features 
+        hide_answer = self.options['config'].pace or not self.options['config'].show_score 
         if len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
             abort("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
@@ -3155,6 +3159,20 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             if file_config.retakes and file_config.timed:
                 abort('PACE-ERROR: --retakes=... incompatible with --timed=...')
 
+            if file_config.show_score and file_config.show_score not in ('never', 'after_answering', 'after_submitting', 'after_grading'):
+                abort('SHOW-ERROR: Must have --show_score=never OR after_answering OR after_submitting OR after_grading')
+
+            if not file_config.show_score:
+                if file_config.pace >= ADMIN_PACE:
+                    file_config.show_score = 'after_answering'
+                elif file_config.pace:
+                    if 'assessment' in file_config.features:
+                        file_config.show_score = 'after_grading'
+                    else:
+                        file_config.show_score = 'after_submitting'
+            elif file_config.show_score == 'never':
+                file_config.show_score = ''
+
             file_config_vars = vars(file_config)
             settings_list = []
             exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
@@ -3195,6 +3213,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 if file_config.vote_date:
                     vote_date_str = sliauth.get_utc_date(file_config.vote_date)
 
+            js_params['showScore'] = file_config.show_score or ''
             js_params['sessionPrereqs'] =  file_config.prereqs or ''
             js_params['sessionRevision'] = file_config.revision or ''
             js_params['slideDelay'] = file_config.slide_delay or 0
@@ -3218,8 +3237,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
                 abort('PACE-ERROR: shuffle_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
-            if js_params['paceLevel'] >= QUESTION_PACE and 'direct_answers' in file_config.features:
-                abort('PACE-ERROR: direct_answers feature not compatible with --pace='+str(js_params['paceLevel']))
+            if js_params['paceLevel'] >= QUESTION_PACE and self.options['config'].show_score != 'after_answering':
+                abort('PACE-ERROR: --show_score=%s feature not compatible with --pace=%s' % (self.options['config'].show_score, js_params['paceLevel']) )
 
         if not j or config.separate:
             # First file or separate files
@@ -4095,12 +4114,13 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 # For pure web pages, --strip=chapters,contents,navigate,sections
 Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections', 'tags']
 
+# Note:
+#   --show_score != after_answering disables all answer buttons/input boxes (useful for immediate multiple choice answers during timed sessions, or for printed question sheets)
+
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents (also displays print exam menu)
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
-#   delay_answers: Correct answers and score are hidden from users until session is graded
-#   direct_answers: Disable all answer buttons/input boxes (useful for immediate multiple choice answers during timed sessions, or for printed question sheets)
 #   discuss_all: Enable discussion for all slides
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
@@ -4114,7 +4134,6 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   remote_answers: Correct answers and score are stored remotely until session is graded
 #   share_all: share responses for all questions after end of lecture etc.
 #   share_answers: share answers for all questions after grading (e.g., after an exam)
-#   show_correct: show correct answers for non-paced sessions
 #   shuffle_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
 #   skip_ahead: Allow questions to be skipped if the previous sequnce of questions were all answered correctly
 #   slide_break_avoid: Avoid page breaks within slide
@@ -4125,7 +4144,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'delay_answers', 'dest_dir', 'direct_answers', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'show_correct', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
@@ -4153,6 +4172,7 @@ Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
 Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 Conf_parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
+Conf_parser.add_argument('--show_score', help='Show correct answers after: never, after_answering, after_submitting, after_grading')
 Conf_parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
 Conf_parser.add_argument('--timed', type=int, help='No. of seconds for timed sessions (default: 0 for untimed)')
 Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")

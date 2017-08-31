@@ -76,6 +76,9 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
 
 .slidoc-answer-disabled { display: none; }
 
+.slidoc-answer-button.slidoc-answer-disabled-choice,
+  .slidoc-answer-correct.slidoc-answer-disabled-choice { display: none; }
+
 /* Text selection */
 
 .slidoc-unselectable {
