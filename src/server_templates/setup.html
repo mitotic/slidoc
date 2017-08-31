@@ -7,6 +7,11 @@
   <meta charset="UTF-8">
   <style>
     body { font-family: sans-serif; }
+
+    .clickable, .altclickable { cursor: pointer; color: #2980B9; text-decoration: none}
+
+    .clickable:hover, .altclickable:hover {text-decoration: underline;}
+
   </style>
   <script>
   function slidocConfirmAction(actionName) {
@@ -38,13 +43,13 @@
   </table>
 
   <ul>
-    <li><a href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
     <hr>
-    <li><a href="javascript:slidocConfirmAction('reload')">reload</a>: Restart proxy server</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('reload')">reload</a>: Restart proxy server</li>
     <hr>
-    <li><a href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
     <hr>
-    <li><a href="javascript:slidocConfirmAction('update')">update</a>: Update code and restart proxy server</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('update')">update</a>: Update code and restart proxy server</li>
   </ul>
 
   <form action="/_setup" method="get" id="setupform">

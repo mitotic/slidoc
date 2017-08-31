@@ -1711,7 +1711,7 @@ class ActionHandler(BaseHandler):
 
         if pacedSession(uploadType) and sessionName != 'index':
             # Lock proxy for preview
-            temMsg = sdproxy.startPreview(sessionName, create=create)
+            temMsg = sdproxy.startPreview(sessionName)
             if temMsg:
                 raise Exception('Unable to preview session: '+temMsg)
 
