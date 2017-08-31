@@ -255,7 +255,7 @@ def endTransactSession(sessionName, noupdate=False):
 def previewingSession():
     return Global.previewStatus.get('sessionName', '')
 
-def startPreview(sessionName, create=False):
+def startPreview(sessionName):
     # Initiate/end preview of session
     # (Delay upstream updates to session sheet and index sheet; also lock all index sheet rows except for this session)
     # Return error message or null string
@@ -288,8 +288,6 @@ def startPreview(sessionName, create=False):
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
-        if not indexSheet and not create:
-            return 'Index sheet '+INDEX_SHEET+' not found!'
 
     Global.previewStatus = {'sessionName': sessionName, 'sessionSheetOrig': sessionSheet.copy() if sessionSheet else None,
                             'indexSheetOrig': indexSheet.copy() if indexSheet else None}

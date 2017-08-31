@@ -22,7 +22,7 @@
 </head>
 <body>
 
-  <h2><a href="/{{ site_name }}">{{ site_name or 'Home' }}</a> Dashboard</h2>
+  <h2><a class="clickable" href="/{{ site_name }}">{{ site_name or 'Home' }}</a> Dashboard</h2>
   <b>(Slidoc version {{version}})</b>
   <p></p>
 
@@ -53,7 +53,7 @@
 
   <hr>
 
-  <a href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced dashboard actions</a>
+  <b><a class="clickable" href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced dashboard actions</a></b>
 
   <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
   <b>Advanced dashboard actions:</b><p></p>
