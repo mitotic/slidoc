@@ -113,9 +113,9 @@ Sliobj.popupQueue = [];
 Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
 Sliobj.pluginSetup = null;
-Sliobj.slidePlugins = null;
+Sliobj.slidePlugins = {};
 Sliobj.answerPlugins = null;
-Sliobj.incrementPlugins = null;
+Sliobj.incrementPlugins = {};
 Sliobj.buttonPlugins = null;
 Sliobj.delaySec = null;
 Sliobj.scores = null;
@@ -7217,7 +7217,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	toggleClass(slide_num == Sliobj.session.lastSlide, 'slidoc-paced-last-slide');
 	toggleClass(Sliobj.session.remainingTries, 'slidoc-expect-answer-state');
     }
-    toggleClass(slide_num < Sliobj.scores.skipToSlide, 'slidoc-skip-optional-slide');
+    if (Sliobj.scores)
+	toggleClass(slide_num < Sliobj.scores.skipToSlide, 'slidoc-skip-optional-slide');
 
     var prev_elem = document.getElementById('slidoc-slide-nav-prev');
     var next_elem = document.getElementById('slidoc-slide-nav-next');

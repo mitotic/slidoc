@@ -2023,7 +2023,7 @@ class ActionHandler(BaseHandler):
                 with open(self.previewState['web_dir']+'/'+sessionName+'.html', 'w') as f:
                     f.write(self.previewState['HTML'])
 
-            if sessionName != 'index' or uploadType != TOP_LEVEL:
+            if self.previewState['TOC'] and (sessionName != 'index' or uploadType != TOP_LEVEL):
                 with open(self.previewState['web_dir']+'/index.html', 'w') as f:
                     f.write(self.previewState['TOC'])
 

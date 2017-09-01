@@ -3909,24 +3909,32 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
         else:
             line_args_dict = dict([(arg_name, None) for arg_name in include_args]) if include_args else {}
 
-        for arg_name in line_args_dict.keys():
+        for arg_name in line_args_dict:
             if include_args and arg_name not in include_args:
                 del line_args_dict[arg_name]
             elif exclude_args and arg_name in exclude_args:
                 del line_args_dict[arg_name]
-            elif arg_name == 'features':
-                # Convert feature string to set
-                line_args_dict[arg_name] = md2md.make_arg_set(line_args_dict[arg_name], Features_all)
-            elif arg_name == 'strip':
-                # Convert strip string to set
-                line_args_dict[arg_name] = md2md.make_arg_set(line_args_dict[arg_name], Strip_all)
         if verbose:
             message('Read command line arguments from ', source, argparse.Namespace(**line_args_dict))
     except Exception, excp:
         abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (source, excp))
 
-    merged_args_dict = default_args_dict.copy()
-    merged_args_dict.update(line_args_dict)
+    merged_args_dict = {}
+    for arg_name in line_args_dict:
+        if line_args_dict[arg_name] is None:
+            # Merge default value for unspecified arg
+            merged_args_dict[arg_name] = default_args_dict.get(arg_name)
+        else:
+            # Use arg from line
+            merged_args_dict[arg_name] = line_args_dict[arg_name]
+
+        if arg_name == 'features':
+            # Convert feature string to set
+            merged_args_dict[arg_name] = md2md.make_arg_set(merged_args_dict[arg_name], Features_all)
+        elif arg_name == 'strip':
+            # Convert strip string to set
+            merged_args_dict[arg_name] = md2md.make_arg_set(merged_args_dict[arg_name], Strip_all)
+
     if default_args_dict.get('pace'):
         # Ensure minimum pace level if default requiring pacing
         merged_args_dict['pace'] = max(merged_args_dict['pace'], default_args_dict['pace'])
