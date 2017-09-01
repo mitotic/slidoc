@@ -519,7 +519,7 @@ def getSheet(sheetName, require=False, backup=False, display=False):
     if not rows:
         raise Exception("Empty sheet '%s'" % sheetName)
 
-    Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=getKeyHeader(sheetName))
+    Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=getKeyHeader(sheetName), updated=True)
     return Sheet_cache[sheetName]
 
 def downloadSheet(sheetName, backup=False):
@@ -571,7 +571,7 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
 
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
-    def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', modifiedHeaders=False):
+    def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', updated=False, modifiedHeaders=False):
         if not rows:
             raise Exception('Must specify at least header row for sheet')
         self.name = name
@@ -619,10 +619,11 @@ class Sheet(object):
             self.keyMap = dict( (k, [v[0], v[1], v[2].copy()]) for k, v in keyMap.items() )
         else:
             # New key map
+            inserted = 0 if updated else 1
             self.keyMap = {}
             for j, row in enumerate(self.xrows[1:]):
                 key = row[self.keyCol-1] if self.keyCol else j+2
-                self.keyMap[key] = [modTime, 0, set()]  # [modTime, insertedFlag, modColsSet]
+                self.keyMap[key] = [modTime, inserted, set()]  # [modTime, insertedFlag, modColsSet]
 
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
@@ -960,6 +961,7 @@ class Sheet(object):
 
         colSet, colList, curUpdate = None, None, None
         allKeys = [row[self.keyCol-1] for row in self.xrows[1:] if row[self.keyCol-1]] if self.keyCol else None
+
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
             if not key:  # Do not update any non-key rows
@@ -1096,11 +1098,23 @@ def getCacheStatus():
         if not sheetStr:
             sheetStr = '<a href="/_%s/%s">%s</a> %s' % (action, sheetName, action, Lock_cache.get(sheetName,''))
     
-        accessTime = str(int((curTime-sheet.accessTime)/1000.))+'s' if sheet else '(not cached)'
-        out += 'Sheet_cache: %s: %s %s\n' % (sheetName, accessTime, sheetStr)
+        if sheet:
+            accessTime = 'accessed:'+str(int((curTime-sheet.accessTime)/1000.))+'s/modified:'+str(int((curTime-sheet.modTime)/1000.))+'s'
+        else:
+            accessTime = '(not cached)'
+
+        updateStr = ''
+        if Settings['debug']:
+            updates = sheet.get_updates(row_limit=PROXY_UPDATE_ROW_LIMIT)
+            if updates:
+                updateStr = '['+','.join(sorted(updates[0].keys()))+']'
+            else:
+                updateStr = '[no pending updates]'
+
+        out += 'Sheet_cache: %s: %s %s %s\n' % (sheetName, accessTime, sheetStr, updateStr)
     out += '\n'
     for sheetName in Miss_cache:
-        out += 'Miss_cache: %s: %ds\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
+        out += 'Miss_cache: %s, %ds\n' % (sheetName, (curTime-Miss_cache[sheetName])/1000.)
     out += '\n'
     return out
 
