@@ -1,0 +1,231 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- https://markuprecipes.wordpress.com/2013/09/29/simple-scientific-calculator-using-html-javascript-and-css/ -->
+<style>
+*{padding:0;
+  margin:0;
+}
+
+body {text-align:center;
+      background-color:#637ACB;
+}
+
+#heading {margin-top:30px;}
+
+#form_wrapper {width:405px;
+               height:450px;
+               margin:30px auto auto 420px;
+               background-color:#000;
+               text-align:center;
+               border-radius:10px;
+               border-right:2px groove #333;
+               box-shadow:4px 4px 2px #666666;}
+
+#formone {padding-top:10px;}
+
+#display {width:380px;
+          height:40px;
+          font-size:18px;
+          color:black;
+          margin:4px;
+          border:2px inset black;
+          border-bottom:1px inset #FFF;
+          border-right:1px inset #FFF;
+          background-color:#D5F192;}
+
+.button {width:60px;
+         height:60px;
+         margin:1px;
+         background-color:#fff;
+}
+
+.number {font-size:16px;
+         font-weight:bold;
+         background-color:#fff;
+}
+
+.opps {font-size:18px;
+         background-color:#fff;
+}
+
+.three {font-size:16px;
+        font-weight:bold;
+        background-color:#FBB9A8;
+}
+.three:hover{background-color:#F66;}
+</style>
+
+<script>
+function isNumber(x) { return !!(x+'') && !isNaN(x+''); }
+
+function parseNumber(x) {
+    try {
+	if (!isNumber(x))
+	    return null;
+	if (typeof x == 'string') {
+	    var retval = parseFloat(x);
+	    return isNaN(retval) ? null : retval;
+	}
+	if (!isNaN(x))
+	    return x || 0;
+    } catch(err) {
+    }
+    return null;
+}
+
+var e = Math.E;
+var pi = Math.PI;
+
+var flag = 0;
+function openpara(val)
+{
+calc.display.value+=val;
+flag+=1;
+}
+function closepara(valval)
+{
+calc.display.value+=valval;
+flag-=1;
+}
+function backspace(calc)
+{
+var size = calc.display.value.length;
+calc.display.value=calc.display.value.substring(0,size-1);
+}
+function Resetfunction(calc)
+{
+calc.display.value=" ";
+
+flag=0;
+}
+function cos_function()
+{
+flag+=1;
+calc.display.value+='Math.cos(';
+}
+function sin_function()
+{
+flag+=1;
+calc.display.value+='Math.sin(';
+}
+function tan_function()
+{
+flag+=1;
+calc.display.value+='Math.tan(';
+}
+function log_function()
+{
+flag+=1;
+calc.display.value+='Math.log(';
+}
+
+function sqrt_function() {
+   flag+=1;
+   calc.display.value+='Math.sqrt(';
+}
+
+function exp_function()
+{
+flag+=1;
+calc.display.value+='Math.exp(';
+}
+function fact(x)
+{
+factvar=1;
+for (i=1;i<=x;i++)
+{
+factvar=factvar*i;
+}
+return factvar;
+}
+function fact_function(x)
+{
+flag+=1;
+calc.display.value+='fact(';
+}
+
+
+function power(x,y) {
+   return Math.pow(x,y);
+}
+
+function power_function(x) {
+   flag+=1;
+   calc.display.value = 'power('+calc.display.value+',';
+}
+
+function evaluation(calc)
+{
+n = calc.display.value;
+var size = calc.display.value.length;
+var lastchar = calc.display.value.charAt(size)
+if(isNaN(lastchar) && lastchar!=")" && lastchar!="!")   {calc.display.value="syntax error";}
+else if(flag!=0){calc.display.value="error:paranthesis";}
+else {
+result=eval(n);
+calc.display.value=result;}
+}
+
+</script>
+
+</head>
+
+<body>
+<div id="big_wrapper">
+<h1 id="heading">SIMPLE SCIENTIFIC CALCULATOR</h1>
+<div id="form_wrapper">
+<form id="formone" name="calc">
+<input id="display" type="text" name="display" value=" " disabled contenteditable="false" >
+<br>
+<input class="button number" type="button" value="1" onClick="calc.display.value+=1">
+<input class="button number" type="button" value="2" onClick="calc.display.value+=2">
+<input class="button number" type="button" value="3" onClick="calc.display.value+=3">
+<input class="button three" type="button" value="C" onClick="Resetfunction(this.form)">
+<input class="button three" type="button" value="<-" onClick="backspace(this.form)">
+<input class="button three" type="button" value="=" onClick="evaluation(this.form)">
+<br>
+<input class="button number" type="button" value="4" onClick="calc.display.value+=4">
+<input class="button number" type="button" value="5" onClick="calc.display.value+=5">
+<input class="button number" type="button" value="6" onClick="calc.display.value+=6">
+<input class="button opps" type="button" value="-" onClick="calc.display.value+='-'">
+<input class="button opps" type="button" value="%" onClick="calc.display.value+='%'">
+<input class="button" type="button" value="cos" onClick="cos_function()">
+<br>
+
+
+<input class="button number" type="button" value="7" onClick="calc.display.value+=7">
+<input class="button number" type="button" value="8" onClick="calc.display.value+=8">
+<input class="button number" type="button" value="9" onClick="calc.display.value+=9">
+<input class="button opps" type="button" value="*" onClick="calc.display.value+='*'">
+<input class="button" type="button" value="n!" onClick="fact_function()">
+<input class="button" type="button" value="sin" onClick="sin_function()">
+<br>
+<input class="button opps" type="button" value="." onClick="calc.display.value+='.'">
+<input class="button number" type="button" value="0" onClick="calc.display.value+=0">
+<input class="button opps" type="button" value="," onClick="calc.display.value+=','">
+<input class="button opps" type="button" value="+" onClick="calc.display.value+='+'">
+<input class="button opps" type="button" value="/" onClick="calc.display.value+='/'">
+<input class="button" type="button" value="tan" onClick="tan_function()">
+<br>
+<input class="button" type="button" value="E" onClick="calc.display.value+='e'">
+<input class="button" type="button" value="pi" onClick="calc.display.value+='pi'">
+<input class="button" type="button" value="x^y" onClick="power_function()">
+<input class="button" type="button" value="(" onClick="openpara(this.value)">
+<input class="button" type="button" value=")" onClick="closepara(this.value)">
+<input class="button" type="button" value="log" onClick="log_function()">
+<br>
+<input class="button" type="button" value="sqrt" onClick="sqrt_function()">
+<input class="button" type="button" value="LN2" onClick="calc.display.value+=0.693">
+<input class="button" type="button" value="LN10" onClick="calc.display.value+=2.302">
+<input class="button" type="button" value="log2E" onClick="calc.display.value+=1.442">
+<input class="button" type="button" value="log10E" onClick="calc.display.value+=0.434">
+<input class="button" type="button" value="EXP" onClick="exp_function">
+
+</form>
+</div>
+</div>
+</body>
+
+</html>
+

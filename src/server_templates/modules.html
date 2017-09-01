@@ -33,10 +33,15 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
    var msg = 'Confirm '+actionName+' '+(sessionPrefix||'')+(sessionName||'');
    if (!window.confirm(msg+'?'))
       return;
+   var statusElem = document.getElementById('status-msg');
    if (actionName == 'delete') {
       if (!window.confirm('Delete operation is irreversible. Are you sure?'))
          return;
    }
+  if (actionName == 'republish') {
+    if (statusElem)
+      statusElem.textContent = 'Processing...';
+  }
    var url = '{{ site_prefix }}'+'/_'+actionName;
    if (sessionName)
       url += '/' + sessionName;
@@ -57,16 +62,16 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   {% include "linkback.html" %}
   </b>
   <p></p>
-  <h3>Create and modify source content</h3>
+  <h3>Create and modify page and module content</h3>
 
-  Status: <tt>{{ message }}</tt>
+  <b>Status:</b> <tt id="status-msg" style="color: red;">{{ message }}</tt>
   <p></p>
 
-  <b><a class="clickable" href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add session type</a></b>
+  <b><a class="clickable" href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add module type</a></b>
 
   <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
-    <label for="sessiontype">Session type:</label><br>
+    <label for="sessiontype">Module type:</label><br>
     <table>
       {% set session_dirs = [x[0] for x in session_props] %}
       {% for session_type, session_label in session_types %}
@@ -80,18 +85,18 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
     <input type="hidden" name="sessioncreate" value="sessions">
 
     <div>
-      <input id="session-upload-submit" type="submit" value="Add session type">
+      <input id="session-upload-submit" type="submit" value="Add module type">
     </div>
     </fieldset>
   </form>
   <p></p>
 
   <p></p>
-  <em>Directory/file actions</em>: View spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
-  Publish (&#x21BA;), Delete (&#x1F5D1;), New session (<b>+</b>)
+  <em>Directory/file actions</em>: Module session spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
+  Publish (&#x21BA;), Delete (&#x1F5D1;), New module (<b>+</b>)
   <p></p>
   <div style="border: 1px solid; padding: 4px;">
-  <b>Session directory</b>
+  <b>Page and module directory</b>
   <ul>
     {% for dirname, private, sessions, dates, logs in session_props %}
     <li>
@@ -109,7 +114,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
           <span class="clickable" onclick="togglebelow(this,true);" style="">&#x27A4;</span>
           <span class="clickable smaller" onclick="togglebelow(this,false);" style="display: none;">&#9660;</span>
 	  {{ dirname }}
-	  <a class="clickable" href="{{ site_prefix }}/_rebuild/{{ dirname }}00">&#x21BA;</a>
+	  <a class="clickable" href="{{ site_prefix }}/_republish/{{ dirname }}00">&#x21BA;</a>
           {% end %}
 
 
@@ -174,22 +179,20 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <b><a class="clickable" href="{{ site_prefix }}/_upload/top">Upload top-level Markdown page content</a></b>
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_upload/raw">Upload top-level raw web content</a></b>
+  <b><a class="clickable" href="{{ site_prefix }}/_upload/raw">Upload top-level raw web page content</a></b>
   <p></p>
 
   <b><a class="clickable" href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced content actions</a></b>
   <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
   <b>Advanced content actions:</b><p></p>
   <p></p>
-  <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Publish all content 
-  (generate HTML files from Markdown)<br>
+  <span class="clickable" onclick="action('republish','all','for ','republishforce');">&#x21BA;</span>: Publish all pages and modules (generate HTML files from Markdown)<br>
   <p></p>
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
-                                <label for="rebuildforce">Force publishing of unmodified sessions:</label>
+                                <input id="republishforce" type="checkbox" id="republishforce" name="republishforce" value="force">
+                                <label for="republishforce">Force publishing of even unmodified pages and modules</label>
   <p></p>
-  <span class="clickable" onclick="action('reindex','all','for ');">&#x2336;</span>: Reindex all content 
-  (regenerate Table of Contents)
+  <span class="clickable" onclick="action('reindex','all','for ');">&#x2336;</span>: Reindex all pages and modules (regenerate Table of Contents)
   <p></p>
   <hr>
   <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Flexible file upload 
@@ -213,9 +216,9 @@ lecture/lecture02.md
 <p></p>
   Notes:
   <ul>
-    <li><code>index</code> is the (Markdown) home page of the web site.</li><p></p>
-    <li>Other Markdown pages may also appear at the top-level.</li><p></p>
-    <li>Top-level Markdown/HTML content will be automatically listed in the navigation bar.</li><p></p>
+    <li><code>index.md</code> is the (Markdown) home page of the web site.</li><p></p>
+    <li>Other Markdown pages may also appear at the top-level, e.g., <code>syllabus.md</code>.</li><p></p>
+    <li>Top-level Markdown/HTML pages will be automatically listed in the navigation bar.</li><p></p>
     <li><em>Publishing</em> generates HTML web pages from Markdown content.</li>
   </ul>
 

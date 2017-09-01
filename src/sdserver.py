@@ -762,7 +762,7 @@ class ActionHandler(BaseHandler):
             self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
-        if action not in ('_dash', '_actions', '_sessions', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
+        if action not in ('_dash', '_actions', '_modules', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
@@ -788,7 +788,7 @@ class ActionHandler(BaseHandler):
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', suspended=sdproxy.Global.suspended)
 
-        elif action == '_sessions':
+        elif action == '_modules':
             self.displaySessions()
 
         elif action == '_browse':
@@ -966,27 +966,27 @@ class ActionHandler(BaseHandler):
                             rowVals = sheet.getSheetValues(labelNum, 1, 1, sheet.getLastColumn())[0]
                             self.write('<pre>'+'\n'.join(headerVals[j]+':\t'+str(json.loads(json.dumps(rowVals[j], default=sliauth.json_default))) for j in range(len(headerVals))) +'</pre>')
 
-        elif action in ('_rebuild', '_reindex'):
+        elif action in ('_republish', '_reindex'):
             if not Options['source_dir']:
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to reindex/rebuild')
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to republish/reindex')
 
-            rebuildForce = bool(self.get_argument('rebuildforce',''))
+            republishForce = bool(self.get_argument('republishforce',''))
 
             if subsubpath == 'all':
                 uploadType = ''
             else:
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
 
-            if action == '_rebuild':
-                buildMsgs = self.rebuild(uploadType, force=rebuildForce, log_dict=True)
+            if action == '_republish':
+                buildMsgs = self.rebuild(uploadType, force=republishForce, log_dict=True)
                 # Re-index after complete rebuild
                 indMsgs = self.rebuild(uploadType, indexOnly=True)
             else:
                 buildMsgs = {}
                 indMsgs = self.rebuild(uploadType, indexOnly=True)
 
-            if action == '_rebuild' and (1 or any(buildMsgs.values()) or any(indMsgs)):
-                self.displaySessions(buildMsgs, indMsgs, msg='Completed rebuild')
+            if action == '_republish' and (1 or any(buildMsgs.values()) or any(indMsgs)):
+                self.displaySessions(buildMsgs, indMsgs, msg='Completed republishing')
             elif action == '_reindex' and indMsgs and any(indMsgs):
                 self.displayMessage(['Error in %s:' % action] + indMsgs)
             else:
@@ -1206,7 +1206,7 @@ class ActionHandler(BaseHandler):
                                     sessionParamDict.get(sessionType, ['','','']),
                                     '\n'.join(buildMsgs.get(sessionType, []))] )
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        self.render('sessions.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
+        self.render('modules.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
 
 
     def browse(self, filepath, delete='', download='', uploadName='', uploadContent=''):
@@ -2341,7 +2341,7 @@ class ActionHandler(BaseHandler):
 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
         if uploadType == TOP_LEVEL:
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for top-level sessions')
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for top-level pages')
 
         sessionEntries = sdproxy.lookupValues(sessionName, ['paceLevel'], sdproxy.INDEX_SHEET)
         adminPaced = (sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE)
@@ -3893,17 +3893,17 @@ def createApplication():
                       r"/(_lockcode/[-\w.;]+)",
                       r"/(_logout)",
                       r"/(_manage/[-\w.]+)",
+                      r"/(_modules)",
                       r"/(_prefill/[-\w.]+)",
                       r"/(_preview/[-\w./]+)",
-                      r"/(_rebuild/[-\w.]+)",
                       r"/(_refresh/[-\w.]+)",
                       r"/(_reindex/[-\w.]+)",
                       r"/(_reloadpreview)",
                       r"/(_remoteupload/[-\w.]+)",
+                      r"/(_republish/[-\w.]+)",
                       r"/(_reset_cache_updates)",
                       r"/(_respond/[-\w.;]+)",
                       r"/(_roster)",
-                      r"/(_sessions)",
                       r"/(_submissions/[-\w.:;]+)",
                       r"/(_submit/[-\w.:;]+)",
                       r"/(_twitter)",

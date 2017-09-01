@@ -19,23 +19,23 @@
 
 <p></p>
 <div id="slidoc-manage">
-  Manage session <b>{{session_name}}</b>
+  Manage module <b>{{session_name}}</b>
   <h3><span id="slidoc-action-status"></span></h3>
 
   <ul>
     <li><a class="clickable" href="javascript:slidocAction('respond')">respond</a>: Award participation credit for lectures</li>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('submit')">submit</a>: Submit test user responses (used for ending admin-paced sessions)</li>
-    <li><a class="clickable" href="javascript:slidocAction('submissions')">submissions</a>: Show session submission stats, allow late submissions etc.</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('submit')">submit</a>: Submit test user responses (used for ending admin-paced modules)</li>
+    <li><a class="clickable" href="javascript:slidocAction('submissions')">submissions</a>: Show module session submission stats, allow late submissions etc.</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('prefill')">prefill</a>: Pre-fill session with all roster users (for creating paper tests)</li>
-    <li><a class="clickable" href="javascript:slidocAction('sheet', '{{session_name}}')">view</a>: View session data (scores, grades, etc.)</em></li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('prefill')">prefill</a>: Pre-fill module session with all roster users (for creating paper tests)</li>
+    <li><a class="clickable" href="javascript:slidocAction('sheet', '{{session_name}}')">view</a>: View module session data (scores, grades, etc.)</em></li>
     <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('import')">import</a>: Import responses/grades from spreadsheet.csv (from paper tests)</li>
     <li><a class="clickable" href="javascript:slidocAction('export')">export</a>: Export responses to <em>spreadsheet.csv</em></li>
-    <li><a class="clickable" href="javascript:slidocAction('download')">download</a>: Download session Markdown file (and images)</li>
+    <li><a class="clickable" href="javascript:slidocAction('download')">download</a>: Download module Markdown file (and images)</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocAction('edit')">edit</a>: Edit session Markdown file</li>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('delete')">delete</a>: Delete session (IRREVERSIBLE)</LI>
+    <li><a class="clickable" href="javascript:slidocAction('edit')">edit</a>: Edit module Markdown file</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('delete')">delete</a>: Delete module (IRREVERSIBLE)</LI>
   </ul>
 
   <p></p>
@@ -44,10 +44,10 @@
   <ul id="slidoc-dash-advanced" style="display: none;">
     <li><a class="clickable" href="javascript:slidocAction('user_qstats')">qstats</a>: Question response statistics</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocAction('getrow')">headers</a>: List session spreadsheet columns (headers)</li>
-    <li><a class="clickable" href="javascript:slidocAction('getcol')">ids</a>: List all rows (ids) in session spreadsheet</li>
+    <li><a class="clickable" href="javascript:slidocAction('getrow')">headers</a>: List module session spreadsheet columns (headers)</li>
+    <li><a class="clickable" href="javascript:slidocAction('getcol')">ids</a>: List all rows (ids) in module session spreadsheet</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocAction('refresh')">refresh</a>: Refresh session cache</li>
+    <li><a class="clickable" href="javascript:slidocAction('refresh')">refresh</a>: Refresh module session cache</li>
   </ul>
 
 </div>

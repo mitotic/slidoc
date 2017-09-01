@@ -11,7 +11,7 @@
 <body>
 
 <h2>{{site_name}}</h2>
-<h2>Upload session/data files</h2>
+<h2>Upload page/module files</h2>
 
 <b>
 {% include "linkback.html" %}
@@ -29,27 +29,27 @@
         <input type="hidden" name="topname" value="{{ session_name }}">
         {% end %}
       {% else %}
-        <label for="sessiontype">Session type:</label><br>
+        <label for="sessiontype">Module type:</label><br>
         <table>
         {% for session_type, session_label in session_types %}
         <tr><td><input type="radio" name="sessiontype" value="{{ session_type }}"> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
         {% end %}
         <tr><td><input type="radio" name="sessiontype" value="raw"> <b>raw</b></td><td> [Raw web archive (zip)]</td></tr>
         </table>
-        Session names will be of the form <tt>sessionType??</tt>, e.g., <tt>lecture01</tt>
+        Module names will be of the form <tt>moduleType??</tt>, e.g., <tt>lecture01</tt>
       {% end %}
      <br>
      {% if upload_type in ('raw', 'top') or str(session_number).isdigit() %}
      <input type="hidden" name="sessionnumber" value="{{ session_number }}">
      {% else %}
-     <label for="sessionnumber">Session number:</label>
+     <label for="sessionnumber">Module number:</label>
      <input type="number" id="sessionnumber" name="sessionnumber" value="">
      (needed only for non-top/raw cases; special value 0 denotes ToC header)<br>
      {% end %}
      <p></p>
 
      {% if session_name == 'index' or upload_type not in ('raw', 'top') %}
-     <label for="sessioncreate">Create blank page/session?</label>
+     <label for="sessioncreate">Create blank page/module?</label>
      <input type="checkbox" id="sessioncreate" name="sessioncreate" value="upload">
      <p></p>
      {% end %}
@@ -66,10 +66,10 @@
      <label for="upload2">Zip archive with Markdown, images, HTML or data (.zip):</label><br>
      <input type="file" id="upload2" name="upload2"  accept=".zip" value="file2">
      <p></p>
-     Sessions as well as raw/Markdown top-level web pages may be uploaded as zip
-     archives. For sessions, images in the zip archive should have names of the form
-     <code>sessionName/*.jpg</code> for pixelized <code>.pptx</code> files and of the
-     form <code>sessionName_images/*.jpg</code> for embedding in <code>.md</code> files,
+     Modules as well as raw/Markdown top-level web pages may be uploaded as zip
+     archives. For modules, images in the zip archive should have names of the form
+     <code>moduleName/*.jpg</code> for pixelized <code>.pptx</code> files and of the
+     form <code>moduleName_images/*.jpg</code> for embedding in <code>.md</code> files,
      The Markdown content may optionally be included in the archive, with the name <code>content.md</code>,
      instead of being provided as a separate file.
      <p></p>
