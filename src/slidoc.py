@@ -3203,15 +3203,15 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
-            if js_params['paceLevel']:
-                # Note: pace does not work with combined files
-                if file_config.release_date:
-                    release_date_str = file_config.release_date if file_config.release_date == FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
-                if file_config.due_date:
-                    due_date_str = sliauth.get_utc_date(file_config.due_date)
 
-                if file_config.vote_date:
-                    vote_date_str = sliauth.get_utc_date(file_config.vote_date)
+            if file_config.release_date:
+                release_date_str = file_config.release_date if file_config.release_date == FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
+
+            if file_config.due_date:
+                due_date_str = sliauth.get_utc_date(file_config.due_date)
+
+            if file_config.vote_date:
+                vote_date_str = sliauth.get_utc_date(file_config.vote_date)
 
             js_params['showScore'] = file_config.show_score or ''
             js_params['sessionPrereqs'] =  file_config.prereqs or ''
@@ -3350,11 +3350,12 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         js_params['topnavList'] = []
         topnav_html = ''
         sessions_due_html = ''
+        announce_due_html = ''
         if topnav_opts and config.separate:
             top_fname = 'home' if fname == 'index' else fname
             js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
             topnav_html = '' if config.make_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
-            sessions_due = []
+            index_display = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
                     if os.path.exists(dest_dir+opt):
@@ -3363,24 +3364,35 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     else:
                          index_entries = []
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str, index_params in index_entries:
-                        if iso_due_str and iso_due_str != '-':
-                            sessions_due.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, doc_str, iso_due_str, iso_release_str])
-            if sessions_due:
-                sessions_due.sort(reverse=True)
+                        if iso_release_str != FUTURE_DATE and (ind_fname.startswith('announce') or (iso_due_str and iso_due_str != '-')):
+                            index_display.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str])
+
+            if index_display:
+                index_display.sort(reverse=True)
                 due_html = []
-                for ind_fpath, ind_fname, doc_str, iso_due_str, iso_release_str in sessions_due:
-                    if iso_release_str == FUTURE_DATE:
-                        continue
+                announce_html = []
+                for ind_fpath, ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_display:
                     release_epoch = 0
                     due_epoch = 0
                     if iso_release_str and iso_release_str != '-':
                         release_epoch = int(sliauth.epoch_ms(sliauth.parse_date(iso_release_str))/1000.0)
                     if iso_due_str and iso_due_str != '-':
                         due_epoch = int(sliauth.epoch_ms(sliauth.parse_date(iso_due_str))/1000.0)
-                    doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (ind_fpath, doc_str)
-                    due_html.append('<li class="slidoc-index-entry" data-release="%d" data-due="%d">%s: <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (release_epoch, due_epoch, iso_due_str[:10], ind_fname, SPACER6, doc_link))
-                sessions_due_html = '<ul class="slidoc-toc-list" style="list-style-type: none;">\n' + '\n'.join(due_html) + '\n</ul>\n'
+                    
+                    if ind_fname.startswith('announce'):
+                        entry = '<li class="slidoc-index-entry" data-release="%d" data-due="%d"><a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>: %s %s</li>\n' % (release_epoch, due_epoch, ind_fpath, ind_fname, ind_fheader, '('+iso_release_str[:10]+')' if release_epoch else '')
+                        announce_html.append(entry)
+                    else:
+                        doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (ind_fpath, doc_str)
+                        entry = '<li class="slidoc-index-entry" data-release="%d" data-due="%d">%s: <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (release_epoch, due_epoch, iso_due_str[:10], ind_fname, SPACER6, doc_link)
+                        due_html.append(entry)
+                        
+                ul_fmt = '<ul class="slidoc-toc-list %s" style="list-style-type: none;">\n%s\n</ul>\n'
+                sessions_due_html = ul_fmt %  ('slidoc-due-sessions', '\n'.join(due_html))
+                announce_due_html = ul_fmt %  ('slidoc-due-announce', '\n'.join(announce_html)) if announce_html else ''
+
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
+        md_html = md_html.replace('<p>Announcements:</p>', announce_due_html)
 
         mid_params = {'session_name': fname,
                       'math_js': math_inc if math_present else '',
@@ -3483,7 +3495,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 if js_params['paceLevel']:
                     index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
                 else:
-                    index_entries = [fname, fheader, 'view', '-', '-']
+                    index_entries = [fname, fheader, 'view', due_date_str or '-', release_date_str or '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
                 index_dict = {'md_digest': md_params['md_digest'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
                               'md_images': md_params['md_images'], 'new_image_number': md_params['new_image_number']}
@@ -3593,6 +3605,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 toc_list.append(doc_str)
                 toc_list.append(iso_due_str)
                 toc_list.append(iso_release_str)
+                toc_list.append('{}')
                 toc_list.append('')
         else:
             # Create ToC using info from rendering

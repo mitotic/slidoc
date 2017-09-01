@@ -181,12 +181,12 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
   <b>Advanced content actions:</b><p></p>
   <p></p>
-  &nbsp;<label for="rebuildforce">Force publishing of unmodified sessions:</label>
-  <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
-  <hr>
-  <p></p>
   <span class="clickable" onclick="action('rebuild','all','for ','rebuildforce');">&#x21BA;</span>: Publish all content 
-  (generate HTML files from Markdown)
+  (generate HTML files from Markdown)<br>
+  <p></p>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                <input id="rebuildforce" type="checkbox" id="rebuildforce" name="rebuildforce" value="force">
+                                <label for="rebuildforce">Force publishing of unmodified sessions:</label>
   <p></p>
   <span class="clickable" onclick="action('reindex','all','for ');">&#x2336;</span>: Reindex all content 
   (regenerate Table of Contents)

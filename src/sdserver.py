@@ -1637,6 +1637,8 @@ class ActionHandler(BaseHandler):
         for j, flist in enumerate([topFolders2, topFiles, topFolders]):
             for fname in flist:
                 entry = fname if j > 0 else PRIVATE_PATH+'/'+fname
+                if not entry.endswith('.html'):
+                    entry += '/index.html'
                 if entry not in topnavList:
                     topnavList.append(entry)
         if not folders_only:
@@ -1853,7 +1855,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, force=%s, make=%s, make_toc=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, force, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
+            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, force=%s, make=%s, make_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, force, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
 
         return_html = bool(src_path)
 

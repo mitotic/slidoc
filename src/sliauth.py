@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import io
 import json
+import re
 import sys
 import time
 import urllib
@@ -95,8 +96,10 @@ def ordered_stringify(value, default=None):
     return json.dumps(value, default=default, sort_keys=True)
 
 def get_utc_date(date_time_str):
-    """Convert local date string of the form yyyy-mm-ddThh:mm to UTC (unless it already ends with 'Z')"""
+    """Convert local date string of the form yyyy-mm-ddThh:mm (or yyyy-mm-dd) to UTC (unless it already ends with 'Z')"""
     if date_time_str and not date_time_str.endswith('Z'):
+        if re.match(r'^\d\d\d\d-\d\d-\d\d$', date_time_str):
+            date_time_str += 'T00:00'
         try:
             date_time_str = datetime.datetime.utcfromtimestamp(time.mktime(time.strptime(date_time_str, "%Y-%m-%dT%H:%M"))).strftime("%Y-%m-%dT%H:%M") + 'Z'
         except Exception, excp:

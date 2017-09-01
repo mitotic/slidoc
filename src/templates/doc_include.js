@@ -527,7 +527,7 @@ document.onreadystatechange = function(event) {
     if (!Sliobj.params.fileName || (Sliobj.params.fileName == 'index' && !Sliobj.previewState)) {
 	// Just a simple web page
 	toggleClass(true, 'slidoc-simple-view');
-	if (Sliobj.params.gd_sheet_url)
+	if (Sliobj.params.gd_sheet_url || getServerCookie())
 	    toggleClass(true, 'slidoc-remote-view');
 	return;
     }
@@ -656,10 +656,14 @@ Slidoc.pageSetup = function() {
 	var releaseTime = parseNumber(elem.dataset.release) || 0;
 	var dueTime = parseNumber(elem.dataset.due || 0);
 	var curTime = (new Date()).getTime() / 1000;
-	if (releaseTime && curTime < releaseTime)
-	    elem.classList.add('slidoc-index-entry-unavailable')
-	else if (dueTime && curTime < dueTime)
-	    elem.classList.add('slidoc-index-entry-due')
+	if (releaseTime && curTime < releaseTime) {
+	    elem.classList.add('slidoc-index-entry-prerelease')
+	} else if (dueTime) {
+	    if (curTime < dueTime)
+		elem.classList.add('slidoc-index-entry-active');
+	    else
+		elem.classList.add('slidoc-index-entry-expired');
+	}
     }
     document.addEventListener('webkitfullscreenchange', fullscreenHandler, false);
     document.addEventListener('mozfullscreenchange', fullscreenHandler, false);
@@ -3279,13 +3283,16 @@ function twitterMessageDisplay(eventArgs) {
 }
 
 Slidoc.userProfile = function() {
-    if (!Sliobj.params.gd_sheet_url)
+    if (!Sliobj.params.gd_sheet_url && !getServerCookie())
 	return;
-    var userId = getUserId();
-    if (!userId) {
+    var userId = getUserId(true);
+    if (!userId || !Sliobj.rosterSheet) {
 	if (Sliobj.closePopup)
 	    Sliobj.closePopup();
-	Slidoc.showPopup('<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>');
+	if (!userId)
+	    Slidoc.showPopup('<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>');
+	else
+	    Slidoc.showPopup('User: <b>'+userId+'</b>');
 	return;
     }
     if (!Sliobj.closePopup)
@@ -3374,9 +3381,11 @@ Slidoc.manageSession = function() {
 	    else
 		html += '<br>Release date: '+Sliobj.params.releaseDate;
 	}
-	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
 	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="https://mitotic.github.io/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
+    }
+    if (Sliobj.fullAccess || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)) {
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
     }
 
     if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {
@@ -3620,11 +3629,14 @@ function setupOverride(msg) {
     return Sliobj.testOverride;
 }
 
-function getUserId() {
+function getUserId(useCookie) {
     if (window.GService && GService.gprofile && GService.gprofile.auth)
 	return GService.gprofile.auth.id;
     else if (location.hostname == 'localhost' && getParameter('reloadcheck'))
 	return Sliobj.params.testUserId;
+    else if (useCookie && Slidoc.serverCookie && Slidoc.serverCookie.user)
+	return Slidoc.serverCookie.user;
+
     return '';
 }
 
@@ -3833,7 +3845,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
 
-    if (getUserId() == Sliobj.params.testUserId || (Sliobj.gradableState && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) )
+    if (getUserId() == Sliobj.params.testUserId || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole && (Sliobj.gradableState || !Sliobj.sessionName)) )
 	toggleClass(true, 'slidoc-testuser-view');
 
     if (collapsibleAccess())
@@ -3848,7 +3860,7 @@ function slidocSetupAux(session, feedback) {
     if (Slidoc.serverCookie)
     	toggleClass(true, 'slidoc-proxy-view');
 
-    if (Sliobj.params.gd_sheet_url) {
+    if (Sliobj.params.gd_sheet_url || getServerCookie()) {
 	toggleClass(true, 'slidoc-remote-view');
 	var gradesButton = document.getElementById('slidoc-grades-button');
 	if (gradesButton)
