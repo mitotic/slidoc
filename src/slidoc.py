@@ -1135,7 +1135,7 @@ class SlidocRenderer(MathRenderer):
             # Last paced slide
             if self.qtypes[-1]:
                 pass
-                ###abort('***ERROR*** Last slide cannot be a question slide for paced mode in session '+self.options["filename"])
+                ###abort('***ERROR*** Last slide cannot be a question slide for paced mode in module '+self.options["filename"])
 
             elif self.options['config'].pace == BASIC_PACE and 'Submit' not in self.plugin_loads:
                 # Non-question slide and submit button not previously included in this slide or earlier slides
@@ -2055,7 +2055,7 @@ class SlidocRenderer(MathRenderer):
             abort("    ****HINT-ERROR: %s: Invalid penalty %s following Hint. Expecting a negative percentage in slide %s" % (self.options["filename"], text, self.slide_number))
 
         if self.options['config'].pace > QUESTION_PACE:
-            message("    ****HINT-WARNING: %s: Hint displayed for non-question-paced session in slide %s" % (self.options["filename"], self.slide_number))
+            message("    ****HINT-WARNING: %s: Hint displayed for non-question-paced module in slide %s" % (self.options["filename"], self.slide_number))
 
         hint_penalty = abs(float(text)) / 100.0
             
@@ -2353,7 +2353,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         admin_paced_col = Index_fields.index('adminPaced')
         due_date_col = Index_fields.index('dueDate')
         if prev_row[revision_col] != revision:
-            message('    ****WARNING: Session %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
+            message('    ****WARNING: Module %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
         prev_questions = json.loads(prev_row[prev_headers.index('questions')])
 
@@ -2372,16 +2372,16 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     if max_last_slide is not None:
                         for j in range(len(questions), len(prev_questions)):
                             if prev_questions[j]['slide'] <= max_last_slide:
-                                abort('ERROR: Cannot truncate previously viewed question %d for session %s (max_last_slide=%d,question_%d_slide=%d); change lastSlide in session sheet' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
+                                abort('ERROR: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d); change lastSlide in session sheet' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
                 elif len(prev_questions) < len(questions):
                     # Extending
                     pass
             elif row_count == 1:
-                abort('ERROR:: Delete test user entry, or check modify box, to modify questions in session '+session_name)
+                abort('ERROR:: Delete test user entry, or check modify box, to modify questions in module session '+session_name)
             elif mod_question:
-                abort('ERROR:MODIFY_SESSION: Mismatch in question %d type for session %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
+                abort('ERROR:MODIFY_SESSION: Mismatch in question %d type for module %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
             else:
-                abort('ERROR:MODIFY_SESSION: Mismatch in question numbers for session %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
+                abort('ERROR:MODIFY_SESSION: Mismatch in question numbers for module %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
 
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
@@ -2398,15 +2398,15 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                  ]
 
     if len(Index_fields) != len(row_values):
-        abort('Error in updating index entry for session %s: number of headers != row length' % (session_name,))
+        abort('Error in updating index entry for module session %s: number of headers != row length' % (session_name,))
 
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values, default=sliauth.json_default)
                   }
     retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
-        abort("Error in updating index entry for session '%s': %s" % (session_name, retval['error']))
-    message('slidoc: Updated remote index sheet %s for session %s' % (INDEX_SHEET, session_name))
+        abort("Error in updating index entry for module session '%s': %s" % (session_name, retval['error']))
+    message('slidoc: Updated remote index sheet %s for module session %s' % (INDEX_SHEET, session_name))
 
     # Return possibly modified due date
     return (due_date_str, modify_questions)
@@ -2463,10 +2463,10 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
         
         if modify_col:
             if row_count == 1:
-                abort('ERROR: Mismatched header %d for session %s. Delete test user row to modify' % (modify_col, sheet_name))
+                abort('ERROR: Mismatched header %d for module session %s. Delete test user row to modify' % (modify_col, sheet_name))
             ###elif not modify_session and row_count:
             elif not modify_session:
-                abort('ERROR:MODIFY_SESSION: Mismatched header %d for session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
+                abort('ERROR:MODIFY_SESSION: Mismatched header %d for module session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
 
     return (maxLastSlide, modify_col, row_count)
                 
@@ -2567,18 +2567,18 @@ def extract_slides(src_path, web_path):
         with open(src_path) as f:
             source = f.read()
     except Exception, excp:
-        raise Exception('Error in reading session text %s: %s' % (src_path, excp))
+        raise Exception('Error in reading module source text %s: %s' % (src_path, excp))
 
     try:
         with open(web_path) as f:
             sessionIndex = read_index(f)
             sessionIndexParams = sessionIndex[0][-1]
     except Exception, excp:
-        raise Exception('Error in reading session HTML %s: %s' % (web_path, excp))
+        raise Exception('Error in reading module published HTML %s: %s' % (web_path, excp))
 
     md_source = preprocess(source).strip()
     if sliauth.digest_hex(md_source) != sessionIndexParams['md_digest']:
-        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-create session HTML file %s by previewing all slides and saving' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
+        raise Exception('Digest mismatch src=%s vs. web=%s; may need to re-publish HTML file %s by previewing all slides and saving' % (sliauth.digest_hex(md_source), sessionIndexParams['md_digest'], web_path))
     md_slides = []
 
     base = len(sessionIndexParams['md_defaults'])
@@ -3446,7 +3446,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 release_date = sliauth.parse_date(release_date_str)
                 iso_release_str = sliauth.iso_date(release_date)
                 if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
-                    # Session not yet released
+                    # Module not yet released
                     rel_local_time = release_date.ctime()
                     if rel_local_time.endswith(':00.000Z'):
                         rel_local_time = rel_local_time[:-8]+'Z'
@@ -4186,7 +4186,7 @@ Conf_parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additiona
 Conf_parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 Conf_parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
 Conf_parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
-Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release session on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
+Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release module on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
 Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 Conf_parser.add_argument('--retakes', type=int, help='Max. number of retakes allowed (default: 0)')
 Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
@@ -4214,7 +4214,7 @@ alt_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_
 alt_parser.add_argument('--libraries_url', metavar='URL', help='URL for library files; default: %s' % LIBRARIES_URL)
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
 alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
-alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Sessions with questions to be modified')
+alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Module sessions with questions to be modified')
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)
 alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
@@ -4222,14 +4222,14 @@ alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help=
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
-alt_parser.add_argument('--session_type', metavar='TYPE', help='Session type, e.g., assignment, exam, ... (default: "")')
+alt_parser.add_argument('--session_type', metavar='TYPE', help='Module session type, e.g., assignment, exam, ... (default: "")')
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')
-alt_parser.add_argument('--start_date', metavar='DATE', help="Date after which all session releases must start yyyy-mm-dd[Thh:mm]")
+alt_parser.add_argument('--start_date', metavar='DATE', help="Date after which all module releases must start yyyy-mm-dd[Thh:mm]")
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
-alt_parser.add_argument('--unbundle', help='Unbundle resource files from session files', action="store_true", default=None)
+alt_parser.add_argument('--unbundle', help='Unbundle resource files from module files', action="store_true", default=None)
 alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for uploading to remote server')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 

@@ -3334,7 +3334,7 @@ Slidoc.manageSession = function() {
     if (Sliobj.sessionName) {
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
-	html += '<p></p>Session: <b>' + Sliobj.sessionName + '</b>';
+	html += '<p></p>Module session: <b>' + Sliobj.sessionName + '</b>';
 	if (Sliobj.session && Sliobj.session.revision)
 	    html += ', ' + Sliobj.session.revision;
 	if (Sliobj.params.questionsMax)
@@ -3368,10 +3368,10 @@ Slidoc.manageSession = function() {
     }
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && !Sliobj.params.timedSec && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
-	html += formatHelp(['', 'reset', 'Reset paced session' + (retakesRemaining()?' for re-takes':'')]) + hr;
+	html += formatHelp(['', 'reset', 'Reset paced module session' + (retakesRemaining()?' for re-takes':'')]) + hr;
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
-	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced session</span>';
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced module session</span>';
 
     if (Sliobj.fullAccess) {
 	if (Sliobj.params.releaseDate) {
@@ -3381,7 +3381,7 @@ Slidoc.manageSession = function() {
 	    else
 		html += '<br>Release date: '+Sliobj.params.releaseDate;
 	}
-	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage session</a><br>';
+	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage module session</a><br>';
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="https://mitotic.github.io/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
     }
     if (Sliobj.fullAccess || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)) {
