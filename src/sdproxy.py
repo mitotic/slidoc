@@ -218,6 +218,9 @@ def initCache():
 
 initCache()
 
+def transactionalSession(sessionName):
+    return sessionName in Global.transactSessions
+
 def startTransactSession(sessionName):
     # (Delay upstream updates to session sheet; also lock index sheet row for the session)
     if Global.suspended:
@@ -248,7 +251,7 @@ def endTransactSession(sessionName, noupdate=False):
         return
     del Global.transactSessions[sessionName]
     if not noupdate:
-        need_update(sessionName)
+        schedule_update(force=True)
     if Settings['debug']:
         print("DEBUG:endTransactSession: %s " % sessionName, file=sys.stderr)
 
@@ -674,7 +677,7 @@ class Sheet(object):
     def requestActions(self, actions=''):
         # Actions to be carried after cache updates to this sheet are completed
         self.actionsRequested = actions
-        need_update(self.name)
+        schedule_update()
 
     def export(self, keepHidden=False, allUsers=False, csvFormat=False, idRename='', altidRename=''):
         headers = self.xrows[0][:]
@@ -926,7 +929,7 @@ class Sheet(object):
     def modifiedSheet(self, modTime=None):
         self.modTime = sliauth.epoch_ms() if modTime is None else modTime
         self.accessTime = self.modTime
-        need_update(self.name)
+        schedule_update()
 
     def get_updates(self, row_limit=None):
         if Global.previewStatus and self.name in (INDEX_SHEET, Global.previewStatus['sessionName']):
@@ -1202,21 +1205,28 @@ def get_locked():
     locked.sort()
     return locked
 
-def need_update(sheetName):
-    # Schedule an update if one not already scheduled
-    if Global.cachePendingUpdate:
-        return
-    Global.cachePendingUpdate = IOLoop.current().add_callback(update_remote_sheets)
-
 def schedule_update(waitSec=0, force=False, synchronous=False):
+    # Schedule update
+    # If force, ignore any minimum wait restrictions and cancel any previously scheduled updates
+    # waitSec=0 will trigger update immediately after this request
+    # otherwise, a delayed update will be scheduled
+    # If synchronous, force update and wait for it to complete before returning
+
     if Global.cachePendingUpdate:
+        if not force and not synchronous:
+            # Update already scheduled
+            return
         IOLoop.current().remove_timeout(Global.cachePendingUpdate)
         Global.cachePendingUpdate = None
 
-    if waitSec and not force:
-        Global.cachePendingUpdate = IOLoop.current().call_later(waitSec, update_remote_sheets)
+    if synchronous:
+        update_remote_sheets(synchronous=True)
+    elif waitSec:
+        # Delayed update
+        Global.cachePendingUpdate = IOLoop.current().call_later(waitSec, functools.partial(update_remote_sheets, force))
     else:
-        update_remote_sheets(force=True, synchronous=synchronous)
+        # Update after request
+        Global.cachePendingUpdate = IOLoop.current().add_callback(functools.partial(update_remote_sheets, force))
 
 def suspend_cache(action=''):
     # action=shutdown must be called from a stand-alone request as it triggers non-transactional synchronous updates
@@ -1227,7 +1237,7 @@ def suspend_cache(action=''):
     if action == 'shutdown':
         if previewingSession():
             revertPreview(noupdate=True)
-        schedule_update(force=True, synchronous=True)
+        schedule_update(synchronous=True)
     elif action:
         print("Suspended for", action, file=sys.stderr)
         schedule_update(force=True)
@@ -1275,6 +1285,8 @@ def updates_current():
             print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
 def update_remote_sheets(force=False, synchronous=False):
+    # If force, do not enforce minimum time delay restriction
+    # If synchronous, wait for update to complete before returning
     if synchronous and previewingSession():
         sheet_proxy_error('update_remote_sheets: Exit preview session %s before synchronous updates' % previewingSession())
     try:
@@ -1302,7 +1314,7 @@ def update_remote_sheets_aux(force=False, synchronous=False):
 
     curTime = sliauth.epoch_ms()
     if not force and not synchronous and (curTime - Global.cacheResponseTime) < 1000*Settings['min_wait_sec']:
-        schedule_update(curTime-Global.cacheResponseTime)
+        schedule_update(waitSec=curTime-Global.cacheResponseTime)
         return
 
     specialMods = []
@@ -1493,7 +1505,7 @@ def next_cache_update(waitSec=0, resetError=False):
     if resetError:
         Global.cacheUpdateError = ''
     Global.httpRequestId = ''
-    schedule_update(waitSec)
+    schedule_update(waitSec=waitSec)
         
 
 def sheetAction(params, notrace=False):
