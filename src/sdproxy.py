@@ -1091,9 +1091,6 @@ def getCacheStatus():
     if Global.cacheUpdateError:
         out += '  ERROR in last cache update: <b>%s</b>\n' % Global.cacheUpdateError
         
-    if Global.pullOutput:
-        out += '  Last git pull output:]n%s\n' % Global.pullOutput
-
     out += '  Suspend status: <b>%s</b>\n' % Global.suspended
     out += '  No. of updates (retries): %d (%d)\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount)
     out += '  Average update time = %.2fs\n\n' % (Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheResponseCount)) )

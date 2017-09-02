@@ -499,7 +499,8 @@ class SiteActionHandler(BaseHandler):
             new_site_name = self.get_argument('sitename', '').strip()
             new_site_url = self.get_argument('siteurl', '').strip()
             if not new_site_name:
-                self.render('setup.html', site_name='', session_name='', status='STATUS', site_updates=[('TBD', 'TBD')])
+                self.render('setup.html', site_name='', session_name='', status='STATUS', site_updates=[('TBD', 'TBD')],
+                            pull_status=sdproxy.Global.pullOutput)
                 return
             elif new_site_name in Options['site_list']:
                 self.write('Site %s already active' % new_site_name)

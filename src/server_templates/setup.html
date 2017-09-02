@@ -2,7 +2,7 @@
 <html>
 <head>
   <!-- setup template for slidoc server --->
-  <!-- setup parameters: site_name, session_name, status, site_updates -->
+  <!-- setup parameters: site_name, session_name, status, site_updates, pull_status -->
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta charset="UTF-8">
 
@@ -47,6 +47,14 @@
      <input id="slidoc-setup-submit" type="submit" value="Create new site">
     </div>
   </form>
+
+  
+  <code>
+  <pre id="slidoc-pull-status">Pull status:
+{{pull_status}}
+  </pre>
+  </code>
+
 </body>
 </html>
 
