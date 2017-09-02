@@ -4270,7 +4270,7 @@ def sendPrivateRequest(relay_address, path='/', proto='http'):
     if isinstance(relay_address, tuple):
         http_client = tornado.httpclient.HTTPClient()
         url = proto+('://%s:%d' % relay_address)
-        return http_client.fetch(url+path)
+        return http_client.fetch(url+path, request_timeout=300)
     else:
         import multiproxy
         sock = multiproxy.create_unix_client_socket(relay_address)
