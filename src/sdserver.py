@@ -136,8 +136,6 @@ SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title', 'site_
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
-TRANSACT_INTERACTIVE = False    # If true, transactionalize interactive sessions (suspending upstream cache updates between question slides)
-
 class Dummy():
     pass
     
@@ -2832,7 +2830,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             return ''
 
     @classmethod
-    def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None):
+    def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None, rollbackOption=None):
         interactiveSession = UserIdMixin.get_path_base(cls._interactiveSession[1]) if cls._interactiveSession[1] else ''
         basePath = UserIdMixin.get_path_base(path) if path else ''
         if action == 'start':
@@ -2842,7 +2840,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 return
             cls._interactiveSession = (connection, path, slideId, questionAttrs)
             cls._interactiveErrors = {}
-            if TRANSACT_INTERACTIVE:
+            if rollbackOption:
                 sdproxy.startTransactSession(basePath)
 
         elif action in ('rollback', 'end'):
@@ -2850,7 +2848,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 return
             cls._interactiveSession = (None, '', '', None)
             cls._interactiveErrors = {}
-            if TRANSACT_INTERACTIVE:
+            if transactionalSession(interactiveSession):
                 if action == 'rollback':
                     sdproxy.rollbackTransactSession(interactiveSession)
                 else:
@@ -2859,7 +2857,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         elif action == 'answered':
             if not interactiveSession:
                 return
-            if TRANSACT_INTERACTIVE:
+            if transactionalSession(interactiveSession):
                 sdproxy.endTransactSession(interactiveSession)
                 sdproxy.startTransactSession(interactiveSession)
 
@@ -3197,17 +3195,15 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     self.closeConnections(self.pathUser[0], teamModifiedIds, excludeId=self.userId)
 
             elif method == 'interact':
-                # args: action, slideId, questionAttrs
+                # args: action, slideId, questionAttrs, rollbackOption
                 if self.userRole == sdproxy.ADMIN_ROLE:
-                    self.setupInteractive(self, self.pathUser[0], args[0], args[1], args[2])
+                    self.setupInteractive(self, self.pathUser[0], args[0], args[1], args[2], args[3])
 
             elif method == 'rollback':
                 # args:
                 if self.userRole == sdproxy.ADMIN_ROLE:
                     # Rollback interactive session to the slide of the last answered question (or start slide)
-                    if not TRANSACT_INTERACTIVE:
-                        raise Exception('Transactions not enabled')
-                    WSHandler.setupInteractive(None, '', 'rollback', '', None)
+                    WSHandler.setupInteractive(None, '', 'rollback', '', None, '')
                     # Close all session websockets (forcing reload)
                     IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
 
@@ -3215,7 +3211,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 # args: qno, userid 
                 if self.userRole == sdproxy.ADMIN_ROLE:
                     # Do not accept interactive responses
-                    WSHandler.setupInteractive(None, '', 'end', '', None)
+                    WSHandler.setupInteractive(None, '', 'end', '', None, '')
                     sdproxy.clearQuestionResponses(sessionName, args[0], args[1])
                     # Close all session websockets (forcing reload)
                     IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)

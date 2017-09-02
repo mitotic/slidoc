@@ -1077,7 +1077,7 @@ Slidoc.slideEditMenu = function() {
 	}
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p>\n';
     }
-    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li>\n';
+    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li><p></p>\n';
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('preview');"+'">Preview all slides</span></li>\n';
     html += '</ul>';
     if (Sliobj.closePopup)
@@ -2588,7 +2588,7 @@ function enableInteract(active) {
     Sliobj.interactive = active;
     toggleClass(active, 'slidoc-interact-view');
     if (!Sliobj.interactive) {
-	GService.requestWS('interact', ['end', '', null], interactCallback);
+	GService.requestWS('interact', ['end', '', null, ''], interactCallback);
 	return;
     }
     if (!isController() || Sliobj.session.submitted)
@@ -2597,7 +2597,7 @@ function enableInteract(active) {
     var qattrs = getQuestionAttrs(lastSlideId);
     if (qattrs && qattrs.qnumber in Sliobj.session.questionsAttempted)
 	qattrs = null;
-    GService.requestWS('interact', ['start', lastSlideId, qattrs], interactCallback);
+    GService.requestWS('interact', ['start', lastSlideId, qattrs, Sliobj.params.features.interact_rollback||''], interactCallback);
     // Note: Closing websocket will disable interactivity
 }
 
@@ -6360,6 +6360,8 @@ Slidoc.submitStatus = function () {
         var disabled = (!Sliobj.currentSlide || !Sliobj.questionSlide);
 	html += '<p></p>' + clickableSpan('Reset '+(userId?'user':'ALL')+' responses to current question',
 			  	       "Slidoc.resetQuestion('"+"'"+userId+"'"+"');", disabled) + '<br>';
+	html += '<p></p>' + clickableSpan('Rollback interactive portion of session',
+	  	  		          "Slidoc.rollbackInteractive();", !(Sliobj.interactive && Sliobj.params.features.interact_rollback)) + '<br>';
     }
 
     if (Sliobj.session.submitted || Sliobj.gradableState)
@@ -7100,7 +7102,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		var ansElem = document.getElementById(prev_slide_id+'-answer-click');
 		if (ansElem)
 		    Slidoc.answerClick(ansElem, prev_slide_id, 'controlled');
-		GService.requestWS('interact', ['answered', prev_slide_id, question_attrs]);
+		GService.requestWS('interact', ['answered', prev_slide_id, question_attrs, '']);
 	    } else  {
 		if (!setupOverride('Enable test user override to proceed without answering?')) {
 		    var tryCount = (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;

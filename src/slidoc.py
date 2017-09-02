@@ -4153,6 +4153,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   progress_bar: Display progress bar during pace delays
 #   quote_response: Display user response as quote (for grading)
 #   remote_answers: Correct answers and score are stored remotely until session is graded
+#   rollback_interact: option to rollback interactive sessions
 #   share_all: share responses for all questions after end of lecture etc.
 #   share_answers: share answers for all questions after grading (e.g., after an exam)
 #   shuffle_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
@@ -4165,7 +4166,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
