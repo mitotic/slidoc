@@ -419,6 +419,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     site_src_dir = None
     site_web_dir = None
     site_data_dir = None
+    site_backup_dir = None
     def set_default_headers(self):
         # Completely disable cache
         self.set_header('Server', SERVER_NAME)
@@ -498,7 +499,7 @@ class SiteActionHandler(BaseHandler):
             new_site_name = self.get_argument('sitename', '').strip()
             new_site_url = self.get_argument('siteurl', '').strip()
             if not new_site_name:
-                self.render('setup.html', status='STATUS', site_updates=[('TBD', 'TBD')])
+                self.render('setup.html', site_name='', session_name='', status='STATUS', site_updates=[('TBD', 'TBD')])
                 return
             elif new_site_name in Options['site_list']:
                 self.write('Site %s already active' % new_site_name)
@@ -534,11 +535,7 @@ class SiteActionHandler(BaseHandler):
                 self.write(setup_html)
 
         elif action == '_backup':
-            errors = backupSite()
-            self.set_header('Content-Type', 'text/plain')
-            self.write('Backed up site %s to directory %s\n' % (Options['site_name'], Options['backup_dir']))
-            if errors:
-                self.write(errors)
+            self.write( backupSite(subsubpath) )
 
         elif action == '_shutdown':
             self.clear_id()
@@ -851,11 +848,7 @@ class ActionHandler(BaseHandler):
             self.displayMessage('Clearing cache<br>', back_url=site_prefix+'/_actions')
 
         elif action == '_backup':
-            errors = backupSite(subsubpath)
-            self.set_header('Content-Type', 'text/plain')
-            self.write('Backed up site %s to directory %s\n' % (Options['site_name'], subsubpath or Options['backup_dir']))
-            if errors:
-                self.write(errors)
+            self.write( backupSite(subsubpath) )
 
         elif action == '_lock':
             lockType = self.get_argument('type','')
@@ -1215,7 +1208,8 @@ class ActionHandler(BaseHandler):
         if not filepath:
             file_list = [ ['source', 'source', False, False],
                           ['web', 'web', False, False],
-                          ['data', 'data', False, False] ]
+                          ['data', 'data', False, False],
+                          ['backup', 'backup', False, False] ]
             up_path = ''
         else:
             predir, _, subpath = filepath.partition('/')
@@ -1225,6 +1219,8 @@ class ActionHandler(BaseHandler):
                 rootdir = self.site_web_dir
             elif predir == 'data':
                 rootdir = self.site_data_dir
+            elif predir == 'backup':
+                rootdir = self.site_backup_dir
             else:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
 
@@ -3791,6 +3787,7 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|reload|setup|shutdown|update))", SiteActionHandler) ]
+        home_handlers += [ (r"/(_backup/[-\w.]+)", SiteActionHandler) ]
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
         if Options['libraries_dir']:
@@ -4280,17 +4277,33 @@ def sendPrivateRequest(relay_address, path='/', proto='http'):
         sock.close()
         return retval
 
-def backupSite(dirpath=''):
+def backupSite(dirname=''):
+    if dirname.endswith('-'):
+        dirname += sliauth.iso_date(nosec=True).replace(':','-')
+    backup_name = dirname or 'scheduled'
+    backup_url = '/_browse/backup/' + backup_name
+    if Options['site_name']:
+        backup_url = '/' + Options['site_name'] + backup_url
+
     if Options['debug']:
-        print >> sys.stderr, 'sdserver.backupSite:', dirpath
+        print >> sys.stderr, 'sdserver.backupSite:', dirname
+
     if Options['site_list'] and not Options['site_number']:
         # Primary server
+        path = '/_backup'
+        if dirname:
+            path += '/' + urllib.quote(dirname)
+        path += '?root='+Options['server_key']
         for j, site in enumerate(Options['site_list']):
             relay_addr = Global.relay_list[j+1]
-            retval = sendPrivateRequest(relay_addr, path='/'+site+'/_backup?root='+Options['server_key'])
-        return ''
+            retval = sendPrivateRequest(relay_addr, path='/'+site+path)
+        return 'Backing up module sessions for each site to directory %s\n' % backup_name
     else:
-        return sdproxy.backupSheets(dirpath)
+        errorList = sdproxy.backupSheets(dirname)
+        if errorList:
+            return '<pre>\n'+'\n'.join(errorList)+'\n</pre>\n'
+        else:
+            return '<p></p><b>Backed up module sessions to directory <a href="%s">%s</a></b>\n' % (backup_url, backup_name)
 
 def shutdown_all():
     if Options['debug']:
@@ -4576,6 +4589,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
         BaseHandler.site_data_dir = Options['plugindata_dir'] + '/' + site_name + '/' + PLUGINDATA_PATH
+        BaseHandler.site_backup_dir = Options['backup_dir'] + '/' + site_name
         setup_site_server(sheetSettings, site_number)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
@@ -4778,6 +4792,7 @@ def main():
 
     BaseHandler.site_src_dir = Options['source_dir']
     BaseHandler.site_web_dir = Options['static_dir']
+    BaseHandler.site_backup_dir = Options['backup_dir']
 
     if options.forward_port:
         Global.relay_forward = ('localhost', forward_port)

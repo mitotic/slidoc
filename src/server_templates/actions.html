@@ -24,8 +24,6 @@
   <p></p>
 
   <ul>
-    <li><b><a class="clickable" href="javascript:slidocConfirmAction('backup')">backup</a></b>: Backup all module sessions</li>
-    <hr>
     <li><b><a class="clickable" href="javascript:slidocAction('cache')">proxy status</a></b>: Status of proxy cache and active connections</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('freeze')">freeze</a></b>: Freeze all cached module sessions (clear to cancel freeze)</li>
@@ -34,9 +32,11 @@
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a></b>: Shutdown proxy server</li>
     {% end %}
     <hr>
-    <li><b><a class="clickable" href="javascript:slidocSheetAction('sheet')">sheet</a></b>: Display sheet</li>
-    <li><b><a class="clickable" href="javascript:slidocSheetAction('getrow')">getrow</a></b>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
-    <li><b><a class="clickable" href="javascript:slidocSheetAction('getcol')">getcol</a></b>.: Get columns from sheet</li>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a></b>: Backup of all module sessions to directory</li>
+    <hr>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('sheet','Sheet name:')">sheet</a></b>: Display sheet</li>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('getrow','Sheet name:')">getrow</a></b>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('getcol''Sheet name:')">getcol</a></b>.: Get columns from sheet</li>
   </ul>
 
 </body>

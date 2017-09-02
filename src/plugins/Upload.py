@@ -18,6 +18,7 @@ class Upload(object):
         self.userId = userId
 
     def lockFile(self, serverParams, fileURL):
+        # Best not to use lockFile, as results are somewhat unpredictable with cloud-backed up filesystems
         print >> sys.stderr, 'Upload.lockFile:', serverParams, fileURL
         self.pluginManager.lockFile(fileURL)
 

@@ -2,31 +2,13 @@
 <html>
 <head>
   <!-- setup template for slidoc server --->
-  <!-- setup parameters: status, site_updates -->
+  <!-- setup parameters: site_name, session_name, status, site_updates -->
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta charset="UTF-8">
-  <style>
-    body { font-family: sans-serif; }
 
-    .clickable, .altclickable { cursor: pointer; color: #2980B9; text-decoration: none}
+{% include "base.html" %}
+{% include "actbase.html" %}
 
-    .clickable:hover, .altclickable:hover {text-decoration: underline;}
-
-  </style>
-  <script>
-  function slidocConfirmAction(actionName) {
-    if (window.confirm('Confirm '+actionName+'?')) {
-      window.location = '/_'+actionName;
-      return;
-    }
-    slidocStatus('');
-  }
-  function slidocStatus(label) {
-    var statusElem = document.getElementById('slidoc-action-status');
-    if (statusElem)
-      statusElem.textContent = label ? 'Processing '+label+'...' : '';
-  }
-  </script>
 </head>
 
 <body>
@@ -43,7 +25,7 @@
   </table>
 
   <ul>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('backup')">backup</a>: Backup all sessions</li>
+    <li><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a>: Backup all sites</li>
     <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('reload')">reload</a>: Restart proxy server</li>
     <hr>

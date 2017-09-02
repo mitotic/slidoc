@@ -24,9 +24,8 @@ function slidocConfirmAction(actionName) {
   slidocStatus('');
 }
 
-
-function slidocSheetAction(actionName) {
-  var sessionName = window.prompt('Sheet name:');
+function slidocPromptAction(actionName, prompt) {
+  var sessionName = window.prompt(prompt);
   if (!sessionName)
     return;
   slidocAction(actionName, sessionName);

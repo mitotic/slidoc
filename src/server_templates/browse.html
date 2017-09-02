@@ -113,7 +113,7 @@ document.onreadystatechange = function(event) {
 <b>Status:</b> <b id="status-line">{{ status }}</b>
 <p></p>
 
-{% if browse_path %}
+{% if browse_path and not browse_path.startswith('backup') %}
 <a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
 (upload)</a>
 
@@ -176,7 +176,8 @@ Notes:
     <li><code>source</code> contains page and module files (along with embedded image files).</li><p></p>
     <li><code>web</code> contains HTML files published from
      Markdown files and any raw files uploaded to the web site by admin.</li><p></p>
-    <li><code>data</code> contains files submitted/uploaded by users during module sessions.</li>
+    <li><code>data</code> contains files submitted/uploaded by users during module sessions.</li><p></p>
+    <li><code>backup</code> contains directories with scheduled and custom site backups.</li><p></p>
   </ul>
 {% end %}
 </body>

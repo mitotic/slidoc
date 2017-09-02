@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.8b'
+VERSION = '0.97.8c'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -64,7 +64,7 @@ Settings = {
     'site_name': '',      # Site name
 
                           # General settings from server
-    'backup_dir': '_BACKUPS/', # Backup directory prefix, including slash
+    'backup_dir': '_BACKUPS', # Backup directory name
     'debug': None,      
     'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
     'lock_proxy_url': '', # URL of proxy server to lock sheet
@@ -172,6 +172,7 @@ Global = Dummy()
 Global.remoteVersions = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
+Global.pullOutput = ''
 
 def copyServerOptions(serverOptions):
     for key in COPY_FROM_SERVER:
@@ -368,16 +369,22 @@ def freezeCache(fill=False):
     suspend_cache('freeze')
 
 
-def backupSheets(dirpath=''):
+def backupSheets(dirname=''):
     # Returns null string on success or error string list
     # (synchronous)
     if Global.previewStatus:
         return [ 'Cannot backup when previewing session '+Global.previewStatus['sessionName'] ]
-    dirpath = dirpath or Settings['backup_dir'] or '_BACKUPS'
-    if dirpath.endswith('-'):
-        dirpath += sliauth.iso_date(nosec=True).replace(':','-')
+
+    if not dirname or dirname == 'scheduled':
+        dirpath = 'scheduled'
+    else:
+        dirpath = dirname
+
     if Settings['site_name']:
-        dirpath += '/' + Settings['site_name']
+        dirpath = os.path.join(Settings['site_name'], dirpath)
+
+    dirpath = os.path.join(Settings['backup_dir'] or '_BACKUPS', dirpath)
+
     suspend_cache('backup')
     if Settings['debug']:
         print("DEBUG:backupSheets: %s started %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
@@ -397,7 +404,7 @@ def backupSheets(dirpath=''):
                 except Exception, excp:
                     errorList.append('Error: Session attributes not loadable %s' % excp)
 
-        if sessionAttributes is None:
+        if sessionAttributes is None and not errorList:
             errorList.append('Error: Session attributes not found in index sheet %s' % INDEX_SHEET)
 
         for name, attributes in (sessionAttributes or []):
@@ -407,20 +414,21 @@ def backupSheets(dirpath=''):
     except Exception, excp:
         errorList.append('Error in backup: '+str(excp))
 
-    errors = '\n'.join(errorList)+'\n' if errorList else ''
-    if errors:
+    errorStr = '\n'.join(errorList)+'\n' if errorList else ''
+    if errorStr:
         try:
             with  open(dirpath+'/ERRORS_IN_BACKUP.txt', 'w') as errfile:
-                errfile.write(errors)
+                errfile.write(errorStr)
         except Exception, excp:
             print("ERROR:backupSheets: ", str(excp), file=sys.stderr)
 
     if Settings['debug']:
-        if errors:
-            print(errors, file=sys.stderr)
+        if errorStr:
+            print(errorStr, file=sys.stderr)
         print("DEBUG:backupSheets: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
+
     suspend_cache('')
-    return errors
+    return errorList
 
 
 def backupCell(value):
@@ -449,10 +457,11 @@ def backupSheet(name, dirpath, errorList, optional=False):
         with open(dirpath+'/'+name+'.csv', 'wb') as csvfile:
             writer = csv.writer(csvfile)
             for j, row in enumerate(rows):
+                rowNum = j+1
                 rowStr = [backupCell(x) for x in row]
                 writer.writerow(rowStr)
     except Exception, excp:
-        errorList.append('Error in saving sheet %s (row %d): %s' % (name, j+1, excp))
+        errorList.append('Error in saving sheet %s (row %d): %s' % (name, rowNum, excp))
         return None
 
     return rows
@@ -630,6 +639,8 @@ class Sheet(object):
 
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
+        if not updated:
+            self.modifiedSheet(modTime)
 
     def update_total_formula(self):
         self.totalCols = []
@@ -1080,6 +1091,9 @@ def getCacheStatus():
     if Global.cacheUpdateError:
         out += '  ERROR in last cache update: <b>%s</b>\n' % Global.cacheUpdateError
         
+    if Global.pullOutput:
+        out += '  Last git pull output:]n%s\n' % Global.pullOutput
+
     out += '  Suspend status: <b>%s</b>\n' % Global.suspended
     out += '  No. of updates (retries): %d (%d)\n' % (Global.totalCacheResponseCount, Global.totalCacheRetryCount)
     out += '  Average update time = %.2fs\n\n' % (Global.totalCacheResponseInterval/(1000*max(1,Global.totalCacheResponseCount)) )
@@ -1279,8 +1293,9 @@ def updates_current():
                 cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
             else:
                 cmd = ['git', 'pull']
-            print("Updating: %s" % cmd, file=sys.stderr)
-            subprocess.check_call(cmd, cwd=scriptdir)
+            print("Updating using git pull: %s" % cmd, file=sys.stderr)
+            Global.pullOutput = subprocess.check_output(cmd, cwd=scriptdir)
+            print("git pull output:\n%s" % Global.pullOutput, file=sys.stderr)
         except Exception, excp:
             print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
