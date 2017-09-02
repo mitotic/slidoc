@@ -3181,8 +3181,10 @@ function showStatsCallback(result, retStatus) {
 }
 
 Slidoc.showGrades = function () {
-    if (!Sliobj.params.gd_sheet_url)
+    if (!Sliobj.params.gd_sheet_url) {
+	window.location = Sliobj.sitePrefix + '/_user_grades';
 	return;
+    }
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Looking up gradebook...');
     var userId = getUserId();
@@ -5348,6 +5350,8 @@ Slidoc.pagesDisplay = function() {
 	html += '<ul>\n';
 	for (var j=0; j<Sliobj.params.topnavList.length; j++) {
 	    var link = Sliobj.params.topnavList[j][0];
+	    if (link == '/' && Sliobj.sitePrefix && !Sliobj.fullAccess)
+		continue;
 	    var pagename = Sliobj.params.topnavList[j][1];
             if (link.match(/^#/))
 		html += '<li><span onclick="Slidoc.go('+link+');">'+pagename+'</span></li>';
