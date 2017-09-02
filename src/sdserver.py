@@ -4295,16 +4295,22 @@ def backupSite(dirname=''):
         if dirname:
             path += '/' + urllib.quote(dirname)
         path += '?root='+Options['server_key']
+        errorList = []
         for j, site in enumerate(Options['site_list']):
             relay_addr = Global.relay_list[j+1]
-            retval = sendPrivateRequest(relay_addr, path='/'+site+path)
-        return 'Backing up module sessions for each site to directory %s\n' % backup_name
+            try:
+                retval = sendPrivateRequest(relay_addr, path='/'+site+path)
+            except Exception, excp:
+                errorList.append('Error in remote backup of site %s: %s' % (site, excp))
+        if not errorList:
+            return 'Backing up module sessions for each site to directory %s\n' % backup_name
     else:
         errorList = sdproxy.backupSheets(dirname)
-        if errorList:
-            return '<pre>\n'+'\n'.join(errorList)+'\n</pre>\n'
-        else:
-            return '<p></p><b>Backed up module sessions to directory <a href="%s">%s</a></b>\n' % (backup_url, backup_name)
+
+    if errorList:
+        return '<pre>\n'+'\n'.join(errorList)+'\n</pre>\n'
+    else:
+        return '<p></p><b>Backed up module sessions to directory <a href="%s">%s</a></b>\n' % (backup_url, backup_name)
 
 def shutdown_all():
     if Options['debug']:
