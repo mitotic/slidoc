@@ -484,7 +484,7 @@ class HomeHandler(BaseHandler):
                 self.redirect(url)
 
 class SiteActionHandler(BaseHandler):
-    def get(self, action='', subsubpath=''):
+    def get(self, action='', skip='', subsubpath=''):
         userId = self.get_current_user()
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: SiteActionHandler', userId, Options['site_number'], action
@@ -3788,7 +3788,7 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|reload|setup|shutdown|update))", SiteActionHandler) ]
-        home_handlers += [ (r"/(_backup/[-\w.]+)", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(backup))/([-\w.]+)", SiteActionHandler) ]
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
         if Options['libraries_dir']:
