@@ -10,6 +10,7 @@
 // Global values
 var PreviewWin = null;
 var SessionText = null;
+var ErrorMsg = '';
 
 function slidocDiscard() {
    if (!window.confirm('Discard changes?')) {
@@ -28,7 +29,10 @@ function slidocAccept() {
       if (!window.confirm('Content modified since last preview update. Discard those modifications?'))
          return false;
    }
-   if (!window.confirm('Accept last preview?')) {
+   var msg = 'Accept last preview';
+   if (ErrorMsg)
+     msg += ', despite error message';
+   if (!window.confirm(msg+'?')) {
      return false;
    }
    if (winURL(PreviewWin)) {
@@ -113,6 +117,7 @@ function slidocUpdate(action) {
    }
    xhr.onreadystatechange = function () {
       var DONE = 4; // readyState 4 means the request is done.
+      ErrorMsg = '';
       if (xhr.readyState === DONE) {
          if (xhr.status === 200) {
 
@@ -122,11 +127,11 @@ function slidocUpdate(action) {
                   retval = JSON.parse(xhr.responseText);
 
                   if (retval.result === 'error') {
-                     var errMsg = ''+retval.error;
-                     slidocStatus(errMsg);
+                     ErrorMsg = ''+retval.error;
+                     slidocStatus(ErrorMsg);
                      if (checkPreviewWin()) {
                          PreviewWin.Slidoc = null;
-                         PreviewWin.document.body.textContent = errMsg;
+                         PreviewWin.document.body.textContent = ErrorMsg;
                      }
                      return;
                   }
@@ -152,18 +157,19 @@ function slidocUpdate(action) {
                     PreviewWin.location.reload(true);
                  }
                  slidocStatus('Updated preview window (use Ctl-Enter update and Alt-Enter to append image links)');
+                 document.getElementById('acceptbutton').style.display = null;
               }
            }
 
         } else {
-          var errMsg = xhr.responseText+' (status='+xhr.status+')';
-          if (errMsg.indexOf('MODIFY_SESSION') >=0) {
-              errMsg = 'Retry with Modify ... option checked. ' + errMsg;
+          ErrorMsg = xhr.responseText+' (status='+xhr.status+')';
+          if (ErrorMsg.indexOf('MODIFY_SESSION') >=0) {
+              ErrorMsg = 'Retry with Modify ... option checked. ' + ErrorMsg;
           }
-          slidocStatus(errMsg);
+          slidocStatus(ErrorMsg);
           if (checkPreviewWin()) {
              PreviewWin.Slidoc = null;
-             PreviewWin.document.body.textContent = errMsg;
+             PreviewWin.document.body.textContent = ErrorMsg;
           }
         }
 
@@ -209,9 +215,9 @@ document.onreadystatechange = function(event) {
   <div>
     <button type="button" onclick="slidocUpdate('save')">Save</button>
     <button type="button" onclick="slidocDiscard()">Discard</button>
-    <button type="button" onclick="slidocAccept()" class="slidoc-edit-preview">Accept preview</button>
     <button type="button" onclick="slidocUpdate('update')" class="slidoc-edit-preview">Update preview</button>
     <button type="button" onclick="slidocUpdate('open')" class="slidoc-edit-preview">Open preview</button>
+    <button type="button" onclick="slidocAccept()" class="slidoc-edit-preview" id="acceptbutton" style="display: none;">Accept preview</button>
   </div>
   <fieldset>
     <label for="sessionname">Module:</label> <b>{{ session_label }}</b>
