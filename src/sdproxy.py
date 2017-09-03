@@ -45,7 +45,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.8c'
+VERSION = '0.97.8d'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -172,7 +172,6 @@ Global = Dummy()
 Global.remoteVersions = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
-Global.pullOutput = ''
 
 def copyServerOptions(serverOptions):
     for key in COPY_FROM_SERVER:
@@ -222,6 +221,9 @@ initCache()
 def transactionalSession(sessionName):
     return sessionName in Global.transactSessions
 
+def previewOrTransactionalSession(sessionName):
+    return sessionName in Global.transactSessions or sessionName == Global.previewStatus.get('sessionName')
+
 def startTransactSession(sessionName):
     # (Delay upstream updates to session sheet; also lock index sheet row for the session)
     if Global.suspended:
@@ -242,7 +244,7 @@ def rollbackTransactSession(sessionName, noupdate=False):
     if sessionName not in Global.transactSessions:
         return
     Sheet_cache[sessionName] = Global.transactSessions[sessionName]
-    endTransactSession(sessionName, noupdate=True)
+    endTransactSession(sessionName, noupdate=noupdate)
     if Settings['debug']:
         print("DEBUG:rollbackTransactSession: %s " % sessionName, file=sys.stderr)
 
@@ -442,16 +444,21 @@ def backupCell(value):
 
 
 def backupSheet(name, dirpath, errorList, optional=False):
-    retval = downloadSheet(name, backup=True)
+    if not isFormulaSheet(name) and name in Sheet_cache:
+        rows = Sheet_cache[name].xrows   # Not a copy
 
-    if retval['result'] != 'success':
-        if optional and retval['error'].startswith('Error:NOSHEET:'):
-            pass
-        else:
-            errorList.append('Error in downloading sheet %s: %s' % (name, retval['error']))
-        return None
+    else:
+        retval = downloadSheet(name, backup=True)
 
-    rows = retval.get('value')
+        if retval['result'] != 'success':
+            if optional and retval['error'].startswith('Error:NOSHEET:'):
+                pass
+            else:
+                errorList.append('Error in downloading %s sheet %s: %s' % (Settings['site_name'], name, retval['error']))
+            return None
+
+        rows = retval.get('value')
+
     try:
         rowNum = 0
         with open(dirpath+'/'+name+'.csv', 'wb') as csvfile:
@@ -469,6 +476,20 @@ def backupSheet(name, dirpath, errorList, optional=False):
 
 def isReadOnly(sheetName):
     return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
+
+def isFormulaSheet(sheetName):
+    return sheetName == SCORES_SHEET or (not TOTAL_COLUMN and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
+
+def refreshGradebook(sessionName):
+    if previewOrTransactionalSession(sessionName):
+        return False
+    scoreSheet = Sheet_cache.get(SCORES_SHEET)
+    if not scoreSheet:
+        return False
+    if '_'+sessionName not in scoreSheet.xrows[0]:
+        return False
+    scoreSheet.expire()
+    return True
 
 def getSheetCache(sheetName):
     # Return cached sheet, if present (for Google Sheets compatibility)
@@ -660,15 +681,18 @@ class Sheet(object):
         totalCol = self.totalCols[0]
         row = self.xrows[rowNum-1]     # Not a copy!
 
-        if not row[self.keyCol-1]:
-            # Only update totals for rows with keys
-            row[totalCol-1] = ''
-            return
+        newVal = ''
+        if row[self.keyCol-1]:
+            # Only compute totals for rows with keys
+            try:
+                newVal = sum(row[j-1] for j in self.totalCols[1:] if row[j-1])
+            except Exception, excp:
+                pass
 
-        try:
-            row[totalCol-1] = sum(row[j-1] for j in self.totalCols[1:] if row[j-1])
-        except Exception, excp:
-            row[totalCol-1] = ''
+        if row[totalCol-1] == newVal:
+            return False
+        row[totalCol-1] = newVal
+        return True
 
     def clear_update(self):
         for j, row in enumerate(self.xrows[1:]):
@@ -686,7 +710,7 @@ class Sheet(object):
         self.holdSec = 0
 
     def requestActions(self, actions=''):
-        # Actions to be carried after cache updates to this sheet are completed
+        # Actions to be carried out after cache updates to this sheet are completed
         self.actionsRequested = actions
         schedule_update()
 
@@ -928,7 +952,8 @@ class Sheet(object):
                 if updateTotal:
                     totalCol = self.totalCols[0]
                     prevTotal = self.xrows[rowNum-1][totalCol-1]
-                    self.update_total(rowNum)
+                    if self.update_total(rowNum):
+                        refreshGradebook(self.name)
 
                     if not self.keyMap[keyValue][1] and prevTotal != self.xrows[rowNum-1][totalCol-1]:
                         # Not inserting and total column updated
@@ -943,6 +968,9 @@ class Sheet(object):
         schedule_update()
 
     def get_updates(self, row_limit=None):
+        if self.readOnly:
+            return None
+
         if Global.previewStatus and self.name in (INDEX_SHEET, Global.previewStatus['sessionName']):
             if self.name == INDEX_SHEET:
                 origSheet = Global.previewStatus['indexSheetOrig']
@@ -1134,7 +1162,7 @@ def getCacheStatus():
 
 def lockSheet(sheetName, lockType='user'):
     # Returns True if lock is immediately effective; False if it will take effect later
-    if sheetName in Global.transactSessions:
+    if transactionalSession(sheetName):
         raise Exception('Cannot lock when transacting session '+sheetName)
     if sheetName == Global.previewStatus.get('sessionName'):
         return False
@@ -1146,7 +1174,7 @@ def lockSheet(sheetName, lockType='user'):
 
 def unlockSheet(sheetName):
     # Unlock and refresh sheet (if no updates pending)
-    if sheetName == Global.previewStatus.get('sessionName'):
+    if previewOrTransactionalSession(sheetName):
         return False
     if sheetName in Sheet_cache and Sheet_cache[sheetName].get_updates() is not None:
         return False
@@ -1155,15 +1183,15 @@ def unlockSheet(sheetName):
 
 def expireSheet(sheetName):
     # Expire sheet from cache (delete after any updates are processed)
-    if sheetName == Global.previewStatus.get('sessionName'):
-        return
+    if previewOrTransactionalSession(sheetName):
+        return False
     sheet = Sheet_cache.get(sheetName)
     if sheet:
         sheet.expire()
 
 def refreshSheet(sheetName):
     # Refresh sheet, if unlocked (after any updates)
-    if sheetName == Global.previewStatus.get('sessionName'):
+    if previewOrTransactionalSession(sheetName):
         return False
     if sheetName in Lock_cache or sheetName in Lock_passthru:
         return False
@@ -1248,6 +1276,8 @@ def suspend_cache(action=''):
     if action == 'shutdown':
         if previewingSession():
             revertPreview(noupdate=True)
+        for sessionName in Global.transactSessions:
+            endTransactSession(sessionName, noupdate=True)
         schedule_update(synchronous=True)
     elif action:
         print("Suspended for", action, file=sys.stderr)
@@ -1278,23 +1308,6 @@ def updates_current():
         if not Global.shuttingDown:
             Global.shuttingDown = True
             IOLoop.current().add_callback(shutdown_loop)
-    elif Global.suspended == 'reload':
-        try:
-            os.utime(scriptdir+'/reload.py', None)
-            print("Reloading...", file=sys.stderr)
-        except Exception, excp:
-            print("Reload failed: "+str(excp), file=sys.stderr)
-    elif Global.suspended == 'update':
-        try:
-            if os.environ.get('SUDO_USER'):
-                cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
-            else:
-                cmd = ['git', 'pull']
-            print("Updating using git pull: %s" % cmd, file=sys.stderr)
-            Global.pullOutput = subprocess.check_output(cmd, cwd=scriptdir)
-            print("git pull output:\n%s" % Global.pullOutput, file=sys.stderr)
-        except Exception, excp:
-            print("Updating via git pull failed: "+str(excp), file=sys.stderr)
 
 def update_remote_sheets(force=False, synchronous=False):
     # If force, do not enforce minimum time delay restriction
@@ -1489,6 +1502,7 @@ class ProxyUpdater(object):
         Global.totalCacheResponseCount += 1
         Global.totalCacheResponseBytes += len(response.body)
 
+        refreshNeeded = []
         for sheetName, sheet in Sheet_cache.items():
             if sheetName in self.sheetUpdateInfo:
                 sheet.complete_update(*self.sheetUpdateInfo[sheetName])
@@ -1501,7 +1515,12 @@ class ProxyUpdater(object):
                 if origSheet:
                     origSheet.complete_update(*self.sheetUpdateInfo[sheetName])
 
+            if not sheet.holdSec:
+                # Refresh expired sheet
+                refreshNeeded.append(sheetName)
+
         for sheetName in respObj['info'].get('refreshSheets',[]):
+            refreshNeeded.append(sheetName)
             refreshSheet(sheetName)
 
         for errSessionName, proxyErrMsg, proxyErrTrace in respObj['info'].get('updateErrors',[]):
@@ -1511,7 +1530,7 @@ class ProxyUpdater(object):
         if Settings['debug']:
             print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), file=sys.stderr)
 
-        next_cache_update(0 if Global.suspended else Settings['min_wait_sec'])
+        next_cache_update(0 if (refreshNeeded or Global.suspended) else Settings['min_wait_sec'])
 
 def next_cache_update(waitSec=0, resetError=False):
     if resetError:
@@ -1816,9 +1835,9 @@ def sheetAction(params, notrace=False):
             if modifyingRow:
                 if readOnlyAccess:
                     raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-                if adminUser:
+                if adminUser and not TOTAL_COLUMN:
                     # Refresh cached gradebook (because scores/grade may be updated)
-                    refreshSheet(SCORES_SHEET)
+                    refreshGradebook(sheetName)
                 
             updatingMaxScoreRow = sessionEntries and rowUpdates and rowUpdates[columnIndex['id']-1] == MAXSCORE_ID
             if headers:
@@ -1884,6 +1903,9 @@ def sheetAction(params, notrace=False):
                 completeActions.append('correct')
                 if updateTotalScores(modSheet, sessionAttributes, questions, True) and not Settings['dry_run']:
                     modSheet.requestActions('gradebook')
+                    if not TOTAL_COLUMN:
+                        # Refresh cached gradebook (because scores/grade may be updated)
+                        refreshGradebook(sheetName)
 
             userId = None
             displayName = None

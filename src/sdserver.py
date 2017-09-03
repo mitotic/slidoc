@@ -142,6 +142,7 @@ class Dummy():
 Global = Dummy()
 Global.userRoles = None
 Global.backup = None
+Global.remoteShutdown = False
 Global.twitter_params = {}
 Global.relay_list = []
 Global.relay_forward = None
@@ -221,6 +222,9 @@ for j, entry in enumerate(SESSION_TYPES):
 
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE = re.compile(r'^(\w*[a-zA-Z_])(\d+)$')
+
+def preElement(content):
+    return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
 
 def getSessionType(sessionName):
     smatch = SESSION_NAME_RE.match(sessionName)
@@ -454,6 +458,11 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
             return True
         return False
 
+    def displayMessage(self, message, back_url=''):
+        if isinstance(message, list):
+            message = preElement('\n'+'\n'.join(message)+'\n')+'\n'
+        self.render('message.html', site_name=Options['site_name'], message=message, back_url=back_url)
+
 
 class HomeHandler(BaseHandler):
     def get(self):
@@ -468,7 +477,7 @@ class HomeHandler(BaseHandler):
             for siteName in Options['site_list']:
                 site_roles.append(self.get_id_from_cookie(role=True, for_site=siteName))
             self.render('index.html', user=self.get_current_user(), status='',
-                         login_url=Global.login_url, logout_url=Global.logout_url,
+                         login_url=Global.login_url, logout_url=Global.logout_url, global_role=self.get_id_from_cookie(role=True),
                          sites=Options['site_list'], site_roles=site_roles, site_labels=Global.split_opts['site_label'],
                          site_titles=Global.split_opts['site_title'], site_restrictions=Global.split_opts['site_restrictions'])
             return
@@ -499,8 +508,7 @@ class SiteActionHandler(BaseHandler):
             new_site_name = self.get_argument('sitename', '').strip()
             new_site_url = self.get_argument('siteurl', '').strip()
             if not new_site_name:
-                self.render('setup.html', site_name='', session_name='', status='STATUS', site_updates=[('TBD', 'TBD')],
-                            pull_status=sdproxy.Global.pullOutput)
+                self.render('setup.html', site_name='', session_name='', status='...', site_updates=[('...', '...')])
                 return
             elif new_site_name in Options['site_list']:
                 self.write('Site %s already active' % new_site_name)
@@ -531,12 +539,36 @@ class SiteActionHandler(BaseHandler):
                 if Global.backup:
                     Global.backup.stop()
                     Global.backup = None
-                sdproxy.suspend_cache(action[1:])
-                self.write('Starting %s' % action[1:])
-                self.write(setup_html)
+                shutdown_all(keep_root=True)
+                outHtml = ''
+                if action == '_update':
+                    try:
+                        if os.environ.get('SUDO_USER'):
+                            cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
+                        else:
+                            cmd = ['git', 'pull']
+                        print >> sys.stderr, 'Updating using git pull: %s' % cmd
+                        pullOutput = subprocess.check_output(cmd, cwd=scriptdir)
+
+                        print >> sys.stderr, 'Git pull output:\n%s' % pullOutput
+                        outHtml += preElement('Git pull output:\n'+pullOutput)
+
+                    except Exception, excp:
+                        errMsg = 'Updating via git pull failed: '+str(excp)
+                        print >> sys.stderr, errMsg
+                        outHtml += preElement(errMsg + '\n')
+
+                # Force reload (if update didn't already reload)
+                try:
+                    os.utime(scriptdir+'/reload.py', None)
+                    print >> sys.stderr, 'Reloading...'
+                except Exception, excp:
+                    print >> sys.stderr, 'Reload failed: '+str(excp)
+
+                self.displayMessage(outHtml, back_url='/_setup')
 
         elif action == '_backup':
-            self.write( backupSite(subsubpath) )
+            self.displayMessage(backupSite(subsubpath), back_url='/_setup')
 
         elif action == '_shutdown':
             self.clear_id()
@@ -775,7 +807,7 @@ class ActionHandler(BaseHandler):
                 modCols = [int(x) for x in self.get_argument('modcols','').split(',') if x]
                 insertRows = [int(x) for x in self.get_argument('insertrows','').split(',') if x]
                 valTable = sdproxy.unsafeTriggerUpdates(sessionName, modCols, insertRows)
-                self.displayMessage('Unsafe column updates triggered for session %s: <br><pre>%s</pre>' % (sessionName, valTable))
+                self.displayMessage('Unsafe column updates triggered for session %s: <br>%s' % (sessionName, preElement(valTable)))
 
         elif action == '_dash':
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
@@ -849,7 +881,7 @@ class ActionHandler(BaseHandler):
             self.displayMessage('Clearing cache<br>', back_url=site_prefix+'/_actions')
 
         elif action == '_backup':
-            self.write( backupSite(subsubpath) )
+            self.displayMessage(backupSite(subsubpath), back_url=site_prefix+'/_actions')
 
         elif action == '_lock':
             lockType = self.get_argument('type','')
@@ -1494,7 +1526,7 @@ class ActionHandler(BaseHandler):
                         if errors:
                              errMsg += '\n'.join(errors)+'\n'
                         if errMsg:
-                            self.displayMessage('<pre>'+errMsg+'</pre>')
+                            self.displayMessage(preElement(errMsg))
 
             elif action in ('_upload',):
                 # Import two files
@@ -1573,11 +1605,6 @@ class ActionHandler(BaseHandler):
                     return
         else:
             self.displayMessage('Invalid post action: '+action)
-
-    def displayMessage(self, message, back_url=''):
-        if isinstance(message, list):
-            message = '<pre>\n'+'\n'.join(message)+'\n</pre>\n'
-        self.render('message.html', site_name=Options['site_name'], message=message, back_url=back_url)
 
     def pptx2md(self, filename, file_content, slides_zip=None, zip_images=False):
         import pptx2md
@@ -2548,7 +2575,7 @@ class UserActionHandler(ActionHandler):
                 lines.append('Q%02d: %2d%%' % (qavg[1], int(qavg[0]*100)) )
                 if j%5 == 4:
                     lines.append('')
-            self.displayMessage(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + '<pre>\n'+'\n'.join(lines)+'\n</pre>\n')
+            self.displayMessage(('<h3>%s: percentage of correct answers</h3>\n' % sessionName) + preElement('\n'+'\n'.join(lines)+'\n')+'\n')
 
     @tornado.gen.coroutine
     def twitter_link(self, twitterName):
@@ -4287,7 +4314,7 @@ def backupSite(dirname=''):
         backup_url = '/' + Options['site_name'] + backup_url
 
     if Options['debug']:
-        print >> sys.stderr, 'sdserver.backupSite:', dirname
+        print >> sys.stderr, 'sdserver.backupSite:', Options['site_name'], dirname
 
     if Options['site_list'] and not Options['site_number']:
         # Primary server
@@ -4303,25 +4330,34 @@ def backupSite(dirname=''):
             except Exception, excp:
                 errorList.append('Error in remote backup of site %s: %s' % (site, excp))
         if not errorList:
-            return 'Backing up module sessions for each site to directory %s\n' % backup_name
+            return 'Backed up module sessions for each site to directory %s\n' % backup_name
     else:
         errorList = sdproxy.backupSheets(dirname)
 
     if errorList:
-        return '<pre>\n'+'\n'.join(errorList)+'\n</pre>\n'
+        return preElement('\n'+'\n'.join(errorList)+'\n')+'\n'
     else:
         return '<p></p><b>Backed up module sessions to directory <a href="%s">%s</a></b>\n' % (backup_url, backup_name)
 
-def shutdown_all():
+def shutdown_all(keep_root=False):
     if Options['debug']:
         print >> sys.stderr, 'sdserver.shutdown_all:'
-    for j, site in enumerate(Options['site_list']):
-        # Shutdown child servers
-        relay_addr = Global.relay_list[j+1]
-        retval = sendPrivateRequest(relay_addr, path='/'+site+'/_shutdown?root='+Options['server_key'])
 
-    # Shutdown parent
-    IOLoop.current().add_callback(shutdown_loop)
+    if not Global.remoteShutdown:
+        Global.remoteShutdown = True
+        for j, site in enumerate(Options['site_list']):
+            # Shutdown child servers
+            relay_addr = Global.relay_list[j+1]
+            try:
+                retval = sendPrivateRequest(relay_addr, path='/'+site+'/_shutdown?root='+Options['server_key'])
+            except Exception, excp:
+                print >> sys.stderr, 'sdserver.shutdown_all: Error in shutting down site', site, excp
+
+    if not keep_root:
+        shutdown_root()
+
+def shutdown_root():
+        IOLoop.current().add_callback(shutdown_loop)
 
 def shutdown_loop():
     shutdown_server()

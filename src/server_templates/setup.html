@@ -2,7 +2,7 @@
 <html>
 <head>
   <!-- setup template for slidoc server --->
-  <!-- setup parameters: site_name, session_name, status, site_updates, pull_status -->
+  <!-- setup parameters: site_name, session_name, status, site_updates -->
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta charset="UTF-8">
 
@@ -31,7 +31,7 @@
     <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('update')">update</a>: Update code and restart proxy server</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('update')">update</a>: Update (git pull) code and restart proxy server</li>
   </ul>
 
   <form action="/_setup" method="get" id="setupform">
@@ -43,18 +43,11 @@
      <input type="text" id="siteurl" name="siteurl" value="">
    </fieldset>
    {% module xsrf_form_html() %}
+  <p></p>
    <div>
      <input id="slidoc-setup-submit" type="submit" value="Create new site">
     </div>
   </form>
-
-  
-  <code>
-  <pre id="slidoc-pull-status">Last git pull status:
-
-{{pull_status}}
-  </pre>
-  </code>
 
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
 
 <!-- home index template for slidoc server --->
-<!-- index parameters: user, status, login_url, logout_url, sites, site_roles, site_labels, site_titles, site_restrictions -->
+<!-- index parameters: user, status, login_url, logout_url, global_role, sites, site_roles, site_labels, site_titles, site_restrictions -->
 
 <title>Courses</title>
 <style>
@@ -48,7 +48,7 @@ a.clickable {
     <h2 class="home-title">Slidoc sites</h2>
 
     <div class="home-user">
-      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/privileged{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a>)
+      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/privileged{% end %}{% if global_role == 'admin' %} <a class="clickable" href="/_setup">&#9881;</a>{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a>)
       {% else %}
       <a class="clickable" href="{{ login_url }}">Login</a>
       {% end %}
