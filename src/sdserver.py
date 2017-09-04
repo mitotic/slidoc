@@ -542,29 +542,38 @@ class SiteActionHandler(BaseHandler):
                     Global.backup = None
                 shutdown_all(keep_root=True)
                 outHtml = ''
-                if action == '_update':
+                reloadAction = False
+                if action == '_reload':
+                    reloadAction = True
+                elif action == '_update':
                     try:
-                        if os.environ.get('SUDO_USER'):
-                            cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
+                        if subsubpath == 'pull':
+                            if os.environ.get('SUDO_USER'):
+                                cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
+                            else:
+                                cmd = ['git', 'pull']
                         else:
-                            cmd = ['git', 'pull']
-                        print >> sys.stderr, 'Updating using git pull: %s' % cmd
-                        pullOutput = subprocess.check_output(cmd, cwd=scriptdir)
+                            cmd = ['git', 'status', '-u', 'no']
 
-                        print >> sys.stderr, 'Git pull output:\n%s' % pullOutput
-                        outHtml += preElement('Git pull output:\n'+pullOutput)
+                        print >> sys.stderr, 'Executing: '+' '.join(cmd)
+                        outHtml += preElement('Executing: '+' '.join(cmd))
+                        gitOutput = subprocess.check_output(cmd, cwd=scriptdir)
+
+                        print >> sys.stderr, 'Output:\n%s' % gitOutput
+                        outHtml += preElement('Output:\n'+gitOutput)
+
+                        if subsubpath == 'pull':
+                            reloadAction = True
 
                     except Exception, excp:
                         errMsg = 'Updating via git pull failed: '+str(excp)
                         print >> sys.stderr, errMsg
                         outHtml += preElement(errMsg + '\n')
 
-                # Force reload (if update didn't already reload)
-                try:
-                    os.utime(scriptdir+'/reload.py', None)
-                    print >> sys.stderr, 'Reloading...'
-                except Exception, excp:
-                    print >> sys.stderr, 'Reload failed: '+str(excp)
+                if reloadAction:
+                    # Schedule reload (update may already have triggered reloading)
+                    outHtml += 'Reloading server ... (wait 30-60s)'
+                    IOLoop.current().add_callback(reload_server)
 
                 self.displayMessage(outHtml, back_url='/_setup')
 
@@ -3831,8 +3840,9 @@ def createApplication():
                     ]
     if not Options['site_number']:
         # Single/root server
-        home_handlers += [ (r"/(_(backup|reload|setup|shutdown|update))", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(backup|reload|setup|shutdown))", SiteActionHandler) ]
         home_handlers += [ (r"/(_(backup))/([-\w.]+)", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(update))/([-\w.]+)", SiteActionHandler) ]
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
         if Options['libraries_dir']:
@@ -4415,6 +4425,14 @@ def shutdown_server():
     if Options['debug']:
         print >> sys.stderr, 'sdserver.shutdown_server:'
     
+
+def reload_server():
+    try:
+        os.utime(scriptdir+'/reload.py', None)
+        print >> sys.stderr, 'Reloading server...'
+    except Exception, excp:
+        print >> sys.stderr, 'Reload server failed: '+str(excp)
+
 class UserRoles(object):
     def __init__(self):
         self.alias_map = {}

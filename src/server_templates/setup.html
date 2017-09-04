@@ -31,7 +31,10 @@
     <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown proxy server</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('update')">update</a>: Update (git pull) code and restart proxy server</li>
+    <li><a class="clickable"
+    href="javascript:slidocAction('update/check')">update check</a>: Check for code updates from github</li>
+    <p></p>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('update/pull')">update pull</a>: Pull updated code from github and restart proxy server</li>
   </ul>
 
   <form action="/_setup" method="get" id="setupform">
