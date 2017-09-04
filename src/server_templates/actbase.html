@@ -17,6 +17,7 @@ function slidocAction(actionName, sessionName) {
 }
 
 function slidocConfirmAction(actionName) {
+  slidocStatus(actionName);
   if (window.confirm('Confirm '+actionName+'?')) {
     slidocAction(actionName);
     return;
@@ -25,9 +26,12 @@ function slidocConfirmAction(actionName) {
 }
 
 function slidocPromptAction(actionName, prompt) {
+  slidocStatus(actionName);
   var sessionName = window.prompt(prompt);
-  if (!sessionName)
+  if (!sessionName) {
+    slidocStatus('');
     return;
+  }
   slidocAction(actionName, sessionName);
 }
 

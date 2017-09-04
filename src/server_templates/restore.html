@@ -1,0 +1,38 @@
+<html>
+<head>
+<!-- restore template for slidoc server --->
+<!-- restore parameters: site_name, session_name -->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+<h2>{{site_name}}</h2>
+<h2>Restore sheet from backup</h2>
+
+<b>
+{% include "linkback.html" %}
+</b>
+
+<div id="slidoc-restore-form">
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_restore" method="post" enctype="multipart/form-data" >
+    <fieldset>
+      <label for="sessionname">Sheet name:</label><br>
+      <input type="text" id="sessionname" name="sessionname"  value="">
+      <p></p>
+      <label for="upload">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
+      <input type="file" id="upload" name="upload"  accept=".csv" value="file">
+      <p></p>
+      <label for="overwrite">Overwrite existing sheet (IRREVERSIBLE)?</label>
+      <input type="checkbox" id="overwrite" name="overwrite" value="overwrite">
+    </fieldset>
+    {% module xsrf_form_html() %}
+    <div>
+      <input id="slidoc-restore-submit" type="submit" value="Restore">
+    </div>
+  </form>
+</div>
+
+</body>
+</html>

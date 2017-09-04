@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.8d';
+var VERSION = '0.97.8e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -2023,10 +2023,20 @@ function handleProxyUpdates(data, create, returnMessages) {
 			throw("Error:PROXY_HEADER_NAMES:Column header mismatch: Expected "+updateHeaders[m]+" but found "+temHeaders[m]+" in sheet '"+updateSheetName+"'");
 		}
 	    }
-	    var allColNums = [];
-	    for (var m=0; m<updateHeaders.length; m++)
-		allColNums.push(m+1);
 
+	    var allColNums = [];
+	    for (var mcol=0; mcol<updateHeaders.length; mcol++) {
+		allColNums.push(mcol+1);
+		if (timeColumn(updateHeaders[mcol])) {
+		    // Parse date in all time columns
+		    for (var mrow=0; mrow<updateInsertRows.length; mrow++) {
+			if (updateInsertRows[mrow][mcol]) {
+			    try { updateInsertRows[mrow][mcol] = createDate(updateInsertRows[mrow][mcol]); } catch (err) { }
+			}
+		    }
+		}
+	    }
+	    
 	    if (updateAllKeys === null) {
 		// Update non-keyed sheet
 
@@ -2060,7 +2070,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    for (var mcol=0; mcol<nUpdateCols; mcol++) {
 
 			if (timeColumn(updateHeaders[mcol])) {
-
+			    // Parse date in all time columns
 			    for (var mrow=0; mrow<nUpdateRows; mrow++) {
 				if (rowSel[mrow][mcol]) {
 				    try { rowSel[mrow][mcol] = createDate(rowSel[mrow][mcol]); } catch (err) { }
@@ -2259,7 +2269,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    for (var mcol=0; mcol<nUpdateCols; mcol++) {
 
 			if (timeColumn(updateHeaders[rowCols[mcol]-1])) {
-
+			    // Parse date in all time columns
 			    for (var mrow=0; mrow<nUpdateRows; mrow++) {
 				if (rowSel[mrow][mcol]) {
 				    try { rowSel[mrow][mcol] = createDate(rowSel[mrow][mcol]); } catch (err) { }

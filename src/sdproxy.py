@@ -44,7 +44,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.8d'
+VERSION = '0.97.8e'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -3584,6 +3584,21 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
         retval = updateUserRow(sessionName, headers, updateObj, {'admin': ADMINUSER_ID, 'import': '1'}, notrace=True)
         if retval['result'] != 'success':
             raise Exception('Error in submitting imported session for user '+userId+': '+retval.get('error'))
+
+def importSheet(sheetName, headers, rows, overwrite=None):
+    # Restore sheet from backup file
+    if Settings['debug']:
+        print("DEBUG:importSheet", sheetName, headers, len(rows), overwrite, file=sys.stderr)
+    oldSheet = getSheet(sheetName)
+    if oldSheet:
+        if overwrite:
+            delSheet(sheetName)
+        else:
+            raise Exception('Cannot overwrite sheet %s for import' % sheetName)
+
+    newSheet = createSheet(sheetName, headers, rows=rows)
+    # Expire sheet to force re-read from update remote cache (essential if sheet contains formulas)
+    newSheet.expire()
 
 def createRoster(headers, rows):
     if headers[:4] != MIN_HEADERS:

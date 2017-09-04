@@ -2,4 +2,7 @@
 
 <!-- linkback parameters: site_name -->
 
-<a class="clickable" href="/{{site_name}}{% if site_name %}/{% end %}_dash">Dashboard</a> &nbsp; <a class="clickable" href="/{{site_name}}">Home</a>
+<a class="clickable" href="/{{site_name}}">Home</a>
+{% if site_name %}
+&nbsp; <a class="clickable" href="/{{site_name}}{% if site_name %}/{% end %}_dash">Dashboard</a>
+{% end %}

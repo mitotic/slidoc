@@ -791,7 +791,7 @@ class ActionHandler(BaseHandler):
             self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
-        if action not in ('_dash', '_actions', '_modules', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
+        if action not in ('_dash', '_actions', '_modules', '_restore', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
@@ -824,6 +824,9 @@ class ActionHandler(BaseHandler):
             delete = self.get_argument('delete', '')
             download = self.get_argument('download', '')
             self.browse(subsubpath, delete=delete, download=download)
+
+        elif action in ('_restore',):
+            self.render('restore.html', site_name=Options['site_name'], session_name='')
 
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
@@ -1463,7 +1466,7 @@ class ActionHandler(BaseHandler):
                 return
             submitDate = self.get_argument('submitdate','')
 
-        if action in ('_browse', '_roster', '_import', '_submit', '_upload'):
+        if action in ('_browse', '_import', '_restore', '_roster', '_submit', '_upload'):
             if action == '_submit':
                 # Submit test user
                 try:
@@ -1477,7 +1480,7 @@ class ActionHandler(BaseHandler):
                 fname = fileinfo['filename']
                 self.browse(subsubpath, uploadName=fname, uploadContent=fileinfo['body'])
 
-            elif action in ('_roster', '_import'):
+            elif action in ('_import', '_restore', '_roster', ):
                 # Import from CSV file
                 if 'upload' not in self.request.files:
                     self.displayMessage('No file to upload!')
@@ -1486,9 +1489,21 @@ class ActionHandler(BaseHandler):
                 fname = fileinfo['filename']
                 fbody = fileinfo['body']
                 if Options['debug']:
-                    print >> sys.stderr, 'ActionHandler:upload', fname, len(fbody), sessionName, submitDate
+                    print >> sys.stderr, 'ActionHandler:upload', action, fname, len(fbody), sessionName, submitDate
                 uploadedFile = cStringIO.StringIO(fbody)
-                if action == '_roster':
+
+                if action == '_restore':
+                    overwrite = self.get_argument('overwrite', '')
+                    if not sessionName:
+                        errMsg = 'Must specify sheet name to restore'
+                    else:
+                        errMsg = restoreSheet(sessionName, fname, uploadedFile, overwrite=overwrite)
+                    if not errMsg:
+                        self.displayMessage('Restored sheet %s from file %s' % (sessionName, fname))
+                    else:
+                        self.displayMessage(errMsg+'\n')
+
+                elif action == '_roster':
                     lastname_col = self.get_argument('lastnamecol','').strip().lower() 
                     firstname_col = self.get_argument('firstnamecol','').strip().lower() 
                     midname_col = self.get_argument('midnamecol','').strip().lower() 
@@ -1501,6 +1516,7 @@ class ActionHandler(BaseHandler):
                         self.displayMessage('Imported roster from '+fname)
                     else:
                         self.displayMessage(errMsg+'\n')
+
                 elif action == '_import':
                     overwrite = self.get_argument('overwrite', '')
                     if not overwrite and any(sdproxy.getRowMap(sessionName, 'submitTimestamp', regular=True).values()):
@@ -3925,6 +3941,7 @@ def createApplication():
                       r"/(_republish/[-\w.]+)",
                       r"/(_reset_cache_updates)",
                       r"/(_respond/[-\w.;]+)",
+                      r"/(_restore)",
                       r"/(_roster)",
                       r"/(_submissions/[-\w.:;]+)",
                       r"/(_submit/[-\w.:;]+)",
@@ -4011,8 +4028,27 @@ def makeName(lastName, firstName, middleName=''):
             name += ' ' +middleName
     return name
 
+def restoreSheet(sheetName, filepath, csvfile, overwrite=None):
+    # Restore sheet from backup CSV file
+    try:
+        ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
+        ##csvfile.seek(0)
+        reader = csv.reader(csvfile, delimiter=',')  # Ignore dialect for now
+        rows = [row for row in reader]
+        if not rows:
+            raise Exception('No rows in CSV file %s for sheet %s' % (filepath, sheetName))
+
+        sdproxy.importSheet(sheetName, rows[0], rows[1:], overwrite=overwrite)
+        return ''
+
+    except Exception, excp:
+        if Options['debug']:
+            import traceback
+            traceback.print_exc()
+        return 'Error in restoreSheet: '+str(excp)
+
 def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_col='',
-                            id_col='', email_col='', altid_col=''):
+                 id_col='', email_col='', altid_col=''):
     try:
         ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
         ##csvfile.seek(0)
