@@ -44,10 +44,11 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.8e'
+VERSION = '0.97.9a'
 
 def sub_version(version):
     # Returns portion of version that should match
+    # (For versions with letter suffix, just drop letter; otherwise, drop last number)
     return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
 
 UPDATE_PARTIAL_ROWS = True
