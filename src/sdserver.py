@@ -553,7 +553,7 @@ class SiteActionHandler(BaseHandler):
                             else:
                                 cmd = ['git', 'pull']
                         else:
-                            cmd = ['git', 'pull', '--dry_run']
+                            cmd = ['git', 'pull', '--dry-run']
 
                         print >> sys.stderr, 'Executing: '+' '.join(cmd)
                         outHtml += preElement('Executing: '+' '.join(cmd))
@@ -905,7 +905,7 @@ class ActionHandler(BaseHandler):
                     if lockType == 'proxy':
                         raise Exception('Failed to lock sheet '+sessionName+'. Try again after a few seconds?')
                     prefix = 'Locking'
-            self.displayMessage(prefix +' sessions: %s<p></p><a href="%s/_cache">Cache status</a><p></p>' % (site_prefix, ', '.join(sdproxy.get_locked())) )
+            self.displayMessage(prefix +' sessions: %s<p></p><a href="%s/_cache">Cache status</a><p></p>' % (', '.join(sdproxy.get_locked()), site_prefix) )
 
         elif action == '_unlock':
             if not sdproxy.unlockSheet(sessionName):

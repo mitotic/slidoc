@@ -1125,6 +1125,7 @@ def getCacheStatus():
     out += '  Average request bytes = %d\n\n' % (Global.totalCacheRequestBytes/max(1,Global.totalCacheResponseCount) )
     out += '  Average response bytes = %d\n\n' % (Global.totalCacheResponseBytes/max(1,Global.totalCacheResponseCount) )
     curTime = sliauth.epoch_ms()
+    sitePrefix = Settings['site_name']+'/' if Settings['site_name'] else ''
     keys = list( set(Sheet_cache.keys() + Lock_cache.keys()) )
     keys.sort()
     for sheetName in keys:
@@ -1138,7 +1139,7 @@ def getCacheStatus():
         else:
             action = 'lock'
         if not sheetStr:
-            sheetStr = '<a href="/_%s/%s">%s</a> %s' % (action, sheetName, action, Lock_cache.get(sheetName,''))
+            sheetStr = '<a href="/%s/%s">%s</a> %s' % (sitePrefix+'_'+action, sheetName, action, Lock_cache.get(sheetName,''))
     
         if sheet:
             accessTime = 'accessed:'+str(int((curTime-sheet.accessTime)/1000.))+'s/modified:'+str(int((curTime-sheet.modTime)/1000.))+'s'
