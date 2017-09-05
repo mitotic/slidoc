@@ -1079,7 +1079,7 @@ Slidoc.slideEditMenu = function() {
 	    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
 	    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('rollover','"+slideId+"');"+'">Rollover remaining slides to next session</span></li><p></p>\n';
 	}
-	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p>\n';
+	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p><hr>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li><p></p>\n';
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('preview');"+'">Preview all slides</span></li>\n';
@@ -3377,7 +3377,7 @@ Slidoc.manageSession = function() {
 	html += formatHelp(['', 'reset', 'Reset paced module session' + (retakesRemaining()?' for re-takes':'')]) + hr;
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
-	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced module session</span>';
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced module session</span><br>';
 
     if (Sliobj.fullAccess) {
 	if (Sliobj.params.releaseDate) {
@@ -7203,10 +7203,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	}
 
 	Slidoc.log('Slidoc.slideViewGo:C', Sliobj.session.lastSlide, slides.length, controlledPace());
-	if (Sliobj.session.lastSlide == slides.length && Sliobj.params.paceLevel >= QUESTION_PACE && !retakesRemaining() && !Sliobj.session.submitted) {
-	    // Auto-submit on last slide (with question-pacing and no retakes); if admin-paced, submit only if test user
-	    if (!controlledPace())
-		Slidoc.endPaced();
+	if (Sliobj.params.paceLevel == QUESTION_PACE && !Sliobj.session.submitted && Sliobj.session.lastSlide == slides.length && !retakesRemaining()) {
+	    // Auto-submit on last slide for question-pacing only with no retakes
+	    Slidoc.endPaced();
 
 	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {
 	    // Not last slide; save updated session (if not transient and not remote)

@@ -540,7 +540,6 @@ class SiteActionHandler(BaseHandler):
                 if Global.backup:
                     Global.backup.stop()
                     Global.backup = None
-                shutdown_all(keep_root=True)
                 outHtml = ''
                 reloadAction = False
                 if action == '_reload':
@@ -553,7 +552,7 @@ class SiteActionHandler(BaseHandler):
                             else:
                                 cmd = ['git', 'pull']
                         else:
-                            cmd = ['git', 'pull', '--dry-run']
+                            cmd = ['git', 'status', '-uno']
 
                         print >> sys.stderr, 'Executing: '+' '.join(cmd)
                         outHtml += preElement('Executing: '+' '.join(cmd))
@@ -769,6 +768,9 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
                 if not previewingSession:
                     self.displayMessage('Not previewing any session')
+                    return
+                if Options['dry_run']:
+                    self.displayMessage('Cannot accept edits during dry run')
                     return
                 return self.acceptPreview()
             elif action == '_edit':
@@ -2097,12 +2099,12 @@ class ActionHandler(BaseHandler):
 
         msgs = []
         if errMsgs and any(errMsgs):
-            msgs = ['Saved changes to session <a href="%s">%s</a>' % (sessionPath, sessionLabel)]+['<pre>']+[tornado.escape.xhtml_escape(x) for x in errMsgs]+['</pre>']
+            msgs = ['Saved changes to session ' + sessionLabel] + errMsgs
 
         if rolloverParams:
             self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs)
         elif msgs:
-            self.displayMessage(msgs, back_url=sessionPath)
+            self.displayMessage(msgs)
         else:
             self.redirect(sessionPath)
 
@@ -2391,8 +2393,10 @@ class ActionHandler(BaseHandler):
         if uploadType == TOP_LEVEL:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for top-level pages')
 
-        sessionEntries = sdproxy.lookupValues(sessionName, ['paceLevel'], sdproxy.INDEX_SHEET)
+        sessionEntries = sdproxy.lookupValues(sessionName, ['attributes', 'paceLevel'], sdproxy.INDEX_SHEET)
+        sessionAttributes = json.loads(sessionEntries['attributes'])
         adminPaced = (sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE)
+        discussSlides = sessionAttributes.get('discussSlides', [])
 
         lastSlide = None
         submitted = ''
@@ -2406,6 +2410,9 @@ class ActionHandler(BaseHandler):
 
         if not lastSlide:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Zero last slide entry to rollover session '+sessionName)
+
+        if discussSlides and submitted:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Truncation/rollover does not yet work with discussions for submitted session '+sessionName)
 
         _, md_slides, __ = self.extract_slides(src_path, web_path)
 

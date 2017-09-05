@@ -6,6 +6,7 @@ Share = {
 	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
 	this.countElem = document.getElementById(this.pluginId+'-sharecount');
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
+	this.finalizeElem = document.getElementById(this.pluginId+'-sharefinalize');
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
 
 	var manage = (this.paced == Slidoc.PluginManager.ADMIN_PACE && (this.gradableState || this.testUser));
@@ -68,6 +69,7 @@ Share = {
 	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
 	    if (this.testUser && !Slidoc.PluginManager.answered(this.qattributes.qnumber))
 		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
+	    toggleClass(true, 'slidoc-shareable-hide', this.finalizeElem);
 	}
 	this.getResponses(true);
     },
@@ -441,6 +443,7 @@ Share = {
 .slidoc-plugin-Share-responder {
     display: inline-block;
     padding: 0.25em 0.5em;
+    border: 2px solid;
     text-align: center;
     background-color: #e3e3e3; /* very light gray */
 }

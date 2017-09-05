@@ -44,7 +44,7 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.9a'
+VERSION = '0.97.9b'
 
 def sub_version(version):
     # Returns portion of version that should match
@@ -835,15 +835,16 @@ class Sheet(object):
         self.modifiedSheet(modTime)
 
     def checkRange(self, rowMin, colMin, rowCount, colCount):
+        rng = [rowMin, colMin, rowCount, colCount]
         if rowMin < 1 or rowMin > len(self.xrows):
-            raise Exception('Invalid min row number for range %s in sheet %s' % (rowMin, self.name))
+            raise Exception('Invalid min row number for range %s in sheet %s' % (rng, self.name))
         if rowCount < 0 or rowCount > len(self.xrows)-rowMin+1:
-            raise Exception('Invalid row count for range %s in sheet %s' % (rowCount, self.name))
+            raise Exception('Invalid row count for range %s in sheet %s' % (rng, self.name))
 
         if colMin < 1 or colMin > self.nCols:
-            raise Exception('Invalid min col number for range %s in sheet %s' % (colMin, self.name))
+            raise Exception('Invalid min col number for range %s in sheet %s' % (rng, self.name))
         if colCount < 0 or colCount > self.nCols-colMin+1:
-            raise Exception('Invalid col count for range %s in sheet %s' % (colCount, self.name))
+            raise Exception('Invalid col count for range %s in sheet %s' % (rng, self.name))
 
     def getRange(self, rowMin, colMin=None, rowCount=None, colCount=None):
         if isinstance(rowMin, (str, unicode)):
@@ -2064,18 +2065,24 @@ def sheetAction(params, notrace=False):
                 if not respIndex:
                     raise Exception('Error::Column '+respCol+' not present in headers for session '+sheetName)
 
+                nCols = 1
+
                 explainOffset = 0
-                shareOffset = 1
-                nCols = 2
-                if columnIndex.get(getShare+'_explain') == respIndex+1:
-                    explainOffset = 1
-                    shareOffset = 2
+                if columnIndex.get(getShare+'_explain') == respIndex+nCols:
+                    explainOffset = nCols
+                    nCols += 1
+
+                shareOffset = 0
+                if columnIndex.get(getShare+'_share') == respIndex+nCols:
+                    shareOffset = nCols
                     nCols += 1
 
                 voteOffset = 0
                 if shareParams.get('vote') and columnIndex.get(getShare+'_vote') == respIndex+nCols:
-                    voteOffset = shareOffset+1
+                    voteOffset = nCols
                     nCols += 1
+                    if not shareOffset:
+                        raise Exception('Error::Column '+respCol+' must have share and vote info for session '+sheetName)
 
                 returnHeaders = columnHeaders[respIndex-1:respIndex-1+nCols]
 

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.9a';
+var VERSION = '0.97.9b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup)'],
 
@@ -1027,19 +1027,28 @@ function sheetAction(params) {
 		if (!respIndex)
 		    throw('Error::Column '+respCol+' not present in headers for session '+sheetName);
 
+		var nCols = 1;
+
 		var explainOffset = 0;
-		var shareOffset = 1;
-		var nCols = 2;
-		if (columnIndex[getShare+'_explain'] == respIndex+1) {
-		    explainOffset = 1;
-		    shareOffset = 2;
+		if (columnIndex[getShare+'_explain'] == respIndex+nCols) {
+		    explainOffset = nCols;
 		    nCols += 1;
 		}
+
+		var shareOffset = 0;
+		if (columnIndex[getShare+'_share'] == respIndex+nCols) {
+		    shareOffset = nCols;
+		    nCols += 1;
+		}
+
 		var voteOffset = 0;
 		if (shareParams.vote && columnIndex[getShare+'_vote'] == respIndex+nCols) {
-		    voteOffset = shareOffset+1;
+		    voteOffset = nCols;
 		    nCols += 1;
+                    if (!shareOffset)
+                        throw('Error::Column '+respCol+' must have share and vote info for session '+sheetName);
 		}
+
 		returnHeaders = [];
 		for (var j=respIndex; j<respIndex+nCols; j++)
 		    returnHeaders.push(columnHeaders[j-1]);
