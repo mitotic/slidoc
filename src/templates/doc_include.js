@@ -480,7 +480,11 @@ Slidoc.serverCookie = getServerCookie();
 if (Slidoc.serverCookie) {
     Sliobj.serverData = Slidoc.serverCookie.data || {};
 }
+
+// Assessment view: for printing exams
 Sliobj.assessmentView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
+
+// Locked view: for lockdown browser mode
 Sliobj.lockedView = !!Sliobj.serverData.locked_access;
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
@@ -3553,6 +3557,7 @@ function slidocReadyAux2(auth) {
     Sliobj.session = null;
     Sliobj.feedback = null;
     Sliobj.delayScoring = false;
+    Sliobj.hideUnviewedSlides = false;
 
     Slidoc.Random = LCRandom;
     sessionManage();
@@ -3678,6 +3683,12 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.showScore && Sliobj.params.showScore != 'after_answering')
 	Sliobj.delayScoring = true;
 
+    // Hide unviewed slides for all question-paced sessions, and for non-printable sessions with immediate scoring
+    if (Sliobj.session && Sliobj.session.paced) {
+	if (Sliobj.session.paced >= QUESTION_PACE || (!Sliobj.params.printable && !Sliobj.delayScoring) )
+	    Sliobj.hideUnviewedSlides = true;
+    }
+
     if (Sliobj.gradableState && !Sliobj.session) {
 	sessionAbort('Admin user: session not found for user');
 	return;
@@ -3714,7 +3725,7 @@ function slidocSetupAux(session, feedback) {
 	// Unhide only admin-paced slides
 	for (var j=0; j<visibleSlideCount(); j++)
 	    slidesVisible(true, j+1, slides);
-    } else if (!Sliobj.batchMode && !Sliobj.assessmentView && !Sliobj.delayScoring && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
+    } else if (!Sliobj.batchMode && !Sliobj.assessmentView && Sliobj.hideUnviewedSlides) {
 	// Unhide only paced slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
@@ -5608,11 +5619,10 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 
 	    elem.classList.add('slidoc-choice-selected');
 
-	    if (Sliobj.delayScoring) {
-		var ansElem = document.getElementById(slide_id+'-answer-click');
-		if (ansElem)
-		    Slidoc.answerClick(ansElem, slide_id, 'direct');
-	    }
+	    // Immediate answer click for choice questions
+	    var ansElem = document.getElementById(slide_id+'-answer-click');
+	    if (ansElem)
+		Slidoc.answerClick(ansElem, slide_id, 'choice');
 	}
 	if (Sliobj.session && question_attrs.team == 'setup')
 	    Slidoc.sendEvent(-1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
@@ -5650,7 +5660,7 @@ function forceQuit(force, msg) {
 Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect, pluginResp, qfeedback) {
     // Handle answer types: number, text
     // expect: should only be defined for setup
-    // force: '', 'setup', 'submit, 'finalize', 'controlled', 'direct'
+    // force: '', 'setup', 'submit, 'finalize', 'controlled', 'choice'
     ///Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
@@ -5736,7 +5746,8 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries = 0;   // Only one try for choice response
 	}
-	if (!Sliobj.delayScoring) {
+	if (question_attrs.qtype.slice != 'multichoice') {
+	    // Disable choice clicking
 	    for (var i=0; i < choices.length; i++) {
 		choices[i].removeAttribute("onclick");
 		choices[i].classList.remove("slidoc-clickable");
@@ -5892,7 +5903,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	    ansContainer.scrollIntoView(true)
     }
 
-    // Question has been answered
+    // Switch to answered slide view if not printing exam and not delayed scoring or submitted
     var slideElem = document.getElementById(slide_id);
     if (!Sliobj.assessmentView && (!Sliobj.delayScoring || (Sliobj.session && Sliobj.session.submitted)) )
 	slideElem.classList.add('slidoc-answered-slideview');
@@ -7008,7 +7019,7 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.PluginManager.optCall(Sliobj.slidePlugins[prev_slide_id][j], 'leaveSlide');
     }
 
-    if (!setupOverride() && !Sliobj.delayScoring && Sliobj.session && Sliobj.session.paced && (Sliobj.session.paced >= QUESTION_PACE || !Sliobj.params.printable) ) {
+    if (!setupOverride() && Sliobj.hideUnviewedSlides) {
 	// Unhide only viewed slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);

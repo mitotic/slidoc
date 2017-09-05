@@ -712,11 +712,11 @@ class SlidocRenderer(MathRenderer):
 '''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
-    ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(disabled)s" data-qnumber="%(qno)d">Answer:</span>'''
+    ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(ansdisp)s" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
   <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly" data-qnumber="%(qno)d">Answer:</span>
-  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-noanswered slidoc-noprint %(disabled)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
-  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-noanswered slidoc-noprint %(ansdisp)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(ansdisp)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
@@ -724,10 +724,10 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-partcorrect-mark" class="slidoc-partcorrect-answer"></span>
     <span id="%(sid)s-wrong-mark" class="slidoc-wrong-answer"></span>
     <span id="%(sid)s-any-mark" class="slidoc-any-answer"></span>
-    <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer %(disabled)s"></span>
+    <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer %(ansdisp)s"></span>
   </span>
   %(explain)s %(boxlabel)s
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(disabled)s" %(boxsize)s ></textarea>
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(ansdisp)s" %(boxsize)s ></textarea>
 '''                
 
     grading_template = '''
@@ -1758,10 +1758,6 @@ class SlidocRenderer(MathRenderer):
         if multiline_answer:
             answer_opts['explain'] = ''      # Explain not compatible with textarea input
 
-        # For choice questions, hide answer button if not scoring immediately
-        if not answer_opts['disabled'] and self.options['config'].show_score != 'after_answering' and self.cur_qtype == 'choice':
-            answer_opts['disabled'] = opt_values['disabled'][0]
-            
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
         qnumber = len(self.questions)
@@ -1823,14 +1819,19 @@ class SlidocRenderer(MathRenderer):
         ans_grade_fields = self.process_weights(weight_answer)
 
         id_str = self.get_slide_id()
-        ans_params = { 'sid': id_str, 'qno': len(self.questions), 'disabled': ''}
+        ans_params = { 'sid': id_str, 'qno': len(self.questions), 'ansdisp': ''}
+
         if answer_opts['disabled']:
             if self.options['config'].pace > BASIC_PACE:
                 abort("    ****ANSWER-ERROR: %s: 'Answer disabling incompatible with pace value: slide %s" % (self.options["filename"], self.slide_number))
             if answer_opts['disabled'] == 'choice':
-                ans_params['disabled'] = 'slidoc-answer-disabled-choice'
+                ans_params['ansdisp'] = ' slidoc-ansdisp-disabled-choice'
             else:
-                ans_params['disabled'] = 'slidoc-answer-disabled'
+                ans_params['ansdisp'] = ' slidoc-ansdisp-disabled'
+        elif self.cur_qtype == 'choice':
+            ans_params['ansdisp'] = 'slidoc-ansdisp-choice'
+        elif self.cur_qtype == 'multichoice':
+            ans_params['ansdisp'] += 'slidoc-ansdisp-multichoice'
 
         if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
@@ -3163,7 +3164,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 abort('SHOW-ERROR: Must have --show_score=never OR after_answering OR after_submitting OR after_grading')
 
             if not file_config.show_score:
-                if file_config.pace >= ADMIN_PACE:
+                if file_config.pace >= QUESTION_PACE:
                     file_config.show_score = 'after_answering'
                 elif file_config.pace:
                     if 'assessment' in file_config.features:
@@ -3237,8 +3238,8 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
             if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
                 abort('PACE-ERROR: shuffle_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
-            if js_params['paceLevel'] >= QUESTION_PACE and self.options['config'].show_score != 'after_answering':
-                abort('PACE-ERROR: --show_score=%s feature not compatible with --pace=%s' % (self.options['config'].show_score, js_params['paceLevel']) )
+            if js_params['paceLevel'] >= QUESTION_PACE and file_config.show_score != 'after_answering':
+                abort('PACE-ERROR: --show_score=%s feature not compatible with --pace=%s' % (file_config.show_score, js_params['paceLevel']) )
 
         if not j or config.separate:
             # First file or separate files
@@ -4134,9 +4135,6 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 # Strip options
 # For pure web pages, --strip=chapters,contents,navigate,sections
 Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections', 'tags']
-
-# Note:
-#   --show_score != after_answering disables all answer buttons/input boxes (useful for immediate multiple choice answers during timed sessions, or for printed question sheets)
 
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points

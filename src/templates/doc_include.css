@@ -74,10 +74,12 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
     display: none;
 }
 
-.slidoc-answer-disabled { display: none; }
+.slidoc-ansdisp-disabled { display: none; }
 
-.slidoc-answer-button.slidoc-answer-disabled-choice,
-  .slidoc-answer-correct.slidoc-answer-disabled-choice { display: none; }
+.slidoc-answer-button.slidoc-ansdisp-choice { display: none; }
+
+.slidoc-answer-button.slidoc-ansdisp-disabled-choice,
+  .slidoc-answer-correct.slidoc-ansdisp-disabled-choice { display: none; }
 
 /* Text selection */
 
