@@ -553,7 +553,7 @@ class SiteActionHandler(BaseHandler):
                             else:
                                 cmd = ['git', 'pull']
                         else:
-                            cmd = ['git', 'status', '-u', 'no']
+                            cmd = ['git', 'pull', '--dry_run']
 
                         print >> sys.stderr, 'Executing: '+' '.join(cmd)
                         outHtml += preElement('Executing: '+' '.join(cmd))
