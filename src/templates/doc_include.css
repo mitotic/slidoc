@@ -38,6 +38,8 @@ body:not(.slidoc-testuser-view):not(.slidoc-gradable-view) .slidoc-testgradableo
 body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
     display: none; }
 
+li.slidoc-restrictedonly { opacity: 0.6; }
+
 /* Plugin display */
 div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
 
