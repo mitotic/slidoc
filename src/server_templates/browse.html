@@ -104,18 +104,24 @@ document.onreadystatechange = function(event) {
 
 </head>
 <body>
-<b>
-{% include "linkback.html" %}
-</b>
 
-<h3><em>Browse directory</em>: {{ browse_path }}</h3>
+  <b>
+  {% include "linkback.html" %}
+  </b>
+
+  <p></p>
+  <h2>Browse site files</h2>
+
+  Directory: <b>{{ browse_path }}</b>
+  <p></p>
+  <hr>
 
 <b>Status:</b> <b id="status-line">{{ status }}</b>
 <p></p>
 
 {% if browse_path and not browse_path.startswith('backup') %}
 <a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
-(upload)</a>
+(upload file/zip archive)</a>
 
 <hr>
 

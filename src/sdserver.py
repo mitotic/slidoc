@@ -1169,8 +1169,8 @@ class ActionHandler(BaseHandler):
                 lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
 
             lines.append('</ul>\n')
-            self.render('submissions.html', site_name=Options['site_name'], submissions_label='Late submission',
-                         submissions_html=('Status of session '+sessionName+':<p></p>'+''.join(lines)) )
+            self.render('submissions.html', site_name=Options['site_name'], session_name=sessionName, submissions_label='Late submission',
+                         submissions_html=('Status of session:<p></p>'+''.join(lines)) )
 
         elif action == '_lockcode':
             comps = sessionName.split(';')

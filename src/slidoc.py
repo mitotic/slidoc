@@ -2731,7 +2731,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
 
         elems.append('<li>'+elem+'</li>')
 
-    topnav_html = '<ul class="slidoc-topnav" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
+    topnav_html = '<ul class="slidoc-topnav slidoc-noprint" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
     topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
     topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
@@ -2742,9 +2742,10 @@ def render_topnav(topnav_list, filepath='', site_name=''):
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 class GlobalState(object):
-    def __init__(self, http_post_func=None, return_html=False):
+    def __init__(self, http_post_func=None, return_html=False, error_exit=False):
         self.http_post = http_post_func or sliauth.http_post
         self.return_html = return_html
+        self.error_exit = error_exit
         self.primary_tags = defaultdict(OrderedDict)
         self.sec_tags = defaultdict(OrderedDict)
         self.primary_qtags = defaultdict(OrderedDict)
@@ -2764,20 +2765,21 @@ class GlobalState(object):
 Global = None
 
 def abort(msg):
-    if not Global or not Global.return_html:
-        sys.exit(msg)
-    else:
+    if Global and not Global.error_exit:
+        message(msg)
         raise Exception(msg)
+    else:
+        sys.exit(msg)
 
 def message(*args):
     print(*args, file=sys.stderr)
 
 def process_input(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
-                  return_html=False, return_messages=False, http_post_func=None):
+                  return_html=False, return_messages=False, error_exit=False, http_post_func=None):
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
-    Global = GlobalState(http_post_func=http_post_func, return_html=return_html)
+    Global = GlobalState(http_post_func=http_post_func, return_html=return_html, error_exit=error_exit)
     if return_html:
         return_messages = True
 
@@ -2817,6 +2819,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
         if config.toc or config.index or config.qindex or config.all:
             abort('ERROR --make option incompatible with indexing or "all" options')
         
+    site_prefix = '/'+config.site_name if config.site_name else ''
     dest_dir = ''
     backup_dir = ''
     if config.dest_dir:
@@ -3587,11 +3590,11 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     message('Index header not found for '+outpath)
                     continue
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
-                entry_extra = ''
-                entry_prefix = ''
+                entry_class = ''
+                entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, fname, SYMS['gear'])
                 if iso_release_str == FUTURE_DATE:
-                    entry_extra = ' class="slidoc-restrictedonly" style="display: none"'
-                    entry_prefix = '[restricted] '
+                    entry_class = ' class="slidoc-restrictedonly" style="display: none"'
+                    entry_prefix += '[restricted] '
 
                 doc_link = ''
                 if doc_str:
@@ -3599,7 +3602,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     if doc_str != 'view':
                         doc_link += '''<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>''' % (orig_fnames[ifile], 'grading view')
 
-                toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_extra, entry_prefix, fheader, SPACER6, doc_link))
+                toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries
                 toc_list.append(orig_fnames[ifile])
                 toc_list.append(fheader)
@@ -4350,7 +4353,8 @@ if __name__ == '__main__':
             pass
         httpd.server_close()
     else:
-        process_input(input_files, input_paths, config_dict, default_args_dict=default_args_dict, images_zipdict=images_zipdict)
+        process_input(input_files, input_paths, config_dict, default_args_dict=default_args_dict, images_zipdict=images_zipdict,
+                      error_exit=True)
 
         if cmd_args.printable:
             if cmd_args.gsheet_url:

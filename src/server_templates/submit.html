@@ -13,17 +13,21 @@
 {% include "linkback.html" %}
 </b>
 
+<p></p>
+Submit test user responses for session <b>{{session_name}}</b>
+<p></p>
+
 <div id="main-container">
   <p></p>
   <div id="main">
     <div id="message-form">
-      <h2>Submit test user responses for module session {{session_name}}</h2>
       <form action="/_submit/{{session_name}}" method="post" id="message_form" enctype="multipart/form-data" >
 	<fieldset>
 	  <label for="submitdate">Submit date:</label>
           <input  type="datetime-local" class="sdserver-input" id="submitdate" name="submitdate" value="">
         </fieldset>
         {% module xsrf_form_html() %}
+        <p></p>
         <div id="form_btn">
 	  <input id="submit-btn" type="submit" value="Submit">
 	</div>

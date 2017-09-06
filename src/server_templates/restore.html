@@ -8,12 +8,17 @@
 </head>
 <body>
 
-<h2>{{site_name}}</h2>
-<h2>Restore sheet from backup</h2>
+  <b>
+  {% include "linkback.html" %}
+  </b>
 
-<b>
-{% include "linkback.html" %}
-</b>
+  <p></p>
+  <h2>Restore session</h2>
+
+  <b>Restore sheet from backup</b>
+  <p></p>
+  <hr>
+
 
 <div id="slidoc-restore-form">
   <form action="/{{site_name}}{% if site_name %}/{% end %}_restore" method="post" enctype="multipart/form-data" >

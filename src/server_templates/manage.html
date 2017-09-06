@@ -11,15 +11,20 @@
 </head>
 <body>
 
-<h2><a href="/{{site_name}}">{{site_name or 'Home'}}</a></h2>
+  <b>
+  {% include "linkback.html" %}
+  </b>
 
-<b>
-{% include "linkback.html" %}
-</b>
+  <p></p>
+  <h2>Manage session</h2>
+  <hr>
+
+  Session: <b>{{session_name}}</b>
+  <p></p>
+
 
 <p></p>
 <div id="slidoc-manage">
-  Manage module <b>{{session_name}}</b>
   <h3><span id="slidoc-action-status"></span></h3>
 
   <ul>

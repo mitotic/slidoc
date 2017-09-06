@@ -22,17 +22,22 @@
 </head>
 <body>
 
-  <h2><a class="clickable" href="/{{ site_name }}">{{ site_name or 'Home' }}</a> Dashboard</h2>
+  <b><a class="clickable" href="/{{ site_name }}">Home</a></b>
+ 
+  <p></p>
+  <h2>Dashboard</h2>
+  <hr>
+
   <b>(Slidoc version {{version}})</b>
   <p></p>
 
   Current interactive module session: {% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_modules">Create and modify pages and modules</a></b>
+  <b><a class="clickable" href="{{ site_prefix }}/_modules">Site content</a></b>
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_actions">Advanced site actions</a></b>
+  <b><a class="clickable" href="{{ site_prefix }}/_actions">Site actions</a></b>
   <p></p>
 
   <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>
@@ -40,15 +45,15 @@
 
   <hr>
 
+  <em>Available actions</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;)
+  <p></p>
+
   Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
   <a class="clickable" href="{{ site_prefix }}/_sheet/roster_slidoc" >&#9783;</a>
   <p></p>
 
   Gradebook:
   <a class="clickable" href="{{ site_prefix }}/_sheet/scores_slidoc" >&#9783;</a>
-  <p></p>
-
-  <em>Available actions</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;)
   <p></p>
 
   <hr>

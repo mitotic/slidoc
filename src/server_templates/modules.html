@@ -57,16 +57,20 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
 </head>
 <body>
 
-  <h2>{{site_name}} Content</h2>
   <b>
   {% include "linkback.html" %}
   </b>
+
   <p></p>
-  <h3>Create and modify page and module content</h3>
+  <h2>Site content</h2>
+
+  <b>Create and modify page and module content</b>
+  <p></p>
+  <hr>
 
   <b>Status:</b> <tt id="status-msg" style="color: red;">{{ message }}</tt>
   <p></p>
-
+  <hr>
   <b><a class="clickable" href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add module type</a></b>
 
   <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
@@ -122,7 +126,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
         </div>
 
 	{% if logs %}
-        <ul class="amber"><li>
+        <ul class="{% if 'error' in logs.lower() %}red{% else %}amber{% end %}"><li>
 	  <span class="clickable" onclick="togglebelow(this,true)">&#9776;</span>
 	  <span class="clickable" onclick="togglebelow(this,false)" style="display: none; background: #eee;">&#9776;</span>
         </li></ul>
@@ -199,6 +203,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <p></p>
   </div>
 
+<hr>
 <p></p>
  Sample source directory structure:
 <blockquote><code><pre>

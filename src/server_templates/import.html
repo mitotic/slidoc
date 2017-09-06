@@ -8,12 +8,16 @@
 </head>
 <body>
 
-<h2>{{site_name}}</h2>
-<h2>Import responses for module session {{session_name}}</h2>
+  <b>
+  {% include "linkback.html" %}
+  </b>
 
-<b>
-{% include "linkback.html" %}
-</b>
+  <p></p>
+  <h2>Import user responses</h2>
+
+  Module session: <b>{{session_name}}</b>
+  <p></p>
+  <hr>
 
 <div id="slidoc-import-form">
   <form action="/{{site_name}}{% if site_name %}/{% end %}_import/{{session_name}}" method="post" enctype="multipart/form-data" >
