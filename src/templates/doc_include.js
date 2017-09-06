@@ -1075,7 +1075,7 @@ Slidoc.slideEditMenu = function() {
     if (Sliobj.currentSlide) {
 	var slideId = Slidoc.getCurrentSlideId();
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit','"+slideId+"');"+'">Edit current slide</span></li><p></p>\n';
-	if (Sliobj.adminPaced) {
+	if (Sliobj.params.paceLevel >= ADMIN_PACE) {
 	    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('delete','"+slideId+"');"+'">Delete current slide</span></li><p></p>\n';
 	    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('rollover','"+slideId+"');"+'">Rollover remaining slides to next session</span></li><p></p>\n';
 	}
@@ -3469,7 +3469,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.gradableState = auth && !!auth.graderKey;
     Sliobj.fullAccess = auth && auth.authRole == Sliobj.params.adminUserId;
 
-    Sliobj.adminPaced = 0;
+    Sliobj.adminPaced = 0;      // Set adminPaced for testuser only upon submission
     Sliobj.maxLastSlide = 0;
     Sliobj.userList = null;
     Sliobj.userGrades = null;

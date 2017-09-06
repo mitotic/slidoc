@@ -459,10 +459,10 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
             return True
         return False
 
-    def displayMessage(self, message, back_url=''):
+    def displayMessage(self, message, html_prefix='', back_url=''):
         if isinstance(message, list):
             message = preElement('\n'+'\n'.join(message)+'\n')+'\n'
-        self.render('message.html', site_name=Options['site_name'], message=message, back_url=back_url)
+        self.render('message.html', site_name=Options['site_name'], message=html_prefix+message, back_url=back_url)
 
 
 class HomeHandler(BaseHandler):
@@ -1436,9 +1436,13 @@ class ActionHandler(BaseHandler):
                 newNumber = None
 
             if self.get_argument('rollover',''):
+                # Close all session websockets (forcing reload)
+                IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
                 return self.rollover(sessionName, slideNumber)
 
             if self.get_argument('truncate',''):
+                # Close all session websockets (forcing reload)
+                IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
                 return self.rollover(sessionName, slideNumber, truncateOnly=True)
 
             sessionText = self.get_argument('sessiontext', '')
@@ -1695,7 +1699,7 @@ class ActionHandler(BaseHandler):
             topnavList = ['index.html'] + topnavList
         return topnavList
 
-    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, create=False, modimages='', deleteSlideNum=0):
+    def uploadSession(self, uploadType, sessionNumber, fname1, fbody1, fname2='', fbody2='', modify=None, create=False, rollingOver=False, modimages='', deleteSlideNum=0):
         # Return null string on success or error message
         if self.previewActive():
             raise Exception('Already previewing session')
@@ -1763,7 +1767,7 @@ class ActionHandler(BaseHandler):
 
         if pacedSession(uploadType) and sessionName != 'index':
             # Lock proxy for preview
-            temMsg = sdproxy.startPreview(sessionName)
+            temMsg = sdproxy.startPreview(sessionName, rollingOver=rollingOver)
             if temMsg:
                 raise Exception('Unable to preview session: '+temMsg)
 
@@ -2102,20 +2106,20 @@ class ActionHandler(BaseHandler):
             msgs = ['Saved changes to session ' + sessionLabel] + errMsgs
 
         if rolloverParams:
-            self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs)
+            self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs, rollingOver=True)
         elif msgs:
             self.displayMessage(msgs)
         else:
             self.redirect(sessionPath)
 
 
-    def truncateSession(self, truncateParams, prevSessionName='', prevMsgs=[]):
+    def truncateSession(self, truncateParams, prevSessionName='', prevMsgs=[], rollingOver=False):
         # Truncate session (possibly after rollover)
         sessionName = truncateParams['sessionName']
         sessionPath = getSessionPath(sessionName, site_prefix=True)
 
         try:
-            errMsg = self.uploadSession(truncateParams['uploadType'], truncateParams['sessionNumber'], truncateParams['sessionName']+'.md', truncateParams['sessionText'], truncateParams['fname2'], truncateParams['fbody2'], modify='truncate')
+            errMsg = self.uploadSession(truncateParams['uploadType'], truncateParams['sessionNumber'], truncateParams['sessionName']+'.md', truncateParams['sessionText'], truncateParams['fname2'], truncateParams['fbody2'], modify='truncate', rollingOver=rollingOver)
 
         except Exception, excp:
             if Options['debug']:
@@ -2141,8 +2145,8 @@ class ActionHandler(BaseHandler):
             previewPath = '/'+Options['site_name']+previewPath
 
         if prevSessionName:
-            msg = 'Rolled over %s slides from session %s to session %s. Proceed to preview of truncated session <a href="%s">%s</a>' % (truncateParams['slidesRolled'], sessionName, prevSessionName, previewPath, sessionName)
-            self.displayMessage( [msg] + prevMsgs )
+            html_prefix = 'Rolled over %s slides from session %s to session %s. Proceed to preview of truncated session <a href="%s">%s</a>' % (truncateParams['slidesRolled'], sessionName, prevSessionName, previewPath, sessionName)
+            self.displayMessage(prevMsgs, html_prefix=html_prefix)
         else:
             self.set_header('Content-Type', 'application/json')
             retval = {'result': 'success'}
@@ -2430,9 +2434,6 @@ class ActionHandler(BaseHandler):
             if truncateOnly:
                 if end_slide != lastSlide:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Truncation only allowed at end for admin-paced session '+sessionName)
-                
-            elif not submitted:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Rollover not permitted for unsubmitted admin-paced session '+sessionName)
 
         truncate_defaults, truncateText, truncate_images_zip, _ = self.extract_slide_range(src_path, web_path, start_slide=1, end_slide=end_slide, renumber=1, session_name=sessionName)
 

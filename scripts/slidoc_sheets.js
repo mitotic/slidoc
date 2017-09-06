@@ -1921,8 +1921,10 @@ function sheetAction(params) {
                     }
                 }
 
-                if ((paramId != TESTUSER_ID || prevSubmitted || params.submit) && sessionEntries && adminPaced)
+                if ((paramId != TESTUSER_ID || prevSubmitted || params.submit) && sessionEntries && adminPaced) {
+		    // Set adminPaced for testuser only upon submission
                     returnInfo['adminPaced'] = adminPaced;
+		}
 
 		// Return updated timestamp
 		returnInfo.timestamp = ('Timestamp' in columnIndex) ? rowValues[columnIndex['Timestamp']-1].getTime() : null;

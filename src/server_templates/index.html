@@ -18,6 +18,8 @@ body {
   padding: 0;
 }
 
+.restricted-site { opacity: 0.5; }
+
 .home-banner h2 {
   margin: 2px;
 }
@@ -61,7 +63,7 @@ a.clickable {
   <ul>
       {% for j, site in enumerate(sites) %}
         {% if not site_restrictions[j] or site_restrictions[j] == 'readonly' or site_roles[j] is not None %}
-        <li><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a>{% end %}</li>
+        <li {% if site_restrictions[j] %} class="restricted-site"{% end %}><a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a>{% end %}</li>
         {% end %}
       <p></p>
       {% end %}
@@ -69,3 +71,5 @@ a.clickable {
 
 </body>
 </html>
+
+

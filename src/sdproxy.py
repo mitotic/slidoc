@@ -261,7 +261,7 @@ def endTransactSession(sessionName, noupdate=False):
 def previewingSession():
     return Global.previewStatus.get('sessionName', '')
 
-def startPreview(sessionName):
+def startPreview(sessionName, rollingOver=False):
     # Initiate/end preview of session
     # (Delay upstream updates to session sheet and index sheet; also lock all index sheet rows except for this session)
     # Return error message or null string
@@ -290,7 +290,7 @@ def startPreview(sessionName):
 
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if indexSheet:
-        if indexSheet.get_updates() is not None:
+        if indexSheet.get_updates() is not None and not rollingOver:
             return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
@@ -2862,6 +2862,7 @@ def sheetAction(params, notrace=False):
                             teamCopy(modSheet, numStickyRows, userRow, teamCol, teamCopyCols[j])
 
                 if (paramId != TESTUSER_ID or prevSubmitted or params.get('submit')) and sessionEntries and adminPaced:
+                    # Set adminPaced for testuser only upon submission
                     returnInfo['adminPaced'] = adminPaced
 
                 # Return updated timestamp
