@@ -2180,14 +2180,15 @@ var Slide_help_list_b = [
     ['i, &#9660;',          'i',     'incremental item'],
     ['f',                   'f',     'fullscreen mode'],
     ['m',                   'm',     'missed question concepts'],
-    ['?',                   'qmark', 'help']
+    ['v',                   'v',     'navigation help']
 ];
 
-Slidoc.viewHelp = function () {
-    var html = '<b>Slide commands</b><p></p>\n';
+Slidoc.viewNavHelp = function () {
+    var html = '<b>Navigation commands</b><p></p>\n';
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
     html += '<table class="slidoc-slide-help-table">';
+    html += formatHelp(['Key', '', 'Action']);
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list_a.length; j++)
 	    html += formatHelp(Slide_help_list_a[j]);
@@ -2226,7 +2227,7 @@ var Slide_view_handlers = {
     'i':     Slidoc.slideViewIncrement,
     'f':     Slidoc.docFullScreen,
     'm':     Slidoc.showConcepts,
-    'qmark': Slidoc.viewHelp,
+    'v':     Slidoc.viewNavHelp,
     'reset': Slidoc.resetPaced
 }
 
@@ -2250,7 +2251,7 @@ var Key_codes = {
     80: 'p',
     81: 'q',
     83: 's',
-   191: 'qmark'
+    86: 'v'
 };
 
 document.onkeydown = function(evt) {

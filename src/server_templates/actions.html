@@ -3,7 +3,7 @@
 <head>
 
 <!-- actions template for slidoc server --->
-<!-- actions parameters: site_name, session_name, suspended -->
+<!-- actions parameters: site_name, session_name, root_admin, suspended -->
 
 {% include "base.html" %}
 {% include "actbase.html" %}
@@ -28,6 +28,21 @@
   <p></p>
 
   <ul>
+    <hr>
+    <li><b><a class="clickable" href="javascript:slidocAction('twitter')">twitter</a></b>: View Twitter stream status</li>
+    <hr>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a></b>: Backup of all module sessions to directory</li>
+    <hr>
+    <li><b><a class="clickable" href="javascript:slidocConfirmAction('restore')">restore</a></b>: Restore sheet from backup file</li>
+  </ul>
+
+  <b><a class="clickable" href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced site actions</a></b>
+
+  <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
+  <b>Advanced dashboard actions:</b><p></p>
+
+  {% if root_admin %}
+  <ul>
     <li><b><a class="clickable" href="javascript:slidocAction('cache')">proxy status</a></b>: Status of proxy cache and active connections</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('freeze')">freeze</a></b>: Freeze all cached module sessions (clear to cancel freeze)</li>
@@ -36,14 +51,16 @@
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a></b>: Shutdown proxy server</li>
     {% end %}
     <hr>
-    <li><b><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a></b>: Backup of all module sessions to directory</li>
-    <hr>
-    <li><b><a class="clickable" href="javascript:slidocConfirmAction('restore')">restore</a></b>: Restore sheet from backup file</li>
+    <li><b><a class="clickable" href="javascript:slidocAction('browse')">browse</a></b>: Browse/upload all site files (<em>Use with care!</em>)</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocPromptAction('sheet','Sheet name:')">sheet</a></b>: Display sheet</li>
     <li><b><a class="clickable" href="javascript:slidocPromptAction('getrow','Sheet name:')">getrow</a></b>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
-    <li><b><a class="clickable" href="javascript:slidocPromptAction('getcol''Sheet name:')">getcol</a></b>.: Get columns from sheet</li>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('getcol''Sheet name:')">getcol</a></b>: Get columns from sheet</li>
   </ul>
+  {% else %}
+  (Only accessible to root admin)
+  {% end %}
+  </div>
 
 </body>
 </html>

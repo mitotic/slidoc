@@ -459,6 +459,11 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
             return True
         return False
 
+    def check_root_admin(self, token=''):
+        if token == Options['root_auth_key']:
+            return True
+        return self.get_id_from_cookie(role=True) == sdproxy.ADMIN_ROLE
+
     def displayMessage(self, message, html_prefix='', back_url=''):
         if isinstance(message, list):
             message = preElement('\n'+'\n'.join(message)+'\n')+'\n'
@@ -826,7 +831,8 @@ class ActionHandler(BaseHandler):
                         version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession())
 
         elif action == '_actions':
-            self.render('actions.html', site_name=Options['site_name'], session_name='', suspended=sdproxy.Global.suspended)
+            self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
+                         suspended=sdproxy.Global.suspended)
 
         elif action == '_modules':
             self.displaySessions()
@@ -852,11 +858,19 @@ class ActionHandler(BaseHandler):
                         del nameMap[idVal]
                 lastMap = sdproxy.makeShortNames(nameMap)
                 firstMap = sdproxy.makeShortNames(nameMap, first=True)
-                firstNames = firstMap.values()
-                firstNames.sort()
+
+                wheelNames = []
+                for idVal, shortName in firstMap.items():
+                    lastName, _, firstNames = nameMap[idVal].partition(',')
+                    if firstNames.strip():
+                        fullName = firstNames.strip().split(' ')[0] + ' ' + lastName
+                    else:
+                        fullName = lastName
+                    wheelNames.append(shortName+'/'+fullName)
+                wheelNames.sort()
 
                 qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(Options['site_name'])
-                qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x) for x in firstNames)
+                qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x,safe='/') for x in wheelNames)
 
                 self.render('roster.html', site_name=Options['site_name'],
                              qwheel_link=qwheel_link, qwheel_new=qwheel_new,
@@ -1355,7 +1369,8 @@ class ActionHandler(BaseHandler):
 
                 file_list.append( [fname, subdirpath, isfile, viewpath] )
 
-        self.render('browse.html', site_name=Options['site_name'], status=status, up_path=up_path, browse_path=filepath, file_list=file_list)
+        self.render('browse.html', site_name=Options['site_name'], status=status, root_admin=self.check_root_admin(),
+                    up_path=up_path, browse_path=filepath, file_list=file_list)
 
     def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:

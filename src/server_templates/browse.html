@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- browse template for slidoc server --->
-<!-- browse parameters: site_name, status, up_path, browse_path, file_list-->
+<!-- browse parameters: site_name, status, root_admin, up_path, browse_path, file_list-->
 
 {% include "base.html" %}
 
@@ -167,7 +167,7 @@ document.onreadystatechange = function(event) {
     <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
     </td>
     <td>
-    <span class="clickable" onclick="deletePath('{{ subpath }}');" >&#x1F5D1;</span>
+    <span class="clickable" onclick="{% if root_admin %}deletePath('{{ subpath }}');{% else %} alert('Only root admin can delete file');{% end %}">&#x1F5D1;</span>
     </td>
   </tr>
 {% end %}

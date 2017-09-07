@@ -31,7 +31,7 @@
   <b>(Slidoc version {{version}})</b>
   <p></p>
 
-  Current interactive module session: {% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}
+  Current interactive module session: <b>{% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}</b>
   <p></p>
 
   <b><a class="clickable" href="{{ site_prefix }}/_modules">Site content</a></b>
@@ -40,12 +40,14 @@
   <b><a class="clickable" href="{{ site_prefix }}/_actions">Site actions</a></b>
   <p></p>
 
+  <hr>
+
   <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>
   <p></p>
 
   <hr>
 
-  <em>Available actions</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;)
+  <em>Available operations</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;)
   <p></p>
 
   Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
@@ -54,20 +56,6 @@
 
   Gradebook:
   <a class="clickable" href="{{ site_prefix }}/_sheet/scores_slidoc" >&#9783;</a>
-  <p></p>
-
-  <hr>
-
-  <b><a class="clickable" href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced dashboard actions</a></b>
-
-  <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
-  <b>Advanced dashboard actions:</b><p></p>
-
-  <a class="clickable" href="{{ site_prefix }}/_twitter">View Twitter stream status</a>
-  <p></p>
-
-  <a class="clickable" href="{{ site_prefix }}/_browse">Browse/upload
-  all site files (<em>Use with care!</em>)</a>
   <p></p>
 
   </div>

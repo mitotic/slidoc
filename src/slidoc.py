@@ -82,7 +82,7 @@ FUTURE_DATE = 'future'
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
+        'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -3666,9 +3666,9 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
                                         classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
             if combined_file:
-                toc_insert = click_span(SYMS['trigram'], "Slidoc.sidebarDisplay();",
+                toc_insert = click_span(SYMS['bigram'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-nosidebar', 'slidoc-noprint']) + SPACER2 + toc_insert
-                toc_insert = click_span(SYMS['trigram'], "Slidoc.sidebarDisplay();",
+                toc_insert = click_span(SYMS['bigram'], "Slidoc.sidebarDisplay();",
                                     classes=['slidoc-clickable-sym', 'slidoc-sidebaronly', 'slidoc-noprint']) + toc_insert
                 toc_insert += SPACER3 + click_span('+All Chapters', "Slidoc.allDisplay(this);",
                                                   classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-noprint'])
