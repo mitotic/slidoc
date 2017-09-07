@@ -19,6 +19,16 @@ import time
 import urllib
 import urllib2
 
+VERSION = '0.97.10a'
+
+def get_version(sub=False):
+    return sub_version(VERSION) if sub else VERSION
+
+def sub_version(version):
+    # Returns portion of version that should match
+    # (For versions with letter suffix, just drop letter; otherwise, drop last number)
+    return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
+
 TRUNCATE_DIGEST = 8
 
 DIGEST_ALGORITHM = hashlib.md5

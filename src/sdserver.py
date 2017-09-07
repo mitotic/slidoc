@@ -823,7 +823,7 @@ class ActionHandler(BaseHandler):
 
         elif action == '_dash':
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
-                        version=sdproxy.VERSION, interactive=WSHandler.getInteractiveSession())
+                        version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession())
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', suspended=sdproxy.Global.suspended)
@@ -872,11 +872,11 @@ class ActionHandler(BaseHandler):
             sorted(wsConnections)
             wsInfo = []
             for path, user, connections in wsConnections:
-                wsInfo += [(path, user, math.floor(curTime-ws.msgTime)) for ws in connections]
+                wsInfo += [(path, user, math.floor(curTime-ws.msgTime), ws.clientVersion) for ws in connections]
             sorted(wsInfo)
             self.write('\nConnections:\n')
             for x in wsInfo:
-                self.write("  %s: %s (idle: %ds)\n" % x)
+                self.write("  %s: %s (idle: %ds, v%s)\n" % x)
             self.write('</pre>')
 
         elif action == '_twitter':
@@ -3123,6 +3123,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                         conn.flushEventBuffer()
 
     def open(self, path=''):
+        self.clientVersion = self.get_argument('version','')
         self.msgTime = time.time()
         self.locked = ''
         self.timeout = None
@@ -3137,7 +3138,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.awaitBinary = None
 
         if Options['debug']:
-            print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser
+            print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser, self.clientVersion
         if not self.userId:
             self.close()
 
@@ -4866,7 +4867,7 @@ def main():
         importlib.import_module('plugins.'+pluginName)
 
     print >> sys.stderr, ''
-    print >> sys.stderr, 'sdserver: Version %s **********************************************' % sdproxy.VERSION
+    print >> sys.stderr, 'sdserver: Version %s **********************************************' % sliauth.get_version()
     if options.start_delay:
         print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
         time.sleep(options.start_delay)

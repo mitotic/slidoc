@@ -554,6 +554,8 @@ function GoogleSheet(url, sheetName, preHeaders, fields, useJSONP) {
 
 GoogleSheet.prototype.send = function(params, callType, callback) {
     params = JSON.parse(JSON.stringify(params));
+    params.version = Slidoc.version;
+
     if (!params.id && GService.gprofile.auth.id)
 	params.id = GService.gprofile.auth.id;
 

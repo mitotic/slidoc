@@ -44,13 +44,6 @@ from tornado.ioloop import IOLoop
 import reload
 import sliauth
 
-VERSION = '0.97.9b'
-
-def sub_version(version):
-    # Returns portion of version that should match
-    # (For versions with letter suffix, just drop letter; otherwise, drop last number)
-    return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
-
 UPDATE_PARTIAL_ROWS = True
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
@@ -582,7 +575,7 @@ def downloadSheet(sheetName, backup=False):
     ##    print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
 
     remoteVersion = retval.get('info',{}).get('version','')
-    if sub_version(VERSION) != sub_version(remoteVersion):
+    if sliauth.get_version(sub=1) != sliauth.sub_version(remoteVersion):
         suspend_cache('version_mismatch')
     Global.remoteVersions.add(remoteVersion)
 
@@ -1116,7 +1109,7 @@ class Range(object):
         pass
 
 def getCacheStatus():
-    out = 'Cache: version %s (%s)\n' % (VERSION, list(Global.remoteVersions))
+    out = 'Cache: version %s (remote: %s)\n' % (sliauth.get_version(), list(Global.remoteVersions))
     if Global.cacheUpdateError:
         out += '  ERROR in last cache update: <b>%s</b>\n' % Global.cacheUpdateError
         
@@ -1143,7 +1136,9 @@ def getCacheStatus():
             sheetStr = '<a href="/%s/%s">%s</a> %s' % (sitePrefix+'_'+action, sheetName, action, Lock_cache.get(sheetName,''))
     
         if sheet:
-            accessTime = 'accessed:'+str(int((curTime-sheet.accessTime)/1000.))+'s/modified:'+str(int((curTime-sheet.modTime)/1000.))+'s'
+            accessTime = 'accessed:'+str(int((curTime-sheet.accessTime)/1000.))+'s'
+            if sheet.modTime:
+                accessTime += '/modified:'+str(int((curTime-sheet.modTime)/1000.))+'s'
         else:
             accessTime = '(not cached)'
 
@@ -1590,7 +1585,7 @@ def sheetAction(params, notrace=False):
 
     returnValues = None
     returnHeaders = None
-    returnInfo = {'version': VERSION}
+    returnInfo = {'version': sliauth.get_version()}
     returnMessages = []
     completeActions = []
 

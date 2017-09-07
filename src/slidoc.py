@@ -82,7 +82,7 @@ FUTURE_DATE = 'future'
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'lock': '&#x1f512;'}
+        'threebars': '&#9776;', 'trigram': '&#9783;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -2928,6 +2928,7 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                  'adminRole': ADMIN_ROLE, 'graderRole': GRADER_ROLE,
                  'authType': '', 'features': {} }
 
+    js_params['version'] = sliauth.get_version()
     js_params['siteName'] = config.site_name
     js_params['sessionType'] = config.session_type
     js_params['overwrite'] = 1 if config.overwrite else 0
@@ -3591,16 +3592,17 @@ def process_input(input_files, input_paths, config_dict, default_args_dict={}, i
                     continue
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
-                entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, fname, SYMS['gear'])
+                entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
+                entry_suffix = ''
                 if iso_release_str == FUTURE_DATE:
                     entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-                    entry_prefix += '[restricted] '
+                    entry_suffix = ' [RESTRICTED] '
 
                 doc_link = ''
                 if doc_str:
-                    doc_link = '''(<a class="slidoc-clickable" href="%s.html" target="_blank">%s</a>)''' % (orig_fnames[ifile], doc_str)
+                    doc_link = '''(<a class="slidoc-clickable" href="%s.html" target="_blank">%s</a>)''' % (orig_fnames[ifile], 'view')
                     if doc_str != 'view':
-                        doc_link += '''<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>''' % (orig_fnames[ifile], 'grading view')
+                        doc_link += '''&nbsp;&nbsp;[%s]<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]%s</span>''' % (doc_str, orig_fnames[ifile], 'alt views', entry_suffix)
 
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries
@@ -4079,11 +4081,11 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
                 self.end_headers()
-                self.wfile.write('Error in upload: No server URL')
+                self.wfile.write("Error in upload: Please specify 'slidoc.py --server_url=http://example.com --site_name=... --upload_key=...'")
                 return
             upload_key = self.config_dict.get('upload_key')
             headers = {'Content-Type': 'application/octet-stream'}
-            qparams = {}
+            qparams = {'version': sliauth.get_version()}
             qparams['digest'] = sliauth.digest_hex(self.upload_content)
             qparams['token'] = sliauth.gen_hmac_token(upload_key, 'upload:'+qparams['digest'])
             load_path = '/_remoteupload/%s?%s' % (self.upload_name, urllib.urlencode(qparams))

@@ -10,6 +10,7 @@ Slidoc.PluginDefs = {};    // JS plugin definitions
 Slidoc.PluginManager = {}; // JS plugins manager
 Slidoc.Plugins = null;     // JS plugin instances
 Slidoc.Random = null;
+Slidoc.version = '';
 
 ///UNCOMMENT: (function(Slidoc) {
 
@@ -89,9 +90,11 @@ function getParameter(name, number, queryStr) {
 /////////////////////////////////////
 
 var Sliobj = {}; // Internal object
+Sliobj.remoteVersion = '';
 Sliobj.logSheet = null;
 
 Sliobj.params = JS_PARAMS_OBJ;
+Slidoc.version = JS_PARAMS_OBJ.version || '';
 
 Sliobj.sitePrefix = Sliobj.params.siteName ? '/'+Sliobj.params.siteName : '';
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.fileName : '';
@@ -493,7 +496,7 @@ Slidoc.websocketPath = '';
 if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
     // Proxy URL
     if (Slidoc.serverCookie) {
-	Slidoc.websocketPath = Sliobj.params.gd_sheet_url+location.pathname;
+	Slidoc.websocketPath = Sliobj.params.gd_sheet_url+location.pathname+'?version='+Slidoc.version;
     } else {
 	sessionAbort('Error: File must be served from proxy server for websocket authentication');
     }
@@ -3337,6 +3340,9 @@ Slidoc.manageSession = function() {
     var userRole = getUserRole();
     if (userRole)
 	html += 'Role: <b>'+userRole+'</b><br>';
+    var versionStr = Slidoc.version;
+    if (Sliobj.remoteVersion)
+	versionStr += ' (remote: '+Sliobj.remoteVersion+')';
     if (Sliobj.sessionName) {
 	if (Sliobj.session && Sliobj.session.team)
 	    html += 'Team: ' + Sliobj.session.team + '<br>';
@@ -3387,7 +3393,7 @@ Slidoc.manageSession = function() {
 	    else
 		html += '<br>Release date: '+Sliobj.params.releaseDate;
 	}
-	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage module session</a><br>';
+	html += '<br><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage module session</a><br>';
 	html += '<p></p><a class="slidoc-clickable" target="_blank" href="https://mitotic.github.io/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
     }
     if (Sliobj.fullAccess || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)) {
@@ -3426,6 +3432,7 @@ Slidoc.manageSession = function() {
 	}
 	html += '</blockquote>\n';
     }
+    html += '<p></p>Version: ' + versionStr;
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Slidoc.showPopup(html);
@@ -4944,6 +4951,9 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	Sliobj.errorRetries = 0;
 	if (retStatus && retStatus.info && retStatus.info.sheet && retStatus.info.sheet == Sliobj.sessionName) {
 	    // Update info for currently active session
+	    if (retStatus.info.version)
+		Sliobj.remoteVersion = retStatus.info.version;
+
 	    if (retStatus.info.proxyError)
 		alert(retStatus.info.proxyError);
 
