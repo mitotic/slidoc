@@ -6986,15 +6986,15 @@ Slidoc.slideViewStart = function () {
    var firstSlideId = slides[0].id;
    Slidoc.breakChain();
 
+   var startSlide = getCurrentlyVisibleSlide(slides) || 1;
    var startSlide;
     if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
-	startSlide = parseSlideId(location.hash.slice(1))[2];
+	startSlide = Math.min(startSlide, parseSlideId(location.hash.slice(1))[2]);
     } else if (Sliobj.updateView) {
 	startSlide = 1;
    } else if (Sliobj.session && Sliobj.session.paced) {
        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
    } else {
-       startSlide = getCurrentlyVisibleSlide(slides) || 1;
        // Hide notes (for paced view, this is handled earlier)
        Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
    }

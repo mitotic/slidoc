@@ -237,12 +237,13 @@ def getSessionType(sessionName):
 
     return (sessionType, sessionNumber)
 
-def getSessionPath(sessionName, site_prefix=False):
+def getSessionPath(sessionName, site_prefix=False, toc=False):
     # Return path to session HTML file, including '/' prefix and optionally site_prefix
+    # If toc, return path to session ToC
     if sessionName == 'index':
         raise Exception('No path to session index')
     sessionType, sessionNumber = getSessionType(sessionName)
-    path = '/' + sessionName+'.html'
+    path = '/' + ('index' if toc else sessionName) + '.html'
     if sessionType != TOP_LEVEL:
         path = '/' + sessionType + path
     path = privatePrefix(sessionType) + path
@@ -1246,7 +1247,7 @@ class ActionHandler(BaseHandler):
 
 
     def displaySessions(self, buildMsgs={}, indMsgs=[], msg=''):
-        colNames = ['releaseDate', 'dueDate', 'gradeDate']
+        colNames = ['sessionWeight', 'releaseDate', 'dueDate', 'gradeDate']
         sessionParamDict = dict(sdproxy.lookupSessions(colNames))
         session_props = []
         for sessionType in self.get_session_names(top=True):
@@ -1256,7 +1257,7 @@ class ActionHandler(BaseHandler):
             session_props.append( [sessionType,
                                     1 if privatePrefix(sessionType) else 0,
                                     fnames,
-                                    sessionParamDict.get(sessionType, ['','','']),
+                                    sessionParamDict,
                                     '\n'.join(buildMsgs.get(sessionType, []))] )
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         self.render('modules.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
@@ -2120,12 +2121,13 @@ class ActionHandler(BaseHandler):
         if errMsgs and any(errMsgs):
             msgs = ['Saved changes to session ' + sessionLabel] + errMsgs
 
+        tocPath = getSessionPath(sessionName, site_prefix=True, toc=True)
         if rolloverParams:
             self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs, rollingOver=True)
         elif msgs:
-            self.displayMessage(msgs)
+            self.displayMessage(msgs, back_url=tocPath)
         else:
-            self.redirect(sessionPath)
+            self.redirect(tocPath)
 
 
     def truncateSession(self, truncateParams, prevSessionName='', prevMsgs=[], rollingOver=False):
@@ -2476,9 +2478,17 @@ class ActionHandler(BaseHandler):
         _, __, src_next, web_next, web_images_next = self.getUploadType(sessionNext)
 
         if os.path.exists(src_next):
+            # Next session exists
             next_defaults, nextText, next_images_zip, new_image_number = self.extract_slide_range(src_next, web_next, renumber=new_image_number, session_name=sessionNext)
         else:
+            # Create next session
             next_defaults, nextText, next_images_zip, new_image_number = truncate_defaults, '', None, new_image_number
+
+            # Do not release it by default
+            if not next_defaults:
+                next_defaults = 'Slidoc:'
+            if not re.search(r'\brelease_date=', next_defaults):
+                next_defaults += ' --release_date=future'
 
         combine_slides = [pad_slide(rolloverText), nextText]
         splice_slides(combine_slides, 0)

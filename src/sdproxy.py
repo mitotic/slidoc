@@ -1504,13 +1504,13 @@ class ProxyUpdater(object):
             if sheetName in self.sheetUpdateInfo:
                 sheet.complete_update(*self.sheetUpdateInfo[sheetName])
 
-            if sheetName in Global.transactSessions:
-                Global.transactSessions[sheetName].complete_update(*self.sheetUpdateInfo[sheetName])
+                if sheetName in Global.transactSessions:
+                    Global.transactSessions[sheetName].complete_update(*self.sheetUpdateInfo[sheetName])
 
-            if sheetName == previewingSession():
-                origSheet = Global.previewStatus['sessionSheetOrig']
-                if origSheet:
-                    origSheet.complete_update(*self.sheetUpdateInfo[sheetName])
+                if sheetName == previewingSession():
+                    origSheet = Global.previewStatus['sessionSheetOrig']
+                    if origSheet:
+                        origSheet.complete_update(*self.sheetUpdateInfo[sheetName])
 
             if not sheet.holdSec:
                 # Refresh expired sheet

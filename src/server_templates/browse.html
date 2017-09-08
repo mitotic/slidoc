@@ -167,7 +167,9 @@ document.onreadystatechange = function(event) {
     <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
     </td>
     <td>
-    <span class="clickable" onclick="{% if root_admin %}deletePath('{{ subpath }}');{% else %} alert('Only root admin can delete file');{% end %}">&#x1F5D1;</span>
+    {% if root_admin %}
+    <span class="clickable" onclick="deletePath('{{ subpath }}');">&#x1F5D1;</span>
+    {% end %}
     </td>
   </tr>
 {% end %}

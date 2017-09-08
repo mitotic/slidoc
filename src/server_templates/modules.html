@@ -102,7 +102,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <div style="border: 1px solid; padding: 4px;">
   <b>Page and module directory</b>
   <ul>
-    {% for dirname, private, sessions, dates, logs in session_props %}
+    {% for dirname, private, sessions, params, logs in session_props %}
     <li>
       <div>
         <div>
@@ -142,15 +142,10 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
 	    <a class="clickable" href="{{ site_prefix }}/_edit/{{ dirname }}00">&#9998;</a>
 	    <a class="clickable" href="{{ site_prefix }}/_upload/{{ dirname }}00">&#x21EA;</a>
           </td>
-          <td>
-          {% if dates[1] %}due: {{ dates[1] }}{% end %}
-          </td>
-          <td>
-          {% if dates[2] %}graded: {{ dates[2] }}{% end %}
-          </td>
         </tr>
 
         {% for session in sessions %}
+          {% set pars = params.get(session, ['','','','']) %}
 	<tr>
           <td>
 	    <a class="clickable" href="{{ site_prefix }}{% if private %}/_private{% end %}/{{ dirname }}/{{ session }}.html">{{ session }}</a>
@@ -161,10 +156,16 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   	    <span class="clickable" onclick="action('delete','{{ session }}');" >&#x1F5D1;</span>  
           </td>
           <td>
-          {% if dates[1] %}due: {{ dates[1] }}{% end %}
+          {% if pars[0].strip() %}Weight:{{ pars[0] }}{% end %}
           </td>
           <td>
-          {% if dates[2] %}graded: {{ dates[2] }}{% end %}
+          {% if pars[1] == 'future' %}Unreleased{% end %}
+          </td>
+          <td>
+          {% if pars[2] %}Due: {{ pars[2] }}{% end %}
+          </td>
+          <td>
+          {% if pars[3] %}Graded: {{ pars[3] }}{% end %}
           </td>
         </tr>
         {% end %}

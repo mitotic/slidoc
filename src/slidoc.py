@@ -2176,12 +2176,12 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
     match = DEFAULTS_RE.match(md_slides[0])
     if match:
-        md_defaults = 'Slidoc: ' + (match.group(3) or match.group(4) or '')
+        md_defaults = match.group(0)
         md_slides[0] = md_slides[0][len(match.group(0)):]
     else:
         md_defaults = ''
         
-    md_source = source.strip()
+    md_source = source.strip()   # Note: source is already preprocessed
     md_digest = sliauth.digest_hex(md_source)
     if len(md_slides) != renderer.slide_number:
         message('SLIDES-WARNING: pre-parsing slide count (%d) does not match post-parsing slide count (%d)' % (len(md_slides), renderer.slide_number))
@@ -2774,8 +2774,17 @@ def abort(msg):
 def message(*args):
     print(*args, file=sys.stderr)
 
-def process_input(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
-                  return_html=False, return_messages=False, error_exit=False, http_post_func=None):
+
+def process_input(*args, **argv):
+    try:
+        return process_input_aux(*args, **argv)
+    except SystemExit, excp:
+        import traceback
+        traceback.print_exc()
+        raise Exception('System exit error in process input: %s' % excp)
+
+def process_input_aux(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
+                     return_html=False, return_messages=False, error_exit=False, http_post_func=None):
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
@@ -3907,7 +3916,7 @@ def read_first_line(file):
     file.seek(0)
     return first_line
 
-DEFAULTS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*$')
+DEFAULTS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|$)')
 def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
     # Read file args and merge with command line args, with command line args being final
     # If default_args_dict is specified, it is updated with file args
@@ -3924,7 +3933,11 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
         if args_text:
             # '--' prefix for args is optional
             line_args_list = [arg if arg.startswith('-') else '--'+arg for arg in shlex.split(args_text)]
-            line_args_dict = vars(parser.parse_args(line_args_list))
+            try:
+                line_args_dict = vars(parser.parse_args(line_args_list))
+            except SystemExit, excp:
+                # Needed because parse_args raises SystemExit
+                raise Exception("****OPTIONS-ERROR: Error in parsing argument list %s: %s" % (line_args_list, excp) )
         else:
             line_args_dict = dict([(arg_name, None) for arg_name in include_args]) if include_args else {}
 
