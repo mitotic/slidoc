@@ -96,11 +96,11 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <p></p>
 
   <p></p>
-  <em>Directory/file actions</em>: Module session spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
+  <b>Directory/file actions</b>: View session spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
   Publish (&#x21BA;), Delete (&#x1F5D1;), New module (<b>+</b>)
   <p></p>
   <div style="border: 1px solid; padding: 4px;">
-  <b>Page and module directory</b>
+  <em>Page and module directory</em>
   <ul>
     {% for dirname, private, sessions, params, logs in session_props %}
     <li>
@@ -181,12 +181,6 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   </div>
   <p></p>
 
-  <b><a class="clickable" href="{{ site_prefix }}/_upload/top">Upload top-level Markdown page content</a></b>
-  <p></p>
-
-  <b><a class="clickable" href="{{ site_prefix }}/_upload/raw">Upload top-level raw web page content</a></b>
-  <p></p>
-
   <b><a class="clickable" href="#" onclick="document.getElementById('advanced-opts').style.display=null;this.style.display='none';">Advanced content actions</a></b>
   <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
   <b>Advanced content actions:</b><p></p>
@@ -203,6 +197,13 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <a class="clickable" href="{{ site_prefix }}/_upload">&#x21EA;</a>: Flexible file upload 
   <p></p>
   </div>
+  <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_upload/top">Upload top-level Markdown page content</a></b>
+  <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_upload/raw">Upload top-level raw web page content</a></b>
+  <p></p>
 
 <hr>
 <p></p>

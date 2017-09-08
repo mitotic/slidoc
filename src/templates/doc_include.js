@@ -2170,6 +2170,20 @@ function clickableLink(text, url, disabled) {
 // Section 10: Help display
 ///////////////////////////////
 
+Slidoc.viewHelp = function () {
+    var html = '<b>Help Info</b><p></p>\n';
+    var hr = '<tr><td colspan="2"><hr></td></tr>';
+
+    html += '<table class="slidoc-slide-help-table">';
+    html += formatHelp('Navigating documents', '/_libraries/help/NavigationHelp.html');
+    html += '</table>';
+    Slidoc.showPopup(html);
+}
+
+function formatHelp(label, link) {
+    return '<tr><td><a class="slidoc-clickable" href="'+link+'" target="_blank">' + label + '</a></td></tr>';
+}
+
 var Slide_help_list_a = [
     ['q, Escape',           'exit',  'exit slide mode'],
     ['h, Home, Fn&#9668;',  'home',  'home (first) slide'],
@@ -2188,24 +2202,24 @@ Slidoc.viewNavHelp = function () {
     var hr = '<tr><td colspan="3"><hr></td></tr>';
     var userId = getUserId();
     html += '<table class="slidoc-slide-help-table">';
-    html += formatHelp(['Key', '', 'Action']);
+    html += formatNavHelp(['Key', '', 'Action']);
     if (Sliobj.currentSlide) {
 	for (var j=0; j<Slide_help_list_a.length; j++)
-	    html += formatHelp(Slide_help_list_a[j]);
-	html += formatHelp(['p, &#9668;',          'left',  'previous slide']);
-	html += formatHelp(['n, &#9658;, space',   'right', 'next slide']);
+	    html += formatNavHelp(Slide_help_list_a[j]);
+	html += formatNavHelp(['p, &#9668;',          'left',  'previous slide']);
+	html += formatNavHelp(['n, &#9658;, space',   'right', 'next slide']);
 	for (var j=0; j<Slide_help_list_b.length; j++)
-	    html += formatHelp(Slide_help_list_b[j]);
+	    html += formatNavHelp(Slide_help_list_b[j]);
     } else if (Sliobj.params.fileName) {
-	html += formatHelp(['&#9668;',   'left',  'collapse']);
-	html += formatHelp(['&#9658;',   'right', 'uncollapse']);
-	html += formatHelp(['Escape', 'unesc', 'enter slide mode']);
+	html += formatNavHelp(['&#9668;',   'left',  'collapse']);
+	html += formatNavHelp(['&#9658;',   'right', 'uncollapse']);
+	html += formatNavHelp(['Escape', 'unesc', 'enter slide mode']);
     }
     html += '</table>';
     Slidoc.showPopup(html);
 }
 
-function formatHelp(help_entry) {  // help_entry = [keyboard_shortcuts, key_code, description]
+function formatNavHelp(help_entry) {  // help_entry = [keyboard_shortcuts, key_code, description]
     return '<tr><td>' + help_entry[0] + '</td><td><span class="slidoc-clickable" onclick="Slidoc.handleKey('+ "'"+help_entry[1]+"'"+ ');">' + help_entry[2] + '</span></td></tr>';
 }
 

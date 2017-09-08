@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.10a'
+VERSION = '0.97.10b'
 
 def get_version(sub=False):
     return sub_version(VERSION) if sub else VERSION

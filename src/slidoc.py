@@ -82,7 +82,7 @@ FUTURE_DATE = 'future'
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
+        'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'rightarrow': '&#x27A4;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -943,7 +943,7 @@ class SlidocRenderer(MathRenderer):
         prefix = str(slide_number)+'. ' if 'untitled_number' not in self.options['config'].features else ''
         html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
         html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
-        html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, '&#x27A4;')
+        html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, SYMS['rightarrow'])
         right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
         for action, icon in right_list:
             toggle_classes = 'slidoc-toptoggle-edit slidoc-edit-icon slidoc-testuseronly slidoc-nolocalpreview slidoc-noupdate slidoc-serveronly'
@@ -4251,7 +4251,7 @@ alt_parser.add_argument('--unbundle', help='Unbundle resource files from module 
 alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for uploading to remote server')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
-cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML')
+cmd_parser = argparse.ArgumentParser(parents=[alt_parser], description='Convert from Markdown to HTML (v%s)' % sliauth.get_version())
 cmd_parser.add_argument('file', help='Markdown/pptx filename', type=argparse.FileType('r'), nargs=argparse.ZERO_OR_MORE)
 
 # Some arguments need to be set explicitly to '' by default, rather than staying as None
