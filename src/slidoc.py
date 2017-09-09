@@ -2289,10 +2289,17 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
             post_header_html += click_span('&#8722;Contents', "Slidoc.hide(this, '%s');" % (chapter_id+'-chapter-toc'),
                                             id=chapter_id+'-chapter-toc-hide', classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-chapter-toc-hide', 'slidoc-nopaced', 'slidoc-noslide', 'slidoc-noprint', 'slidoc-nosidebar'])
 
-    if 'contents' not in config.strip and 'slidoc-notes' in content_html:
-        post_header_html += '&nbsp;&nbsp;' + click_span('&#8722;All Notes',
-                                             "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
-                                              classes=['slidoc-clickable', 'slidoc-hide-label', 'slidoc-nopaced', 'slidoc-noprint'])
+    if 'slidoc-notes' in content_html:
+        notes_classes = ['slidoc-clickable', 'slidoc-hide-label', 'slidoc-nopaced', 'slidoc-noprint']
+        if 'contents' in config.strip:
+            notes_classes += ['slidoc-hidden']
+            post_header_html = ''
+        else:
+            post_header_html = '&nbsp;&nbsp;'
+
+        post_header_html += click_span('&#8722;All Notes',
+                                        "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
+                                         classes=notes_classes)
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:
         post_header_html += '&nbsp;&nbsp;' + click_span('Missed question concepts', "Slidoc.showConcepts();", classes=['slidoc-clickable', 'slidoc-noprint'])
@@ -3461,17 +3468,14 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 iso_release_str = sliauth.iso_date(release_date)
                 if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
                     # Module not yet released
-                    rel_local_time = release_date.ctime()
-                    if rel_local_time.endswith(':00.000Z'):
-                        rel_local_time = rel_local_time[:-8]+'Z'
-                    doc_str += ', available ' + rel_local_time
+                    doc_str += ', available ' + sliauth.print_date(release_date, weekday=True)
 
             admin_ended = bool(admin_due_date.get(fname))
             doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
             iso_due_str = '-'
             if doc_date_str:
                 date_time = doc_date_str if isinstance(doc_date_str, datetime.datetime) else sliauth.parse_date(doc_date_str)
-                local_time_str = date_time.ctime()
+                local_time_str = sliauth.print_date(date_time, weekday=True)
                 if admin_ended:
                     doc_str += ', ended '
                 else:
@@ -3602,16 +3606,14 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
                 entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
-                entry_suffix = ''
                 if iso_release_str == FUTURE_DATE:
                     entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-                    entry_suffix = ' [RESTRICTED] '
 
                 doc_link = ''
                 if doc_str:
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html" target="_blank">%s</a>)''' % (orig_fnames[ifile], 'view')
                     if doc_str != 'view':
-                        doc_link += '''&nbsp;&nbsp;[%s]<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]%s</span>''' % (doc_str, orig_fnames[ifile], 'alt views', entry_suffix)
+                        doc_link += '''&nbsp;&nbsp;[%s]<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>''' % (doc_str, orig_fnames[ifile], 'alt views')
 
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries

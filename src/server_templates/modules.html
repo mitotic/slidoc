@@ -159,13 +159,13 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
           {% if pars[0].strip() %}Weight:{{ pars[0] }}{% end %}
           </td>
           <td>
-          {% if pars[1] == 'future' %}Unreleased{% end %}
+          {% if pars[1] %}Release: {{ str(pars[1])[:16] }}{% end %}
           </td>
           <td>
-          {% if pars[2] %}Due: {{ pars[2] }}{% end %}
+          {% if pars[2] %}Due: {{ str(pars[2])[:16] }}{% end %}
           </td>
           <td>
-          {% if pars[3] %}Graded: {{ pars[3] }}{% end %}
+          {% if pars[3] %}Graded: {{ str(pars[3])[:16] }}{% end %}
           </td>
         </tr>
         {% end %}

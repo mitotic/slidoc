@@ -3395,24 +3395,26 @@ Slidoc.manageSession = function() {
     }
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && !Sliobj.params.timedSec && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
-	html += formatHelp(['', 'reset', 'Reset paced module session' + (retakesRemaining()?' for re-takes':'')]) + hr;
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced();">'+'Reset paced module session'+(retakesRemaining()?' for re-takes':'')+'</span><br>';
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced module session</span><br>';
 
     if (Sliobj.fullAccess) {
+        html += '<p></p><hr>';
 	if (Sliobj.params.releaseDate) {
 	    var dateVal = parseDate(Sliobj.params.releaseDate);
 	    if (dateVal)
-		html += '<br>Release date: '+dateVal.toLocaleString()
+		html += 'Release date: '+dateVal.toLocaleString()+'<br>';
 	    else
-		html += '<br>Release date: '+Sliobj.params.releaseDate;
+		html += 'Release date: '+Sliobj.params.releaseDate+'<br>';
 	}
-	html += '<br><a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage module session</a><br>';
-	html += '<p></p><a class="slidoc-clickable" target="_blank" href="https://mitotic.github.io/wheel/?session='+Sliobj.params.siteName+'">QWheel</a><br>';
+	html += '<a class="slidoc-clickable" href="'+Sliobj.sitePrefix+'/_manage/'+Sliobj.sessionName+'" target="_blank">Manage module session</a>';
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="https://mitotic.github.io/wheel/?session='+Sliobj.params.siteName+'">QWheel</a>';
+        html += '<hr>';
     }
     if (Sliobj.fullAccess || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)) {
-	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Dashboard</a><br>';
+	html += '<p></p><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_dash">Site dashboard</a><br>';
     }
 
     if (Sliobj.gradableState || !Sliobj.params.gd_sheet_url) {

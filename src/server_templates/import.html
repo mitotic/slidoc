@@ -25,9 +25,11 @@
       {% if import_params %}
       Import parameters:
         <ul>
-          <li><u>Key type</u>: {{ import_params['importKey'] }}</li>
-          <li><u>CSV column</u>: {{ import_params['keyColName'] }}</li>
-          <li><u>Skip keys</u>: {{ import_params['skipKeys'] }}</li>
+          <li><em>Key type</em>: {{ import_params['importKey'] }}</li>
+          <p></p>
+          <li><em>CSV column</em>: {{ import_params['keyColName'] }}</li>
+          <p></p>
+          <li><em>Skip keys</em>: {{ import_params['skipKeys'] }}</li>
         </ul>
       {% else %}
       <label for="importkey">Import key:</label>
@@ -49,13 +51,15 @@
       <label for="submitdate">Submit date (optional):</label>
       <input type="datetime-local" id="submitdate" name="submitdate" value="{{submit_date}}">
       <p></p>
-      <label for="upload">Answers file (CSV spreadsheet file containing columns id/twitter, q1, qx2, qg3, q4, ...):</label><br>
+      <label for="upload">Answers file (CSV spreadsheet file containing columns: <em>id, q1, qx2, qg3, q4, ...</em>):</label><br>
+      <p></p>
       <input type="file" id="upload" name="upload"  accept=".csv" value="file">
       <p></p>
       <label for="overwrite">Overwrite?</label>
       <input type="checkbox" id="overwrite" name="overwrite" value="overwrite">
     </fieldset>
     {% module xsrf_form_html() %}
+    <p></p>
     <div>
       <input id="slidoc-import-submit" type="submit" value="Import">
     </div>

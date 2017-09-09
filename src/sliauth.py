@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.10b'
+VERSION = '0.97.10c'
 
 def get_version(sub=False):
     return sub_version(VERSION) if sub else VERSION
@@ -163,6 +163,14 @@ def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
         retval = date_time.isoformat()
 
     return retval[:16] if nosec else (retval[:19] if nosubsec else retval)
+
+def print_date(date_time=None, weekday=False):
+    if not date_time:
+        date_time = datetime.datetime.now()
+    if weekday:
+        return date_time.strftime('%a, %H:%M %b %-d, %Y')
+    else:
+        return date_time.strftime('%H:%M %b %-d, %Y')
 
 def json_default(obj):
     if isinstance(obj, datetime.datetime):

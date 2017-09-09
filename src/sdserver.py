@@ -1112,16 +1112,16 @@ class ActionHandler(BaseHandler):
                     return
             colIndex = sdproxy.indexColumns(sheet)
             idSet = set([x[0] for x in sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)])
-            lines = ['<ul style="font-family: sans-serif;">\n']
+            lines = ['<table style="font-family: sans-serif;">\n']
             count = 0
             for idVal, name in nameMap.items():
                 if idVal in idSet:
                     count += 1
-                    lines.append('<li>'+name+'</li>\n')
+                    lines.append('<tr><td>'+name+'</td></tr>\n')
                 else:
-                    lines.append('<li>%s (<a href="%s/_respond/%s;%s">set responded</a>)</li>\n' % (site_prefix, name, sessionName, idVal))
-            lines.append('</ul>\n')
-            self.displayMessage(('Responders to session %s (%d/%d):' % (sessionName, count, len(nameMap)))+''.join(lines))
+                    lines.append('<tr><td>%s</td><td>(<a href="%s/_respond/%s;%s">respond</a>)</td></tr>\n' % (name, site_prefix,sessionName, idVal))
+            lines.append('</table>\n')
+            self.displayMessage(('<b>Response record</b><p></p> Session: <b>%s</b> (%d out of %d responded):<p></p>' % (sessionName, count, len(nameMap)))+''.join(lines))
 
         elif action in ('_submissions',):
             comps = sessionName.split(';')
@@ -1161,7 +1161,7 @@ class ActionHandler(BaseHandler):
             for j in range(len(idVals)):
                 userMap[idVals[j][0]] = (lastSlides[j][0], submitTimes[j][0], lateTokens[j][0])
 
-            lines = ['<ul>\n']
+            lines = ['<table><tr><th>User</th><th>Status</th></tr>\n']
             for idVal, name in nameMap.items():
                 labels = []
                 if idVal in userMap:
@@ -1170,7 +1170,7 @@ class ActionHandler(BaseHandler):
                     lastSlide, submitTime, lateToken = 0, '', ''
 
                 if submitTime:
-                    labels.append('(<em>submitted '+submitTime.ctime()+'</em>)')
+                    labels.append('(<em>submitted '+sliauth.print_date(submitTime)+'</em>)')
                 else:
                     if lastSlide:
                         labels.append('<code>#%s</code>' % lastSlide)
@@ -1181,11 +1181,11 @@ class ActionHandler(BaseHandler):
                     labels.append('''(<a href="javascript:submit('session','%s;%s')">allow late</a>)''' % (sessionName, idVal) )
                     labels.append(''' [<a href="%s/_lockcode/%s;%s">lockdown access</a>]''' % (site_prefix, sessionName, idVal) )
 
-                lines.append('<li>%s %s</li>\n' % (name, ' '.join(labels)))
+                lines.append('<tr><td>%s</td><td>%s</td></tr>\n' % (name, ' '.join(labels)))
 
-            lines.append('</ul>\n')
+            lines.append('</table>\n')
             self.render('submissions.html', site_name=Options['site_name'], session_name=sessionName, submissions_label='Late submission',
-                         submissions_html=('Status of session:<p></p>'+''.join(lines)) )
+                         submissions_html=('<p></p>'+''.join(lines)) )
 
         elif action == '_lockcode':
             comps = sessionName.split(';')

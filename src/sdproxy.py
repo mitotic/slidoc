@@ -3950,12 +3950,13 @@ def getDiscussStats(sessionName, userId):
     if not discussSheet:
         return discussStats
 
+    userRow = lookupRowIndex(userId, discussSheet)
+    if not userRow:
+        return discussStats
+
     discussRow = lookupRowIndex(DISCUSS_ID, discussSheet)
     if not discussRow:
         raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+sheetName)
-    userRow = lookupRowIndex(userId, discussSheet)
-    if not userRow:
-        raise Exception('User with id '+userId+' not found in sheet '+sheetName)
 
     ncols = discussSheet.getLastColumn()
     headers = discussSheet.getSheetValues(1, 1, 1, ncols)[0]
