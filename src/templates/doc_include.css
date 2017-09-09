@@ -117,6 +117,12 @@ body.slidoc-plain-page {
   padding-top: 0px;
 }
 
+@media screen and (orientation: portrait) and (max-width:800px) {
+  body {
+    padding-top: 60px;
+  }
+}
+
 /* Multi-column (use ---- to force single column) */
 body:not(.slidoc-slide-view) article.slidoc-two-column {
     -webkit-column-count: 2;

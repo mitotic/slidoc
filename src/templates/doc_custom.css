@@ -154,11 +154,24 @@ body.slidoc-slide-view .slidoc-slide-help-table td { font-size: 120%; padding-le
 body.slidoc-slide-view .slidoc-nav-overlay { font-size: 140%; }
 body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 140%; }
 
+@media screen and (orientation: portrait) and (max-width:800px) {
+  body.slidoc-slide-view:not(.slidoc-gradable-view) .slidoc-slide { font-size: 110%; }
+  body.slidoc-slide-view.slidoc-gradable-view .slidoc-slide { font-size: 100%; }
+}
+
+@media screen and (orientation: landscape) and (max-width:800px) {
+  body.slidoc-slide-view:not(.slidoc-gradable-view) .slidoc-slide { font-size: 100%; }
+  body.slidoc-slide-view.slidoc-gradable-view .slidoc-slide { font-size: 100%; }
+}
+
 @media screen and (max-width:800px) {
-  body:not(.slidoc-slide-view) #slidoc-slideview-button { font-size: 160%; }
+  body.slidoc-slide-view .slidoc-slide-nav-counter { font-size: 60%; }
+
   body.slidoc-slide-view .slidoc-nav-overlay { font-size: 160%; }
   body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 160%; }
+
   .slidoc-chapter-accordion { font-size: 140%; }
+  body:not(.slidoc-slide-view) #slidoc-slideview-button { font-size: 160%; }
 }
 
 /* Discussions */
