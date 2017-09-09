@@ -660,7 +660,11 @@ class ActionHandler(BaseHandler):
             configOpts['make_toc'] = True
             configOpts['session_type'] = uploadType
 
-        if text:
+        if text and 0:
+            # DISABLED because this applies to single file edit but not whole directory rebuilds
+            # Results in file options being treated like command line options for single files, but not rebuilds
+            # leading to minimum pace level requirement not working for single file edits
+            # TODO: Eliminate unused text argument for this function
             fileOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, {}, first_line=True))
             for key, value in fileOpts.items():
                 if key not in self.fix_opts and value is not None:

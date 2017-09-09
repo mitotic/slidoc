@@ -119,7 +119,7 @@ body.slidoc-plain-page {
 
 @media screen and (orientation: portrait) and (max-width:800px) {
   body {
-    padding-top: 60px;
+    padding-top: 65px;
   }
 }
 
