@@ -164,10 +164,12 @@ def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
 
     return retval[:16] if nosec else (retval[:19] if nosubsec else retval)
 
-def print_date(date_time=None, weekday=False):
+def print_date(date_time=None, weekday=False, date_only=False):
     if not date_time:
         date_time = datetime.datetime.now()
-    if weekday:
+    if date_only:
+        return date_time.strftime('%d%b%y').lower()
+    elif weekday:
         return date_time.strftime('%a, %H:%M %b %-d, %Y')
     else:
         return date_time.strftime('%H:%M %b %-d, %Y')

@@ -2579,7 +2579,7 @@ def extract_slides(src_path, web_path):
 
     try:
         with open(web_path) as f:
-            sessionIndex = read_index(f)
+            sessionIndex = read_index(f, path=web_path)
             sessionIndexParams = sessionIndex[0][-1]
     except Exception, excp:
         raise Exception('Error in reading module published HTML %s: %s' % (web_path, excp))
@@ -2623,7 +2623,7 @@ def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber
     return (md_defaults, extract_text, extract_zipped, tem_image_number if renumber else new_image_number)
     
 
-def read_index(fhandle, entry_count=6):
+def read_index(fhandle, entry_count=6, path=''):
     # Read one or more index entries from comment in the header portion of HTML file
     index_entries = []
     found_entries = False
@@ -2645,8 +2645,8 @@ def read_index(fhandle, entry_count=6):
         if not sline or sline.startswith(Index_suffix.strip()):
             if len(tem_list) >= entry_count:
                 index_entries.append(tem_list[:entry_count])
-            else:
-                message('INDEX-WARNING: Insufficient index entries: %s' % (tem_list,))
+            elif tem_list:
+                message('INDEX-WARNING: Insufficient index entries in %s %s %s: %s' % (path, len(index_entries), entry_count, tem_list) )
             if sline.startswith(Index_suffix.strip()):
                 break
             tem_list = []
@@ -3379,9 +3379,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             index_display = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
-                    if os.path.exists(dest_dir+opt):
-                        with open(dest_dir+opt) as f:
-                            index_entries = read_index(f)
+                    tempath = dest_dir+opt
+                    if os.path.exists(tempath):
+                        with open(tempath) as f:
+                            index_entries = read_index(f, path=tempath)
                     else:
                          index_entries = []
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str, index_params in index_entries:
@@ -3461,7 +3462,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             iso_release_str = '-'
 
             if release_date_str == FUTURE_DATE:
-                doc_str += ', to be released'
+                doc_str += ', UNRELEASED'
                 iso_release_str = release_date_str
             elif release_date_str:
                 release_date = sliauth.parse_date(release_date_str)
@@ -3475,7 +3476,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             iso_due_str = '-'
             if doc_date_str:
                 date_time = doc_date_str if isinstance(doc_date_str, datetime.datetime) else sliauth.parse_date(doc_date_str)
-                local_time_str = sliauth.print_date(date_time, weekday=True)
+                local_time_str = sliauth.print_date(date_time, date_only=True)
                 if admin_ended:
                     doc_str += ', ended '
                 else:
@@ -3594,10 +3595,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 ifile = len(temlist) - jfile - 1 if reverse_toc else jfile
 
                 if outpath in out_index:
-                    index_entries = read_index(io.BytesIO(out_index[outpath].encode('utf8')))
+                    index_entries = read_index(io.BytesIO(out_index[outpath].encode('utf8')), path=outpath)
                 elif os.path.exists(outpath):
                     with open(outpath) as f:
-                        index_entries = read_index(f)
+                        index_entries = read_index(f, path=outpath)
                 else:
                     abort('Output file '+outpath+' not readable for indexing')
                 if not index_entries:
@@ -3613,7 +3614,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 if doc_str:
                     doc_link = '''(<a class="slidoc-clickable" href="%s.html" target="_blank">%s</a>)''' % (orig_fnames[ifile], 'view')
                     if doc_str != 'view':
-                        doc_link += '''&nbsp;&nbsp;[%s]<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>''' % (doc_str, orig_fnames[ifile], 'alt views')
+                        doc_link += '''<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'alt views', doc_str)
 
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries

@@ -2193,6 +2193,7 @@ var Slide_help_list_a = [
 var Slide_help_list_b = [
     ['i, &#9660;',          'i',     'incremental item'],
     ['f',                   'f',     'fullscreen mode'],
+    ['c',                   'c',     'table of contents'],
     ['m',                   'm',     'missed question concepts'],
     ['v',                   'v',     'navigation help']
 ];
@@ -2236,13 +2237,14 @@ var Slide_view_handlers = {
     'right': function() { Slidoc.slideViewGo(true); },
     'n':     function() { Slidoc.slideViewGo(true); },
     'space': function() { Slidoc.slideViewGo(true); },
-    'up':    Slidoc.prevUser,
-    'down':  Slidoc.slideViewIncrement,
-    'i':     Slidoc.slideViewIncrement,
-    'f':     Slidoc.docFullScreen,
-    'm':     Slidoc.showConcepts,
-    'v':     Slidoc.viewNavHelp,
-    'reset': Slidoc.resetPaced
+    'up':    function() { Slidoc.prevUser(); },
+    'down':  function() { Slidoc.slideViewIncrement(); },
+    'i':     function() { Slidoc.slideViewIncrement(); },
+    'f':     function() { Slidoc.docFullScreen(); },
+    'c':     function() { Slidoc.contentsDisplay(); },
+    'm':     function() { Slidoc.showConcepts(); },
+    'v':     function() { Slidoc.viewNavHelp(); },
+    'reset': function() { Slidoc.resetPaced(); }
 }
 
 var Key_codes = {
@@ -2319,7 +2321,7 @@ Slidoc.handleKey = function (keyName, swipe) {
 
     if (Sliobj.closePopup) {
 	Sliobj.closePopup();
-	if (keyName == 'esc' || keyName == 'q')
+	if (keyName == 'esc' || keyName == 'c' || keyName == 'm' || keyName == 'q' || keyName == 'v')
 	    return false;
     }
 
@@ -5326,7 +5328,7 @@ function visibleSlideCount() {
 	return Sliobj.params.pacedSlides;
 }
 
-function getVisibleSlides() {
+function getVisibleSlides(getAll) {
    var slideClass = 'slidoc-slide';
    if (Sliobj.curChapterId) {
       var curChap = document.getElementById(Sliobj.curChapterId);
@@ -5339,7 +5341,7 @@ function getVisibleSlides() {
     for (var j=0; j<slideElems.length; j++)   // Convert NodeList to regular array for slicing
 	slides.push(slideElems[j]);
 
-    if (!controlledPace())
+    if (!controlledPace() || getAll)
 	return slides;
     else
 	return slides.slice(0, visibleSlideCount());
@@ -5405,39 +5407,58 @@ Slidoc.pagesDisplay = function() {
 
 Slidoc.contentsDisplay = function() {
     Slidoc.log('Slidoc.contentsDisplay:');
-    var prefix = '<b>Contents</b><br>\n';
+    var prefix = '<b>Contents</b>\n';
     if (!Sliobj.params.fileName) {
 	Slidoc.showPopup(prefix);
 	return;
     }
 
     if (Sliobj.sessionName)
-	prefix += '<b><em>'+Sliobj.sessionName+'</em></b>';
+	prefix += '<br><b><em>'+Sliobj.sessionName+'</em></b>\n';
 
     if (!Sliobj.currentSlide && document.getElementById("slidoc00")) {
 	Slidoc.sidebarDisplay();
 	return;
     }
-    var lines = [prefix];
+    var lines = [];
     lines.push('<ul class="slidoc-contents-list">');
-    var slideElems = getVisibleSlides();
-    var nSlides = slideElems.length;
+    var allSlides = getVisibleSlides(true);
+    var nVisible = getVisibleSlides().length;
     if ((Sliobj.session && Sliobj.session.paced) || Sliobj.params.paceLevel >= QUESTION_PACE)
-	nSlides = Math.min(nSlides, Math.max(1,Sliobj.session.lastSlide));
+	nVisible = Math.min(nVisible, Math.max(1,Sliobj.session.lastSlide));
     var headers = [];
-    for (var j=0; j<nSlides; j++) {
-	var headerElems = document.getElementsByClassName(slideElems[j].id+'-header');
+    for (var j=0; j<allSlides.length; j++) {
+	var hidden = j >= nVisible;
+	if (hidden && !isController())  // Skip hidden slides if not adminPaced controller
+	    break;
+	var headerElems = document.getElementsByClassName(allSlides[j].id+'-header');
+	var headerText = headerElems.length ? headerElems[0].textContent : 'Slide 1';
 	if (headerElems.length || !j) {
 	    // Slide with header or first slide
-	    lines.push('<li class="slidoc-clickable slidoc-contents-header" onclick="Slidoc.go('+"'#"+slideElems[j].id+"'"+');"></li>');
-	    headers.push(headerElems.length ? headerElems[0].textContent : 'Slide 1');
+            var action = '';
+	    var classes = 'slidoc-contents-header';
+	    if (hidden) {
+		classes += ' slidoc-contents-hiddenslide';
+		if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && getUserId() == Sliobj.params.testUserId) {
+		    classes += ' slidoc-contents-nextslide';
+		}
+	    } else {
+		action = ' onclick="Slidoc.go('+"'#"+allSlides[j].id+"'"+');"';
+		classes += ' slidoc-clickable';
+		if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide)
+		    classes += ' slidoc-contents-currentslide';
+	    }
+	    if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && getUserId() == Sliobj.params.testUserId) {
+		prefix += '<p></p>Next slide: <b>'+headerText+'</b>\n';
+	    }
+	    lines.push('<li class="'+classes+'"' + action + '></li>');
+	    headers.push(headerText);
 	}
-	
     }
     lines.push('</ul>');
-    var popupContent = Slidoc.showPopup(lines.join('\n'));
+    var popupContent = Slidoc.showPopup(prefix+'<hr>Slides:'+lines.join('\n'));
     var listNodes = popupContent.lastElementChild.children;
-    for (var j=0; j<listNodes.length; j++)
+    for (var j=0; j<listNodes.length; j++)  // Insert slide header names
 	listNodes[j].textContent = headers[j];
 }
 

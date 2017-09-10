@@ -152,6 +152,11 @@ body:not(.slidoc-slide-view) section.slidoc-page-break-before {
   page-break-before: always;    
 }
 
+/* slide header display */
+.slidoc-contents-currentslide { font-style: italic; text-decoration: underline; }
+.slidoc-contents-nextslide { font-weight: bold; }
+.slidoc-contents-hiddenslide { }
+
 /* Navigation */
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }
 .slidoc-bottom-right { z-index: 1000; position: fixed; right: 20px; bottom: 15px; font-size: 1.2em; opacity: 0.5; }

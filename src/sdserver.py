@@ -685,6 +685,9 @@ class ActionHandler(BaseHandler):
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
 
+        if Options['dry_run']:
+            configOpts.update(dry_run=True)
+
         if Options['libraries_dir']:
             configOpts.update(libraries_url='/'+LIBRARIES_PATH)
 
@@ -1968,7 +1971,7 @@ class ActionHandler(BaseHandler):
             if msgs:
                 msg_list += msgs + ['']
 
-        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=indexOnly)
+        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=indexOnly, force=force)
         msgs = retval.get('messages',[])
         msg_dict[TOP_LEVEL] = msgs
         if msgs:
@@ -3920,7 +3923,7 @@ def createApplication():
         else:
             redirect_uri = 'http://localhost'+ ('' if Options['port'] == 80 else ':'+str(Options['port'])) + Global.login_url
 
-        Global.login_domain = comps[0] if comps[0][0] == '@' else ''
+        Global.login_domain = comps[0] if comps[0] and comps[0][0] == '@' else ''
 
         if comps[0] == 'google' or Global.login_domain:
             settings.update(google_oauth={'key': comps[1],
