@@ -221,8 +221,17 @@ class ChunkyStream(object):
                 raise Exception("Must unconsume less data than was previously consumed (unless resetting)")
             self._chunky_prev_consumed -= len(data)
 
-        self._read_buffer.appendleft(data)
         self._read_buffer_size += len(data)
+        if not isinstance(self._read_buffer, bytearray):
+            # For tornado v4.4
+            self._read_buffer.appendleft(data)
+        else:
+            # For tornado v4.5
+            self._read_buffer = data + self._read_buffer
+            if self._read_buffer_size > self.max_buffer_size:
+                gen_log.error("Reached maximum read buffer size (unconsume %d)" % len(data))
+                self.close()
+                raise StreamBufferFullError("Reached maximum read buffer size (unconsume %d)" % len(data))
 
     def data_available(self):
         return bool(self._read_buffer_size)
@@ -319,6 +328,7 @@ class ProxyServer(object):
                                      self.io_loop.READ)
             self.socks[server_type] = sock
             logging.warning("%s: Listening for %s on %s:%d", LOGNAME, server_type, self.host, port)
+            print >> sys.stderr, "%s: Listening for %s on %s:%d" % (LOGNAME, server_type, self.host, port)
 
         self.periodic_loop = ioloop.PeriodicCallback(self.periodic_callback, PERIODIC_SEC*1000,
                                                      io_loop=self.io_loop)

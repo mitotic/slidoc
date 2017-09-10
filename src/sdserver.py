@@ -319,7 +319,7 @@ class UserIdMixin(object):
 
     def is_web_view(self):
         # Check if web view (for locked access)
-        return re.search(r';\s*wv', self.request.headers['User-Agent'], re.IGNORECASE)
+        return re.search(r';\s*wv', self.request.headers.get('User-Agent','')], re.IGNORECASE)
 
     def set_id(self, username, role='', sites='', displayName='', email='', altid='', data={}):
         if Options['debug']:
