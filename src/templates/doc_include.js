@@ -444,7 +444,7 @@ function getUserRole(checkIfGuest) {
 }
 
 function getServerCookie() {
-    var slidocCookie = getCookieValue("slidoc_server", true);
+    var slidocCookie = getCookieValue(Sliobj.params.userCookiePrefix, true);
     if (!slidocCookie)
 	return null;
     
@@ -476,6 +476,20 @@ function getServerCookie() {
     return retval;
 }
 
+function getSiteCookie() {
+    var siteCookie = getCookieValue(Sliobj.params.siteCookiePrefix+'_'+Sliobj.params.siteName, true);
+    if (!siteCookie)
+	return {};
+
+    try {
+	return JSON.parse(atob(decodeURIComponent(siteCookie)));
+    } catch(err) {
+	Slidoc.log('getSiteCookie: ERROR '+err);
+	return {};
+    }
+}
+
+
 Slidoc.imageLink = '';
 
 Sliobj.serverData = {};
@@ -483,6 +497,7 @@ Slidoc.serverCookie = getServerCookie();
 if (Slidoc.serverCookie) {
     Sliobj.serverData = Slidoc.serverCookie.data || {};
 }
+Slidoc.siteCookie = getSiteCookie();
 
 // Assessment view: for printing exams
 Sliobj.assessmentView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
@@ -621,20 +636,20 @@ Slidoc.pageSetup = function() {
 	    var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
 	    [].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
 	}
-	if (!Slidoc.serverCookie.data.editable) {
+    }
+
+    if (Slidoc.siteCookie) {
+	if (!Slidoc.siteCookie.editable) {
 	    var editIcons = document.getElementsByClassName('slidoc-edit-icon');
 	    [].forEach.call(editIcons, function(elem) { elem.style.display = 'none'; });
 	}
-	var gradebookEnabled = Slidoc.serverCookie.data.gradebook || [];
-	if (gradebookEnabled.length) {
-	    if (!Sliobj.params.siteName || gradebookEnabled.indexOf(Sliobj.params.siteName) >= 0) {
-		var gradesButton = document.getElementById('slidoc-grades-button');
-		if (gradesButton)
-		    gradesButton.style.display = null;
-		var gradeElem = document.getElementById('gradelink');
-		if (gradeElem)
-		    gradeElem.style.display = null;
-	    }
+	if (Slidoc.siteCookie.gradebook) {
+	    var gradesButton = document.getElementById('slidoc-grades-button');
+	    if (gradesButton)
+		gradesButton.style.display = null;
+	    var gradeElem = document.getElementById('gradelink');
+	    if (gradeElem)
+		gradeElem.style.display = null;
 	}
     }
 
@@ -2183,7 +2198,7 @@ Slidoc.viewHelp = function () {
     var hr = '<tr><td colspan="2"><hr></td></tr>';
 
     html += '<table class="slidoc-slide-help-table">';
-    html += formatHelp('Navigating documents', '/_libraries/help/NavigationHelp.html');
+    html += formatHelp('Navigating documents', '/_docs/NavigationHelp.html');
     html += '</table>';
     Slidoc.showPopup(html);
 }

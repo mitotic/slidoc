@@ -2945,6 +2945,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'authType': '', 'features': {} }
 
     js_params['version'] = sliauth.get_version()
+    js_params['userCookiePrefix'] = sliauth.USER_COOKIE_PREFIX
+    js_params['siteCookiePrefix'] = sliauth.SITE_COOKIE_PREFIX
     js_params['siteName'] = config.site_name
     js_params['sessionType'] = config.session_type
     js_params['overwrite'] = 1 if config.overwrite else 0

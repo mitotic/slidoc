@@ -165,12 +165,16 @@ RAWPRIVATE_PATH = '_rawprivate'
 RESTRICTED_PATH = '_restricted'
 RESOURCE_PATH = '_resource'
 LIBRARIES_PATH = '_libraries'
+DOCS_PATH = '_docs'
+
 ACME_PATH = '.well-known/acme-challenge'
 
 ADMIN_PATH = 'admin'
 
-USER_COOKIE_SECURE = "slidoc_user_secure"
-SERVER_COOKIE = "slidoc_server"
+USER_COOKIE_SECURE = sliauth.USER_COOKIE_PREFIX+'_secure'
+USER_COOKIE        = sliauth.USER_COOKIE_PREFIX
+SITE_COOKIE_SECURE = sliauth.SITE_COOKIE_PREFIX+'_secure_'
+SITE_COOKIE        = sliauth.SITE_COOKIE_PREFIX+'_'
 EXPIRES_DAYS = 30
 BATCH_AGE = 60      # Age of batch cookies (sec)
 
@@ -183,7 +187,7 @@ SCORES_SHEET = 'scores_slidoc'
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
-COOKIE_VERSION = '0.97.11'             # Update version if cookie format changes
+COOKIE_VERSION = '0.97.11b'             # Update version if cookie format changes (automatically deletes previous secure cookies)
 SERVER_NAME = 'Webster0.9'
 
 RAW_UPLOAD = 'raw'
@@ -307,6 +311,32 @@ def zipdir(dirpath, inner=False):
     zfile.close()
     return stream.getvalue()
 
+class SiteMixin(object):
+    def set_site_cookie(self, cookieStr):
+        self.set_secure_cookie(SITE_COOKIE_SECURE+Options['site_name'], cookieStr, expires_days=EXPIRES_DAYS)
+        self.set_cookie(SITE_COOKIE+Options['site_name'], cookieStr, expires_days=EXPIRES_DAYS)
+
+    def get_site_cookie(self):
+        if Options['insecure_cookie']:
+            cookieStr = self.get_cookie(SITE_COOKIE+Options['site_name'])
+        else:
+            cookieStr = self.get_secure_cookie(SITE_COOKIE_SECURE+Options['site_name']) if self.get_cookie(SITE_COOKIE+Options['site_name']) else ''
+        return cookieStr
+
+    def clear_site_cookie(self):
+        self.clear_cookie(SITE_COOKIE+Options['site_name'])
+        self.clear_cookie(SITE_COOKIE_SECURE+Options['site_name'])
+
+    def site_cookie_data(self):
+        siteName = Options['site_name'] or ''
+        cookie_data = {'version': COOKIE_VERSION, 'site': siteName}
+        if Options['source_dir']:
+            cookie_data['editable'] = 'edit'
+        if Global.siteSettings.get(siteName,{}).get('gradebook_enabled','').strip():
+            cookie_data['gradebook'] = 1
+
+        return sliauth.safe_quote( base64.b64encode(json.dumps(cookie_data,sort_keys=True)) )
+
 class UserIdMixin(object):
     @classmethod
     def get_path_base(cls, path, special=False):
@@ -338,33 +368,33 @@ class UserIdMixin(object):
             cookie_data['email'] = email
         if altid:
             cookie_data['altid'] = altid
-        if Options['source_dir']:
-            cookie_data['editable'] = 'edit'
-
-        gradebookEnabled = []
-        if Options['site_list']:
-            for siteName in Options['site_list']:
-                if Global.siteSettings[siteName].get('gradebook_enabled','').strip():
-                    gradebookEnabled.append(siteName)
-        elif Global.siteSettings[''].get('gradebook_enabled','').strip():
-            gradebookEnabled.append('')
-        cookie_data['gradebook'] = gradebookEnabled
 
         cookie_data.update(data)
 
         token = gen_proxy_auth_token(username, role, sites, root=True)
-        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, role, sites, token, base64.b64encode(json.dumps(cookie_data))] )
+        cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, role, sites, token, base64.b64encode(json.dumps(cookie_data,sort_keys=True))] )
 
-        if cookie_data.get('batch'):
+        self.set_user_cookie(cookieStr, batch=cookie_data.get('batch'))
+
+    def set_user_cookie(self, cookieStr, batch=False):
+        if batch:
             self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, max_age=BATCH_AGE)
-            self.set_cookie(SERVER_COOKIE, cookieStr, max_age=BATCH_AGE)
+            self.set_cookie(USER_COOKIE, cookieStr, max_age=BATCH_AGE)
         else:
             self.set_secure_cookie(USER_COOKIE_SECURE, cookieStr, expires_days=EXPIRES_DAYS)
-            self.set_cookie(SERVER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
+            self.set_cookie(USER_COOKIE, cookieStr, expires_days=EXPIRES_DAYS)
 
-    def clear_id(self):
+    def get_user_cookie(self):
+        # Ensure USER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
+        if Options['insecure_cookie']:
+            cookieStr = self.get_cookie(USER_COOKIE)
+        else:
+            cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(USER_COOKIE) else ''
+        return cookieStr
+
+    def clear_user_cookie(self):
+        self.clear_cookie(USER_COOKIE)
         self.clear_cookie(USER_COOKIE_SECURE)
-        self.clear_cookie(SERVER_COOKIE)
 
     def revert_to_plain_user(self):
         username = self.get_id_from_cookie()
@@ -389,12 +419,7 @@ class UserIdMixin(object):
     def get_id_from_cookie(self, role=False, for_site='', sites=False, name=False, email=False, altid=False, data=False):
         # If for_site and site name does not appear in cookie.sites, None will be returned for role
         # Null string will be returned for role, if site name is present
-        # Ensure SERVER_COOKIE is also set before retrieving id from secure cookie (in case one of them gets deleted)
-        if Options['insecure_cookie']:
-            cookieStr = self.get_cookie(SERVER_COOKIE)
-        else:
-            cookieStr = self.get_secure_cookie(USER_COOKIE_SECURE) if self.get_cookie(SERVER_COOKIE) else ''
-
+        cookieStr = self.get_user_cookie()
         if not cookieStr:
             return None
         try:
@@ -424,12 +449,12 @@ class UserIdMixin(object):
             return userId
         except Exception, err:
             print >> sys.stderr, 'sdserver: COOKIE ERROR - '+str(err)
-            self.clear_id()
+            self.clear_user_cookie()
             return None
 
     def custom_error(self, errCode, html_msg, clear_cookies=False):
         if clear_cookies:
-            self.clear_all_cookies() 
+            self.clear_user_cookie() 
         self.clear()
         self.set_status(errCode)
         self.finish(html_msg)
@@ -447,7 +472,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
 
     def get_current_user(self):
         if not Options['auth_key']:
-            self.clear_id()
+            self.clear_user_cookie()
             return "noauth"
         return self.get_id_from_cookie() or None
 
@@ -600,7 +625,7 @@ class SiteActionHandler(BaseHandler):
             self.displayMessage(backupSite(subsubpath), back_url='/_setup')
 
         elif action == '_shutdown':
-            self.clear_id()
+            self.clear_user_cookie()
             self.write('Starting shutdown (also cleared cookies)<p></p>')
             self.write(setup_html)
             if Options['site_list'] and not Options['site_number']:
@@ -712,7 +737,7 @@ class ActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: ActionHandler.get', userId, Options['site_number'], subpath
         if subpath == '_logout':
-            self.clear_id()
+            self.clear_user_cookie()
             self.render('logout.html')
             return
         root = str(self.get_argument("root", ""))
@@ -3469,24 +3494,32 @@ class PluginManager(object):
 
 class CachedStaticFileHandler(tornado.web.StaticFileHandler):
     def set_extra_headers(self, path):
-        # Cacheable static files
+        # Cacheable static files (no site cookies are set)
         self.set_header('Server', SERVER_NAME)
         self.set_header('Cache-Control', 'public, max-age=900')
     
-class BaseStaticFileHandler(tornado.web.StaticFileHandler):
+class UncachedStaticFileHandler(tornado.web.StaticFileHandler):
     def set_extra_headers(self, path):
-        # Force validation of cache
+        # Force validation of cache (no site cookies are set)
         self.set_header('Server', SERVER_NAME)
         self.set_header('Cache-Control', 'no-cache, must-revalidate, max-age=0')
+
+class SiteStaticFileHandler(UncachedStaticFileHandler, SiteMixin):
+    def set_extra_headers(self, path):
+        super(SiteStaticFileHandler, self).set_extra_headers(path)
+        # Set site cookies
+        cookieStr = self.site_cookie_data()
+        if self.get_site_cookie() != cookieStr:
+            self.set_site_cookie(cookieStr)
     
     def write_error(self, status_code, **kwargs):
         err_cls, err, traceback = kwargs['exc_info']
         if getattr(err, 'log_message', None) and err.log_message.startswith('CUSTOM:'):
             self.write('<html><body><h3>%s</h3></body></html>' % err.log_message[len('CUSTOM:'):])
         else:
-            super(BaseStaticFileHandler, self).write_error(status_code, **kwargs)
+            super(SiteStaticFileHandler, self).write_error(status_code, **kwargs)
 
-class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
+class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
     def get_current_user(self):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         sessionName = self.get_path_base(self.request.path)
@@ -3653,7 +3686,7 @@ class AuthStaticFileHandler(BaseStaticFileHandler, UserIdMixin):
             return userId
 
         if not Options['auth_key']:
-            self.clear_id()   # Clear any cookies
+            self.clear_user_cookie()   # Clear any user cookies
             return "noauth"
         elif Options['public']:
             return "noauth"
@@ -3782,7 +3815,7 @@ class AuthLoginHandler(BaseHandler):
             
 class AuthLogoutHandler(BaseHandler):
     def get(self):
-        self.clear_id()
+        self.clear_user_cookie()
         self.render('logout.html')
 
 class GoogleLoginHandler(tornado.web.RequestHandler,
@@ -3898,8 +3931,11 @@ def createApplication():
         home_handlers += [ (r"/(_(backup|reload|setup|shutdown))", SiteActionHandler) ]
         home_handlers += [ (r"/(_(backup))/([-\w.]+)", SiteActionHandler) ]
         home_handlers += [ (r"/(_(update))/([-\w.]+)", SiteActionHandler) ]
-        home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", BaseStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
-        home_handlers += [ (r"/"+ACME_PATH+"/(.*)", BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
+
+        home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
+        home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
+        if Options['static_dir']:
+            home_handlers += [ (r"/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(Options['static_dir'],'_docs')}) ]
         if Options['libraries_dir']:
             home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {'path': Options['libraries_dir']}) ]
 
@@ -4022,7 +4058,7 @@ def createApplication():
         site_handlers = []
         action_handlers = []
 
-    file_handler = BaseStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
+    file_handler = SiteStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
 
     if Options['static_dir']:
         sprefix = Options['site_name']+'/' if Options['site_name'] else ''
@@ -4651,7 +4687,7 @@ def start_server(site_number=0, restart=False):
 
     if Options['ssl_options'] and not site_number:
         # Redirect plain HTTP to HTTPS
-        handlers = [ (r'/'+ACME_PATH+'/(.*)', BaseStaticFileHandler, {'path': 'acme-challenge'}) ]
+        handlers = [ (r'/'+ACME_PATH+'/(.*)', UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
         handlers += [ (r'/.*', PlainHTTPHandler) ]
         plain_http_app = tornado.web.Application(handlers)
         plain_http_app.listen(80 + (options.port - (options.port % 1000)), address=Options['host'])
@@ -4846,7 +4882,7 @@ def main():
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")
-    define("insecure_cookie", default=False, help="Insecure cookies (for printing)")
+    define("insecure_cookie", default=False, help="Insecure cookies (for direct PDF printing)")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
