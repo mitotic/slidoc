@@ -151,6 +151,7 @@ Global.http_server = None
 Global.server_socket = None
 Global.proxy_server = None
 Global.session_options = {}
+Global.siteSettings = {}
 
 Global.twitterStream = None
 Global.twitterSpecial = {}
@@ -182,7 +183,7 @@ SCORES_SHEET = 'scores_slidoc'
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
-COOKIE_VERSION = '0.9'             # Update version if cookie format changes
+COOKIE_VERSION = '0.97.11'             # Update version if cookie format changes
 SERVER_NAME = 'Webster0.9'
 
 RAW_UPLOAD = 'raw'
@@ -241,12 +242,15 @@ def getSessionPath(sessionName, site_prefix=False, toc=False):
     # Return path to session HTML file, including '/' prefix and optionally site_prefix
     # If toc, return path to session ToC
     if sessionName == 'index':
-        raise Exception('No path to session index')
-    sessionType, sessionNumber = getSessionType(sessionName)
-    path = '/' + ('index' if toc else sessionName) + '.html'
-    if sessionType != TOP_LEVEL:
-        path = '/' + sessionType + path
-    path = privatePrefix(sessionType) + path
+        if not toc:
+            raise Exception('No path to session index')
+        path = '/'
+    else:
+        sessionType, sessionNumber = getSessionType(sessionName)
+        path = '/' + ('index' if toc else sessionName) + '.html'
+        if sessionType != TOP_LEVEL:
+            path = '/' + sessionType + path
+        path = privatePrefix(sessionType) + path
     if site_prefix and Options['site_name']:
         path = '/' + Options['site_name'] + path
     return path
@@ -319,7 +323,7 @@ class UserIdMixin(object):
 
     def is_web_view(self):
         # Check if web view (for locked access)
-        return re.search(r';\s*wv', self.request.headers.get('User-Agent','')], re.IGNORECASE)
+        return re.search(r';\s*wv', self.request.headers.get('User-Agent',''), re.IGNORECASE)
 
     def set_id(self, username, role='', sites='', displayName='', email='', altid='', data={}):
         if Options['debug']:
@@ -328,7 +332,7 @@ class UserIdMixin(object):
         if ':' in username or ':' in role or ':' in sites or ':' in displayName:
             raise Exception('Colon character not allowed in username/role/name')
 
-        cookie_data = {}
+        cookie_data = {'version': COOKIE_VERSION}
         cookie_data['name'] = displayName or username
         if email:
             cookie_data['email'] = email
@@ -336,6 +340,16 @@ class UserIdMixin(object):
             cookie_data['altid'] = altid
         if Options['source_dir']:
             cookie_data['editable'] = 'edit'
+
+        gradebookEnabled = []
+        if Options['site_list']:
+            for siteName in Options['site_list']:
+                if Global.siteSettings[siteName].get('gradebook_enabled','').strip():
+                    gradebookEnabled.append(siteName)
+        elif Global.siteSettings[''].get('gradebook_enabled','').strip():
+            gradebookEnabled.append('')
+        cookie_data['gradebook'] = gradebookEnabled
+
         cookie_data.update(data)
 
         token = gen_proxy_auth_token(username, role, sites, root=True)
@@ -4679,6 +4693,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
 
     errMsg = ''
     sheetSettings = getSheetSettings(gsheet_url, site_name) if gsheet_url else {}
+    Global.siteSettings[site_name] = sheetSettings
 
     Options['site_list'].append(site_name)
     site_number = len(Options['site_list'])
@@ -4956,6 +4971,7 @@ def main():
     else:
         # Start single site server
         sheetSettings = getSheetSettings(Options['gsheet_url']) if Options['gsheet_url'] else {}
+        Global.siteSettings[''] = sheetSettings
         if sheetSettings:
             for key in SPLIT_OPTS[1:]:
                 if key in sheetSettings:

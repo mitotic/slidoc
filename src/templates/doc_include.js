@@ -625,6 +625,17 @@ Slidoc.pageSetup = function() {
 	    var editIcons = document.getElementsByClassName('slidoc-edit-icon');
 	    [].forEach.call(editIcons, function(elem) { elem.style.display = 'none'; });
 	}
+	var gradebookEnabled = Slidoc.serverCookie.data.gradebook || [];
+	if (gradebookEnabled.length) {
+	    if (!Sliobj.params.siteName || gradebookEnabled.indexOf(Sliobj.params.siteName) >= 0) {
+		var gradesButton = document.getElementById('slidoc-grades-button');
+		if (gradesButton)
+		    gradesButton.style.display = null;
+		var gradeElem = document.getElementById('gradelink');
+		if (gradeElem)
+		    gradeElem.style.display = null;
+	    }
+	}
     }
 
     var loadElem = document.getElementById("slidoc-init-load");
@@ -635,9 +646,6 @@ Slidoc.pageSetup = function() {
     if (contentsButton && !topnavElem)
 	contentsButton.style.display = null;
 
-    var gradeElem = document.getElementById('gradelink');
-    if (gradeElem)
-	gradeElem.style.display = null;
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
 	var dashElem = document.getElementById('dashlink');
 	if (dashElem) {
@@ -3899,12 +3907,8 @@ function slidocSetupAux(session, feedback) {
     if (Slidoc.serverCookie)
     	toggleClass(true, 'slidoc-proxy-view');
 
-    if (Sliobj.params.gd_sheet_url || getServerCookie()) {
+    if (Sliobj.params.gd_sheet_url || getServerCookie())
 	toggleClass(true, 'slidoc-remote-view');
-	var gradesButton = document.getElementById('slidoc-grades-button');
-	if (gradesButton)
-	    gradesButton.style.display = null;
-    }
 
     if (Sliobj.scores.questionsCount)
 	Slidoc.showScore();

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.10c';
+var VERSION = '0.97.11a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -21,6 +21,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require', 'Non-null string for true'],
 			 ['share_averages', 'yes', 'Non-null string for true'],
+			 ['gradebook_enabled', '', 'Non-null string to enable gradebook sheet (users need to re-login if setting changes)'],
 		         ['total_formula', '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
 			 ['grading_scale', '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'], // Or A:180:4,B:160:3,...
 			 ['proxy_update_cache', '', 'Used to cache response to last update request (not user configured)']   
