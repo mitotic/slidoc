@@ -2686,11 +2686,12 @@ def sheetAction(params, notrace=False):
                         discussSheet = getSheet(sheetName+'-discuss')
                         if discussSheet:
                             discussRows = discussSheet.getLastRow()
-                            discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1)
-                            discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1)
-                            temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds)
+                            discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1)
+                            discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1)
+                            temName = rosterValues.get('name','#'+userId)
+                            temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds)
                             discussSheet.insertRowBefore(temRow, keyValue=userId)
-                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[displayName]])
+                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]])
                             
                 elif selectedUpdates:
                     # Update selected row values

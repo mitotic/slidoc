@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.11b';
+var VERSION = '0.97.11c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -1740,12 +1740,13 @@ function sheetAction(params) {
                         var discussSheet = getSheet(sheetName+'-discuss');
                         if (discussSheet) {
                             var discussRows = discussSheet.getLastRow();
-                            var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, numRows-discussRowOffset, 1);
-                            var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, numRows-discussRowOffset, 1);
-                            var temRow = discussRowOffset + locateNewRow(displayName, userId, discussNames, discussIds);
+                            var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1);
+                            var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1);
+			    var temName = rosterValues.name || '#'+userId;
+                            var temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds);
                             discussSheet.insertRowBefore(temRow);
                             discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
-                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[displayName]]);
+                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]]);
                         }
 
                     }
