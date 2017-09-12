@@ -19,10 +19,12 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.11c'
+VERSION = '0.97.11d'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
+
+SLIDOC_OPTIONS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|$)')
 
 def get_version(sub=False):
     return sub_version(VERSION) if sub else VERSION

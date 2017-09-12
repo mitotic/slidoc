@@ -80,7 +80,7 @@ FUTURE_DATE = 'future'
 	
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
-        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'lightning': '&#9889;', 'pencil': '&#9998;',
+        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'openfolder': '&#x1f4c2;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'rightarrow': '&#x27A4;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
 
@@ -2174,7 +2174,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     content_html = md_parser_obj.render(source, index_id=index_id, qindex_id=qindex_id)
 
     md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
-    match = DEFAULTS_RE.match(md_slides[0])
+    match = sliauth.SLIDOC_OPTIONS_RE.match(md_slides[0])
     if match:
         md_defaults = match.group(0)
         md_slides[0] = md_slides[0][len(match.group(0)):]
@@ -2739,6 +2739,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav slidoc-noprint" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
+    topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
     topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
     topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
@@ -3289,7 +3290,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         # Strip annotations (may also break slide editing)
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname))
+        files_url = '/_rawprivate'
+        if config.site_name:
+            files_url = '/' + config.site_name + files_url
+        slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname), files_url=files_url)
         md_text_modified, _, new_renumber = slide_parser.parse(md_text, filepath)
 
         if file_config.hide and 'hidden' in file_config.strip:
@@ -3921,12 +3925,11 @@ def read_first_line(file):
     file.seek(0)
     return first_line
 
-DEFAULTS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|$)')
 def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
     # Read file args and merge with command line args, with command line args being final
     # If default_args_dict is specified, it is updated with file args
     if first_line:
-        match = DEFAULTS_RE.match(args_text)
+        match = sliauth.SLIDOC_OPTIONS_RE.match(args_text)
         if match:
             args_text = (match.group(3) or match.group(4) or '').strip()
         else:
@@ -4305,7 +4308,7 @@ if __name__ == '__main__':
     skipped = []
     for fhandle in fhandles:
         first_line = read_first_line(fhandle)
-        if cmd_args.publish and (not DEFAULTS_RE.match(first_line) or 'publish' not in first_line):
+        if cmd_args.publish and (not sliauth.SLIDOC_OPTIONS_RE.match(first_line) or 'publish' not in first_line):
             # Skip files without --publish option in the first line
             skipped.append(fhandle.name)
             continue

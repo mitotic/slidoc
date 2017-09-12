@@ -332,8 +332,11 @@ class SiteMixin(object):
         cookie_data = {'version': COOKIE_VERSION, 'site': siteName}
         if Options['source_dir']:
             cookie_data['editable'] = 'edit'
-        if Global.siteSettings.get(siteName,{}).get('gradebook_enabled','').strip():
+        siteMenu = [x.strip().lower() for x in Global.siteSettings.get(siteName,{}).get('site_menu','').split(',')]
+        if 'gradebook' in siteMenu:
             cookie_data['gradebook'] = 1
+        if 'files' in siteMenu:
+            cookie_data['files'] = 1
 
         return sliauth.safe_quote( base64.b64encode(json.dumps(cookie_data,sort_keys=True)) )
 
@@ -465,6 +468,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     site_web_dir = None
     site_data_dir = None
     site_backup_dir = None
+    site_files_dir = None
     def set_default_headers(self):
         # Completely disable cache
         self.set_header('Server', SERVER_NAME)
@@ -887,7 +891,7 @@ class ActionHandler(BaseHandler):
         elif action == '_browse':
             delete = self.get_argument('delete', '')
             download = self.get_argument('download', '')
-            self.browse(subsubpath, delete=delete, download=download)
+            self.browse('_browse', subsubpath, site_admin=self.check_admin_access(), delete=delete, download=download)
 
         elif action in ('_restore',):
             self.render('restore.html', site_name=Options['site_name'], session_name='')
@@ -916,10 +920,12 @@ class ActionHandler(BaseHandler):
                     wheelNames.append(shortName+'/'+fullName)
                 wheelNames.sort()
 
-                qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(Options['site_name'])
+                siteName = Options['site_name'] or ''
+                qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(siteName)
                 qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x,safe='/') for x in wheelNames)
 
-                self.render('roster.html', site_name=Options['site_name'],
+                siteMenu = [x.strip().lower() for x in Global.siteSettings.get(siteName,{}).get('site_menu','').split(',')]
+                self.render('roster.html', site_name=siteName, gradebook='gradebook' in siteMenu,
                              qwheel_link=qwheel_link, qwheel_new=qwheel_new,
                              name_map=nameMap, last_map=lastMap, first_map=firstMap)
 
@@ -1309,12 +1315,13 @@ class ActionHandler(BaseHandler):
         self.render('modules.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
 
 
-    def browse(self, filepath, delete='', download='', uploadName='', uploadContent=''):
+    def browse(self, url_path, filepath, site_admin=False, delete='', download='', uploadName='', uploadContent=''):
         if '..' in filepath:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
 
+        user_browse = (url_path != '_browse')
         status = ''
-        if not filepath:
+        if not filepath and not user_browse:
             file_list = [ ['source', 'source', False, False],
                           ['web', 'web', False, False],
                           ['data', 'data', False, False],
@@ -1322,6 +1329,13 @@ class ActionHandler(BaseHandler):
             up_path = ''
         else:
             predir, _, subpath = filepath.partition('/')
+            if predir != 'files':
+                if user_browse:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with files')
+                if not site_admin:
+                    # Failsafe check to prevent user access to non-files directories
+                    raise tornado.web.HTTPError(403)
+
             if predir == 'source':
                 rootdir = self.site_src_dir
             elif predir == 'web':
@@ -1330,8 +1344,10 @@ class ActionHandler(BaseHandler):
                 rootdir = self.site_data_dir
             elif predir == 'backup':
                 rootdir = self.site_backup_dir
+            elif predir == 'files':
+                rootdir = self.site_files_dir
             else:
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source/ or web/ or uploads/')
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Directory must start with source|web|data|backup|files')
 
             up_path = os.path.dirname(filepath)
             fullpath = os.path.join(rootdir, subpath) if subpath else rootdir
@@ -1370,7 +1386,7 @@ class ActionHandler(BaseHandler):
                 else:
                     os.remove(fullpath)
                 site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-                self.redirect(site_prefix+'/_browse/'+os.path.dirname(filepath))
+                self.redirect(site_prefix+'/'+url_path+'/'+os.path.dirname(filepath))
                 return
 
             if uploadName:
@@ -1416,7 +1432,8 @@ class ActionHandler(BaseHandler):
 
                 file_list.append( [fname, subdirpath, isfile, viewpath] )
 
-        self.render('browse.html', site_name=Options['site_name'], status=status, root_admin=self.check_root_admin(),
+        self.render('browse.html', site_name=Options['site_name'], status=status,
+                    url_path=url_path, site_admin=site_admin, root_admin=self.check_root_admin(),
                     up_path=up_path, browse_path=filepath, file_list=file_list)
 
     def getUploadType(self, sessionName, siteName=''):
@@ -1555,7 +1572,7 @@ class ActionHandler(BaseHandler):
             elif action == '_browse':
                 fileinfo = self.request.files['upload'][0]
                 fname = fileinfo['filename']
-                self.browse(subsubpath, uploadName=fname, uploadContent=fileinfo['body'])
+                self.browse('_browse', subsubpath, site_admin=self.check_admin_access(), uploadName=fname, uploadContent=fileinfo['body'])
 
             elif action in ('_import', '_restore', '_roster', ):
                 # Import from CSV file
@@ -2532,9 +2549,19 @@ class ActionHandler(BaseHandler):
 
             # Do not release it by default
             if not next_defaults:
-                next_defaults = 'Slidoc:'
+                next_defaults = 'Slidoc: \n\n'
+
             if not re.search(r'\brelease_date=', next_defaults):
-                next_defaults += ' --release_date=future'
+                # "Unrelease" rolled over session
+                replaceStr = None
+                if 'Slidoc:' in next_defaults:
+                    replaceStr = 'Slidoc:'
+                elif 'slidoc-options' in next_defaults:
+                    replaceStr = 'slidoc-options'
+                elif 'slidoc-defaults' in next_defaults:
+                    replaceStr = 'slidoc-defaults'
+                if replaceStr:
+                    next_defaults = next_defaults.replace(replaceStr, replaceStr+' release_date=future')
 
         combine_slides = [pad_slide(rolloverText), nextText]
         splice_slides(combine_slides, 0)
@@ -2630,6 +2657,14 @@ class UserActionHandler(ActionHandler):
                 sessionPath = getSessionPath(sessionName[1:]) if sessionName.startswith('_') else ''
                 sessionGrades.append([sessionName, sessionPath, vals])
             self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], session_grades=sessionGrades)
+            return
+
+        elif action == '_user_browse':
+            if subsubpath != 'files' and not subsubpath.startswith('files/'):
+                raise tornado.web.HTTPError(403)
+            site_admin = self.check_admin_access()
+            url_path = '_browse' if site_admin else '_user_browse'
+            self.browse(url_path, subsubpath, site_admin=site_admin, download=self.get_argument('download', ''))
             return
 
         elif action in ('_user_plain',):
@@ -4004,6 +4039,8 @@ def createApplication():
                       (pathPrefix+r"/interact", AuthMessageHandler),
                       (pathPrefix+r"/interact/(.*)", AuthMessageHandler),
                       (pathPrefix+r"/(_dash)", AuthActionHandler),
+                      (pathPrefix+r"/(_user_browse)", UserActionHandler),
+                      (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades/[-\w.]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_plain)", UserActionHandler),
@@ -4017,7 +4054,7 @@ def createApplication():
                       r"/(_actions)",
                       r"/(_backup/[-\w.]+)",
                       r"/(_browse)",
-                      r"/(_browse/[-\w./]+)",
+                      r"/(_browse/.+)",
                       r"/(_delete/[-\w.]+)",
                       r"/(_discard)",
                       r"/(_download/[-\w.]+)",
@@ -4780,6 +4817,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
         BaseHandler.site_data_dir = Options['plugindata_dir'] + '/' + site_name + '/' + PLUGINDATA_PATH
         BaseHandler.site_backup_dir = Options['backup_dir'] + '/' + site_name
+        BaseHandler.site_files_dir = Options['static_dir'] + '/' + site_name + '/' + RAWPRIVATE_PATH
         setup_site_server(sheetSettings, site_number)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
@@ -4983,6 +5021,7 @@ def main():
     BaseHandler.site_src_dir = Options['source_dir']
     BaseHandler.site_web_dir = Options['static_dir']
     BaseHandler.site_backup_dir = Options['backup_dir']
+    BaseHandler.site_files_dir =Options['static_dir'] + '/' + RAWPRIVATE_PATH
 
     if options.forward_port:
         Global.relay_forward = ('localhost', forward_port)

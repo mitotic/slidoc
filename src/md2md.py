@@ -211,8 +211,9 @@ class Parser(object):
         r')\]\s*\{\s*#([^^\}]*)\}'
     )
     
-    def __init__(self, cmd_args, images_zipdata=None):
+    def __init__(self, cmd_args, images_zipdata=None, files_url=''):
         self.cmd_args = cmd_args
+        self.files_url = files_url
         self.arg_check(cmd_args)
         self.images_zipfile = None
         self.images_map = {}
@@ -345,6 +346,9 @@ class Parser(object):
         text = match.group(1)
         link = match.group(3)
         title = match.group(4) or ''
+
+        if link.startswith('_files/') and self.files_url:
+            link = self.files_url + link[len('_files'):]
 
         is_image = orig_content.startswith('!')
         if not is_image:

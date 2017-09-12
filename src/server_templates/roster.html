@@ -1,19 +1,19 @@
 <html>
 <head>
 <!-- roster template for slidoc server --->
-<!-- roster parameters: site_name, qwheel_new, qwheel_link, name_map, last_map, first_map -->
+<!-- roster parameters: site_name, gradebook, qwheel_new, qwheel_link, name_map, last_map, first_map -->
 
 {% include "base.html" %}
 
 </head>
 <body>
 
-<h2>{{site_name}} Roster</h2>
-
 <b>
 {% include "linkback.html" %}
 </b>
 <p></p>
+
+<h2>{{site_name}} Roster</h2>
 
 <a href="{{ qwheel_new  }}" target="_blank"><b>New question wheel session</b></a>
 <p></p>
@@ -25,7 +25,7 @@
   {% set items = sorted(nMap.items(), key=lambda x: x[1]) %}
   <hr><table>
   {% for userid, name in items %}
-  <tr><td>{{ name }}{% if not j %} <a class="clickable" href="{{ site_prefix }}/_user_grades/{{ userid }}">&#x1F520;</a>{% end %}</td></tr>
+  <tr><td>{{ name }}{% if not j and gradebook %} <a class="clickable" href="{{ site_prefix }}/_user_grades/{{ userid }}">&#x1F520;</a>{% end %}</td></tr>
   {% end %}
   </table>
 {% end %}

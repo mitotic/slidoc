@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- browse template for slidoc server --->
-<!-- browse parameters: site_name, status, root_admin, up_path, browse_path, file_list-->
+<!-- browse parameters: url_path, site_name, status, site_admin, root_admin, up_path, browse_path, file_list-->
 
 {% include "base.html" %}
 
@@ -11,13 +11,14 @@ td { padding: 0.2em 0 0 1em; }
 .rowhover:hover {background: #eee;}
 
 .dropzone {
-  border: 3px dashed transparent;
+  border: 2px solid black;
   min-height: 48px;
   min-width: 200px;
+  padding:5px;
 }
 
 .dropzone.dragover {
-  border: 3px dashed gray;
+  border: 2px dashed gray;
 }
 
 </style>
@@ -27,7 +28,7 @@ function deletePath(subpath) {
     var msg = 'Confirm deletion of '+subpath+'. This cannot be undone.';
     if (!window.confirm(msg))
         return;
-    window.location = "{{site_prefix }}/_browse/" + subpath + '?delete=1';
+    window.location = "{{site_prefix }}/{{url_path}}/" + subpath + '?delete=1';
 }
 
 function dropContainer(element, callback) {
@@ -70,7 +71,7 @@ function dropCallback(files) {
     }
     var formData = new FormData();
     formData.append("upload", file);
-    post("{{site_prefix }}/_browse/{{ browse_path }}", formData, "Uploaded "+file.name);
+    post("{{site_prefix }}/{{url_path}}/{{ browse_path }}", formData, "Uploaded "+file.name);
 }
 
 function post(url, formData, successMsg) {
@@ -93,7 +94,9 @@ function post(url, formData, successMsg) {
 document.onreadystatechange = function(event) {
     if (document.readyState != "interactive" || !document.body)
         return;
+{% if site_admin %}
     dropContainer(document.getElementById("dropzone"), dropCallback);
+{% end %}
     if (location.hash) {
         document.getElementById("status-line").textContent = location.hash.slice(1);
         location.hash = "";
@@ -110,41 +113,25 @@ document.onreadystatechange = function(event) {
   </b>
 
   <p></p>
-  <h2>Browse site files</h2>
+  <h2>Browse files</h2>
 
-  Directory: <b>{{ browse_path }}</b>
+  Folder: <b>{{ browse_path }}</b>
   <p></p>
   <hr>
 
 <b>Status:</b> <b id="status-line">{{ status }}</b>
 <p></p>
 
-{% if browse_path and not browse_path.startswith('backup') %}
-<a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
-(upload file/zip archive)</a>
-
-<hr>
-
-<form id="upload-form" style="display: none;" action="{{site_prefix }}/_browse/{{ browse_path }}" method="post" enctype="multipart/form-data" >
-  <fieldset>
-    <label for="upload">File (or .zip archive) to upload:</label><br>
-    <input type="file" id="upload" name="upload"  value="file1">
-    <br><em>(Select or drag and drop on button above, or over file
-             list area below.)</em>
-    <p></p>
-    <input id="upload-submit" type="submit" value="Upload">
-  </fieldset>
-</form>
-{% end %}
+{% if browse_path.startswith('files/') %}
+<a class="clickable" href="{{ site_prefix }}/{{url_path}}"><b>Files folder</b></a>
 <p></p>
-
-{% if browse_path %}
-<a class="clickable" href="{{ site_prefix }}/_browse"><b>~ (root)</b></a>
+{% elif browse_path and browse_path != 'files' %}
+<a class="clickable" href="{{ site_prefix }}/{{url_path}}"><b>Home folder</b></a> (~)
 <p></p>
 {% end %}
 
-{% if up_path %}
-<a class="clickable" href="{{ site_prefix }}/_browse/{{ up_path }}"><b>.. (parent)</b></a>
+{% if up_path and up_path != 'files' %}
+<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(up_path,plus=False) }}"><b>Parent folder</b></a> (..)
 <p></p>
 {% end %}
 
@@ -154,20 +141,20 @@ document.onreadystatechange = function(event) {
 {% for fname, subpath, isfile, viewpath in file_list %}
   <tr class="rowhover">
     <td>
-    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}">&#x1F4C2;</a>{% end %}
+    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(subpath,plus=False) }}">&#x1F4C2;</a>{% end %}
     </td>
     <td id="file-{{ fname }}">
     {% if viewpath %}
-      <a class="clickable" href="{{ site_prefix }}/{{ viewpath }}">{{ fname }}</a>
+      <a class="clickable" href="{{ site_prefix }}/{{ url_escape(viewpath,plus=False) }}">{{ fname }}</a>
     {% else %}
       {{ fname }}
     {% end %}
     </td>
     <td>
-    <a class="clickable" href="{{ site_prefix }}/_browse/{{ subpath }}?download=1">&#x21E9;</a>
+    <a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(subpath,plus=False) }}?download=1">&#x21E9;</a>
     </td>
     <td>
-    {% if root_admin %}
+    {% if root_admin or (site_admin and browse_path.startswith('files/')) %}
     <span class="clickable" onclick="deletePath('{{ subpath }}');">&#x1F5D1;</span>
     {% end %}
     </td>
@@ -176,16 +163,32 @@ document.onreadystatechange = function(event) {
 </table>
 </div>
 
-{% if not up_path %}
+<p></p>
+{% if site_admin and browse_path and not browse_path.startswith('backup') %}
+<a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
+Click to upload file/zip archive, or drag-and-drop it in box above</a>
+
+<form id="upload-form" style="display: none;" action="{{site_prefix }}/{{url_path}}/{{ browse_path }}" method="post" enctype="multipart/form-data" >
+  <fieldset>
+    <label for="upload">File (or .zip archive) to upload:</label><br>
+    <p></p><input type="file" id="upload" name="upload"  value="file1">
+    <p></p>
+    <input id="upload-submit" type="submit" value="Upload">
+  </fieldset>
+</form>
+{% end %}
+<p></p>
+
+<em>Folder/file actions</em>: Traverse (&#x1F4C2;), Download (&#x21E9;) {% if site_admin %}, Delete (&#x1F5D1;){% end %}<p></p>
+{% if not browse_path %}
 <p></p>
 Notes:
   <ul>
-    <li><em>Directory/file actions</em>: Traverse (&#x1F4C2;), Download (&#x21E9;), Delete (&#x1F5D1;)</li><p></p>
     <li><code>source</code> contains page and module files (along with embedded image files).</li><p></p>
     <li><code>web</code> contains HTML files published from
      Markdown files and any raw files uploaded to the web site by admin.</li><p></p>
     <li><code>data</code> contains files submitted/uploaded by users during module sessions.</li><p></p>
-    <li><code>backup</code> contains directories with scheduled and custom site backups.</li><p></p>
+    <li><code>backup</code> contains folders with scheduled and custom site backups.</li><p></p>
   </ul>
 {% end %}
 </body>

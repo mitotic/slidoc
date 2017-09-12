@@ -651,6 +651,11 @@ Slidoc.pageSetup = function() {
 	    if (gradeElem)
 		gradeElem.style.display = null;
 	}
+	if (Slidoc.siteCookie.files) {
+	    var filesElem = document.getElementById('fileslink');
+	    if (filesElem)
+		filesElem.style.display = null;
+	}
     }
 
     var loadElem = document.getElementById("slidoc-init-load");
@@ -1528,7 +1533,6 @@ function timedInit(remainingSec) {
     Slidoc.log('timedInit:', remainingSec);
     if (Sliobj.timedClose)
 	return;
-    toggleClass(true, 'slidoc-timed-view');
 
     Sliobj.timedEndTime = Date.now() + remainingSec*1000;
     Sliobj.timedClose = setTimeout(timedCloseFunc, remainingSec*1000);
@@ -1566,6 +1570,8 @@ function timedProgressFunc() {
     if (!Sliobj.timedTick)
 	return;
     Sliobj.timedTick = null;
+
+    toggleClass(true, 'slidoc-timed-view');
 
     var secsLeft = Math.floor((Sliobj.timedEndTime - Date.now())/1000);
     var timeElem = document.getElementById('slidoc-timed-value');
@@ -2216,9 +2222,9 @@ var Slide_help_list_a = [
 var Slide_help_list_b = [
     ['i, &#9660;',          'i',     'incremental item'],
     ['f',                   'f',     'fullscreen mode'],
-    ['c',                   'c',     'table of contents'],
-    ['m',                   'm',     'missed question concepts'],
-    ['v',                   'v',     'navigation help']
+    ['g',                   'g',     'navigation help'],
+    ['t',                   't',     'table of contents'],
+    ['m',                   'm',     'missed question concepts']
 ];
 
 Slidoc.viewNavHelp = function () {
@@ -2264,9 +2270,9 @@ var Slide_view_handlers = {
     'down':  function() { Slidoc.slideViewIncrement(); },
     'i':     function() { Slidoc.slideViewIncrement(); },
     'f':     function() { Slidoc.docFullScreen(); },
-    'c':     function() { Slidoc.contentsDisplay(); },
+    'g':     function() { Slidoc.viewNavHelp(); },
+    't':     function() { Slidoc.contentsDisplay(); },
     'm':     function() { Slidoc.showConcepts(); },
-    'v':     function() { Slidoc.viewNavHelp(); },
     'reset': function() { Slidoc.resetPaced(); }
 }
 
@@ -2279,10 +2285,10 @@ var Key_codes = {
     38: 'up',
     39: 'right',
     40: 'down',
-    67: 'c',
     68: 'd',
     69: 'e',
     70: 'f',
+    71: 'g',
     72: 'h',
     73: 'i',
     77: 'm',
@@ -2290,7 +2296,7 @@ var Key_codes = {
     80: 'p',
     81: 'q',
     83: 's',
-    86: 'v'
+    84: 't'
 };
 
 document.onkeydown = function(evt) {
@@ -2344,7 +2350,7 @@ Slidoc.handleKey = function (keyName, swipe) {
 
     if (Sliobj.closePopup) {
 	Sliobj.closePopup();
-	if (keyName == 'esc' || keyName == 'c' || keyName == 'm' || keyName == 'q' || keyName == 'v')
+	if (keyName == 'esc' || keyName == 'g' || keyName == 'm' || keyName == 'q' || keyName == 't')
 	    return false;
     }
 
@@ -5970,9 +5976,9 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	    ansContainer.scrollIntoView(true)
     }
 
-    // Switch to answered slide view if not printing exam and not delayed scoring or submitted
+    // Switch to answered slide view if not printing exam and non-choice question or not delayed scoring or submitted 
     var slideElem = document.getElementById(slide_id);
-    if (!Sliobj.assessmentView && (!Sliobj.delayScoring || (Sliobj.session && Sliobj.session.submitted)) )
+    if (!Sliobj.assessmentView && (question_attrs.qtype != 'choice' || !Sliobj.delayScoring || (Sliobj.session && Sliobj.session.submitted)) )
 	slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
@@ -7043,9 +7049,8 @@ Slidoc.slideViewStart = function () {
    Slidoc.breakChain();
 
    var startSlide = getCurrentlyVisibleSlide(slides) || 1;
-   var startSlide;
     if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
-	startSlide = Math.min(startSlide, parseSlideId(location.hash.slice(1))[2]);
+	startSlide = Math.min(slides.length, parseSlideId(location.hash.slice(1))[2]);
     } else if (Sliobj.updateView) {
 	startSlide = 1;
    } else if (Sliobj.session && Sliobj.session.paced) {
