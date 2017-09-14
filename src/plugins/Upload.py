@@ -11,11 +11,12 @@ ADMINUSER_ID = 'admin'
 
 class Upload(object):
     lateDir = 'Late'
-    def __init__(self, pluginManager, path, userId):
+    def __init__(self, pluginManager, path, userId, userRole):
         print >> sys.stderr, 'Upload.__init__:', path, userId
         self.pluginManager = pluginManager
         self.path = path
         self.userId = userId
+        self.userRole = userRole
 
     def lockFile(self, serverParams, fileURL):
         # Best not to use lockFile, as results are somewhat unpredictable with cloud-backed up filesystems
@@ -24,7 +25,8 @@ class Upload(object):
 
     def lateUploads(self, serverParams, userId=''):
         print >> sys.stderr, 'Upload.lateUploads:', serverParams, userId
-        if not userId or self.userId != ADMINUSER_ID:
+        if not userId or not self.pluginManager.adminRole(self.userRole, alsoGrader=True):
+            # Only admin/grader can access all users
             userId = self.userId
 
         dirpath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + self.lateDir
@@ -48,7 +50,7 @@ class Upload(object):
         print >> sys.stderr, 'Upload._uploadData:', serverParams, dataParams, contentLength, type(content)
         filePrefix = dataParams.get('filePrefix')
         if serverParams.get('pastDue') and not filePrefix.startswith(self.lateDir+'/'):
-            raise Exception('Upload._uploadData: ERROR use late upload option past due date - '+serverParams['pastDue'])
+            raise Exception('Upload._uploadData: ERROR Please use "Late file upload" option in "Submitted" menu past the due date - '+serverParams['pastDue'])
         if content is None:
             raise Exception('Upload._uploadData: ERROR no content')
         if len(content) != contentLength:

@@ -4407,22 +4407,32 @@ function preAnswer() {
 	displayRemarks(commentsValue, gradeValue);
     }
 
-    var keys = Object.keys(Sliobj.session.questionsAttempted);
-    for (var j=0; j<keys.length; j++) {
-	var qnumber = keys[j];
-	var question_attrs = attr_vals[qnumber-1];
-	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
-	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
-    }
-
+    var attemptedQuestions = Object.keys(Sliobj.session.questionsAttempted);
     for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
+	var question_attrs = attr_vals[qnumber-1];
+	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+
 	if (Sliobj.session.hintsUsed && Sliobj.session.hintsUsed[qnumber]) {
-	    var question_attrs = attr_vals[qnumber-1];
-	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
+	    // Display hints used
 	    hintDisplayAux(slide_id, qnumber, Sliobj.session.hintsUsed[qnumber]);
 	}
+
+	if (qnumber in attemptedQuestions) {
+	    // Question attempted; display answer
+	    var qAttempted = Sliobj.session.questionsAttempted[qnumber];
+	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
+	    Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
+	} else {
+	    // Question not attempted; display null plugin response
+	    var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
+	
+	    if (pluginMatch && pluginMatch[3] == 'response') {
+		var pluginName = pluginMatch[2];
+		Slidoc.PluginMethod(pluginName, slide_id, 'display', '', null);
+		Slidoc.PluginMethod(pluginName, slide_id, 'disable');
+	    }
+	}
+
     }
 
     if (Sliobj.session.submitted)

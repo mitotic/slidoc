@@ -3297,7 +3297,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if not pluginClass:
                 raise Exception('Plugin class '+pluginName+'.'+pluginName+' not defined!')
             try:
-                self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), self.pathUser[0], self.pathUser[1])
+                self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), self.pathUser[0], self.pathUser[1], self.userRole)
             except Exception, err:
                 raise Exception('Error in creating instance of plugin '+pluginName+': '+err.message)
 
@@ -3465,6 +3465,12 @@ class PluginManager(object):
             key = sliauth.safe_unquote(key)
         salt, _, oldpath = key.partition(':')
         return sliauth.safe_quote(key) == cls.getFileKey(filepath, salt=salt)
+
+    @classmethod
+    def adminRole(cls, userRole, alsoGrader=False):
+        if userRole == sdproxy.GRADER_ROLE and alsoGrader:
+            return True
+        return userRole == sdproxy.ADMIN_ROLE
 
     def __init__(self, pluginName):
         self.pluginName = pluginName
