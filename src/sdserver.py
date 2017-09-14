@@ -128,6 +128,7 @@ Options = {
     'ssl_options': None,
     'start_date': '',
     'static_dir': 'static',
+    'timezone': '',
     'twitter_config': '',
     'xsrf': False,
     }
@@ -4945,6 +4946,7 @@ def main():
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("start_delay", default=0, help="Delay at start (in sec) to cleanly restart for port binding etc.")
     define("static_dir", default=Options["static_dir"], help="Path to static files directory")
+    define("timezone", default=Options["timezone"], help="Local timezone for date/time values, e.g., US/Central")
     define("twitter_config", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret;...")
     define("xsrf", default=False, help="XSRF cookies for security")
 
@@ -4992,6 +4994,11 @@ def main():
 
     print >> sys.stderr, ''
     print >> sys.stderr, 'sdserver: Version %s **********************************************' % sliauth.get_version()
+    if options.timezone:
+        os.environ['TZ'] = options.timezone
+        time.tzset()
+        print >> sys.stderr, 'sdserver: Timezone =', options.timezone
+
     if options.start_delay:
         print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
         time.sleep(options.start_delay)
