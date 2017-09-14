@@ -226,16 +226,15 @@ for j, entry in enumerate(SESSION_TYPES):
     if entry[0] in OFFLINE_SESSIONS:
         entry[1] += ' (offline)'
 
-SESSION_NAME_FMT = '%s%02d'
-SESSION_NAME_RE = re.compile(r'^(\w*[a-zA-Z_])(\d+)$')
-
 def preElement(content):
     return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
 
 def getSessionType(sessionName):
-    smatch = SESSION_NAME_RE.match(sessionName)
+    smatch = sliauth.SESSION_NAME_RE.match(sessionName)
     if not smatch:
-        return (TOP_LEVEL, 0)
+        if sliauth.SESSION_NAME_TOP_RE.match(sessionName):
+            return (TOP_LEVEL, 0)
+        raise Exception('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension' % sessionName)
 
     sessionType = smatch.group(1)
     sessionNumber = int(smatch.group(2))
@@ -1111,16 +1110,19 @@ class ActionHandler(BaseHandler):
         elif action == '_upload':
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-            smatch = SESSION_NAME_RE.match(sessionName)
+            smatch = sliauth.SESSION_NAME_RE.match(sessionName)
             if smatch:
                 upload_type = smatch.group(1)
                 session_number = smatch.group(2)
             elif sessionName == RAW_UPLOAD:
                 upload_type = RAW_UPLOAD
                 session_number = ''
-            else:
-                upload_type = TOP_LEVEL if sessionName else ''
+            elif sliauth.SESSION_NAME_TOP_RE.match(sessionName):
+                upload_type = TOP_LEVEL 
                 session_number = ''
+            else:
+                self.displayMessage('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension' % sessionName)
+                return
             self.render('upload.html', site_name=Options['site_name'],
                         upload_type=upload_type, session_name=sessionName, session_number=session_number, session_types=SESSION_TYPES, err_msg='')
 
@@ -1146,52 +1148,30 @@ class ActionHandler(BaseHandler):
                     msg = ' Cannot refresh locked sheet '+subsubpath+' ...'
                 self.displayMessage(msg+('<p></p><a href="%s/_cache">Cache status</a><p></p>' % site_prefix))
 
-        elif action in ('_respond',):
+        elif action == '_responders':
             sessionName, sep, respId = sessionName.partition(';')
             if not sessionName:
-                self.displayMessage('Please specify /_respond/session name')
+                self.displayMessage('Please specify /_responders/session_name')
                 return
             sheet = sdproxy.getSheet(sessionName)
             if not sheet:
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
-            nameMap = sdproxy.lookupRoster('name')
-            if respId:
-                if respId in nameMap:
-                    sdproxy.importUserAnswers(sessionName, respId, nameMap[respId], source='manual', submitDate='dueDate')
-                else:
-                    self.displayMessage('User ID '+respId+' not in roster')
-                    return
-            colIndex = sdproxy.indexColumns(sheet)
-            idSet = set([x[0] for x in sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)])
-            lines = ['<table style="font-family: sans-serif;">\n']
-            count = 0
-            for idVal, name in nameMap.items():
-                if idVal in idSet:
-                    count += 1
-                    lines.append('<tr><td>'+name+'</td></tr>\n')
-                else:
-                    lines.append('<tr><td>%s</td><td>(<a href="%s/_respond/%s;%s">respond</a>)</td></tr>\n' % (name, site_prefix,sessionName, idVal))
-            lines.append('</table>\n')
-            self.displayMessage(('<b>Response record</b><p></p> Session: <b>%s</b> (%d out of %d responded):<p></p>' % (sessionName, count, len(nameMap)))+''.join(lines))
 
-        elif action in ('_submissions',):
-            comps = sessionName.split(';')
-            sessionName = comps[0]
-            userId = comps[1] if len(comps) >= 2 else ''
-            dateStr = comps[2] if len(comps) >= 3 else ''
-            sheet = sdproxy.getSheet(sessionName)
-            if not sheet:
-                self.displayMessage('Unable to retrieve session '+sessionName)
-                return
+            sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'attributes'], sdproxy.INDEX_SHEET)
+            sessionAttributes = json.loads(sessionEntries['attributes'])
+            adminPaced = sessionEntries.get('adminPaced','')
+            dueDate = sessionEntries.get('dueDate','')
+
+            pastDue = sliauth.epoch_ms() > sliauth.epoch_ms(dueDate) if dueDate else False
             sessionConnections = WSHandler.get_connections(sessionName)
+
+            userId = self.get_argument('user','')
+            dateStr = self.get_argument('date','')
             nameMap = sdproxy.lookupRoster('name')
-            if not nameMap:
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s has no roster for submissions' % sessionName)
-    
-            if userId:
-                if not dateStr:
-                    self.displayMessage('Please specify date')
+            if dateStr:
+                if not userId:
+                    self.displayMessage('Please specify user id for late token')
                     return
                 if 'T' not in dateStr:
                     dateStr += 'T23:59'
@@ -1201,43 +1181,59 @@ class ActionHandler(BaseHandler):
                         connection.close()
                     newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, Options['site_name'], sessionName, dateStr)
                     sdproxy.createUserRow(sessionName, userId, lateToken=newLatetoken, source='allow')
+                    self.redirect(site_prefix+'/_responders/'+sessionName)
+                    return
                 else:
                     self.displayMessage('User ID '+userId+' not in roster')
                     return
+            elif userId:
+                if userId in nameMap:
+                    sdproxy.importUserAnswers(sessionName, userId, nameMap[userId], source='manual', submitDate='dueDate')
+                    self.redirect(site_prefix+'/_responders/'+sessionName)
+                    return
+                else:
+                    self.displayMessage('User ID '+userId+' not in roster')
+                    return
+
             colIndex = sdproxy.indexColumns(sheet)
-            idVals = sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)
-            lastSlides = sheet.getSheetValues(1, colIndex['lastSlide'], sheet.getLastRow(), 1)
+            idVals      = sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)
+            lastSlides  = sheet.getSheetValues(1, colIndex['lastSlide'], sheet.getLastRow(), 1)
+            startTimes  = sheet.getSheetValues(1, colIndex['initTimestamp'], sheet.getLastRow(), 1)
             submitTimes = sheet.getSheetValues(1, colIndex['submitTimestamp'], sheet.getLastRow(), 1)
-            lateTokens = sheet.getSheetValues(1, colIndex['lateToken'], sheet.getLastRow(), 1)
+            lateTokens  = sheet.getSheetValues(1, colIndex['lateToken'], sheet.getLastRow(), 1)
+
             userMap = {}
             for j in range(len(idVals)):
-                userMap[idVals[j][0]] = (lastSlides[j][0], submitTimes[j][0], lateTokens[j][0])
+                userMap[idVals[j][0]] = (lastSlides[j][0], startTimes[j][0], submitTimes[j][0], lateTokens[j][0])
 
-            lines = ['<table><tr><th>User</th><th>Status</th></tr>\n']
+            sessionStatus = []
+            totalCount = 0
+            startedCount = 0
+            submittedCount = 0
+            idResponders = set()
             for idVal, name in nameMap.items():
-                labels = []
+                normalUser = name and not name.startswith('#')
+                if normalUser:
+                    totalCount += 1
+
                 if idVal in userMap:
-                    lastSlide, submitTime, lateToken = userMap[idVal]
+                    if normalUser:
+                        startedCount += 1
+                    lastSlide, startTime, submitTime, lateToken = userMap[idVal]
+                    if submitTime:
+                        submittedCount += 1
                 else:
-                    lastSlide, submitTime, lateToken = 0, '', ''
+                    lastSlide, startTime, submitTime, lateToken = 0, '', '', ''
 
-                if submitTime:
-                    labels.append('(<em>submitted '+sliauth.print_date(submitTime)+'</em>)')
-                else:
-                    if lastSlide:
-                        labels.append('<code>#%s</code>' % lastSlide)
-                    if sessionConnections.get(idVal, []):
-                        labels.append('<em>connected</em>')
-                    if lateToken:
-                        labels.append('<em>token=%s</em>' % lateToken[:16])
-                    labels.append('''(<a href="javascript:submit('session','%s;%s')">allow late</a>)''' % (sessionName, idVal) )
-                    labels.append(''' [<a href="%s/_lockcode/%s;%s">lockdown access</a>]''' % (site_prefix, sessionName, idVal) )
+                submitTimeStr = sliauth.print_date(submitTime, prefix_time=True) if submitTime else ''
+                startTimeStr = sliauth.print_date(submitTime, prefix_time=True) if startTime else ''
+                dueDateStr = sliauth.print_date(dueDate, prefix_time=True) if dueDate else ''
+                connection = 'active' if sessionConnections.get(idVal, []) else ''
+                sessionStatus.append( [name, idVal, lastSlide, startTimeStr, submitTimeStr, lateToken[:16] if lateToken else '', connection] )
 
-                lines.append('<tr><td>%s</td><td>%s</td></tr>\n' % (name, ' '.join(labels)))
-
-            lines.append('</table>\n')
-            self.render('submissions.html', site_name=Options['site_name'], session_name=sessionName, submissions_label='Late submission',
-                         submissions_html=('<p></p>'+''.join(lines)) )
+            self.render('responders.html', site_name=Options['site_name'], session_name=sessionName,
+                         total_count=totalCount, started_count=startedCount, submitted_count=submittedCount,
+                         due_date=dueDateStr, past_due=pastDue, session_status=sessionStatus)
 
         elif action == '_lockcode':
             comps = sessionName.split(';')
@@ -1352,8 +1348,11 @@ class ActionHandler(BaseHandler):
             up_path = os.path.dirname(filepath)
             fullpath = os.path.join(rootdir, subpath) if subpath else rootdir
             if not os.path.exists(fullpath):
-                self.displayMessage('Path %s (%s) does not exist!' % (filepath, fullpath))
-                return
+                if not subpath:
+                    os.makedirs(fullpath)
+                else:
+                    self.displayMessage('Path %s (%s) does not exist!' % (filepath, fullpath))
+                    return
 
             basename= os.path.basename(fullpath)
             if download:
@@ -1567,6 +1566,9 @@ class ActionHandler(BaseHandler):
                     sdproxy.importUserAnswers(sessionName, sdproxy.TESTUSER_ID, '', submitDate=submitDate, source='submit')
                     self.displayMessage('Submit '+sdproxy.TESTUSER_ID+' row')
                 except Exception, excp:
+                    if Options['debug']:
+                        import traceback
+                        traceback.print_exc()
                     self.displayMessage('Error in submit for '+sdproxy.TESTUSER_ID+': '+str(excp))
 
             elif action == '_browse':
@@ -1689,7 +1691,7 @@ class ActionHandler(BaseHandler):
                         return
 
                     sessionNumber = int(sessionNumber)
-                    sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
+                    sessionName = sliauth.SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
                     if sessionCreate:
                         fname1 = sessionName + '.md'
                         fbody1 = '**Table of Contents**\n' if sessionName == 'index' else 'BLANK SESSION\n'
@@ -1837,7 +1839,7 @@ class ActionHandler(BaseHandler):
             src_dir = self.site_src_dir
             web_dir = self.site_web_dir
         else:
-            sessionName = SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
+            sessionName = sliauth.SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
             src_dir = self.site_src_dir + '/' + uploadType
             web_dir = self.site_web_dir + privatePrefix(uploadType) + '/' + uploadType
 
@@ -2537,7 +2539,7 @@ class ActionHandler(BaseHandler):
         # Rollover slides to next session
         _, rolloverText, rollover_images_zip, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=start_slide, renumber=1, session_name=sessionName)
 
-        sessionNext = SESSION_NAME_FMT % (uploadType, sessionNumber+1)
+        sessionNext = sliauth.SESSION_NAME_FMT % (uploadType, sessionNumber+1)
         _, __, src_next, web_next, web_images_next = self.getUploadType(sessionNext)
 
         if os.path.exists(src_next):
@@ -3978,9 +3980,11 @@ def createApplication():
         # Site server
         home_handlers += [ (pathPrefix+r"/(_shutdown)", SiteActionHandler) ]
 
+    primary_server = False
     if Options['site_list']:
         if not Options['site_number']:
-            # Primary server
+            # Primary server (no site associated with it)
+            primary_server = True
             home_handlers += [ (pathPrefix+r"/index.html", HomeHandler) ]
         else:
             # Secondary server
@@ -4032,7 +4036,7 @@ def createApplication():
         debug=Options['debug'],
     )
 
-    if Options['proxy_wait'] is not None:
+    if Options['proxy_wait'] is not None and not primary_server:
         site_handlers = [
                       (pathPrefix+r"/_proxy", ProxyHandler),
                       (pathPrefix+r"/_websocket/(.*)", WSHandler),
@@ -4078,10 +4082,9 @@ def createApplication():
                       r"/(_remoteupload/[-\w.]+)",
                       r"/(_republish/[-\w.]+)",
                       r"/(_reset_cache_updates)",
-                      r"/(_respond/[-\w.;]+)",
+                      r"/(_responders/[-\w.]+)",
                       r"/(_restore)",
                       r"/(_roster)",
-                      r"/(_submissions/[-\w.:;]+)",
                       r"/(_submit/[-\w.:;]+)",
                       r"/(_twitter)",
                       r"/(_unlock/[-\w.]+)",

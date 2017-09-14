@@ -19,12 +19,16 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.11d'
+VERSION = '0.97.12a'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
 
 SLIDOC_OPTIONS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|$)')
+
+SESSION_NAME_FMT = '%s%02d'
+SESSION_NAME_RE     = re.compile(r'^([a-zA-Z]\w*[a-zA-Z_])(\d\d)$')
+SESSION_NAME_TOP_RE = re.compile(r'^([a-zA-Z]\w*[a-zA-Z])$')
 
 def get_version(sub=False):
     return sub_version(VERSION) if sub else VERSION
@@ -169,15 +173,18 @@ def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
 
     return retval[:16] if nosec else (retval[:19] if nosubsec else retval)
 
-def print_date(date_time=None, weekday=False, date_only=False):
+def print_date(date_time=None, weekday=False, long_date=False, prefix_time=False):
     if not date_time:
         date_time = datetime.datetime.now()
-    if date_only:
-        return date_time.strftime('%d%b%y').lower()
-    elif weekday:
-        return date_time.strftime('%a, %H:%M %b %-d, %Y')
-    else:
-        return date_time.strftime('%H:%M %b %-d, %Y')
+
+    fmt = '%b %d, %Y' if long_date else '%d%b%y'
+    if prefix_time:
+        fmt = '%H:%M ' + fmt
+    if weekday:
+        fmt = '%a, ' + fmt
+
+    date_str = date_time.strftime(fmt)
+    return date_str if long_date else date_str.lower()
 
 def json_default(obj):
     if isinstance(obj, datetime.datetime):

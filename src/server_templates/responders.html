@@ -1,0 +1,218 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- submissions template for slidoc server --->
+<!-- responders parameters: site_name, session_name, session_status, past_due, total_count, started_count, submitted_count -->
+
+{% include "base.html" %}
+{% include "actbase.html" %}
+
+<style>
+body {
+    font-family: sans-serif;
+}
+
+body.dynamic th:not(.dynamic),
+  body.dynamic td:not(.dynamic)
+{ display: none; }
+
+th, td { padding-left: 15px;
+         padding-right: 15px;
+         padding-top: 5px;
+         padding-bottom: 5px;
+   }
+
+th { text-align: left; }
+
+td.submitted { background-color: lightgreen; }
+
+tr.evenrow { background-color: lightgray; }
+
+table { border-top: solid;
+        border-bottom: solid; }
+
+tr.allrow { background-color: lightgray;
+            border-top: solid;
+            border-bottom: solid; }
+
+</style>
+
+<script>
+function submit(elem, label, name, idVal) {
+    var dateElem = elem.previousElementSibling;
+    var dateValue = dateElem ? dateElem.value : '';
+    if (!dateValue) {
+        alert('Please specify date');
+        return;
+    }
+    var statusElem = document.getElementById('actionstatus');
+    if (statusElem) statusElem.textContent = 'Loading...';
+    location = '{{site_prefix}}'+'/_'+label+'/'+name+'?user=' + encodeURIComponent(idVal)+'&date='+encodeURIComponent(dateValue);
+}
+function autorefresh() {
+    var refreshElem = document.getElementById('autorefresh');
+    if (refreshElem) {
+        if (location.search == "?reload=1") {
+            if (refreshElem.checked)
+                location.reload(true);
+            else
+                location = location.pathname;  // Cancel reload
+        } else if (refreshElem.checked) {
+            location = location.pathname+'?reload=1';
+        } else {
+            document.body.classList.remove("dynamic");
+        }
+    }
+}
+document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+	return;
+    var dateElems = document.getElementsByClassName("dateinput");
+    for (var j=0; j<dateElems.length; j++)
+        dateElems[j].value = (new Date()).toISOString().slice(0,11)+'23:59';
+
+    if (location.search == "?reload=1") {
+        var refreshElem = document.getElementById('autorefresh');
+        if (refreshElem)
+            refreshElem.checked = true;
+        setTimeout(autorefresh, 5000);
+        document.body.classList.add("dynamic");
+    }
+}
+</script>
+
+</head>
+<body>
+  <b>
+  {% include "linkback.html" %}
+  </b>
+
+  <p></p>
+  <h2>Responder status</h2>
+
+  Module session: <b>{{ session_name }}</b>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<label for="sessioncreate">Autorefresh: </label>
+  <input type="checkbox" onchange="autorefresh();" id="autorefresh" name="autorefresh" value="autorefresh">
+  <p></p>
+  <em>Started</em>: {{started_count}} out of {{total_count}} normal users 
+  <p></p>
+  <em>Submitted</em>: {{submitted_count}} out of {{total_count}} normal users 
+  <hr> 
+ 
+<b>Manage session responders</b>
+<p></p>
+
+<ul>
+  <li>Use <b>Start</b> option in <b><em>All roster users</em></b> row to
+  "pre-fill" module session with all users in the roster (for creating paper
+  tests).
+  </li>
+  <p></p>
+  <li>Use <b>Start</b> option for a particular user row to award participation
+  credit for users with no computer access during interactive admin-paced module sessions.
+
+  (If sesson is closed, i.e., <em>test user</em> submitted, then use the
+  <b>Submit</b> option.)
+  </li>
+  <p></p>
+  <li>Use <b>Extend</b> option for a particular user row to generate a
+  late submission token.
+  </li>
+  <p></p>
+  <li>Use <b>Submit</b> option for <em>test user</em> to end
+  interactive admin-paced module sessions.
+  </li>
+</ul>
+
+<div id="main-container">
+  <div id="main">
+    <div id="actionstatus"></div>
+  </div>
+</div>
+<p></p>
+
+<table>
+  <thead>
+  <tr>
+      <th class="dynamic">User</th>
+      <th class="dynamic">Slide</th>
+      <th class="dynamic">Started</th>
+      <th class="dynamic">Submitted</th>
+      <th>Due date</th>
+      <th>Lockdown</th>
+      <th>Connection</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr class="allrow">
+      <td><em><b>All roster users</b></em></td>
+      <td></td>
+      <td>{% if not past_due %}<span class="clickable" onclick="slidocConfirmAction('prefill')"><b>Start</b></span>{% end %}</td>
+      <td></td>
+      <td>{{due_date}}</td>
+      <td></td>
+      <td></td>
+  </tr>
+  {% set j = 0 %}
+  {% for name, idVal, lastSlide, startTime, submitTime, lateToken, connection in session_status %}
+      {% set j += 1 %}
+      {% if j % 2 %}
+  <tr class="oddrow">
+      {% else %}
+  <tr class="evenrow">
+      {% end %}
+      <td class="dynamic">{{name}}</td>
+      <td class="dynamic"><code>#{{'%02d' % lastSlide}}</code></td>
+
+      {% if startTime %}
+        <td class="dynamic">{{ startTime }}</td>
+      {% elif not past_due %}
+        <td><a class="clickable" href="{{site_prefix}}/_responders/{{session_name}}?user={{idVal}}">Start</a></td>
+      {% else %}
+        <td></td>
+      {% end %}
+
+      {% if submitTime %}
+        <td class="dynamic submitted">{{ submitTime }}</td>
+      {% elif idVal == '_test_user' %}
+	<td>
+	  <span class="clickable" onclick="this.nextElementSibling.style.display=null;this.style.display='none';"><b>Submit</b></span>
+          <form style="display: none;" action="{{site_prefix}}/_submit/{{session_name}}" method="post" id="message_form" enctype="multipart/form-data" >
+	    <fieldset>
+              <input id="submit-btn" type="submit" value="Submit date:"> <input  type="datetime-local" class="dateinput" id="submitdate" name="submitdate" value="">
+            </fieldset>
+          </form>
+        </td>
+      {% elif past_due %}
+        <td><a class="clickable" href="{{site_prefix}}/_responders/{{session_name}}?user={{idVal}}">Submit</a></td>
+      {% else %}
+        <td></td>
+      {% end %}
+
+      {% if submitTime %}
+        <td></td>
+      {% else %}
+	<td>
+	  <span class="clickable" onclick="this.nextElementSibling.style.display=null;this.style.display='none';">{{ lateToken or 'Extend' }}</span>
+          <fieldset style="display: none;">
+            New due date:
+            <input  type="datetime-local" class="dateinput" name="dateinput" value="">
+            <span class="clickable"  onclick="submit(this, 'responders','{{session_name}}', '{{idVal}}')">Extend</span>
+          </fieldset>
+        </td>
+      {% end %}
+
+      {% if submitTime %}
+        <td></td>
+      {% else %}
+        <td><a class="clickable" href="{{site_prefix}}/_lockcode/{{session_name}};{{idVal}}">Access code</a></td>
+      {% end %}
+
+      <td><code>{{connection}}</code></td>
+  </tr>
+  {% end %}
+  </tbody>
+</table>
+
+</body>
+</html>

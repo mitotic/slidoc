@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.11d';
+var VERSION = '0.97.12a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -4259,9 +4259,11 @@ function actionHandler(actions, sheetName, create) {
 	    }
 	} else if (action == 'gradebook') {
 	    var retval = updateScores(sessions, create);
-	    if (!retval.length && sessions.length)
-		throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
-	    refreshSheets.push(SCORES_SHEET);
+	    if (retval) {
+		if (!retval.length && sessions.length)
+		    throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
+		refreshSheets.push(SCORES_SHEET);
+	    }
 	} else {
 	    throw('Error:ACTION:Invalid action '+action+' for session(s) '+sessions);
 	}
@@ -4340,7 +4342,10 @@ function updateScoreAll() {
     try {
 	loadSettings();
 	var updatedNames = updateScores(getSessionNames(), false, true);
-	notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
+	if (updatedNames && updatedNames.length)
+	    notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
+	else
+	    notify("No scores updated", 'Slidoc Scores');
     } catch(err) {
 	SpreadsheetApp.getUi().alert(''+err);
     } finally { //release lock
@@ -4361,7 +4366,7 @@ function updateScores(sessionNames, create, interactive) {
 	if (!create) {
 	    // Refresh only already posted sessions
 	    if (!scoreSheet)
-		return [];
+		return null;
 	    var temColIndex = indexColumns(scoreSheet);
 	    var curSessions = [];
 	    for (var j=0; j<sessionNames.length; j++) {

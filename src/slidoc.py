@@ -3162,7 +3162,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Merge file config with command line
             file_config = parse_merge_args(read_first_line(fhandle), fname, Conf_parser, vars(config), default_args_dict=default_args_dict,
                                            first_line=True, verbose=config.verbose)
-            if config.preview:
+            if config.preview_port:
                 if file_config.gsheet_url:
                     file_config.gsheet_url = ''
 
@@ -3199,7 +3199,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
             file_config_vars = vars(file_config)
             settings_list = []
-            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
+            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview_port', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
             arg_names = file_config_vars.keys()
             arg_names.sort()
             for name in arg_names:
@@ -3305,7 +3305,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         # zipped_md containing will only be created if any images are present (and will also include the original (preprocessed) md_text as content.md)
         fheader, file_toc, renderer, md_params, md_html, zipped_md = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
                                                         filedir=filedir, plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
-                                                        index_id=index_id, qindex_id=qindex_id, zip_content=config.preview,
+                                                        index_id=index_id, qindex_id=qindex_id, zip_content=config.preview_port,
                                                         images_zipdata=images_zipdict.get(fname))
         math_present = renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
 
@@ -3475,14 +3475,14 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 iso_release_str = sliauth.iso_date(release_date)
                 if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
                     # Module not yet released
-                    doc_str += ', available ' + sliauth.print_date(release_date, weekday=True)
+                    doc_str += ', available ' + sliauth.print_date(release_date, weekday=True, prefix_time=True)
 
             admin_ended = bool(admin_due_date.get(fname))
             doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
             iso_due_str = '-'
             if doc_date_str:
                 date_time = doc_date_str if isinstance(doc_date_str, datetime.datetime) else sliauth.parse_date(doc_date_str)
-                local_time_str = sliauth.print_date(date_time, date_only=True)
+                local_time_str = sliauth.print_date(date_time, prefix_time=True)
                 if admin_ended:
                     doc_str += ', ended '
                 else:
@@ -4243,7 +4243,7 @@ alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.ht
 alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Module sessions with questions to be modified')
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)
-alt_parser.add_argument('--preview', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
+alt_parser.add_argument('-p', '--preview_port', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
@@ -4334,7 +4334,7 @@ if __name__ == '__main__':
     pptx_paths = {}
     for j, inpath in enumerate(input_paths):
         fname, fext = os.path.splitext(os.path.basename(inpath))
-        if fext == '.pptx' and not cmd_args.preview:
+        if fext == '.pptx' and not cmd_args.preview_port:
             # Convert .pptx to .md
             import pptx2md
             ppt_parser = pptx2md.PPTXParser(pptx_opts)
@@ -4346,9 +4346,9 @@ if __name__ == '__main__':
             pptx_paths[md_path] = input_paths[j]
             input_paths[j] = md_path
 
-    if cmd_args.preview:
+    if cmd_args.preview_port:
         if len(input_files) != 1:
-            raise Exception('ERROR: --preview only works for a single file')
+            raise Exception('ERROR: --preview_port only works for a single file')
         if cmd_args.upload_key and not cmd_args.server_url:
             raise Exception('ERROR: Must specify --server_url with --upload_key')
         input_files[0].close()
@@ -4365,9 +4365,9 @@ if __name__ == '__main__':
         except Exception, excp:
             sys.exit(str(excp))
 
-        httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args.preview), RequestHandler)
-        command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args.preview, RequestHandler.preview_token, '1' if cmd_args.upload_key else '')
-        print('Preview at http://localhost:'+str(cmd_args.preview), file=sys.stderr)
+        httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args.preview_port), RequestHandler)
+        command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args.preview_port, RequestHandler.preview_token, '1' if cmd_args.upload_key else '')
+        print('Preview at http://localhost:'+str(cmd_args.preview_port), file=sys.stderr)
         print(command, file=sys.stderr)
         subp = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, stderr=subprocess.STDOUT)
         try:

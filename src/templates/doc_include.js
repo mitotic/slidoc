@@ -1991,10 +1991,10 @@ Slidoc.makeShortNames = function (nameMap, first) {
 
 Slidoc.switchNav = function () {
     var elem = document.getElementById("slidoc-topnav");
-    if (elem.className === "slidoc-topnav") {
-        elem.className += " slidoc-responsive";
+    if (elem.classList.contains("slidoc-responsive")) {
+	elem.classList.remove("slidoc-responsive");
     } else {
-        elem.className = "slidoc-topnav";
+        elem.classList.add("slidoc-responsive");
     }
 }
 
