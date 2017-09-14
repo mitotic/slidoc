@@ -687,12 +687,6 @@ class Sheet(object):
         row[totalCol-1] = newVal
         return True
 
-    def clear_update(self):
-        for j, row in enumerate(self.xrows[1:]):
-            key = row[self.keyCol-1] if self.keyCol else j+2
-            if self.keyMap[key][1] or self.keyMap[key][2]:
-                self.keyMap[key][1:3] = [0, set()]
-
     def copy(self):
         # Returns "shallow" copy
         return Sheet(self.name, self.xrows, keyHeader=self.keyHeader, modTime=self.modTime, accessTime=self.accessTime, keyMap=self.keyMap,
@@ -1056,7 +1050,7 @@ class Sheet(object):
                     # Non-partial or non-keyed; update full rows
                     updateSel.append( [[key], None, [row]] )
 
-        if not insertRows and not updateSel and not actions and not self.modifiedHeaders:
+        if not insertRows and not updateSel and not actions and not self.modifiedHeaders and (not self.modTime or self.modTime < Global.cacheUpdateTime):
             # No updates
             return None
 
@@ -1065,6 +1059,14 @@ class Sheet(object):
 
         return [updateRows, actions, self.modifiedHeaders, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
                     
+    def clear_update(self):
+        self.actionsRequested = ''
+        self.modifiedHeaders = False
+        for j, row in enumerate(self.xrows[1:]):
+            key = row[self.keyCol-1] if self.keyCol else j+2
+            if self.keyMap[key][1] or self.keyMap[key][2]:
+                self.keyMap[key][1:3] = [0, set()]
+
     def complete_update(self, updateRows, actions, modifiedHeaders):
         # Update sheet status after remote update has completed
         if actions and actions == self.actionsRequested:
@@ -1321,14 +1323,6 @@ def update_remote_sheets(force=False, synchronous=False):
         sheet_proxy_error('Unexpected error in update_remote_sheets: %s' % excp)
 
 def update_remote_sheets_aux(force=False, synchronous=False):
-    if not Settings['gsheet_url'] or Settings['dry_run']:
-        # No updates if no sheet URL or dry run
-        Global.cacheUpdateTime = sliauth.epoch_ms()
-        for sheetName, sheet in Sheet_cache.items():
-            sheet.clear_update()
-        updates_current()
-        return
-
     if Global.cacheUpdateError or (Global.httpRequestId and not synchronous):
         # Request currently active/disabled
         # (synchronous request will supersede any active previous request)
@@ -1372,10 +1366,20 @@ def update_remote_sheets_aux(force=False, synchronous=False):
     json_data = json.dumps(modRequests, default=sliauth.json_default)
 
     if Settings['debug']:
-        print("update_remote_sheets_aux: REQUEST %s partial=%s, log=%s, nsheets=%d, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], len(modRequests), len(json_data)), file=sys.stderr)
+        print("update_remote_sheets_aux: REQUEST %s partial=%s, log=%s, sheets=%s, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], sorted(sheetUpdateInfo.keys()), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
     ##    print("update_remote_sheets_aux: REQUEST2", [(x[0], x[4:]) for x in modRequests], file=sys.stderr)
+
+    if not Settings['gsheet_url'] or Settings['dry_run']:
+        # "Immediate" updates if no sheet URL or dry run
+        Global.cacheUpdateTime = sliauth.epoch_ms()
+        Global.cacheResponseTime = Global.cacheUpdateTime
+        for sheetName, sheet in Sheet_cache.items():
+            if sheetName in sheetUpdateInfo:
+                sheet.clear_update()
+        updates_current()
+        return
 
     proxy_updater = ProxyUpdater(sheetUpdateInfo, json_data, synchronous=synchronous)
     proxy_updater.update(curTime)

@@ -786,7 +786,7 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'discussSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
+        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
         self.slide_number = 0
         self.slide_images = []
 
@@ -1777,6 +1777,8 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['disabled']:
             self.questions[-1].update(disabled=answer_opts['disabled'])
+            if answer_opts['disabled'] == 'all':
+                self.sheet_attributes['disabledCount'] += 1
         if answer_opts['explain']:
             self.questions[-1].update(explain=answer_opts['explain'])
         if answer_opts['participation']:
@@ -3344,6 +3346,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['gradeFields'] = []
             js_params['totalWeight'] = 0
 
+        js_params['disabledCount'] = renderer.sheet_attributes['disabledCount']
         js_params['discussSlides'] = renderer.sheet_attributes['discussSlides']
 
         if config.separate:

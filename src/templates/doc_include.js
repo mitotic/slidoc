@@ -343,22 +343,21 @@ Slidoc.remoteLog = function (funcName, msgType, msg, msgTrace) {
 
 var sessionAborted = false;
 function sessionAbort(err_msg, err_trace) {
-    Slidoc.remoteLog('sessionAbort', '', err_msg, err_trace);
+    console.log('sessionAbort', '', err_msg, err_trace||'');
+    Slidoc.remoteLog('sessionAbort', '', err_msg, err_trace||'');
     if (sessionAborted)
 	return;
     sessionAborted = true;
     localDel('auth');
     try { slidesVisible(false); } catch(err) {}
     alert((Sliobj.params.debug ? 'DEBUG: ':'')+err_msg);
-    if (!Sliobj.params.debug)
-	document.body.textContent = err_msg + ' (reload page to restart)   '+(err_trace || '');
 
     if (Slidoc.serverCookie) {
 	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
 
-    throw(err_msg);
+    document.body.innerHTML = '<a href="/">Home</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
 }
 
 function loadPath(newPath, newHash) {  // newHash, if specified, should include '#' prefix
@@ -5985,7 +5984,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', dispCorrect && qscore !== 1);
 
     if (question_attrs.qtype.match(/^(text|Code)\//)) {
-	renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
+	renderDisplay(slide_id, '-answer-textarea', '-response-div', usingMarkdown(question_attrs.qtype) && !Sliobj.params.features.no_markdown);
     } else {
 	if (question_attrs.explain)
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
@@ -6091,8 +6090,17 @@ Slidoc.showScore = function () {
     }
 }
 
+
+function usingMarkdown(qtype) {
+    if (!qtype)
+	return false;
+    if (qtype.match(/^Code\//) || qtype.match(/^text\/x-code/))  // Code => no markdown
+	return false;
+    return qtype.match(/^text\//);   // Text type => markdown
+}
+
 function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
-    Slidoc.log("Slidoc.renderDisplay:", slide_id, inputSuffix, renderSuffix, renderMarkdown);
+    Slidoc.log("renderDisplay:", slide_id, inputSuffix, renderSuffix, renderMarkdown);
     if (!(inputSuffix in Sliobj.params.answer_elements)) {
 	Slidoc.log("renderDisplay: ERROR Invalid suffix '"+inputSuffix+"'");
 	return false;
@@ -6135,7 +6143,7 @@ Slidoc.renderText = function(elem, slide_id) {
 	    if (question_attrs.explain) {
 		renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown)
 	    } else {
-		renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
+		renderDisplay(slide_id, '-answer-textarea', '-response-div', usingMarkdown(question_attrs.qtype) && !Sliobj.params.features.no_markdown);
 	    }
 	}
     }
@@ -6600,8 +6608,8 @@ Slidoc.submitClick = function(elem, noFinalize, force) {
 	    else
 		unanswered += 1;
 	}
-	if (unanswered)
-	    prompt = 'There are '+unanswered+' unanswered questions. Do you still wish to proceed with submission?';
+	if (unanswered && unanswered > Sliobj.params.disabledCount)
+	    prompt = 'There are '+(unanswered-Sliobj.params.disabledCount)+' unanswered questions. Do you still wish to proceed with submission?';
 	else
 	    prompt = '';
     }
