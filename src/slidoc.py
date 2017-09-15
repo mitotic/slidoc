@@ -3233,7 +3233,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             if file_config.release_date:
                 release_date_str = file_config.release_date if file_config.release_date == sliauth.FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
 
-            if restricted_sessions_re and restricted_sessions_re.search(fname):
+            if not file_config.publish and restricted_sessions_re and restricted_sessions_re.search(fname):
                 if not release_date_str:
                     abort('RESTRICTED-ERROR: Must specify release date to create restricted session %s' % fname)
                 if return_html and release_date_str != sliauth.FUTURE_DATE:

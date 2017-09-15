@@ -599,7 +599,7 @@ Sliobj.previewState = false;
 Sliobj.updateView = false;
 
 Slidoc.pageSetup = function() {
-    Slidoc.log("pageSetup:", Sliobj.reloadCheck);
+    Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash);
 
     if (Sliobj.reloadCheck) {
 	if (getParameter('remoteupload')) {
@@ -894,6 +894,7 @@ function handleImageDrop(evt) {
 //////////////////////////////////
 
 Slidoc.accordionView = function(active, show) {
+    Slidoc.log('accordionView: ', active, show);
     if (!document.body.classList.contains('slidoc-collapsible-view'))
 	return;
 
@@ -3907,10 +3908,13 @@ function slidocSetupAux(session, feedback) {
 	displayDiscussStats();
     }
 
+    if (collapsibleAccess())
+	toggleClass(true, 'slidoc-collapsible-view');
+
     if (Sliobj.previewState) {
     	toggleClass(true, 'slidoc-preview-view');
 	if (location.hash == '#collapsed')
-	    Slidoc.accordionView(true);
+	    Slidoc.accordionView(true);  // Requires collapsible view to be set
     }
 
     if (Sliobj.gradableState)
@@ -3918,9 +3922,6 @@ function slidocSetupAux(session, feedback) {
 
     if (getUserId() == Sliobj.params.testUserId || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole && (Sliobj.gradableState || !Sliobj.sessionName)) )
 	toggleClass(true, 'slidoc-testuser-view');
-
-    if (collapsibleAccess())
-	toggleClass(true, 'slidoc-collapsible-view');
 
     if (isController())
     	toggleClass(true, 'slidoc-controller-view');
@@ -4485,7 +4486,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
     }
 
     if (Object.keys(choiceElems).length != shuffleStr.length) {
-	Slidoc.log("shuffleBlock: ERROR Incorrect number of choice elements for shuffling: Expected "+(shuffleStr.length-1)+" but found "+(Object.keys(choiceElems).length-1));
+	Slidoc.log("shuffleBlock: ERROR Incorrect number of choice elements for shuffling in "+qnumber+": Expected "+(shuffleStr.length-1)+" but found "+(Object.keys(choiceElems).length-1));
 	return;
     }
 
@@ -6926,7 +6927,7 @@ function remarksUpdateAux(userId, callback, result, retStatus) {
 /////////////////////////////////////////
 
 Slidoc.startPaced = function () {
-    Slidoc.log('Slidoc.startPaced: ');
+    Slidoc.log('Slidoc.startPaced: ', location.hash);
     Sliobj.delaySec = null;
 
     var firstSlideId = getVisibleSlides()[0].id;
@@ -6984,7 +6985,7 @@ Slidoc.startPaced = function () {
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
 
-    if (Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') {
+    if ((Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') || (Sliobj.previewState && location.hash == '#collapsed')) {
 	// Unhide all slides
 	slidesVisible(true);
 	restoreScroll();

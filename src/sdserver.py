@@ -4783,7 +4783,7 @@ def start_server(site_number=0, restart=False):
             import multiproxy
             Global.server_socket = multiproxy.make_unix_server_socket(relay_addr)
             Global.http_server.add_socket(Global.server_socket)
-        print >> sys.stderr, "Site %d listening on %s (%s: admin=%s, grades=%s, guests=%s, start_date=%s)" % (site_number, relay_addr,
+        print >> sys.stderr, "Site %d listening on %s (%s: admins=%s, graders=%s, guests=%s, start_date=%s)" % (site_number, relay_addr,
                 Options['site_name'], Options['admin_users'], Options['grader_users'], Options['guest_users'], Options['start_date'] )
 
     if not restart:
@@ -4906,15 +4906,12 @@ def setup_site_server(sheetSettings, site_number):
                         opts_dict[name] = value
                 Global.session_options[sessionName] = opts_dict
 
-    if options.backup:
+    if Options['backup_hhmm']:
         curTimeSec = sliauth.epoch_ms()/1000.0
         curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
-        if Options['backup_hhmm']:
-            backupTimeSec = sliauth.epoch_ms(sliauth.parse_date(curDate+'T'+Options['backup_hhmm']))/1000.0
-        else:
-            backupTimeSec = curTimeSec + 31
+        backupTimeSec = sliauth.epoch_ms(sliauth.parse_date(curDate+'T'+Options['backup_hhmm']))/1000.0
         backupInterval = 86400
-        if backupTimeSec - curTimeSec < 30:
+        if curTimeSec+60 > backupTimeSec:
             backupTimeSec += backupInterval
         print >> sys.stderr, 'Scheduled backup in dir %s every %s hours, starting at %s' % (Options['backup_dir'], backupInterval/3600, sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
         def start_backup():
