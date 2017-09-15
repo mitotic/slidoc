@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.12a';
+var VERSION = '0.97.12c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -67,9 +67,9 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 // 
 // 6. In the script window, select `Edit->Current project's triggers`
 //    - In this dialog, click on `No triggers set up. Click here to add one now`
-//    - In the dropdowns, select `onOpen`, `From spreadsheet`, and `On open`
-//    - Click on `Add a new trigger`
 //    - In the dropdowns select `doPost`, `From spreadsheet`, and `On form submit`
+//    - Click on `Add a new trigger`
+//    - In the dropdowns, select `onOpen`, `From spreadsheet`, and `On open`
 //    - Then click on `Save`
 // 
 // 7. In the script window, select `Publish->Deploy as web app...`

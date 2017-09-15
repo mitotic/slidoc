@@ -469,6 +469,33 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     site_data_dir = None
     site_backup_dir = None
     site_files_dir = None
+    @classmethod
+    def setup_dirs(cls, site_name=''):
+        sitePrefix = '/'+site_name if site_name else ''
+        cls.site_src_dir    = Options['source_dir'] + sitePrefix
+        cls.site_web_dir    = Options['static_dir'] + sitePrefix
+        cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH
+        cls.site_backup_dir = Options['backup_dir'] + sitePrefix
+        cls.site_files_dir  = Options['static_dir'] + sitePrefix + '/' + RAWPRIVATE_PATH
+        homeSrc = cls.site_src_dir+'/index.md'
+        homeWeb = cls.site_web_dir+'/index.html'
+        try:
+            if not os.path.exists(cls.site_web_dir):
+                os.makedirs(cls.site_web_dir)
+            if not os.path.exists(homeWeb):
+                    with open(homeWeb, 'w') as f:
+                        f.write('<b>%s Home Page</b>' % site_name)
+                    print >> sys.stderr, 'sdserver: Created %s' % homeWeb
+
+                    if not os.path.exists(homeSrc):
+                        if not os.path.exists(cls.site_src_dir):
+                            os.makedirs(cls.site_src_dir)
+                        with open(homeSrc, 'w') as f:
+                            f.write('**%s Home Page**' % site_name)
+                    print >> sys.stderr, 'sdserver: Created %s' % homeSrc
+        except Exception, excp:
+            print >> sys.stderr, 'sdserver: Failed to create %s/%s' % (homeWeb, homeSrc)
+
     def set_default_headers(self):
         # Completely disable cache
         self.set_header('Server', SERVER_NAME)
@@ -547,6 +574,10 @@ class SiteActionHandler(BaseHandler):
         userId = self.get_current_user()
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: SiteActionHandler', userId, Options['site_number'], action
+        if action == '_logout':
+            self.clear_user_cookie()
+            self.render('logout.html')
+            return
         root = str(self.get_argument("root", ""))
         token = str(self.get_argument("token", ""))
         if not self.check_admin_access(token=token, root=root):
@@ -3972,7 +4003,7 @@ def createApplication():
                     ]
     if not Options['site_number']:
         # Single/root server
-        home_handlers += [ (r"/(_(backup|reload|setup|shutdown))", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown))", SiteActionHandler) ]
         home_handlers += [ (r"/(_(backup))/([-\w.]+)", SiteActionHandler) ]
         home_handlers += [ (r"/(_(update))/([-\w.]+)", SiteActionHandler) ]
 
@@ -4823,11 +4854,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         for key in SPLIT_OPTS:
             Options[key] = Global.split_opts[key][site_number-1]
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], site_name)
-        BaseHandler.site_src_dir = Options['source_dir'] + '/' + site_name
-        BaseHandler.site_web_dir = Options['static_dir'] + '/' + site_name
-        BaseHandler.site_data_dir = Options['plugindata_dir'] + '/' + site_name + '/' + PLUGINDATA_PATH
-        BaseHandler.site_backup_dir = Options['backup_dir'] + '/' + site_name
-        BaseHandler.site_files_dir = Options['static_dir'] + '/' + site_name + '/' + RAWPRIVATE_PATH
+        BaseHandler.setup_dirs(site_name)
         setup_site_server(sheetSettings, site_number)
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
@@ -4938,7 +4965,7 @@ def main():
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
-    define("offline_sessions", default=Options["offline_sessions"], help="Pattern matching sessions that are offline assessments, default=(exam|quiz|test|midterm|final)")
+    define("offline_sessions", default=Options["offline_sessions"], help="Pattern matching sessions that are offline assessments, default=(exam|final|midterm)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
@@ -5005,6 +5032,9 @@ def main():
         time.tzset()
         print >> sys.stderr, 'sdserver: Timezone =', options.timezone
 
+    if Options['offline_sessions']:
+        print >> sys.stderr, 'sdserver: Offline check for sessions matching:', '('+Options['offline_sessions']+')'
+
     if options.start_delay:
         print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
         time.sleep(options.start_delay)
@@ -5025,7 +5055,7 @@ def main():
             if Options[key]:
                 Global.split_opts[key] = [x.strip() for x in Options[key].split(';')]
                 if len(Global.split_opts[key]) != nsites:
-                    raise Exception('No. of values for --'+key+'=...;... should match number of sites')
+                    raise Exception('No. of values for --'+key+'=...;... should match number of sites %d: %s' % (nsites, Global.split_opts[key]))
                 # Clear gsheet_url, twitter_config, site label/title options
                 Options[key] = ''
             else:
@@ -5034,10 +5064,7 @@ def main():
     Global.child_pids = []
     socket_name_fmt = options.socket_dir + '/uds_socket'
 
-    BaseHandler.site_src_dir = Options['source_dir']
-    BaseHandler.site_web_dir = Options['static_dir']
-    BaseHandler.site_backup_dir = Options['backup_dir']
-    BaseHandler.site_files_dir =Options['static_dir'] + '/' + RAWPRIVATE_PATH
+    BaseHandler.setup_dirs()
 
     if options.forward_port:
         Global.relay_forward = ('localhost', forward_port)

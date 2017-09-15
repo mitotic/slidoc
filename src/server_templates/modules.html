@@ -71,29 +71,6 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   <b>Status:</b> <tt id="status-msg" style="color: red;">{{ message }}</tt>
   <p></p>
   <hr>
-  <b><a class="clickable" href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">Add module type</a></b>
-
-  <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
-    <fieldset>
-    <label for="sessiontype">Module type:</label><br>
-    <table>
-      {% set session_dirs = [x[0] for x in session_props] %}
-      {% for session_type, session_label in session_types %}
-        {% if session_type != 'top' %}
-        <tr {% if session_type in session_dirs %}class="session-present"{% end %}><td><input type="radio" name="sessiontype" value="{{session_type}}" {% if session_type in session_dirs %}disabled{% end %}> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
-        {% end %}
-      {% end %}
-      </table>
-    {% module xsrf_form_html() %}
-
-    <input type="hidden" name="sessioncreate" value="sessions">
-
-    <div>
-      <input id="session-upload-submit" type="submit" value="Add module type">
-    </div>
-    </fieldset>
-  </form>
-  <p></p>
 
   <p></p>
   <b>Directory/file actions</b>: View session spreadsheet (&#9783;), Manage (&#9881;), Edit (&#9998;), Create/upload (&#x21EA;),
@@ -178,6 +155,30 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
     </li>
     {% end %}
   </ul>
+
+  <b><a class="clickable" href="#" onclick="document.getElementById('session-list').style.display=null;this.style.display='none';">+Add module type</a></b>
+
+  <form id="session-list" style="display: none;" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
+    <fieldset>
+    <label for="sessiontype">Type:</label><br>
+    <table>
+      {% set session_dirs = [x[0] for x in session_props] %}
+      {% for session_type, session_label in session_types %}
+        {% if session_type != 'top' %}
+        <tr {% if session_type in session_dirs %}class="session-present"{% end %}><td><input type="radio" name="sessiontype" value="{{session_type}}" {% if session_type in session_dirs %}disabled{% end %}> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+        {% end %}
+      {% end %}
+      </table>
+    {% module xsrf_form_html() %}
+
+    <input type="hidden" name="sessioncreate" value="sessions">
+
+    <div>
+      <input id="session-upload-submit" type="submit" value="Add module type">
+    </div>
+    </fieldset>
+  </form>
+
   </div>
   <p></p>
 

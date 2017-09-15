@@ -3343,10 +3343,13 @@ Slidoc.userProfile = function() {
     if (!userId || !Sliobj.rosterSheet) {
 	if (Sliobj.closePopup)
 	    Sliobj.closePopup();
-	if (!userId)
+	if (!userId) {
 	    Slidoc.showPopup('<a href="/_oauth/login?next=' + encodeURIComponent(location.pathname)+'">Login</a>');
-	else
-	    Slidoc.showPopup('User: <b>'+userId+'</b>');
+	} else {
+	    var html = '<b>Profile</b><p></p>';
+	    html += 'User: <b>'+userId+'</b><br>';
+	    Slidoc.showPopup(html);
+	}
 	return;
     }
     if (!Sliobj.closePopup)
@@ -3358,12 +3361,13 @@ function userProfileCallback(userId, result, retStatus) {
     Slidoc.log('userProfileCallback:', userId, result, retStatus);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    var html = '<span class="slidoc-clickable" onclick="Slidoc.userLogout();">Logout</span><hr>';
-    html += 'User: <b>'+userId+'</b><br>';
+    var html = '<b>Profile</b><p></p>';
+    html += 'User: <b>'+userId+'</b>';
+    html += '&nbsp;&nbsp;&nbsp;(<span class="slidoc-clickable" onclick="Slidoc.userLogout();">Logout</span>)<hr>';
     if (result) {
 	html += 'Name: '+escapeHtml(result.name)+'<br>\n';
 	html += 'Email: '+escapeHtml(result.email)+'<br>\n';
-	html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">modify</span>)<br>\n';
+	html += 'Twitter: '+escapeHtml(result.twitter)+' (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">Modify</span>)<br>\n';
     } else {
 	if (Sliobj.session.displayName)
 	    html += 'Name: '+escapeHtml(Sliobj.session.displayName);
@@ -4407,7 +4411,6 @@ function preAnswer() {
 	displayRemarks(commentsValue, gradeValue);
     }
 
-    var attemptedQuestions = Object.keys(Sliobj.session.questionsAttempted);
     for (var qnumber=1; qnumber <= attr_vals.length; qnumber++) {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
@@ -4417,7 +4420,7 @@ function preAnswer() {
 	    hintDisplayAux(slide_id, qnumber, Sliobj.session.hintsUsed[qnumber]);
 	}
 
-	if (qnumber in attemptedQuestions) {
+	if (qnumber in Sliobj.session.questionsAttempted) {
 	    // Question attempted; display answer
 	    var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
