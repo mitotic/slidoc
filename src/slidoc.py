@@ -76,7 +76,7 @@ BASIC_PACE    = 1
 QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
-FUTURE_DATE = 'future'
+
 	
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
@@ -2794,7 +2794,7 @@ def process_input(*args, **argv):
         raise Exception('System exit error in process input: %s' % excp)
 
 def process_input_aux(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
-                     return_html=False, return_messages=False, error_exit=False, http_post_func=None):
+                     restricted_sessions_re=None, return_html=False, return_messages=False, error_exit=False, http_post_func=None):
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
@@ -2903,11 +2903,11 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         if not input_files[j]:
             continue
 
-        if  start_date:
+        if start_date:
             # Only process files with a release date after the minimum required release date
             tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
             tem_release_date_str = tem_config.release_date or config.release_date
-            if not tem_release_date_str or sliauth.parse_date(tem_release_date_str) < start_date:
+            if not tem_release_date_str or tem_release_date_str == sliauth.FUTURE_DATE or sliauth.parse_date(tem_release_date_str) < start_date:
                 continue
 
         if not config.make:
@@ -3231,7 +3231,16 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['paceLevel'] = file_config.pace or 0
 
             if file_config.release_date:
-                release_date_str = file_config.release_date if file_config.release_date == FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
+                release_date_str = file_config.release_date if file_config.release_date == sliauth.FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
+
+            if restricted_sessions_re and restricted_sessions_re.search(fname):
+                if not release_date_str:
+                    abort('RESTRICTED-ERROR: Must specify release date to create restricted session %s' % fname)
+                if return_html and release_date_str != sliauth.FUTURE_DATE:
+                    if not start_date:
+                        abort('RESTRICTED-ERROR: Must specify site start date to create restricted session %s' % fname)
+                    if  sliauth.epoch_ms(sliauth.parse_date(release_date_str)) < sliauth.epoch_ms(start_date):
+                        abort('RESTRICTED-ERROR: Invalid release date %s before start date %s for restricted session %s' % (release_date_str, config.start_date, fname))
 
             if file_config.due_date:
                 due_date_str = sliauth.get_utc_date(file_config.due_date)
@@ -3395,7 +3404,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     else:
                          index_entries = []
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str, index_params in index_entries:
-                        if iso_release_str != FUTURE_DATE and (ind_fname.startswith('announce') or (iso_due_str and iso_due_str != '-')):
+                        if iso_release_str != sliauth.FUTURE_DATE and (ind_fname.startswith('announce') or (iso_due_str and iso_due_str != '-')):
                             index_display.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str])
 
             if index_display:
@@ -3470,7 +3479,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             doc_str = file_type + ' exercise'
             iso_release_str = '-'
 
-            if release_date_str == FUTURE_DATE:
+            if release_date_str == sliauth.FUTURE_DATE:
                 doc_str += ', UNRELEASED'
                 iso_release_str = release_date_str
             elif release_date_str:
@@ -3616,7 +3625,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
                 entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
-                if iso_release_str == FUTURE_DATE:
+                if iso_release_str == sliauth.FUTURE_DATE:
                     entry_class = ' class="slidoc-restrictedonly" style="display: none"'
 
                 doc_link = ''
@@ -3643,7 +3652,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 ifile = len(temlist) - jfile - 1 if reverse_toc else jfile
                     
                 fname, outname, release_date_str, fheader, file_toc = felem
-                if release_date_str == FUTURE_DATE:
+                if release_date_str == sliauth.FUTURE_DATE:
                     # Future release files not accessible from ToC
                     continue
                 chapter_id = make_chapter_id(ifile+1)
@@ -4035,7 +4044,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             images_zipdata = None
         input_file.close()
         retval = process_input([io.BytesIO(cls.md_content)], [md_path], cls.config_dict,
-                               default_args_dict=cls.default_args_dict, return_html=True, images_zipdict=images_zipdict)
+                               default_args_dict=cls.default_args_dict, return_html=True, images_zipdict=images_zipdict,
+                               restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE)
         cls.log_messages = retval['messages']
         cls.outname = os.path.basename(retval['outpath'])
         cls.out_html = retval['out_html']
@@ -4380,7 +4390,7 @@ if __name__ == '__main__':
         httpd.server_close()
     else:
         process_input(input_files, input_paths, config_dict, default_args_dict=default_args_dict, images_zipdict=images_zipdict,
-                      error_exit=True)
+                      restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, error_exit=True)
 
         if cmd_args.printable:
             if cmd_args.gsheet_url:

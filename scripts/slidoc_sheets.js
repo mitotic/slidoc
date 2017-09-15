@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.12c';
+var VERSION = '0.97.12d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -16,8 +16,8 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 ['grader_users', '', 'User IDs or email addresses with grader access'],
 			 ['guest_users', '', 'User IDs or email addresses with guest access'],
 			 [],
-			 ['start_date', '', 'Date after which all session releases must start'],
-			 ['freeze_date', '', 'Date when all user modifications are disabled'],
+			 ['start_date', '', 'Date after which all session releases must start (yyyy-mm-dd)'],
+			 ['freeze_date', '', 'Date when all user modifications are disabled (yyyy-mm-dd)'],
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require', 'Non-null string for true'],
 			 ['share_averages', 'yes', 'Non-null string for true to share class averages for tests etc.'],
@@ -272,6 +272,8 @@ function loadSettings() {
 	else
 	    settingsValue = '';
 	Settings[settingsName] = settingsValue;
+	if (settingsName.match(/date$/i) && settingsValue)
+	    settingsValue = createDate(settingsValue) || '';
 	if (settingsName == 'proxy_update_cache') {
 	    ProxyCacheRange = settingsSheet.getRange(j+2, 2, 1, 1);
 	    if (settingsValue) {
@@ -574,8 +576,7 @@ function sheetAction(params) {
 	var curDate = new Date();
 	var curTime = curDate.getTime();
 
-	var freezeDate = createDate(Settings['freeze_date']) || null;
-	var frozenSessions = Settings['freeze_date'] == 'readonly' || (freezeDate && curDate.getTime() > freezeDate.getTime());
+	var frozenSessions = Settings['site_access'] == 'readonly' || (Settings['freeze_date'] && curDate.getTime() > Settings['freeze_date'].getTime());
 
 	var logCall = params.logcall ? (parseInt(params.logcall) || 0) : 0;
 	if (logCall)

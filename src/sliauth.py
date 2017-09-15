@@ -19,16 +19,23 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.12c'
+VERSION = '0.97.12d'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
+
+FUTURE_DATE = 'future'
 
 SLIDOC_OPTIONS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|$)')
 
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE     = re.compile(r'^([a-zA-Z]\w*[a-zA-Z_])(\d\d)$')
 SESSION_NAME_TOP_RE = re.compile(r'^([a-zA-Z]\w*[a-zA-Z])$')
+
+RESTRICTED_SESSIONS = ('exam', 'final', 'midterm', 'quiz', 'test')
+
+# Set to None to disable restricted checks
+RESTRICTED_SESSIONS_RE = re.compile('(' + '|'.join(RESTRICTED_SESSIONS) + ')', re.IGNORECASE)
 
 def get_version(sub=False):
     return sub_version(VERSION) if sub else VERSION

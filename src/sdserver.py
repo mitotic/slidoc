@@ -102,7 +102,6 @@ Options = {
     'min_wait_sec': 0,
     'missing_choice': '*',
     'no_auth': False,
-    'offline_sessions': r'exam|final|midterm',
     'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
@@ -212,7 +211,6 @@ SESSION_TYPES = [
 
 PUBLIC_SESSIONS = (TOP_LEVEL, 'help')
 UNPACED_SESSIONS = (TOP_LEVEL, 'announce', 'exercise', 'help', 'notes')
-OFFLINE_SESSIONS = ('exam', 'final', 'midterm')
 
 SESSION_TYPE_SET = set()
 for j, entry in enumerate(SESSION_TYPES):
@@ -224,8 +222,8 @@ for j, entry in enumerate(SESSION_TYPES):
     if entry[0] not in UNPACED_SESSIONS:
         entry[1] += ' (paced)'
 
-    if entry[0] in OFFLINE_SESSIONS:
-        entry[1] += ' (offline)'
+    if entry[0] in sliauth.RESTRICTED_SESSIONS:
+        entry[1] += ' (restricted)'
 
 def preElement(content):
     return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
@@ -749,12 +747,13 @@ class ActionHandler(BaseHandler):
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list()))
 
+        if Options['start_date']:
+            configOpts.update(start_date=Options['start_date'])
+
         if pacedSession(uploadType):
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
-            if Options['start_date']:
-                configOpts.update(start_date=Options['start_date'])
 
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
@@ -1726,7 +1725,7 @@ class ActionHandler(BaseHandler):
                     sessionName = sliauth.SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
                     if sessionCreate:
                         fname1 = sessionName + '.md'
-                        fbody1 = '**Table of Contents**\n' if sessionName == 'index' else 'BLANK SESSION\n'
+                        fbody1 = '**Table of Contents**\n' if sessionName == 'index' else 'Slidoc: release_date=future\n\nBLANK SESSION\n'
 
                 sessionModify = sessionName if self.get_argument('sessionmodify', '') else None
                     
@@ -1913,6 +1912,7 @@ class ActionHandler(BaseHandler):
                                               image_dir=image_dir, extraOpts=extraOpts)
 
             if 'md_params' not in retval:
+                print >> sys.stderr, 'sdserver.uploadSession: Error', uploadType, src_path, len(fbody1), retval
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
 
             # Save current preview state (allowing user to navigate and answer questions, without saving those changes)
@@ -1962,7 +1962,7 @@ class ActionHandler(BaseHandler):
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, '', reload=False)
             temMsg = err.message+'\n'
-            if not temMsg.lower().startswith('error'):
+            if temMsg.strip() and not temMsg.lower().startswith('error'):
                 temMsg = 'Error:\n' + temMsg
             return temMsg
 
@@ -2028,7 +2028,8 @@ class ActionHandler(BaseHandler):
 
         try:
             retval = slidoc.process_input(fileHandles, filePaths, configOpts, default_args_dict=defaultOpts, return_html=return_html,
-                                          images_zipdict=images_zipdict, http_post_func=http_sync_post, return_messages=True)
+                                          images_zipdict=images_zipdict, http_post_func=http_sync_post,
+                                          restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, return_messages=True)
         except Exception, excp:
             if Options['debug']:
                 import traceback
@@ -3713,10 +3714,10 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
                 if Options['start_date']:
-                    startDate = sliauth.epoch_ms(Options['start_date'])
-                    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < startDate:
+                    startDateMS = sliauth.epoch_ms(sliauth.parse_ate(Options['start_date']))
+                    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < startDateMS:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName) )
-                    elif gradeDate and sliauth.epoch_ms(gradeDate) < startDate:
+                    elif gradeDate and sliauth.epoch_ms(gradeDate) < startDateMS:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName) )
 
                 if siteRole != sdproxy.ADMIN_ROLE:
@@ -3732,14 +3733,13 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                         # Future release date
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
-                    offlineCheck = Options['offline_sessions'] and re.search('('+Options['offline_sessions']+')', sessionName, re.IGNORECASE)
-                    if offlineCheck:
-                        # Failsafe check to prevent premature release of offline exams etc.
-                        if gradeDate or (Options['start_date'] and releaseDate):
-                            # Valid gradeDate or (start_date & release_date) must be specified to access offline session
+                    if sliauth.RESTRICTED_SESSIONS_RE and sliauth.RESTRICTED_SESSIONS_RE.search(sessionName):
+                        # Failsafe check to prevent premature release of restricted exams etc.
+                        if Options['start_date'] and releaseDate:
+                            # Valid start_date and release_date must be specified to access restricted session
                             pass
                         else:
-                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Session '+sessionName+' not yet released')
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted session '+sessionName+' not yet released')
                             
             # Check if pre-authorized for site access
             if Options['site_name']:
@@ -4783,7 +4783,8 @@ def start_server(site_number=0, restart=False):
             import multiproxy
             Global.server_socket = multiproxy.make_unix_server_socket(relay_addr)
             Global.http_server.add_socket(Global.server_socket)
-        print >> sys.stderr, "Site %d listening on %s" % (site_number, relay_addr)
+        print >> sys.stderr, "Site %d listening on %s (%s: admin=%s, grades=%s, guests=%s, start_date=%s)" % (site_number, relay_addr,
+                Options['site_name'], Options['admin_users'], Options['grader_users'], Options['guest_users'], Options['start_date'] )
 
     if not restart:
         IOLoop.current().start()
@@ -4965,7 +4966,6 @@ def main():
     define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
-    define("offline_sessions", default=Options["offline_sessions"], help="Pattern matching sessions that are offline assessments, default=(exam|final|midterm)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
@@ -5032,8 +5032,8 @@ def main():
         time.tzset()
         print >> sys.stderr, 'sdserver: Timezone =', options.timezone
 
-    if Options['offline_sessions']:
-        print >> sys.stderr, 'sdserver: Offline check for sessions matching:', '('+Options['offline_sessions']+')'
+    if sliauth.RESTRICTED_SESSIONS_RE:
+        print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
 
     if options.start_delay:
         print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay

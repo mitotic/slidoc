@@ -1698,9 +1698,7 @@ def sheetAction(params, notrace=False):
         curDate = createDate()
         curTime = sliauth.epoch_ms(curDate)
 
-        freezeDate = createDate(Settings['freeze_date']) or None
-        
-        frozenSessions = Settings['freeze_date'] == 'readonly' or (freezeDate and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(freezeDate))
+        frozenSessions = Settings['site_access'] == 'readonly' or (Settings['freeze_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['freeze_date']))
 
         if sheetName == SETTINGS_SHEET and adminUser != ADMIN_ROLE:
             raise Exception('Error::Must be admin user to access settings')
