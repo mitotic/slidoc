@@ -696,7 +696,7 @@ class SlidocRenderer(MathRenderer):
 
     plugin_body_template = '''<div id="%(pluginId)s-body" class="%(pluginLabel)s-body slidoc-plugin-body slidoc-pluginonly">%(pluginBodyDef)s</div><!--%(pluginId)s-body-->'''
 
-    image_drop_template = '''<div id="slidoc-imgupload-container" class="slidoc-previewonly slidoc-updateonly"><div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop">Drop image here<br><code id="slidoc-imgupload-imglink" class="slidoc-imgupload-imglink"></code></div><img id="slidoc-imgupload-imgdisp" class="slidoc-imgupload-imgdisp slidoc-img-drop" src="" style="display: none;"></div>'''
+    image_drop_template = '''<div id="slidoc-imgupload-container" class="slidoc-previewonly slidoc-updateonly"><div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop">Drop image here<br></div></div>'''
 
     remarks_template = '''
   <button id="slidoc-remarks-start-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly" onclick="Slidoc.remarksClick(this);">Edit remarks</button>
@@ -969,14 +969,13 @@ class SlidocRenderer(MathRenderer):
         html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
         html += '''  <div>\n'''
         html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
-        html += '''  </div><div>\n'''
+        html += '''  To insert images, open preview and look for drop area below</div><div>\n'''
         html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
         html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
         html += '''  </div>\n'''
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
-        html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img  slidoc-previewonly">''' % (slide_id,)
-        html += '''    <div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop" data-slide-id="%s">Drop image here<br><code id="%s-imgupload-imglink" class="slidoc-imgupload-imglink"></code></div>\n''' % (slide_id, slide_id)
-        html += '''    <img id="%s-imgupload-imgdisp" class="slidoc-imgupload-imgdisp slidoc-img-drop" src="" style="display: none;">\n''' % (slide_id,)
+        html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img" style="display: none;">''' % (slide_id,)
+        html += '''    <div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop" data-slide-id="%s">Drop image here<br></div>\n''' % (slide_id,)
         html += '''  </div>'''
         html += '''</div>\n'''
 
@@ -3447,7 +3446,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         mid_params.update(SYMS)
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
-        if not config.dry_run and gd_sheet_url:
+        if gd_sheet_url and (not config.dry_run or return_html):
             tem_attributes = renderer.sheet_attributes.copy()
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
@@ -3507,7 +3506,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 doc_str += (local_time_str[:-8]+'Z' if local_time_str.endswith(':00.000Z') else local_time_str)
             paced_files[fname] = {'type': file_type, 'release_date': iso_release_str, 'due_date': iso_due_str, 'doc_str': doc_str}
 
-        if config.dry_run:
+        if config.dry_run and not return_html:
             message("Indexed ", outname+":", fheader)
         else:
             chapter_classes = 'slidoc-reg-chapter'
@@ -3693,7 +3692,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         toc_html.append('<p></p><em>'+Formatted_by+'</em><p></p>')
 
-        if not config.dry_run:
+        if not config.dry_run or return_html:
             toc_insert = ''
             if config.toc and fname not in paced_files:
                 toc_insert += click_span('+Contents', "Slidoc.hide(this,'slidoc-toc-sections');",
@@ -3725,7 +3724,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     md2md.write_file(toc_path, toc_all_html)
                     message("Created ToC file:", toc_path)
 
-    if not config.dry_run:
+    if not config.dry_run or return_html:
         if not combined_file:
             if outfile_buffer:
                 message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
@@ -3749,7 +3748,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     xref_list = []
     if config.index and (Global.primary_tags or Global.primary_qtags):
         first_references, covered_first, index_html = make_index(Global.primary_tags, Global.sec_tags, config.server_url, fprefix=fprefix, index_id=index_id, index_file='' if combined_file else config.index)
-        if not config.dry_run:
+        if not config.dry_run or return_html:
             index_html = ' <b>CONCEPT</b>\n' + index_html
             if config.qindex:
                 index_html = nav_link('QUESTION INDEX', config.server_url, config.qindex, hash='#'+qindex_chapter_id,
@@ -3794,7 +3793,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         qout_list.append(qindex_html)
 
         qindex_output = chapter_prefix(nfiles+2, 'slidoc-qindex-container slidoc-noslide', hide=False) + back_to_contents +'<p></p>' + ''.join(qout_list) + '</article>\n'
-        if not config.dry_run:
+        if not config.dry_run or return_html:
             if combined_file:
                 combined_html.append('<div class="slidoc-noslide">'+qindex_output+'</div>\n')
             elif not return_html:

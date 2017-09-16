@@ -597,6 +597,7 @@ function onreadystateaux() {
 
 Sliobj.previewState = false;
 Sliobj.updateView = false;
+Sliobj.imageDropSetup = false;
 
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash);
@@ -626,6 +627,7 @@ Slidoc.pageSetup = function() {
 	    Sliobj.updateView = true;
 	    if (!Sliobj.params.fileName)
 		toggleClass(true, 'slidoc-update-view');
+	    imageDropState(true);
 	}
     }
 
@@ -716,17 +718,26 @@ Slidoc.pageSetup = function() {
 	togglebar.addEventListener('dragleave', handleEditDragLeave, false);
 	togglebar.addEventListener('drop', handleEditDrop, false);
     });
+}
 
-    if (Sliobj.previewState) {
+function addImageDropHandlers(imageDrop) {
+    imageDrop.addEventListener('dragenter', handleImageDragEnter, false);
+    imageDrop.addEventListener('dragover', handleImageDragOver, false);
+    imageDrop.addEventListener('dragleave', handleImageDragLeave, false);
+    imageDrop.addEventListener('drop', handleImageDrop, false);
+}
+
+function imageDropState(active, slideId) {
+    Slidoc.log("imageDropState:", active, slideId);
+    var containerElem = document.getElementById(slideId ? slideId+'-togglebar-edit-img' : 'slidoc-imgupload-container');
+    if (containerElem)
+	containerElem.style.display = active ? null : 'none';
+
+    if (!Sliobj.imageDropSetup) {
+	Sliobj.imageDropSetup = true;
 	var imageDrops = document.getElementsByClassName('slidoc-img-drop');
-	[].forEach.call(imageDrops, function(imageDrop) {
-	    imageDrop.addEventListener('dragenter', handleImageDragEnter, false);
-	    imageDrop.addEventListener('dragover', handleImageDragOver, false);
-	    imageDrop.addEventListener('dragleave', handleImageDragLeave, false);
-	    imageDrop.addEventListener('drop', handleImageDrop, false);
-	});
+	[].forEach.call(imageDrops, addImageDropHandlers);
     }
-
 }
 
 var handleEditDragSlideNumber = 0;
@@ -820,19 +831,21 @@ function handleImageDrop(evt) {
     this.classList.remove('slidoc-dragover');
     Slidoc.log('handleImageDrop: ', this, evt);
 
+    var dropElem = this;
+
     var imageFile = '';
     var imageExtn = '';
     var slideId = '';
+    var imageElem = null;
     if (this.tagName == 'IMG') {
 	if (!window.confirm('Replace '+this.src+'?'))
 	    return false;
 
-	var imageElem = this;
+	imageElem = this;
 	imageFile = this.src.split('/').slice(-1)[0];
 	imageExtn = imageFile.split('.').slice(-1)[0];
     } else {
         slideId = this.dataset.slideId ||'';
-	var imageElem = document.getElementById((slideId||'slidoc')+'-imgupload-imgdisp')
     }
 
     var files = evt.dataTransfer.files;
@@ -842,7 +855,7 @@ function handleImageDrop(evt) {
     }
 
     var fileProps = checkFileUpload(files, /^image\//);
-    Slidoc.log('handleImageDrop:B ', fileProps);
+    Slidoc.log('handleImageDrop: ', slideId, dropElem, fileProps);
 
     var imageHead = '';
     if (fileProps) {
@@ -852,29 +865,45 @@ function handleImageDrop(evt) {
 	    return false;
 	}
 	function handleImageDropAux(result, errMsg) {
+	    Slidoc.log('handleImageDropAux: ', slideId, imageElem, result, errMsg);
 	    if (!result) {
 		alert('Error in uploading image :'+errMsg);
 		return false;
 	    }
-	    if (imageElem.classList.contains('slidoc-img') || imageElem.classList.contains('slidoc-imgdisp')) {
+	    if (imageElem && (imageElem.classList.contains('slidoc-img') || imageElem.classList.contains('slidoc-imgdisp')) ) {
 		// Reload image
 		imageElem.src = imageElem.src;
 	    } else {
 		// Display uploadable image
 		var imagePath = '_images/'+result.imageFile;
-		imageElem.src = Sliobj.params.fileName+imagePath;
-		imageElem.style.display = null;
 		Slidoc.imageLink = '![' + imageHead + '](' + imagePath + ')';
-		var imageLinkElem = document.getElementById((slideId||'slidoc')+'-imgupload-imglink');
-		if (imageLinkElem)
-		    imageLinkElem.textContent = Slidoc.imageLink;
+
+		imagePath = Sliobj.params.fileName + imagePath
+		if (!Sliobj.previewState) {
+		    imagePath = '/_preview/'+imagePath;
+		    if (Sliobj.params.siteName)
+			imagePath = '/' + Sliobj.params.siteName + imagePath;
+		}
+		var dropParent = dropElem.parentNode;
+		var newImg = document.createElement('img');
+		newImg.className = 'slidoc-imgdisp slidoc-imgupload-imgdisp slidoc-img-drop';
+		newImg.src = imagePath;
+		dropParent.appendChild(newImg);
+		addImageDropHandlers(newImg);
+
+		var newLabel = document.createElement('code');
+		newLabel.className = 'slidoc-imgupload-imglink';
+		newLabel.textContent = Slidoc.imageLink
+		dropParent.appendChild(newLabel);
+
+		dropParent.appendChild(document.createElement('br'));
 
 		// Append image link to edit textarea (if present)
 		if (slideId) {
 		    var areaElem = document.getElementById(slideId+'-togglebar-edit-area');
 		    if (areaElem) {
 			areaElem.value += '\n\n' + Slidoc.imageLink + '\n\n';
-			scrollDownTextArea(areaElem);
+			scrollTextArea(areaElem);
 		    }
 		}
 	    }
@@ -1224,6 +1253,7 @@ Slidoc.slideEdit = function(action, slideId) {
     } else if (action == 'discard') {
 	if (!window.confirm('Discard edits?'))
 	    return;
+	imageDropState(false, slideId);
 	editContainer.style.display = 'none';
 	editArea.value = '';
 	if (Sliobj.previewWin) {
@@ -1289,6 +1319,9 @@ Slidoc.slideEdit = function(action, slideId) {
 		return;
 	    }
 
+	    if (action == 'open')
+		imageDropState(true, slideId);  // Preview state required for image uploads
+
 	    if (action == 'open' || action == 'update') {
 		if (checkPreviewWin()) {
                     if (checkPreviewWin() == 'about:blank') {
@@ -1322,11 +1355,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    }
 	    editContainer.style.display = null;
 	    editArea.value = result.slideText;
-	    setTimeout(function() {
-		editArea.style.height = editArea.scrollHeight + 12 + 'px';
-		editContainer.scrollIntoView(true);
-		editArea.focus();
-	    }, 200);
+	    scrollTextArea(editArea, true);
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_edit', params, slideEditAux, true);
     }
@@ -2295,10 +2324,15 @@ var Key_codes = {
     84: 't'
 };
 
-function scrollDownTextArea(areaElem) {
+function scrollTextArea(areaElem, top) {
     setTimeout(function() {
-	areaElem.scrollTop = areaElem.scrollHeight;
-	areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
+	if (top) {
+	    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
+	    areaElem.scrollIntoView(true);
+	} else {
+	    areaElem.scrollTop = areaElem.scrollHeight;
+	    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
+	}
 	areaElem.focus();
     }, 200);
 }
@@ -2336,10 +2370,10 @@ document.onkeydown = function(evt) {
 	    // Append image link to end of text area
 	    if (Slidoc.imageLink) {
 		evt.target.value += '\n\n' + Slidoc.imageLink;
-		scrollDownTextArea(evt.target);
+		scrollTextArea(evt.target);
 	    } else if (Sliobj.previewWin && Sliobj.previewWin.Slidoc && Sliobj.previewWin.Slidoc.imageLink) {
 		evt.target.value += '\n\n' + Sliobj.previewWin.Slidoc.imageLink;
-		scrollDownTextArea(evt.target);
+		scrollTextArea(evt.target);
 	    }
 	}
     }
