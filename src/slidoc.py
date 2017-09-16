@@ -3231,7 +3231,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['paceLevel'] = file_config.pace or 0
 
             if file_config.release_date:
-                release_date_str = file_config.release_date if file_config.release_date == sliauth.FUTURE_DATE else sliauth.get_utc_date(file_config.release_date)
+                if file_config.release_date == sliauth.FUTURE_DATE:
+                    release_date_str = file_config.release_date
+                else:
+                    release_date_str = sliauth.get_utc_date(file_config.release_date)
 
             if not file_config.publish and restricted_sessions_re and restricted_sessions_re.search(fname):
                 if not release_date_str:
@@ -3243,7 +3246,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                         abort('RESTRICTED-ERROR: Invalid release date %s before start date %s for restricted session %s' % (release_date_str, config.start_date, fname))
 
             if file_config.due_date:
-                due_date_str = sliauth.get_utc_date(file_config.due_date)
+                due_date_str = sliauth.get_utc_date(file_config.due_date, pre_midnight=True)
 
             if file_config.vote_date:
                 vote_date_str = sliauth.get_utc_date(file_config.vote_date)

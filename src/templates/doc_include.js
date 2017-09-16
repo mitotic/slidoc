@@ -874,11 +874,7 @@ function handleImageDrop(evt) {
 		    var areaElem = document.getElementById(slideId+'-togglebar-edit-area');
 		    if (areaElem) {
 			areaElem.value += '\n\n' + Slidoc.imageLink + '\n\n';
-			setTimeout(function() {
-			    areaElem.scrollTop = areaElem.scrollHeight;
-			    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
-			    areaElem.focus();
-			}, 200);
+			scrollDownTextArea(areaElem);
 		    }
 		}
 	    }
@@ -2299,6 +2295,14 @@ var Key_codes = {
     84: 't'
 };
 
+function scrollDownTextArea(areaElem) {
+    setTimeout(function() {
+	areaElem.scrollTop = areaElem.scrollHeight;
+	areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
+	areaElem.focus();
+    }, 200);
+}
+
 document.onkeydown = function(evt) {
     //Slidoc.log('document.onkeydown:', evt);
     if (!Sliobj.currentSlide && (evt.keyCode == 32 || evt.keyCode > 44))
@@ -2330,10 +2334,13 @@ document.onkeydown = function(evt) {
 	} else if (evt.altKey) {
 	    // Alt-Enter
 	    // Append image link to end of text area
-	    if (Slidoc.imageLink)
+	    if (Slidoc.imageLink) {
 		evt.target.value += '\n\n' + Slidoc.imageLink;
-	    else if (Sliobj.previewWin && Sliobj.previewWin.Slidoc && Sliobj.previewWin.Slidoc.imageLink)
+		scrollDownTextArea(evt.target);
+	    } else if (Sliobj.previewWin && Sliobj.previewWin.Slidoc && Sliobj.previewWin.Slidoc.imageLink) {
 		evt.target.value += '\n\n' + Sliobj.previewWin.Slidoc.imageLink;
+		scrollDownTextArea(evt.target);
+	    }
 	}
     }
 
@@ -5428,8 +5435,6 @@ Slidoc.pagesDisplay = function() {
 	html += '<ul>\n';
 	for (var j=0; j<Sliobj.params.topnavList.length; j++) {
 	    var link = Sliobj.params.topnavList[j][0];
-	    if (link == '/' && Sliobj.sitePrefix && !Sliobj.fullAccess)
-		continue;
 	    var pagename = Sliobj.params.topnavList[j][1];
             if (link.match(/^#/))
 		html += '<li><span onclick="Slidoc.go('+link+');">'+pagename+'</span></li>';

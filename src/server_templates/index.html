@@ -3,9 +3,9 @@
 <head>
 
 <!-- home index template for slidoc server --->
-<!-- index parameters: user, status, login_url, logout_url, global_role, sites, site_roles, site_labels, site_titles, site_restrictions -->
+<!-- index parameters: user, status, login_url, logout_url, global_role, sites, site_roles, site_labels, site_titles, site_hide, site_restrictions -->
 
-<title>Courses</title>
+<title>Slidoc sites</title>
 <style>
 body {
   font-family: 'Trebuchet MS', Trebuchet, 'Lucida Sans Unicode', 'Lucida Grande', 'Lucida Sans', Arial, sans-serif;
@@ -47,10 +47,10 @@ a.clickable {
 <body>
 
   <div class="home-banner">
-    <h2 class="home-title">Slidoc sites</h2>
+    <h2 class="home-title">Slidoc sites {% if global_role == 'admin' %} <a class="clickable" href="/_setup">&#9881;&nbsp;&nbsp;</a>{% end %}</h2>
 
     <div class="home-user">
-      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/special{% end %}{% if global_role == 'admin' %} <a class="clickable" href="/_setup">&#9881;&nbsp;&nbsp;</a>{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a>)
+      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/special{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a>)
       {% else %}
       <a class="clickable" href="{{ login_url }}">Login</a>
       {% end %}
@@ -62,8 +62,8 @@ a.clickable {
 
   <ul>
       {% for j, site in enumerate(sites) %}
-        {% if not site_restrictions[j] or site_restrictions[j] == 'readonly' or site_roles[j] is not None %}
-        <li {% if site_restrictions[j] %} class="restricted-site"{% end %}>{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a> {% end %}<a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}</li>
+        {% if not site_hide[j] %}
+        <li {% if site_restrictions[j] and site_restrictions[j] != 'readonly' %} class="restricted-site"{% end %}>{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a> {% end %}<a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}</li>
         {% end %}
       <p></p>
       {% end %}

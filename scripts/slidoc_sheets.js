@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.12d';
+var VERSION = '0.97.12g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -18,6 +18,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 [],
 			 ['start_date', '', 'Date after which all session releases must start (yyyy-mm-dd)'],
 			 ['freeze_date', '', 'Date when all user modifications are disabled (yyyy-mm-dd)'],
+			 ['end_date', '', 'Date after which all user access is disabled (yyyy-mm-dd)'],
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require', 'Non-null string for true'],
 			 ['share_averages', 'yes', 'Non-null string for true to share class averages for tests etc.'],

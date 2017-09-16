@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.12d'
+VERSION = '0.97.12g'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -121,11 +121,11 @@ def ordered_stringify(value, default=None):
     # (compatible with Javscript object key ordering provided there are no keys of string type consisting solely of digits)
     return json.dumps(value, default=default, sort_keys=True)
 
-def get_utc_date(date_time_str):
+def get_utc_date(date_time_str, pre_midnight=False):
     """Convert local date string of the form yyyy-mm-ddThh:mm (or yyyy-mm-dd) to UTC (unless it already ends with 'Z')"""
     if date_time_str and not date_time_str.endswith('Z'):
         if re.match(r'^\d\d\d\d-\d\d-\d\d$', date_time_str):
-            date_time_str += 'T00:00'
+            date_time_str += 'T23:59' if pre_midnight else 'T00:00'
         try:
             date_time_str = datetime.datetime.utcfromtimestamp(time.mktime(time.strptime(date_time_str, "%Y-%m-%dT%H:%M"))).strftime("%Y-%m-%dT%H:%M") + 'Z'
         except Exception, excp:
@@ -133,10 +133,19 @@ def get_utc_date(date_time_str):
 
     return date_time_str
 
-def parse_date(date_time_str):
+def parse_date(date_time_str, pre_midnight=False):
     """Parse ISO format date, with or without Z suffix denoting UTC, to return datetime object (containing local time)
        Return None on error
     """
+    if not date_time_str:
+        return None
+
+    if isinstance(date_time_str, datetime.datetime):
+        return date_time_str
+
+    if re.match(r'^\d\d\d\d-\d\d-\d\d$', date_time_str):
+        date_time_str += 'T23:59' if pre_midnight else 'T00:00'
+
     if date_time_str.endswith('Z'):
         # UTC time step (add local time offset)
         offset_sec = time.mktime(datetime.datetime.now().timetuple()) - time.mktime(datetime.datetime.utcnow().timetuple())
@@ -164,6 +173,9 @@ def create_date(epoch_ms=None):
 
 def epoch_ms(date_time=None):
     """Return epoch milliseconds (i.e., milliseconds since Jan. 1, 1970) for datetime object"""
+    if date_time and isinstance(date_time, (str, unicode)):
+        date_time = parse_date(date_time)
+
     if date_time:
         return time.mktime(date_time.timetuple())*1000.0 + date_time.microsecond/1000.0
     else:
@@ -173,6 +185,10 @@ def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
     """Return ISO date time string YYYY-MM-DDThh:mm:ss for local time (or UTC time)"""
     if not date_time:
         date_time = datetime.datetime.now()
+
+    if isinstance(date_time, (str, unicode)):
+        date_time = parse_date(date_time)
+
     if utc:
         retval = datetime.datetime.utcfromtimestamp(epoch_ms(date_time)/1000.0).isoformat() + 'Z'
     else:
@@ -180,9 +196,14 @@ def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
 
     return retval[:16] if nosec else (retval[:19] if nosubsec else retval)
 
-def print_date(date_time=None, weekday=False, long_date=False, prefix_time=False):
+def print_date(date_time=None, weekday=False, long_date=False, prefix_time=False, not_now=False):
     if not date_time:
+        if not_now:
+            return ''
         date_time = datetime.datetime.now()
+
+    if isinstance(date_time, (str, unicode)):
+        date_time = parse_date(date_time)
 
     fmt = '%b %d, %Y' if long_date else '%d%b%y'
     if prefix_time:
@@ -270,7 +291,7 @@ if __name__ == '__main__':
 
     for user in cmd_args.user:
         if cmd_args.due_date:
-            token = gen_late_token(auth_key, user, cmd_args.site or '', cmd_args.session, get_utc_date(cmd_args.due_date))
+            token = gen_late_token(auth_key, user, cmd_args.site or '', cmd_args.session, get_utc_date(cmd_args.due_date, pre_midnight=True))
         elif cmd_args.session:
             token = gen_locked_token(auth_key, user, cmd_args.site or '', cmd_args.session)
             if cmd_args.qrcode:

@@ -128,7 +128,7 @@ document.onreadystatechange = function(event) {
 </head>
 <body>
   <form action="/{{site_name}}{% if site_name %}/{% end %}_sheet/{{table_name}}" method="post" enctype="multipart/form-data" >
-     <a href="/{{site_name}}{% if site_name %}/{% end %}">Home</a> &nbsp;
+     <a href="/{{site_name}}{% if site_name %}/{% end %}">{{ site_name or 'Home' }}</a> &nbsp;
      <p></p>
      <input id="slidoc-sheet-submit" type="submit" value="Redisplay">
      &nbsp;&nbsp;

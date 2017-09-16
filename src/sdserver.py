@@ -91,6 +91,7 @@ Options = {
     'backup_hhmm': '',
     'debug': False,
     'dry_run': False,
+    'end_date': '',
     'grader_users': '',
     'gsheet_url': '',
     'guest_users': '',
@@ -119,7 +120,6 @@ Options = {
     'site_label': '',        # E.g., Calculus 101
     'site_list': [],         # List of site names
     'site_title': '',        # E.g., Elementary Calculus, Fall 2000
-    'site_restrictions': '',
     'site_number': 0,
     'sites': '',             # Comma separated list of site names
     'socket_dir': '',
@@ -132,8 +132,8 @@ Options = {
     'xsrf': False,
     }
 
-OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'start_date']
-SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title', 'site_restrictions']
+OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'start_date', 'end_date']
+SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title']
 
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
@@ -268,6 +268,29 @@ def pacedSession(uploadType):
         return 0
     else:
         return 1
+
+def restricted_user_access(start_date, end_date, site_role=None, site_access=''):
+    if site_role:
+        # Admin.grader access
+        return ''
+
+    if site_access and site_access != 'readonly':
+        # Restricted site
+        if site_access == 'adminguest' and site_role is not None:
+            # Restricted guest access
+            return ''
+        return 'restricted'
+
+    cur_time_ms = sliauth.epoch_ms()
+    if start_date and cur_time_ms < sliauth.epoch_ms(sliauth.parse_date(start_date)):
+        # Prerelease site
+        return 'prerelease'
+    elif end_date and cur_time_ms > sliauth.epoch_ms(sliauth.parse_date(end_date)):
+        # Expired site
+        return 'expired'
+
+    # Open, unexpired site
+    return ''
 
 def gen_proxy_auth_token(username, role='', sites='', key='', prefixed=False, root=False):
     if not key:
@@ -482,14 +505,14 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
                 os.makedirs(cls.site_web_dir)
             if not os.path.exists(homeWeb):
                     with open(homeWeb, 'w') as f:
-                        f.write('<b>%s Home Page</b>' % site_name)
+                        f.write('<b>%s Site Page</b>' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeWeb
 
                     if not os.path.exists(homeSrc):
                         if not os.path.exists(cls.site_src_dir):
                             os.makedirs(cls.site_src_dir)
                         with open(homeSrc, 'w') as f:
-                            f.write('**%s Home Page**' % site_name)
+                            f.write('**%s Site Page**' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeSrc
         except Exception, excp:
             print >> sys.stderr, 'sdserver: Failed to create %s/%s' % (homeWeb, homeSrc)
@@ -548,13 +571,32 @@ class HomeHandler(BaseHandler):
             
         if Options['site_list'] and not Options['site_number']:
             # Primary server
-            site_roles = []
-            for siteName in Options['site_list']:
-                site_roles.append(self.get_id_from_cookie(role=True, for_site=siteName))
+            siteHide = []
+            siteRoles = []
+            siteRestrictions = []
+            for j, siteName in enumerate(Options['site_list']):
+                siteRole = self.get_id_from_cookie(role=True, for_site=siteName)
+                siteSettings = Global.siteSettings[siteName]
+                siteAccess = siteSettings.get('site_access','')
+                startDate = siteSettings.get('start_date','')
+                endDate = siteSettings.get('end_date','')
+                hideStr = restricted_user_access(startDate, endDate, siteRole, siteAccess)
+                siteRestriction = restricted_user_access(startDate, endDate)  # 'prerelease' or 'expired' or ''
+                if siteAccess:
+                    # Expired
+                    siteRestriction = siteAccess+' '+siteRestriction if siteRestriction else siteAccess
+                if siteSettings.keys() == ['site_access']:
+                    # No access to settings
+                    siteRestriction += ' nosettings'
+                    
+                siteHide.append(hideStr)
+                siteRoles.append(siteRole)
+                siteRestrictions.append(siteRestriction)
+                
             self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url, global_role=self.get_id_from_cookie(role=True),
-                         sites=Options['site_list'], site_roles=site_roles, site_labels=Global.split_opts['site_label'],
-                         site_titles=Global.split_opts['site_title'], site_restrictions=Global.split_opts['site_restrictions'])
+                         sites=Options['site_list'], site_roles=siteRoles, site_labels=Global.split_opts['site_label'],
+                         site_titles=Global.split_opts['site_title'], site_hide=siteHide, site_restrictions=siteRestrictions)
             return
         elif Options.get('_index_html'):
             # Not authenticated
@@ -562,7 +604,7 @@ class HomeHandler(BaseHandler):
         else:
             url = '/'+Options['site_name']+'/index.html' if Options['site_number'] else '/index.html'
             if sdproxy.proxy_error_status():
-                self.write('Read-only mode; session modifications are disabled. Proceed to <a href="%s">Home Page</a>' % url)
+                self.write('Read-only mode; session modifications are disabled. Proceed to <a href="%s">Site Page</a>' % url)
             else:
                 # Authenticated by static file handler, if need be
                 self.redirect(url)
@@ -908,8 +950,13 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Unsafe column updates triggered for session %s: <br>%s' % (sessionName, preElement(valTable)))
 
         elif action == '_dash':
-            self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'] or 'Home',
-                        version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession())
+            self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'],
+                        site_title=Options['site_title'], site_access=sdproxy.Settings['site_access'],
+                        version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession(),
+                        admin_users=Options['admin_users'], grader_users=Options['grader_users'], guest_users=Options['guest_users'],
+                        start_date=sliauth.print_date(Options['start_date'],not_now=True),
+                        freeze_date=sliauth.print_date(sdproxy.Settings['freeze_date'],not_now=True),
+                        end_date=sliauth.print_date(Options['end_date'],not_now=True) )
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
@@ -1204,13 +1251,12 @@ class ActionHandler(BaseHandler):
                 if not userId:
                     self.displayMessage('Please specify user id for late token')
                     return
-                if 'T' not in dateStr:
-                    dateStr += 'T23:59'
                 if userId in nameMap:
                     # Close any active connections associated with user for session
                     for connection in sessionConnections.get(userId, []):
                         connection.close()
-                    newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, Options['site_name'], sessionName, dateStr)
+                    newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, Options['site_name'], sessionName,
+                                                          sliauth.get_utc_date(dateStr, pre_midnight=True))
                     sdproxy.createUserRow(sessionName, userId, lateToken=newLatetoken, source='allow')
                     self.redirect(site_prefix+'/_responders/'+sessionName)
                     return
@@ -3657,17 +3703,9 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
 
-        if Options['site_restrictions'] and siteRole is None:
-            raise tornado.web.HTTPError(404)
-
-        if sdproxy.Settings['site_access'] and sdproxy.Settings['site_access'] != 'readonly':
-            if sdproxy.Settings['site_access'] == 'adminguest':
-                # Guest/admin access
-                if siteRole is None:
-                    raise tornado.web.HTTPError(404)
-            elif not siteRole:
-                # Admin/grader access
-                raise tornado.web.HTTPError(404)
+        denyStr = restricted_user_access(Options['start_date'], Options['end_date'], siteRole, sdproxy.Settings['site_access'])
+        if denyStr:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Site %s not accessible (%s)' % (Options['site_name'], denyStr))
 
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
@@ -3714,7 +3752,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
                 if Options['start_date']:
-                    startDateMS = sliauth.epoch_ms(sliauth.parse_ate(Options['start_date']))
+                    startDateMS = sliauth.epoch_ms(sliauth.parse_date(Options['start_date']))
                     if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) < startDateMS:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:release_date %s must be after start_date %s for session %s' % (releaseDate, Options['start_date'], sessionName) )
                     elif gradeDate and sliauth.epoch_ms(gradeDate) < startDateMS:
@@ -4783,13 +4821,13 @@ def start_server(site_number=0, restart=False):
             import multiproxy
             Global.server_socket = multiproxy.make_unix_server_socket(relay_addr)
             Global.http_server.add_socket(Global.server_socket)
-        print >> sys.stderr, "Site %d listening on %s (%s: admins=%s, graders=%s, guests=%s, start_date=%s)" % (site_number, relay_addr,
-                Options['site_name'], Options['admin_users'], Options['grader_users'], Options['guest_users'], Options['start_date'] )
+        print >> sys.stderr, "Site %d listening on %s (%s: admins=%s, graders=%s, guests=%s, start=%s, end=%s)" % (site_number, relay_addr,
+                Options['site_name'], Options['admin_users'], Options['grader_users'], Options['guest_users'], Options['start_date'], Options['end_date'])
 
     if not restart:
         IOLoop.current().start()
 
-def getSheetSettings(gsheet_url, site_name=''):
+def getSheetSettings(gsheet_url, site_name='', adminonly_fail=False):
     try:
         return sliauth.read_settings(gsheet_url, Options['root_auth_key'], sdproxy.SETTINGS_SHEET, site=site_name)
     except Exception, excp:
@@ -4797,7 +4835,7 @@ def getSheetSettings(gsheet_url, site_name=''):
         ##    import traceback
         ##    traceback.print_exc()
         print >> sys.stderr, 'Error:site %s: Failed to read  Google Sheet settings_slidoc from %s: %s' % (site_name, gsheet_url, excp)
-        return {}
+        return {'site_access': 'adminonly'} if adminonly_fail else {}
 
 def fork_site_server(site_name, gsheet_url, **kwargs):
     # Return error message or null string
@@ -4807,7 +4845,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
     new_site = site_name not in Global.split_opts['site_list']
 
     errMsg = ''
-    sheetSettings = getSheetSettings(gsheet_url, site_name) if gsheet_url else {}
+    sheetSettings = getSheetSettings(gsheet_url, site_name, adminonly_fail=Options['host'] != 'localhost') if gsheet_url else {}
     Global.siteSettings[site_name] = sheetSettings
 
     Options['site_list'].append(site_name)
@@ -4823,10 +4861,6 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         for key in SPLIT_OPTS[1:]:
             if key in sheetSettings:
                 Global.split_opts[key][site_number-1] = sheetSettings[key]
-        Global.split_opts['site_restrictions'][site_number-1] = sheetSettings.get('site_access','')
-    elif gsheet_url:
-        # No sheet settings; admin access only
-        Global.split_opts['site_restrictions'][site_number-1] = 'adminonly'
 
     Global.userRoles.update_site_roles(site_name, sheetSettings.get('admin_users',''), sheetSettings.get('grader_users',''), sheetSettings.get('guest_users','') )
 
@@ -4867,19 +4901,10 @@ def setup_site_server(sheetSettings, site_number):
 
         if sheetSettings:
             sdproxy.copySheetOptions(sheetSettings)
-        elif Options['gsheet_url'] and Options['host'] != 'localhost':
-            # No sheet settings; admin access only
-            sheetSettings = {'site_access': 'adminonly'}
         else:
             sheetSettings = {}
 
         sdproxy.copySheetOptions(sheetSettings)
-
-        if sheetSettings:
-            # Override site restrictions with sheet values
-            Options['site_restrictions'] = sheetSettings.get('site_access','')
-            if site_number:
-                Global.split_opts['site_restrictions'][site_number-1] = Options['site_restrictions']
 
         Global.session_options = {}
         for key in sheetSettings:
@@ -4968,7 +4993,6 @@ def main():
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")
-    define("site_restrictions", default='', help="Site restrictions")
     define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
@@ -5085,7 +5109,7 @@ def main():
             start_server()
     else:
         # Start single site server
-        sheetSettings = getSheetSettings(Options['gsheet_url']) if Options['gsheet_url'] else {}
+        sheetSettings = getSheetSettings(Options['gsheet_url'], adminonly_fail=Options['host'] != 'localhost') if Options['gsheet_url'] else {}
         Global.siteSettings[''] = sheetSettings
         if sheetSettings:
             for key in SPLIT_OPTS[1:]:
