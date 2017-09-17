@@ -696,7 +696,7 @@ class SlidocRenderer(MathRenderer):
 
     plugin_body_template = '''<div id="%(pluginId)s-body" class="%(pluginLabel)s-body slidoc-plugin-body slidoc-pluginonly">%(pluginBodyDef)s</div><!--%(pluginId)s-body-->'''
 
-    image_drop_template = '''<div id="slidoc-imgupload-container" class="slidoc-previewonly slidoc-updateonly"><div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop">Drop image here<br></div></div>'''
+    image_drop_template = '''<div id="slidoc-imgupload-container" class="slidoc-previewonly slidoc-updateonly"><label>Autonumber images:</label><input id="slidoc-upload-img-autonumber" type="checkbox" class="slidoc-upload-img-autonumber" value="autonumber"></input></label><div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop">Drop image here<br></div></div>'''
 
     remarks_template = '''
   <button id="slidoc-remarks-start-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly" onclick="Slidoc.remarksClick(this);">Edit remarks</button>
@@ -968,13 +968,17 @@ class SlidocRenderer(MathRenderer):
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="display: none;">\n''' % (slide_id, slide_id)
         html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
         html += '''  <div>\n'''
-        html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button> <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button> <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id, slide_id, slide_id, slide_id, slide_id)
-        html += '''  To insert images, open preview and look for drop area below</div><div>\n'''
+        html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button>''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button>''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id)
+        html += '''  </div><div>\n'''
+        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update" onclick="Slidoc.slideEdit('insert', '%s');">Insert image</button>\n''' % (slide_id, slide_id)
         html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
         html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
         html += '''  </div>\n'''
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img" style="display: none;">''' % (slide_id,)
+        html += '''    <label>Autonumber images:</label><input id="%s-upload-img-autonumber" type="checkbox" class="slidoc-upload-img-autonumber" value="autonumber"></input></label>\n''' % (slide_id,)
         html += '''    <div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop" data-slide-id="%s">Drop image here<br></div>\n''' % (slide_id,)
         html += '''  </div>'''
         html += '''</div>\n'''
@@ -2906,7 +2910,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Only process files with a release date after the minimum required release date
             tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
             tem_release_date_str = tem_config.release_date or config.release_date
-            if not tem_release_date_str or tem_release_date_str == sliauth.FUTURE_DATE or sliauth.parse_date(tem_release_date_str) < start_date:
+            if not tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE and sliauth.parse_date(tem_release_date_str) < start_date:
+                abort('RELEASE-ERROR: Module %s has release date %s before start date %s' % (fname, tem_release_date_str, start_date) )
                 continue
 
         if not config.make:
@@ -3298,7 +3303,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         md_text = preprocess(md_text, hrule_setext=('underline_headers' in file_config.features))
         loc = md2md.find_non_ascii(md_text)
         if loc:
-            message('ASCII-ERROR: Possible non-ascii character at position %d could create problems: %s' % (loc, repr(md_text[max(0,loc-10):loc+15])) )
+            message('ASCII-WARNING: Possible non-ascii character at position %d could create problems: %s' % (loc, repr(md_text[max(0,loc-10):loc+15])) )
 
         # Strip annotations (may also break slide editing)
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)

@@ -1618,7 +1618,8 @@ class ActionHandler(BaseHandler):
             fbody = fileinfo['body']
             sessionName = self.get_argument("sessionname")
             imageFile = self.get_argument("imagefile", "")
-            return self.imageUpload(sessionName, imageFile, fname, fbody)
+            autonumber = self.get_argument("autonumber", "")
+            return self.imageUpload(sessionName, imageFile, fname, fbody, autonumber=autonumber)
 
         if action in ('_sheet',):
             self.displaySheet(sessionName, download=self.get_argument("download", ''),
@@ -2097,6 +2098,9 @@ class ActionHandler(BaseHandler):
         else:
             utypes = self.get_session_names()
 
+        if not indexOnly:
+            WSHandler.lockAllConnections('Site rebuilt. Reload page', reload=True)
+
         msg_dict = {}
         msg_list = []
         if Options['debug'] :
@@ -2117,13 +2121,17 @@ class ActionHandler(BaseHandler):
         return msg_dict if log_dict else msg_list
 
 
-    def imageUpload(self, sessionName, imageFile, fname, fbody):
+    def imageUpload(self, sessionName, imageFile, fname, fbody, autonumber=None):
         if Options['debug']:
-            print >> sys.stderr, 'ActionHandler:imageUpload', sessionName, imageFile, fname, len(fbody)
+            print >> sys.stderr, 'ActionHandler:imageUpload', sessionName, imageFile, fname, autonumber, len(fbody)
         if not self.previewActive():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
         if not imageFile:
-            imageFile = (md2md.IMAGE_FMT % self.previewState['new_image_number']) + os.path.splitext(fname)[1].lower()
+            imgName = re.sub(r'[^\w,.+-]', '', fname.strip().replace(' ','_'))
+            if imgName and not autonumber:
+                imageFile = imgName
+            else:
+                imageFile = (md2md.IMAGE_FMT % self.previewState['new_image_number']) + os.path.splitext(fname)[1].lower()
             self.previewState['new_image_number'] += 1
         if not self.previewState['image_zipfile']:
             self.previewState['image_zipbytes'] = io.BytesIO()
@@ -3140,6 +3148,13 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
 
     @classmethod
+    def lockAllConnections(cls, lock_msg, reload=False):
+        for path, user, connections in  cls.get_connections():
+            for connection in connections:
+                connection.locked = lock_msg
+                connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
+
+    @classmethod
     def closeSessionConnections(cls, sessionName):
         # Close all socket connections for specified session
         for userId, connections in cls.get_connections(sessionName).items():
@@ -3689,8 +3704,10 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
         if ActionHandler.previewState.get('name'):
             if sessionName and sessionName.startswith(ActionHandler.previewState['name']):
                 if siteRole == sdproxy.ADMIN_ROLE:
-                    preview_url = '_preview/index.html'
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Use %s/%s to view session %s' % (Options['site_name'], preview_url, ActionHandler.previewState['name']))
+                    preview_url = '/_preview/index.html'
+                    if Options['site_name']:
+                        preview_url = '/' + Options['site_name'] + preview_url
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Click <a href="%s">here</a> to preview session %s' % (preview_url, ActionHandler.previewState['name']))
                 else:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Session not currently accessible')
 

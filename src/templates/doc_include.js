@@ -908,7 +908,12 @@ function handleImageDrop(evt) {
 		}
 	    }
 	}
-	Slidoc.ajaxUpload(Sliobj.sitePrefix + '/_imageupload', fileProps.file, {sessionname: Sliobj.params.fileName, imagefile: imageFile}, handleImageDropAux, true);
+	var params = {sessionname: Sliobj.params.fileName, imagefile: imageFile};
+	var autoElem = document.getElementById((slideId||'slidoc')+'-upload-img-autonumber');
+	if (autoElem && autoElem.checked)
+	    params.autonumber = 1;
+
+	Slidoc.ajaxUpload(Sliobj.sitePrefix + '/_imageupload', fileProps.file, params, handleImageDropAux, true);
     }
 
     return false;
@@ -1262,9 +1267,9 @@ Slidoc.slideEdit = function(action, slideId) {
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
 
-    } else if (action == 'open' || action == 'update' || action == 'save' || action == 'delete' || action == 'rollover' || action == 'truncate') {
+    } else if (action == 'open' || action == 'update' || action == 'insert' || action == 'save' || action == 'delete' || action == 'rollover' || action == 'truncate') {
 	params.sessiontext = editArea.value;
-	if (action == 'open' || action == 'update')
+	if (action == 'open' || action == 'update' || action == 'insert')
 	    params.update = '1';
 	if (action == 'delete')
 	    params.deleteslide = 'delete';
@@ -1277,7 +1282,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
 	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
 
-	if (action == 'open' || (action == 'update' && !checkPreviewWin())) {
+	if (action == 'open' || (!checkPreviewWin() && (action == 'update' &&  action == 'insert')) ) {
 	    var winName = Sliobj.params.siteName+'_preview';
 	    if (window.name == winName)
 		winName += '2';
@@ -1319,10 +1324,12 @@ Slidoc.slideEdit = function(action, slideId) {
 		return;
 	    }
 
-	    if (action == 'open')
+	    if (action == 'insert') {
 		imageDropState(true, slideId);  // Preview state required for image uploads
+		setTimeout(function(){alert('To insert new images, drag-and-drop them into box below text edit area, then update preview. To overwrite old images, simply drop new image over old image in preview.'); }, 200);
+	    }
 
-	    if (action == 'open' || action == 'update') {
+	    if (action == 'open' || action == 'update'|| action == 'insert') {
 		if (checkPreviewWin()) {
                     if (checkPreviewWin() == 'about:blank') {
 			Sliobj.previewWin.location = previewURL;
