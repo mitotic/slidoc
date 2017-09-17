@@ -161,10 +161,10 @@ Global.split_opts = {}
 
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
-RAWPRIVATE_PATH = '_rawprivate'
 RESTRICTED_PATH = '_restricted'
 RESOURCE_PATH = '_resource'
 LIBRARIES_PATH = '_libraries'
+FILES_PATH = '_files'
 DOCS_PATH = '_docs'
 
 ACME_PATH = '.well-known/acme-challenge'
@@ -373,6 +373,8 @@ class UserIdMixin(object):
             basename, sep, suffix = basename.rpartition('.')
         if not special and basename == 'index':
             return None
+        if ('/'+FILES_PATH) in basename:
+            return None
         return basename
 
     def is_web_view(self):
@@ -497,7 +499,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         cls.site_web_dir    = Options['static_dir'] + sitePrefix
         cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH
         cls.site_backup_dir = Options['backup_dir'] + sitePrefix
-        cls.site_files_dir  = Options['static_dir'] + sitePrefix + '/' + RAWPRIVATE_PATH
+        cls.site_files_dir  = Options['static_dir'] + sitePrefix + '/' + FILES_PATH
         homeSrc = cls.site_src_dir+'/index.md'
         homeWeb = cls.site_web_dir+'/index.html'
         try:
@@ -1427,6 +1429,8 @@ class ActionHandler(BaseHandler):
             if not os.path.exists(fullpath):
                 if not subpath:
                     os.makedirs(fullpath)
+                    if predir == 'files':
+                        os.makedirs(os.path.join(fullpath, PRIVATE_PATH))
                 else:
                     self.displayMessage('Path %s (%s) does not exist!' % (filepath, fullpath))
                     return
@@ -1499,16 +1503,19 @@ class ActionHandler(BaseHandler):
                 fext = os.path.splitext(fname)[1]
                 subdirpath = os.path.join(filepath, fname)
                 isfile = os.path.isfile(fpath)
-                if isfile and predir in ('web', 'data') and fext.lower() in ('.jpeg','.jpg','.pdf','.png'):
-                    _, _, viewpath = subdirpath.partition('/')
+                linkpath, viewpath = '', ''
+                if isfile:
+                    _, _, linkpath = subdirpath.partition('/')
                     if predir == 'data':
-                       viewpath = PLUGINDATA_PATH + '/' + viewpath
-                else:
-                    viewpath = ''
+                       linkpath = PLUGINDATA_PATH + '/' + linkpath
+                    elif predir == 'files':
+                       linkpath = FILES_PATH + '/' + linkpath
+                    if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.jpeg','.jpg','.pdf','.png'):
+                        viewpath = linkpath
 
-                file_list.append( [fname, subdirpath, isfile, viewpath] )
+                file_list.append( [fname, subdirpath, isfile, linkpath, viewpath] )
 
-        self.render('browse.html', site_name=Options['site_name'], status=status,
+        self.render('browse.html', site_name=Options['site_name'], status=status, server_url=Options['server_url'],
                     url_path=url_path, site_admin=site_admin, root_admin=self.check_root_admin(),
                     up_path=up_path, browse_path=filepath, file_list=file_list)
 
@@ -2104,7 +2111,7 @@ class ActionHandler(BaseHandler):
         msg_dict = {}
         msg_list = []
         if Options['debug'] :
-            print >> sys.stderr, 'sdserver.rebuild:', utypes
+            print >> sys.stderr, 'sdserver.rebuild:', force, utypes
         for utype in utypes:
             retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly, force=force)
             msgs = retval.get('messages',[])
@@ -3741,14 +3748,13 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 return userId
             raise tornado.web.HTTPError(404)
 
-        elif ('/'+PRIVATE_PATH) in self.request.path or ('/'+RAWPRIVATE_PATH) in self.request.path:
+        elif ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/'+PRIVATE_PATH are always protected and used for session-related content
-            # '/'+RAWPRIVATE_PATH is used to restrict non-session content to users with access to the site
             if not userId:
                 return None
 
             if ('/'+PRIVATE_PATH) in self.request.path and sessionName and sessionName != 'index':
-                # Session access checks
+                # Session access checks (for files with /_files in path, sessionName will be None)
                 gradeDate = None
                 releaseDate = None
                 sessionType, _ = getSessionType(sessionName)
@@ -4196,7 +4202,7 @@ def createApplication():
     if Options['static_dir']:
         sprefix = Options['site_name']+'/' if Options['site_name'] else ''
         # Handle special paths
-        for path in [RAWPRIVATE_PATH, PRIVATE_PATH, RESTRICTED_PATH, PLUGINDATA_PATH]:
+        for path in [FILES_PATH, PRIVATE_PATH, RESTRICTED_PATH, PLUGINDATA_PATH]:
             if path == PLUGINDATA_PATH:
                 if not Options['plugindata_dir']:
                     continue

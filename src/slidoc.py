@@ -2910,7 +2910,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Only process files with a release date after the minimum required release date
             tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
             tem_release_date_str = tem_config.release_date or config.release_date
-            if not tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE and sliauth.parse_date(tem_release_date_str) < start_date:
+            if tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE and sliauth.parse_date(tem_release_date_str) < start_date:
                 abort('RELEASE-ERROR: Module %s has release date %s before start date %s' % (fname, tem_release_date_str, start_date) )
                 continue
 
@@ -3308,7 +3308,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         # Strip annotations (may also break slide editing)
         md_text = re.sub(r"(^|\n) {0,3}[Aa]nnotation:(.*?)(\n|$)", '', md_text)
 
-        files_url = '/_rawprivate'
+        files_url = '/_files'
         if config.site_name:
             files_url = '/' + config.site_name + files_url
         slide_parser = md2md.Parser(slide_mods_args, images_zipdata=images_zipdict.get(fname), files_url=files_url)
