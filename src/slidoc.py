@@ -4319,7 +4319,7 @@ if __name__ == '__main__':
     settings = {}
     if cmd_args.gsheet_url:
         try:
-            settings = sliauth.read_settings(cmd_args.gsheet_url, cmd_args.auth_key, SETTINGS_SHEET)
+            settings = sliauth.get_settings(sliauth.read_sheet(cmd_args.gsheet_url, cmd_args.auth_key, SETTINGS_SHEET)[0])
         except Exception, excp:
             print('Error in reading settings: %s', str(excp), file=sys.stderr)
 

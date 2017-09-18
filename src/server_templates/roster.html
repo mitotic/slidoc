@@ -4,6 +4,17 @@
 <!-- roster parameters: site_name, gradebook, qwheel_new, qwheel_link, name_map, last_map, first_map -->
 
 {% include "base.html" %}
+{% include "actbase.html" %}
+
+<style>
+th, td { padding-left: 6px;
+         padding-right: 6px;
+         padding-top: 2px;
+         padding-bottom: 2px;
+   }
+
+th { text-align: left; }
+</style>
 
 </head>
 <body>
@@ -12,20 +23,35 @@
 {% include "linkback.html" %}
 </b>
 <p></p>
+<hr>
+<p></p>
+<h2>Site Roster</h2>
 
-<h2>{{site_name}} Roster</h2>
-
-<a href="{{ qwheel_new  }}" target="_blank"><b>New question wheel session</b></a>
+<b><a class="clickable" href="{{ site_prefix }}/_attend">Take attendance</a></b>
 <p></p>
 
-<a href="{{ qwheel_link }}" target="_blank"><b>Question wheel session</b></a>
+<b><a class="clickable" href="javascript:slidocAction('editroster')">Add new user to roster</a></b>
+<hr>
+
+<a class="clickable" href="{{ qwheel_new  }}" target="_blank"><b>New question wheel session</b></a>
 <p></p>
 
-{% for j, nMap in enumerate([name_map, last_map, first_map]) %}
+<a class="clickable" href="{{ qwheel_link }}" target="_blank"><b>Question wheel session</b></a>
+<p></p>
+
+{% for j, nMap in enumerate([name_map]) %}
   {% set items = sorted(nMap.items(), key=lambda x: x[1]) %}
-  <hr><table>
+  <hr>
+  <table>
+  {% set k = 0 %}
   {% for userid, name in items %}
-  <tr><td>{{ name }}{% if not j and gradebook %} <a class="clickable" href="{{ site_prefix }}/_user_grades/{{ userid }}">&#x1F520;</a>{% end %}</td></tr>
+   {% set k += 1 %}
+    <tr class="{{ 'oddrow' if k % 2 else 'evenrow' }}">
+      <td>{{ name }}</td>
+      <td>{% if not j and gradebook %} <a class="clickable" href="{{ site_prefix }}/_user_grades/{{ userid }}">&#x1F520;</a>{% end %}</td>
+      <td><a class="clickable" href="{{ site_prefix }}/_editroster?user={{ userid }}" >&#9998;</a></td>
+      <td><a class="clickable" href="javascript:slidocConfirmAction('editroster','delete','?user={{ userid }}&delete=1')" >&#x1F5D1;</a></td>
+    </tr>
   {% end %}
   </table>
 {% end %}

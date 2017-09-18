@@ -5,21 +5,23 @@
 var slidocSiteName = '{{site_name}}'; 
 var slidocSessionName = '{{session_name}}';
 
-function slidocAction(actionName, sessionName) {
-  slidocStatus(actionName);
+function slidocAction(actionName, sessionName, dispMsg, query) {
+  slidocStatus(dispMsg || actionName);
 
   var url = '/_' + actionName;
   if (slidocSiteName)
     url = '/' + slidocSiteName + url
   if (sessionName || slidocSessionName)
     url += '/' + (sessionName || slidocSessionName);
+  if (query)
+    url += query;
   window.location = url;
 }
 
-function slidocConfirmAction(actionName) {
-  slidocStatus(actionName);
-  if (window.confirm('Confirm '+actionName+'?')) {
-    slidocAction(actionName);
+function slidocConfirmAction(actionName, dispMsg, query) {
+  slidocStatus(dispMsg || actionName);
+  if (window.confirm('Confirm '+(dispMsg || actionName)+'?')) {
+    slidocAction(actionName, '', dispMsg, query);
     return;
   }
   slidocStatus('');

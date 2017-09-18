@@ -1,0 +1,45 @@
+<html>
+<head>
+<!-- editroster template for slidoc server --->
+<!-- editroster parameters: site_name, headers, values, edit, err_msg -->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+  <b>
+  {% include "linkback.html" %}
+  </b>
+
+  <p></p>
+  <b><a href="{{site_prefix}}/_roster">Back</a></b>
+
+  <p></p>
+  <h2>{{'Edit' if edit else 'Add'}} roster entry</h2>
+
+  <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
+
+  <form action="/{{site_name}}{% if site_name %}/{% end %}_editroster"  method="post" enctype="multipart/form-data">
+    <fieldset>
+      <label>Name: <input type="text" name="name" value="{{values[0]}}"></label> (Must be of the form 'Lastname, First Middlenames')<br>
+      <label>Id: <input type="text" name="id" {% if edit %}readonly{% end %} value="{{values[1]}}"></label> (Must be unique; omit to construct from name)<br>
+      <label>Email: <input type="text" name="email" value="{{values[2]}}"></label> (user@example.com)<br>
+      <label>Alternate Id: <input type="text" name="altid" value="{{values[3]}}"></label><br>
+      <hr>
+    {% for j, header in enumerate(headers[4:]) %}
+      <label>{{header}}: <input type="text" name="altid" value="{{values[4+j]}}"></label><br>
+    {% end %}
+    <hr>
+      <label><em>Edit</em>: <input type="checkbox" {{'checked' if edit else ''}} name="edit" value="edit"></label>
+    </fieldset>
+   {% module xsrf_form_html() %}
+   <p></p>
+   <div>
+     <input id="slidoc-editroster-submit" type="submit" value="{{'Edit' if edit else 'Add'}} entry">
+   </div>
+  </form>
+</div>
+
+</body>
+</html>

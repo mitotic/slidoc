@@ -88,6 +88,7 @@ COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
                     'backup_dir', 'debug', 'dry_run',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
 
+DAY_PREFIX = '_day_'
 ACTION_FORMULAS = False
 TOTAL_COLUMN = 'q_total'        # session total column name (to avoid formula in session sheet)
 
@@ -3612,7 +3613,6 @@ def createRoster(headers, rows):
     if headers[:4] != MIN_HEADERS:
         raise Exception('Error: Invalid headers for roster_slidoc; first four should be "'+', '.join(MIN_HEADERS)+'", but found "'+', '.join(headers or [])+'"')
 
-    test_user_row = ['#User, Test', TESTUSER_ID] + ['']*(len(headers)-2)
     idSet = set()
     rosterRows = []
     for row in rows:
@@ -3626,24 +3626,20 @@ def createRoster(headers, rows):
         if row[1] in idSet:
             raise Exception('Duplicate id found in imported roster row: '+row[1])
         idSet.add(row[1])
-        if row[1] == TESTUSER_ID:
-            test_user_row = row
-            continue
         if row[1][0] == '_':
             raise Exception('Underscore not allowed at start of id in imported roster row: '+row[1])
 
+        if not row[0][0].isalpha() and row[0][0] != '#':
+            raise Exception('Invalid start character in imported name '+row[0])
         if row[0].count(',') > 1:
             raise Exception('Multiple commas not allowed in imported name: '+row[0])
-        if row[0][0].isalpha():
-            row[0] = row[0][0].upper() + row[0][1:]
-        elif row[0][0] == '#' and len(row[0]) > 1:
-            row[0] = row[0][0] + row[0][1].upper() + row[0][2:]
-        else:
-            raise Exception('Invalid start character in imported name '+row[0])
+        lastName, _, firstNames = row[0].partition(',')
+        row[0] = makeName(lastName, firstNames)
         rosterRows.append(row)
         
-    rosterRows.sort()
+    test_user_row = ['#User, Test', TESTUSER_ID] + ['']*(len(headers)-2)
     rosterRows.insert(0, test_user_row)
+    rosterRows.sort()
     rosterSheet = getSheet(ROSTER_SHEET)
     if rosterSheet:
         raise Exception('Roster sheet already present; delete it before importing')
@@ -3696,6 +3692,149 @@ def lookupRoster(field, userId=None):
     for j, idVal in enumerate(idVals):
         fieldDict[idVal] = fieldVals[j]
     return fieldDict
+
+NAME_RE = re.compile(r'[a-z][a-z-]*( +[a-z][a-z-]*)* *(,( *[a-z][a-z-]*)( +[a-z][a-z-]*)*)?$', re.IGNORECASE)
+def makeId(displayName, idVals):
+    # Creates ids of the form: 'lastname-firstname@'
+    # (guaranteed to be different from any email id)
+    if not NAME_RE.match(displayName):
+        raise Exception('Invalid name "%s"; must be of the form "Last Name, First And Middle"' % displayName)
+
+    lastnames, _, firstnames = displayName.partition(',')
+    lastnames = lastnames.strip().split()
+    firstnames = firstnames.strip().split() if firstnames else []
+    idPrefix = '-'.join(lastnames).lower()
+    if firstnames:
+        j = 0
+        idPrefix += '-' + firstnames[j].lower()
+        while idPrefix+'@' in idVals:
+            j += 1
+            if j < len(firstnames):
+                idPrefix = idPrefix + '-' + firstnames[j].lower()
+            else:
+                raise Exception('Unable to generate unique id for name "%s"' % displayName)
+    return idPrefix+'@'
+    
+
+def splitCapitalize(names):
+    return ' '.join( name.capitalize() for name in names.strip().split() )
+
+def makeName(lastName, firstNames, middleNames=''):
+    name = splitCapitalize(lastName)
+    if name.startswith('#'):
+        name = name[0] + name[1:].capitalize()
+    if firstNames.strip():
+        name += ', ' + splitCapitalize(firstNames)
+        if middleNames.strip():
+            name += ' ' +splitCapitalize(middleNames)
+    return name
+
+def getRosterHeaders():
+    # Return list of user profile-related headers
+    rosterSheet = getSheet(ROSTER_SHEET)
+    if not rosterSheet:
+        return None
+    headers = []
+    for header in rosterSheet.getHeaders():
+        if header.startswith('_'):
+            break
+        headers.append(header)
+    return headers
+
+def editRosterValues(rowDict, overwrite=False):
+    rosterSheet = getSheet(ROSTER_SHEET)
+    if not rosterSheet:
+        return None
+
+    headers = getRosterHeaders()
+    nameVals = getColumns('name', rosterSheet, 1, 2)
+    idVals = getColumns('id', rosterSheet, 1, 2)
+
+    if 'name' not in rowDict:
+        raise Exception('Name required for new roster entry')
+
+    if not NAME_RE.match(rowDict['name']):
+        raise Exception('Invalid name "%s"; must be of the form "Last Name, First And Middle"' % rowDict['name'])
+
+    if not rowDict.get('id','').strip():
+        idVal = makeId(rowDict['name'], idVals)
+        rowDict = rowDict.copy()
+        rowDict['id'] = idVal
+        
+    if rowDict['id'] in idVals:
+        userRow = 2 + idVals.index(rowDict['id'])
+        if not overwrite:
+            return rosterSheet.getSheetValues(userRow, 1, 1, len(headers))[0]
+    else:
+        if overwrite:
+            raise Exception('Id %s not found in roster for editing' % rowDict['id'])
+        userRow = 1 + locateNewRow(rowDict['name'], rowDict['id'], nameVals, idVals)
+        rosterSheet.insertRowBefore(userRow, keyValue=rowDict['id'])
+
+    rowVals = [ rowDict.get(header, '') for header in  headers]
+    rosterSheet.getRange(userRow, 1, 1, len(rowVals)).setValues([rowVals])
+    return None
+    
+def getRosterValues(idVal, delete=False):
+    rosterSheet = getSheet(ROSTER_SHEET)
+    if not rosterSheet:
+        return None
+
+    idVals = getColumns('id', rosterSheet, 1, 2)
+    if idVal not in idVals:
+        return None
+    userRow = 2 + idVals.index(idVal)
+    headers = getRosterHeaders()
+    oldValues = rosterSheet.getSheetValues(userRow, 1, 1, len(headers))[0]
+    if delete:
+        rosterSheet.deleteRow(userRow)
+    return oldValues
+
+def getAttendanceDays():
+    # Return list of attendance days [ddMONyy, ...]
+    rosterSheet = getSheet(ROSTER_SHEET)
+    if not rosterSheet:
+        return None
+    return [header[len(DAY_PREFIX):] for header in rosterSheet.getHeaders() if header.startswith(DAY_PREFIX)]
+
+def getAttendance(day, new=False):
+    # Return list [ [name, userid, 1/0/''], ... ] for column _day_ddMONyy
+    rosterSheet = getSheet(ROSTER_SHEET)
+    if not rosterSheet:
+        return None
+
+    dayColName = DAY_PREFIX+day
+    dayCol = indexColumns(rosterSheet).get(DAY_PREFIX+day)
+    if not dayCol and not new:
+        raise Exception('Attendance column %s not found in roster sheet' % dayColName)
+    if new:
+        if dayCol:
+            raise Exception('New attendance column %s already present in roster sheet' % dayColName)
+        rosterSheet.appendColumns([dayColName])
+        dayCol = len(rosterSheet.getHeaders())
+    nameVals = getColumns('name', rosterSheet, 2, 2)
+    dayVals = getColumns(dayColName, rosterSheet, 1, 2)
+    retVals = []
+    for j, dayVal in enumerate(dayVals):
+        if not nameVals[j][0].startswith('#'):
+            retVals.append(nameVals[j]+[dayVal])
+    return retVals
+
+def toggleAttendance(day, userId):
+    rosterSheet = getSheet(ROSTER_SHEET)
+    dayColName = DAY_PREFIX+day
+    colIndex = indexColumns(rosterSheet)
+    dayCol = colIndex.get(dayColName)
+    dayRow = indexRows(rosterSheet, colIndex['id'], 2).get(userId)
+    if not dayCol:
+        raise Exception('Attendance column %s not found in roster sheet' % dayColName)
+    if not dayRow:
+        raise Exception('Attendance for user %s not found in roster sheet' % userId)
+    rng = rosterSheet.getRange(dayRow, dayCol, 1, 1)
+    newVal = 0 if rng.getValue() else 1
+    rng.setValue(newVal)
+    return newVal
+
 
 AGGREGATE_COL_RE = re.compile(r'\b(_\w+)_(avg|normavg|sum)(_(\d+))?$', re.IGNORECASE)
 def lookupGrades(userId):

@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.12j'
+VERSION = '0.97.12k'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -235,19 +235,19 @@ def http_post(url, params_dict=None, add_size_info=False):
         result = {'result': 'error', 'error': 'Error in http_post: result='+str(result)+': '+str(excp)}
     return result
 
-def read_settings(sheet_url, hmac_key, settings_sheet, site=''):
+def read_sheet(sheet_url, hmac_key, sheet_name, site=''):
+    # Returns [rows, headers]
     auth_key = gen_site_key(hmac_key, site) if site else hmac_key
     user_token = gen_auth_token(auth_key, 'admin', 'admin', prefixed=True)
-    get_params = {'sheet': settings_sheet, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
+    get_params = {'sheet': sheet_name, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
-        raise Exception("Error in accessing %s %s: %s" % (site, settings_sheet, retval['error']))
-    rows = retval.get('value')
-    if not rows:
-        raise Exception("Error: Empty sheet %s %s" % (site, settings_sheet))
-    return get_settings(rows)
+        raise Exception("Error in accessing %s %s: %s" % (site, sheet_name, retval['error']))
+    return retval.get('value'), retval.get('headers')
 
 def get_settings(rows):
+    if not rows:
+        raise Exception("Error: Empty settings sheet")
     settings = {}
     for row in rows:
         if not row or not row[0].strip():

@@ -1,12 +1,11 @@
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <html>
 <head>
+
+{% include "base.html" %}
+
 <style>
-body
-{
-    font-family: Helvetica,Arial,sans-serif;
-    text-shadow: 0 1px 0 #fff;
-}
+
 .ztablecontainer {
     width: 100%;
     overflow: scroll;
@@ -127,8 +126,12 @@ document.onreadystatechange = function(event) {
 </script>
 </head>
 <body>
+  <b>
+  {% include "linkback.html" %}
+  </b>
+  <hr>
+
   <form action="/{{site_name}}{% if site_name %}/{% end %}_sheet/{{table_name}}" method="post" enctype="multipart/form-data" >
-     <a href="/{{site_name}}{% if site_name %}/{% end %}">{{ site_name or 'Home' }}</a> &nbsp;
      <p></p>
      <input id="slidoc-sheet-submit" type="submit" value="Redisplay">
      &nbsp;&nbsp;

@@ -152,6 +152,8 @@ Global.server_socket = None
 Global.proxy_server = None
 Global.session_options = {}
 Global.siteSettings = {}
+Global.siteRosterMaps = {}
+Global.email2id = None
 
 Global.twitterStream = None
 Global.twitterSpecial = {}
@@ -932,7 +934,7 @@ class ActionHandler(BaseHandler):
             self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
             return
 
-        if action not in ('_dash', '_actions', '_modules', '_restore', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
+        if action not in ('_dash', '_actions', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
@@ -975,6 +977,52 @@ class ActionHandler(BaseHandler):
         elif action in ('_restore',):
             self.render('restore.html', site_name=Options['site_name'], session_name='')
 
+        elif action == '_editroster':
+            headers = sdproxy.getRosterHeaders()
+            userId = self.get_argument('user', '')
+            delete = self.get_argument('delete', '')
+            if userId:
+                edit = True
+                oldValues = sdproxy.getRosterValues(userId, delete=delete)
+                if not oldValues:
+                    self.displayMessage('Roster entry not found for user %s' % userId,
+                                        back_url=site_prefix+'/_roster')
+                    return
+                elif delete:
+                    self.displayMessage('Roster entry deleted for user %s' % userId,
+                                        back_url=site_prefix+'/_roster')
+                    return
+            else:
+                oldValues = ['']*len(headers)
+                edit = False
+            self.render('editroster.html', site_name=Options['site_name'], session_name='',
+                         headers=headers, values=oldValues, err_msg='', edit=edit)
+
+        elif action in ('_attend',):
+            userId = self.get_argument('user', '')
+            toggle = self.get_argument('toggle', '')
+            selectedDay = self.get_argument('selectedday', '')
+            if userId:
+                self.set_header('Content-Type', 'text/plain')
+                try:
+                    present = sdproxy.toggleAttendance(selectedDay, userId)
+                    self.write('&#x2714;' if present else '&#x2718;')
+                except Exception, excp:
+                    self.write('Error: '+str(excp))
+                return
+            attendanceDays = list( reversed( sdproxy.getAttendanceDays() ))
+
+            if attendanceDays:
+                if not selectedDay or selectedDay not in attendanceDays:
+                    selectedDay = attendanceDays[0]
+                attendanceInfo = sdproxy.getAttendance(selectedDay)
+            else:
+                selectedDay = ''
+                attendanceInfo = []
+                
+            self.render('attendance.html', site_name=Options['site_name'], session_name='', attendance_days=attendanceDays,
+                        selected_day=selectedDay, attendance_info=attendanceInfo)
+
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
             if not nameMap:
@@ -1005,7 +1053,7 @@ class ActionHandler(BaseHandler):
 
                 siteMenu = [x.strip().lower() for x in Global.siteSettings.get(siteName,{}).get('site_menu','').split(',')]
                 self.render('roster.html', site_name=siteName, gradebook='gradebook' in siteMenu,
-                             qwheel_link=qwheel_link, qwheel_new=qwheel_new,
+                             session_name='', qwheel_link=qwheel_link, qwheel_new=qwheel_new,
                              name_map=nameMap, last_map=lastMap, first_map=firstMap)
 
         elif action == '_cache':
@@ -1644,7 +1692,7 @@ class ActionHandler(BaseHandler):
                 return
             submitDate = self.get_argument('submitdate','')
 
-        if action in ('_browse', '_import', '_restore', '_roster', '_submit', '_upload'):
+        if action in ('_browse', '_import', '_restore', '_editroster', '_attend', '_roster', '_submit', '_upload'):
             if action == '_submit':
                 # Submit test user
                 try:
@@ -1661,7 +1709,44 @@ class ActionHandler(BaseHandler):
                 fname = fileinfo['filename']
                 self.browse('_browse', subsubpath, site_admin=self.check_admin_access(), uploadName=fname, uploadContent=fileinfo['body'])
 
-            elif action in ('_import', '_restore', '_roster', ):
+            elif action == '_editroster':
+                headers = sdproxy.getRosterHeaders()
+                edit = self.get_argument('edit', '')
+                rowDict = {}
+                for header in headers:
+                    rowDict[header] = self.get_argument(header, '')
+                try:
+                    oldValues = sdproxy.editRosterValues(rowDict, overwrite=edit)
+                    if not oldValues:
+                        self.displayMessage('Roster entry %s for user %s' % ('edited' if edit else 'added', rowDict.get('name')),
+                                            back_url=site_prefix+'/_roster')
+                    else:
+                        self.render('editroster.html', site_name=Options['site_name'], session_name='',
+                                     headers=headers, values=oldValues, edit=False,
+                                     err_msg='Id %s already present in roster. Use edit option to overwrite values' % rowDict['id'])
+                except Exception, excp:
+                    self.render('editroster.html', site_name=Options['site_name'], session_name='',
+                                 headers=headers, values=[rowDict[header] for header in headers], err_msg=str(excp), edit=False)
+
+            elif action == '_attend':
+                selectedDay = self.get_argument('newday', '').strip().lower()
+                if not selectedDay:
+                    selectedDay = sliauth.print_date()
+                else:
+                    match = re.match(r'^(\d+)([a-z][a-z][a-z])(\d+)$', selectedDay)
+                    if not match:
+                        self.displayMessage('Invalid attendance date "%s"; must be of the form "12sep17"' % selectedDay, back_url=site_prefix+'/_attend')
+                        return
+                    selectedDay = '%02d%s%02d' % (int(match.group(1)), match.group(2), int(match.group(3)))
+                try:
+                    attendanceInfo = sdproxy.getAttendance(selectedDay, new=True)
+                    attendanceDays = sdproxy.getAttendanceDays()
+                    self.render('attendance.html', site_name=Options['site_name'], session_name='', attendance_days=attendanceDays,
+                                selected_day=selectedDay, attendance_info=attendanceInfo)
+                except Exception, excp:
+                    self.displayMessage('Error in creating attendance record: %s' % excp, back_url=site_prefix+'/_attend')
+
+            elif action in ('_import', '_restore', '_roster',):
                 # Import from CSV file
                 if 'upload' not in self.request.files:
                     self.displayMessage('No file to upload!')
@@ -3966,12 +4051,14 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             # For embedded browsers ("web views"), Google login does not work; use token authentication
             self.redirect('/_auth/login/')
             return
+
         if self.get_argument('code', False):
             user = yield self.get_authenticated_user(
                 redirect_uri=self.settings['google_oauth']['redirect_uri'],
                 code=self.get_argument('code'))
+
             if Options['debug']:
-                print >> sys.stderr, "GoogleAuth: step 1", user.get('token_type')
+                print >> sys.stderr, 'GoogleAuth: step 1', user.get('token_type'), 'state=', self.get_argument('state', '')
 
             if not user:
                 self.custom_error(500, '<h2>Google authentication failed</h2><a href="/">Home</a>', clear_cookies=True)
@@ -3986,7 +4073,8 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             if Options['debug']:
                 print >> sys.stderr, "GoogleAuth: step 2", user
 
-            username = user['email'].lower()
+            orig_email = user['email'].lower()
+            username = orig_email
             if Global.userRoles.is_known_user(username):
                 # Special case: out-of-domain emails
                 pass
@@ -4009,22 +4097,50 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             if not displayName:
                 displayName = username
             
+            role, sites = Global.userRoles.id_role_sites(username)
+            userId = username
+            if not role and Global.email2id is not None:
+                # Map email to id for users with no roles
+                siteRoles = []
+                idValsDict = Global.email2id.get(orig_email)
+                if not idValsDict:
+                    self.custom_error(500, 'Email %s not found in any site rosters. Please register it.' % orig_email)
+                    return
+
+                if len(idValsDict) == 1:
+                    userId = idValsDict.keys()[0]
+                    sites = ','.join( idValsDict[userId] )
+                else:
+                    state = self.get_argument('state', '/')
+                    match = re.search(r'\?seluser=([\w-]+)$', state)
+                    if match and match.group(1) in idValsDict:
+                        userId = match.group(1)
+                        sites = ','.join( idValsDict[userId] )
+                    else:
+                        html = '<h3>Select user for Slidoc sites:<h3> ' + ''.join([ '''<b><a href="%s?seluser=%s">%s</a></b><p></p> ''' % (Global.login_url, x, x) for x in sorted(idValsDict.keys()) ])
+                        self.custom_error(500, html, clear_cookies=True)
+                        return
+
+            # Set cookie
             data = {}
             if Global.twitter_params:
                 data['site_twitter'] = Global.twitter_params['screen_name']
-            role, sites = Global.userRoles.id_role_sites(username)
-            self.set_id(username, displayName=displayName, role=role, sites=sites, email=user['email'].lower(), data=data)
-            self.redirect(self.get_argument("state", "") or self.get_argument("next", "/"))
+            self.set_id(userId, displayName=displayName, role=role, sites=sites, email=orig_email, data=data)
+            self.redirect(self.get_argument('state', '') or self.get_argument('next', '/'))
             return
 
             # Save the user with e.g. set_secure_cookie
         else:
+            nextPath = self.get_argument('next', '/')
+            seluser = self.get_argument('seluser', '')
+            if seluser:
+                nextPath = '/?seluser=' + seluser
             yield self.authorize_redirect(
                 redirect_uri=self.settings['google_oauth']['redirect_uri'],
                 client_id=self.settings['google_oauth']['key'],
                 scope=['profile', 'email'],
                 response_type='code',
-                extra_params={'approval_prompt': 'auto', 'state': self.get_argument("next", "/")})
+                extra_params={'approval_prompt': 'auto', 'state': nextPath})
 
 class TwitterLoginHandler(tornado.web.RequestHandler,
                           tornado.auth.TwitterMixin, UserIdMixin):
@@ -4155,6 +4271,7 @@ def createApplication():
         patterns= [   r"/(_(backup|cache|clear|freeze))",
                       r"/(_accept)",
                       r"/(_actions)",
+                      r"/(_attend)",
                       r"/(_backup/[-\w.]+)",
                       r"/(_browse)",
                       r"/(_browse/.+)",
@@ -4163,6 +4280,7 @@ def createApplication():
                       r"/(_download/[-\w.]+)",
                       r"/(_edit)",
                       r"/(_edit/[-\w.]+)",
+                      r"/(_editroster)",
                       r"/(_export/[-\w.]+)",
                       r"/(_(getcol|getrow|sheet)/[-\w.;]+)",
                       r"/(_imageupload)",
@@ -4260,14 +4378,6 @@ def processTwitterMessage(msg):
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
 
-def makeName(lastName, firstName, middleName=''):
-    name = lastName.strip()
-    if firstName.strip():
-        name += ', ' + firstName.strip()
-        if middleName:
-            name += ' ' +middleName
-    return name
-
 def restoreSheet(sheetName, filepath, csvfile, overwrite=None):
     # Restore sheet from backup CSV file
     try:
@@ -4356,6 +4466,8 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
         for row in rows:
             altid = row[altidCol-1].lower() if altidCol else ''
             email = row[emailCol-1].lower() if emailCol else ''
+            name = sdproxy.makeName(row[lastNameCol-1], row[firstNameCol-1], row[midNameCol-1] if midNameCol else '')
+
             if email:
                 emailid, _, domain = email.partition('@')
                 if domain:
@@ -4364,12 +4476,18 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
                     elif singleDomain != domain:
                         singleDomain = ''
                 
+            userId = ''
             if idCol:
                 userId = row[idCol-1].strip().lower()
-            else:
+
+            if not userId and name and options.multi_email_id:
+                userId = sdproxy.makeId(name, idVals)
+
+            if not userId:
                 userId = email
 
-            name = makeName(row[lastNameCol-1], row[firstNameCol-1], row[midNameCol-1] if midNameCol else '')
+            if not userId:
+                raise Exception('No userId for name: %s %s' % (name, email))
 
             rosterRow = [name, userId, email, altid]
             if twitterCol:
@@ -4502,7 +4620,7 @@ def importAnswers(sessionName, filepath, csvfile, importParams, submitDate=''):
         idRows = []
         for row in rows:
             if nameKey:
-                userKey = makeName(row[lastNameCol-1], row[firstNameCol-1], row[midNameCol-1] if midNameCol else '').lower()
+                userKey = sdproxy.makeName(row[lastNameCol-1], row[firstNameCol-1], row[midNameCol-1] if midNameCol else '').lower()
             else:
                 userKey = row[keyCol-1].strip().lower()
 
@@ -4852,13 +4970,32 @@ def start_server(site_number=0, restart=False):
 
 def getSheetSettings(gsheet_url, site_name='', adminonly_fail=False):
     try:
-        return sliauth.read_settings(gsheet_url, Options['root_auth_key'], sdproxy.SETTINGS_SHEET, site=site_name)
+        rows, headers = sliauth.read_sheet(gsheet_url, Options['root_auth_key'], sdproxy.SETTINGS_SHEET, site=site_name)
+        return sliauth.get_settings(rows)
     except Exception, excp:
         ##if Options['debug']:
         ##    import traceback
         ##    traceback.print_exc()
-        print >> sys.stderr, 'Error:site %s: Failed to read  Google Sheet settings_slidoc from %s: %s' % (site_name, gsheet_url, excp)
+        print >> sys.stderr, 'Error:site %s: Failed to read Google Sheet settings_slidoc from %s: %s' % (site_name, gsheet_url, excp)
         return {'site_access': 'adminonly'} if adminonly_fail else {}
+
+def getSiteRosterMaps(gsheet_url, site_name=''):
+    try:
+        rows, headers = sliauth.read_sheet(gsheet_url, Options['root_auth_key'], sdproxy.ROSTER_SHEET, site=site_name)
+        nameCol  = 1 + headers.index('name')
+        idCol    = 1 + headers.index('id')
+        emailCol = 1 + headers.index('email')
+        rosterMaps = {}
+        rosterMaps['id2email'] = dict( (x[idCol-1], x[emailCol-1]) for x in rows[1:] if x[idCol-1] )
+        rosterMaps['id2name']  = dict( (x[idCol-1], x[nameCol-1])  for x in rows[1:] if x[idCol-1] )
+        return rosterMaps
+
+    except Exception, excp:
+        ##if Options['debug']:
+        ##    import traceback
+        ##    traceback.print_exc()
+        print >> sys.stderr, 'Error:site %s: Failed to read Google Sheet roster_slidoc from %s: %s' % (site_name, gsheet_url, excp)
+        return {}
 
 def fork_site_server(site_name, gsheet_url, **kwargs):
     # Return error message or null string
@@ -4870,6 +5007,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
     errMsg = ''
     sheetSettings = getSheetSettings(gsheet_url, site_name, adminonly_fail=Options['host'] != 'localhost') if gsheet_url else {}
     Global.siteSettings[site_name] = sheetSettings
+    Global.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and options.multi_email_id else {}
 
     Options['site_list'].append(site_name)
     site_number = len(Options['site_list'])
@@ -4998,12 +5136,13 @@ def main():
     define("forward_port", default=0, help="Forward port for default (root) web server with multiproxy, allowing slidoc sites to overlay a regular website, using '_' prefix for admin")
     define("gsheet_url", default="", help="Google sheet URL1;...")
     define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")
+    define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")
+    define("insecure_cookie", default=False, help="Insecure cookies (for direct PDF printing)")
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
     define("log_call", default=0, help="Log selected calls to sheet 'call_log'")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
-    define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")
-    define("insecure_cookie", default=False, help="Insecure cookies (for direct PDF printing)")
+    define("multi_email_id", default=False, help="Allow multiple ids for same email")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
@@ -5014,6 +5153,7 @@ def main():
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
+    define("single_site", default="", help="Single site name for testing")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")
     define("site_title", default='', help="Site title")
@@ -5105,6 +5245,13 @@ def main():
             else:
                 Global.split_opts[key] = Global.split_opts['site_list'][:] if key == 'site_label' else ['']*nsites
 
+        if options.single_site:
+            # Access gsheet for a single site only (TESTING OPTION)
+            print >> sys.stderr, 'DEBUG: sdserver.main: SINGLE SITE TESTING', options.single_site
+            for j in range(nsites):
+                if Global.split_opts['site_list'][j] != options.single_site:
+                    Global.split_opts['gsheet_url'][j] = ''
+
     Global.child_pids = []
     socket_name_fmt = options.socket_dir + '/uds_socket'
 
@@ -5129,17 +5276,31 @@ def main():
             # Root server
             print >> sys.stderr, 'DEBUG: sdserver.userRoles:', Global.userRoles.root_role, Global.userRoles.site_roles, Global.userRoles.external_users
             start_multiproxy()
-            start_server()
     else:
         # Start single site server
         sheetSettings = getSheetSettings(Options['gsheet_url'], adminonly_fail=Options['host'] != 'localhost') if Options['gsheet_url'] else {}
         Global.siteSettings[''] = sheetSettings
+        Global.siteRosterMaps[''] = getSiteRosterMaps(Options['gsheet_url']) if Options['gsheet_url'] and options.multi_email_id else {}
         if sheetSettings:
             for key in SPLIT_OPTS[1:]:
                 if key in sheetSettings:
                     Options[key] = sheetSettings[key]
         setup_site_server(sheetSettings, 0)
-        start_server()
+
+    if options.multi_email_id and not Options['site_number']:
+        print >> sys.stderr, 'DEBUG: sdserver.id2email: Allowing multiple ids for a single email address'
+        Global.email2id = defaultdict(lambda : defaultdict(list))
+        id2email = {}
+        for siteName, rosterMaps in Global.siteRosterMaps.items():
+            for idVal, emailVal in rosterMaps['id2email']:
+                if idVal in id2email:
+                    print >> sys.stderr, 'sdserver.id2email: ERROR Ignored conflicting emails for id %s: %s vs. %s' (idVal, id2email[idVal], siteName+':'+emailVal)
+                elif emailVal:
+                    id2email[idVal] = siteName+':'+emailVal
+                    Global.email2id[email][idVal].append(siteName)
+
+    # Start primary/secondary server
+    start_server()
 
 if __name__ == "__main__":
     main()
