@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, freeze_date, end_date, admin_users, grader_users, guest_users -->
+<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, freeze_date, end_date, admin_users, grader_users, guest_users, site_menu-->
 
 {% include "base.html" %}
 
@@ -31,7 +31,12 @@
   <h3>{{site_label}}: {{site_title}}</h3>
 
   Current interactive module session: <b>{% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}</b>
+  <hr>
   <p></p>
+
+  <b><a class="clickable" href="{{ site_prefix }}/_attend">Record attendance</a></b>
+  <p></p>
+  <hr>
 
   <b><a class="clickable" href="{{ site_prefix }}/_modules">Site content</a></b>
   <p></p>
@@ -49,13 +54,15 @@
   <em>Available operations</em>: Upload/view roster (&#x1F464;), View spreadsheet (&#9783;)
   <p></p>
 
-  Roster of users: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
+  <b>Roster of users</b>: <a class="clickable" href="{{ site_prefix }}/_roster">&#x1F464;</a> 
   <a class="clickable" href="{{ site_prefix }}/_sheet/roster_slidoc" >&#9783;</a>
   <p></p>
 
-  Gradebook:
+  {% if 'gradebook' in site_menu %}
+  <b>Gradebook</b>:
   <a class="clickable" href="{{ site_prefix }}/_sheet/scores_slidoc" >&#9783;</a>
   <p></p>
+  {% end %}
 
   </div>
 

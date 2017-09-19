@@ -8,12 +8,11 @@
 </head>
 <body>
 
-<h2>{{site_name}}</h2>
-<h2>Import roster file</h2>
-
 <b>
 {% include "linkback.html" %}
 </b>
+
+<h2>Import roster file</h2>
 
 <div id="slidoc-roster-form">
   <form action="/{{site_name}}{% if site_name %}/{% end %}_roster" method="post" enctype="multipart/form-data" >
@@ -38,8 +37,9 @@
       <code>firstname</code>. Additional headers that are
       recognized are: <code>email, altid, twitter</code>.<br>
 
-      (If <code>id</code> column is not present but <code>email</code> column is, then the
-      email addresses (with any common domain dropped) are used as unique ids.<br>
+      If <code>id</code> column is not present but <code>email</code> column is, then
+      email addresses (with any common domain dropped) are normally used as unique ids.<br>
+      If <code>multi_email_id</code> option is set, then unique ids are generated from names.
       <p></p>
       Id's are required to be unique, but names are not required to
       be unique (unless they are to be used for importing answers etc.)

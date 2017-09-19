@@ -20,7 +20,7 @@ function slidocDiscard() {
       PreviewWin.close();
    }
    PreviewWin = null;
-   window.location = '{{site_prefix}}/_discard';
+   window.location = '{{site_prefix}}/_discard/{{session_name}}';
    return false;
 }
 
@@ -220,7 +220,7 @@ document.onreadystatechange = function(event) {
     <button type="button" onclick="slidocAccept()" class="slidoc-edit-preview" id="acceptbutton" style="display: none;">Accept preview</button>
   </div>
   <fieldset>
-    <label for="sessionname">Module:</label> <b>{{ session_label }}</b>
+    <label for="sessionname">Editing module:</label> <b>{{ session_label }}</b>
     <input type="hidden" id="sessionname" name="sessionname" value="{{session_name}}"></input>
     &nbsp;&nbsp;
     <label for="sessionmodify">Modify question numbers/types?</label>

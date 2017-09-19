@@ -161,6 +161,9 @@ Global.twitterVerify = {}
 
 Global.split_opts = {}
 
+def get_site_menu():
+    return [x.strip().lower() for x in Global.siteSettings.get(Options['site_name'],{}).get('site_menu','').split(',')]
+    
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
 RESTRICTED_PATH = '_restricted'
@@ -355,7 +358,8 @@ class SiteMixin(object):
         cookie_data = {'version': COOKIE_VERSION, 'site': siteName}
         if Options['source_dir']:
             cookie_data['editable'] = 'edit'
-        siteMenu = [x.strip().lower() for x in Global.siteSettings.get(siteName,{}).get('site_menu','').split(',')]
+
+        siteMenu = get_site_menu()
         if 'gradebook' in siteMenu:
             cookie_data['gradebook'] = 1
         if 'files' in siteMenu:
@@ -917,7 +921,7 @@ class ActionHandler(BaseHandler):
                     return
                 return self.editSession(sessionName, sessionType=sessionType, start=True, startPreview=startPreview)
             elif action == '_discard':
-                return self.discardPreview()
+                return self.discardPreview(sessionName)
             elif action == '_reloadpreview':
                 if not previewingSession:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
@@ -960,7 +964,7 @@ class ActionHandler(BaseHandler):
                         admin_users=Options['admin_users'], grader_users=Options['grader_users'], guest_users=Options['guest_users'],
                         start_date=sliauth.print_date(Options['start_date'],not_now=True),
                         freeze_date=sliauth.print_date(sdproxy.Settings['freeze_date'],not_now=True),
-                        end_date=sliauth.print_date(Options['end_date'],not_now=True) )
+                        end_date=sliauth.print_date(Options['end_date'],not_now=True), site_menu=get_site_menu() )
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
@@ -1016,12 +1020,14 @@ class ActionHandler(BaseHandler):
                 if not selectedDay or selectedDay not in attendanceDays:
                     selectedDay = attendanceDays[0]
                 attendanceInfo = sdproxy.getAttendance(selectedDay)
+                recent = (selectedDay == attendanceDays[0])
             else:
                 selectedDay = ''
                 attendanceInfo = []
+                recent = False
                 
             self.render('attendance.html', site_name=Options['site_name'], session_name='', attendance_days=attendanceDays,
-                        selected_day=selectedDay, attendance_info=attendanceInfo)
+                        selected_day=selectedDay, attendance_info=attendanceInfo, recent=recent)
 
         elif action in ('_roster',):
             nameMap = sdproxy.lookupRoster('name', userId=None)
@@ -1051,8 +1057,7 @@ class ActionHandler(BaseHandler):
                 qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(siteName)
                 qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x,safe='/') for x in wheelNames)
 
-                siteMenu = [x.strip().lower() for x in Global.siteSettings.get(siteName,{}).get('site_menu','').split(',')]
-                self.render('roster.html', site_name=siteName, gradebook='gradebook' in siteMenu,
+                self.render('roster.html', site_name=siteName, gradebook='gradebook' in get_site_menu(),
                              session_name='', qwheel_link=qwheel_link, qwheel_new=qwheel_new,
                              name_map=nameMap, last_map=lastMap, first_map=firstMap)
 
@@ -1445,10 +1450,10 @@ class ActionHandler(BaseHandler):
         user_browse = (url_path != '_browse')
         status = ''
         if not filepath and not user_browse:
-            file_list = [ ['source', 'source', False, False],
-                          ['web', 'web', False, False],
-                          ['data', 'data', False, False],
-                          ['backup', 'backup', False, False] ]
+            file_list = [ ['source', 'source', False, '', ''],
+                          ['web', 'web', False, '', ''],
+                          ['data', 'data', False, '', ''],
+                          ['backup', 'backup', False, '', ''] ]
             up_path = ''
         else:
             predir, _, subpath = filepath.partition('/')
@@ -1742,7 +1747,7 @@ class ActionHandler(BaseHandler):
                     attendanceInfo = sdproxy.getAttendance(selectedDay, new=True)
                     attendanceDays = sdproxy.getAttendanceDays()
                     self.render('attendance.html', site_name=Options['site_name'], session_name='', attendance_days=attendanceDays,
-                                selected_day=selectedDay, attendance_info=attendanceInfo)
+                                selected_day=selectedDay, attendance_info=attendanceInfo, recent=True)
                 except Exception, excp:
                     self.displayMessage('Error in creating attendance record: %s' % excp, back_url=site_prefix+'/_attend')
 
@@ -2413,9 +2418,8 @@ class ActionHandler(BaseHandler):
             retval = {'result': 'success'}
             self.write( json.dumps(retval) )
 
-
-    def discardPreview(self):
-        sessionPath = ''
+    def discardPreview(self, sessionName=''):
+        sessionPath = getSessionPath(sessionName, site_prefix=True) if sessionName and sessionName != 'index' else ''
         if self.previewActive():
             sessionName = self.previewState['name']
             sessionPath = self.previewState['path']
@@ -3935,7 +3939,7 @@ class AuthMessageHandler(BaseHandler):
     def get(self, subpath=''):
         note = self.get_argument("note", "")
         interactiveSession = WSHandler.getInteractiveSession()
-        label = '%s: %s' % (self.get_id_from_cookie(), interactiveSession if interactiveSession else 'No interactive session')
+        label = 'User %s: %s' % (self.get_id_from_cookie(), interactiveSession if interactiveSession else 'No interactive session')
         self.render("interact.html", note=note, site_name=Options['site_name'], site_label=Options['site_label'], session_label=label)
 
     @tornado.web.authenticated
@@ -4277,6 +4281,7 @@ def createApplication():
                       r"/(_browse/.+)",
                       r"/(_delete/[-\w.]+)",
                       r"/(_discard)",
+                      r"/(_discard/[-\w.]+)",
                       r"/(_download/[-\w.]+)",
                       r"/(_edit)",
                       r"/(_edit/[-\w.]+)",

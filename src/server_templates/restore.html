@@ -12,12 +12,14 @@
   {% include "linkback.html" %}
   </b>
 
+  <b><a class="clickable" href="{{site_prefix}}/_actions">Back</a></b>
+  <hr>
+
   <p></p>
   <h2>Restore session</h2>
 
   <b>Restore sheet from backup</b>
   <p></p>
-  <hr>
 
 
 <div id="slidoc-restore-form">
@@ -33,6 +35,7 @@
       <input type="checkbox" id="overwrite" name="overwrite" value="overwrite">
     </fieldset>
     {% module xsrf_form_html() %}
+    <p></p>
     <div>
       <input id="slidoc-restore-submit" type="submit" value="Restore">
     </div>
