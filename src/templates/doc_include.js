@@ -498,6 +498,9 @@ if (Slidoc.serverCookie) {
 }
 Slidoc.siteCookie = getSiteCookie();
 
+Slidoc.PluginManager.sitePrefix = Sliobj.sitePrefix;
+Slidoc.PluginManager.pluginDataPath = Slidoc.siteCookie.pluginDataPath || '';
+
 // Assessment view: for printing exams
 Sliobj.assessmentView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
 
@@ -1265,7 +1268,10 @@ Slidoc.slideEdit = function(action, slideId) {
 	    Sliobj.previewWin.close();
 	    Sliobj.previewWin = null;
 	}
-	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
+	if (Sliobj.previewState)
+	    window.location = Sliobj.sitePrefix + '/_discard';
+	else
+	    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
 
     } else if (action == 'open' || action == 'update' || action == 'insert' || action == 'save' || action == 'delete' || action == 'rollover' || action == 'truncate') {
 	params.sessiontext = editArea.value;

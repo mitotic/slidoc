@@ -355,7 +355,7 @@ class SiteMixin(object):
 
     def site_cookie_data(self):
         siteName = Options['site_name'] or ''
-        cookie_data = {'version': COOKIE_VERSION, 'site': siteName}
+        cookie_data = {'version': COOKIE_VERSION, 'site': siteName, 'pluginDataPath': '/'+PLUGINDATA_PATH}
         if Options['source_dir']:
             cookie_data['editable'] = 'edit'
 
@@ -3486,7 +3486,12 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if not pluginClass:
                 raise Exception('Plugin class '+pluginName+'.'+pluginName+' not defined!')
             try:
-                self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), self.pathUser[0], self.pathUser[1], self.userRole)
+                pluginPath = self.pathUser[0]
+                if Options['site_name']:
+                    pluginPath = '/'.join( pluginPath.split('/')[1:] )
+                if pluginPath.startswith(PRIVATE_PATH+'/'):
+                    pluginPath = '/'.join( pluginPath.split('/')[1:] )
+                self.pluginInstances[pluginName] = pluginClass(PluginManager.getManager(pluginName), pluginPath, self.pathUser[1], self.userRole)
             except Exception, err:
                 raise Exception('Error in creating instance of plugin '+pluginName+': '+err.message)
 
@@ -3664,28 +3669,29 @@ class PluginManager(object):
     def __init__(self, pluginName):
         self.pluginName = pluginName
 
-    def makePath(self, filepath, restricted=True, private=True):
+    def makePath(self, filepath, restricted=True, private=True, fullpath=False):
         if not Options['plugindata_dir']:
             raise Exception('sdserver.PluginManager.makePath: ERROR No plugin data directory!')
         if '..' in filepath:
             raise Exception('sdserver.PluginManager.makePath: ERROR Invalid .. in file path: '+filepath)
             
-        fullpath = filepath
+        dataPath = filepath
         if restricted:
-            fullpath = os.path.join(RESTRICTED_PATH, fullpath)
+            dataPath = os.path.join(RESTRICTED_PATH, dataPath)
         elif private:
-            fullpath = os.path.join(PRIVATE_PATH, fullpath)
+            dataPath = os.path.join(PRIVATE_PATH, dataPath)
 
-        fullpath = os.path.join(PLUGINDATA_PATH, self.pluginName, fullpath)
+        if fullpath:
+            dataPath = os.path.join(PLUGINDATA_PATH, self.pluginName, dataPath)
+            if Options['site_name']:
+                dataPath = os.path.join(Options['site_name'], dataPath)
+            dataPath = os.path.join(Options['plugindata_dir'], dataPath)
 
-        if Options['site_name']:
-            fullpath = os.path.join(Options['site_name'], fullpath)
-            
-        return os.path.join(Options['plugindata_dir'], fullpath )
+        return dataPath
     
     def readFile(self, filepath, restricted=True, private=True):
         # Returns file content from relative path
-        fullpath = self.makePath(filepath, restricted=restricted, private=private)
+        fullpath = self.makePath(filepath, restricted=restricted, private=private, fullpath=True)
         try:
             with open(fullpath) as f:
                 content = f.read()
@@ -3703,7 +3709,7 @@ class PluginManager(object):
 
     def dirFiles(self, dirpath, restricted=True, private=True):
         # Returns list of [filepath, /url] in directory
-        fullpath = self.makePath(dirpath, restricted=restricted, private=private)
+        fullpath = self.makePath(dirpath, restricted=restricted, private=private, fullpath=True)
         if not os.path.exists(fullpath):
             return []
         try:

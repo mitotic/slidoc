@@ -26,12 +26,12 @@ Upload = {
 	for (var j=0; j<fTypes.length; j++)
 	    this.fileTypes.push(fTypes[j].trim().toLowerCase());
 			       
-
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
-	Slidoc.log('Slidoc.Plugins.Upload.init2:', fileInfo);
-	if (fileInfo && fileInfo.loadURL) {
+	var loadURL = this.loadPath(fileInfo);
+	Slidoc.log('Slidoc.Plugins.Upload.init2:', fileInfo, loadURL);
+	if (fileInfo && loadURL) {
 	    this.display();
-	    this.viewer.initURL = fileInfo.loadURL;
+	    this.viewer.initURL = loadURL;
 	    this.viewer.fileType = fileInfo.upload.fileType || fileInfo.fileType; // fileInfo.fileType for backward compatibility
 	}
     },
@@ -41,7 +41,7 @@ Upload = {
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
 	if (fileInfo) {
 	    this.confirmMsgElem.textContent = 'Successfully uploaded '+(fileInfo.upload.origName||fileInfo.origName)+' on '+(new Date(fileInfo.uploadTime)); // fileInfo.origName for backward compatibility
-	    this.confirmLoadElem.href = fileInfo.loadURL;
+	    this.confirmLoadElem.href = this.loadPath(fileInfo);
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
 	    this.confirmLoadElem.href = "javascript:alert('Nothing uploaded')";
@@ -50,7 +50,7 @@ Upload = {
 	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), this.userId);
 	if (this.viewer.displayURL) {
 	    if (fileInfo)
-		this.viewer.displayURL(fileInfo.loadURL, fileInfo.upload.fileType|| fileInfo.fileType); // fileInfo.fileType for backward compatibility
+		this.viewer.displayURL(this.loadPath(fileInfo), fileInfo.upload.fileType|| fileInfo.fileType); // fileInfo.fileType for backward compatibility
 	    else
 		this.viewer.displayURL('', '');
 	}
@@ -66,36 +66,40 @@ Upload = {
 	    var furl = uploadList[j][1];
 	    var fkey = uploadList[j][2];
 	    var loadURL = location.host + furl;
-	    if (furl.match(/.ipynb$/)) {
-		// Append "query" using "%3F" as nbviewer chomps up normal queries
-		loadURL += '%3F' + fkey;
-		if (location.protocol == 'https:')
-		    loadURL = 'https://nbviewer.jupyter.org/urls/'+loadURL;
-		else
-		    loadURL = 'http://nbviewer.jupyter.org/url/'+loadURL;
-	    } else {
-		loadURL = '//'+loadURL+'?'+fkey;
-	    }
+	    loadURL = this.loadPrefix(loadURL, fkey, furl.match(/.ipynb$/));
 	    html.push('<li><a href="'+loadURL+'" target="_blank">'+flabel+'</a></li>\n');
 	}
 	this.lateElem.innerHTML = 'Late uploads:<ul>\n'+html.join('\n')+'</ul>\n';
     },
 
+    loadPrefix: function (loadURL, fileKey, notebook) {
+	if (notebook) {
+	    // Append "query" using "%3F" as nbviewer chomps up normal queries
+	    loadURL += '%3F' + fileKey;
+	    if (location.protocol == 'https:')
+		return 'https://nbviewer.jupyter.org/urls/'+loadURL;
+	    else
+		return 'http://nbviewer.jupyter.org/url/'+loadURL;
+	} else {
+	    return '//'+loadURL+'?'+fileKey;
+	}
+    },
+
+    loadPath: function(fileInfo) {
+	if (!fileInfo)
+	    return '';
+
+	if (fileInfo.loadURL)         // Backwards compatibility
+	    return fileInfo.loadURL;
+	var value = fileInfo.upload;
+	var loadURL = location.host + Slidoc.PluginManager.sitePrefix + Slidoc.PluginManager.pluginDataPath + '/' + this.name + value.url;
+
+	return this.loadPrefix(loadURL, value.fileKey, value.fileType == 'ipynb');
+    },
+
     uploaded: function(value) {
 	Slidoc.log('Slidoc.Plugins.Upload.uploaded:', value);
-	var loadURL = location.host + value.url;
-	if (value.fileType == 'ipynb') {
-	    // Append "query" using "%3F" as nbviewer chomps up normal queries
-	    loadURL += '%3F' + value.fileKey;
-	    if (location.protocol == 'https:')
-		loadURL = 'https://nbviewer.jupyter.org/urls/'+loadURL;
-	    else
-		loadURL = 'http://nbviewer.jupyter.org/url/'+loadURL;
-	} else {
-	    loadURL = '//'+loadURL+'?'+value.fileKey;
-	}
-	this.persist[this.qattributes.qnumber] = {upload: value, loadURL: loadURL,
-						  uploadTime: Date.now()};
+	this.persist[this.qattributes.qnumber] = {upload: value, uploadTime: Date.now()};
 	this.display(value.name);
 	Slidoc.PluginManager.saveSession(); // Save upload info
     },
