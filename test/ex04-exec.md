@@ -1,4 +1,4 @@
-<!--slidoc-defaults --pace=1 --features=assessment,grade_response -->
+<!--slidoc-defaults --pace=1 --features=grade_response -->
 # Test code execution
 
 Test file
@@ -75,6 +75,79 @@ print sq(3.5)
 ```nb_output
 12.25
 ```
+
+Answer: Code/python
+
+---
+
+## Python function, solution provided
+
+Write a function `sq(x)` that returns the square of `x`.
+
+```
+def sq(x):
+    ...
+
+```
+
+Test it using the following call:
+
+```python_test
+print sq(2.5)
+```
+
+to produce the following output:
+
+```nb_output
+6.25
+```
+
+```python_test_hidden
+# Additional tests
+print sq(3.5)
+```
+
+```python_solution
+# Correct answer
+def sq(x):
+    return x*x
+
+```
+
+Answer: Code/python
+
+---
+
+## Python function, fillable solution provided
+
+Write a function `sq(x)` that returns the square of `x` by filling in
+the blanks in the following piece of code.
+
+```python_fillable
+# Correct answer
+def sq(x):
+    return ``x*x``
+```
+
+Use the *Check* button to run the following test on the above
+filled-in code:
+
+```python_test
+print sq(2.5)
+```
+which should produce the following output:
+
+```nb_output
+6.25
+```
+
+```python_test_hidden
+# Additional tests
+print sq(3.5)
+```
+
+When satisfied, use the *Answer* button to record the answer. An
+additional hidden test will be carried to further validate the function.
 
 Answer: Code/python
 

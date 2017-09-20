@@ -35,6 +35,7 @@ body:not(.slidoc-collapsible-view) .slidoc-collapsibleonly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
 body:not(.slidoc-assessment-view) .slidoc-assessmentonly,
 body:not(.slidoc-testuser-view):not(.slidoc-gradable-view) .slidoc-testgradableonly,
+body:not(.slidoc-localpreview-view):not(.slidoc-preview-view) .slidoc-anypreviewonly,
 body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
     display: none; }
 
@@ -42,6 +43,21 @@ li.slidoc-restrictedonly { opacity: 0.6; }
 
 /* Plugin display */
 div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
+
+/* Code display */
+.slidoc-block-fillable pre  { counter-reset: line; }
+.slidoc-block-fillable code { counter-increment: line; padding-left: 5px;}
+.slidoc-block-fillable code:before {
+  content: counter(line, decimal-leading-zero) ": ";
+  -webkit-user-select: none;
+}
+
+.slidoc-fillable-input { background-color: #eaeaea; }
+
+.slidoc-code-input { font-style: italic; }
+.slidoc-code-expect { opacity: 0.7; }
+.slidoc-code-invalid { color: red; }
+.slidoc-code-error { color: red; }
 
 /* Answer/grading control */
 body.slidoc-gradable-view .slidoc-nogradable { display: none; }
@@ -181,8 +197,6 @@ body:not(.slidoc-gradable-view):not(.slidoc-incremental-view) .slidoc-slide-nav-
 body.slidoc-strict-paced-view #slidoc-slide-nav-end { opacity: 0.3; }
 body.slidoc-paced-last-slide.slidoc-expect-answer-state #slidoc-slide-nav-next { opacity: 0.3; }
 
-body.slidoc-slide-view .slidoc-block-multi { display: none; }
-body:not(.slidoc-graded-view) .slidoc-block-multi { display: none; } /* Show secondary checks only after grading (non-slide) */
 body.slidoc-paced-last-slide span.slidoc-forward-link { opacity: 0.3; }
 body.slidoc-paced-last-slide span.slidoc-forward-link.slidoc-forward-link-allowed { opacity: 1.0; }
 

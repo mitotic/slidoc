@@ -797,6 +797,7 @@ class SlidocRenderer(MathRenderer):
         self.block_input_counter = 0
         self.block_test_counter = 0
         self.block_output_counter = 0
+        self.block_solution_counter = 0
         self.toggle_slide_id = ''
         self.render_markdown = 'no_markdown' not in self.options['config'].features
         self.render_mathjax = 'math_input' in self.options['config'].features
@@ -840,6 +841,9 @@ class SlidocRenderer(MathRenderer):
         self.incremental_pause = False
         self.slide_block_test = []
         self.slide_block_output = []
+        self.slide_block_hidden = 0
+        self.slide_block_solution = 0
+        self.slide_block_fillable = 0
         self.slide_forward_links = []
         self.slide_plugin_refs = set()
         self.slide_plugin_embeds = set()
@@ -1201,8 +1205,9 @@ class SlidocRenderer(MathRenderer):
         self.render_mathjax = True
         return super(SlidocRenderer, self).inline_math(text)
 
-    def block_code(self, code, lang=None):
+    def block_code(self, code, lang=''):
         """Rendering block level code. ``pre > code``.
+        python_input, python_solution, python_fillable, python_test, python_test_hidden, javascript..., nb_output, nb_error
         """
         if code.endswith('\n\n'):
             code = code[:-1]
@@ -1212,32 +1217,50 @@ class SlidocRenderer(MathRenderer):
 
         id_str = ''
 
-        if lang in ('javascript_input','python_input'):
-            lang = lang[:-6]
-            classes += ' slidoc-block-input'
+        comps = (lang or '').split('_')
+        lang = comps[0]
+        blockType = comps[1] if len(comps) > 1 else ''
+        blockOption = comps[2] if len(comps) > 2 else ''
+
+        if lang in ('javascript','python') and blockType in ('input', 'solution', 'fillable'):
             self.block_input_counter += 1
             id_str = 'id="slidoc-block-input-%d"' % self.block_input_counter
+            if blockType == 'input':
+                classes += ' slidoc-block-input'
+            elif blockType in ('solution', 'fillable'):
+                if self.slide_block_solution:
+                    abort("    ****SOLUTION-ERROR: %s: Multiple '*s' blocks in slide %s" % (self.options["filename"], lang, self.slide_number))
+                self.slide_block_solution = self.block_input_counter
+                classes += ' slidoc-block-solution'
+                if self.options['config'].show_score == 'after_grading':
+                    classes += ' slidoc-gradedonly'
+                else:
+                    classes += ' slidoc-answeredonly'
+                if blockType == 'fillable':
+                    self.slide_block_fillable = 1
 
-        elif lang in ('javascript_test','python_test'):
-            lang = lang[:-5]
+        elif lang in ('javascript','python') and blockType == 'test':
             classes += ' slidoc-block-test'
             self.block_test_counter += 1
             self.slide_block_test.append(self.block_test_counter)
             id_str = 'id="slidoc-block-test-%d"' % self.block_test_counter
-            if len(self.slide_block_test) > 1 and self.options['config'].pace:
-                classes += ' slidoc-block-multi'
+            if blockOption == 'hidden' or self.slide_block_hidden:
+                # Hide all blocks after first hidden block (viewable only in preview modes)
+                if not self.slide_block_hidden:
+                    self.slide_block_hidden = len(self.slide_block_test)
+                classes += ' slidoc-anypreviewonly'
 
-        elif lang == 'nb_output':
-            lang = lang[3:]
+        elif lang == 'nb' and blockType == 'output':
+            lang = 'output'
             classes += ' slidoc-block-output'
             self.block_output_counter += 1
             self.slide_block_output.append(self.block_output_counter)
             id_str = 'id="slidoc-block-output-%d"' % self.block_output_counter
-            if len(self.slide_block_output) > 1 and self.options['config'].pace:
-                classes += ' slidoc-block-multi'
+            if self.slide_block_hidden:
+                classes += ' slidoc-anypreviewonly'
 
-        elif lang == 'nb_error':
-            lang = lang[3:]
+        elif lang == 'nb' and blockType == 'error':
+            lang = 'error'
             classes += ' slidoc-block-error'
 
         lexer = None
@@ -1248,12 +1271,27 @@ class SlidocRenderer(MathRenderer):
             except ClassNotFound:
                 code = lang + '\n' + code
 
+        if blockType == 'fillable':
+            comps = code.strip().split('\n')
+            if lang == 'python' and comps[0].startswith('#'):
+                # Strip first comment from displayed code
+                comps = comps[1:]
+            dispCode = '<code>' + '</code>\n<code>'.join(mistune.escape(x) for x in comps) + '</code>'
+            dispHtml = re.sub(r'``([^`\n]+)``', r'''<input class="slidoc-fillable-input">''', dispCode)
+            solution = re.sub(r'``([^`\n]+)``', r'''<span class="slidoc-fillable-solution">\1</span>''', mistune.escape(code.strip()))
+            dispClasses = ' slidoc-block-fillable'
+            dispIdStr = 'id=%s-block-fillable' % slide_id
+            html = '\n<div %s class="%s"><pre>%s</pre></div>\n' % (dispIdStr, dispClasses, dispHtml)
+            html += '\n<p></p>'
+            html += '\n<div %s class="%s"><pre><code>%s</code></pre></div>\n' % (id_str, classes, solution)
+            return html
+
         if lexer and HtmlFormatter:
             html = highlight(code, lexer, HtmlFormatter())
         else:
             html = '<pre><code>%s</code></pre>\n' % mistune.escape(code)
         
-        return ('\n<div %s class="%s">\n' % (id_str, classes))+html+'</div>\n'
+        return '\n<div %s class="%s">\n%s</div>\n' % (id_str, classes, html)
 
     def get_header_prefix(self):
         if 'untitled_number' in self.options['config'].features:
@@ -1807,6 +1845,12 @@ class SlidocRenderer(MathRenderer):
             self.questions[-1].update(test=self.slide_block_test)
         if self.slide_block_output:
             self.questions[-1].update(output=self.slide_block_output)
+        if self.slide_block_solution:
+            self.questions[-1].update(solution=self.slide_block_solution)
+        if self.slide_block_fillable:
+            self.questions[-1].update(fillable=self.slide_block_fillable)
+        if self.slide_block_hidden:
+            self.questions[-1].update(hiddentest=self.slide_block_hidden)
 
         if answer_opts['share']:
             self.sheet_attributes['shareAnswers']['q'+str(qnumber)] = {'share': answer_opts['share'], 'vote': answer_opts['vote'], 'voteWeight': 0}
@@ -1843,7 +1887,7 @@ class SlidocRenderer(MathRenderer):
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
         hide_answer = self.options['config'].pace or not self.options['config'].show_score 
-        if len(self.slide_block_test) != len(self.slide_block_output):
+        if not self.slide_block_solution and len(self.slide_block_test) != len(self.slide_block_output):
             hide_answer = False
             abort("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
 
@@ -1860,6 +1904,8 @@ class SlidocRenderer(MathRenderer):
             ans_classes += ' slidoc-choice-answer'
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'
+        if self.slide_block_fillable:
+            ans_classes += ' slidoc-answer-fillable'
 
         if self.questions[-1].get('gweight'):
             gweight_str = '/'+str(self.questions[-1]['gweight'])
@@ -2553,7 +2599,7 @@ def plugin_heads(plugin_defs, plugin_loads):
             plugin_params = {'pluginName': plugin_name,
                              'pluginLabel': 'slidoc-plugin-'+plugin_name}
             try:
-                tem_head = plugin_head % plugin_params
+                tem_head = (plugin_head % {}) % plugin_params  # Unescape % signs in HEAD template before formatting
             except Exception, err:
                 tem_head = ''
                 abort('ERROR Template formatting error in Head for plugin %s: %s' % (plugin_name, err))

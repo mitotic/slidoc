@@ -9,6 +9,9 @@ Code = {
 
     init: function () {
 	Slidoc.log('Slidoc.Plugins.Code.init:');
+	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
+	if (textAreaElem && this.qattributes.fillable)
+	    textAreaElem.style.display = 'none';
     },
 
     disable: function (displayCorrect) {
@@ -23,23 +26,46 @@ Code = {
 	Slidoc.log('Slidoc.Plugins.Code.display:', this, response, pluginResp);
 	var textareaElem = document.getElementById(this.pluginId+'-textarea');
 	textareaElem.value = response || '';
+	this.displayInput(response || '');
 	codeResponseCallback.bind(this)(false, null, response, pluginResp);
+    },
+
+    displayInput: function (inputValue) {
+	Slidoc.log('Slidoc.Plugins.Code.displayInput:', this);
+	var lines = inputValue.split('\n');
+	var html = [];
+	for (var j=0; j<lines.length; j++) {
+	    if (lines[j] || j < lines.length-1)
+		html.push('<code>'+lines[j]+'</code>');
+	}
+	var inputElem = document.getElementById(this.pluginId+'-input');
+	if (inputElem)
+	    inputElem.innerHTML = html.join('\n');
     },
 
     response: function (retry, callback) {
 	Slidoc.log('Slidoc.Plugins.Code.response:', this, retry, !!callback);
 	var inputValue = this.getInput(this.pluginId);
+	this.displayInput(inputValue);
 	checkCode(this.name, this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
     checkCode: function (elem) {
 	Slidoc.log('Slidoc.Plugins.Code.checkCode:', elem);
-	checkCode(this.name, this.slideId+'', this.qattributes, this.getInput(this.pluginId), true,
+	var inputValue = this.getInput(this.pluginId);
+	this.displayInput(inputValue);
+	checkCode(this.name, this.slideId+'', this.qattributes, inputValue, true,
 		  checkCodeCallback.bind(this) );
     },
 
     getInput: function (pluginId) {
+	var fillableElem = document.getElementById(this.slideId+'-block-fillable');
+	if (fillableElem) {
+	    var inputElems = fillableElem.getElementsByClassName('slidoc-fillable-input');
+	    [].forEach.call(inputElems, function(elem) { elem.textContent = elem.value; });
+	    return fillableElem.textContent;
+	}
 	var textareaElem = document.getElementById(pluginId+'-textarea');
 	return textareaElem.value;
     }
@@ -49,56 +75,73 @@ function checkCodeCallback(pluginResp) {
     Slidoc.log('checkCodeCallback:', this, pluginResp)
     var outputElem = document.getElementById(this.pluginId+'-output');
     var ntest = this.qattributes.test ? this.qattributes.test.length : 0;
-    var msg = 'Checked';
-    var code_msg = msg;
+    var nhide = this.qattributes.hiddentest || 0;
+    var msg = '';
+    var output = pluginResp.output || '';
     if (pluginResp.invalid) {
-	msg = 'Syntax/runtime error!';
-	code_msg = 'Error output:\n'+pluginResp.invalid;
-    } else if (pluginResp.score < 1) {
-	if (ntest > 1)
-	    msg = pluginResp.score ? 'First check failed partially!' : ' First check failed!';
-	else
-	    msg = pluginResp.score ? 'Partially incorrect output!' : 'Incorrect output!';
-	code_msg = 'Incorrect output:\n'+pluginResp.output;
+	msg = 'Syntax/runtime error! \n'+pluginResp.invalid;
+	output += renderCode(pluginResp.invalid.trim(), '', 'slidoc-code-invalid');
+    } else if (pluginResp.score === 0) {
+	msg = 'All checks failed';
     } else if (pluginResp.score === 1) {
-	msg = (ntest > 1) ? 'First check passed!' : 'Valid output!';
-	code_msg = msg;
+	msg = nhide ? 'First ' + pluginResp.tests + ' checks passed!' : 'All checks passed!';
+    } else {
+	msg = 'Some checks failed!';
     }
-    outputElem.textContent = code_msg;
-    Slidoc.showPopup(msg);
+    //Slidoc.showPopup(msg);
+    output += renderCode(msg, '', 'slidoc-code-status');
+    outputElem.innerHTML = output;
 }
 
 function codeResponseCallback(retry, callback, response, pluginResp) {
     Slidoc.log('codeResponseCallback:', this, retry, !!callback, response, pluginResp)
     var outputElem = document.getElementById(this.pluginId+'-output');
-    var code_msg = '';
+    var output = pluginResp.output || '';
     if (pluginResp) {
 	var ntest = this.qattributes.test ? this.qattributes.test.length : 0;
+	var nhide = this.qattributes.hiddentest || 0;
 	if (pluginResp.invalid) {
-	    code_msg = 'Error output:\n'+pluginResp.invalid;
+	    output += renderCode(pluginResp.invalid.trim(), '', 'slidoc-code-invalid');
 	} else if (pluginResp.score === 1) {
-	    code_msg = (pluginResp.tests > 1) ? 'Second check passed!' : 'Valid output';
+	    output += renderCode('All checks passed!', '', 'slidoc-code-status');
 	} else if (isNumber(pluginResp.score)) {
-
-	    if (retry && ntest > 1) {
-		// Retry only if second check is present
+	    if (retry && nhide) {
+		// Retry only if hidden tests present
 		var msg;
 		if (pluginResp.tests > 0)
-		    msg = pluginResp.score ? 'Second check failed partially!' : ' Second check failed!';
+		    msg = (ntest - pluginResp.tests)+' checks failed!';
 		else
-		    msg = (pluginResp.score ? 'Partially incorrect output!' : 'Incorrect output!')+pluginResp.output;
+		    msg = 'All checks failed';
 		Slidoc.PluginRetry(msg);
 		return;
 	    }
-
-	    code_msg = 'Incorrect output:\n'+pluginResp.output;
-	} else {
-	    code_msg = 'Output:\n'+(pluginResp.output || '');
 	}
     }
-    outputElem.textContent = code_msg;
+    if (pluginResp.score !== null)
+	output += renderCode('Score = '+pluginResp.score, '');
+    outputElem.innerHTML = output;
     if (callback)
 	callback(response, pluginResp);
+}
+
+var PADDING = '<code class="slidoc-code-padding">       </code> ';
+var ERROR_PREFIX = '<code class="slidoc-code-error"> Error:</code> ';
+var INPUT_PREFIX = '<code class="slidoc-code-input"> Input:</code> ';
+var OUTPUT_PREFIX = '<code class="slidoc-code-output">Output:</code> ';
+var EXPECT_PREFIX = '<code class="slidoc-code-expect">Expect:</code> ';
+
+function renderCode(text, prefix, classes) {
+    // Specify null value for prefix to have padding
+    classes = classes || 'slidoc-code-plain';
+    var lines = text.split('\n');
+    var output = [];
+    for (var j=0; j<lines.length; j++) {
+	if (lines[j] || j < lines.length-1) {
+	    var temPrefix = (j || prefix === null) ? PADDING : prefix;
+	    output.push( temPrefix + '<code class="'+classes+'">'+Slidoc.PluginManager.escapeHtml(lines[j])+'</code>\n');
+	}
+    }
+    return output.join('');
 }
 
 function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, callback) {
@@ -107,65 +150,104 @@ function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, c
     // invalid_msg => syntax error when executing user code
     Slidoc.log('checkCode:', slide_id, question_attrs, user_code, checkOnly);
 
-    if (!question_attrs.test || !question_attrs.output) {
-	Slidoc.log('checkCode: Error - Test/output code checks not found in '+slide_id);
-	return callback( {name:pluginName, score:null, invalid:'', output:'Not checked', tests:0} );
+    if (!question_attrs.test || !question_attrs.test.length) {
+	Slidoc.log('checkCode: Error - Test code checks not found in '+slide_id);
+	return callback( {name:pluginName, score:null, invalid:'No checks', output:'', tests:0} );
     }
 
     var codeType = question_attrs.qtype;
 
     var codeCells = [];
+    var solutionCode = '';
     if (question_attrs.input) {
 	for (var j=1; j<=question_attrs.input; j++) {
 	    // Execute all input cells
-	    var inputCell = document.getElementById('slidoc-block-input-'+j);
-	    if (!inputCell) {
-		Slidoc.log('checkCode: Error - Input cell '+j+' not found in '+slide_id);
-		return callback({name:pluginName, score:null, invalid:'', output:'Missing input cell'+j, tests:0});
-	    }
-	    codeCells.push( inputCell.textContent.trim() );
+	    var inputText = getCellText(pluginName, slide_id, 'input', j, 0);
+	    if (question_attrs.solution && question_attrs.solution == j)
+		solutionCode = inputText;
+	    else
+		codeCells.push(inputText);
 	}
     }
 
-    codeCells.push(user_code);
     var ntest = question_attrs.test.length;
-    if (checkOnly) ntest = Math.min(ntest, 1);
+    var nhide = question_attrs.hiddentest || 0;
+    if (checkOnly && nhide && nhide > 1) ntest = Math.min(ntest, nhide-1);
+    Slidoc.log('checkCode2:', ntest, nhide)
 
-    function checkCodeAux(index, msg, score, stdout, stderr) {
-	Slidoc.log('checkCodeAux:', index, msg, score, stdout, stderr);
-	if (stderr) {
-	    Slidoc.log('checkCodeAux: Error', msg, stderr);
-	    return callback({name:pluginName, score:0, invalid:stderr, output:'', tests:(index>0)?(index-1):0});
-	}
-	if (index > 0 && !score) {
-	    Slidoc.log('checkCodeAux: Error in test cell in '+slide_id, msg);
-	    // Do not display actual second check output (to avoid leaking test details)
-	    var outmsg = (index == 1) ? stdout : 'Second check failed!'
-	    return callback({name:pluginName, score:score, invalid:'', output:outmsg, tests:index-1});
+    function checkCodeAux(testCode, expectOutput, dispOutput, cumScore, index, score, stdout, stderr) {
+	Slidoc.log('checkCodeAux:', 'index='+index, testCode, expectOutput, 'dispout=', dispOutput, cumScore, score, 'out=', stdout, 'err=', stderr);
+	if (index) {
+	    if (!expectOutput) {
+		// Solution received
+		if (stderr) {
+		    Slidoc.log('checkCodeAux: Error in solution', stderr);
+		    if (Slidoc.PluginManager.previewStatus())
+			dispOutput += renderCode(stderr, ERROR_PREFIX);
+		    return callback({name:pluginName, score:cumScore, invalid:'Error in solution', output:dispOutput, tests:Math.max(0,index-1)});
+		}
+		stdout = stdout.trim();
+		if (!stdout) {
+		    Slidoc.log('checkCodeAux: Error: No solution output');
+		    return callback({name:pluginName, score:cumScore, invalid:'No solution output', output:dispOutput, tests:Math.max(0,index-1)});
+		}
+		// Note: index not incremented; stdout contains expectOutput
+		return checkCodeAux2(user_code, testCode, stdout, dispOutput, cumScore, index);
+
+	    }
+
+	    var hiddenTest = nhide && index >= nhide;
+
+	    if (stderr) {
+		Slidoc.log('checkCodeAux: Error', stderr);
+		if (!hiddenTest || Slidoc.PluginManager.previewStatus())
+		    dispOutput += renderCode(stderr, ERROR_PREFIX);
+		return callback({name:pluginName, score:cumScore, invalid:'Error in test '+index, output:dispOutput, tests:Math.max(0,index-1)});
+	    }
+
+	    if (!hiddenTest || Slidoc.PluginManager.previewStatus()) {
+		// Do not display actual hidden test output (to avoid leaking test details)
+		dispOutput += renderCode(testCode.trim(), INPUT_PREFIX);
+		dispOutput += renderCode(stdout.trim(), OUTPUT_PREFIX);
+		dispOutput += renderCode(expectOutput.trim(), EXPECT_PREFIX, 'slidoc-code-expect');
+	    }
+
+	    dispOutput += renderCode((hiddenTest?'Hidden check ':'Check ')+index+': '+((score === 1) ? 'Succeeded' : 'Failed'), '', 'slidoc-code-check')+'\n';
+
+	    cumScore += score || 0;
+
+	    if (index >= ntest) // All checks completed
+		return callback({name:pluginName, score:(cumScore/ntest), invalid:'', output:dispOutput, tests:ntest});
 	}
 
-	// Execute test code
-	while (index < ntest) {
-	    var testCell = document.getElementById('slidoc-block-test-'+question_attrs.test[index]);
-	    if (!testCell) {
-		Slidoc.log('checkCodeAux: Error - Test cell '+question_attrs.test[index]+' not found in '+slide_id);
-		return callback({name:pluginName, score:null, invalid:'', output:'Missing test cell'+(index+1), tests:index});
-	    }
-	    var testCode = testCell.textContent.trim();
+	// Execute next test
+	var testCode = getCellText(pluginName, slide_id, 'test', question_attrs.test[index], index);
 	    
-	    var outputCell = document.getElementById('slidoc-block-output-'+question_attrs.output[index]);
-	    if (!outputCell) {
-		Slidoc.log('checkCodeAux: Error - Test output cell '+question_attrs.output[index]+' not found in '+slide_id);
-		return callback({name:pluginName, score:null, invalid:'', output:'Missing test output'+(index+1), tests:index});
-	    }
-	    var expectOutput = outputCell.textContent.trim();
+	if (solutionCode)  // Compute expected output
+	    return checkCodeAux2(solutionCode, testCode, '', dispOutput, cumScore, index+1, true);
+	
+	// New expect output
+	expectOutput = getCellText(pluginName, slide_id, 'output', question_attrs.output ? question_attrs.output[index] : null, index);
 	    
-	    return execCode(codeType, codeCells.concat(testCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, index+1, 'test code'+index));
-	}
-	return callback({name:pluginName, score:(ntest?1:null), invalid:'', output:'', tests:ntest});
+	return checkCodeAux2(user_code, testCode, expectOutput, dispOutput, cumScore, index+1);
     }
 
-    checkCodeAux(0, '', null, '', '');
+    function checkCodeAux2(mainCode, testCode, expectOutput, dispOutput, cumScore, index) {
+	Slidoc.log('checkCodeAux2:', testCode, expectOutput, dispOutput, cumScore, index);
+	return execCode(codeType, codeCells.concat(mainCode).concat(testCode).join('\n\n'), expectOutput, checkCodeAux.bind(null, testCode, expectOutput, dispOutput, cumScore, index));
+    }
+
+    checkCodeAux('', '', '', 0, 0, null, '', '');
+}
+
+function getCellText(pluginName, slide_id, cellType, cellNumber, testIndex) {
+    var cellElem = cellNumber ? document.getElementById('slidoc-block-'+cellType+'-'+cellNumber) : null;
+    var cellText = cellElem ? cellElem.textContent.trim() : '';
+    if (cellText)
+	return cellText;
+
+    Slidoc.log('getCellText: Error - Code '+cellType+' cell #'+cellNumber+' not found or blank in '+slide_id);
+    return callback({name:pluginName, score:null, invalid:'', output:'Missing/blank '+cellType+'cell #'+(testIndex ? testIndex+1 : cellNumber), tests:testIndex});
 }
 
 
@@ -243,7 +325,7 @@ function execCode(codeType, code, expect, callback) {
 
 function execCodeOut(expect, callback, text) {
     Slidoc.log('execCodeOut:', expect, text);
-    var score = scoreCodeOutput(expect, text);
+    var score = expect ? scoreCodeOutput(expect, text) : null;
     callback(score, text.trim(), '');
 }
 
@@ -298,11 +380,21 @@ function execCodeErr(callback, err) {
 <style>
 .%(pluginLabel)s-textarea,
   .%(pluginLabel)s-check-button {display: block;}
-.%(pluginLabel)s-output { opacity: 0.7; }
+
+.%(pluginLabel)s-input { font-size: 0.8em; }
+.%(pluginLabel)s-input  { counter-reset: line; }
+.%(pluginLabel)s-input code { counter-increment: line; padding-left: 5px;}
+.%(pluginLabel)s-input code:before {
+  content: counter(line, decimal-leading-zero) ": ";
+  -webkit-user-select: none;
+}
+
+.%(pluginLabel)s-output { font-size: 0.7em; }
 </style>
 
 BODY:
-<button id="%(pluginId)s-check-button" class="slidoc-clickable %(pluginLabel)s-check-button" onclick="Slidoc.PluginMethod('%(pluginName)s','%(pluginSlideId)s','checkCode',this);">Check</button>
 <textarea id="%(pluginId)s-textarea" class="%(pluginLabel)s-textarea" cols="60" rows="5"></textarea>
-<pre><code id="%(pluginId)s-output" class="%(pluginLabel)s-output"></code></pre>
+<button id="%(pluginId)s-check-button" class="slidoc-clickable %(pluginLabel)s-check-button" onclick="Slidoc.PluginMethod('%(pluginName)s','%(pluginSlideId)s','checkCode',this);">Check</button>
+<pre id="%(pluginId)s-input" class="%(pluginLabel)s-input"></pre>
+<pre id="%(pluginId)s-output" class="%(pluginLabel)s-output"></pre>
 */

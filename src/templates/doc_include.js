@@ -1860,6 +1860,8 @@ function escapeHtml(unsafe) {
          .replace(/>/g, "&gt;");
 }
 
+Slidoc.PluginManager.escapeHtml = escapeHtml;
+
 function unescapeAngles(text) {
     return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
@@ -2844,6 +2846,10 @@ Slidoc.PluginManager.submitted = function() {
 
 Slidoc.PluginManager.answered = function(qnumber) {
     return Sliobj.session && Sliobj.session.questionsAttempted[qnumber];
+}
+
+Slidoc.PluginManager.previewStatus = function() {
+    return Sliobj.previewState || Sliobj.reloadCheck;
 }
 
 Slidoc.PluginManager.lateSession = function() {
@@ -4480,8 +4486,8 @@ function preAnswer() {
 	    var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	    Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
-	} else {
-	    // Question not attempted; display null plugin response
+	} else if (Sliobj.gradableState) {
+	    // Question not attempted; display null plugin response if grading
 	    var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
 	
 	    if (pluginMatch && pluginMatch[3] == 'response') {
