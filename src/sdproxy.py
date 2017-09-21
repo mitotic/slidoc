@@ -3794,7 +3794,7 @@ def getAttendanceDays():
     # Return list of attendance days [ddMONyy, ...]
     rosterSheet = getSheet(ROSTER_SHEET)
     if not rosterSheet:
-        return None
+        return []
     return [header[len(DAY_PREFIX):] for header in rosterSheet.getHeaders() if header.startswith(DAY_PREFIX)]
 
 def getAttendance(day, new=False):

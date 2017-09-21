@@ -181,8 +181,8 @@ document.onreadystatechange = function(event) {
 
 <p></p>
 {% if site_admin and browse_path and not browse_path.startswith('backup') %}
-<a class="clickable" href="#" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
-Click to upload file/zip archive, or drag-and-drop it in box above</a>
+<span class="clickable" onclick="document.getElementById('upload-form').style.display=null;this.style.display='none'">&#x21EA;
+Click to upload file/zip archive, or drag-and-drop it in box above</span>
 
 <form id="upload-form" style="display: none;" action="{{site_prefix }}/{{url_path}}/{{ browse_path }}" method="post" enctype="multipart/form-data" >
   <fieldset>

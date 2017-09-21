@@ -3669,7 +3669,8 @@ class PluginManager(object):
     def __init__(self, pluginName):
         self.pluginName = pluginName
 
-    def makePath(self, filepath, restricted=True, private=True, fullpath=False):
+    def makePath(self, filepath, restricted=True, private=True, relpath=False):
+        # If relpath, return '/...' for use in URL, else return full path relative to run directory
         if not Options['plugindata_dir']:
             raise Exception('sdserver.PluginManager.makePath: ERROR No plugin data directory!')
         if '..' in filepath:
@@ -3681,7 +3682,9 @@ class PluginManager(object):
         elif private:
             dataPath = os.path.join(PRIVATE_PATH, dataPath)
 
-        if fullpath:
+        if relpath:
+            dataPath = '/'+dataPath
+        else:
             dataPath = os.path.join(PLUGINDATA_PATH, self.pluginName, dataPath)
             if Options['site_name']:
                 dataPath = os.path.join(Options['site_name'], dataPath)
@@ -3691,7 +3694,7 @@ class PluginManager(object):
     
     def readFile(self, filepath, restricted=True, private=True):
         # Returns file content from relative path
-        fullpath = self.makePath(filepath, restricted=restricted, private=private, fullpath=True)
+        fullpath = self.makePath(filepath, restricted=restricted, private=private)
         try:
             with open(fullpath) as f:
                 content = f.read()
@@ -3709,7 +3712,7 @@ class PluginManager(object):
 
     def dirFiles(self, dirpath, restricted=True, private=True):
         # Returns list of [filepath, /url] in directory
-        fullpath = self.makePath(dirpath, restricted=restricted, private=private, fullpath=True)
+        fullpath = self.makePath(dirpath, restricted=restricted, private=private)
         if not os.path.exists(fullpath):
             return []
         try:
@@ -3721,13 +3724,14 @@ class PluginManager(object):
     def writeFile(self, filepath, content, restricted=True, private=True):
         # Returns relative file URL
         fullpath = self.makePath(filepath, restricted=restricted, private=private)
+        relpath = self.makePath(filepath, restricted=restricted, private=private, relpath=True)
         try:
             filedir = os.path.dirname(fullpath)
             if not os.path.exists(filedir):
                 os.makedirs(filedir)
             with open(fullpath, 'w') as f:
                 f.write(content)
-            return fullpath[len(Options['plugindata_dir']):]
+            return relpath
         except Exception, err:
             raise Exception('sdserver.PluginManager.writeFile: ERROR in writing file %s: %s' % (fullpath, err))
 
@@ -5303,7 +5307,7 @@ def main():
         Global.email2id = defaultdict(lambda : defaultdict(list))
         id2email = {}
         for siteName, rosterMaps in Global.siteRosterMaps.items():
-            for idVal, emailVal in rosterMaps['id2email']:
+            for idVal, emailVal in rosterMaps.get('id2email',{}).items():
                 if idVal in id2email:
                     print >> sys.stderr, 'sdserver.id2email: ERROR Ignored conflicting emails for id %s: %s vs. %s' (idVal, id2email[idVal], siteName+':'+emailVal)
                 elif emailVal:
