@@ -125,6 +125,8 @@ Sliobj.scores = null;
 Sliobj.liveResponses = {};
 Sliobj.choiceBlockHTML = {};
 
+Sliobj.origSlideText = null;
+
 Sliobj.testOverride = null;
 
 Sliobj.errorRetries = 0;
@@ -1259,11 +1261,17 @@ Slidoc.slideEdit = function(action, slideId) {
 	editArea.value = '';
 
     } else if (action == 'discard') {
-	if (!window.confirm('Discard edits?'))
+	var unchanged = (Sliobj.origSlideText === editArea.value);
+	var unsaved = (Sliobj.origSlideText !== null);
+	if (!unchanged && !window.confirm('Discard edits?'))
 	    return;
 	imageDropState(false, slideId);
 	editContainer.style.display = 'none';
 	editArea.value = '';
+	Sliobj.origSlideText = null;
+	if (unchanged || unsaved)
+	    return;
+
 	if (Sliobj.previewWin) {
 	    Sliobj.previewWin.close();
 	    Sliobj.previewWin = null;
@@ -1275,6 +1283,8 @@ Slidoc.slideEdit = function(action, slideId) {
 
     } else if (action == 'open' || action == 'update' || action == 'insert' || action == 'save' || action == 'delete' || action == 'rollover' || action == 'truncate') {
 	params.sessiontext = editArea.value;
+	Sliobj.origSlideText = null;  // Changes are being saved as preview
+
 	if (action == 'open' || action == 'update' || action == 'insert')
 	    params.update = '1';
 	if (action == 'delete')
@@ -1368,6 +1378,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    }
 	    editContainer.style.display = null;
 	    editArea.value = result.slideText;
+	    Sliobj.origSlideText = editArea.value;
 	    scrollTextArea(editArea, true);
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_edit', params, slideEditAux, true);

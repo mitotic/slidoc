@@ -699,7 +699,7 @@ class SlidocRenderer(MathRenderer):
     image_drop_template = '''<div id="slidoc-imgupload-container" class="slidoc-previewonly slidoc-updateonly"><label>Autonumber images:</label><input id="slidoc-upload-img-autonumber" type="checkbox" class="slidoc-upload-img-autonumber" value="autonumber"></input></label><div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop">Drop image here<br></div></div>'''
 
     remarks_template = '''
-  <button id="slidoc-remarks-start-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly" onclick="Slidoc.remarksClick(this);">Edit remarks</button>
+  <button id="slidoc-remarks-start-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly slidoc-noprint" onclick="Slidoc.remarksClick(this);">Edit remarks</button>
   <div id="slidoc-remarks-edit" class="slidoc-grade-element slidoc-gradableonly" style="display: none;">
     <button id="slidoc-remarks-save-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button" onclick="Slidoc.remarksClick(this);">Save remarks</button>
     <span id="slidoc-remarksprefix" class="slidoc-grade slidoc-gradeprefix"><em>Extra points:</em></span>
@@ -3674,9 +3674,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     with open(outpath) as f:
                         index_entries = read_index(f, path=outpath)
                 else:
-                    abort('Output file '+outpath+' not readable for indexing')
+                    message('TOC-WARNING: Output file '+outpath+' not readable for indexing')
+                    continue
                 if not index_entries:
-                    message('Index header not found for '+outpath)
+                    message('TOC-WARNING: Index header not found for '+outpath)
                     continue
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
@@ -4189,12 +4190,16 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             conn = httplib.HTTPSConnection(host, port) if server_comps.scheme == 'https' else httplib.HTTPConnection(host, port)
             conn.request('PUT', load_path, self.upload_content, headers)
             resp = conn.getresponse()
+            try:
+                respText = resp.read()
+            except Exception:
+                respText = ''
             conn.close()
             if resp.status != 200:
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
                 self.end_headers()
-                self.wfile.write('Error in upload to %s %s: %d %s' % (server_url, load_path, resp.status, resp.reason))
+                self.wfile.write('Error in upload: %d %s\n(%s%s)' % (resp.status, respText.strip() or resp.reason, server_url, load_path))
             else:
                 self.send_response(303)
                 redirect_url = server_url
@@ -4418,8 +4423,14 @@ if __name__ == '__main__':
     if cmd_args.preview_port:
         if len(input_files) != 1:
             raise Exception('ERROR: --preview_port only works for a single file')
-        if cmd_args.upload_key and not cmd_args.server_url:
-            raise Exception('ERROR: Must specify --server_url with --upload_key')
+
+        if cmd_args.upload_key:
+            if not cmd_args.server_url:
+                raise Exception('ERROR: Must specify --server_url with --upload_key')
+            fname, fext = os.path.splitext(os.path.basename(input_paths[0]))
+            if not sliauth.SESSION_NAME_RE.match(fname):
+                raise Exception('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension' % fname)
+
         input_files[0].close()
         src_path = input_paths[0]
         fname, fext = os.path.splitext(os.path.basename(src_path))

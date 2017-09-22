@@ -835,7 +835,13 @@ class ActionHandler(BaseHandler):
         root = str(self.get_argument("root", ""))
         token = str(self.get_argument("token", ""))
         if not self.check_admin_access(token=token, root=root):
-            raise tornado.web.HTTPError(403)
+            if self.previewActive() and subpath.startswith('_preview/') and not self.get_user_cookie():
+                next_url = '/' + subpath
+                if Options['site_name']:
+                    next_url = '/'+Options['site_name']+next_url
+                self.redirect(Global.login_url+'?next='+urllib.quote_plus(next_url))
+                return
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:<a href="/">Login</a> as admin to preview session %s' % self.previewActive())
 
         try:
             return self.getAction(subpath)
@@ -873,7 +879,7 @@ class ActionHandler(BaseHandler):
                 fname1, fbody1, fname2, fbody2 = subsubpath, self.request.body, '', ''
 
             try:
-                errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2)
+                errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modimages='clear')
             except Exception, excp:
                 if Options['debug']:
                     import traceback
@@ -943,7 +949,7 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(403)
 
         if previewingSession:
-            self.write('Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard">Discard</a> <p></p>' % (previewingSession, site_prefix, site_prefix))
+            self.write('<h3>Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard">Discard</a></h3>' % (previewingSession, site_prefix, site_prefix))
             return
 
         if action not in ('_dash', '_actions', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
@@ -2307,10 +2313,13 @@ class ActionHandler(BaseHandler):
             if dirpath:
                 clearpath = os.path.join(dirpath, clearpath)
             if clearpath:
-                for fname in os.listdir(clearpath):
-                    fpath = os.path.join(clearpath, fname)
-                    if os.path.isfile(fpath):
-                        os.remove(fpath)
+                if not os.path.exists(clearpath):
+                    os.makedirs(clearpath)
+                else:
+                    for fname in os.listdir(clearpath):
+                        fpath = os.path.join(clearpath, fname)
+                        if os.path.isfile(fpath):
+                            os.remove(fpath)
 
         if not renameFolder:
             zfile.extractall(dirpath, extractList)
@@ -2328,40 +2337,48 @@ class ActionHandler(BaseHandler):
     def acceptPreview(self):
         sessionName = self.previewState['name']
         uploadType = self.previewState['type']
+        src_dir = self.previewState['src_dir']
+        web_dir = self.previewState['web_dir']
 
         try:
-            if not os.path.exists(self.previewState['src_dir']):
-                os.makedirs(self.previewState['src_dir'])
+            if not os.path.exists(src_dir):
+                os.makedirs(src_dir)
 
-            with open(self.previewState['src_dir']+'/'+sessionName+'.md', 'w') as f:
+            with open(src_dir+'/'+sessionName+'.md', 'w') as f:
                 f.write(self.previewState['md'])
 
             if self.previewState['image_zipfile'] and self.previewState['modimages']:
-                self.extractFolder(self.previewState['image_zipfile'], self.previewState['src_dir'], folder=self.previewState['image_dir'],
+                self.extractFolder(self.previewState['image_zipfile'], src_dir, folder=self.previewState['image_dir'],
                                    clear=(self.previewState['modimages'] == 'clear'))
 
         except Exception, excp:
+            if Options['debug']:
+                import traceback
+                traceback.print_exc()
             self.previewClear()   # Revert to original version
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to source directory %s: %s' % (sessionName, self.previewState['src_dir'], excp))
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to source directory %s: %s' % (sessionName, src_dir, excp))
 
         try:
-            if not os.path.exists(self.previewState['web_dir']):
-                os.makedirs(self.previewState['web_dir'])
+            if not os.path.exists(web_dir):
+                os.makedirs(web_dir)
 
             if sessionName != 'index' or uploadType == TOP_LEVEL:
-                with open(self.previewState['web_dir']+'/'+sessionName+'.html', 'w') as f:
+                with open(web_dir+'/'+sessionName+'.html', 'w') as f:
                     f.write(self.previewState['HTML'])
 
             if self.previewState['TOC'] and (sessionName != 'index' or uploadType != TOP_LEVEL):
-                with open(self.previewState['web_dir']+'/index.html', 'w') as f:
+                with open(web_dir+'/index.html', 'w') as f:
                     f.write(self.previewState['TOC'])
 
             if self.previewState['image_zipfile']:
-                self.extractFolder(self.previewState['image_zipfile'], self.previewState['web_dir'], folder=self.previewState['image_dir'])
+                self.extractFolder(self.previewState['image_zipfile'], web_dir, folder=self.previewState['image_dir'])
 
         except Exception, excp:
+            if Options['debug']:
+                import traceback
+                traceback.print_exc()
             self.previewClear()   # Revert to original version
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to web directory %s: %s' % (sessionName, self.previewState['web_dir'], excp))
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to web directory %s: %s' % (sessionName, web_dir, excp))
 
         sessionPath = self.previewState['path']
         sessionLabel = self.previewState['label']
