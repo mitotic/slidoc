@@ -20,11 +20,16 @@ function slidocAction(actionName, sessionName, dispMsg, query) {
 
 function slidocConfirmAction(actionName, dispMsg, query) {
   slidocStatus(dispMsg || actionName);
-  if (window.confirm('Confirm '+(dispMsg || actionName)+'?')) {
-    slidocAction(actionName, '', dispMsg, query);
+  var suffix = slidocSessionName ? ' for '+slidocSessionName : '';
+  if (!window.confirm('Confirm '+(dispMsg || actionName)+suffix+'?')) {
+    slidocStatus('');
     return;
   }
-  slidocStatus('');
+  if (actionName == 'delete' && !window.confirm('Re-confirm delete'+suffix+'?')) {
+    slidocStatus('');
+    return;
+  }
+  slidocAction(actionName, '', dispMsg, query);
 }
 
 function slidocPromptAction(actionName, prompt) {

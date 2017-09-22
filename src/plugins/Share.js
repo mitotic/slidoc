@@ -480,7 +480,7 @@ pre.slidoc-plugin-Share-responders {
     -moz-white-space: pre-wrap;
     -o-white-space:   pre-wrap;
     white-space:      pre-wrap;
-    font-size: 90%%;
+    font-size: 90%;
 }
    </style>
    BODY:

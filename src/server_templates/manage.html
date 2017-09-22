@@ -16,7 +16,7 @@
   </b>
 
   <p></p>
-  <h2>Manage session</h2>
+  <h2>Manage module session</h2>
   <hr>
 
   Session: <b>{{session_name}}</b>
@@ -28,16 +28,17 @@
   <h3><span id="slidoc-action-status"></span></h3>
 
   <table>
-    <tr><td><a class="clickable" href="javascript:slidocAction('responders')">responders</a> </td><td> Show module session submission stats, allow late submissions etc.</td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocAction('responders')">&#x1F464;</a> </td><td> Session responder data, allow late submissions etc.</td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocAction('sheet')">&#9783;</a> </td><td> View session data spreadsheet (scores, grades, etc.)</em></td></tr>
     <tr><td>&nbsp;</td><td> <td></tr>
-    <tr><td><a class="clickable" href="javascript:slidocAction('edit')">edit</a> </td><td> Edit module Markdown file</td></tr>
-    <tr><td><a class="clickable" href="javascript:slidocAction('download')">download</a> </td><td> Download module Markdown file (with images)</td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocAction('edit')">&#9998;</a> </td><td> Edit module Markdown file</td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocAction('edit', '', 'preview', '?preview=1')">&#x1F441;</a> </td><td> Preview module Markdown file</td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocAction('download')">&#x21E9;</a> </td><td> Download module Markdown file (with images)</td></tr>
     <tr><td>&nbsp;</td><td> <td></tr>
-    <tr><td><a class="clickable" href="javascript:slidocAction('sheet', '{{session_name}}')">view</a> </td><td> View session data spreadsheet (scores, grades, etc.)</em></td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocConfirmAction('delete')">&#x1F5D1;</a> </td><td> Delete module (IRREVERSIBLE)</TD></TR>
+    <tr><td>&nbsp;</td><td> <td></tr>
     <tr><td><a class="clickable" href="javascript:slidocConfirmAction('import')">import</a> </td><td> Import responses/grades from <em>spreadsheet.csv</em> (from paper tests)</td></tr>
     <tr><td><a class="clickable" href="javascript:slidocAction('export')">export</a> </td><td> Export responses to <em>spreadsheet.csv</em></td></tr>
-    <tr><td>&nbsp;</td><td> <td></tr>
-    <tr><td><a class="clickable" href="javascript:slidocConfirmAction('delete')">delete</a> </td><td> Delete module (IRREVERSIBLE)</TD></TR>
   </table>
 
   <p></p>

@@ -1538,7 +1538,10 @@ class SlidocRenderer(MathRenderer):
             self.plugin_loads.add(plugin_def_name)
             plugin_top = plugin_def.get('TOP', '').strip()
             if plugin_top:
-                self.plugin_tops.append( (plugin_top % {}) % plugin_params ) # Unescape the %% before substituting
+                try:
+                    self.plugin_tops.append(plugin_top % plugin_params)
+                except Exception, err:
+                    abort('ERROR Template formatting error in TOP for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
 
         # Add slide-specific plugin params
         plugin_params['pluginSlideId'] = slide_id
@@ -1553,15 +1556,17 @@ class SlidocRenderer(MathRenderer):
 
         if '%(pluginBody)s' in content:
             # Insert plugin body at the right place within the HTML content
+            tem_params = plugin_params.copy()
+            tem_params['pluginBody'] = body_div
             try:
-                plugin_params['pluginContent'] = content.replace('%(pluginBody)s', body_div, 1) % plugin_params
+                plugin_params['pluginContent'] = content % tem_params
             except Exception, err:
-                abort('ERROR Template formatting error for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+                abort('ERROR Template formatting error in content for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
         else:
             # Save content as raw (pre) text (for plugin processing); insert plugin body after raw content
             if content:
                 content = ('<pre id="%(pluginId)s-raw-content">' % plugin_params) + mistune.escape(content) + '</pre>'
-            plugin_params['pluginContent'] = content + (body_div % plugin_params)
+            plugin_params['pluginContent'] = content + body_div
         return self.plugin_content_template % plugin_params
 
     def slidoc_plugin(self, name, text):
@@ -2568,7 +2573,7 @@ def parse_plugin(text, name=None):
             tail = tail[:-2].strip()
         # Unescape embedded <script> elements
         tail = unescape_slidoc_script(tail)
-        tail = re.sub(r'%(?!\(plugin_)', '%%', tail)  # Escape % signs in HEAD/BODY template
+        tail = re.sub(r'%(?!\(plugin)', '%%', tail)  # Escape % signs in HEAD/BODY template
         comps = re.split(r'(^|\n)\s*(BUTTON|TOP|BODY):' if comment else r'(^|\n)(BUTTON|BODY):', tail)
         plugin_def['HEAD'] = comps[0]+'\n' if comps[0] else ''
         comps = comps[1:]
@@ -2599,7 +2604,7 @@ def plugin_heads(plugin_defs, plugin_loads):
             plugin_params = {'pluginName': plugin_name,
                              'pluginLabel': 'slidoc-plugin-'+plugin_name}
             try:
-                tem_head = (plugin_head % {}) % plugin_params  # Unescape % signs in HEAD template before formatting
+                tem_head = plugin_head % plugin_params
             except Exception, err:
                 tem_head = ''
                 abort('ERROR Template formatting error in Head for plugin %s: %s' % (plugin_name, err))
@@ -3547,14 +3552,12 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             iso_due_str = '-'
             if doc_date_str:
                 date_time = doc_date_str if isinstance(doc_date_str, datetime.datetime) else sliauth.parse_date(doc_date_str)
-                local_time_str = sliauth.print_date(date_time, prefix_time=True)
                 if admin_ended:
-                    doc_str += ', ended '
+                    doc_str += ', ended '+sliauth.print_date(date_time)
                 else:
-                    doc_str += ', due '
+                    doc_str += ', due '+sliauth.print_date(date_time, prefix_time=True)
                     iso_due_str = sliauth.iso_date(date_time)
 
-                doc_str += (local_time_str[:-8]+'Z' if local_time_str.endswith(':00.000Z') else local_time_str)
             paced_files[fname] = {'type': file_type, 'release_date': iso_release_str, 'due_date': iso_due_str, 'doc_str': doc_str}
 
         if config.dry_run and not return_html:

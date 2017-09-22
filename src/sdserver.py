@@ -6,7 +6,7 @@ sdserver: Tornado-based web server to serve Slidoc html files (with authenticati
           - Can be used as a simple static file server (with authentication), AND
           - As a proxy server that handles spreadsheet operations on cached data and copies them to Google sheets
 
-        Use 'sdserver.py --proxy_wait=0 --gsheet_url=...' and
+        Use 'sdserver.py --proxy_sheet --gsheet_url=...' and
             'slidoc.py --gsheet_url=... --proxy_url=/_websocket/ ...' to proxy user calls to Google sheet (but not slidoc.py setup calls, which are still directed to gsheet_url)
         Can specify 'slidoc.py --gsheet_url=http:/hostname/_proxy/ --proxy_url=/_websocket/ ...' to re-direct session setup calls to proxy as well.
 
@@ -106,7 +106,7 @@ Options = {
     'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
-    'proxy_wait': None,
+    'proxy_sheet': False,
     'public': False,
     'reload': False,
     'request_timeout': 60,
@@ -501,29 +501,37 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     @classmethod
     def setup_dirs(cls, site_name=''):
         sitePrefix = '/'+site_name if site_name else ''
-        cls.site_src_dir    = Options['source_dir'] + sitePrefix
+        cls.site_src_dir    = Options['source_dir'] + sitePrefix if Options['source_dir'] else None
         cls.site_web_dir    = Options['static_dir'] + sitePrefix
-        cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH
-        cls.site_backup_dir = Options['backup_dir'] + sitePrefix
+        cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH if Options['plugindata_dir'] else None
+        cls.site_backup_dir = Options['backup_dir'] + sitePrefix if Options['backup_dir'] else None
         cls.site_files_dir  = Options['static_dir'] + sitePrefix + '/' + FILES_PATH
-        homeSrc = cls.site_src_dir+'/index.md'
-        homeWeb = cls.site_web_dir+'/index.html'
-        try:
-            if not os.path.exists(cls.site_web_dir):
-                os.makedirs(cls.site_web_dir)
-            if not os.path.exists(homeWeb):
+
+        if Options['static_dir'] and os.path.exists(Options['static_dir']):
+            homeWeb = cls.site_web_dir+'/index.html'
+            try:
+                # Create dummy home web page
+                if not os.path.exists(cls.site_web_dir):
+                    os.makedirs(cls.site_web_dir)
+                if not os.path.exists(homeWeb):
                     with open(homeWeb, 'w') as f:
                         f.write('<b>%s Site Page</b>' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeWeb
+            except Exception, excp:
+                print >> sys.stderr, 'sdserver: Failed to create home web %s' % homeWeb
 
-                    if not os.path.exists(homeSrc):
-                        if not os.path.exists(cls.site_src_dir):
-                            os.makedirs(cls.site_src_dir)
-                        with open(homeSrc, 'w') as f:
-                            f.write('**%s Site Page**' % site_name)
+        if Options['source_dir'] and os.path.exists(Options['source_dir']):
+            homeSrc = cls.site_src_dir+'/index.md' if cls.site_src_dir else None
+            try:
+                # Create dummy home source page
+                if not os.path.exists(cls.site_src_dir):
+                    os.makedirs(cls.site_src_dir)
+                if not os.path.exists(homeSrc):
+                    with open(homeSrc, 'w') as f:
+                        f.write('**%s Site Page**' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeSrc
-        except Exception, excp:
-            print >> sys.stderr, 'sdserver: Failed to create %s/%s' % (homeWeb, homeSrc)
+            except Exception, excp:
+                print >> sys.stderr, 'sdserver: Failed to create home source %s' % homeSrc
 
     def set_default_headers(self):
         # Completely disable cache
@@ -935,7 +943,7 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(403)
 
         if previewingSession:
-            self.write('Previewing session <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+            self.write('Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard">Discard</a> <p></p>' % (previewingSession, site_prefix, site_prefix))
             return
 
         if action not in ('_dash', '_actions', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
@@ -3238,10 +3246,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     def lockSessionConnections(cls, sessionName, lock_msg, reload=False):
         # Lock all socket connections for specified session (for uploads/modifications)
         # (Null string value for lock_msg unlocks)
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: lockSessionConnections', sessionName, lock_msg, reload
         for userId, connections in cls.get_connections(sessionName).items():
             for connection in connections:
                 connection.locked = lock_msg
                 connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: lockSessionConnections', 'DONE'
 
     @classmethod
     def lockAllConnections(cls, lock_msg, reload=False):
@@ -4265,7 +4277,7 @@ def createApplication():
         debug=Options['debug'],
     )
 
-    if Options['proxy_wait'] is not None and not primary_server:
+    if Options['proxy_sheet'] and not primary_server:
         site_handlers = [
                       (pathPrefix+r"/_proxy", ProxyHandler),
                       (pathPrefix+r"/_websocket/(.*)", WSHandler),
@@ -5071,7 +5083,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         return errMsg  # If not restart, returns only when server stops
 
 def setup_site_server(sheetSettings, site_number):
-    if Options['proxy_wait'] is not None:
+    if Options['proxy_sheet']:
         # Copy options to proxy
         sdproxy.copyServerOptions(Options)
 
@@ -5162,7 +5174,7 @@ def main():
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
-    define("proxy_wait", type=int, help="Proxy wait time (>=0; omit argument for no proxy)")
+    define("proxy_sheet", default=False, help="Use proxy to communicate with Google Sheet")
     define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")

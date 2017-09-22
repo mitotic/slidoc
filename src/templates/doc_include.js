@@ -2105,7 +2105,6 @@ Slidoc.resetPaced = function (delRow) {
 	    return false;
 	var gsheet = getSheet(Sliobj.sessionName);
 
-	// Will reload page after reset
 	if (delRow) {
 	    gsheet.delRow(userId, resetSessionCallback.bind(null, delRow));
 	} else {
@@ -2132,6 +2131,9 @@ function resetSessionCallback(delRow, result, retStatus) {
     Slidoc.log('resetSessionCallback:', delRow, result, retStatus);
     if (!result) {
 	alert('Error in resetting session: '+retStatus.error);
+    } if (delRow) {
+	alert('Session has been deleted');
+	window.location = Sliobj.sitePrefix || '/';
     } else {
 	sessionReload('Session has been reset. Reload page to restart?');
     }

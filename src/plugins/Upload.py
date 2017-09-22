@@ -56,7 +56,8 @@ class Upload(object):
         if len(content) != contentLength:
             return {'result': 'error', 'error': 'Incorrect data upload: expected '+str(contentLength)+' but received '+str(len(content))+ 'bytes'}
 
-        if self.userId != ADMINUSER_ID:
+        if not self.pluginManager.adminRole(self.userRole, alsoGrader=True):
+            # Only admin/grader can access other users
             userId = self.userId
         else:
             userId = dataParams.get('userId') or self.userId

@@ -438,11 +438,16 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 		regularUserToken = userName+adminToken;
 
 	    console.log("promptUserInfo:", testMode, userName, userRole, userSites);
-	    var userIds     = ['_test_user',                  '_grader',              userName,                      ''];
-	    var userTokens  = ['_test_user'+adminToken,      adminToken,              regularUserToken,      adminToken];
-	    var graderKeys  = ['',                           adminToken,              '',                            ''];
-	    var authRoles   = [siteRole,                       siteRole,              '',                            ''];
-	    var userOptions = ['Admin view (for editing/testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
+	    var adminUser = 1;
+	    var previewUser = 2;
+	    var editUser = 3;
+	    var graderUser = 4;
+	    var normalUser = 5;
+	    var userIds     = ['_test_user',            '', '',       '_grader',              userName,                      ''];
+	    var userTokens  = ['_test_user'+adminToken, '', '',      adminToken,              regularUserToken,      adminToken];
+	    var graderKeys  = ['',                      '', '',      adminToken,              '',                            ''];
+	    var authRoles   = [siteRole,                '', '',        siteRole,              '',                            ''];
+	    var userOptions = ['Admin view (for editing/testing/pacing)', 'Preview view (for non-destructive testing)', 'Edit view', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {
@@ -468,18 +473,25 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    }
 
 	    var userOffset;
-	    function optCallback(altUser) {
-		Slidoc.log('GoogleProfile.promptUserInfo.optCallback:', altUser);
-		var indx = userOffset + Math.min(userOptions.length-userOffset, Math.max(1, altUser||0));
-		pickRole(indx);
+	    function optCallback(selOption) {
+		Slidoc.log('GoogleProfile.promptUserInfo.optCallback:', selOption);
+		var indx = userOffset + Math.min(userOptions.length-userOffset, Math.max(1, selOption||0));
+		if (indx == previewUser || indx == editUser) {
+		    var editURL = sitePrefix + '/_edit/' + sessionName;
+		    if (indx == previewUser )
+			editURL += '?preview=1';
+		    window.location = editURL;
+		} else {
+		    pickRole(indx);
+		}
 	    }
 
 	    if (!getParameter('grading')) {
 		// For non-grading mode, test user if admin else normal user otherwise
-		pickRole( (siteRole == 'admin') ? 1 : 3)
+		pickRole( (siteRole == 'admin') ? adminUser : normalUser)
 	    } else if (siteRole && (testMode || userData.batch)) {
 		// For test/batch mode, test user if admin else grader
-		pickRole( (siteRole == 'admin') ? 1 : 2)
+		pickRole( (siteRole == 'admin') ? adminUser : graderUser)
 	    } else if (siteRole == 'admin') {
 		userOffset = 0;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset),
@@ -487,12 +499,12 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 					'<br><a href="'+sitePrefix+'/_dash">Dashboard</a>',
 					optCallback);
 	    } else if (siteRole == 'grader') {
-		userOffset = 1;
+		userOffset = graderUser-1;
 		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset,-1),
 					'', optCallback);
 	    } else {
 		// Normal user
-		pickRole(3)
+		pickRole(normalUser)
 	    }
 	    return;
 	}
