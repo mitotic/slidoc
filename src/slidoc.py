@@ -3340,7 +3340,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 mathjax_config += r", TeX: { equationNumbers: { autoNumber: 'AMS' } }"
             if 'tex_math' in file_config.features:
                 mathjax_config += r", tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }"
-            math_inc = Mathjax_js % mathjax_config
+            math_inc = Mathjax_js % ('false' if 'immediate_math' in file_config.features else 'true', mathjax_config)
 
         if not file_config.features.issubset(set(Features_all)):
             abort('Error: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
@@ -3687,9 +3687,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
                 doc_link = ''
                 if doc_str:
-                    doc_link = '''(<a class="slidoc-clickable" href="%s.html" target="_blank">%s</a>)''' % (orig_fnames[ifile], 'view')
-                    if doc_str != 'view':
-                        doc_link += '''<span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1" target="_blank">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'alt views', doc_str)
+                    if doc_str == 'view':
+                        doc_link = '''(<a class="slidoc-clickable" target="_blank" href="%s.html">%s</a>)''' % (orig_fnames[ifile], 'view')
+                    else:
+                        doc_link = '''(<a class="slidoc-clickable" target="_blank" href="%s.html?grading=1">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" target="_blank" href="%s.html">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'alt views', orig_fnames[ifile], 'view', doc_str)
 
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries
@@ -3951,7 +3952,7 @@ Pagedown_js = r'''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
-    skipStartupTypeset: true
+    skipStartupTypeset: %s
     %s
   });
 </script>
@@ -4244,6 +4245,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   discuss_all: Enable discussion for all slides
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
+#   immediate_math: Immediate rendering of math formulas (normally math rendering is delayed to load plugins)
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
 #   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
 #   math_input: Render math in user input (not needed if session text already contains math)
@@ -4265,7 +4267,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate
 #   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

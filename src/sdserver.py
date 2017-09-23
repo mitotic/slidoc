@@ -161,6 +161,8 @@ Global.twitterVerify = {}
 
 Global.split_opts = {}
 
+Global.previewModifiedCount = 0
+
 def get_site_menu():
     return [x.strip().lower() for x in Global.siteSettings.get(Options['site_name'],{}).get('site_menu','').split(',')]
     
@@ -245,19 +247,25 @@ def getSessionType(sessionName):
 
     return (sessionType, sessionNumber)
 
-def getSessionPath(sessionName, site_prefix=False, toc=False):
+def getSessionLabel(sessionName, sessionType):
+    sessionLabel = sessionName
+    if sessionType != TOP_LEVEL and sessionName == 'index':
+        sessionLabel = sessionType+'/index'
+    return sessionLabel
+
+def getSessionPath(sessionName, sessionType='', site_prefix=False, toc=False):
     # Return path to session HTML file, including '/' prefix and optionally site_prefix
     # If toc, return path to session ToC
-    if sessionName == 'index':
-        if not toc:
-            raise Exception('No path to session index')
-        path = '/'
-    else:
-        sessionType, sessionNumber = getSessionType(sessionName)
+    if not sessionType and sessionName:
+        sessionType, _ = getSessionType(sessionName)
+
+    if sessionType:
         path = '/' + ('index' if toc else sessionName) + '.html'
         if sessionType != TOP_LEVEL:
-            path = '/' + sessionType + path
-        path = privatePrefix(sessionType) + path
+            path = privatePrefix(sessionType) + '/' + sessionType + path
+    else:
+        path = '/'
+
     if site_prefix and Options['site_name']:
         path = '/' + Options['site_name'] + path
     return path
@@ -903,7 +911,10 @@ class ActionHandler(BaseHandler):
         if not Options['site_list'] or Options['site_number']:
             # Secondary server
             root = str(self.get_argument('root', ''))
-            if action == '_preview':
+            modifiedStr = self.get_argument('modified', '')
+            modifiedNum = sdproxy.parseNumber(modifiedStr) or 0
+
+            if action == '_preview' or (action == '_startpreview' and previewingSession == sessionName):
                 if not previewingSession:
                     self.displayMessage('Not previewing any session')
                     return
@@ -912,17 +923,35 @@ class ActionHandler(BaseHandler):
                     # Inconsistent preview
                     self.discardPreview()
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Preview state inconsistent; resetting')
-                return self.displayPreview(subsubpath)
+
+                if modifiedStr and modifiedNum == self.previewState['modified']:
+                    return self.displayPreview(subsubpath)
+
+                # Ensure that current preview modification version is an URL parameter
+                redirURL = site_prefix + '/_preview/index.html?modified=%d' % self.previewState['modified']
+                previewUpdate = self.get_argument('update', '')
+                if previewUpdate:
+                    redirURL += '&update=' + previewUpdate
+                self.redirect(redirURL)
+                return
+
+            elif action == '_startpreview':
+                if not previewingSession:
+                    self.createUnmodifiedPreview(sessionName)
+                    self.redirect(site_prefix + '/_preview/index.html')
+                    return
+                else:
+                    self.displayMessage('Already previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+                    return
+
             elif action == '_accept':
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
                 if not previewingSession:
                     self.displayMessage('Not previewing any session')
                     return
-                if Options['dry_run']:
-                    self.displayMessage('Cannot accept edits during dry run')
-                    return
-                return self.acceptPreview()
+                return self.acceptPreview(modified=modifiedNum)
+
             elif action == '_edit':
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to edit')
@@ -930,12 +959,21 @@ class ActionHandler(BaseHandler):
                     sessionName = self.get_argument('sessionname', '')
                 sessionType = self.get_argument('sessiontype', '')
                 startPreview = self.get_argument('preview', '')
-                if previewingSession and previewingSession != sessionName:
-                    self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
-                    return
+                if previewingSession:
+                    if previewingSession != sessionName:
+                        self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+                        return
+                    if not self.previewState['modified']:
+                        # Clear any unmodified preview
+                        self.previewClear()
                 return self.editSession(sessionName, sessionType=sessionType, start=True, startPreview=startPreview)
+
+            elif action == '_closepreview':
+                return self.discardPreview(sessionName, modified=modifiedNum)
+
             elif action == '_discard':
-                return self.discardPreview(sessionName)
+                return self.discardPreview(sessionName, modified=modifiedNum)
+
             elif action == '_reloadpreview':
                 if not previewingSession:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Not previewing session')
@@ -1245,11 +1283,15 @@ class ActionHandler(BaseHandler):
                 self.redirect("/"+Options['site_name']+"/index.html" if Options['site_number'] else "/index.html")
 
         elif action == '_delete':
-            errMsgs = self.deleteSession(subsubpath)
+            rebuild = bool(self.get_argument('rebuild',''))
+            errMsgs = self.deleteSession(subsubpath, rebuild=rebuild)
+            tocPath = getSessionPath(sessionName, site_prefix=True, toc=True)
             if errMsgs and any(errMsgs):
                 self.displayMessage(errMsgs)
+            elif rebuild:
+                self.displayMessage('Rebuilt session '+sessionName, back_url=tocPath)
             else:
-                self.displayMessage('Deleted session '+sessionName)
+                self.displayMessage('Deleted session '+sessionName, back_url=tocPath)
 
         elif action == '_import':
             self.render('import.html', site_name=Options['site_name'], session_name=sessionName, import_params=updateImportParams(Options['import_params']) if Options['import_params'] else {}, submit_date=sliauth.iso_date())
@@ -1401,7 +1443,9 @@ class ActionHandler(BaseHandler):
         else:
             self.displayMessage('Invalid get action: '+action)
 
-    def deleteSession(self, sessionName):
+    def deleteSession(self, sessionName, rebuild=False):
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: deleteSession', Options['site_name'], sessionName, rebuild
         user = sdproxy.ADMINUSER_ID
         userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
         args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
@@ -1409,35 +1453,40 @@ class ActionHandler(BaseHandler):
         if retObj['result'] != 'success':
             return ['Error in deleting sheet '+sessionName+': '+retObj.get('error','')]
 
-        if Options['source_dir']:
-            uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
-
-            if sessionName != 'index':
-                if os.path.exists(src_path):
-                    os.remove(src_path)
-
-                if os.path.exists(web_path):
-                    os.remove(web_path)
-
-                if os.path.isdir(web_images):
-                    shutil.rmtree(web_images)
-
-            filePaths = self.get_md_list(uploadType)
-            if filePaths:
-                # Rebuild session index
-                errMsgs = self.rebuild(uploadType, indexOnly=True)
-            else:
-                # No more sessions of this type; remove session index
-                ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
-                if os.path.exists(ind_path):
-                    os.remove(ind_path)
-                errMsgs = self.rebuild(indexOnly=True)
-
-            if errMsgs and any(errMsgs):
-                msgs = ['Re-indexing after deleting session '+sessionName+':'] + [''] + errMsgs
-                return msgs
-
+        if not Options['source_dir'] or Options['dry_run']:
             return []
+
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+
+        if rebuild:
+            return self.rebuild(uploadType, force=True)
+
+        if sessionName != 'index':
+            if os.path.exists(src_path):
+                os.remove(src_path)
+
+            if os.path.exists(web_path):
+                os.remove(web_path)
+
+            if os.path.isdir(web_images):
+                shutil.rmtree(web_images)
+
+        filePaths = self.get_md_list(uploadType)
+        if filePaths:
+            # Rebuild session index
+            errMsgs = self.rebuild(uploadType, indexOnly=True)
+        else:
+            # No more sessions of this type; remove session index
+            ind_path = os.path.join(os.path.dirname(web_path), 'index.html')
+            if os.path.exists(ind_path):
+                os.remove(ind_path)
+            errMsgs = self.rebuild(indexOnly=True)
+
+        if errMsgs and any(errMsgs):
+            msgs = ['Re-indexing after deleting session '+sessionName+':'] + [''] + errMsgs
+            return msgs
+
+        return []
 
 
     def displaySessions(self, buildMsgs={}, indMsgs=[], msg=''):
@@ -2077,17 +2126,6 @@ class ActionHandler(BaseHandler):
             if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
-            sessionLabel = sessionName
-            if uploadType == TOP_LEVEL:
-                sessionPath = '/'+sessionName+'.html'
-            else:
-                sessionPath = privatePrefix(uploadType)+'/'+uploadType+'/'+sessionName+'.html'
-                if sessionName == 'index':
-                    sessionLabel = uploadType+'/index'
-
-            if Options['site_name']:
-                sessionPath = '/' + Options['site_name'] + sessionPath
-
             self.previewState['md'] = fbody1
             self.previewState['md_defaults'] = retval['md_params'].get('md_defaults', '')
             self.previewState['md_slides'] = retval['md_params'].get('md_slides', [])
@@ -2098,17 +2136,18 @@ class ActionHandler(BaseHandler):
             self.previewState['type'] = uploadType
             self.previewState['number'] = sessionNumber
             self.previewState['name'] = sessionName
-            self.previewState['path'] = sessionPath
-            self.previewState['label'] = sessionLabel
-            self.previewState['src_dir'] = src_dir
-            self.previewState['web_dir'] = web_dir
+            self.previewState['label'] = getSessionLabel(sessionName, uploadType)
+            self.previewState['src_dir'] = src_dir       # Parent directory of session file
+            self.previewState['web_dir'] = web_dir       # Parent directory of session file
             self.previewState['image_dir'] = image_dir
             self.previewState['image_zipbytes'] = io.BytesIO(images_zipdata) if images_zipdata else None
             self.previewState['image_zipfile'] = zipfile.ZipFile(self.previewState['image_zipbytes'], 'a') if images_zipdata else None
             self.previewState['image_paths'] = dict( (os.path.basename(fpath), fpath) for fpath in self.previewState['image_zipfile'].namelist() if os.path.basename(fpath)) if images_zipdata else {}
 
-            self.previewState['overwrite'] = overwrite
+            Global.previewModifiedCount += 1
+            self.previewState['modified'] = Global.previewModifiedCount
             self.previewState['modimages'] = modimages
+            self.previewState['overwrite'] = overwrite
             self.previewState['rollover'] = None
             return ''
 
@@ -2123,6 +2162,51 @@ class ActionHandler(BaseHandler):
             if temMsg.strip() and not temMsg.lower().startswith('error'):
                 temMsg = 'Error:\n' + temMsg
             return temMsg
+
+    def createUnmodifiedPreview(self, sessionName):
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+
+        if self.previewState:
+            self.previewClear()
+
+        if pacedSession(uploadType) and sessionName != 'index':
+            temMsg = sdproxy.startPreview(sessionName)
+            if temMsg:
+                raise Exception('Unable to preview session: '+temMsg)
+
+        try:
+            with open(web_path) as f:
+                sessionHTML = f.read()
+        except Exception, excp:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading preview file %s: %s' % (web_path, excp))
+
+        if sessionName == 'index' and uploadType != TOP_LEVEL:
+            self.previewState['TOC'] = sessionHTML
+            self.previewState['HTML'] = ''
+        else:
+            self.previewState['TOC'] = ''
+            self.previewState['HTML'] = sessionHTML
+
+        self.previewState['md'] = ''
+        self.previewState['md_defaults'] = ''
+        self.previewState['md_slides'] = []
+        self.previewState['new_image_number'] = 0
+        self.previewState['messages'] = []
+        self.previewState['type'] = uploadType
+        self.previewState['number'] = sessionNumber
+        self.previewState['name'] = sessionName
+        self.previewState['label'] = getSessionLabel(sessionName, uploadType)
+        self.previewState['src_dir'] = os.path.dirname(src_path)
+        self.previewState['web_dir'] = os.path.dirname(web_path)
+        self.previewState['image_dir'] = ''
+        self.previewState['image_zipbytes'] = None
+        self.previewState['image_zipfile'] = None
+        self.previewState['image_paths'] = {}
+
+        self.previewState['modified'] = 0
+        self.previewState['modimages'] = ''
+        self.previewState['overwrite'] = False
+        self.previewState['rollover'] = None
 
     def reloadPreview(self, slideNumber=0):
         previewingSession = self.previewActive()
@@ -2334,11 +2418,23 @@ class ActionHandler(BaseHandler):
                 f.write(zfile.read(name))
             
 
-    def acceptPreview(self):
+    def acceptPreview(self, modified=0):
+        if Options['dry_run']:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept edits during dry run')
+
+        if not self.previewState:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:No preview state to accept')
+
         sessionName = self.previewState['name']
         uploadType = self.previewState['type']
         src_dir = self.previewState['src_dir']
         web_dir = self.previewState['web_dir']
+
+        if not self.previewState['modified']:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept unmodified preview for session '+sessionName)
+
+        if self.previewState['modified'] != modified:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Modified version mismatch when accepting preview for session %s (%s vs %s)' % (sessionName, self.previewState['modified'], modified))
 
         try:
             if not os.path.exists(src_dir):
@@ -2380,7 +2476,6 @@ class ActionHandler(BaseHandler):
             self.previewClear()   # Revert to original version
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in saving edited session %s to web directory %s: %s' % (sessionName, web_dir, excp))
 
-        sessionPath = self.previewState['path']
         sessionLabel = self.previewState['label']
         rolloverParams = self.previewState['rollover']
 
@@ -2443,15 +2538,16 @@ class ActionHandler(BaseHandler):
             retval = {'result': 'success'}
             self.write( json.dumps(retval) )
 
-    def discardPreview(self, sessionName=''):
-        sessionPath = getSessionPath(sessionName, site_prefix=True) if sessionName and sessionName != 'index' else ''
+    def discardPreview(self, sessionName='', modified=0):
         if self.previewActive():
             sessionName = self.previewState['name']
-            sessionPath = self.previewState['path']
+            if modified != self.previewState['modified']:
+                self.displayMessage('Failed to discard obsolete preview for session '+sessionName)
+                return
             self.previewClear()
             if sessionName != 'index':
                 WSHandler.lockSessionConnections(sessionName, 'Session mods discarded. Reload page', reload=True)
-        self.displayMessage('Discarded changes', back_url=sessionPath)
+        self.displayMessage('Discarded changes' if modified else 'Closed preview', back_url=getSessionPath(sessionName, site_prefix=True, toc=True))
 
     def previewClear(self, saved_version=False, final_version=False):
         if sdproxy.previewingSession():
@@ -3796,9 +3892,34 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
         sessionName = self.get_path_base(self.request.path)
         filename = self.get_path_base(self.request.path, special=True)
-        userId = self.get_id_from_cookie() or None
-        siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])  # May be None
-        cookieData = self.get_id_from_cookie(data=True) or {}
+
+        batchMode = False
+        cookieData = {}
+        if Options['server_url'] == 'http://localhost' or Options['server_url'].startswith('http://localhost:'):
+            # Batch auto login for localhost through query parameter: ...?auth=userId:token
+            # To print exams using headless browser: ...?auth=userId:token&print=1
+            query = self.request.query
+            if query.startswith('auth='):
+                query = query.split('&')[0]
+                qauth = query[len('auth='):]
+                userId, token = qauth.split(':')
+                if token == Options['auth_key']:
+                    cookieData = {'batch':1}
+                elif token == gen_proxy_auth_token(userId, root=True):
+                    cookieData = {}
+                else:
+                    raise tornado.web.HTTPError(404)
+                name = sdproxy.lookupRoster('name', userId) or ''
+                print >> sys.stderr, "AuthStaticFileHandler.get_current_user: BATCH ACCESS", self.request.path, userId, name
+                self.set_id(userId, displayName=name, data=cookieData)
+                siteRole = None
+                batchMode = True
+
+        if not batchMode:
+            userId = self.get_id_from_cookie() or None
+            siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])  # May be None
+            cookieData = self.get_id_from_cookie(data=True) or {}
+
         lockedAccess = False
         if cookieData.get('locked_access'):
             if cookieData['locked_access'] == '/'+Options['site_name']:
@@ -3819,22 +3940,6 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
 
         if Options['debug']:
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId, repr(siteRole), Options['site_number'], sessionName, self.request.path, self.request.query, Options['dry_run'], Options['lock_proxy_url']
-
-        if Options['server_url'] == 'http://localhost' or Options['server_url'].startswith('http://localhost:'):
-            # Batch auto login for localhost through query parameter: ?auth=userId:token
-            query = self.request.query
-            if query.startswith('auth='):
-                qauth = query[len('auth='):]
-                userId, token = qauth.split(':')
-                if token == Options['auth_key']:
-                    data = {'batch':1}
-                elif token == gen_proxy_auth_token(userId, root=True):
-                    data = {}
-                else:
-                    raise tornado.web.HTTPError(404)
-                name = sdproxy.lookupRoster('name', userId) or ''
-                print >> sys.stderr, "AuthStaticFileHandler.get_current_user: BATCH ACCESS", self.request.path, userId, name
-                self.set_id(userId, displayName=name, data=data)
 
         if ActionHandler.previewState.get('name'):
             if sessionName and sessionName.startswith(ActionHandler.previewState['name']):
@@ -3909,7 +4014,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                     elif gradeDate and sliauth.epoch_ms(gradeDate) < startDateMS:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:grade date %s must be after start_date %s for session %s' % (gradeDate, Options['start_date'], sessionName) )
 
-                if siteRole != sdproxy.ADMIN_ROLE:
+                if siteRole != sdproxy.ADMIN_ROLE and not batchMode:
                     # Non-admin access
                     # (Admin has access regardless of release date, allowing delayed release of live lectures and exams)
                     if lockedAccess:
@@ -3938,7 +4043,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 # Single site: check if userid is special (admin/grader/guest)
                 preAuthorized = Global.userRoles.is_special_user(userId)
 
-            if not preAuthorized:
+            if not preAuthorized and not batchMode:
                 if Global.login_domain and '@' in userId:
                     # External user
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:User not pre-authorized to access site')
@@ -4060,7 +4165,7 @@ class AuthLoginHandler(BaseHandler):
             else:
                 # Locked session access
                 next = getSessionPath(sessionName)
-                if siteName:                         # Because this is root site
+                if siteName:                         # Add site prefix separately because this is root site
                     next = '/' + siteName + next
             data['locked_access'] = next
             auth = self.check_locked(username, token, siteName, sessionName)
@@ -4156,11 +4261,12 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 else:
                     state = self.get_argument('state', '/')
                     match = re.search(r'\?seluser=([\w-]+)$', state)
-                    if match and match.group(1) in idValsDict:
-                        userId = match.group(1)
+                    temId = urllib.unquote_plus(match.group(1)) if match else ''
+                    if temId in idValsDict:
+                        userId = temId
                         sites = ','.join( idValsDict[userId] )
                     else:
-                        html = '<h3>Select user for Slidoc sites:<h3> ' + ''.join([ '''<b><a href="%s?seluser=%s">%s</a></b><p></p> ''' % (Global.login_url, x, x) for x in sorted(idValsDict.keys()) ])
+                        html = '<h3>Select user for Slidoc sites:<h3> ' + ''.join([ '''<b><a href="%s?seluser=%s">%s</a></b><p></p> ''' % (Global.login_url, urllib.quote_plus(x), x) for x in sorted(idValsDict.keys()) ])
                         self.custom_error(500, html, clear_cookies=True)
                         return
 
@@ -4177,7 +4283,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             nextPath = self.get_argument('next', '/')
             seluser = self.get_argument('seluser', '')
             if seluser:
-                nextPath = '/?seluser=' + seluser
+                nextPath = '/?seluser=' + urllib.quote_plus(seluser)
             yield self.authorize_redirect(
                 redirect_uri=self.settings['google_oauth']['redirect_uri'],
                 client_id=self.settings['google_oauth']['key'],
@@ -4304,7 +4410,7 @@ def createApplication():
                       (pathPrefix+r"/(_user_browse)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),
-                      (pathPrefix+r"/(_user_grades/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_grades/[-\w.%]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_plain)", UserActionHandler),
                       (pathPrefix+r"/(_user_qstats/[-\w.]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_twitterlink/[-\w.]+)", UserActionHandler),
@@ -4318,6 +4424,7 @@ def createApplication():
                       r"/(_backup/[-\w.]+)",
                       r"/(_browse)",
                       r"/(_browse/.+)",
+                      r"/(_closepreview)",
                       r"/(_delete/[-\w.]+)",
                       r"/(_discard)",
                       r"/(_discard/[-\w.]+)",
@@ -4331,7 +4438,7 @@ def createApplication():
                       r"/(_import/[-\w.]+)",
                       r"/(_lock)",
                       r"/(_lock/[-\w.]+)",
-                      r"/(_lockcode/[-\w.;]+)",
+                      r"/(_lockcode/[-\w.;%]+)",
                       r"/(_logout)",
                       r"/(_manage/[-\w.]+)",
                       r"/(_modules)",
@@ -4346,6 +4453,7 @@ def createApplication():
                       r"/(_responders/[-\w.]+)",
                       r"/(_restore)",
                       r"/(_roster)",
+                      r"/(_startpreview/[-\w.]+)",
                       r"/(_submit/[-\w.:;]+)",
                       r"/(_twitter)",
                       r"/(_unlock/[-\w.]+)",

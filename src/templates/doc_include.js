@@ -437,7 +437,9 @@ function getSiteRole(siteName, siteRoles, checkIfGuest) {
 
 function getUserRole(checkIfGuest) {
     var userRole = '';
-    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole)
+    if (window.GService && GService.gprofile && GService.gprofile.auth)
+	userRole = GService.gprofile.auth.authRole;
+    else if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole)
 	userRole = Slidoc.serverCookie.siteRole;
     else if (Slidoc.serverCookie && Slidoc.serverCookie.sites && checkIfGuest && getSiteRole(Sliobj.params.siteName, Slidoc.serverCookie.sites, true))
 	userRole = 'guest';
@@ -503,13 +505,20 @@ Slidoc.siteCookie = getSiteCookie();
 Slidoc.PluginManager.sitePrefix = Sliobj.sitePrefix;
 Slidoc.PluginManager.pluginDataPath = Slidoc.siteCookie.pluginDataPath || '';
 
-// Assessment view: for printing exams
-Sliobj.assessmentView = !Sliobj.params.gd_sheet_url && getParameter('print') && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole);
-
 // Locked view: for lockdown browser mode
 Sliobj.lockedView = !!Sliobj.serverData.locked_access;
 
 Sliobj.batchMode = Sliobj.serverData.batch ? true : isHeadless;
+
+// Assessment view: for printing exams
+Sliobj.assessmentView = false;
+if (getParameter('print')) {
+    if (Sliobj.batchMode) {
+	Sliobj.assessmentView = true;
+    } else if (!Sliobj.params.gd_sheet_url && (!Slidoc.serverCookie || Slidoc.serverCookie.siteRole)) {
+	Sliobj.assessmentView = true;
+    }
+}
 
 Slidoc.websocketPath = '';
 if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') {
@@ -579,7 +588,7 @@ function onreadystateaux() {
     }
 
     // Typeset MathJax after plugin setup
-    if (window.MathJax)
+    if (!('immediate_math' in Sliobj.params.features) && window.MathJax)
 	MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
 
     if (Sliobj.params.gd_client_id) {
@@ -601,6 +610,7 @@ function onreadystateaux() {
 }
 
 Sliobj.previewState = false;
+Sliobj.previewModified = '';
 Sliobj.updateView = false;
 Sliobj.imageDropSetup = false;
 
@@ -628,6 +638,18 @@ Slidoc.pageSetup = function() {
 	Slidoc.classDisplay('slidoc-edit-update', 'none');
 	if (!Sliobj.params.fileName)
 	    toggleClass(true, 'slidoc-preview-view');
+	Sliobj.previewModified = getParameter('modified');
+
+	if (!Sliobj.previewModified || Sliobj.previewModified == '0') {
+	    var acceptButton = document.getElementById('slidoc-preview-accept');
+	    if (acceptButton) acceptButton.style.display = 'none';
+	    var discardButton = document.getElementById('slidoc-preview-discard');
+	    if (discardButton) discardButton.style.display = 'none';
+	} else {
+	    var closeButton = document.getElementById('slidoc-preview-close');
+	    if (closeButton) closeButton.style.display = 'none';
+	}
+
 	if (getParameter('update')) {
 	    Sliobj.updateView = true;
 	    if (!Sliobj.params.fileName)
@@ -1148,7 +1170,7 @@ Slidoc.slideEditMenu = function() {
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p><hr>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li><p></p>\n';
-    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('preview');"+'">Preview all slides</span></li>\n';
+    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('startpreview');"+'">Preview all slides</span></li>\n';
     html += '</ul>';
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -1244,9 +1266,7 @@ Slidoc.slideEdit = function(action, slideId) {
     if (!slideId) {
 	if (checkActiveEdit())
 	    return;
-	var url = Sliobj.sitePrefix + '/_edit/'+Sliobj.params.fileName;
-	if (action == 'preview')
-	    url += '?preview=1';
+	var url = Sliobj.sitePrefix+ ((action == 'startpreview')?'/_startpreview/':'/_edit/') + Sliobj.params.fileName;
 	loadPath(url);
 	return;
     }
@@ -1379,7 +1399,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    editContainer.style.display = null;
 	    editArea.value = result.slideText;
 	    Sliobj.origSlideText = editArea.value;
-	    scrollTextArea(editArea, true);
+	    scrollTextArea(editArea);
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_edit', params, slideEditAux, true);
     }
@@ -1431,7 +1451,7 @@ Slidoc.previewAction = function (action) {
 	}
     }
 
-    window.location = Sliobj.sitePrefix + '/_' + action;
+    window.location = Sliobj.sitePrefix + '/_' + action + '?modified=' + Sliobj.previewModified;
 }
 
 function previewMessages(optional) {
@@ -1469,7 +1489,7 @@ Slidoc.ajaxRequest = function (method, url, data, callback, json, nolog) {
 	    var msg = '';
             if (XHR.status === OK) {
 		if (!nolog)
-		    Slidoc.log('ajaxRequest.OK: '+XHR.status, XHR.responseText);
+		    Slidoc.log('ajaxRequest.OK: '+XHR.status, XHR.responseText.slice(0,200));
 		if (json) {
 		    if (XHR.getResponseHeader('Content-Type') !== 'application/json') {
 			msg = 'Expected application/json response but received '+XHR.getResponseHeader('Content-Type')+' from '+url;
@@ -1871,6 +1891,7 @@ function escapeHtml(unsafe) {
          .replace(/>/g, "&gt;");
 }
 
+Slidoc.escapeHtml = escapeHtml;
 Slidoc.PluginManager.escapeHtml = escapeHtml;
 
 function unescapeAngles(text) {
@@ -3122,16 +3143,20 @@ function selectUserCallback(auth, userId, result, retStatus) {
     prepGradeSession(Sliobj.session);
     initSessionPlugins(Sliobj.session);
     showSubmitted();
+    dispUserInfo(userId, Sliobj.userGrades[userId].name);
     preAnswer();
+}
+
+function dispUserInfo(userId, dispName) {
     var infoElem = document.getElementById('slidoc-session-info');
     var footerElem = document.getElementById('slidoc-body-footer');
     if (Sliobj.assessmentView) {
 	if (infoElem)
-	    infoElem.textContent = (Sliobj.userGrades[userId].name || userId);
+	    infoElem.textContent = (dispName || userId);
 	if (footerElem)
 	    footerElem.innerHTML = '<p></p><p></p><em>Seed: '+Sliobj.session.randomSeed+'</em>';
 
-	var ncomps = Sliobj.userGrades[userId].name.split(',');
+	var ncomps = dispName.split(',');
 	var username = ncomps[0].trim();
 	if (ncomps.length > 1)
 	    username += '-'+ncomps[1].trim();
@@ -4023,12 +4048,10 @@ function slidocSetupAux(session, feedback) {
     }
 
     showSubmitted();
+    setTimeout(showPendingCalls, 2000);
 
-    if (Sliobj.assessmentView) {
-	var infoElem = document.getElementById('slidoc-session-info');
-	if (infoElem)
-	    infoElem.textContent = 'user ('+Sliobj.session.randomSeed+')';
-	document.title = 'user-'+Sliobj.sessionName;
+    if (Sliobj.assessmentView && !Sliobj.gradableState) {
+	dispUserInfo(getUserId(), Sliobj.session.displayName);
     }
 
     // Setup completed; branch out

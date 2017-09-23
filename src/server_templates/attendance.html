@@ -74,7 +74,7 @@ function get(elem, url) {
     {% set j += 1 %}
     <tr class="{{'oddrow' if j % 2 else 'evenrow' }}">
       <td>{{ name }}</td>
-      <td><span class="clickable" data-name="{{name}}" data-present="{{present}}" onclick="get(this,'{{site_prefix}}/_attend?selectedday={{selected_day}}&user={{userid}}&toggle=1')">{% raw '&#x2714;' if present else '&#x2718;' %}</span></td>
+      <td><span class="clickable" data-name="{{name}}" data-present="{{present}}" onclick="get(this,'{{site_prefix}}/_attend?selectedday={{selected_day}}&user={{url_escape(userid)}}&toggle=1')">{% raw '&#x2714;' if present else '&#x2718;' %}</span></td>
     </tr>
     {% end %}
   </table>

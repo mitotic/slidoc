@@ -167,7 +167,7 @@ document.onreadystatechange = function(event) {
       {% if startTime %}
         <td class="dynamic">{{ startTime }}</td>
       {% elif not past_due %}
-        <td><a class="clickable" href="{{site_prefix}}/_responders/{{session_name}}?user={{idVal}}">Start</a></td>
+        <td><a class="clickable" href="{{site_prefix}}/_responders/{{session_name}}?user={{url_escape(idVal)}}">Start</a></td>
       {% else %}
         <td></td>
       {% end %}
@@ -184,7 +184,7 @@ document.onreadystatechange = function(event) {
           </form>
         </td>
       {% elif past_due %}
-        <td><a class="clickable" href="{{site_prefix}}/_responders/{{session_name}}?user={{idVal}}">Submit</a></td>
+        <td><a class="clickable" href="{{site_prefix}}/_responders/{{session_name}}?user={{url_escape(idVal)}}">Submit</a></td>
       {% else %}
         <td></td>
       {% end %}
@@ -197,7 +197,7 @@ document.onreadystatechange = function(event) {
           <fieldset style="display: none;">
             New due date:
             <input  type="datetime-local" class="dateinput" name="dateinput" value="">
-            <span class="clickable"  onclick="submit(this, 'responders','{{session_name}}', '{{idVal}}')">Extend</span>
+            <span class="clickable"  onclick="submit(this, 'responders','{{session_name}}', '{{url_escape(idVal)}}')">Extend</span>
           </fieldset>
         </td>
       {% end %}
@@ -205,7 +205,7 @@ document.onreadystatechange = function(event) {
       {% if submitTime %}
         <td></td>
       {% else %}
-        <td><a class="clickable" href="{{site_prefix}}/_lockcode/{{session_name}};{{idVal}}">Access code</a></td>
+        <td><a class="clickable" href="{{site_prefix}}/_lockcode/{{url_escape(session_name+';'+idVal,plus=False)}}">Access code</a></td>
       {% end %}
 
       <td><code>{{connection}}</code></td>

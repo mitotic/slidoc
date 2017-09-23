@@ -133,8 +133,8 @@ GService.openWebsocket = function (wsPath) {
 		if (callback_method == 'lock') {
 		    wsock.locked = callback_args[0]; // Null string to unlock
 		    if (callback_args[1]) {
-			if (window.confirm(callback_args[0] || 'Reload page?'))
-			    location.reload(true);
+			Slidoc.showPopup(Slidoc.escapeHtml(callback_args[0] || 'Reload page?'), null, false, 0, 'lockReload',
+					 function() {location.reload(true)});
 		    }
 		} else if (callback_method == 'close') {
 		    GService.closeWS(callback_args[0]);
@@ -438,16 +438,15 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 		regularUserToken = userName+adminToken;
 
 	    console.log("promptUserInfo:", testMode, userName, userRole, userSites);
-	    var adminUser = 1;
-	    var previewUser = 2;
-	    var editUser = 3;
-	    var graderUser = 4;
-	    var normalUser = 5;
-	    var userIds     = ['_test_user',            '', '',       '_grader',              userName,                      ''];
-	    var userTokens  = ['_test_user'+adminToken, '', '',      adminToken,              regularUserToken,      adminToken];
-	    var graderKeys  = ['',                      '', '',      adminToken,              '',                            ''];
-	    var authRoles   = [siteRole,                '', '',        siteRole,              '',                            ''];
-	    var userOptions = ['Admin view (for editing/testing/pacing)', 'Preview view (for non-destructive testing)', 'Edit view', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
+	    var previewUser = 1;
+	    var adminUser   = 2;
+	    var graderUser  = 3;
+	    var normalUser  = 4;
+	    var userIds     = ['', '_test_user',                   '_grader',              userName,                      ''];
+	    var userTokens  = ['', '_test_user'+adminToken,       adminToken,              regularUserToken,      adminToken];
+	    var graderKeys  = ['', '',                            adminToken,              '',                            ''];
+	    var authRoles   = ['', siteRole,                        siteRole,              '',                            ''];
+	    var userOptions = ['Preview view (for non-destructive testing/editing)', 'Admin view (for live testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {
@@ -476,11 +475,8 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    function optCallback(selOption) {
 		Slidoc.log('GoogleProfile.promptUserInfo.optCallback:', selOption);
 		var indx = userOffset + Math.min(userOptions.length-userOffset, Math.max(1, selOption||0));
-		if (indx == previewUser || indx == editUser) {
-		    var editURL = sitePrefix + '/_edit/' + sessionName;
-		    if (indx == previewUser )
-			editURL += '?preview=1';
-		    window.location = editURL;
+		if (indx == previewUser) {
+		    window.location = sitePrefix + '/_startpreview/' + sessionName;
 		} else {
 		    pickRole(indx);
 		}

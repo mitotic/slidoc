@@ -48,9 +48,9 @@ th { text-align: left; }
    {% set k += 1 %}
     <tr class="{{ 'oddrow' if k % 2 else 'evenrow' }}">
       <td>{{ name }}</td>
-      {% if not j and gradebook %}<td><a class="clickable" href="{{ site_prefix }}/_user_grades/{{ userid }}">&#x1F520;</a></td>{% end %}
-      <td><a class="clickable" href="{{ site_prefix }}/_editroster?user={{ userid }}" >&#9998;</a></td>
-      <td><a class="clickable" href="javascript:slidocConfirmAction('editroster','delete','?user={{ userid }}&delete=1')" >&#x1F5D1;</a></td>
+      {% if not j and gradebook %}<td><a class="clickable" href="{{ site_prefix }}/_user_grades/{{ url_escape(userid,plus=False) }}">&#x1F520;</a></td>{% end %}
+      <td><a class="clickable" href="{{ site_prefix }}/_editroster?user={{ url_escape(userid) }}" >&#9998;</a></td>
+      <td><a class="clickable" href="javascript:slidocConfirmAction('editroster','delete','?user={{ url_escape(userid) }}&delete=1')" >&#x1F5D1;</a></td>
     </tr>
   {% end %}
   </table>
