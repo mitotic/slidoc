@@ -1,26 +1,26 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.12g';
+var VERSION = '0.97.13c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
 			 ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
 			 [],
-                         ['site_name', '', 'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
-			 ['site_label', 'Site name', 'Site label, e.g., Calculus 101'],
+                         ['site_name', '',                  'Site name, e.g., calc101, for multi-site setup (must match proxy)'],
+			 ['site_label', 'Site label',       'Site label, e.g., Calculus 101'],
 			 ['site_title', 'Site description', 'Descriptive site title'],
-			 ['site_access', '', "Blank '' OR 'adminonly' OR 'adminguest' OR 'readonly'"],
+			 ['site_access', '',                "Blank '' OR 'adminonly' OR 'adminguest' OR 'readonly'"],
                          ['twitter_config', '', 'Twitter stream config: username,consumer_key,consumer_secret,access_key,access_secret'],
 			 [],
-			 ['admin_users', '', 'User IDs or email addresses with admin access (comma-separated)'],
+			 ['admin_users', '',  'User IDs or email addresses with admin access (comma-separated)'],
 			 ['grader_users', '', 'User IDs or email addresses with grader access'],
-			 ['guest_users', '', 'User IDs or email addresses with guest access'],
+			 ['guest_users', '',  'User IDs or email addresses with guest access'],
 			 [],
-			 ['start_date', '', 'Date after which all session releases must start (yyyy-mm-dd)'],
+			 ['start_date', '',  'Date after which all session releases must start (yyyy-mm-dd)'],
 			 ['freeze_date', '', 'Date when all user modifications are disabled (yyyy-mm-dd)'],
-			 ['end_date', '', 'Date after which all user access is disabled (yyyy-mm-dd)'],
+			 ['end_date', '',    'Date after which all user access is disabled (yyyy-mm-dd)'],
 			 ['require_login_token', 'require', 'Non-null string for true'],
-			 ['require_late_token', 'require', 'Non-null string for true'],
+			 ['require_late_token', 'require',  'Non-null string for true'],
 			 ['share_averages', 'yes', 'Non-null string for true to share class averages for tests etc.'],
 			 ['site_menu', '', 'List of top menu items: files, gradebook (comma-separated)'],
 		         ['total_formula', '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
@@ -272,9 +272,9 @@ function loadSettings() {
 	    settingsValue = '' + settingsValue;
 	else
 	    settingsValue = '';
-	Settings[settingsName] = settingsValue;
 	if (settingsName.match(/date$/i) && settingsValue)
 	    settingsValue = createDate(settingsValue) || '';
+	Settings[settingsName] = settingsValue;
 	if (settingsName == 'proxy_update_cache') {
 	    ProxyCacheRange = settingsSheet.getRange(j+2, 2, 1, 1);
 	    if (settingsValue) {
@@ -571,7 +571,11 @@ function sheetAction(params) {
 	var getShare = params.getshare || '';
 	var importSession = params.import || '';
 	var seedRow = adminUser ? (params.seed || null) : null;
-	    
+
+	var selectedUpdates = params.update ? JSON.parse(params.update) : null;
+	var rowUpdates = params.row ? JSON.parse(params.row) : null;
+
+	var removeSheet = params.delsheet;
 	var performActions = params.actions || '';
 
 	var curDate = new Date();
@@ -582,6 +586,16 @@ function sheetAction(params) {
 	var logCall = params.logcall ? (parseInt(params.logcall) || 0) : 0;
 	if (logCall)
 	    startCallTracking(logCall, params, sheetName, origUser);
+
+	var modifyingRow = delRow || resetRow || selectedUpdates || (rowUpdates && !nooverwriteRow);
+        if (modifyingRow || removeSheet) {
+	    if (readOnlyAccess) {
+                throw('Error::Admin user '+origUser+' cannot modify row for user '+paramId);
+            }
+	    if (!adminUser && frozenSessions) {
+		throw('Error::All sessions are frozen. No user modifications permitted');
+	    }
+        }
 
 	if (performActions) {
             if (performActions == 'discuss_posts') {
@@ -676,7 +690,7 @@ function sheetAction(params) {
 		ProxyCacheRange.setValue( JSON.stringify([params.requestid || '', retval[0], retval[1]]) );
 	    }
 
-        } else if (params.delsheet) {
+        } else if (removeSheet) {
 	    // Delete sheet (and session entry)
 	    returnValues = [];
 	    if (!adminUser)
@@ -768,16 +782,6 @@ function sheetAction(params) {
 	    var columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
 	    var columnIndex = indexColumns(modSheet);
 	    
-	    var selectedUpdates = params.update ? JSON.parse(params.update) : null;
-	    var rowUpdates = params.row ? JSON.parse(params.row) : null;
-
-	    var modifyingRow = delRow || resetRow || selectedUpdates || (rowUpdates && !nooverwriteRow);
-            if (modifyingRow) {
-		if (readOnlyAccess) {
-                    throw('Error::Admin user '+origUser+' cannot modify row for user '+paramId);
-                }
-            }
-
 	    var updatingMaxScoreRow = sessionEntries && rowUpdates && rowUpdates[columnIndex['id']-1] == MAXSCORE_ID;
 	    if (headers) {
 		var modifyStartCol = params.modify ? parseInt(params.modify) : 0;
@@ -2866,11 +2870,15 @@ function createSheet(sheetName, headers, overwrite) {
     sheet.getRange('1:1').setFontWeight('bold');
 
     for (var j=0; j<headers.length; j++) {
-	if (headers[j].slice(-6).toLowerCase() == 'hidden')
-	    sheet.hideColumns(j+1);
-	if (headers[j].slice(-4).toLowerCase() == 'date' || headers[j].slice(-4).toLowerCase() == 'time') {
-	    ///var c = colIndexToChar(j+1);
+	var c = colIndexToChar(j+1);
+	if (headers[j].match(/^discuss/i) || headers[j].match(/(file|function|id|latetoken|message|name|params|revision|source|status|team|twitter|type|value)$/i)) {
+	    // Enforce plain text format (to avoid email-derived ids like "december11" being treated as dates)
+	    sheet.getRange(c+'1:'+c).setNumberFormat("@");
+	} else if (headers[j].match(/(date|time|timestamp)$/i)) {
 	    ///sheet.getRange(c+'2:'+c).setNumberFormat("yyyy-MM-ddTHH:mmZ");
+	}
+	if (headers[j].match(/hidden$/i)) {
+	    sheet.hideColumns(j+1);
 	}
     }
 

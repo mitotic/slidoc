@@ -924,10 +924,15 @@ class ActionHandler(BaseHandler):
                     self.discardPreview()
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Preview state inconsistent; resetting')
 
+                if action == '_preview' and (subsubpath and subsubpath != 'index.html'):
+                    # Messages/image preview (passthru)
+                    self.displayPreview(subsubpath)
+                    return
+
+                # Ensure that current preview modification version is an URL parameter for content preview
                 if modifiedStr and modifiedNum == self.previewState['modified']:
                     return self.displayPreview(subsubpath)
 
-                # Ensure that current preview modification version is an URL parameter
                 redirURL = site_prefix + '/_preview/index.html?modified=%d' % self.previewState['modified']
                 previewUpdate = self.get_argument('update', '')
                 if previewUpdate:
@@ -2191,7 +2196,7 @@ class ActionHandler(BaseHandler):
         self.previewState['md_defaults'] = ''
         self.previewState['md_slides'] = []
         self.previewState['new_image_number'] = 0
-        self.previewState['messages'] = []
+        self.previewState['messages'] = ['Unmodified preview of '+sessionName]
         self.previewState['type'] = uploadType
         self.previewState['number'] = sessionNumber
         self.previewState['name'] = sessionName
@@ -2419,6 +2424,7 @@ class ActionHandler(BaseHandler):
             
 
     def acceptPreview(self, modified=0):
+        # Modified == -1 disables version checking
         if Options['dry_run']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept edits during dry run')
 
@@ -2433,8 +2439,8 @@ class ActionHandler(BaseHandler):
         if not self.previewState['modified']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept unmodified preview for session '+sessionName)
 
-        if self.previewState['modified'] != modified:
-            raise tornado.web.HTTPError(403, log_message='CUSTOM:Modified version mismatch when accepting preview for session %s (%s vs %s)' % (sessionName, self.previewState['modified'], modified))
+        if  modified >= 0 and modified != self.previewState['modified']:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Modified version mismatch when accepting preview for session %s (%s vs %s)' % (sessionName, modified, self.previewState['modified']))
 
         try:
             if not os.path.exists(src_dir):
@@ -2539,9 +2545,10 @@ class ActionHandler(BaseHandler):
             self.write( json.dumps(retval) )
 
     def discardPreview(self, sessionName='', modified=0):
+        # Modified == -1 disables version checking
         if self.previewActive():
             sessionName = self.previewState['name']
-            if modified != self.previewState['modified']:
+            if modified >= 0 and modified != self.previewState['modified']:
                 self.displayMessage('Failed to discard obsolete preview for session '+sessionName)
                 return
             self.previewClear()
@@ -4247,12 +4254,13 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             
             role, sites = Global.userRoles.id_role_sites(username)
             userId = username
-            if not role and Global.email2id is not None:
+            if not role and not sites and Global.email2id is not None:
                 # Map email to id for users with no roles
                 siteRoles = []
-                idValsDict = Global.email2id.get(orig_email)
+                tem_email = username if '@' in username else orig_email
+                idValsDict = Global.email2id.get(tem_email)
                 if not idValsDict:
-                    self.custom_error(500, 'Email %s not found in any site rosters. Please register it.' % orig_email)
+                    self.custom_error(500, 'Email %s not found in any site rosters. Please register it.' % tem_email)
                     return
 
                 if len(idValsDict) == 1:
@@ -5449,7 +5457,7 @@ def main():
                     print >> sys.stderr, 'sdserver.id2email: ERROR Ignored conflicting emails for id %s: %s vs. %s' (idVal, id2email[idVal], siteName+':'+emailVal)
                 elif emailVal:
                     id2email[idVal] = siteName+':'+emailVal
-                    Global.email2id[email][idVal].append(siteName)
+                    Global.email2id[emailVal][idVal].append(siteName)
 
     # Start primary/secondary server
     start_server()

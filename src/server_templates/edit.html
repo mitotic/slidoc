@@ -20,7 +20,7 @@ function slidocDiscard() {
       PreviewWin.close();
    }
    PreviewWin = null;
-   window.location = '{{site_prefix}}/_discard/{{session_name}}';
+   window.location = '{{site_prefix}}/_discard/{{session_name}}?modified=-1';
    return false;
 }
 
@@ -39,7 +39,7 @@ function slidocAccept() {
       PreviewWin.close();
    }
    PreviewWin = null;
-   window.location = '{{site_prefix}}/_accept';
+   window.location = '{{site_prefix}}/_accept?modified=-1';
    return false;
 }
 

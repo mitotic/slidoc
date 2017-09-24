@@ -238,6 +238,9 @@ Slidoc.sheetIsLocked = function () {
 Sliobj.sheets = {};
 
 function getSheet(name) {
+    if (!window.GService)
+	return null;
+    
     if (Sliobj.sheets[name])
 	return Sliobj.sheets[name];
 

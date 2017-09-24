@@ -438,15 +438,14 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 		regularUserToken = userName+adminToken;
 
 	    console.log("promptUserInfo:", testMode, userName, userRole, userSites);
-	    var previewUser = 1;
-	    var adminUser   = 2;
-	    var graderUser  = 3;
-	    var normalUser  = 4;
-	    var userIds     = ['', '_test_user',                   '_grader',              userName,                      ''];
-	    var userTokens  = ['', '_test_user'+adminToken,       adminToken,              regularUserToken,      adminToken];
-	    var graderKeys  = ['', '',                            adminToken,              '',                            ''];
-	    var authRoles   = ['', siteRole,                        siteRole,              '',                            ''];
-	    var userOptions = ['Preview view (for non-destructive testing/editing)', 'Admin view (for live testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
+	    var adminUser   = 1;
+	    var graderUser  = 2;
+	    var normalUser  = 3;
+	    var userIds     = ['_test_user',                   '_grader',              userName,                      ''];
+	    var userTokens  = ['_test_user'+adminToken,       adminToken,              regularUserToken,      adminToken];
+	    var graderKeys  = ['',                            adminToken,              '',                            ''];
+	    var authRoles   = [siteRole,                        siteRole,              '',                            ''];
+	    var userOptions = ['Admin view (for live testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {
@@ -475,11 +474,7 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    function optCallback(selOption) {
 		Slidoc.log('GoogleProfile.promptUserInfo.optCallback:', selOption);
 		var indx = userOffset + Math.min(userOptions.length-userOffset, Math.max(1, selOption||0));
-		if (indx == previewUser) {
-		    window.location = sitePrefix + '/_startpreview/' + sessionName;
-		} else {
-		    pickRole(indx);
-		}
+		pickRole(indx);
 	    }
 
 	    if (!getParameter('grading')) {

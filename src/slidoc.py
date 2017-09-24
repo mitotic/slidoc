@@ -3688,9 +3688,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 doc_link = ''
                 if doc_str:
                     if doc_str == 'view':
-                        doc_link = '''(<a class="slidoc-clickable" target="_blank" href="%s.html">%s</a>)''' % (orig_fnames[ifile], 'view')
+                        doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>)''' % (orig_fnames[ifile], 'view')
+                    elif iso_release_str == sliauth.FUTURE_DATE:
+                        # Preview and user views
+                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str)
                     else:
-                        doc_link = '''(<a class="slidoc-clickable" target="_blank" href="%s.html?grading=1">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" target="_blank" href="%s.html">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'alt views', orig_fnames[ifile], 'view', doc_str)
+                        # View and user views
+                        doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view', orig_fnames[ifile], 'user views', doc_str)
 
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries

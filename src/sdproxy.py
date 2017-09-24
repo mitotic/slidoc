@@ -1657,6 +1657,8 @@ def sheetAction(params, notrace=False):
         loggingSheet = sheetName.endswith('_log')
         discussionSheet = sheetName.endswith('-discuss')
 
+        previewingSheet = (sheetName == previewingSession())
+
         getRow = params.get('get','')
         createRow = params.get('create', '')
         allRows = params.get('all','')
@@ -1669,7 +1671,34 @@ def sheetAction(params, notrace=False):
         importSession = params.get('import','')
         seedRow = params.get('seed', None) if adminUser else None
 
+        selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
+        rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
+
+        removeSheet = params.get('delsheet')
         performActions = params.get('actions', '')
+
+        curDate = createDate()
+        curTime = sliauth.epoch_ms(curDate)
+
+        frozenSessions = Settings['site_access'] == 'readonly' or (Settings['freeze_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['freeze_date']))
+
+        modifyingRow = delRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow)
+        if modifyingRow or removeSheet:
+            if Global.cacheUpdateError:
+                raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
+            if readOnlyAccess:
+                raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
+            if adminUser:
+                if modifyingRow and not TOTAL_COLUMN:
+                    # Refresh cached gradebook (because scores/grade may be updated)
+                    refreshGradebook(sheetName)
+                if removeSheet and previewingSheet:
+                    raise Exception('Error:PREVIEW_MODS:Cannot delete sheet when previewing it');
+            if not adminUser:
+                if frozenSessions:
+                    raise Exception('Error:FROZEN_MODS:All sessions are frozen. No user modifications permitted');
+                if previewingSheet:
+                    raise Exception('Error:PREVIEW_MODS:No user modifications permitted at this time');
 
         if performActions:
             if performActions == 'discuss_posts':
@@ -1696,10 +1725,6 @@ def sheetAction(params, notrace=False):
         timedSec = None
 
         computeTotalScore = False
-        curDate = createDate()
-        curTime = sliauth.epoch_ms(curDate)
-
-        frozenSessions = Settings['site_access'] == 'readonly' or (Settings['freeze_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['freeze_date']))
 
         if sheetName == SETTINGS_SHEET and adminUser != ADMIN_ROLE:
             raise Exception('Error::Must be admin user to access settings')
@@ -1725,7 +1750,7 @@ def sheetAction(params, notrace=False):
             processed = True
             returnValues = []
 
-        elif params.get('delsheet'):
+        elif removeSheet:
             # Delete sheet (and session entry)
             processed = True
             returnValues = []
@@ -1828,17 +1853,6 @@ def sheetAction(params, notrace=False):
             columnHeaders = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0]
             columnIndex = indexColumns(modSheet)
 
-            selectedUpdates = json.loads(params.get('update','')) if params.get('update','') else None
-            rowUpdates = json.loads(params.get('row','')) if params.get('row','') else None
-
-            modifyingRow = delRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow)
-            if modifyingRow:
-                if readOnlyAccess:
-                    raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-                if adminUser and not TOTAL_COLUMN:
-                    # Refresh cached gradebook (because scores/grade may be updated)
-                    refreshGradebook(sheetName)
-                
             updatingMaxScoreRow = sessionEntries and rowUpdates and rowUpdates[columnIndex['id']-1] == MAXSCORE_ID
             if headers:
                 modifyStartCol = int(params['modify']) if params.get('modify') else 0
@@ -2379,12 +2393,16 @@ def sheetAction(params, notrace=False):
                         rowUpdates[columnIndex['name']-1] = displayName
                         
             if newRow or rowUpdates or selectedUpdates:
-                # Modifying sheet
+                # Modifying sheet (somewhat redundant due to prior checks; just to be safe due to newRow creation)
                 if Global.cacheUpdateError:
                     raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
-                elif not adminUser and frozenSessions:
-                    raise Exception('Error::All sessions are frozen. No user modifications permitted');
-                        
+                if readOnlyAccess:
+                    raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
+                if not adminUser:
+                    if frozenSessions:
+                        raise Exception('Error:FROZEN_MODS:All sessions are frozen. No user modifications permitted');
+                    if previewingSheet:
+                        raise Exception('Error:PREVIEW_MODS:No user modifications permitted at this time');
             teamCol = columnIndex.get('team')
             if newRow and rowUpdates and teamCol and sessionAttributes and sessionAttributes.get('sessionTeam') == 'roster':
                 # Copy team name from roster
