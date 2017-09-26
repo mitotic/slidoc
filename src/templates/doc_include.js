@@ -2205,18 +2205,56 @@ Slidoc.showConcepts = function (submitMsg) {
     if (Sliobj.params.questionsMax) {
 	html += 'Questions answered: '+Sliobj.scores.questionsCount;
 	if (!controlledPace())
-	    html += '/'+Sliobj.params.questionsMax;
+	    html += '/'+(Sliobj.params.questionsMax-Sliobj.params.disabledCount);
 	html += '<br>\n';
     }
-    if (!displayAfterGrading() && Sliobj.session.submitted && Sliobj.params.scoreWeight)
-	html += 'Weighted score (max score): '+Sliobj.scores.weightedCorrect+' ('+Sliobj.params.scoreWeight+')<br>\n';
 
-    if (!displayAfterGrading() && Sliobj.session.submitted && Sliobj.allQuestionConcepts.length && !controlledPace()) {
-	html += '<p></p>';
-	var labels = ['<h3>Primary concepts missed</h3>', '<h3>Secondary concepts missed</h3>'];
-	for (var m=0; m<labels.length; m++)
-	    html += labels[m]+conceptStats(Sliobj.allQuestionConcepts[m], missedConcepts[m])+'<p></p>';
+    if (!displayAfterGrading()) {
+	// No need to wait until grading to display automatic scores
+	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight) {
+	    // There are manually graded questions
+	    if (Sliobj.feedback && isNumber(Sliobj.feedback.q_total)) {
+		// DIsplay total grade
+		var feedbackGrade = parseNumber(Sliobj.feedback.q_total);
+		html += 'Total grade: '+feedbackGrade+'/'+Sliobj.params.totalWeight+'<br>';
+		
+		if (Sliobj.gradableState) {
+		    var userId = getUserId();
+		    var computedGrade = computeGrade(userId);
+		    if (computedGrade != null && Math.abs(feedbackGrade - parseNumber(computedGrade)) > 0.01) {
+			alert('Warning: Inconsistent re-computed total grade: q_total!='+computedGrade)
+		    }
+		}
+	    } else if (Sliobj.params.scoreWeight) {
+		// Display autoscore, if available
+		var scoreValue = null
+		if (Sliobj.feedback && isNumber(Sliobj.feedback.q_scores)) {
+		    scoreValue = Sliobj.feedback.q_scores;
+
+		    if (Sliobj.gradableState) {
+			if (Sliobj.scores.weightedCorrect != null && Math.abs(scoreValue - parseNumber(Sliobj.scores.weightedCorrect)) > 0.01) {
+			    alert('Warning: Inconsistent re-computed weighted score: q_score!='+Sliobj.scores.weightedCorrect)
+			}
+		    }
+		} else if (Sliobj.session.submitted) {
+		    scoreValue = Sliobj.scores.weightedCorrect;
+		}
+		if (scoreValue != null)
+		    html += 'Weighted autoscore portion only: '+scoreValue+' (out of '+Sliobj.params.scoreWeight+')<br>';
+	    }
+	} else if (Sliobj.session.submitted && Sliobj.params.scoreWeight) {
+	    // Submitted autoscored session
+	    html += 'Weighted autoscore: '+Sliobj.scores.weightedCorrect+' (out of '+Sliobj.params.scoreWeight+')<br>\n';
+	}
+
+	if (!controlledPace() && Sliobj.session.submitted && Sliobj.allQuestionConcepts.length) {
+	    html += '<p></p>';
+	    var labels = ['<h3>Primary concepts missed</h3>', '<h3>Secondary concepts missed</h3>'];
+	    for (var m=0; m<labels.length; m++)
+		html += labels[m]+conceptStats(Sliobj.allQuestionConcepts[m], missedConcepts[m])+'<p></p>';
+	}
     }
+
     if (submitMsg) {
 	html = submitMsg + '<p></p>' + html;
     } else {
@@ -3512,19 +3550,6 @@ Slidoc.manageSession = function() {
 	if (Sliobj.voteDate)
 	    html += 'Submit Likes by: <em>'+Sliobj.voteDate+'</em><br>';
 
-	var computedGrade = null;
-	if (Sliobj.gradableState && Sliobj.params.totalWeight > Sliobj.params.scoreWeight)
-	    computedGrade = computeGrade(userId);
-	    
-	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight && Sliobj.feedback && isNumber(Sliobj.feedback.q_total)) {
-	    var feedbackGrade = parseNumber(Sliobj.feedback.q_total);
-	    if (computedGrade != null && Math.abs(feedbackGrade-parseNumber(computedGrade)) > 0.01) {
-		alert('Warning: Inconsistent total grade: q_total='+Sliobj.feedback.q_total)
-	    }
-	    html += 'Total grade: '+feedbackGrade+'/'+Sliobj.params.totalWeight+'<br>';
-	} else if (Sliobj.params.scoreWeight && Sliobj.feedback && 'q_scores' in Sliobj.feedback && isNumber(Sliobj.feedback.q_scores)) {
-	    html += 'Score: '+Sliobj.feedback.q_scores+'/'+Sliobj.params.scoreWeight+'<br>';
-	}
     } else {
 	if (Slidoc.serverCookie)
 	    html += 'User: <b>'+(userId || Slidoc.serverCookie.user)+'</b> (<a class="slidoc-clickable" href="'+Slidoc.logoutURL+'">logout</a>)<br>';
@@ -4636,7 +4661,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 }
 
 function displayAfterGrading() {
-    // Always display correct answers for submitted and graded sessions (except for locked views)
+    // Always display automatic correct answers for submitted and graded sessions (except for locked views)
     return (Sliobj.params.showScore == 'after_grading' || 'remote_answers' in Sliobj.params.features) && (Sliobj.lockedView || !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr) );
 }
 
@@ -6202,10 +6227,10 @@ Slidoc.showScore = function () {
     if (Sliobj.scores.questionsCount) {
 	if (controlledPace())
 	    scoreElem.textContent = Sliobj.scores.questionsCount;
-	else if (Sliobj.session.submitted && Sliobj.params.scoreWeight && !displayAfterGrading())
+	else if (Sliobj.session.submitted && Sliobj.params.totalWeight == Sliobj.params.scoreWeight && !displayAfterGrading())
 	    scoreElem.textContent = Sliobj.scores.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
 	else
-	    scoreElem.textContent = Sliobj.scores.questionsCount+'/'+Sliobj.params.questionsMax;
+	    scoreElem.textContent = Sliobj.scores.questionsCount+'/'+(Sliobj.params.questionsMax-Sliobj.params.disabledCount);
     } else {
 	scoreElem.textContent = '';
     }

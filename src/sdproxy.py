@@ -638,9 +638,6 @@ class Sheet(object):
                             row[j] = createDate(row[j])
 
         self.update_total_formula()
-        if self.totalCols:
-            for rowNum in range(2,len(self.xrows)):
-                self.update_total(rowNum)
 
         if keyMap is not None:
             # Create 3-level copy of key map
@@ -655,6 +652,21 @@ class Sheet(object):
 
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
             raise Exception('Duplicate key in initial rows for sheet %s: %s' % (self.name, [x[self.keyCol-1] for x in self.xrows[1:]]))
+
+        if self.totalCols and len(self.xrows) > 1:
+            # Recompute total column, and update remote sheet if necessary
+            if Settings['debug']:
+                headers = self.xrows[0]
+                print("DEBUG:Sheet %s, %s=sum([%s])" % (self.name, headers[self.totalCols[0]-1], [headers[colNum-1] for colNum in self.totalCols[1:]]), file=sys.stderr)
+
+            for rowNum in range(2,len(self.xrows)+1):
+                if self.update_total(rowNum):
+                    # New total value needs to be transmitted to remote sheet
+                    updated = False
+                    modTime = sliauth.epoch_ms()
+                    key = self.xrows[rowNum-1][self.keyCol-1] if self.keyCol else rowNum
+                    self.keyMap[key] = [modTime, 1, set()]
+
         if not updated:
             self.modifiedSheet(modTime)
 

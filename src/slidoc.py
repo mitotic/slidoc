@@ -3541,7 +3541,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             doc_str = file_type + ' exercise'
             iso_release_str = '-'
 
-            if release_date_str == sliauth.FUTURE_DATE:
+            if release_date_str == sliauth.FUTURE_DATE or (not release_date_str and config.start_date and restricted_sessions_re and restricted_sessions_re.search(fname)):
+                # Future release date or restricted session with start date but no release date
                 doc_str += ', UNRELEASED'
                 iso_release_str = release_date_str
             elif release_date_str:
@@ -3590,7 +3591,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 pre_html = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment
                 if js_params['paceLevel']:
-                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'], paced_files[fname]['release_date']]
+                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'] or '-', paced_files[fname]['release_date'] or '-']
                 else:
                     index_entries = [fname, fheader, 'view', due_date_str or '-', release_date_str or '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
@@ -3686,7 +3687,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
                 entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
-                if iso_release_str == sliauth.FUTURE_DATE:
+                if iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
                     entry_class = ' class="slidoc-restrictedonly" style="display: none"'
 
                 doc_link = ''
