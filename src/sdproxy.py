@@ -147,6 +147,7 @@ TRUNCATE_DIGEST = 8
 PLUGIN_RE = re.compile(r"^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$")
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
 QFIELD_MOD_RE = re.compile(r"^(q_other|q_comments|q(\d+)_(comments|grade))$")
+QFIELD_TOTAL_RE = re.compile(r"^(q_scores|q_other|q(\d+)_grade)$")
 
 DELETED_POST = '(deleted)'
 POST_PREFIX_RE = re.compile(r'^Post:(\d+):([-\d:T]+)(\s|$)')
@@ -667,7 +668,7 @@ class Sheet(object):
             totalCol = 1+headers.index(TOTAL_COLUMN)
             self.totalCols = [ totalCol ]
             for j, header in enumerate(headers[totalCol:]):
-                if header in ('q_scores', 'q_other') or QFIELD_RE.match(header):
+                if QFIELD_TOTAL_RE.match(header):
                     self.totalCols.append(j+totalCol+1)
             self.totalColSet = set(self.totalCols)
 
@@ -679,9 +680,14 @@ class Sheet(object):
         if row[self.keyCol-1]:
             # Only compute totals for rows with keys
             try:
-                newVal = sum(row[j-1] for j in self.totalCols[1:] if row[j-1])
+                newVal = sum((parseNumber(row[j-1]) or 0) for j in self.totalCols[1:] if row[j-1])
             except Exception, excp:
-                pass
+                print("DEBUG:update_total: Error in computing %s for user %s in session %s " % (TOTAL_COLUMN, row[self.keyCol-1], self.name), file=sys.stderr)
+                print("DEBUG:update_total:", [repr(row[j-1]) for j in self.totalCols[1:] if row[j-1]], file=sys.stderr)
+                if Settings['debug']:
+                    import traceback
+                    traceback.print_exc()
+                newVal = ''
 
         if row[totalCol-1] == newVal:
             return False
