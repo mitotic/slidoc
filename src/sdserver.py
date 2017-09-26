@@ -1388,16 +1388,19 @@ class ActionHandler(BaseHandler):
                     self.displayMessage('User ID '+userId+' not in roster')
                     return
 
-            colIndex = sdproxy.indexColumns(sheet)
-            idVals      = sheet.getSheetValues(1, colIndex['id'], sheet.getLastRow(), 1)
-            lastSlides  = sheet.getSheetValues(1, colIndex['lastSlide'], sheet.getLastRow(), 1)
-            startTimes  = sheet.getSheetValues(1, colIndex['initTimestamp'], sheet.getLastRow(), 1)
-            submitTimes = sheet.getSheetValues(1, colIndex['submitTimestamp'], sheet.getLastRow(), 1)
-            lateTokens  = sheet.getSheetValues(1, colIndex['lateToken'], sheet.getLastRow(), 1)
-
+            nRows = sheet.getLastRow()
             userMap = {}
-            for j in range(len(idVals)):
-                userMap[idVals[j][0]] = (lastSlides[j][0], startTimes[j][0], submitTimes[j][0], lateTokens[j][0])
+            if nRows > 2:
+                # Skip headers and maxscore rows
+                colIndex = sdproxy.indexColumns(sheet)
+                idVals      = sheet.getSheetValues(3, colIndex['id'], nRows-2, 1)
+                lastSlides  = sheet.getSheetValues(3, colIndex['lastSlide'], nRows-2, 1)
+                startTimes  = sheet.getSheetValues(3, colIndex['initTimestamp'], nRows-2, 1)
+                submitTimes = sheet.getSheetValues(3, colIndex['submitTimestamp'], nRows-2, 1)
+                lateTokens  = sheet.getSheetValues(3, colIndex['lateToken'], nRows-2, 1)
+
+                for j in range(len(idVals)):
+                    userMap[idVals[j][0]] = (lastSlides[j][0], startTimes[j][0], submitTimes[j][0], lateTokens[j][0])
 
             sessionStatus = []
             totalCount = 0
@@ -1419,7 +1422,7 @@ class ActionHandler(BaseHandler):
                     lastSlide, startTime, submitTime, lateToken = 0, '', '', ''
 
                 submitTimeStr = sliauth.print_date(submitTime, prefix_time=True) if submitTime else ''
-                startTimeStr = sliauth.print_date(submitTime, prefix_time=True) if startTime else ''
+                startTimeStr = sliauth.print_date(startTime, prefix_time=True) if startTime else ''
                 dueDateStr = sliauth.print_date(dueDate, prefix_time=True) if dueDate else ''
                 connection = 'active' if sessionConnections.get(idVal, []) else ''
                 sessionStatus.append( [name, idVal, lastSlide, startTimeStr, submitTimeStr, lateToken[:16] if lateToken else '', connection] )
@@ -2597,12 +2600,18 @@ class ActionHandler(BaseHandler):
         else:
             slideNumber = None
 
+        sessionResponders = 0
         sessionLabel = sessionName
         temSessionName = sessionType+'00' if sessionName == 'index' and sessionType else sessionName
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(temSessionName)
-        if uploadType != TOP_LEVEL and not sessionNumber:
-            sessionName = 'index'
-            sessionLabel = uploadType+'/index'
+        if uploadType != TOP_LEVEL:
+            if not sessionNumber:
+                sessionName = 'index'
+                sessionLabel = uploadType+'/index'
+            else:
+                sheet = sdproxy.getSheet(sessionName)
+                if sheet and sheet.getLastRow() > 2:
+                    sessionResponders = sheet.getLastRow() - 2
 
         sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
 
@@ -2627,7 +2636,7 @@ class ActionHandler(BaseHandler):
                 sessionText = strip_slide(sessionText)
                 if not startPreview:
                     # Edit single slide
-                    retval = {'slideText': sessionText, 'newImageName': md2md.IMAGE_FMT % new_image_number}
+                    retval = {'slideText': sessionText, 'sessionResponders': sessionResponders, 'newImageName': md2md.IMAGE_FMT % new_image_number}
                     self.set_header('Content-Type', 'application/json')
                     self.write( json.dumps(retval) )
                     return
@@ -2650,7 +2659,7 @@ class ActionHandler(BaseHandler):
                 if not startPreview:
                     # Edit all slides
                     self.render('edit.html', site_name=Options['site_name'], session_name=temSessionName, session_label=sessionLabel,
-                                session_text=sessionText, discard_url='_preview/index.html', err_msg='')
+                                session_text=sessionText, session_responders=sessionResponders, discard_url='_preview/index.html', err_msg='')
                     return
 
         prevPreviewState = self.previewState.copy() if self.previewState else None

@@ -103,7 +103,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
         </div>
 
 	{% if logs %}
-        <ul class="{% if 'error' in logs.lower() %}red{% else %}amber{% end %}"><li>
+        <ul class="{% if 'error' in logs.lower() %}red{% elif 'warning' in logs.lower() %}amber{% else %}green{% end %}"><li>
 	  <span class="clickable" onclick="togglebelow(this,true)">&#9776;</span>
 	  <span class="clickable" onclick="togglebelow(this,false)" style="display: none; background: #eee;">&#9776;</span>
         </li></ul>

@@ -103,7 +103,7 @@ document.onreadystatechange = function(event) {
 <p></p>
 
 <ul>
-  <li>Use <b>Start</b> option in <b><em>All roster users</em></b> row to
+  <li>Use <b>Start</b> option in <em>All roster users</em> row to
   "pre-fill" module session with all users in the roster (for creating paper
   tests).
   </li>
@@ -111,8 +111,8 @@ document.onreadystatechange = function(event) {
   <li>Use <b>Start</b> option for a particular user row to award participation
   credit for users with no computer access during interactive admin-paced module sessions.
 
-  (If sesson is closed, i.e., <em>test user</em> submitted, then use the
-  <b>Submit</b> option.)
+  (If session is closed, i.e., <em>test user</em> has submitted, then use the
+  <b>Submit</b> option for the user.)
   </li>
   <p></p>
   <li>Use <b>Extend</b> option for a particular user row to generate a
@@ -145,9 +145,9 @@ document.onreadystatechange = function(event) {
   </thead>
   <tbody>
   <tr class="allrow">
-      <td><em><b>All roster users</b></em></td>
+      <td><em>All roster users</em></td>
       <td></td>
-      <td>{% if not past_due %}<span class="clickable" onclick="slidocConfirmAction('prefill')"><b>Start</b></span>{% end %}</td>
+      <td>{% if not past_due and not started_count %}<span class="clickable" onclick="slidocConfirmAction('prefill')"><b>Start</b></span>{% end %}</td>
       <td></td>
       <td>{{due_date}}</td>
       <td></td>
@@ -176,7 +176,7 @@ document.onreadystatechange = function(event) {
         <td class="dynamic submitted">{{ submitTime }}</td>
       {% elif idVal == '_test_user' %}
 	<td>
-	  <span class="clickable" onclick="this.nextElementSibling.style.display=null;this.style.display='none';"><b>Submit</b></span>
+	  <span class="clickable" onclick="this.nextElementSibling.style.display=null;this.style.display='none';">Submit</span>
           <form style="display: none;" action="{{site_prefix}}/_submit/{{session_name}}" method="post" id="message_form" enctype="multipart/form-data" >
 	    <fieldset>
               <input id="submit-btn" type="submit" value="Submit date:"> <input  type="datetime-local" class="dateinput" id="submitdate" name="submitdate" value="">

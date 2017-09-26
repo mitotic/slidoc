@@ -1688,13 +1688,14 @@ def sheetAction(params, notrace=False):
                 raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
             if readOnlyAccess:
                 raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-            if adminUser:
+            if adminUser or paramId == TESTUSER_ID:
                 if modifyingRow and not TOTAL_COLUMN:
                     # Refresh cached gradebook (because scores/grade may be updated)
                     refreshGradebook(sheetName)
                 if removeSheet and previewingSheet:
                     raise Exception('Error:PREVIEW_MODS:Cannot delete sheet when previewing it');
-            if not adminUser:
+            else:
+                # Not admin/test user
                 if frozenSessions:
                     raise Exception('Error:FROZEN_MODS:All sessions are frozen. No user modifications permitted');
                 if previewingSheet:
@@ -2398,7 +2399,8 @@ def sheetAction(params, notrace=False):
                     raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
                 if readOnlyAccess:
                     raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-                if not adminUser:
+                if not adminUser and paramId != TESTUSER_ID:
+                    # Not admin/test user
                     if frozenSessions:
                         raise Exception('Error:FROZEN_MODS:All sessions are frozen. No user modifications permitted');
                     if previewingSheet:

@@ -2427,6 +2427,10 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             if prev_questions[j]['qtype'] != questions[j]['qtype']:
                 mod_question = j+1
                 break
+            if row_count:
+                for optname in ('choices', 'explain', 'noshuffle'):
+                    if prev_questions[j].get(optname) != questions[j].get(optname):
+                        abort('ERROR:QUESTION_ERROR: Cannot change %s value for question %d in session %s with %s responders: %s=%s vs. %s. Reset session?' % (optname, j+1, session_name, row_count, optname, prev_questions[j].get(optname), questions[j].get(optname)))
 
         if mod_question or len(prev_questions) != len(questions):
             if modify_session or not row_count:
@@ -2436,12 +2440,12 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     if max_last_slide is not None:
                         for j in range(len(questions), len(prev_questions)):
                             if prev_questions[j]['slide'] <= max_last_slide:
-                                abort('ERROR: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d); change lastSlide in session sheet' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
+                                abort('ERROR:TRUNCATE_SESSION: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d); change lastSlide in session sheet' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
                 elif len(prev_questions) < len(questions):
                     # Extending
                     pass
             elif row_count == 1:
-                abort('ERROR:: Delete test user entry, or check modify box, to modify questions in module session '+session_name)
+                abort('ERROR:MODIFY_SESSION: Delete responder entry, or check modify box, to modify questions in module session '+session_name)
             elif mod_question:
                 abort('ERROR:MODIFY_SESSION: Mismatch in question %d type for module %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
             else:
@@ -2462,14 +2466,14 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                  ]
 
     if len(Index_fields) != len(row_values):
-        abort('Error in updating index entry for module session %s: number of headers != row length' % (session_name,))
+        abort('Error:HEADERS:Error in updating index entry for module session %s: number of headers != row length' % (session_name,))
 
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values, default=sliauth.json_default)
                   }
     retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
-        abort("Error in updating index entry for module session '%s': %s" % (session_name, retval['error']))
+        abort("Error::Failed to update index entry for module session '%s': %s" % (session_name, retval['error']))
     message('slidoc: Updated remote index sheet %s for module session %s' % (INDEX_SHEET, session_name))
 
     # Return possibly modified due date
@@ -2527,7 +2531,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
         
         if modify_col:
             if row_count == 1:
-                abort('ERROR: Mismatched header %d for module session %s. Delete test user row to modify' % (modify_col, sheet_name))
+                abort('ERROR:: Mismatched header %d for module session %s. Delete responder row to modify' % (modify_col, sheet_name))
             ###elif not modify_session and row_count:
             elif not modify_session:
                 abort('ERROR:MODIFY_SESSION: Mismatched header %d for module session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))

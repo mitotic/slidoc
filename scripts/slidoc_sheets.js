@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.13c';
+var VERSION = '0.97.13d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -592,7 +592,7 @@ function sheetAction(params) {
 	    if (readOnlyAccess) {
                 throw('Error::Admin user '+origUser+' cannot modify row for user '+paramId);
             }
-	    if (!adminUser && frozenSessions) {
+	    if (!adminUser && paramId != TESTUSER_ID && frozenSessions) {
 		throw('Error::All sessions are frozen. No user modifications permitted');
 	    }
         }
@@ -1409,7 +1409,7 @@ function sheetAction(params) {
 		}
 	    }
 
-	    if (!adminUser && frozenSessions && (newRow || rowUpdates || selectedUpdates))
+	    if (!adminUser && paramId != TESTUSER_ID && frozenSessions && (newRow || rowUpdates || selectedUpdates))
 		throw('Error::All sessions are frozen. No user modifications permitted');
 	    
 	    var teamCol = columnIndex.team;

@@ -618,7 +618,7 @@ Sliobj.updateView = false;
 Sliobj.imageDropSetup = false;
 
 Slidoc.pageSetup = function() {
-    Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash);
+    Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash, getParameter('update'));
 
     if (Sliobj.reloadCheck) {
 	if (getParameter('remoteupload')) {
@@ -638,7 +638,6 @@ Slidoc.pageSetup = function() {
 	if (labelElem)
 	    labelElem.textContent = 'Previewing '+Sliobj.sessionLabel;
 	previewMessages(true);
-	Slidoc.classDisplay('slidoc-edit-update', 'none');
 	if (!Sliobj.params.fileName)
 	    toggleClass(true, 'slidoc-preview-view');
 	Sliobj.previewModified = getParameter('modified');
@@ -658,6 +657,7 @@ Slidoc.pageSetup = function() {
 	    if (!Sliobj.params.fileName)
 		toggleClass(true, 'slidoc-update-view');
 	    imageDropState(true);
+	    Slidoc.classDisplay('slidoc-edit-update', 'none');
 	}
     }
 
@@ -3531,10 +3531,10 @@ Slidoc.manageSession = function() {
     }
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && !Sliobj.params.timedSec && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
-	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced();">'+'Reset paced module session'+(retakesRemaining()?' for re-takes':'')+'</span><br>';
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced();">'+'Reset paced session entry'+(retakesRemaining()?' for re-takes':'')+'</span><br>';
 
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
-	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced module session</span><br>';
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced session entry</span><br>';
 
     if (Sliobj.fullAccess) {
         html += '<p></p><hr>';
@@ -3843,8 +3843,8 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.showScore && Sliobj.params.showScore != 'after_answering')
 	Sliobj.delayScoring = true;
 
-    // Hide unviewed slides for all question-paced sessions, and for non-printable sessions with immediate scoring
-    if (Sliobj.session && Sliobj.session.paced) {
+    // Hide unviewed slides for all question-paced sessions, and for non-printable sessions with immediate scoring (in non-preview mode)
+    if (!Sliobj.previewState && Sliobj.session && Sliobj.session.paced) {
 	if (Sliobj.session.paced >= QUESTION_PACE || (!Sliobj.params.printable && !Sliobj.delayScoring) )
 	    Sliobj.hideUnviewedSlides = true;
     }
@@ -3890,7 +3890,7 @@ function slidocSetupAux(session, feedback) {
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
     } else {
-	// Not paced or admin-paced, or direct answers; unhide all slides
+	// Not paced or admin-paced, or batch/assessment view; unhide all slides
 	slidesVisible(true);
     }
 
@@ -3902,22 +3902,26 @@ function slidocSetupAux(session, feedback) {
     }
 
     var sessionElem = document.getElementById("slidoc-session-display");
-    if (sessionElem && Sliobj.params.fileName && Sliobj.params.fileName != 'index') {
-	if (Sliobj.params.tocFile) {
-	    var prefix = Sliobj.params.fileName;
-	    var suffix = '';
-	    var nmatch = Sliobj.params.fileName.match(/(\d+)$/);
-	    if (nmatch) {
-		suffix = nmatch[1];
-		prefix = prefix.slice(0,-suffix.length);
+    if (sessionElem) {
+	if (Sliobj.params.fileName && Sliobj.params.fileName != 'index') {
+	    if (Sliobj.params.tocFile) {
+		var prefix = Sliobj.params.fileName;
+		var suffix = '';
+		var nmatch = Sliobj.params.fileName.match(/(\d+)$/);
+		if (nmatch) {
+		    suffix = nmatch[1];
+		    prefix = prefix.slice(0,-suffix.length);
+		}
+		var target = Sliobj.session.submitted ? '' : ' target="_blank"';
+		sessionElem.innerHTML = '<a href="'+Sliobj.params.tocFile+'" '+target+'>'+prefix+'</a>'+suffix;
+	    } else {
+		sessionElem.textContent = Sliobj.params.fileName;
 	    }
-	    var target = Sliobj.session.submitted ? '' : ' target="_blank"';
-	    sessionElem.innerHTML = '<a href="'+Sliobj.params.tocFile+'" '+target+'>'+prefix+'</a>'+suffix;
 	} else {
-	    sessionElem.textContent = Sliobj.params.fileName;
+	    sessionElem.textContent = '';
 	}
-    } else {
-	sessionElem.textContent = '';
+	if (Sliobj.previewState)  // Make element non-clickable during preview
+	    sessionElem.textContent = sessionElem.textContent;
     }
 
     // DOM set-up and clean-up
@@ -4982,9 +4986,9 @@ function displayCommentSuggestions(slideId, qnumber) {
 	    var qCommentLine = qComments[lines[j]];
 	    dispComments.push( [Object.keys(qCommentLine.userIds).length, lines[j], qCommentLine.score] )
 	}
-	// Sort by negative counts
-	dispComments.sort( function(a,b){if (a[0] == b[0]) return cmp(a[1].toLowerCase(),b[1].toLowerCase());
-					 else return cmp(-a[0], -b[0]); } );
+
+	// Sort by negative occurrence counts, and then negative absolute score, and then alphabetically
+	dispComments.sort( function(a,b){ if (a[0] != b[0]) return cmp(-a[0], -b[0]); else if (a[2] != b[2]) return cmp(-Math.abs(a[2]), -Math.abs(b[2])); else return cmp(a[1].toLowerCase(),b[1].toLowerCase()); } );
     }
     if (suggestElem) {
 	var html = ['Suggested comments:<br>\n'];
@@ -5563,13 +5567,19 @@ Slidoc.contentsDisplay = function() {
 	nVisible = Math.min(nVisible, Math.max(1,Sliobj.session.lastSlide));
     var headers = [];
     for (var j=0; j<allSlides.length; j++) {
-	var hidden = j >= nVisible;
+	var hidden = (j >= nVisible) && !Sliobj.previewState;  // Do not hide any slides in preview mode
 	if (hidden && !isController())  // Skip hidden slides if not adminPaced controller
 	    break;
 	var headerElems = document.getElementsByClassName(allSlides[j].id+'-header');
-	var headerText = headerElems.length ? headerElems[0].textContent : 'Slide 1';
-	if (headerElems.length || !j) {
+	var headerText = headerElems.length ? headerElems[0].textContent : '';
+	if (!headerText && 'untitled_number' in Sliobj.params.features) {
+	    var footerElem = document.getElementById(allSlides[j].id+'-footer-toggle');
+	    if (footerElem)
+		headerText = footerElem.textContent;
+	}
+	if (headerText || !j) {
 	    // Slide with header or first slide
+	    headerText = headerText || ('Slide '+(j+1));
             var action = '';
 	    var classes = 'slidoc-contents-header';
 	    if (hidden) {
