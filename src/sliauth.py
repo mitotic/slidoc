@@ -26,7 +26,7 @@ SITE_COOKIE_PREFIX = 'slidoc_site'
 
 FUTURE_DATE = 'future'
 
-SLIDOC_OPTIONS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|$)')
+SLIDOC_OPTIONS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|\r|$)')
 
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE     = re.compile(r'^([a-zA-Z]\w*[a-zA-Z_])(\d\d)$')
@@ -218,6 +218,12 @@ def json_default(obj):
     if isinstance(obj, datetime.datetime):
         return iso_date(obj, utc=True)
     raise TypeError("%s not serializable" % type(obj))
+
+def read_first_line(file):
+    # Read first line of file and rewind it
+    first_line = file.readline()
+    file.seek(0)
+    return first_line
 
 def http_post(url, params_dict=None, add_size_info=False):
     req = urllib2.Request(url, urllib.urlencode(params_dict)) if params_dict else urllib2.Request(url)

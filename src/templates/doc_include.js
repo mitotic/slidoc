@@ -1186,6 +1186,20 @@ Slidoc.confirmLoad = function(path, msg) {
 	window.location = path;
 }
 
+Slidoc.dateLoad = function(prompt, loadPath) {
+    var html = escapeHtml(prompt) + ' <input id="slidoc-dateload" type="datetime-local" value="">\n';
+    html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.dateLoadAux('+"'"+loadPath+"'"+');">Confirm</span>';
+    Slidoc.showPopup(html);
+}
+
+Slidoc.dateLoadAux = function(loadPath) {
+    var url = loadPath;
+    var dateElem = document.getElementById('slidoc-dateload');
+    if (dateElem && dateElem.value)
+	url += '?releasedate=' + encodeURIComponent(dateElem.value);
+    window.location = url;
+}
+
 Slidoc.assessmentMenu = function () {
     var adminAccess = Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole;
     var html = '<h3>Assessment menu</h3>\n';

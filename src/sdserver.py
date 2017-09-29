@@ -990,6 +990,10 @@ class ActionHandler(BaseHandler):
                 self.write('reloadpreview')
                 return
 
+            elif action == '_release':
+                releaseDate = self.get_argument('releasedate', '')
+                return self.releaseModule(sessionName, releaseDate=releaseDate)
+
         if Options['site_list'] and not Options['site_number']:
             # Primary server
             if action not in ('_backup',):
@@ -2669,11 +2673,11 @@ class ActionHandler(BaseHandler):
                     try:
                         with open(src_path) as f:
                             sessionText = f.read()
+                        if isinstance(sessionText, unicode):
+                            sessionText = sessionText.encode('utf-8')
                     except Exception, excp:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading session file %s: %s' % (src_path, excp))
 
-                    if isinstance(sessionText, unicode):
-                        sessionText = sessionText.encode('utf-8')
 
                 if not startPreview:
                     # Edit all slides
@@ -2802,12 +2806,73 @@ class ActionHandler(BaseHandler):
         if update:
             self.reloadPreview(slideNumber)
         if startPreview:
-            site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             self.redirect(site_prefix+'/_preview/index.html')
         else:
             self.set_header('Content-Type', 'application/json')
             self.write( json.dumps( {'result': 'success'} ) )
 
+
+    def releaseModule(self, sessionName, releaseDate=''):
+        releaseDate = str(releaseDate)  # Unicode releaseDate contaminates the UTF-8 strings
+        if releaseDate and releaseDate != sliauth.FUTURE_DATE and not sliauth.parse_date(releaseDate):
+            self.displayMessage('Invalid release date "%s" specified for module %s' % (releaseDate, sessionName),
+                                back_url=getSessionPath(sessionName, site_prefix=True, toc=True))
+            return
+
+        uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
+        try:
+            with open(src_path) as f:
+                sessionText = f.read()
+                if isinstance(sessionText, unicode):
+                    sessionText = sessionText.encode('utf-8')
+        except Exception, excp:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading module file %s: %s' % (src_path, excp))
+
+        slidocOptions = ''
+        newReleaseOpt = 'release_date='+releaseDate if releaseDate else ''
+        lines = sessionText.splitlines()
+        omatch = sliauth.SLIDOC_OPTIONS_RE.match(lines[0]) if lines else None
+        if omatch:
+            # First line with slidoc options found
+            slidocOptions = (omatch.group(3) or omatch.group(4) or '').strip()
+            lines = lines[1:]
+
+            rmatch = re.search(r'\b(release_date=(\S+))(\s|$)', slidocOptions)
+            if rmatch:
+                # Replace option
+                slidocOptions = slidocOptions.replace('--'+rmatch.group(1), '--'+newReleaseOpt if newReleaseOpt else '')
+                slidocOptions = slidocOptions.replace(rmatch.group(1), newReleaseOpt)
+            elif newReleaseOpt:
+                # Add option
+                slidocOptions += ' ' + newReleaseOpt
+        elif newReleaseOpt:
+            # Insert new first line with slidoc options
+            slidocOptions = newReleaseOpt
+
+        if slidocOptions:
+            lines = ['<!--slidoc-options ' + slidocOptions + ' -->'] + lines
+
+        sessionText = '\n'.join(lines) + ('\n' if lines else '')
+
+        try:
+            errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, '', '')
+        except Exception, excp:
+            if Options['debug']:
+                import traceback
+                traceback.print_exc()
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in releasing module %s: %s' % (sessionName, excp))
+
+        if errMsg:
+            if not errMsg.lower().startswith('error'):
+                errMsg = 'Error in releasing session '+sessionName+': '+errMsg
+            else:
+                errMsg += ' (session: '+sessionName+')'
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
+
+        self.previewState['messages'] = ['Releasing module'] + self.previewState['messages']
+        
+        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+        self.redirect(site_prefix+'/_preview/index.html')
 
     def rollover(self, sessionName, slideNumber=None, truncateOnly=False):
         sessionName = md2md.stringify(sessionName)
@@ -4489,6 +4554,7 @@ def createApplication():
                       r"/(_preview/[-\w./]+)",
                       r"/(_refresh/[-\w.]+)",
                       r"/(_reindex/[-\w.]+)",
+                      r"/(_release/[-\w.]+)",
                       r"/(_reloadpreview)",
                       r"/(_remoteupload/[-\w.]+)",
                       r"/(_republish/[-\w.]+)",

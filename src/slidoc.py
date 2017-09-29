@@ -2919,12 +2919,11 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % ('/'+RESOURCE_PATH, filename)) if config.unbundle else ('\n<style>\n%s</style>\n' % templates[filename])
         raise Exception('Invalid filename for insert_resource: '+filename)
 
-    start_date = None
+    start_date_obj = None
     if config.start_date:
-        try:
-            start_date = sliauth.parse_date(config.start_date)
-        except Exception, excp:
-            abort('***ERROR*** Invalid start date: %s' % config.start_date)
+        start_date_obj = sliauth.parse_date(config.start_date)
+        if not start_date_obj:
+            abort('DATE-ERROR: Invalid site start date: %s' % config.start_date)
 
     orig_fnames = []
     orig_outpaths = []
@@ -2962,13 +2961,18 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         if not input_files[j]:
             continue
 
-        if start_date:
+        if start_date_obj:
             # Only process files with a release date after the minimum required release date
-            tem_config = parse_merge_args(read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
+            tem_config = parse_merge_args(sliauth.read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
             tem_release_date_str = tem_config.release_date or config.release_date
-            if tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE and sliauth.parse_date(tem_release_date_str) < start_date:
-                abort('RELEASE-ERROR: Module %s has release date %s before start date %s' % (fname, tem_release_date_str, start_date) )
-                continue
+            if tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE:
+                tem_release_date_obj = sliauth.parse_date(tem_release_date_str)
+                if not tem_release_date_obj:
+                    abort('DATE-ERROR: Module %s has invalid release date %s' % (fname, tem_release_date_str))
+                    continue
+                if tem_release_date_obj < start_date_obj:
+                    abort('RELEASE-ERROR: Module %s has release date %s before start date %s' % (fname, tem_release_date_str, start_date_obj) )
+                    continue
 
         if not config.make:
             fnumbers.append(fnumber)
@@ -3222,7 +3226,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Separate files (may also be paced)
 
             # Merge file config with command line
-            file_config = parse_merge_args(read_first_line(fhandle), fname, Conf_parser, vars(config), default_args_dict=default_args_dict,
+            file_config = parse_merge_args(sliauth.read_first_line(fhandle), fname, Conf_parser, vars(config), default_args_dict=default_args_dict,
                                            first_line=True, verbose=config.verbose)
             if config.preview_port:
                 if file_config.gsheet_url:
@@ -3290,26 +3294,38 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
 
+            release_date_obj = None
+            due_date_obj = None
+            vote_date_obj = None
             if file_config.release_date:
                 if file_config.release_date == sliauth.FUTURE_DATE:
                     release_date_str = file_config.release_date
                 else:
                     release_date_str = sliauth.get_utc_date(file_config.release_date)
+                    release_date_obj = sliauth.parse_date(release_date_str)
+                    if not release_date_obj:
+                        abort('DATE-ERROR: Invalid release date %s for module %s' % (release_date_str, fname))
 
             if not file_config.publish and restricted_sessions_re and restricted_sessions_re.search(fname):
                 if not release_date_str:
                     abort('RESTRICTED-ERROR: Must specify release date to create restricted session %s' % fname)
-                if return_html and release_date_str != sliauth.FUTURE_DATE:
-                    if not start_date:
+                if return_html and release_date_obj:
+                    if not start_date_obj:
                         abort('RESTRICTED-ERROR: Must specify site start date to create restricted session %s' % fname)
-                    if  sliauth.epoch_ms(sliauth.parse_date(release_date_str)) < sliauth.epoch_ms(start_date):
+                    if  sliauth.epoch_ms(release_date_obj) < sliauth.epoch_ms(start_date_obj):
                         abort('RESTRICTED-ERROR: Invalid release date %s before start date %s for restricted session %s' % (release_date_str, config.start_date, fname))
 
             if file_config.due_date:
                 due_date_str = sliauth.get_utc_date(file_config.due_date, pre_midnight=True)
+                due_date_obj = sliauth.parse_date(due_date_str)
+                if not due_date_obj:
+                    abort('DATE-ERROR: Invalid due date %s for module %s' % (due_date_str, fname))
 
             if file_config.vote_date:
                 vote_date_str = sliauth.get_utc_date(file_config.vote_date)
+                vote_date_obj = sliauth.parse_date(vote_date_str)
+                if not vote_date_obj:
+                    abort('DATE-ERROR: Invalid vote date %s for module %s' % (vote_date_str, fname))
 
             js_params['showScore'] = file_config.show_score or ''
             js_params['sessionPrereqs'] =  file_config.prereqs or ''
@@ -3693,16 +3709,14 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
                 entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
-                if iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
-                    entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-
                 doc_link = ''
                 if doc_str:
                     if doc_str == 'view':
                         doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>)''' % (orig_fnames[ifile], 'view')
-                    elif iso_release_str == sliauth.FUTURE_DATE:
+                    elif iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
                         # Preview and user views
-                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str)
+                        entry_class = ' class="slidoc-restrictedonly" style="display: none"'
+                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (may be blank)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str, site_prefix, orig_fnames[ifile], 'release')
                     else:
                         # View and user views
                         doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view', orig_fnames[ifile], 'user views', doc_str)
@@ -4006,12 +4020,6 @@ function onGoogleAPILoad() {
 
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
-
-def read_first_line(file):
-    # Read first line of file and rewind it
-    first_line = file.readline()
-    file.seek(0)
-    return first_line
 
 def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
     # Read file args and merge with command line args, with command line args being final
@@ -4379,7 +4387,7 @@ if __name__ == '__main__':
 
     if cmd_args.default_args == 'file':
         # Read default args from first line of first file
-        default_args = parse_merge_args(read_first_line(cmd_args.file[0]), cmd_args.file[0].name, Conf_parser, vars(cmd_args),
+        default_args = parse_merge_args(sliauth.read_first_line(cmd_args.file[0]), cmd_args.file[0].name, Conf_parser, vars(cmd_args),
                                         first_line=True, verbose=cmd_args.verbose)
     elif cmd_args.default_args:
         default_args = parse_merge_args(cmd_args.default_args, '--default_args', Conf_parser, {})
@@ -4401,7 +4409,7 @@ if __name__ == '__main__':
     input_files = []
     skipped = []
     for fhandle in fhandles:
-        first_line = read_first_line(fhandle)
+        first_line = sliauth.read_first_line(fhandle)
         if cmd_args.publish and (not sliauth.SLIDOC_OPTIONS_RE.match(first_line) or 'publish' not in first_line):
             # Skip files without --publish option in the first line
             skipped.append(fhandle.name)
