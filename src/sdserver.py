@@ -91,6 +91,7 @@ Options = {
     'backup_hhmm': '',
     'debug': False,
     'dry_run': False,
+    'dry_run_file_modify': False,  # If true, allow source/web/plugin file mods even for dry run (e.g., local copy)
     'end_date': '',
     'grader_users': '',
     'gsheet_url': '',
@@ -515,6 +516,9 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         cls.site_backup_dir = Options['backup_dir'] + sitePrefix if Options['backup_dir'] else None
         cls.site_files_dir  = Options['static_dir'] + sitePrefix + '/' + FILES_PATH
 
+        if Options['dry_run'] and not Options['dry_run_file_modify']:
+            return
+
         if Options['static_dir'] and os.path.exists(Options['static_dir']):
             homeWeb = cls.site_web_dir+'/index.html'
             try:
@@ -811,7 +815,7 @@ class ActionHandler(BaseHandler):
 
         configOpts.update(site_name=Options['site_name'])
         if topnav:
-            configOpts.update(topnav=','.join(self.get_topnav_list()))
+            configOpts.update(topnav=','.join(self.get_topnav_list(uploadType=uploadType)))
 
         if Options['start_date']:
             configOpts.update(start_date=Options['start_date'])
@@ -824,7 +828,7 @@ class ActionHandler(BaseHandler):
         if dest_dir:
             configOpts.update(dest_dir=dest_dir)
 
-        if Options['dry_run']:
+        if Options['dry_run'] and not Options['dry_run_file_modify']:
             configOpts.update(dry_run=True)
 
         if Options['libraries_dir']:
@@ -992,7 +996,7 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(403)
 
         if previewingSession:
-            self.write('<h3>Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard">Discard</a></h3>' % (previewingSession, site_prefix, site_prefix))
+            self.write('<h3>Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard?modified=-1">Discard</a></h3>' % (previewingSession, site_prefix, site_prefix))
             return
 
         if action not in ('_dash', '_actions', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
@@ -1356,6 +1360,7 @@ class ActionHandler(BaseHandler):
             sessionAttributes = json.loads(sessionEntries['attributes'])
             adminPaced = sessionEntries.get('adminPaced','')
             dueDate = sessionEntries.get('dueDate','')
+            timedSec = sessionAttributes['params'].get('timedSec')
 
             pastDue = sliauth.epoch_ms() > sliauth.epoch_ms(dueDate) if dueDate else False
             sessionConnections = WSHandler.get_connections(sessionName)
@@ -1373,11 +1378,14 @@ class ActionHandler(BaseHandler):
                         connection.close()
                     newLatetoken = sliauth.gen_late_token(Options['auth_key'], userId, Options['site_name'], sessionName,
                                                           sliauth.get_utc_date(dateStr, pre_midnight=True))
-                    sdproxy.createUserRow(sessionName, userId, lateToken=newLatetoken, source='allow')
-                    self.redirect(site_prefix+'/_responders/'+sessionName)
+                    if timedSec:
+                        self.displayMessage('Late toke for user '+userId+' = '+newLatetoken, back_url=site_prefix+'/_responders/'+sessionName)
+                    else:
+                        sdproxy.createUserRow(sessionName, userId, lateToken=newLatetoken, source='allow')
+                        self.redirect(site_prefix+'/_responders/'+sessionName)
                     return
                 else:
-                    self.displayMessage('User ID '+userId+' not in roster')
+                    self.displayMessage('User ID '+userId+' not in roster', back_url=site_prefix+'/_responders/'+sessionName)
                     return
             elif userId:
                 if userId in nameMap:
@@ -1461,7 +1469,7 @@ class ActionHandler(BaseHandler):
         if retObj['result'] != 'success':
             return ['Error in deleting sheet '+sessionName+': '+retObj.get('error','')]
 
-        if not Options['source_dir'] or Options['dry_run']:
+        if not Options['source_dir'] or (Options['dry_run'] and not Options['dry_run_file_modify']):
             return []
 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
@@ -2002,12 +2010,20 @@ class ActionHandler(BaseHandler):
         fnames.sort()
         return fnames
 
-    def get_topnav_list(self, folders_only=False):
+    def get_topnav_list(self, folders_only=False, uploadType=''):
         topFiles = [] if folders_only else [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/*.html')]
         topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/*/index.html')]
         topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/'+PRIVATE_PATH+'/*/index.html')]
         if 'index.html' in topFiles:
             del topFiles[topFiles.index('index.html')]
+
+        if uploadType and uploadType != TOP_LEVEL:
+            # Include self folder, if not already listed
+            if privatePrefix(uploadType):
+                if uploadType not in topFolders2:
+                    topFolders2 += [uploadType]
+            elif uploadType not in topFolders:
+                topFolders += [uploadType]
 
         topFiles.sort()
         topFolders.sort()
@@ -2315,7 +2331,7 @@ class ActionHandler(BaseHandler):
             if msgs:
                 msg_list += msgs + ['']
 
-        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=indexOnly, force=force)
+        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=False, force=True)
         msgs = retval.get('messages',[])
         msg_dict[TOP_LEVEL] = msgs
         if msgs:
@@ -2428,7 +2444,7 @@ class ActionHandler(BaseHandler):
 
     def acceptPreview(self, modified=0):
         # Modified == -1 disables version checking
-        if Options['dry_run']:
+        if Options['dry_run'] and not Options['dry_run_file_modify']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept edits during dry run')
 
         if not self.previewState:
@@ -2438,6 +2454,9 @@ class ActionHandler(BaseHandler):
         uploadType = self.previewState['type']
         src_dir = self.previewState['src_dir']
         web_dir = self.previewState['web_dir']
+
+        if Options['debug']:
+            print >> sys.stderr, 'ActionHandler:acceptPreview', sessionName, uploadType, src_dir, web_dir, modified
 
         if not self.previewState['modified']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept unmodified preview for session '+sessionName)
@@ -3754,6 +3773,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     # Append binary data as final argument
                     args.append(binaryContent)
                     binaryContent = None
+                    if Options['dry_run'] and not Options['dry_run_file_modify']:
+                        raise Exception('Cannot upload files during dry run without file modify option')
+
                 try:
                     retObj = pluginMethod(*([params] + args[2:]))
                 except Exception, err:
@@ -3955,7 +3977,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to locked sessions only')
 
         if Options['debug']:
-            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId, repr(siteRole), Options['site_number'], sessionName, self.request.path, self.request.query, Options['dry_run'], Options['lock_proxy_url']
+            print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId, repr(siteRole), Options['site_number'], sessionName, self.request.path, self.request.query, Options['dry_run'], Options['dry_run_file_modify'], Options['lock_proxy_url']
 
         if ActionHandler.previewState.get('name'):
             if sessionName and sessionName.startswith(ActionHandler.previewState['name']):
@@ -4352,14 +4374,18 @@ def createApplication():
 
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
-        if Options['static_dir']:
-            home_handlers += [ (r"/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(Options['static_dir'],'_docs')}) ]
         if Options['libraries_dir']:
             home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {'path': Options['libraries_dir']}) ]
 
     else:
         # Site server
         home_handlers += [ (pathPrefix+r"/(_shutdown)", SiteActionHandler) ]
+
+    if Options['static_dir']:
+        # Maps any path containing .../_docs/... (can be used as /site_name/session_name/_docs/... for session-aware help docs)
+        docs_dir = os.path.join(Options['static_dir'],'_docs')
+        home_handlers += [ (r"[^_]*/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': docs_dir}) ]
+        home_handlers += [ (r"[^_]*/_private/[^_]*/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': docs_dir}) ]
 
     primary_server = False
     if Options['site_list']:
@@ -5302,6 +5328,7 @@ def main():
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
+    define("dry_run_file_modify", default=False, help="Allow source/web/plugin file mods even for dry run (e.g., local copy)")
     define("forward_port", default=0, help="Forward port for default (root) web server with multiproxy, allowing slidoc sites to overlay a regular website, using '_' prefix for admin")
     define("gsheet_url", default="", help="Google sheet URL1;...")
     define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")

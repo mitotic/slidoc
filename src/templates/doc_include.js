@@ -115,6 +115,7 @@ Sliobj.popupEvent = '';
 Sliobj.popupQueue = [];
 Sliobj.activePlugins = {};
 Sliobj.pluginList = [];
+Sliobj.setupPlugins = [];
 Sliobj.pluginSetup = null;
 Sliobj.slidePlugins = {};
 Sliobj.answerPlugins = null;
@@ -2074,7 +2075,7 @@ Slidoc.switchNav = function () {
 }
 
 Slidoc.userLogout = function () {
-    if (!window.confirm('Do want to logout user '+GService.gprofile.auth.id+'?'))
+    if (!window.confirm('Do want to logout user '+(window.GService ? GService.gprofile.auth.id : '')+'?'))
 	return false;
     localDel('auth');
     sessionAbort('Logged out');
@@ -2317,9 +2318,16 @@ function clickableLink(text, url, disabled) {
 Slidoc.viewHelp = function () {
     var html = '<b>Help Info</b><p></p>\n';
     var hr = '<tr><td colspan="2"><hr></td></tr>';
+    var docsPrefix = '_docs';
+    if (!Sliobj.sessionName)
+	docsPrefix = '/' + docsPrefix;
+    else if (Sliobj.previewState)
+	docsPrefix = '../' + Sliobj.sessionName + '/' + docsPrefix;
+    else
+	docsPrefix = Sliobj.sessionName + '/' + docsPrefix;
 
     html += '<table class="slidoc-slide-help-table">';
-    html += formatHelp('Navigating documents', '/_docs/NavigationHelp.html');
+    html += formatHelp('Navigating documents', docsPrefix+'/NavigationHelp.html');
     html += '</table>';
     Slidoc.showPopup(html);
 }
@@ -2798,6 +2806,7 @@ function setupPlugins() {
     Sliobj.pluginSetup = {};
     Sliobj.activePlugins = {};
     Sliobj.pluginList = [];
+    Sliobj.setupPlugins = [];
     var allContent = document.getElementsByClassName('slidoc-plugin-content');
     for (var j=0; j<allContent.length; j++) {
 	var pluginName = allContent[j].dataset.plugin;
@@ -2820,6 +2829,7 @@ function setupPlugins() {
     }
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginInstance = createPluginInstance(Sliobj.pluginList[j], true);
+	Sliobj.setupPlugins.push(pluginInstance);
 	Slidoc.PluginManager.optCall.apply(null, [pluginInstance, 'initSetup'].concat(pluginInstance.initArgs));
     }
 }
@@ -2966,18 +2976,18 @@ Slidoc.PluginManager.splitNumericAnswer = function(corrAnswer) {
 
 function evalPluginArgs(pluginName, argStr, slide_id) {
     // Evaluates plugin init args in appropriate context
-    if (!argStr || !slide_id)
+    if (!argStr)
 	return [];
     try {
 	Slidoc.log('evalPluginArgs:', pluginName, argStr, slide_id);
-	var pluginList = Sliobj.slidePlugins[slide_id]; // Plugins instantiated in the slide so far
+	var pluginList = slide_id ? Sliobj.slidePlugins[slide_id] : Sliobj.setupPlugins; // Plugins instantiated so far for slide (or setup)
 	var SlidePlugins = {};
 	for (var j=0; j<pluginList.length; j++)
 	    SlidePlugins[pluginList[j].name] = pluginList[j];
 	var argVals = eval('['+argStr+']');
 	return argVals;
     } catch (err) {
-	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+slide_id+': '+err;
+	var errMsg = 'evalPluginArgs: ERROR in init('+argStr+') arguments for plugin '+pluginName+' in '+(slide_id||'setup')+': '+err;
 	Slidoc.log(errMsg);
 	alert(errMsg);
 	return [argStr];
@@ -3003,11 +3013,12 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
     defCopy.pluginLabel = 'slidoc-plugin-'+pluginName;
     defCopy.slideData = slideData || null;
 
-    // Provide init args from first slide (as a string) where plugin occurs for initSetup/initGlobal
-    if (slide_id)
+    if (slide_id) {
 	defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id);
-    else
-	defCopy.initArgs = [ Sliobj.activePlugins[pluginName].args[ Sliobj.activePlugins[pluginName].firstSlide ] ];
+    } else {
+	// Provide init args from first slide where plugin occurs for initSetup/initGlobal
+	defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[ Sliobj.activePlugins[pluginName].firstSlide ] );
+    }
 
     var auth = window.GService && GService.gprofile && GService.gprofile.auth;
     defCopy.userId = auth ? auth.id : null;
@@ -6837,9 +6848,10 @@ Slidoc.gradeClick = function (elem, slide_id) {
     if (!Sliobj.userGrades[userId].allowGrading) {
 	alert('User '+userId+' must submit before session can be graded');
 	return;
-    } else if (Sliobj.userGrades[userId].late) {
+    } else if (Sliobj.userGrades[userId].late && !Sliobj.userGrades[userId].allowLateGrading) {
 	if (!window.confirm('Late submission. Do you still want to grade it?'))
 	    return;
+	Sliobj.userGrades[userId].allowLateGrading = 1;
     }
 
     var question_attrs = getQuestionAttrs(slide_id);
@@ -6918,11 +6930,9 @@ function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
 
     if (!Slidoc.testingActive()) {
 	// Move on to next user needing grading if slideshow mode, else to next question
+	var nextUserSlide = '';
 	if (Sliobj.currentSlide) {
-	    if (Sliobj.gradingUser < Sliobj.userList.length) {
-		Slidoc.nextUser(true, false, true);
-		setTimeout(function(){Slidoc.gradeClick(null, slide_id);}, 200);
-	    }
+	    nextUserSlide = slide_id;
 	} else {
 	    var attr_vals = getChapterAttrs(slide_id);
 	    while (qnumber < attr_vals.length) {
@@ -6938,6 +6948,12 @@ function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
 		goSlide('#'+new_slide);
 		setTimeout(function(){Slidoc.gradeClick(null, new_slide);}, 200);
 	    }
+	    if (qnumber == attr_vals.length) // Move to first question for next user
+		nextUserSlide = parseSlideId(slide_id)[0]+'-'+zeroPad(attr_vals[0].slide,2);
+	}
+	if (nextUserSlide && (Sliobj.gradingUser < Sliobj.userList.length)) {
+	    Slidoc.nextUser(true, false, true);
+	    setTimeout(function(){Slidoc.gradeClick(null, nextUserSlide);}, 200);
 	}
     }
 }

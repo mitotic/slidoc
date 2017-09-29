@@ -2801,6 +2801,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
     topnav_html = '<ul class="slidoc-topnav slidoc-noprint" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
     topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
     topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
+    topnav_html += '<li id="helplink" class="" style=""><a href="_docs/index.html" target="_blank">%s</a></li>' % ('<b>?</b>',)
     topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
@@ -3665,8 +3666,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         reverse_toc = fprefix.lower().startswith('announce')
         toc_list = []
+        addSessionLink = ''
         if config.make_toc:
             # Create ToC using header info from .html files
+            smatch = sliauth.SESSION_NAME_RE.match(orig_fnames[-1] if orig_fnames else fprefix+'00')
+            if smatch:
+                addSessionLink = '<li class="slidoc-restrictedonly" style="display: none"><a class="slidoc-clickable-sym" href="%s/_upload/%s%02d"><b>+</b></a></li>\n' % (site_prefix, smatch.group(1), int(smatch.group(2))+1)
+
             temlist = orig_outpaths[:]
             if reverse_toc:
                 temlist.reverse()
@@ -3749,6 +3755,9 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 if fname not in paced_files:
                     f_toc_html = ('\n<div id="%s-toc-sections" class="slidoc-toc-sections" style="display: none;">' % chapter_id)+file_toc+'\n<p></p></div>'
                     toc_html.append(f_toc_html)
+
+        if addSessionLink:
+            toc_html.append(addSessionLink)
 
         toc_html.append('</ol>\n' if 'sections' in config.strip else '</ul>\n')
 
