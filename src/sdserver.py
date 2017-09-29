@@ -765,7 +765,7 @@ class ActionHandler(BaseHandler):
     def previewActive(self):
         return self.previewState.get('name', '')
 
-    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', image_dir='', no_make=False):
+    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', session_name='', image_dir='', no_make=False):
         # Return (cmd_args, default_args) 
         defaultOpts = self.default_opts['base'].copy()
         if uploadType in self.default_opts:
@@ -799,7 +799,7 @@ class ActionHandler(BaseHandler):
         if uploadType == TOP_LEVEL:
             defaultOpts['strip'] = 'chapters,contents'
         else:
-            configOpts['make_toc'] = True
+            configOpts['create_toc'] = True
             configOpts['session_type'] = uploadType
 
         if text and 0:
@@ -815,7 +815,7 @@ class ActionHandler(BaseHandler):
 
         configOpts.update(site_name=Options['site_name'])
         if topnav:
-            configOpts.update(topnav=','.join(self.get_topnav_list(uploadType=uploadType)))
+            configOpts.update(topnav=','.join(self.get_topnav_list(uploadType=uploadType, session_name=session_name)))
 
         if Options['start_date']:
             configOpts.update(start_date=Options['start_date'])
@@ -1003,7 +1003,7 @@ class ActionHandler(BaseHandler):
             self.write('<h3>Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard?modified=-1">Discard</a></h3>' % (previewingSession, site_prefix, site_prefix))
             return
 
-        if action not in ('_dash', '_actions', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
+        if action not in ('_dash', '_actions', '_addtype', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
@@ -1034,6 +1034,10 @@ class ActionHandler(BaseHandler):
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
                          suspended=sdproxy.Global.suspended)
+
+        elif action == '_addtype':
+            self.render('addtype.html', site_name=Options['site_name'], session_types=SESSION_TYPES,
+                         session_props=self.get_session_props())
 
         elif action == '_modules':
             self.displaySessions()
@@ -1508,13 +1512,13 @@ class ActionHandler(BaseHandler):
 
         return []
 
-
-    def displaySessions(self, buildMsgs={}, indMsgs=[], msg=''):
+    def get_session_props(self, buildMsgs={}, indMsgs=[]):
         colNames = ['sessionWeight', 'releaseDate', 'dueDate', 'gradeDate']
         sessionParamDict = dict(sdproxy.lookupSessions(colNames))
         session_props = []
         for sessionType in self.get_session_names(top=True):
             session_props.append( [sessionType, 0, None, [], '\n'.join(buildMsgs.get(TOP_LEVEL, [])+indMsgs) if sessionType == 'index' else ''] )
+
         for sessionType in self.get_session_names():
             fnames = [os.path.splitext(os.path.basename(x))[0] for x in self.get_md_list(sessionType)]
             session_props.append( [sessionType,
@@ -1522,7 +1526,10 @@ class ActionHandler(BaseHandler):
                                     fnames,
                                     sessionParamDict,
                                     '\n'.join(buildMsgs.get(sessionType, []))] )
-        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+        return session_props
+
+    def displaySessions(self, buildMsgs={}, indMsgs=[], msg=''):
+        session_props = self.get_session_props(buildMsgs=buildMsgs, indMsgs=indMsgs)
         self.render('modules.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
 
 
@@ -1911,6 +1918,10 @@ class ActionHandler(BaseHandler):
                 fbody1 = ''
                 fname2 = ''
                 fbody2 = ''
+
+                if not uploadType:
+                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Must select session type')
+
                 if not sessionCreate:
                     if 'upload1' not in self.request.files and 'upload2' not in self.request.files:
                         self.displayMessage('No file(s) to upload!')
@@ -1935,7 +1946,9 @@ class ActionHandler(BaseHandler):
                 elif uploadType == TOP_LEVEL:
                     if sessionCreate:
                         if not topName:
-                            raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot create blank top session; upload a file' )
+                            self.render('upload.html', site_name=Options['site_name'], upload_type=TOP_LEVEL, session_name='', session_number='',
+                                         session_types=SESSION_TYPES, err_msg='')
+                            return
                         fname1 = topName + '.md'
                         fbody1 = '*Markdown* content'
                     sessionNumber = 0
@@ -2014,16 +2027,19 @@ class ActionHandler(BaseHandler):
         fnames.sort()
         return fnames
 
-    def get_topnav_list(self, folders_only=False, uploadType=''):
+    def get_topnav_list(self, folders_only=False, uploadType='', session_name=''):
         topFiles = [] if folders_only else [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/*.html')]
         topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/*/index.html')]
         topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/'+PRIVATE_PATH+'/*/index.html')]
         if 'index.html' in topFiles:
             del topFiles[topFiles.index('index.html')]
 
-        if uploadType and uploadType != TOP_LEVEL:
+        if uploadType:
             # Include self folder, if not already listed
-            if privatePrefix(uploadType):
+            if uploadType == TOP_LEVEL:
+                if session_name and session_name not in topFiles:
+                    topFiles += [session_name]
+            elif privatePrefix(uploadType):
                 if uploadType not in topFolders2:
                     topFolders2 += [uploadType]
             elif uploadType not in topFolders:
@@ -2256,11 +2272,6 @@ class ActionHandler(BaseHandler):
                 force=False, extraOpts={}):
         # If src_path, compile single .md file, returning output
         # Else, compile all files of that type, updating index etc.
-        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
-                                                       image_dir=image_dir, no_make=force)
-
-        configOpts.update(extraOpts)
-
         images_zipdict = {}
         if src_path:
             sessionName = os.path.splitext(os.path.basename(src_path))[0]
@@ -2272,6 +2283,11 @@ class ActionHandler(BaseHandler):
         filePaths = self.get_md_list(uploadType, newSession=sessionName)
         if not filePaths and src_path and sessionName != 'index':
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Empty session folder '+uploadType)
+
+        configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
+                                                       session_name=sessionName, image_dir=image_dir, no_make=force)
+
+        configOpts.update(extraOpts)
 
         if uploadType != TOP_LEVEL:
             if sessionName == 'index':
@@ -2292,7 +2308,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, force=%s, make=%s, make_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, force, configOpts.get('make'), configOpts.get('make_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
+            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, force=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, force, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
 
         return_html = bool(src_path)
 
@@ -4528,6 +4544,7 @@ def createApplication():
         patterns= [   r"/(_(backup|cache|clear|freeze))",
                       r"/(_accept)",
                       r"/(_actions)",
+                      r"/(_addtype)",
                       r"/(_attend)",
                       r"/(_backup/[-\w.]+)",
                       r"/(_browse)",

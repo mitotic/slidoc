@@ -28,10 +28,12 @@
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}
-        Uploading: <b>{{ upload_type }}{% if regular_session %}{{ '%02d' % int(session_number) }}{% else %}/index{% end %}</b>
+        Uploading: <b>{{ upload_type }}{% if regular_session %}{{ '%02d' % int(session_number) }}{% elif upload_type != 'top' %}/index{% end %}</b>
         <input type="hidden" name="sessiontype" value="{{ upload_type }}">
         {% if upload_type == 'top' %}
         <input type="hidden" name="topname" value="{{ session_name }}">
+        <p></p>
+        <em>Note:</em> For top-level pages, the filename will be used as the link for navigation.
         {% end %}
       {% else %}
         <label for="sessiontype">Module type:</label><br>
@@ -77,8 +79,6 @@
      form <code>moduleName_images/*.jpg</code> for embedding in <code>.md</code> files,
      The Markdown content may optionally be included in the archive, with the name <code>content.md</code>,
      instead of being provided as a separate file.
-     <p></p>
-     For top-level pages, the filename will be used as the link for navigation.
    </fieldset>
    {% module xsrf_form_html() %}
    <p></p>

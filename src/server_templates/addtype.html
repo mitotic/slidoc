@@ -1,0 +1,50 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<!-- sessions template for slidoc server --->
+<!-- sessions parameters: site_name, session_types, session_props -->
+
+{% include "base.html" %}
+
+<style>
+.clickable { padding: 0.2em 0 0 0.8em; }
+.nested { padding: 0.2em 0 0 2em; }
+.session-present { opacity: 0.6; }
+</style>
+
+</head>
+<body>
+
+  <b>
+  {% include "linkback.html" %}
+  </b>
+
+  <p></p>
+  <h2>Add module type</h2>
+
+  <form id="session-list" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
+    <fieldset>
+    <label for="sessiontype">Type:</label><br>
+    <table>
+      {% set session_dirs = [x[0] for x in session_props] %}
+      {% for session_type, session_label in session_types %}
+        {% if session_type != 'top' %}
+        <tr {% if session_type in session_dirs %}class="session-present"{% end %}><td><input type="radio" required name="sessiontype" value="{{session_type}}" {% if session_type in session_dirs %}disabled{% end %}> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+        {% end %}
+      {% end %}
+        <tr><td>&nbsp;</td></tr>
+        <tr><td><input type="radio" name="sessiontype" value="top"><b>top</b></td><td> [Create top level page]</td>
+	<td>Name: <input type="text" name="topname" value=""></td></tr>
+      </table>
+    {% module xsrf_form_html() %}
+
+    <input type="hidden" name="sessioncreate" value="sessions">
+
+    <div>
+      <input id="session-upload-submit" type="submit" value="Add module type">
+    </div>
+    </fieldset>
+  </form>
+
+</body>
+</html>

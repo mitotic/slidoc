@@ -165,7 +165,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
       {% set session_dirs = [x[0] for x in session_props] %}
       {% for session_type, session_label in session_types %}
         {% if session_type != 'top' %}
-        <tr {% if session_type in session_dirs %}class="session-present"{% end %}><td><input type="radio" name="sessiontype" value="{{session_type}}" {% if session_type in session_dirs %}disabled{% end %}> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
+        <tr {% if session_type in session_dirs %}class="session-present"{% end %}><td><input type="radio" required name="sessiontype" value="{{session_type}}" {% if session_type in session_dirs %}disabled{% end %}> <b>{{ session_type }}</b></td><td> [{{ session_label }}]</td></tr>
         {% end %}
       {% end %}
       </table>

@@ -2802,7 +2802,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
     topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
     topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
     topnav_html += '<li id="helplink" class="" style=""><a href="_docs/index.html" target="_blank">%s</a></li>' % ('<b>?</b>',)
-    topnav_html += '<li id="dashlink" style="display: none;"><a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, SYMS['gear'], SYMS['pencil'])
+    topnav_html += '<li id="dashlink" class="slidoc-restricted-top" style="display: none;"><a href="%s_addtype" target="_blank"><b>+</b></a> <a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html
@@ -2964,7 +2964,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         if start_date_obj:
             # Only process files with a release date after the minimum required release date
             tem_config = parse_merge_args(sliauth.read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
-            tem_release_date_str = tem_config.release_date or config.release_date
+            tem_release_date_str = getattr(tem_config, 'release_date', None) or config.release_date
             if tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE:
                 tem_release_date_obj = sliauth.parse_date(tem_release_date_str)
                 if not tem_release_date_obj:
@@ -2987,7 +2987,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     if not fnumbers:
         if not return_messages and input_files:
             message('All output files are newer than corresponding input files')
-        if not config.make_toc:
+        if not config.create_toc:
             return {'messages':messages}
     elif return_html and len(fnumbers) != 1 and config.separate:
         raise Exception('Cannot return html for multiple input files')
@@ -3019,7 +3019,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     js_params['overwrite'] = 1 if config.overwrite else 0
     js_params['paceLevel'] = config.pace or 0  # May be overridden by file-specific values
 
-    js_params['conceptIndexFile'] = '' if config.make_toc else 'index.html' # Need command line option to modify this
+    js_params['conceptIndexFile'] = '' if config.create_toc else 'index.html' # Need command line option to modify this
     js_params['printable'] = config.printable
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging
@@ -3133,8 +3133,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     js_params['answer_elements'] = answer_elements
 
     toc_file = ''
-    if config.make_toc or config.toc:
-        toc_file = 'index.html' if config.make_toc else config.toc
+    if config.create_toc or config.toc:
+        toc_file = 'index.html' if config.create_toc else config.toc
         js_params['tocFile'] = toc_file
 
     topnav_list = []
@@ -3265,7 +3265,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
             file_config_vars = vars(file_config)
             settings_list = []
-            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'make_toc', 'modify_sessions', 'notebook', 'overwrite', 'preview_port', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
+            exclude = set(['anonymous', 'auth_key', 'backup_dir', 'config', 'copy_source', 'create_toc', 'dest_dir', 'dry_run', 'google_login', 'gsheet_url', 'make', 'modify_sessions', 'notebook', 'overwrite', 'preview_port', 'proxy_url', 'server_url', 'split_name', 'test_script', 'toc_header', 'topnav', 'verbose', 'file', 'separate', 'toc', 'index', 'qindex'])
             arg_names = file_config_vars.keys()
             arg_names.sort()
             for name in arg_names:
@@ -3472,7 +3472,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         if topnav_opts and config.separate:
             top_fname = 'home' if fname == 'index' else fname
             js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
-            topnav_html = '' if config.make_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
+            topnav_html = '' if config.create_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
             index_display = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and opt.endswith('/index.html'):
@@ -3683,7 +3683,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         reverse_toc = fprefix.lower().startswith('announce')
         toc_list = []
         addSessionLink = ''
-        if config.make_toc:
+        if config.create_toc:
             # Create ToC using header info from .html files
             smatch = sliauth.SESSION_NAME_RE.match(orig_fnames[-1] if orig_fnames else fprefix+'00')
             if smatch:
@@ -4313,7 +4313,7 @@ Conf_parser.add_argument('--participation_credit', type=int, metavar='INTEGER', 
 Conf_parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 Conf_parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
 Conf_parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
-Conf_parser.add_argument('--publish', help='Only process files with --public in first line', action="store_true", default=None)
+Conf_parser.add_argument('--publish', help='Only process files with --publish in first line', action="store_true", default=None)
 Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release module on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
 Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
 Conf_parser.add_argument('--retakes', type=int, help='Max. number of retakes allowed (default: 0)')
@@ -4332,6 +4332,7 @@ alt_parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_au
 alt_parser.add_argument('--backup_dir', default='', help='Directory to create backup files for last valid version in when dest_dir is specified')
 alt_parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 alt_parser.add_argument('--copy_source', help='Create a modified copy (only if dest_dir is specified)', action="store_true", default=None)
+alt_parser.add_argument('--create_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--default_args', metavar='ARGS', help="'--arg=val --arg2=val2' default arguments ('file' to read first line of first file)")
 alt_parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
@@ -4341,7 +4342,6 @@ alt_parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_
 alt_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 alt_parser.add_argument('--libraries_url', metavar='URL', help='URL for library files; default: %s' % LIBRARIES_URL)
 alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
-alt_parser.add_argument('--make_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Module sessions with questions to be modified')
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)
@@ -4416,7 +4416,7 @@ if __name__ == '__main__':
             continue
         input_files.append(fhandle)
 
-    if not input_files and not cmd_args.make_toc:
+    if not input_files and not cmd_args.create_toc:
         cmd_parser.error('No files to process!')
 
     if skipped:
