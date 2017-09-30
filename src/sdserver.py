@@ -3271,6 +3271,7 @@ class UserActionHandler(ActionHandler):
 
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
+    # Replace root-signed tokens with site-specific tokens
     if not Options['site_name'] or not args.get('token'):
         return
 
@@ -3311,15 +3312,16 @@ def modify_user_auth(args, socketId=None):
 
 class ProxyHandler(BaseHandler):
     @tornado.gen.coroutine
-    def get(self):
-        yield self.handleResponse()
+    def get(self, subpath):
+        yield self.handleResponse(subpath)
 
     @tornado.gen.coroutine
-    def post(self):
-        yield self.handleResponse()
+    def post(self, subpath):
+        yield self.handleResponse(subpath)
 
     @tornado.gen.coroutine
-    def handleResponse(self):
+    def handleResponse(self, subpath):
+        dryProxy = (subpath == '_dryproxy')
         jsonPrefix = ''
         jsonSuffix = ''
         mimeType = 'application/json'
@@ -3334,12 +3336,24 @@ class ProxyHandler(BaseHandler):
                 args[arg_name] = self.get_argument(arg_name)
 
         if Options['debug']:
-            print >> sys.stderr, "DEBUG: URI", self.request.uri, args.get('sheet'), args.get('actions'), args.get('modify')
+            print >> sys.stderr, "DEBUG: Proxyhandler:", self.request.uri, dryProxy, 'sheet=', args.get('sheet'), args.keys(), args.get('actions'), args.get('modify')
 
-        # Replace root-signed tokens with site-specific tokens
-        modify_user_auth(args)
+        if dryProxy:
+            # Already has site-specific tokens
+            if not (args.get('get') and args.get('all')):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Only get/all action allowed for _dryproxy')
+        else:
+            # Replace root-signed tokens with site-specific tokens
+            try:
+                modify_user_auth(args)
+            except Exception, excp:
+                if Options['debug']:
+                    import traceback
+                    traceback.print_exc()
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in modify_user_auth')
+
         if (args.get('actions') and args['actions'] not in  ('discuss_posts', 'answer_stats', 'correct')) and Options['gsheet_url']:
-            # NOTE: No longer proxy passthru for args.get('modify') (to allow revert preview)
+            # NOTE: No longer using proxy passthru for args.get('modify') (to allow revert preview)
 
             if Options['log_call']:
                 args['logcall'] = str(Options['log_call'])
@@ -3352,7 +3366,7 @@ class ProxyHandler(BaseHandler):
                 elif sdproxy.previewingSession():
                     errMsg = 'Actions/modify not permitted during session preview'
 
-            if not errMsg and args.get('modify'):
+            if not errMsg and args.get('modify'):   ## passthru not used anymore
                 if not sdproxy.startPassthru(sessionName):
                     errMsg = 'Failed to lock sheet '+sessionName+' for passthru. Try again after a few seconds?'
 
@@ -4526,7 +4540,8 @@ def createApplication():
 
     if Options['proxy_sheet'] and not primary_server:
         site_handlers = [
-                      (pathPrefix+r"/_proxy", ProxyHandler),
+                      (pathPrefix+r"/(_proxy)", ProxyHandler),
+                      (pathPrefix+r"/(_dryproxy)", ProxyHandler),
                       (pathPrefix+r"/_websocket/(.*)", WSHandler),
                       (pathPrefix+r"/interact", AuthMessageHandler),
                       (pathPrefix+r"/interact/(.*)", AuthMessageHandler),
