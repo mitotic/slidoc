@@ -888,7 +888,7 @@ class ActionHandler(BaseHandler):
             if fext == '.zip':
                 fname1, fbody1, fname2, fbody2 = '', '', subsubpath, self.request.body
             else:
-                fname1, fbody1, fname2, fbody2 = subsubpath, self.request.body, '', ''
+                fname1, fbody1, fname2, fbody2 = subsubpath, sliauth.normalize_newlines(self.request.body), '', ''
 
             try:
                 errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modimages='clear')
@@ -1848,7 +1848,7 @@ class ActionHandler(BaseHandler):
                     return
                 fileinfo = self.request.files['upload'][0]
                 fname = fileinfo['filename']
-                fbody = fileinfo['body']
+                fbody = sliauth.normalize_newlines(fileinfo['body'])
                 if Options['debug']:
                     print >> sys.stderr, 'ActionHandler:upload', action, fname, len(fbody), sessionName, submitDate
                 uploadedFile = cStringIO.StringIO(fbody)
@@ -1930,7 +1930,7 @@ class ActionHandler(BaseHandler):
                     if 'upload1' in self.request.files:
                         fileinfo1 = self.request.files['upload1'][0]
                         fname1 = fileinfo1['filename']
-                        fbody1 = fileinfo1['body']
+                        fbody1 = sliauth.normalize_newlines(fileinfo1['body'])
 
                     if 'upload2' in self.request.files:
                         fileinfo2 = self.request.files['upload2'][0]
@@ -1973,7 +1973,7 @@ class ActionHandler(BaseHandler):
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 
                 try:
-                    errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify, create=sessionCreate)
+                    errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify, create=sessionCreate, modimages='clear')
                 except Exception, excp:
                     if Options['debug']:
                         import traceback
@@ -2476,7 +2476,7 @@ class ActionHandler(BaseHandler):
         web_dir = self.previewState['web_dir']
 
         if Options['debug']:
-            print >> sys.stderr, 'ActionHandler:acceptPreview', sessionName, uploadType, src_dir, web_dir, modified
+            print >> sys.stderr, 'ActionHandler:acceptPreview', sessionName, uploadType, src_dir, web_dir, modified, self.previewState['modimages']
 
         if not self.previewState['modified']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept unmodified preview for session '+sessionName)
@@ -3003,7 +3003,7 @@ class ActionHandler(BaseHandler):
             fname2 = sessionNext+'_images.zip'
 
         try:
-            errMsg = self.uploadSession(uploadType, sessionNumber+1, sessionNext+'.md', combineText, fname2, fbody2, modify='overwrite')
+            errMsg = self.uploadSession(uploadType, sessionNumber+1, sessionNext+'.md', combineText, fname2, fbody2, modify='overwrite', modimages='clear')
         except Exception, excp:
             if Options['debug']:
                 import traceback
@@ -4981,16 +4981,21 @@ def sendPrivateRequest(relay_address, path='/', proto='http'):
 def backupSite(dirname=''):
     if dirname.endswith('-'):
         dirname += sliauth.iso_date(nosec=True).replace(':','-')
-    backup_name = dirname or 'scheduled'
-    backup_url = '/_browse/backup/' + backup_name
-    if Options['site_name']:
-        backup_url = '/' + Options['site_name'] + backup_url
 
     if Options['debug']:
         print >> sys.stderr, 'sdserver.backupSite:', Options['site_name'], dirname
 
+    backup_name = dirname or 'scheduled'
+    backup_url = '/_browse/backup/' + backup_name
+
+    if Options['site_name']:
+        dirpath = os.path.join(Options['site_name'], backup_name)
+        backup_url = '/' + Options['site_name'] + backup_url
+
+    backup_path = os.path.join(Options['backup_dir'] or '_BACKUPS', backup_name)
+
     if Options['site_list'] and not Options['site_number']:
-        # Primary server
+        # Root server
         path = '/_backup'
         if dirname:
             path += '/' + urllib.quote(dirname)
@@ -5005,7 +5010,41 @@ def backupSite(dirname=''):
         if not errorList:
             return 'Backed up module sessions for each site to directory %s\n' % backup_name
     else:
-        errorList = sdproxy.backupSheets(dirname)
+        # Sole or site server
+        errorList = sdproxy.backupSheets(backup_path)
+
+        if dirname.lower().startswith('full'):
+            dirList = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir), (FILES_PATH, BaseHandler.site_files_dir)]
+            for name, relpath in dirList:
+                if relpath and os.path.isdir(relpath):
+                    cmd = ['rsync', relpath+'/', backup_path]
+                    print >> sys.stderr, 'backupSite', Options['site_name'], ' '.join(cmd)
+                    try:
+                        output = subprocess.check_output(cmd)
+                    except Exception, excp:
+                        output = str(excp)
+                        print >> sys.stderr, 'ERROR:backupSite', Options['site_name'], output
+                    if output.strip():
+                        errorList += 'Error in backing up %s directory %s: %s' % (name, relpath, output.strip())
+
+    errorStr = '\n'.join(errorList)+'\n' if errorList else ''
+    if errorStr:
+        try:
+            with open(os.path.join(backup_path,'ERRORS_IN_BACKUP.txt'), 'w') as errfile:
+                errfile.write(errorStr)
+        except Exception, excp:
+            print >> sys.stderr, "ERROR:backupSite: [%s] %s" % (Options['site_name'], excp)
+
+    try:
+        with open(os.path.join(backup_path,'_version.txt'), 'w') as f:
+            f.write(sliauth.get_version()+'\n')
+    except Exception, excp:
+        pass
+
+    if Options['debug']:
+        if errorStr:
+            print >> sys.stderr, errorStr
+        print >> sys.stderr, "DEBUG:backupSite: [%s] %s completed %s" % (Options['site_name'], backup_path, datetime.datetime.now())
 
     if errorList:
         return preElement('\n'+'\n'.join(errorList)+'\n')+'\n'

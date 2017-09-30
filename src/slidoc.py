@@ -121,6 +121,20 @@ def isfloat(value):
   except ValueError:
     return False
 
+def font_css(fontsize):
+    if not fontsize:
+        return ''
+    comps = fontsize.split(',')
+    if comps[0]:
+        tem_css = '@media not print { body { font-size: %s; }  }\n' % comps[0]
+    else:
+        tem_css = ''
+
+    if len(comps) > 1 and comps[1]:
+        tem_css += '@media print { body { font-size: %s; }  }\n' % comps[1]
+
+    return '<style>\n'+tem_css+'</style>\n' if tem_css else ''
+
 def html2text(element):
     """extract inner text from html
     
@@ -3078,16 +3092,6 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         css_html = '<style>\n' + md2md.read_file(config.css) + '</style>\n'
     else:
         css_html = insert_resource('doc_custom.css')
-        if config.fontsize:
-            comps = config.fontsize.split(',')
-            if comps[0]:
-                tem_css = '@media not print { body { font-size: %s; }  }\n' % comps[0]
-            else:
-                tem_css = ''
-            if len(comps) > 1 and comps[1]:
-                tem_css += '@media print { body { font-size: %s; }  }\n' % comps[1]
-            if tem_css:
-                css_html += '<style>\n'+tem_css+'</style>\n'
 
     # External CSS replaces doc_custom.css, but not doc_include.css
     css_html += insert_resource('doc_include.css')
@@ -3142,7 +3146,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
     js_params['topnavList'] = topnav_list
 
-    head_html = css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js')
+    head_html = css_html + font_css(config.fontsize) + insert_resource('doc_include.js') + insert_resource('wcloud.js')
     if combined_file:
         head_html += add_scripts
     body_prefix = templates['doc_include.html']
@@ -3603,7 +3607,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             else:
                 file_plugin_defs = base_plugin_defs.copy()
                 file_plugin_defs.update(renderer.plugin_defs)
-                file_head_html = (js_params_fmt % sliauth.ordered_stringify(js_params)) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
+                file_head_html = (js_params_fmt % sliauth.ordered_stringify(js_params)) + css_html + font_css(file_config.fontsize) + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
                 pre_html = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment

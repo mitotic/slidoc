@@ -57,7 +57,6 @@ Settings = {
     'site_name': '',      # Site name
 
                           # General settings from server
-    'backup_dir': '_BACKUPS', # Backup directory name
     'debug': None,      
     'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
     'lock_proxy_url': '', # URL of proxy server to lock sheet
@@ -85,7 +84,7 @@ COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
                    'admin_users', 'grader_users', 'guest_users']
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
-                    'backup_dir', 'debug', 'dry_run',
+                    'debug', 'dry_run',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
 
 DAY_PREFIX = '_day_'
@@ -366,21 +365,11 @@ def freezeCache(fill=False):
     suspend_cache('freeze')
 
 
-def backupSheets(dirname=''):
+def backupSheets(dirpath):
     # Returns null string on success or error string list
     # (synchronous)
     if Global.previewStatus:
         return [ 'Cannot backup when previewing session '+Global.previewStatus['sessionName'] ]
-
-    if not dirname or dirname == 'scheduled':
-        dirpath = 'scheduled'
-    else:
-        dirpath = dirname
-
-    if Settings['site_name']:
-        dirpath = os.path.join(Settings['site_name'], dirpath)
-
-    dirpath = os.path.join(Settings['backup_dir'] or '_BACKUPS', dirpath)
 
     suspend_cache('backup')
     if Settings['debug']:
@@ -410,19 +399,6 @@ def backupSheets(dirname=''):
                 backupSheet(name+'-discuss', dirpath, errorList, optional=True)
     except Exception, excp:
         errorList.append('Error in backup: '+str(excp))
-
-    errorStr = '\n'.join(errorList)+'\n' if errorList else ''
-    if errorStr:
-        try:
-            with  open(dirpath+'/ERRORS_IN_BACKUP.txt', 'w') as errfile:
-                errfile.write(errorStr)
-        except Exception, excp:
-            print("ERROR:backupSheets: ", str(excp), file=sys.stderr)
-
-    if Settings['debug']:
-        if errorStr:
-            print(errorStr, file=sys.stderr)
-        print("DEBUG:backupSheets: %s completed %s" % (dirpath, datetime.datetime.now()), file=sys.stderr)
 
     suspend_cache('')
     return errorList
