@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.13g'
+VERSION = '0.97.13h'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -248,11 +248,13 @@ def read_sheet(sheet_url, hmac_key, sheet_name, site=''):
     # Returns [rows, headers]
     auth_key = gen_site_key(hmac_key, site) if site else hmac_key
     user_token = gen_auth_token(auth_key, 'admin', 'admin', prefixed=True)
-    get_params = {'sheet': sheet_name, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
+    get_params = {'sheet': sheet_name, 'proxy': 1, 'get': '1', 'all': '1', 'getheaders': '1', 'admin': 'admin', 'token': user_token}
     retval = http_post(sheet_url, get_params)
     if retval['result'] != 'success':
         raise Exception("Error in accessing %s %s: %s" % (site, sheet_name, retval['error']))
-    return retval.get('value'), retval.get('headers')
+    if not retval.get('value'):
+        raise Exception("No data when reading sheet %s %s: %s" % (site, sheet_name, retval['error']))
+    return retval['value'][1:], retval['value'][0]
 
 def get_settings(rows):
     if not rows:

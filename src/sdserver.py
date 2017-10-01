@@ -3340,8 +3340,8 @@ class ProxyHandler(BaseHandler):
 
         if dryProxy:
             # Already has site-specific tokens
-            if not (args.get('get') and args.get('all')):
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:Only get/all action allowed for _dryproxy')
+            if not (args.get('proxy') and args.get('get') and args.get('all')):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Only proxy/get/all action allowed for _dryproxy')
         else:
             # Replace root-signed tokens with site-specific tokens
             try:

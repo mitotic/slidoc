@@ -1641,6 +1641,8 @@ def sheetAction(params, notrace=False):
                 raise Exception('Error:INVALID_TOKEN:Invalid token '+authToken+' for authenticating id '+paramId)
             origUser = paramId
 
+        proxy = params.get('proxy','');
+
         # Read-only sheets
         protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
         # Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
@@ -1705,6 +1707,8 @@ def sheetAction(params, notrace=False):
                     raise Exception("Error:ACTION:Must be admin user to perform action on sheet "+sheetName)
                 if protectedSheet or restrictedSheet or loggingSheet:
                     raise Exception('Error:ACTION:Action not allowed for sheet '+sheetName)
+        elif not proxy and not sheetName:
+            raise Exception('Error:SHEETNAME:No sheet name specified')
 
         sessionEntries = None
         sessionAttributes = None
@@ -1718,6 +1722,9 @@ def sheetAction(params, notrace=False):
         timedSec = None
 
         computeTotalScore = False
+
+        if proxy and adminUser != ADMIN_ROLE:
+            raise Exception("Error::Must be admin user for proxy access sheet '"+sheetName+"'")
 
         if sheetName == SETTINGS_SHEET and adminUser != ADMIN_ROLE:
             raise Exception('Error::Must be admin user to access settings')
@@ -1742,6 +1749,15 @@ def sheetAction(params, notrace=False):
             actionHandler(performActions, sheetName, True)
             processed = True
             returnValues = []
+
+        elif proxy and getRow and allRows:
+            # Return all sheet values to proxy
+            processed = True
+            modSheet = getSheet(sheetName)
+            if not modSheet:
+                raise Exception("Error:NOSHEET:Sheet '"+sheetName+"' not found")
+            allRange = modSheet.getRange(1, 1, modSheet.getLastRow(), modSheet.getLastColumn())
+            returnValues = allRange.getValues()
 
         elif removeSheet:
             # Delete sheet (and session entry)
