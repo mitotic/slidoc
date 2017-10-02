@@ -59,7 +59,7 @@ Settings = {
                           # General settings from server
     'debug': None,      
     'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
-    'lock_proxy_url': '', # URL of proxy server to lock sheet
+    'lock_proxy_url': '', # URL of proxy server to lock sheet (used to "safely" allow direct access to Google Sheets from an auxiliary server)
     'log_call': 0,        # Enable call debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
     'server_url': '',     # Base URL of server (if any); e.g., http://example.com'
@@ -422,13 +422,14 @@ def backupSheet(name, dirpath, errorList, optional=False):
         retval = downloadSheet(name, backup=True)
 
         if retval['result'] != 'success':
-            if optional and retval['error'].startswith('Error:NOSHEET:'):
-                pass
-            else:
-                errorList.append('Error in downloading %s sheet %s: %s' % (Settings['site_name'], name, retval['error']))
+            errorList.append('Error in downloading %s sheet %s: %s' % (Settings['site_name'], name, retval['error']))
             return None
 
         rows = retval.get('value')
+        if not rows:
+            if not optional:
+                errorList.append('Error in downloading %s sheet %s: sheet empty or not accessible' % (Settings['site_name'], name))
+            return None
 
     try:
         rowNum = 0
@@ -495,7 +496,7 @@ def getSheet(sheetName, require=False, backup=False, display=False):
         lockURL = Settings['lock_proxy_url']
         if Settings['site_name']:
             lockURL += '/' + Settings['site_name']
-        lockURL += '/_proxy/_lock/'+sheetName
+        lockURL += '/_lock/'+sheetName
         try:
             req = urllib2.Request(lockURL+'?token='+Settings['auth_key']+'&type=proxy')
             response = urllib2.urlopen(req)
@@ -514,14 +515,14 @@ def getSheet(sheetName, require=False, backup=False, display=False):
     retval = downloadSheet(sheetName)
 
     if retval['result'] != 'success':
-        if not require and retval['error'].startswith('Error:NOSHEET:'):
-            Miss_cache[sheetName] = sliauth.epoch_ms()
-            return None
-        else:
-            raise Exception("%s (Error in accessing sheet '%s')" % (retval['error'], sheetName))
+        raise Exception("%s (Error in accessing sheet '%s')" % (retval['error'], sheetName))
+
     rows = retval.get('value')
     if not rows:
-        raise Exception("Empty sheet '%s'" % sheetName)
+        if require:
+            raise Exception("Error: Sheet '%s' empty or not accessible" % sheetName)
+        Miss_cache[sheetName] = sliauth.epoch_ms()
+        return None
 
     Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=getKeyHeader(sheetName), updated=True)
     return Sheet_cache[sheetName]
@@ -1130,20 +1131,21 @@ def getCacheStatus():
         if not sheetStr:
             sheetStr = '<a href="/%s/%s">%s</a> %s' % (sitePrefix+'_'+action, sheetName, action, Lock_cache.get(sheetName,''))
     
+        updateStr = ''
         if sheet:
             accessTime = 'accessed:'+str(int((curTime-sheet.accessTime)/1000.))+'s'
             if sheet.modTime:
                 accessTime += '/modified:'+str(int((curTime-sheet.modTime)/1000.))+'s'
+
+            if Settings['debug']:
+                updates = sheet.get_updates(row_limit=PROXY_UPDATE_ROW_LIMIT)
+                if updates:
+                    updateStr = '['+','.join(sorted(updates[0].keys()))+']'
+                else:
+                    updateStr = '[no pending updates]'
         else:
             accessTime = '(not cached)'
 
-        updateStr = ''
-        if Settings['debug']:
-            updates = sheet.get_updates(row_limit=PROXY_UPDATE_ROW_LIMIT)
-            if updates:
-                updateStr = '['+','.join(sorted(updates[0].keys()))+']'
-            else:
-                updateStr = '[no pending updates]'
 
         out += 'Sheet_cache: %s: %s %s %s\n' % (sheetName, accessTime, sheetStr, updateStr)
     out += '\n'
@@ -1755,9 +1757,10 @@ def sheetAction(params, notrace=False):
             processed = True
             modSheet = getSheet(sheetName)
             if not modSheet:
-                raise Exception("Error:NOSHEET:Sheet '"+sheetName+"' not found")
-            allRange = modSheet.getRange(1, 1, modSheet.getLastRow(), modSheet.getLastColumn())
-            returnValues = allRange.getValues()
+                returnValues = []
+            else:
+                allRange = modSheet.getRange(1, 1, modSheet.getLastRow(), modSheet.getLastColumn())
+                returnValues = allRange.getValues()
 
         elif removeSheet:
             # Delete sheet (and session entry)

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.13d';
+var VERSION = '0.97.13i';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -653,17 +653,19 @@ function sheetAction(params) {
 	} else if (proxy && params.get && params.all) {
 	    // Return all sheet values to proxy
 	    var modSheet = getSheet(sheetName);
-	    if (!modSheet)
-		throw("Error:NOSHEET:Sheet '"+sheetName+"' not found");
-	    var allRange = modSheet.getRange(1, 1, modSheet.getLastRow(), modSheet.getLastColumn());
-	    returnValues = allRange.getValues();
-	    if (params.formula) {
-		var formulaValues = allRange.getFormulas();
-		for (var j=0; j<formulaValues.length; j++) {
-		    var temFormulas = formulaValues[j];
-		    for (var k=0; k<temFormulas.length; k++) {
-			if (temFormulas[k])
-			    returnValues[j][k] = temFormulas[k];
+	    if (!modSheet) {
+		returnValues = [];
+	    } else {
+		var allRange = modSheet.getRange(1, 1, modSheet.getLastRow(), modSheet.getLastColumn());
+		returnValues = allRange.getValues();
+		if (params.formula) {
+		    var formulaValues = allRange.getFormulas();
+		    for (var j=0; j<formulaValues.length; j++) {
+			var temFormulas = formulaValues[j];
+			for (var k=0; k<temFormulas.length; k++) {
+			    if (temFormulas[k])
+				returnValues[j][k] = temFormulas[k];
+			}
 		    }
 		}
 	    }

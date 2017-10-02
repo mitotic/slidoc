@@ -5477,6 +5477,7 @@ def main():
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
     define("no_auth", default=False, help="No authentication mode (for testing)")
+    define("noreload", default=False, help="Disable autoreload mode (for updates)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
@@ -5510,6 +5511,9 @@ def main():
         if not key.startswith('_') and hasattr(options, key):
             # Command line overrides settings
             Options[key] = getattr(options, key)
+
+    if getattr(options, 'noreload'):   # Overrides any config reload option
+        Options['reload'] = False
 
     if len(Options['roster_columns'].split(',')) != 6:
         sys.exit('Must specify --roster_columns=lastname_col,firstname_col,midname_col,id_col,email_col,altid_col')
