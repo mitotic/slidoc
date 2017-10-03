@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.13i';
+var VERSION = '0.97.13j';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -1971,8 +1971,8 @@ function sheetAction(params) {
 	    }
 	}
 
-        if (sessionEntries && getRow && (allRows || (createRow && paramId == TESTUSER_ID))) {
-            // Getting all session rows or test user row (with creation); return related sheet names
+        if (sessionEntries && getRow && ((!proxy && allRows) || (createRow && paramId == TESTUSER_ID))) {
+            // Getting all session rows (non-proxy) or test user row (with creation option); return related sheet names
             returnInfo['sheetsAvailable'] = [];
             for (var j=0; j<RELATED_SHEETS.length; j++) {
                 if (getSheet(sheetName+'-'+RELATED_SHEETS[j])) {

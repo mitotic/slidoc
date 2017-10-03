@@ -161,6 +161,8 @@ Miss_cache = {}     # For optional sheets that are missing
 Lock_cache = {}     # Locked sheets
 Lock_passthru = defaultdict(int)  # Count of passthru
 
+Locked_proxy_sheets = set()  # Set of sheets locked on upstream proxy
+
 Global = Dummy()
 
 Global.remoteVersions = set()
@@ -476,6 +478,26 @@ def getKeyHeader(sheetName):
         return ''
     return 'id'
 
+
+def upstreamLockable(sheetName):
+    # Check if sheet should be locked of upstream proxy
+    return Settings['lock_proxy_url'] and not sheetName.endswith('_log') and (not sheetName.endswith('_slidoc') or sheetName in (INDEX_SHEET, ROSTER_SHEET))
+
+def lockUpstreamProxy(sheetName, unlock=False):
+    # Lock (or unlock) sheet in upstream proxy
+    lockURL = Settings['lock_proxy_url']
+    if Settings['site_name']:
+        lockURL += '/' + Settings['site_name']
+    lockURL += '/_%s/%s' % ('unlock' if unlock else 'lock', sheetName)
+    req = urllib2.Request(lockURL+'?token='+Settings['auth_key']+'&type=proxy')
+    response = urllib2.urlopen(req)
+    if unlock:
+        Locked_proxy_sheets.discard(sheetName)
+    else:
+        Locked_proxy_sheets.add(sheetName)
+    if Settings['debug']:
+        print("DEBUG:lockUpstreamProxy: %s %s %s (%s)" % (unlock, sheetName, lockURL, response.read()), file=sys.stderr)
+
 def getSheet(sheetName, require=False, backup=False, display=False):
     cached = sheetName in Sheet_cache
 
@@ -491,17 +513,9 @@ def getSheet(sheetName, require=False, backup=False, display=False):
         # Retry retrieving sheet
         del Miss_cache[sheetName]
 
-    if Settings['lock_proxy_url'] and not sheetName.endswith('_slidoc') and not sheetName.endswith('_log'):
-        # Lock sheet in upstream proxy
-        lockURL = Settings['lock_proxy_url']
-        if Settings['site_name']:
-            lockURL += '/' + Settings['site_name']
-        lockURL += '/_lock/'+sheetName
+    if upstreamLockable(sheetName):
         try:
-            req = urllib2.Request(lockURL+'?token='+Settings['auth_key']+'&type=proxy')
-            response = urllib2.urlopen(req)
-            if Settings['debug']:
-                print("DEBUG:getSheet: %s LOCKED %s (%s)" % (sheetName, lockURL, response.read()), file=sys.stderr)
+            lockUpstreamProxy(sheetName)
         except Exception, excp:
             errMsg = 'ERROR:getSheet: Unable to lock sheet '+sheetName+': '+str(excp)
             print(errMsg, file=sys.stderr)
@@ -1210,8 +1224,8 @@ def endPassthru(sheetName):
         unlockSheet(sheetName)
 
 def check_if_locked(sheetName, get=False, backup=False, cached=False):
-    if Settings['lock_proxy_url'] and sheetName.endswith('_slidoc') and not get:
-        raise Exception('Only get operation allowed for special sheet '+sheetName+' in locked proxy mode')
+    if Settings['lock_proxy_url'] and not (upstreamLockable(sheetName) or get):
+        raise Exception('Only get operation allowed for upstream unlocked sheet '+sheetName+' in locked proxy mode')
 
     if sheetName in Lock_cache:
         raise Exception('Sheet %s is locked!' % sheetName)
@@ -1279,6 +1293,11 @@ def suspend_cache(action=''):
 
 def shutdown_loop():
     print("Completed IO loop shutdown", file=sys.stderr)
+    for sheetName in sorted(list(Locked_proxy_sheets)):
+        try:
+            lockUpstreamProxy(sheetName, unlock=True)
+        except Exception, excp:
+            print("shutdown_loop: Failed to unlock sheet %s in upstream proxy %s: %s" % (sheetName, Settings['lock_proxy_url'], excp), file=sys.stderr)
     IOLoop.current().stop()
 
 def sheet_proxy_error(errMsg=''):
@@ -2144,10 +2163,10 @@ def sheetAction(params, notrace=False):
 
                 if not adminUser and paramId != TESTUSER_ID:
                     if paceLevel == ADMIN_PACE and (not testUserVals or (not testUserVals[0] and not testUserSubmitted)):
-                        raise Exception('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName)
+                        raise Exception('Error:NOSHARE:Instructor must respond to question '+getShare+' or Submit before sharing in session '+sheetName)
 
                     if shareParams.get('share') == 'after_answering' and not curUserResponded and not curUserSubmitted:
-                        raise Exception('Error::User '+paramId+' must respond to question '+getShare+' before sharing in session '+sheetName)
+                        raise Exception('Error:NOSHARE:User '+paramId+' must respond to question '+getShare+' or Submit before sharing on '+sheetName)
 
                 disableVoting = False
 
@@ -2914,8 +2933,8 @@ def sheetAction(params, notrace=False):
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
 
-        if sessionEntries and getRow and (allRows or (createRow and paramId == TESTUSER_ID)):
-            # Getting all session rows or test user row (with creation); return related sheet names
+        if sessionEntries and getRow and ((not proxy and allRows) or (createRow and paramId == TESTUSER_ID)):
+            # Getting all session (non-proxy) rows or test user row (with creation option); return related sheet names
             returnInfo['sheetsAvailable'] = []
             for j in range(len(RELATED_SHEETS)):
                 if getSheet(sheetName+'-'+RELATED_SHEETS[j]):

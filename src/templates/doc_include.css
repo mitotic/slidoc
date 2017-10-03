@@ -55,11 +55,6 @@ div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
 
 .slidoc-fillable-input { background-color: #eaeaea; }
 
-.slidoc-code-input { font-style: italic; }
-.slidoc-code-expect { opacity: 0.7; }
-.slidoc-code-invalid { color: red; }
-.slidoc-code-error { color: red; }
-
 /* Answer/grading control */
 body.slidoc-gradable-view .slidoc-nogradable { display: none; }
 body.slidoc-graded-view .slidoc-nograded { display: none; }

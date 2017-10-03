@@ -8082,7 +8082,8 @@ var touchStart,
     touchSort,
     touchStartX,
     touchStartY,
-    touchSwipe;
+    touchSwipe,
+    sortTimer;
 
 function getCoord(evt, c) {
     return /touch/.test(evt.type) ? (evt.originalEvent || evt).changedTouches[0]['page' + c] : evt['page' + c];

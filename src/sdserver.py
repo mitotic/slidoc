@@ -186,7 +186,7 @@ SITE_COOKIE        = sliauth.SITE_COOKIE_PREFIX+'_'
 EXPIRES_DAYS = 30
 BATCH_AGE = 60      # Age of batch cookies (sec)
 
-WS_TIMEOUT_SEC = 3600
+WS_TIMEOUT_SEC = 1200    # Aggressive websocket timeout OK, since clients can re-connect (with session versioning)
 EVENT_BUFFER_SEC = 3
 
 SETTINGS_SHEET = 'settings_slidoc'
@@ -838,7 +838,7 @@ class ActionHandler(BaseHandler):
 
     def get(self, subpath, inner=None):
         userId = self.get_current_user()
-        if Options['debug']:
+        if Options['debug'] and not self.get_argument('reload', ''):
             print >> sys.stderr, 'DEBUG: ActionHandler.get', userId, Options['site_number'], subpath
         if subpath == '_logout':
             self.clear_user_cookie()
@@ -2170,6 +2170,7 @@ class ActionHandler(BaseHandler):
             if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
+            # NOTE: If adding any preview fields here, also modify createUnmodifiedPreview below
             self.previewState['md'] = fbody1
             self.previewState['md_defaults'] = retval['md_params'].get('md_defaults', '')
             self.previewState['md_slides'] = retval['md_params'].get('md_slides', [])
@@ -2190,6 +2191,7 @@ class ActionHandler(BaseHandler):
 
             Global.previewModifiedCount += 1
             self.previewState['modified'] = Global.previewModifiedCount
+            self.previewState['modify_session'] = modify
             self.previewState['modimages'] = modimages
             self.previewState['overwrite'] = overwrite
             self.previewState['rollover'] = None
@@ -2248,6 +2250,7 @@ class ActionHandler(BaseHandler):
         self.previewState['image_paths'] = {}
 
         self.previewState['modified'] = 0
+        self.previewState['modify_session'] = ''
         self.previewState['modimages'] = ''
         self.previewState['overwrite'] = False
         self.previewState['rollover'] = None
@@ -2462,7 +2465,7 @@ class ActionHandler(BaseHandler):
                 f.write(zfile.read(name))
             
 
-    def acceptPreview(self, modified=0):
+    def acceptPreview(self, modified=0, acceptMessages=[]):
         # Modified == -1 disables version checking
         if Options['dry_run'] and not Options['dry_run_file_modify']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept edits during dry run')
@@ -2527,6 +2530,10 @@ class ActionHandler(BaseHandler):
         sessionLabel = self.previewState['label']
         rolloverParams = self.previewState['rollover']
 
+        if self.previewState['modify_session']:
+            # Being conservative in incrementing session version to avoid client reloads; increment only if "modifying" session
+            WSHandler.getSessionVersion(sessionName, increment=True)
+
         # Success. Revert to saved version of preview (discarding any navigation/answer info); this may trigger proxy updates
         self.previewClear(saved_version=True)   
 
@@ -2537,6 +2544,8 @@ class ActionHandler(BaseHandler):
         msgs = []
         if errMsgs and any(errMsgs):
             msgs = ['Saved changes to session ' + sessionLabel] + errMsgs
+        if acceptMessages:
+            msgs = acceptMessages + msgs
 
         tocPath = getSessionPath(sessionName, site_prefix=True, toc=True)
         if rolloverParams:
@@ -2885,10 +2894,7 @@ class ActionHandler(BaseHandler):
                 errMsg += ' (session: '+sessionName+')'
             raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 
-        self.previewState['messages'] = ['Releasing module'] + self.previewState['messages']
-        
-        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        self.redirect(site_prefix+'/_preview/index.html')
+        self.acceptPreview(modified=-1, acceptMessages=['Released module '+sessionName, ''] + self.previewState['messages'])
 
     def rollover(self, sessionName, slideNumber=None, truncateOnly=False):
         sessionName = md2md.stringify(sessionName)
@@ -3404,6 +3410,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     _connections = defaultdict(functools.partial(defaultdict,ConnectionList))
     _interactiveSession = (None, None, None, None)
     _interactiveErrors = {}
+    _sessionVersions = {}
+
     @classmethod
     def get_connections(cls, sessionName=''):
         # Return dict((user, connections_list)) if sessionName
@@ -3504,6 +3512,20 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             for connection in connections:
                 connection.locked = lock_msg
                 connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
+
+    @classmethod
+    def getSessionVersion(cls, sessionName, increment=False):
+        if not sessionName:
+            return 0
+        
+        return 1  # ABC: Disable session versioning for now
+
+        if sessionName not in cls._sessionVersions:
+            cls._sessionVersions[sessionName] = random.randint(100000,999999)*1000
+        elif increment:
+            cls._sessionVersions[sessionName] += 1
+
+        return cls._sessionVersions[sessionName]
 
     @classmethod
     def closeSessionConnections(cls, sessionName):
@@ -3682,6 +3704,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.timeout = None
         self.userId = self.get_id_from_cookie()
         self.pathUser = (path, self.userId)
+        self.sessionVersion = self.getSessionVersion(self.get_path_base(path))
         self.userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
         connectionList = self._connections[self.pathUser[0]][self.pathUser[1]]
         if not connectionList:
@@ -3698,6 +3721,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.eventBuffer = []
         self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
         self.eventFlusher.start()
+
+        self.write_message(json.dumps([0, 'session_version', [self.sessionVersion] ]))
 
     def on_close(self):
         if Options['debug']:
@@ -3785,9 +3810,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         callback_index = None
         try:
             obj = json.loads(message)
-            callback_index = obj[0]
-            method = obj[1]
-            args = obj[2]
+            if obj[0] != self.sessionVersion:
+                self.write_message(json.dumps([0, 'close', ['Outdated version of session: %s vs %s' % (obj[0], self.sessionVersion), 'Outdated version of session. Reload page'] ]))
+                return
+
+            callback_index = obj[1]
+            method = obj[2]
+            args = obj[3]
+
             retObj = {"result":"success"}
             ##if Options['debug']:
             ##    print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)

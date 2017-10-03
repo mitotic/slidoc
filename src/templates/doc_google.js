@@ -81,27 +81,33 @@ GService.handleJSONP = function(callback_index, json_obj) {
 }
 
 var wsock = {};
-wsock.counter = 0;
-wsock.received = 0;
-wsock.requests = {};
 
-wsock.connection = null;
-wsock.opened = false;
-wsock.locked = '';
-wsock.closed = '';
-wsock.buffer = [];
-wsock.eventReceiver = null;
+wsock.sessionVersion = 0;
+
+function initWebsocket() {
+    wsock.counter = 0;
+    wsock.received = 0;
+    wsock.requests = {};
+
+    wsock.connection = null;
+    wsock.opened = false;
+    wsock.locked = '';
+    wsock.closed = '';
+    wsock.buffer = [];
+    wsock.eventReceiver = null;
+}
+
+initWebsocket();
 
 GService.openWebsocket = function (wsPath) {
     var wsUrl = ((location.protocol === "https:") ? "wss://" : "ws://") + location.host + wsPath;
     Slidoc.log('GService.openWebsocket:', wsUrl);
+
     wsock.connection = new WebSocket(wsUrl);
 
     wsock.connection.onopen = function() {
 	Slidoc.log('GService.ws.onopen:');
 	wsock.opened = true;
-	while (wsock.buffer.length > 0)
-	    wsock.connection.send(wsock.buffer.shift());
     }
 
     wsock.connection.onerror = function (error) {
@@ -111,8 +117,11 @@ GService.openWebsocket = function (wsPath) {
     }
 
     wsock.connection.onclose = function (evt) {
-	if (!wsock.closed)
-	    wsock.closed = 'Connection closed. Reload page to restart.';
+	Slidoc.log('GService.ws.onclose:', wsock.closed);
+	if (wsock.closed)  // Deliberate close
+	    return;
+	// Auto-close on timeout; reconnect if needed
+	initWebsocket();
     }
 
     wsock.connection.onmessage = function(evt) {
@@ -130,14 +139,26 @@ GService.openWebsocket = function (wsPath) {
 
 	if (!callback_index) {
 	    try {
-		if (callback_method == 'lock') {
+		if (callback_method == 'session_version') {
+		    if (wsock.sessionVersion && wsock.sessionVersion != callback_args[0]) {
+			GService.closeWS('Session version is out of date. Please reload ('+callback_args[0]+')', 'Please reload page to access latest session');
+		    } else {
+			wsock.sessionVersion = callback_args[0];
+
+			// Flush message buffer
+			while (wsock.buffer.length > 0)
+			    wsock.connection.send( GService.stringifyWS(wsock.buffer.shift()) );
+		    }
+
+		} else if (callback_method == 'lock') {
 		    wsock.locked = callback_args[0]; // Null string to unlock
 		    if (callback_args[1]) {
+			Slidoc.closeAllPopups();
 			Slidoc.showPopup(Slidoc.escapeHtml(callback_args[0] || 'Reload page?'), null, false, 0, 'lockReload',
 					 function() {location.reload(true)});
 		    }
 		} else if (callback_method == 'close') {
-		    GService.closeWS(callback_args[0]);
+		    GService.closeWS(callback_args[0], callback_args[1]);
 		} else if (callback_method == 'event') {
 		    if (wsock.eventReceiver)
 			wsock.eventReceiver(callback_args);
@@ -163,11 +184,23 @@ GService.openWebsocket = function (wsPath) {
     }
 }
 
-GService.closeWS = function (msg) {
+GService.closeWS = function (closeMsg, dispMsg) {
+    if (dispMsg) {
+	Slidoc.closeAllPopups();
+	Slidoc.showPopup(Slidoc.escapeHtml(dispMsg));
+    }
     if (wsock.closed)
 	return;
-    wsock.closed = msg || 'Connection closed. Reload page to restart.';
+    Slidoc.log('GService.closeWS:', closeMsg);
+    wsock.closed = closeMsg || 'Connection closed. Reload page to restart.';
     wsock.connection.close();
+}
+
+GService.stringifyWS = function (message) {
+    if (Array.isArray(message)) // Pre-pend session version
+	return JSON.stringify( [wsock.sessionVersion].concat(message) );
+    else
+	return message;
 }
     
 GService.rawWS = function (message) {
@@ -176,7 +209,7 @@ GService.rawWS = function (message) {
 	return;
     }
     if (wsock.opened) {
-	wsock.connection.send(message);
+	wsock.connection.send( GService.stringifyWS(message) );
     } else {
 	if (!wsock.connection)
 	    GService.openWebsocket(Slidoc.websocketPath);
@@ -195,8 +228,7 @@ GService.requestWS = function (callType, data, callback) {
 	callbackIndex = wsock.counter;
 	wsock.requests[wsock.counter] = [callback];
     }
-    var jsonStr = JSON.stringify([callbackIndex, callType, data]);
-    GService.rawWS(jsonStr);
+    GService.rawWS( [callbackIndex, callType, data] );
 }
 
 GService.setEventReceiverWS = function (eventReceiver) {

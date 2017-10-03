@@ -8,10 +8,16 @@ Code = {
 	   },
 
     init: function () {
-	Slidoc.log('Slidoc.Plugins.Code.init:');
+	Slidoc.log('Slidoc.Plugins.Code.init:', this);
 	var textAreaElem = document.getElementById(this.pluginId+'-textarea');
 	if (textAreaElem && this.qattributes.fillable)
 	    textAreaElem.style.display = 'none';
+
+	this.PADDING       = '<code class="'+this.pluginLabel+'-code-padding">       </code> ';
+	this.ERROR_PREFIX  = '<code class="'+this.pluginLabel+'-code-error"> Error: </code>';
+	this.INPUT_PREFIX  = '<code class="'+this.pluginLabel+'-code-input"> Input: </code>';
+	this.OUTPUT_PREFIX = '<code class="'+this.pluginLabel+'-code-output">Output: </code>';
+	this.EXPECT_PREFIX = '<code class="'+this.pluginLabel+'-code-expect">Expect: </code>';
     },
 
     disable: function (displayCorrect) {
@@ -47,7 +53,7 @@ Code = {
 	Slidoc.log('Slidoc.Plugins.Code.response:', this, retry, !!callback);
 	var inputValue = this.getInput(this.pluginId);
 	this.displayInput(inputValue);
-	checkCode(this.name, this.slideId+'', this.qattributes, inputValue, false,
+	checkCode2.call(this, this.slideId+'', this.qattributes, inputValue, false,
 		  codeResponseCallback.bind(this, retry, callback, inputValue) );
     },
 
@@ -55,7 +61,7 @@ Code = {
 	Slidoc.log('Slidoc.Plugins.Code.checkCode:', elem);
 	var inputValue = this.getInput(this.pluginId);
 	this.displayInput(inputValue);
-	checkCode(this.name, this.slideId+'', this.qattributes, inputValue, true,
+	checkCode2.call(this, this.slideId+'', this.qattributes, inputValue, true,
 		  checkCodeCallback.bind(this) );
     },
 
@@ -68,7 +74,22 @@ Code = {
 	}
 	var textareaElem = document.getElementById(pluginId+'-textarea');
 	return textareaElem.value;
+    },
+
+    renderCode: function(text, prefix, classes) {
+	// Specify null value for prefix to have padding
+	classes = classes || this.pluginLabel+'-plain';
+	var lines = text.split('\n');
+	var output = [];
+	for (var j=0; j<lines.length; j++) {
+	    if (lines[j] || j < lines.length-1) {
+		var temPrefix = (j || prefix === null) ? this.PADDING : prefix;
+		output.push( temPrefix + '<code class="'+classes+'">'+Slidoc.PluginManager.escapeHtml(lines[j])+'</code>\n');
+	    }
+	}
+	return output.join('');
     }
+
 }
 
 function checkCodeCallback(pluginResp) {
@@ -80,7 +101,7 @@ function checkCodeCallback(pluginResp) {
     var output = pluginResp.output || '';
     if (pluginResp.invalid) {
 	msg = 'Syntax/runtime error! \n'+pluginResp.invalid;
-	output += renderCode(pluginResp.invalid.trim(), '', 'slidoc-code-invalid');
+	output += this.renderCode(pluginResp.invalid.trim(), '', this.pluginLabel+'-invalid');
     } else if (pluginResp.score === 0) {
 	msg = 'All checks failed';
     } else if (pluginResp.score === 1) {
@@ -89,7 +110,7 @@ function checkCodeCallback(pluginResp) {
 	msg = 'Some checks failed!';
     }
     //Slidoc.showPopup(msg);
-    output += renderCode(msg, '', 'slidoc-code-status');
+    output += this.renderCode(msg, '', this.pluginLabel+'-status');
     outputElem.innerHTML = output;
 }
 
@@ -101,9 +122,9 @@ function codeResponseCallback(retry, callback, response, pluginResp) {
 	var ntest = this.qattributes.test ? this.qattributes.test.length : 0;
 	var nhide = this.qattributes.hiddentest || 0;
 	if (pluginResp.invalid) {
-	    output += renderCode(pluginResp.invalid.trim(), '', 'slidoc-code-invalid');
+	    output += this.renderCode(pluginResp.invalid.trim(), '', this.pluginLabel+'-invalid');
 	} else if (pluginResp.score === 1) {
-	    output += renderCode('All checks passed!', '', 'slidoc-code-status');
+	    output += this.renderCode('All checks passed!', '', this.pluginLabel+'-status');
 	} else if (isNumber(pluginResp.score)) {
 	    if (retry && nhide) {
 		// Retry only if hidden tests present
@@ -118,41 +139,21 @@ function codeResponseCallback(retry, callback, response, pluginResp) {
 	}
     }
     if (pluginResp.score !== null)
-	output += renderCode('Score = '+pluginResp.score, '');
+	output += this.renderCode('Score = '+pluginResp.score, '');
     outputElem.innerHTML = output;
     if (callback)
 	callback(response, pluginResp);
 }
 
-var PADDING = '<code class="slidoc-code-padding">       </code> ';
-var ERROR_PREFIX = '<code class="slidoc-code-error"> Error:</code> ';
-var INPUT_PREFIX = '<code class="slidoc-code-input"> Input:</code> ';
-var OUTPUT_PREFIX = '<code class="slidoc-code-output">Output:</code> ';
-var EXPECT_PREFIX = '<code class="slidoc-code-expect">Expect:</code> ';
-
-function renderCode(text, prefix, classes) {
-    // Specify null value for prefix to have padding
-    classes = classes || 'slidoc-code-plain';
-    var lines = text.split('\n');
-    var output = [];
-    for (var j=0; j<lines.length; j++) {
-	if (lines[j] || j < lines.length-1) {
-	    var temPrefix = (j || prefix === null) ? PADDING : prefix;
-	    output.push( temPrefix + '<code class="'+classes+'">'+Slidoc.PluginManager.escapeHtml(lines[j])+'</code>\n');
-	}
-    }
-    return output.join('');
-}
-
-function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, callback) {
+function checkCode2(slide_id, question_attrs, user_code, checkOnly, callback) {
     // Execute code and compare output to expected output
     // callback( {name:'Code', score:1/0/null, invalid: invalid_msg, output:output, tests:0/1/2} )
     // invalid_msg => syntax error when executing user code
-    Slidoc.log('checkCode:', slide_id, question_attrs, user_code, checkOnly);
+    Slidoc.log('checkCode2:', slide_id, question_attrs, user_code, checkOnly);
 
     if (!question_attrs.test || !question_attrs.test.length) {
-	Slidoc.log('checkCode: Error - Test code checks not found in '+slide_id);
-	return callback( {name:pluginName, score:null, invalid:'No checks', output:'', tests:0} );
+	Slidoc.log('checkCode2: Error - Test code checks not found in '+slide_id);
+	return callback( {name:this.name, score:null, invalid:'No checks', output:'', tests:0} );
     }
 
     var codeType = question_attrs.qtype;
@@ -162,7 +163,7 @@ function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, c
     if (question_attrs.input) {
 	for (var j=1; j<=question_attrs.input; j++) {
 	    // Execute all input cells
-	    var inputText = getCellText(pluginName, slide_id, 'input', j, 0);
+	    var inputText = getCellText(this.name, slide_id, 'input', j, 0);
 	    if (question_attrs.solution && question_attrs.solution == j)
 		solutionCode = inputText;
 	    else
@@ -175,6 +176,7 @@ function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, c
     if (checkOnly && nhide && nhide > 1) ntest = Math.min(ntest, nhide-1);
     Slidoc.log('checkCode2:', ntest, nhide)
 
+    var self = this;
     function checkCodeAux(testCode, expectOutput, dispOutput, cumScore, index, score, stdout, stderr) {
 	Slidoc.log('checkCodeAux:', 'index='+index, testCode, expectOutput, 'dispout=', dispOutput, cumScore, score, 'out=', stdout, 'err=', stderr);
 	if (index) {
@@ -183,13 +185,13 @@ function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, c
 		if (stderr) {
 		    Slidoc.log('checkCodeAux: Error in solution', stderr);
 		    if (Slidoc.PluginManager.previewStatus())
-			dispOutput += renderCode(stderr, ERROR_PREFIX);
-		    return callback({name:pluginName, score:cumScore, invalid:'Error in solution', output:dispOutput, tests:Math.max(0,index-1)});
+			dispOutput += self.renderCode(stderr, self.ERROR_PREFIX);
+		    return callback({name:self.name, score:cumScore, invalid:'Error in solution', output:dispOutput, tests:Math.max(0,index-1)});
 		}
 		stdout = stdout.trim();
 		if (!stdout) {
 		    Slidoc.log('checkCodeAux: Error: No solution output');
-		    return callback({name:pluginName, score:cumScore, invalid:'No solution output', output:dispOutput, tests:Math.max(0,index-1)});
+		    return callback({name:self.name, score:cumScore, invalid:'No solution output', output:dispOutput, tests:Math.max(0,index-1)});
 		}
 		// Note: index not incremented; stdout contains expectOutput
 		return checkCodeAux2(user_code, testCode, stdout, dispOutput, cumScore, index);
@@ -201,33 +203,34 @@ function checkCode(pluginName, slide_id, question_attrs, user_code, checkOnly, c
 	    if (stderr) {
 		Slidoc.log('checkCodeAux: Error', stderr);
 		if (!hiddenTest || Slidoc.PluginManager.previewStatus())
-		    dispOutput += renderCode(stderr, ERROR_PREFIX);
-		return callback({name:pluginName, score:cumScore, invalid:'Error in test '+index, output:dispOutput, tests:Math.max(0,index-1)});
+		    dispOutput += self.renderCode(stderr, self.ERROR_PREFIX);
+		return callback({name:self.name, score:cumScore, invalid:'Error in test '+index, output:dispOutput, tests:Math.max(0,index-1)});
 	    }
 
 	    if (!hiddenTest || Slidoc.PluginManager.previewStatus()) {
 		// Do not display actual hidden test output (to avoid leaking test details)
-		dispOutput += renderCode(testCode.trim(), INPUT_PREFIX);
-		dispOutput += renderCode(stdout.trim(), OUTPUT_PREFIX);
-		dispOutput += renderCode(expectOutput.trim(), EXPECT_PREFIX, 'slidoc-code-expect');
+		dispOutput += self.renderCode(testCode.trim(), self.INPUT_PREFIX);
+		dispOutput += self.renderCode(stdout.trim(), self.OUTPUT_PREFIX);
+		dispOutput += self.renderCode(expectOutput.trim(), self.EXPECT_PREFIX, self.pluginLabel+'-expect');
 	    }
 
-	    dispOutput += renderCode((hiddenTest?'Hidden check ':'Check ')+index+': '+((score === 1) ? 'Succeeded' : 'Failed'), '', 'slidoc-code-check')+'\n';
+	    dispOutput += self.renderCode((hiddenTest?'Hidden check ':'Check ')+index+': '+((score === 1) ? 'Succeeded' : 'Failed'), '',
+				     self.pluginLabel+'-check '+self.pluginLabel+'-code-'+((score === 1) ? 'succeeded':'failed')+'\n');
 
 	    cumScore += score || 0;
 
 	    if (index >= ntest) // All checks completed
-		return callback({name:pluginName, score:(cumScore/ntest), invalid:'', output:dispOutput, tests:ntest});
+		return callback({name:self.name, score:(cumScore/ntest), invalid:'', output:dispOutput, tests:ntest});
 	}
 
 	// Execute next test
-	var testCode = getCellText(pluginName, slide_id, 'test', question_attrs.test[index], index);
+	var testCode = getCellText(self.name, slide_id, 'test', question_attrs.test[index], index);
 	    
 	if (solutionCode)  // Compute expected output
 	    return checkCodeAux2(solutionCode, testCode, '', dispOutput, cumScore, index+1, true);
 	
 	// New expect output
-	expectOutput = getCellText(pluginName, slide_id, 'output', question_attrs.output ? question_attrs.output[index] : null, index);
+	expectOutput = getCellText(self.name, slide_id, 'output', question_attrs.output ? question_attrs.output[index] : null, index);
 	    
 	return checkCodeAux2(user_code, testCode, expectOutput, dispOutput, cumScore, index+1);
     }
@@ -390,6 +393,18 @@ function execCodeErr(callback, err) {
 }
 
 .%(pluginLabel)s-output { font-size: 0.7em; }
+
+.%(pluginLabel)s-code-plain { }
+.%(pluginLabel)s-code-status { }
+
+.%(pluginLabel)s-code-input { background-color: #e9e9e9;}
+.%(pluginLabel)s-code-input + code { background-color: #e9e9e9;}
+.%(pluginLabel)s-code-expect { opacity: 0.7; }
+.%(pluginLabel)s-code-invalid { color: red; }
+.%(pluginLabel)s-code-error { color: red; }
+
+.%(pluginLabel)s-code-succeeded { color: forestgreen; }
+.%(pluginLabel)s-code-failed { color: red; }
 </style>
 
 BODY:

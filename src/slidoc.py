@@ -533,7 +533,7 @@ class MathInlineLexer(mistune.InlineLexer):
                 if link.startswith('#:'):
                     # Numbered reference
                     if ref_id in Global.ref_tracker:
-                        num_label, _, ref_class = Global.ref_tracker[ref_id]
+                        num_label, _, ref_class, _ = Global.ref_tracker[ref_id]
                         classes.append(ref_class)
                     else:
                         num_label = '_MISSING_SLIDOC_REF_NUM(#%s)' % ref_id
@@ -880,7 +880,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_forward_links.append(ref_id)
 
     def add_ref_link(self, ref_id, num_label, key, ref_class):
-        Global.ref_tracker[ref_id] = (num_label, key, ref_class)
+        Global.ref_tracker[ref_id] = (num_label, key, ref_class, '%s#%s' % (self.options["filename"],self.slide_number) )
         if ref_id in self.qforward:
             last_qno = len(self.cum_weights)  # cum_weights are only appended at end of slide
             for qno in self.qforward.pop(ref_id):
@@ -1371,7 +1371,7 @@ class SlidocRenderer(MathRenderer):
         if ref_id in Global.ref_tracker:
             if ref_id not in Global.dup_ref_tracker:
                 Global.dup_ref_tracker.add(ref_id)
-                message('    ****REF-WARNING: %s: Duplicate reference #%s in slide %s' % (self.options["filename"], header_ref, self.slide_number))
+                message('    ****REF-WARNING: %s: Duplicate reference #%s in slide %s (also in %s)' % (self.options["filename"], header_ref, self.slide_number, Global.ref_tracker[ref_id][-1]))
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
@@ -3720,7 +3720,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     elif iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
                         # Preview and user views
                         entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (may be blank)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str, site_prefix, orig_fnames[ifile], 'release')
+                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (leave blank for immediate release)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str, site_prefix, orig_fnames[ifile], 'release')
                     else:
                         # View and user views
                         doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view', orig_fnames[ifile], 'user views', doc_str)

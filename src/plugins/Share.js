@@ -141,8 +141,16 @@ Share = {
 
     responseCallback: function (display, result, retStatus) {
 	Slidoc.log('Slidoc.Plugins.Share.responseCallback:', display, result, retStatus);
-	if (!result || !retStatus)
+	if (!result && !retStatus)
 	    return;
+	if (retStatus.error) {
+	    var err_match = retStatus.error.match(/^Error:(\w*):(.*)$/);
+	    if (err_match)
+		alert(err_match[2]);
+	    else
+		alert(retStatus.error);
+	    return;
+	}
 	var prefix = 'q'+this.qattributes.qnumber+'_';
 	var responseHeader = prefix + 'response';
 	var explainHeader = prefix + 'explain';
