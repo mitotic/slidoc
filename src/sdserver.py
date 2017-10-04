@@ -1828,11 +1828,11 @@ class ActionHandler(BaseHandler):
                 if not selectedDay:
                     selectedDay = sliauth.print_date()
                 else:
-                    match = re.match(r'^(\d+)([a-z][a-z][a-z])(\d+)$', selectedDay)
+                    match = re.match(r'^(\d\d\d\d)-(\d+)-(\d+)$', selectedDay)
                     if not match:
-                        self.displayMessage('Invalid attendance date "%s"; must be of the form "12sep17"' % selectedDay, back_url=site_prefix+'/_attend')
+                        self.displayMessage('Invalid attendance date "%s"; must be of the form "yyyy-mm-dd"' % selectedDay, back_url=site_prefix+'/_attend')
                         return
-                    selectedDay = '%02d%s%02d' % (int(match.group(1)), match.group(2), int(match.group(3)))
+                    selectedDay = '%04d-%02d-%02d' % (int(match.group(1)), int(match.group(2)), int(match.group(3)))
                 try:
                     attendanceInfo = sdproxy.getAttendance(selectedDay, new=True)
                     attendanceDays = sdproxy.getAttendanceDays()
@@ -2531,8 +2531,8 @@ class ActionHandler(BaseHandler):
         rolloverParams = self.previewState['rollover']
 
         if self.previewState['modify_session']:
-            # Being conservative in incrementing session version to avoid client reloads; increment only if "modifying" session
-            WSHandler.getSessionVersion(sessionName, increment=True)
+            # Being conservative in updating session version to avoid client reloads; update only if "modifying" session
+            WSHandler.getSessionVersion(sessionName, update=True)
 
         # Success. Revert to saved version of preview (discarding any navigation/answer info); this may trigger proxy updates
         self.previewClear(saved_version=True)   
@@ -2876,6 +2876,9 @@ class ActionHandler(BaseHandler):
 
         if slidocOptions:
             lines = ['<!--slidoc-options ' + slidocOptions + ' -->'] + lines
+
+        if Options['debug']:
+            print >> sys.stderr, 'ActionHandler:releaseModule', releaseDate, sessionName, lines[0] if lines else ''
 
         sessionText = '\n'.join(lines) + ('\n' if lines else '')
 
@@ -3514,18 +3517,20 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
 
     @classmethod
-    def getSessionVersion(cls, sessionName, increment=False):
+    def getSessionVersion(cls, sessionName, update=False):
+        # TODO: Integrate this with separate session versioning in sessions_slidoc
         if not sessionName:
-            return 0
+            return ''
         
-        return 1  # ABC: Disable session versioning for now
+        if not options.session_versioning:
+            return 'noversioning'
 
         if sessionName not in cls._sessionVersions:
             cls._sessionVersions[sessionName] = random.randint(100000,999999)*1000
-        elif increment:
+        elif update:
             cls._sessionVersions[sessionName] += 1
 
-        return cls._sessionVersions[sessionName]
+        return str(cls._sessionVersions[sessionName])
 
     @classmethod
     def closeSessionConnections(cls, sessionName):
@@ -3722,7 +3727,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
         self.eventFlusher.start()
 
-        self.write_message(json.dumps([0, 'session_version', [self.sessionVersion] ]))
+        self.write_message(json.dumps([0, 'session_setup', [self.sessionVersion] ]))
 
     def on_close(self):
         if Options['debug']:
@@ -5507,12 +5512,11 @@ def main():
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
     define("no_auth", default=False, help="No authentication mode (for testing)")
-    define("noreload", default=False, help="Disable autoreload mode (for updates)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
     define("proxy_sheet", default=False, help="Use proxy to communicate with Google Sheet")
-    define("public", default=Options["public"], help="Public web site (no login required, except for _private/_restricted)")
+    define("public", default=Options["public"], help="Public web site (no login required for home page etc., except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
@@ -5522,6 +5526,7 @@ def main():
     define("site_label", default='', help="Site label")
     define("site_title", default='', help="Site title")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
+    define("session_versioning", default=True, help="Session versioning on proxy server, with version updated after modifications (default: True)")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
     define("source_dir", default=Options["source_dir"], help="Path to source files directory (required for edit/upload)")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
@@ -5541,9 +5546,6 @@ def main():
         if not key.startswith('_') and hasattr(options, key):
             # Command line overrides settings
             Options[key] = getattr(options, key)
-
-    if getattr(options, 'noreload'):   # Overrides any config reload option
-        Options['reload'] = False
 
     if len(Options['roster_columns'].split(',')) != 6:
         sys.exit('Must specify --roster_columns=lastname_col,firstname_col,midname_col,id_col,email_col,altid_col')
@@ -5585,6 +5587,8 @@ def main():
 
     if sliauth.RESTRICTED_SESSIONS_RE:
         print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
+
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(options, x))
 
     if options.start_delay:
         print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay

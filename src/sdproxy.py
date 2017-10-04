@@ -3841,14 +3841,14 @@ def getRosterValues(idVal, delete=False):
     return oldValues
 
 def getAttendanceDays():
-    # Return list of attendance days [ddMONyy, ...]
+    # Return list of attendance days ['yyyy-mm-dd', ...]
     rosterSheet = getSheet(ROSTER_SHEET)
     if not rosterSheet:
         return []
     return [header[len(DAY_PREFIX):] for header in rosterSheet.getHeaders() if header.startswith(DAY_PREFIX)]
 
 def getAttendance(day, new=False):
-    # Return list [ [name, userid, 1/0/''], ... ] for column _day_ddMONyy
+    # Return list [ [name, userid, 1/0/''], ... ] for column _day_yyyy-mm-dd
     rosterSheet = getSheet(ROSTER_SHEET)
     if not rosterSheet:
         return None

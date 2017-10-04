@@ -69,7 +69,7 @@ document.onreadystatechange = function(event) {
 	return;
     var dateElems = document.getElementsByClassName("dateinput");
     for (var j=0; j<dateElems.length; j++)
-        dateElems[j].value = (new Date()).toISOString().slice(0,11)+'23:59';
+        dateElems[j].value = localISOString(true)+'T23:59';
 
     if (location.search == "?reload=1") {
         var refreshElem = document.getElementById('autorefresh');

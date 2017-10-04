@@ -1188,8 +1188,12 @@ Slidoc.confirmLoad = function(path, msg) {
 
 Slidoc.dateLoad = function(prompt, loadPath) {
     var html = escapeHtml(prompt) + ' <input id="slidoc-dateload" type="datetime-local" value="">\n';
+    html += '<span class="slidoc-clickable" onclick="document.getElementById('+"'slidoc-dateload'"+').value='+"''"+';">Blank</span>\n';
     html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.dateLoadAux('+"'"+loadPath+"'"+');">Confirm</span>';
     Slidoc.showPopup(html);
+    var dateElem = document.getElementById('slidoc-dateload');
+    if (dateElem)
+	dateElem.value = Slidoc.toLocalISOString(null, true) + 'T00:00';
 }
 
 Slidoc.dateLoadAux = function(loadPath) {
@@ -1998,6 +2002,13 @@ Slidoc.exitFullscreen = function() {
   }
 }
 
+
+Slidoc.toLocalISOString = function (dateObj, dateOnly) {
+    var date = dateObj || (new Date());
+    date.setTime( date.getTime() - date.getTimezoneOffset()*60*1000 );
+    return dateOnly ? date.toISOString().slice(0,10) : date.toISOString().slice(0,16);
+}
+
 Slidoc.makeShortNames = function (nameMap, first) {
     // Make short versions of names from dict of the form {id: 'Last, First ...', ...}
     // If first, use first name as prefix, rather than last name
@@ -2342,6 +2353,7 @@ Slidoc.viewHelp = function () {
 
     html += '<table class="slidoc-slide-help-table">';
     html += formatHelp('Navigating documents', docsPrefix+'/NavigationHelp.html');
+    html += formatHelp('Randomized exams', docsPrefix+'/RandomizedExams.html');
     html += '</table>';
     Slidoc.showPopup(html);
 }
@@ -6808,7 +6820,7 @@ Slidoc.releaseGrades = function () {
 	return;
     
     var updates = {id: Sliobj.sessionName, gradeDate: new Date()};
-    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback.bind(null, updates.gradeDate.toISOString()));
+    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback.bind(null, Slidoc.toLocalISOString(updates.gradeDate) ));
 }
 
 function releaseGradesCallback(gradeDateStr, result, retStatus){

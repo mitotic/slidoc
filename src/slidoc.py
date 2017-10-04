@@ -3312,7 +3312,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
             if not file_config.publish and restricted_sessions_re and restricted_sessions_re.search(fname):
                 if not release_date_str:
-                    abort('RESTRICTED-ERROR: Must specify release date to create restricted session %s' % fname)
+                    abort('RESTRICTED-ERROR: Must specify an actual release date to create restricted session %s' % fname)
                 if return_html and release_date_obj:
                     if not start_date_obj:
                         abort('RESTRICTED-ERROR: Must specify site start date to create restricted session %s' % fname)
@@ -3720,7 +3720,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     elif iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
                         # Preview and user views
                         entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (leave blank for immediate release)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str, site_prefix, orig_fnames[ifile], 'release')
+                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (set to blank for indefinite release)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'user views', doc_str, site_prefix, orig_fnames[ifile], 'release')
                     else:
                         # View and user views
                         doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view', orig_fnames[ifile], 'user views', doc_str)

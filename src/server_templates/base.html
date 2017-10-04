@@ -38,4 +38,12 @@ tr.evenrow { background-color: lightgray; }
 .red span {color: red ;}
 </style>
 
+<script>
+function localISOString(dateOnly) {
+    var date = new Date();
+    date.setTime( date.getTime() - date.getTimezoneOffset()*60*1000 );
+    return dateOnly ? date.toISOString().slice(0,10) : date.toISOString().slice(0,16);
+}
+</script>
+
 {% set site_prefix = '/'+site_name if site_name else '' %}

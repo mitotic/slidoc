@@ -82,7 +82,7 @@ GService.handleJSONP = function(callback_index, json_obj) {
 
 var wsock = {};
 
-wsock.sessionVersion = 0;
+wsock.remoteVersion = '';
 
 function initWebsocket() {
     wsock.counter = 0;
@@ -139,11 +139,11 @@ GService.openWebsocket = function (wsPath) {
 
 	if (!callback_index) {
 	    try {
-		if (callback_method == 'session_version') {
-		    if (wsock.sessionVersion && wsock.sessionVersion != callback_args[0]) {
+		if (callback_method == 'session_setup') {
+		    if (wsock.remoteVersion && wsock.remoteVersion != callback_args[0]) {
 			GService.closeWS('Session version is out of date. Please reload ('+callback_args[0]+')', 'Please reload page to access latest session');
 		    } else {
-			wsock.sessionVersion = callback_args[0];
+			wsock.remoteVersion = callback_args[0];
 
 			// Flush message buffer
 			while (wsock.buffer.length > 0)
@@ -198,7 +198,7 @@ GService.closeWS = function (closeMsg, dispMsg) {
 
 GService.stringifyWS = function (message) {
     if (Array.isArray(message)) // Pre-pend session version
-	return JSON.stringify( [wsock.sessionVersion].concat(message) );
+	return JSON.stringify( [wsock.remoteVersion].concat(message) );
     else
 	return message;
 }

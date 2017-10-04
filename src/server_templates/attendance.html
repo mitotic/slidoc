@@ -10,6 +10,14 @@ td { padding: 8px; }
 </style>
 
 <script>
+document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+	return;
+    var dateElems = document.getElementsByClassName("dateinput");
+    for (var j=0; j<dateElems.length; j++)
+        dateElems[j].value = localISOString(true);
+}
+
 function get(elem, url) {
     console.log("get", elem, elem.dataset.name, elem.dataset.present, url);
     {% if not recent %}
@@ -44,8 +52,8 @@ function get(elem, url) {
 
   <form action="/{{site_name}}{% if site_name %}/{% end %}_attend" method="post" enctype="multipart/form-data">
     <fieldset>
-    <label>New record date: <input type="text"  name="newday"></label>
-    <input id="slidoc-attendance-submit" type="submit" value="Create"> (Enter date as <code>ddmmmyy</code>, e.g., <code>29sep17</code>; leave blank for today)
+    <label>New date (yyyy/mm/dd): <input class="dateinput" type="date" name="newday"></label>
+    <input id="slidoc-attendance-submit" type="submit" value="Create">
    </fieldset>
    {% module xsrf_form_html() %}
    <p></p>
