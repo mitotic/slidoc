@@ -5,6 +5,16 @@
 
 {% include "base.html" %}
 
+<script>
+ document.onreadystatechange = function(event) {
+    if (document.readyState != "interactive" || !document.body)
+	return;
+    var dateElem = document.getElementById("submitdate");
+    if (dateElem)
+        dateElem.value = localISOString();
+}
+</script>
+
 </head>
 <body>
 

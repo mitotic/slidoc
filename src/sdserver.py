@@ -1458,8 +1458,12 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
             token = sliauth.gen_locked_token(Options['auth_key'], userId, Options['site_name'], sessionName)
-            img_data_uri = sliauth.gen_qr_code( '%s:%s' % (userId, token))
-            self.displayMessage('<h3>Lock code for user %s, session "%s"</h3><img class="slidoc-lockcode" src="%s">' % (userId, sessionName, img_data_uri) )
+            accessCode = '%s:%s' % (userId, token)
+            accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], accessCode)
+            if Options['debug']:
+                print >> sys.stderr, 'DEBUG: locked access URL', accessURL
+            img_data_uri = sliauth.gen_qr_code(accessCode)
+            self.displayMessage('<h3>Access code for user %s, session "%s"</h3><a href="%s" target="_blank"><b>Click or copy this link for locked access</b></a><br><img class="slidoc-lockcode" src="%s">' % (userId, sessionName, accessURL, img_data_uri) )
             return
 
         elif action == '_submit':
@@ -2423,34 +2427,32 @@ class ActionHandler(BaseHandler):
         else:
             raise tornado.web.HTTPError(404)
 
-    def extractFolder(self, zfile, dirpath, folder='', clear=False):
-        # Extract only files in a folder
-        # If folder, rename folder
-        # If clear, clear old files in folder
+    def extractFolder(self, zfile, dirpath, folder, clear=False):
+        # Extract all folder files in zfile to a single folder named dirpath/folder
+        # If clear, clear old files in dirpath/folder
         renameFolder = False
         extractList = []
         for name in zfile.namelist():
-            if '/' not in name:
+            if '/' not in name or name.endswith('/'):
                 continue
+            # File in folder
             extractList.append(name)
-            if folder and not name.startswith(folder+'/'):
+            if not name.startswith(folder+'/'):
                 renameFolder = True
 
         if not extractList:
             return
 
-        if clear:
-            clearpath = folder
-            if dirpath:
-                clearpath = os.path.join(dirpath, clearpath)
-            if clearpath:
-                if not os.path.exists(clearpath):
-                    os.makedirs(clearpath)
-                else:
-                    for fname in os.listdir(clearpath):
-                        fpath = os.path.join(clearpath, fname)
-                        if os.path.isfile(fpath):
-                            os.remove(fpath)
+        folderpath = folder
+        if dirpath:
+            folderpath = os.path.join(dirpath, folderpath)
+        if not os.path.exists(folderpath):
+            os.makedirs(folderpath)
+        elif clear:
+            for fname in os.listdir(folderpath):
+                fpath = os.path.join(folderpath, fname)
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
 
         if not renameFolder:
             zfile.extractall(dirpath, extractList)
@@ -2495,7 +2497,7 @@ class ActionHandler(BaseHandler):
                 f.write(self.previewState['md'])
 
             if self.previewState['image_zipfile'] and self.previewState['modimages']:
-                self.extractFolder(self.previewState['image_zipfile'], src_dir, folder=self.previewState['image_dir'],
+                self.extractFolder(self.previewState['image_zipfile'], src_dir, self.previewState['image_dir'],
                                    clear=(self.previewState['modimages'] == 'clear'))
 
         except Exception, excp:
@@ -2518,7 +2520,7 @@ class ActionHandler(BaseHandler):
                     f.write(self.previewState['TOC'])
 
             if self.previewState['image_zipfile']:
-                self.extractFolder(self.previewState['image_zipfile'], web_dir, folder=self.previewState['image_dir'])
+                self.extractFolder(self.previewState['image_zipfile'], web_dir, self.previewState['image_dir'])
 
         except Exception, excp:
             if Options['debug']:

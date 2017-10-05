@@ -990,9 +990,9 @@ class SlidocRenderer(MathRenderer):
         html += '''    <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button>''' % (slide_id, slide_id)
         html += '''    <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id)
         html += '''  </div><div>\n'''
-        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update" onclick="Slidoc.slideEdit('insert', '%s');">Insert image</button>\n''' % (slide_id, slide_id)
-        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
-        html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-insert" class="slidoc-edit-update" onclick="Slidoc.slideEdit('insert', '%s');">Insert image</button>\n''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update slidoc-nopreview" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update slidoc-nopreview" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
         html += '''  </div>\n'''
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img" style="display: none;">''' % (slide_id,)

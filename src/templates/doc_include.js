@@ -363,7 +363,7 @@ function sessionAbort(err_msg, err_trace) {
 	    location.href = Slidoc.logoutURL;
     }
 
-    document.body.innerHTML = '<a href="/">Home</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
+    document.body.innerHTML = '<a href="/">Main</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
 }
 
 function loadPath(newPath, newHash) {  // newHash, if specified, should include '#' prefix
@@ -614,7 +614,7 @@ function onreadystateaux() {
 }
 
 Sliobj.previewState = false;
-Sliobj.previewModified = '';
+Sliobj.previewModified = 0;
 Sliobj.updateView = false;
 Sliobj.imageDropSetup = false;
 
@@ -641,9 +641,9 @@ Slidoc.pageSetup = function() {
 	previewMessages(true);
 	if (!Sliobj.params.fileName)
 	    toggleClass(true, 'slidoc-preview-view');
-	Sliobj.previewModified = getParameter('modified');
+	Sliobj.previewModified = parseNumber(getParameter('modified')) || 0;
 
-	if (!Sliobj.previewModified || Sliobj.previewModified == '0') {
+	if (!Sliobj.previewModified) {
 	    var acceptButton = document.getElementById('slidoc-preview-accept');
 	    if (acceptButton) acceptButton.style.display = 'none';
 	    var discardButton = document.getElementById('slidoc-preview-discard');
@@ -1327,7 +1327,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	params.sessiontext = editArea.value;
 	Sliobj.origSlideText = null;  // Changes are being saved as preview
 
-	if (action == 'open' || action == 'update' || action == 'insert')
+	if (!Sliobj.previewState && (action == 'open' || action == 'update' || action == 'insert'))
 	    params.update = '1';
 	if (action == 'delete')
 	    params.deleteslide = 'delete';
@@ -1340,7 +1340,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
 	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
 
-	if (action == 'open' || (!checkPreviewWin() && (action == 'update' &&  action == 'insert')) ) {
+	if (!Sliobj.previewState && (action == 'open' || (!checkPreviewWin() && (action == 'update' || action == 'insert')) ) ) {
 	    var winName = Sliobj.params.siteName+'_preview';
 	    if (window.name == winName)
 		winName += '2';
@@ -1384,11 +1384,11 @@ Slidoc.slideEdit = function(action, slideId) {
 
 	    if (action == 'insert') {
 		imageDropState(true, slideId);  // Preview state required for image uploads
-		setTimeout(function(){alert('To insert new images, drag-and-drop them into box below text edit area, then update preview. To overwrite old images, simply drop new image over old image in preview.'); }, 200);
+		setTimeout(function(){alert('To insert new images, drag-and-drop them into box below text edit area'+(Sliobj.previewState?'':', then update preview')+'. To overwrite old images, simply drop new image over old image in preview.'); }, 200);
 	    }
 
 	    if (action == 'open' || action == 'update'|| action == 'insert') {
-		if (checkPreviewWin()) {
+		if (!Sliobj.previewState && checkPreviewWin()) {
                     if (checkPreviewWin() == 'about:blank') {
 			Sliobj.previewWin.location = previewURL;
 		    } else if (!Sliobj.params.fileName || !Sliobj.previewWin.Slidoc) {
@@ -5601,7 +5601,7 @@ Slidoc.pagesDisplay = function() {
 	}
 	html += '</ul>\n'
     } else {
-	html += '<br><a href="/'+Sliobj.params.siteName+'">'+(Sliobj.params.siteName || 'Home')+'</a>\n';
+	html += '<br><a href="/'+Sliobj.params.siteName+'">'+(Sliobj.params.siteName || '&#8962;')+'</a>\n';
     }
     Slidoc.showPopup(html);
 }
@@ -5877,7 +5877,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    // Immediate answer click for choice questions
 	    var ansElem = document.getElementById(slide_id+'-answer-click');
 	    if (ansElem)
-		Slidoc.answerClick(ansElem, slide_id, 'choice');
+		Slidoc.answerClick(ansElem, slide_id, 'choiceclick');
 	}
 	if (Sliobj.session && question_attrs.team == 'setup')
 	    Slidoc.sendEvent(-1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
@@ -5915,7 +5915,7 @@ function forceQuit(force, msg) {
 Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect, pluginResp, qfeedback) {
     // Handle answer types: number, text
     // expect: should only be defined for setup
-    // force: '', 'setup', 'submit, 'finalize', 'controlled', 'choice'
+    // force: '', 'setup', 'submit, 'finalize', 'controlled', 'choiceclick'
     ///Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
@@ -6001,8 +6001,9 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries = 0;   // Only one try for choice response
 	}
-	if (question_attrs.qtype.slice != 'multichoice') {
-	    // Disable choice clicking
+	var allowChoice =  (question_attrs.qtype == 'multichoice') || (force && (force == 'setup' || force == 'choiceclick'));
+	if (!allowChoice || (Sliobj.session && Sliobj.session.submitted)) {
+	    // Disable further choice clicking if submitted or single choice and not setup/choiceclick
 	    for (var i=0; i < choices.length; i++) {
 		choices[i].removeAttribute("onclick");
 		choices[i].classList.remove("slidoc-clickable");
@@ -7359,7 +7360,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
     if (Sliobj.session && Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
-	if (!setupOverride('Enable test user override to skip ahead?')) {
+	if (!Sliobj.previewState && !setupOverride('Enable test user override to skip ahead?')) {
 	    showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	    return false;
 	}

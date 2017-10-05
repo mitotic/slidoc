@@ -28,7 +28,7 @@
   <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}
-        Uploading: <b>{{ upload_type }}{% if regular_session %}{{ '%02d' % int(session_number) }}{% elif upload_type != 'top' %}/index{% end %}</b>
+        Uploading: <b>{{ upload_type }}{% if regular_session %}{{ '%02d' % int(session_number) }}{% elif upload_type not in ('top', 'raw') %}/index{% end %}</b>
         <input type="hidden" name="sessiontype" value="{{ upload_type }}">
         {% if upload_type == 'top' %}
         <input type="hidden" name="topname" value="{{ session_name }}">
