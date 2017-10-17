@@ -960,7 +960,7 @@ Slidoc.accordionView = function(active, show) {
 	return;
 
     if (Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
-	setupOverride('Enable test user override to display all slides?');
+	setupOverride('Enable test user override to display all slides?', Sliobj.previewState);
 
     var allSlides = document.getElementsByClassName('slidoc-slide');
     for (var j=0; j<allSlides.length; j++) {
@@ -3849,12 +3849,12 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
 // Section 14: Session setup
 ///////////////////////////////
 
-function setupOverride(msg) {
+function setupOverride(msg, force) {
     if (getUserId() != Sliobj.params.testUserId)
 	return false;
 
     if (Sliobj.testOverride == null && msg)
-	Sliobj.testOverride = !!window.confirm(msg);
+	Sliobj.testOverride = force || !!window.confirm(msg);
     return Sliobj.testOverride;
 }
 

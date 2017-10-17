@@ -33,7 +33,8 @@ Code = {
 	var textareaElem = document.getElementById(this.pluginId+'-textarea');
 	textareaElem.value = response || '';
 	this.displayInput(response || '');
-	codeResponseCallback.bind(this)(false, null, response, pluginResp);
+	if (pluginResp)
+	    codeResponseCallback.bind(this)(false, null, response, pluginResp);
     },
 
     displayInput: function (inputValue) {

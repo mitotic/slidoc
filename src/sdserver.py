@@ -92,6 +92,8 @@ Options = {
     'debug': False,
     'dry_run': False,
     'dry_run_file_modify': False,  # If true, allow source/web/plugin file mods even for dry run (e.g., local copy)
+    'email_addr': '',
+    'email_url': '',
     'end_date': '',
     'grader_users': '',
     'gsheet_url': '',
@@ -1458,7 +1460,7 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
             token = sliauth.gen_locked_token(Options['auth_key'], userId, Options['site_name'], sessionName)
-            accessCode = '%s:%s' % (userId, token)
+            accessCode = urllib.quote_plus('%s:%s' % (userId, token))
             accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], accessCode)
             if Options['debug']:
                 print >> sys.stderr, 'DEBUG: locked access URL', accessURL
@@ -2440,19 +2442,20 @@ class ActionHandler(BaseHandler):
             if not name.startswith(folder+'/'):
                 renameFolder = True
 
-        if not extractList:
-            return
-
         folderpath = folder
         if dirpath:
             folderpath = os.path.join(dirpath, folderpath)
-        if not os.path.exists(folderpath):
+        if os.path.exists(folderpath):
+            if clear:
+                for fname in os.listdir(folderpath):
+                    fpath = os.path.join(folderpath, fname)
+                    if os.path.isfile(fpath):
+                        os.remove(fpath)
+        elif extractList:
             os.makedirs(folderpath)
-        elif clear:
-            for fname in os.listdir(folderpath):
-                fpath = os.path.join(folderpath, fname)
-                if os.path.isfile(fpath):
-                    os.remove(fpath)
+
+        if not extractList:
+            return
 
         if not renameFolder:
             zfile.extractall(dirpath, extractList)
@@ -2677,7 +2680,7 @@ class ActionHandler(BaseHandler):
                     md_slides = self.previewState['md_slides']
                     new_image_number = self.previewState['new_image_number']
                     if slideNumber > len(md_slides):
-                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid preview slide number %d of %d' % (slideNumber, len(md_slides)) )
                     sessionText = md_slides[slideNumber-1]
 
                 else:
@@ -2719,19 +2722,23 @@ class ActionHandler(BaseHandler):
         deleteSlideNum = 0
         if slideNumber:
             # Editing slide
-            if self.previewState:
+            if self.previewState and self.previewState['modified']:
                 if self.previewState['md_slides'] is None:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Unable to edit individual slides in preview')
                 md_defaults = self.previewState['md_defaults']
                 md_slides = self.previewState['md_slides'][:]  # Shallow copy of slides so as not overwrite any backup copy
                 new_image_number = self.previewState['new_image_number']
             else:
+                if self.previewState and not self.previewState['modified']:
+                    # Clear any unmodified preview
+                    self.previewClear()
+                    
                 md_defaults, md_slides, new_image_number = self.extract_slides(src_path, web_path)
                 if not sameSession:
                     _, _, image_zipdata, _ = self.extract_slide_range(src_path, web_path) # Redundant, but need images
 
             if sameSession and slideNumber > len(md_slides):
-                raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d' % slideNumber)
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d of %d' % (slideNumber, len(md_slides)) )
 
             if not sameSession:
                 # Insert slide from another session
@@ -5503,6 +5510,8 @@ def main():
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("dry_run_file_modify", default=False, help="Allow source/web/plugin file mods even for dry run (e.g., local copy)")
+    define("email_addr", default="", help="Admin notification email address for server errors")
+    define("email_url", default="", help="Google app send email script?to=&subject=&content=")
     define("forward_port", default=0, help="Forward port for default (root) web server with multiproxy, allowing slidoc sites to overlay a regular website, using '_' prefix for admin")
     define("gsheet_url", default="", help="Google sheet URL1;...")
     define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")
@@ -5590,11 +5599,13 @@ def main():
     if sliauth.RESTRICTED_SESSIONS_RE:
         print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
 
-    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(options, x))
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(options, x))
 
     if options.start_delay:
         print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
         time.sleep(options.start_delay)
+    if Options['email_addr']:
+        print >> sys.stderr, 'sdserver: admin email', Options['email_addr']
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_KEY', Options['server_key']
     if plugins:

@@ -84,7 +84,7 @@ COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
                    'admin_users', 'grader_users', 'guest_users']
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
-                    'debug', 'dry_run',
+                    'debug', 'dry_run', 'email_addr', 'email_url',
                     'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
 
 DAY_PREFIX = '_day_'
@@ -195,6 +195,7 @@ def initCache():
     Lock_passthru.clear()
 
     Global.httpRequestId = ''
+    Global.notifiedAdmin = ''
 
     Global.cacheResponseTime = 0
     Global.cacheUpdateTime = sliauth.epoch_ms()
@@ -1288,7 +1289,10 @@ def suspend_cache(action=''):
             endTransactSession(sessionName, noupdate=True)
         schedule_update(synchronous=True)
     elif action:
-        print("Suspended for", action, file=sys.stderr)
+        print('Suspended for', action, file=sys.stderr)
+        if action == 'clear' and Global.cacheUpdateError:
+            print('Cleared cache update error', Global.cacheUpdateError, file=sys.stderr)
+            Global.cacheUpdateError = ''
         schedule_update(force=True)
 
 def shutdown_loop():
@@ -1301,8 +1305,38 @@ def shutdown_loop():
     IOLoop.current().stop()
 
 def sheet_proxy_error(errMsg=''):
-    Global.cacheUpdateError = sliauth.iso_date(nosubsec=True) + ': ' + errMsg
-    print('sheet_proxy_error: '+errMsg, file=sys.stderr)
+    err = sliauth.iso_date(nosubsec=True) + ': ' + errMsg
+    Global.cacheUpdateError = err
+    print('sheet_proxy_error: '+err, file=sys.stderr)
+    url = Settings['server_url']
+    if Settings['site_name']:
+        url += '/' + Settings['site_name']
+    url += '/_cache'
+    notify_admin('[Slidoc-notify] %s %s' % (Settings['site_name'], ' Cache update error'), content=url+'\n\n'+err)
+
+def notify_admin(subject='', content=''):
+    if not Settings['email_addr'] or Global.notifiedAdmin:
+        return
+    Global.notifiedAdmin = subject + ' ' + content
+    try:
+        send_email(Settings['email_addr'], subject=subject, content=content)
+        print('notify_admin:Sent email', subject, content, file=sys.stderr)
+    except Exception, excp:
+        print('notify_admin:Error: ', str(excp), file=sys.stderr)
+
+def send_email(toAddr, subject='', content=''):
+    if not Settings['email_url']:
+        return
+    params = {'to': toAddr, 'subject': subject, 'content': content}
+    url = tornado.httputil.url_concat(Settings['email_url'], params)
+
+    http_client = tornado.httpclient.AsyncHTTPClient()
+
+    def handle_request(response):
+        if response.error:
+            print('send_email:Error: ', response.error, file=sys.stderr)
+
+    http_client.fetch(url, handle_request)
 
 def proxy_error_status():
     return Global.cacheUpdateError
@@ -1327,6 +1361,7 @@ def update_remote_sheets(force=False, synchronous=False):
     # If synchronous, wait for update to complete before returning
     if synchronous and previewingSession():
         sheet_proxy_error('update_remote_sheets: Exit preview session %s before synchronous updates' % previewingSession())
+        return
     try:
         # Need to trap exception because it fails silently otherwise
         return update_remote_sheets_aux(force=force, synchronous=synchronous)
