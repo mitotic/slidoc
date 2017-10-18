@@ -2988,13 +2988,16 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     abort('RELEASE-ERROR: Module %s has release date %s before start date %s' % (fname, tem_release_date_str, start_date_obj) )
                     continue
 
-        if not config.make:
+        if not config.make or config.make == fname:
+            # Not make mode or force single file make; process file
             fnumbers.append(fnumber)
-
-        elif return_html or fname == 'index' or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath)):
+        elif config.make == 'all':
             # Process only accessible and modified input files (if updated using web interface, inpath and outpath may have nearly same mod times)
             # (Always process return_html or index.md file)
-            fnumbers.append(fnumber)
+            if return_html or fname == 'index' or not (os.path.exists(outpath) and os.path.getmtime(outpath) >= os.path.getmtime(inpath)):
+                fnumbers.append(fnumber)
+
+
 
     fprefix = fprefix or ''
     
@@ -4345,7 +4348,7 @@ alt_parser.add_argument('--google_login', metavar='CLIENT_ID,API_KEY', help='cli
 alt_parser.add_argument('--gsheet_url', metavar='URL', help='Google spreadsheet_url (export sessions to Google Docs spreadsheet)')
 alt_parser.add_argument('--indexed', metavar='TOC,INDEX,QINDEX', help='Table_of_contents,concep_index,question_index base filenames, e.g., "toc,ind,qind" (if omitted, all input files are combined, unless pacing)')
 alt_parser.add_argument('--libraries_url', metavar='URL', help='URL for library files; default: %s' % LIBRARIES_URL)
-alt_parser.add_argument('--make', help='Make mode: only process .md files that are newer than corresponding .html files', action="store_true", default=None)
+alt_parser.add_argument('--make', help='=all OR =filename; enable Make mode, i.e., only process .md files that are newer than corresponding .html files')
 alt_parser.add_argument('--modify_sessions', metavar='SESSION1,SESSION2,... OR overwrite OR truncate', help='Module sessions with questions to be modified')
 alt_parser.add_argument('--notebook', help='Create notebook files', action="store_true", default=None)
 alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)

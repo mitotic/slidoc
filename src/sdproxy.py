@@ -166,6 +166,7 @@ Locked_proxy_sheets = set()  # Set of sheets locked on upstream proxy
 Global = Dummy()
 
 Global.remoteVersions = set()
+Global.dryDeletedSheets = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
 
@@ -547,6 +548,10 @@ def downloadSheet(sheetName, backup=False):
     # If backup, retrieve formulas rather than values
     if Global.previewStatus.get('sessionName') == sheetName:
         raise Exception('Cannot download when previewing session '+Global.previewStatus['sessionName'])
+
+    if Settings['dry_run'] and sheetName in Global.dryDeletedSheets:
+        return  {'result': 'success', 'value': []}
+
     user = ADMINUSER_ID
     userToken = gen_proxy_token(user, ADMIN_ROLE)
 
@@ -580,6 +585,9 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
+
+    if Settings['dry_run'] and sheetName in Global.dryDeletedSheets:
+        Global.dryDeletedSheets.discard(sheetName)
 
     if sheetName in Sheet_cache and not overwrite:
         raise Exception("Cannote create sheet %s because it is already present in the cache" % sheetName)
@@ -1414,8 +1422,8 @@ def update_remote_sheets_aux(force=False, synchronous=False):
 
     json_data = json.dumps(modRequests, default=sliauth.json_default)
 
-    if Settings['debug']:
-        print("update_remote_sheets_aux: REQUEST %s partial=%s, log=%s, sheets=%s, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], sorted(sheetUpdateInfo.keys()), len(json_data)), file=sys.stderr)
+    ##if Settings['debug']:
+    ##    print("update_remote_sheets_aux: REQUEST %s partial=%s, log=%s, sheets=%s, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], sorted(sheetUpdateInfo.keys()), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
     ##    print("update_remote_sheets_aux: REQUEST2", [(x[0], x[4:]) for x in modRequests], file=sys.stderr)
@@ -1471,8 +1479,8 @@ class ProxyUpdater(object):
         self.cacheRequestTime = curTime
         Global.totalCacheRequestBytes += len(self.json_data)
 
-        if Settings['debug']:
-            print("ProxyUpdater.update: UPDATE requestid=%s, retry=%d" % (Global.httpRequestId, self.cacheRetryCount), file=sys.stderr)
+        ##if Settings['debug']:
+        ##    print("ProxyUpdater.update: UPDATE requestid=%s, retry=%d" % (Global.httpRequestId, self.cacheRetryCount), file=sys.stderr)
 
         if self.synchronous:
             self.handle_proxy_response(self.http_client.fetch(Settings['gsheet_url'], method='POST', headers=None, body=self.body))
@@ -1517,7 +1525,7 @@ class ProxyUpdater(object):
 
             if Settings['debug']:
                 cachedResp = respObj['info'].get('cachedResponse', '') if respObj else ''
-                print("handle_proxy_response_aux: Update RESPONSE", sliauth.iso_date(nosubsec=True), cachedResp, errMsg, respObj, response.body[:256]+'\n', errTrace, file=sys.stderr)
+                ##print("handle_proxy_response_aux: Update RESPONSE", sliauth.iso_date(nosubsec=True), cachedResp, errMsg, respObj, response.body[:256]+'\n', errTrace, file=sys.stderr)
 
         if errMsg or not respObj:
             # Handle update errors
@@ -1577,8 +1585,8 @@ class ProxyUpdater(object):
             Lock_cache[errSessionName] = proxyErrMsg
             print("ProxyUpdater.handle_proxy_response_aux: Update LOCKED %s: %s %s" % (errSessionName, proxyErrMsg, proxyErrTrace), file=sys.stderr)
 
-        if Settings['debug']:
-            print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), file=sys.stderr)
+        ##if Settings['debug']:
+        ##    print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), file=sys.stderr)
 
         next_cache_update(0 if (refreshNeeded or Global.suspended) else Settings['min_wait_sec'])
 
@@ -1837,7 +1845,9 @@ def sheetAction(params, notrace=False):
                 if getSheet(sheetName+'-'+RELATED_SHEETS[j]):
                     delSheet(sheetName+'-'+RELATED_SHEETS[j])
 
-            if Settings['gsheet_url'] and not Settings['dry_run']:
+            if Settings['dry_run']:
+                Global.dryDeletedSheets.add(sheetName)
+            elif Settings['gsheet_url']:
                 user = ADMINUSER_ID
                 userToken = gen_proxy_token(user, ADMIN_ROLE)
                 delParams = {'sheet': sheetName, 'delsheet': '1', 'admin': user, 'token': userToken}

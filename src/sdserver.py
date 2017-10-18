@@ -767,7 +767,7 @@ class ActionHandler(BaseHandler):
     def previewActive(self):
         return self.previewState.get('name', '')
 
-    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', session_name='', image_dir='', no_make=False):
+    def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', session_name='', image_dir='', make=''):
         # Return (cmd_args, default_args) 
         defaultOpts = self.default_opts['base'].copy()
         if uploadType in self.default_opts:
@@ -781,8 +781,8 @@ class ActionHandler(BaseHandler):
         configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
         configOpts.update(self.cmd_opts['base'])
 
-        if not no_make:
-            configOpts['make'] = True
+        if make:
+            configOpts['make'] = make
 
         if uploadType in self.cmd_opts:
             configOpts.update(self.cmd_opts[uploadType])
@@ -913,6 +913,11 @@ class ActionHandler(BaseHandler):
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         dash_url = site_prefix + '/_dash'
         json_return = self.get_argument('json', '')
+        slideNumber = self.get_argument('slide', '')
+        if slideNumber.isdigit():
+            slideNumber = int(slideNumber)
+        else:
+            slideNumber = None
         previewingSession = self.previewActive()
         if not Options['site_list'] or Options['site_number']:
             # Secondary server
@@ -972,12 +977,16 @@ class ActionHandler(BaseHandler):
                 startPreview = self.get_argument('preview', '')
                 if previewingSession:
                     if previewingSession != sessionName:
-                        self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+                        if slideNumber:
+                            self.set_header('Content-Type', 'application/json')
+                            self.write( json.dumps( {'result': 'error', 'error': 'Cannot edit sessions while previewing another session '+previewingSession} ) )
+                        else:
+                            self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
                         return
                     if not self.previewState['modified']:
                         # Clear any unmodified preview
                         self.previewClear()
-                return self.editSession(sessionName, sessionType=sessionType, start=True, startPreview=startPreview)
+                return self.editSession(sessionName, sessionType=sessionType, start=True, slideNumber=slideNumber, startPreview=startPreview)
 
             elif action == '_closepreview':
                 return self.discardPreview(sessionName, modified=modifiedNum)
@@ -1287,7 +1296,7 @@ class ActionHandler(BaseHandler):
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
 
             if action == '_republish':
-                buildMsgs = self.rebuild(uploadType, force=republishForce, log_dict=True)
+                buildMsgs = self.rebuild(uploadType, make='all' if republishForce else '', log_dict=True)
                 # Re-index after complete rebuild
                 indMsgs = self.rebuild(uploadType, indexOnly=True)
             else:
@@ -1302,13 +1311,13 @@ class ActionHandler(BaseHandler):
                 self.redirect("/"+Options['site_name']+"/index.html" if Options['site_number'] else "/index.html")
 
         elif action == '_delete':
-            rebuild = bool(self.get_argument('rebuild',''))
-            errMsgs = self.deleteSession(subsubpath, rebuild=rebuild)
+            reset = bool(self.get_argument('reset',''))
+            errMsgs = self.deleteSession(subsubpath, reset=reset)
             tocPath = getSessionPath(sessionName, site_prefix=True, toc=True)
             if errMsgs and any(errMsgs):
                 self.displayMessage(errMsgs)
-            elif rebuild:
-                self.displayMessage('Rebuilt session '+sessionName, back_url=tocPath)
+            elif reset:
+                self.displayMessage('Reset session '+sessionName, back_url=tocPath)
             else:
                 self.displayMessage('Deleted session '+sessionName, back_url=tocPath)
 
@@ -1473,9 +1482,9 @@ class ActionHandler(BaseHandler):
         else:
             self.displayMessage('Invalid get action: '+action)
 
-    def deleteSession(self, sessionName, rebuild=False):
+    def deleteSession(self, sessionName, reset=False):
         if Options['debug']:
-            print >> sys.stderr, 'DEBUG: deleteSession', Options['site_name'], sessionName, rebuild
+            print >> sys.stderr, 'DEBUG: deleteSession', Options['site_name'], sessionName, reset
         user = sdproxy.ADMINUSER_ID
         userToken = gen_proxy_auth_token(user, sdproxy.ADMIN_ROLE, prefixed=True)
         args = {'sheet': sessionName, 'delsheet': '1', 'admin': user, 'token': userToken}
@@ -1488,8 +1497,8 @@ class ActionHandler(BaseHandler):
 
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
 
-        if rebuild:
-            return self.rebuild(uploadType, force=True)
+        if reset:
+            return self.rebuild(uploadType, make=sessionName)
 
         if sessionName != 'index':
             if os.path.exists(src_path):
@@ -1731,9 +1740,6 @@ class ActionHandler(BaseHandler):
         if action == '_edit':
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to edit')
-            if previewingSession and previewingSession != sessionName:
-                self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
-                return
             sessionType = self.get_argument('sessiontype', '')
             slideNumber = self.get_argument('slide', '')
             newNumber = self.get_argument('move', '')
@@ -1745,6 +1751,14 @@ class ActionHandler(BaseHandler):
                 newNumber = int(newNumber)
             else:
                 newNumber = None
+
+            if previewingSession and previewingSession != sessionName:
+                if slideNumber:
+                    self.set_header('Content-Type', 'application/json')
+                    self.write( json.dumps( {'result': 'error', 'error': 'Cannot edit sessions while previewing another session '+previewingSession} ) )
+                else:
+                    self.displayMessage('Cannot edit sessions while previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
+                return
 
             if self.get_argument('rollover',''):
                 # Close all session websockets (forcing reload)
@@ -2278,7 +2292,7 @@ class ActionHandler(BaseHandler):
             connection.sendEvent(previewPath, '', userRole, ['', 1, 'ReloadPage', [slideNumber]])
 
     def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False,
-                force=False, extraOpts={}):
+                make='', extraOpts={}):
         # If src_path, compile single .md file, returning output
         # Else, compile all files of that type, updating index etc.
         images_zipdict = {}
@@ -2294,7 +2308,7 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Empty session folder '+uploadType)
 
         configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
-                                                       session_name=sessionName, image_dir=image_dir, no_make=force)
+                                                       session_name=sessionName, image_dir=image_dir, make=make)
 
         configOpts.update(extraOpts)
 
@@ -2317,7 +2331,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, force=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, force, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
+            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
 
         return_html = bool(src_path)
 
@@ -2340,7 +2354,7 @@ class ActionHandler(BaseHandler):
             # Normal return
             return {'messages': retval.get('messages', []) if retval else []}
 
-    def rebuild(self, uploadType='', indexOnly=False, force=False, log_dict=False):
+    def rebuild(self, uploadType='', indexOnly=False, make='', log_dict=False):
         if uploadType:
             utypes = [uploadType] if uploadType != TOP_LEVEL else []
         else:
@@ -2352,15 +2366,15 @@ class ActionHandler(BaseHandler):
         msg_dict = {}
         msg_list = []
         if Options['debug'] :
-            print >> sys.stderr, 'sdserver.rebuild:', force, utypes
+            print >> sys.stderr, 'sdserver.rebuild:', make, utypes
         for utype in utypes:
-            retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly, force=force)
+            retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly, make=make)
             msgs = retval.get('messages',[])
             msg_dict[utype] = msgs
             if msgs:
                 msg_list += msgs + ['']
 
-        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=False, force=True)
+        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=False, make='all')
         msgs = retval.get('messages',[])
         msg_dict[TOP_LEVEL] = msgs
         if msgs:
@@ -2646,12 +2660,6 @@ class ActionHandler(BaseHandler):
 
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:editSession: session=%s, type=%s, start=%s, startPreview=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, sessionType, start, startPreview, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
-
-        slideNumber = self.get_argument('slide', '')
-        if slideNumber.isdigit():
-            slideNumber = int(slideNumber)
-        else:
-            slideNumber = None
 
         sessionResponders = 0
         sessionLabel = sessionName
@@ -3353,8 +3361,8 @@ class ProxyHandler(BaseHandler):
             if arg_name != 'prefix':
                 args[arg_name] = self.get_argument(arg_name)
 
-        if Options['debug']:
-            print >> sys.stderr, "DEBUG: Proxyhandler:", self.request.uri, dryProxy, 'sheet=', args.get('sheet'), args.keys(), args.get('actions'), args.get('modify')
+        ##if Options['debug']:
+        ##    print >> sys.stderr, "DEBUG: ProxyHandler:", self.request.uri, dryProxy, 'sheet=', args.get('sheet'), args.keys(), args.get('actions'), args.get('modify')
 
         if dryProxy:
             # Already has site-specific tokens
@@ -3677,8 +3685,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
         # event_name = [plugin.]event_name[.slide_id]
         evTarget, evType, evName, evArgs = args
-        if Options['debug'] and not evName.startswith('Timer.clockTick'):
-            print >> sys.stderr, 'sdserver.sendEvent: event', path, fromUser, fromRole, evType, evName
+        ##if Options['debug'] and not evName.startswith('Timer.clockTick'):
+        ##    print >> sys.stderr, 'sdserver.sendEvent: event', path, fromUser, fromRole, evType, evName
         pathConnections = cls._connections[path]
         for toUser, connections in pathConnections.items():
             if toUser == fromUser:
@@ -5225,7 +5233,7 @@ class UserRoles(object):
                 if userId not in Options['root_users']:
                     Options['root_users'].append(userId)
 
-            print >> sys.stderr, 'USER %s: %s -> %s:%s:' % (user_map, origId, userId, userRole)
+            print >> sys.stderr, 'sdserver: USER %s: %s -> %s:%s:' % (user_map, origId, userId, userRole)
 
         if Options['root_auth_key'] and not admin_user:
             raise Exception('There must be at least one user with admin access')
@@ -5567,8 +5575,17 @@ def main():
     if not options.debug:
         logging.getLogger('tornado.access').disabled = True
 
+    print >> sys.stderr, ''
+    print >> sys.stderr, 'sdserver: Version %s **********************************************' % sliauth.get_version()
+    if options.timezone:
+        os.environ['TZ'] = options.timezone
+        time.tzset()
+        print >> sys.stderr, 'sdserver: Timezone =', options.timezone
+
     if options.auth_users:
         Global.userRoles.update_root_roles(options.auth_users)
+    if Options['email_addr']:
+        print >> sys.stderr, 'sdserver: admin email', Options['email_addr']
 
     Options['ssl_options'] = None
     if options.port % 1000 == 443:
@@ -5589,27 +5606,19 @@ def main():
         plugins.append(pluginName)
         importlib.import_module('plugins.'+pluginName)
 
-    print >> sys.stderr, ''
-    print >> sys.stderr, 'sdserver: Version %s **********************************************' % sliauth.get_version()
-    if options.timezone:
-        os.environ['TZ'] = options.timezone
-        time.tzset()
-        print >> sys.stderr, 'sdserver: Timezone =', options.timezone
-
     if sliauth.RESTRICTED_SESSIONS_RE:
         print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
 
     print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(options, x))
 
-    if options.start_delay:
-        print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
-        time.sleep(options.start_delay)
-    if Options['email_addr']:
-        print >> sys.stderr, 'sdserver: admin email', Options['email_addr']
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_KEY', Options['server_key']
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
+    if options.start_delay:
+        print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
+        time.sleep(options.start_delay)
+    print >> sys.stderr, ''
 
     if options.backup and not Options['site_name']:
         comps = options.backup.split(',')

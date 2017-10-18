@@ -362,8 +362,10 @@ function sessionAbort(err_msg, err_trace) {
 	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
-
-    document.body.innerHTML = '<a href="/">Main</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
+    var html = '<a href="/">Main</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
+    if (Sliobj.previewState)
+	html += '<p></p><a href="'+(Sliobj.params.siteName?'/'+Sliobj.params.siteName:'')+'/_discard?modified='+Sliobj.previewModified+'">Discard preview</a>';
+    document.body.innerHTML = html;
 }
 
 function loadPath(newPath, newHash) {  // newHash, if specified, should include '#' prefix
@@ -1415,7 +1417,8 @@ Slidoc.slideEdit = function(action, slideId) {
 	
 	function slideEditAux(result, errMsg) {
 	    if (!result || !('slideText' in result)) {
-		alert('Error in editing slide :'+errMsg);
+		var altErr = (result && result.error) ? result.error : '';
+		alert('Error in editing slide :'+(errMsg||altErr));
 		return;
 	    }
 	    editContainer.style.display = null;
