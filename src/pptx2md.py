@@ -74,9 +74,10 @@ class PPTXParser(object):
 
         self.prs = pptx.Presentation(filehandle)
 
+        self.filename = os.path.splitext(os.path.basename(filepath))[0] if filepath else ''
         if filepath and not self.nofile:
             self.filedir = os.path.dirname(os.path.realpath(filepath))
-            self.fileprefix = os.path.splitext(os.path.basename(filepath))[0]
+            self.fileprefix = self.filename
             self.file_mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0
         else:
             self.filedir = ''
@@ -100,7 +101,7 @@ class PPTXParser(object):
         self.img_count = 0
         for j, slide in enumerate(self.prs.slides):
             slide_num = j+1
-            full_slide = ('%s/Slide%02d' if nslides >= 10 else '%s/Slide%d') % (self.fileprefix, slide_num)
+            full_slide = ('%s/Slide%02d' if nslides >= 10 else '%s/Slide%d') % (self.filename, slide_num)
             slide_images = []
             slide_text = ''
             shape_list = [(shape.top, shape) for shape in slide.shapes]
@@ -250,14 +251,16 @@ class PPTXParser(object):
                             img_params = "'height=%d'" % iheight
                         img_path = self.slide_image_path(full_slide)
                         img_ref = self.copy_image(image_num, self.read_file(img_path), img_params=img_params, img_name=img_name, img_path=img_path)
-                    else:
+                    elif image_num <= len(slide_images):
                         # Embedded image: ![image1]()
                         slide_image = slide_images[image_num-1]
                         iheight = self.compute_img_height(slide_image['width'], slide_image['height'], self.img_height/max(1,len(slide_images)))
                         if not img_params:
                             img_params = "'height=%d'" % iheight
                         img_ref = self.copy_image(image_num, slide_image['blob'], img_params=img_params, img_name=img_name, img_ext=slide_image['ext'])
-
+                    else:
+                        img_ref = 'Missing/annotated image%d(%s)' % (image_num, img_name or '')
+                        print('pptx2md: Error: ![image%d]() in slide %d exceeds available image count of %d. Only raw images are recognized in slides. Remove any annotation and re-paste raw image.' % (image_num, slide_num, len(slide_images)), file=sys.stderr)
                     md_lines.append('\n'+img_ref+'\n\n')
                 else:
                     # Not image
@@ -349,7 +352,7 @@ class PPTXParser(object):
         if not ipath:
             raise Exception('pptx2md: Slide image file '+image_file+'/'.join(extensions)+' not found! Please export slideshow as images')
 
-        if os.path.getmtime(ipath) < self.file_mtime:
+        if not self.slide_zip_file and os.path.getmtime(ipath) < self.file_mtime:
             raise Exception('pptx2md: Slide image file '+ipath+' older than slide file! Please re-export slideshow as images')
 
         return ipath

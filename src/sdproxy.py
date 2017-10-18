@@ -2401,7 +2401,7 @@ def sheetAction(params, notrace=False):
             newRow = (not userRow)
 
             if (readOnlyAccess or adminUser) and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
-                raise Exception("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'")
+                raise Exception("Error:ADMIN_NEW_ROW:Admin user not allowed to create new row in sheet '"+sheetName+"'")
 
             retakesCol = columnIndex.get('retakes')
             if resetRow:

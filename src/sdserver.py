@@ -1014,7 +1014,7 @@ class ActionHandler(BaseHandler):
             self.write('<h3>Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard?modified=-1">Discard</a></h3>' % (previewingSession, site_prefix, site_prefix))
             return
 
-        if action not in ('_dash', '_actions', '_addtype', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock'):
+        if action not in ('_dash', '_actions', '_addtype', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock', '_interactcode'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
@@ -1475,6 +1475,12 @@ class ActionHandler(BaseHandler):
                 print >> sys.stderr, 'DEBUG: locked access URL', accessURL
             img_data_uri = sliauth.gen_qr_code(accessCode)
             self.displayMessage('<h3>Access code for user %s, session "%s"</h3><a href="%s" target="_blank"><b>Click or copy this link for locked access</b></a><br><img class="slidoc-lockcode" src="%s">' % (userId, sessionName, accessURL, img_data_uri) )
+            return
+
+        elif action == '_interactcode':
+            interactURL = '%s%s/send' % (Options['server_url'], site_prefix)
+            img_data_uri = sliauth.gen_qr_code(interactURL)
+            self.displayMessage('<h3>To interact, type URL or scan code</h3><h2>%s</h2><img class="slidoc-lockcode" src="%s">' % (interactURL, img_data_uri) )
             return
 
         elif action == '_submit':
@@ -1950,7 +1956,7 @@ class ActionHandler(BaseHandler):
                     if 'upload1' in self.request.files:
                         fileinfo1 = self.request.files['upload1'][0]
                         fname1 = fileinfo1['filename']
-                        fbody1 = sliauth.normalize_newlines(fileinfo1['body'])
+                        fbody1 = fileinfo1['body']
 
                     if 'upload2' in self.request.files:
                         fileinfo2 = self.request.files['upload2'][0]
@@ -1993,6 +1999,8 @@ class ActionHandler(BaseHandler):
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 
                 try:
+                    if fbody1 and (fname1.endswith('.csv') or fname1.endswith('.md')):
+                        fbody1 = sliauth.normalize_newlines(fbody1)
                     errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify, create=sessionCreate, modimages='clear')
                 except Exception, excp:
                     if Options['debug']:
@@ -2129,9 +2137,9 @@ class ActionHandler(BaseHandler):
             if not zfile:
                 return 'Error: Must provide .md/.pptx file for upload'
             # Extract Markdown file from zip archive
-            topNames = [name for name in zfile.namelist() if '/' not in name and name.endswith('.md')]
+            topNames = [name for name in zfile.namelist() if '/' not in name and (name.endswith('.md') or name.endswith('.pptx'))]
             if len(topNames) != 1:
-                return 'Error: Expecting single .md file in zip archive'
+                return 'Error: Expecting single .md/.pptx file in zip archive'
             fname1 = topNames[0]
             fbody1 = zfile.read(fname1)
 
@@ -3459,10 +3467,13 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     @classmethod
     def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None, rollbackOption=None):
+        if Options['debug']:
+            print >> sys.stderr, 'sdserver.setupInteractive:', path, action, cls._interactiveSession
+
         interactiveSession = UserIdMixin.get_path_base(cls._interactiveSession[1]) if cls._interactiveSession[1] else ''
         basePath = UserIdMixin.get_path_base(path) if path else ''
         if action == 'start':
-            if interactiveSession:
+            if interactiveSession and interactiveSession != basePath:
                 raise Exception('There is already an interactive session: '+interactiveSession)
             if not basePath:
                 return
@@ -3476,7 +3487,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 return
             cls._interactiveSession = (None, '', '', None)
             cls._interactiveErrors = {}
-            if transactionalSession(interactiveSession):
+            if sdproxy.transactionalSession(interactiveSession):
                 if action == 'rollback':
                     sdproxy.rollbackTransactSession(interactiveSession)
                 else:
@@ -3485,12 +3496,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         elif action == 'answered':
             if not interactiveSession:
                 return
-            if transactionalSession(interactiveSession):
+            if sdproxy.transactionalSession(interactiveSession):
                 sdproxy.endTransactSession(interactiveSession)
                 sdproxy.startTransactSession(interactiveSession)
-
-        if Options['debug']:
-            print >> sys.stderr, 'sdserver.setupInteractive:', action, cls._interactiveSession
 
     @classmethod
     def closeConnections(cls, path, userIdList, excludeId=None):
@@ -3557,7 +3565,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 connection.close()
 
     @classmethod
-    def processMessage(cls, fromUser, fromRole, fromName, message, allStatus=False, source=''):
+    def processMessage(cls, fromUser, fromRole, fromName, message, allStatus=False, source='', adminBroadcast=False):
         # Return null string on success or error message
         print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromRole, fromName, message
 
@@ -3589,6 +3597,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if Options['debug']:
                 print >> sys.stderr, 'sdserver.processMessage:', msg
             return msg if allStatus else ''
+
+        if adminBroadcast and source in ('twitter', 'interact'):
+            interactiveMsg = {'sender': fromUser, 'name': fromName, 'text': message}
+            sessionPath = getSessionPath(sessionName, site_prefix=True)
+            for connId, connections in session_connections.items():
+                if connections.sd_role == sdproxy.ADMIN_ROLE:
+                    for connection in connections:
+                        connection.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, ['', -1, 'InteractiveMessage', [interactiveMsg]])
 
         # Close any active connections associated with user for interactive session
         for connection in session_connections.get(fromUser,[]):
@@ -4275,7 +4291,7 @@ class AuthMessageHandler(BaseHandler):
     def post(self, subpath=''):
         try:
             userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
-            msg = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), self.get_argument("message", ""), allStatus=True, source='interact')
+            msg = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), self.get_argument("message", ""), allStatus=True, source='interact', adminBroadcast=True)
             if not msg:
                 msg = 'Previous message accepted'
         except Exception, excp:
@@ -4595,8 +4611,8 @@ def createApplication():
                       (pathPrefix+r"/(_proxy)", ProxyHandler),
                       (pathPrefix+r"/(_dryproxy)", ProxyHandler),
                       (pathPrefix+r"/_websocket/(.*)", WSHandler),
-                      (pathPrefix+r"/interact", AuthMessageHandler),
-                      (pathPrefix+r"/interact/(.*)", AuthMessageHandler),
+                      (pathPrefix+r"/send", AuthMessageHandler),
+                      (pathPrefix+r"/send/(.*)", AuthMessageHandler),
                       (pathPrefix+r"/(_dash)", AuthActionHandler),
                       (pathPrefix+r"/(_user_browse)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
@@ -4628,6 +4644,7 @@ def createApplication():
                       r"/(_(getcol|getrow|sheet)/[-\w.;]+)",
                       r"/(_imageupload)",
                       r"/(_import/[-\w.]+)",
+                      r"/(_interactcode)",
                       r"/(_lock)",
                       r"/(_lock/[-\w.]+)",
                       r"/(_lockcode/[-\w.;%]+)",
@@ -4695,21 +4712,13 @@ def processTwitterMessage(msg):
     interactiveSession = WSHandler.getInteractiveSession()
     print >> sys.stderr, 'sdserver.processTwitterMessage:', interactiveSession, msg
 
-    if interactiveSession:
-        sessionPath = getSessionPath(interactiveSession, site_prefix=True)
-        sessionConnections = WSHandler.get_connections(interactiveSession)
-        for user, connections_list in sessionConnections.items():
-            if Global.userRoles.id_role(user, for_site=Options['site_name']) == sdproxy.ADMIN_ROLE:
-                for connection in connections_list:
-                    connection.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, ['', -1, 'TwitterMessage', [msg]])
-
     fromUser = msg['sender']
     fromName = msg['name']
     message = msg['text']
     status = None
     fromRole = ''
     if Options['auth_type'].startswith('twitter,'):
-        status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter')
+        status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter', adminBroadcast=True)
     else:
         idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
         userId = idMap.get(fromUser.lower())
@@ -4717,7 +4726,7 @@ def processTwitterMessage(msg):
             userId = Global.twitterSpecial.get(fromUser.lower())
 
         if userId:
-            status = WSHandler.processMessage(userId, fromRole, sdproxy.lookupRoster('name', userId), message, source='twitter')
+            status = WSHandler.processMessage(userId, fromRole, sdproxy.lookupRoster('name', userId), message, source='twitter', adminBroadcast=True)
         else:
             status = 'Error - twitter ID '+fromUser+' not found in roster'
     print >> sys.stderr, 'processTwitterMessage:', status

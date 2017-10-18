@@ -3482,8 +3482,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             topnav_html = '' if config.create_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
             index_display = []
             for opt in topnav_opts.split(','):
-                if opt != '/index.html' and opt.endswith('/index.html'):
-                    tempath = dest_dir+opt
+                if opt != '/index.html' and (opt.endswith('/index.html') or not opt.endswith('.html')):
+                    tempath = os.path.join(dest_dir, opt)
+                    if opt.endswith('.html'):
+                        temdir = os.path.dirname(opt)
+                    else:
+                        temdir = opt
+                        tempath = os.path.join(tempath, 'index.html')
                     if os.path.exists(tempath):
                         with open(tempath) as f:
                             index_entries = read_index(f, path=tempath)
@@ -3491,12 +3496,11 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                          index_entries = []
                     for ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str, index_params in index_entries:
                         if iso_release_str != sliauth.FUTURE_DATE and (ind_fname.startswith('announce') or (iso_due_str and iso_due_str != '-')):
-                            index_display.append([os.path.dirname(opt)+'/'+ind_fname, ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str])
+                            index_display.append([temdir+'/'+ind_fname, ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str])
 
             if index_display:
-                index_display.sort(reverse=True)
-                due_html = []
-                announce_html = []
+                due_index = []
+                announce_index = []
                 for ind_fpath, ind_fname, ind_fheader, doc_str, iso_due_str, iso_release_str in index_display:
                     release_epoch = 0
                     due_epoch = 0
@@ -3506,16 +3510,18 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                         due_epoch = int(sliauth.epoch_ms(sliauth.parse_date(iso_due_str))/1000.0)
                     
                     if ind_fname.startswith('announce'):
-                        entry = '<li class="slidoc-index-entry" data-release="%d" data-due="%d"><a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>: %s %s</li>\n' % (release_epoch, due_epoch, ind_fpath, ind_fname, ind_fheader, '('+iso_release_str[:10]+')' if release_epoch else '')
-                        announce_html.append(entry)
+                        entry = '<tr class="slidoc-index-entry" data-release="%d" data-due="%d"><td><a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>: %s %s</td></tr>\n' % (release_epoch, due_epoch, ind_fpath, ind_fname, ind_fheader, '('+iso_release_str[:10]+')' if release_epoch else '')
+                        announce_index.append([due_epoch, ind_fname, entry])
                     else:
                         doc_link = '''(<a class="slidoc-clickable" href="%s.html"  target="_blank">%s</a>)''' % (ind_fpath, doc_str)
-                        entry = '<li class="slidoc-index-entry" data-release="%d" data-due="%d">%s: <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (release_epoch, due_epoch, iso_due_str[:10], ind_fname, SPACER6, doc_link)
-                        due_html.append(entry)
-                        
-                ul_fmt = '<ul class="slidoc-toc-list %s" style="list-style-type: none;">\n%s\n</ul>\n'
-                sessions_due_html = ul_fmt %  ('slidoc-due-sessions', '\n'.join(due_html))
-                announce_due_html = ul_fmt %  ('slidoc-due-announce', '\n'.join(announce_html)) if announce_html else ''
+                        entry = '<tr class="slidoc-index-entry" data-release="%d" data-due="%d"><td>%s:</td><td> <span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s</td><td><span class="slidoc-nosidebar"> %s</span></td></tr>\n' % (release_epoch, due_epoch, iso_due_str[:10], ind_fname, SPACER6, doc_link)
+                        due_index.append([due_epoch, ind_fname, entry])
+
+                due_index.sort(reverse=True)
+                announce_index.sort(reverse=True)
+                ul_fmt = '<table class="slidoc-toc-table %s">\n%s\n</table>\n'
+                sessions_due_html = ul_fmt %  ('slidoc-due-sessions', '\n'.join(x[-1] for x in due_index))
+                announce_due_html = ul_fmt %  ('slidoc-due-announce', '\n'.join(x[-1] for x in announce_index)) if announce_index else ''
 
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
         md_html = md_html.replace('<p>Announcements:</p>', announce_due_html)

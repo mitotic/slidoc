@@ -105,7 +105,7 @@ for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
 
 Sliobj.ajaxRequestActive = null;
-Sliobj.twitterMessages = [];
+Sliobj.interactiveMessages = [];
 
 Sliobj.interactive = false;
 Sliobj.gradableState = null;
@@ -2670,11 +2670,11 @@ Sliobj.eventReceiver = function(eventMessage) {
     } else if (eventName == 'ReloadPage') {
 	statefulReload(eventArgs.length ? eventArgs[0] : '');
 
-    } else if (eventName == 'TwitterMessage') {
-	console.log('TwitterMessage:', eventArgs[0]);
-	Sliobj.twitterMessages.unshift(eventArgs[0]);
-	if (Sliobj.twitterMessages.length > 100)
-	    delete Sliobj.twitterMessages[100];
+    } else if (eventName == 'InteractiveMessage') {
+	console.log('InteractiveMessage:', eventArgs[0]);
+	Sliobj.interactiveMessages.unshift(eventArgs[0]);
+	if (Sliobj.interactiveMessages.length > 100)
+	    delete Sliobj.interactiveMessages[100];
 	if (Sliobj.closePopup)
 	    Sliobj.closePopup(null, eventName);
 
@@ -2717,16 +2717,17 @@ Slidoc.interact = function() {
 	html += 'Interactivity not available for submitted sessions';
     } else {
 	var siteTwitter = Sliobj.serverData.site_twitter || '';
-	var interactURL = location.protocol+'//'+location.host+'/interact';
+	var interactURL = location.protocol+'//'+location.host+'/send';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span><p></p>';
 	html += 'To interact:<ul>';
 	if (siteTwitter) {
 	    html += '<li>Text 40404: <code>d '+siteTwitter+' answer</code></li>';
 	    html += '<li>Twitter direct message @'+siteTwitter+': <code>answer</code></li>';
 	}
-	html += '<li>Browser: <a href="'+interactURL+'" target="_blank"><code>'+interactURL+'</code></a></li>';
+	html += '<li><a href="'+interactURL+'" target="_blank"><code>'+interactURL+'</code></a></li>';
+	html += '<li><a href="'+Sliobj.sitePrefix+'/_interactcode" target="_blank"><b>QR code</b></a></li>';
 	html += '</ul>';
-	html += clickableSpan('Live message display', 'twitterMessageDisplay();', !Sliobj.interactive)+'<p></p>';
+	html += clickableSpan('Live message display', 'interactiveMessageDisplay();', !Sliobj.interactive)+'<p></p>';
     }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -3503,17 +3504,17 @@ function showGradesCallback(userId, result, retStatus) {
     Slidoc.showPopup(html);
 }
 
-function twitterMessageDisplay(eventArgs) {
+function interactiveMessageDisplay(eventArgs) {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     var html = 'Live messages: <p></p>\n';
     html += '<ul class="slidoc-direct-message-list">';
-    for (var j=0; j<Sliobj.twitterMessages.length; j++) {
-	var msg = Sliobj.twitterMessages[j];
+    for (var j=0; j<Sliobj.interactiveMessages.length; j++) {
+	var msg = Sliobj.interactiveMessages[j];
 	html += '<li><em>'+escapeHtml(msg['name'])+'</em> (<code>@'+escapeHtml(msg['sender'])+'</code>): '+escapeHtml(msg['text'])+'</li>';
     }
     html += '</ul>';
-    Slidoc.showPopup(html, null, true, 0, 'TwitterMessage', twitterMessageDisplay);
+    Slidoc.showPopup(html, null, true, 0, 'InteractiveMessage', interactiveMessageDisplay);
 }
 
 Slidoc.userProfile = function() {
@@ -5288,6 +5289,12 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	    if (err_type == 'NEED_ROSTER_ENTRY') {
 		Slidoc.userLogin(err_info+'. Please enter a valid userID (or contact instructor).', retryOpts.call);
 		return;
+
+	    } else if (err_type == 'ADMIN_NEW_ROW') {
+		alert('Admin user cannot create new session entry for user '+getUserId()+'. Please logout and login again.');
+		Slidoc.userLogout();
+		return;
+
 	    } else if (err_type == 'INVALID_ADMIN_TOKEN') {
 		Slidoc.userLogin('Invalid admin token or key mismatch. Please re-enter', retryOpts.call);
 		return;

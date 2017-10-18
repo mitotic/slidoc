@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.14a';
+var VERSION = '0.97.14c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -1337,7 +1337,7 @@ function sheetAction(params) {
 	    var newRow = !userRow;
 
 	    if ((readOnlyAccess || adminUser) && !restrictedSheet && newRow && userId != MAXSCORE_ID && !importSession)
-		throw("Error::Admin user not allowed to create new row in sheet '"+sheetName+"'");
+		throw("Error:ADMIN_NEW_ROW:Admin user not allowed to create new row in sheet '"+sheetName+"'");
 
 	    var retakesCol = columnIndex['retakes'];
 	    if (resetRow) {

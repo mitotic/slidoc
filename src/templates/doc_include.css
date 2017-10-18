@@ -229,6 +229,10 @@ body.slidoc-sidebar-view .slidoc-all-container {
 
 .slidoc-due-sessions .slidoc-index-entry-active { font-weight: bold; }
 
+tr.slidoc-index-entry:nth-of-type(even) {
+  background-color: lightgray;
+}
+
 /* Answers */
 .slidoc-answer-textarea,
   .slidoc-comments-textarea,
