@@ -4250,8 +4250,11 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:User not pre-authorized to access site')
 
                 # Check if userId appears in roster
-                if sdproxy.getSheet(sdproxy.ROSTER_SHEET) and not sdproxy.lookupRoster('id', userId):
-                    raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
+                if sdproxy.getSheet(sdproxy.ROSTER_SHEET):
+                    if not sdproxy.lookupRoster('id', userId):
+                        raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
+                elif sdproxy.Settings['require_roster']:
+                        raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site')
                     
             return userId
 

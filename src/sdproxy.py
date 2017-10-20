@@ -69,6 +69,7 @@ Settings = {
     'request_timeout': 75,  # Proxy update request timeout (sec)
     'require_login_token': True,
     'require_late_token': True,
+    'require_roster': True,
     'root_users': [],
     'share_averages': True, # Share class averages for tests etc.
     'site_label': '',
@@ -79,7 +80,7 @@ Settings = {
     'guest_users': ''
     }
 
-COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token',
+COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token', 'require_roster',
                    'share_averages', 'site_label', 'site_title', 'site_access',
                    'admin_users', 'grader_users', 'guest_users']
     
@@ -1798,13 +1799,16 @@ def sheetAction(params, notrace=False):
 
         rosterValues = None
         rosterSheet = getSheet(ROSTER_SHEET)
-        if rosterSheet and not adminUser:
-            # Check user access
-            if not paramId:
-                raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
-            # Copy user info from roster
-            rosterValues = getRosterEntry(paramId)
-
+        if not adminUser:
+            if rosterSheet:
+                # Check user access
+                if not paramId:
+                    raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
+                # Copy user info from roster
+                rosterValues = getRosterEntry(paramId)
+            elif Settings['require_roster']:
+                raise Exception('Error:NEED_ROSTER:Need roster for non-admin access')
+		
         returnInfo['prevTimestamp'] = None
         returnInfo['timestamp'] = None
         processed = False
@@ -4693,12 +4697,13 @@ def updateAnswers(sessionName, create):
         # Number of ids
         nids = sessionSheet.getLastRow()-sessionStartRow+1
 
-        # Copy session values
-        for j in range(0,len(sessionCopyCols)):
-            colHeader = sessionCopyCols[j]
-            sessionCol = sessionColIndex[colHeader]
-            ansCol = ansColIndex[colHeader]
-            answerSheet.getRange(answerStartRow, ansCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1))
+        if nids:
+            # Copy session values
+            for j in range(0,len(sessionCopyCols)):
+                colHeader = sessionCopyCols[j]
+                sessionCol = sessionColIndex[colHeader]
+                ansCol = ansColIndex[colHeader]
+                answerSheet.getRange(answerStartRow, ansCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1))
 
         # Get hidden session values
         hiddenSessionCol = sessionColIndex['session_hidden']

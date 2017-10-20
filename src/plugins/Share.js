@@ -317,7 +317,7 @@ Share = {
 	    for (var j=0; j<nResp; j++) {
 		lines.push([(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'), result[responseHeader][j]]);
 	    }
-	    Slidoc.showPopupWithList('Responses (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, this.qattributes.qtype == 'text/markdown');
+	    Slidoc.showPopupWithList('Responses (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, true);
 	    return;
 	}
 
@@ -374,7 +374,7 @@ Share = {
 		ulistOther.push(comp);
 	}
 
-	Slidoc.showPopupWithList(lines.join('\n'), ulistCorr.concat(ulistOther), this.qattributes.explain == 'markdown');
+	Slidoc.showPopupWithList(lines.join('\n'), ulistCorr.concat(ulistOther), true);
 
 	for (var k=0; k<this.voteCodes.length; k++) {
 	    if (!this.voteCodes[k])
@@ -406,7 +406,7 @@ Share = {
 	var lines = [];
 	for (var j=0; j<this.responseTally[index-1][3].length; j++)
 	    lines.push([ '<span class="slidoc-plugin-Share-resp"></span>', this.responseTally[index-1][3][j] ]);
-	Slidoc.showPopupWithList('Explanations for answer '+this.responseTally[index-1][0]+':<p></p>\n', lines, this.qattributes.explain == 'markdown');
+	Slidoc.showPopupWithList('Explanations for answer '+this.responseTally[index-1][0]+' (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, true);
     },
 
     upVote: function (voteCode, elem) {

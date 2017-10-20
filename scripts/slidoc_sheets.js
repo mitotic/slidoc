@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.14c';
+var VERSION = '0.97.14d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -21,6 +21,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure admini
 			 ['end_date', '',    'Date after which all user access is disabled (yyyy-mm-dd)'],
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require',  'Non-null string for true'],
+			 ['require_roster', 'require',  'Non-null string for true'],
 			 ['share_averages', 'yes', 'Non-null string for true to share class averages for tests etc.'],
 			 ['site_menu', '', 'List of top menu items: files, gradebook (comma-separated)'],
 		         ['total_formula', '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
@@ -636,12 +637,16 @@ function sheetAction(params) {
 
 	var rosterValues = null;
 	var rosterSheet = getSheet(ROSTER_SHEET);
-	if (rosterSheet && !adminUser) {
-	    // Check user access
-	    if (!paramId)
-		throw('Error:NEED_ID:Must specify userID to lookup roster')
-	    // Copy user info from roster
-	    rosterValues = getRosterEntry(paramId);
+	if (!adminUser) {
+	    if (rosterSheet) {
+		// Check user access
+		if (!paramId)
+		    throw('Error:NEED_ID:Must specify userID to lookup roster')
+		// Copy user info from roster
+		rosterValues = getRosterEntry(paramId);
+	    } else if (Settings['require_roster']) {
+		throw('Error:NEED_ROSTER:Need roster for non-admin access');
+	    }
 	}
 
 	returnInfo.prevTimestamp = null;
@@ -3404,12 +3409,14 @@ function updateAnswers(sessionName, create) {
 	// Number of ids
 	var nids = sessionSheet.getLastRow()-sessionStartRow+1;
 
-	// Copy session values
-	for (var j=0; j<sessionCopyCols.length; j++) {
-	    var colHeader = sessionCopyCols[j];
-	    var sessionCol = sessionColIndex[colHeader];
-	    var ansCol = ansColIndex[colHeader];
-	    answerSheet.getRange(answerStartRow, ansCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1));
+	if (nids) {
+	    // Copy session values
+	    for (var j=0; j<sessionCopyCols.length; j++) {
+		var colHeader = sessionCopyCols[j];
+		var sessionCol = sessionColIndex[colHeader];
+		var ansCol = ansColIndex[colHeader];
+		answerSheet.getRange(answerStartRow, ansCol, nids, 1).setValues(sessionSheet.getSheetValues(sessionStartRow, sessionCol, nids, 1));
+	    }
 	}
 
 	// Get hidden session values

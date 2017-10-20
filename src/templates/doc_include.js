@@ -664,12 +664,10 @@ Slidoc.pageSetup = function() {
 	}
     }
 
-    if (Slidoc.serverCookie) {
-	if (Slidoc.serverCookie.siteRole == Sliobj.params.adminRole || Slidoc.serverCookie.siteRole == Sliobj.params.graderRole) {
-	    toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
-	    var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
-	    [].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
-	}
+    if (gradingAccess()) {
+	toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
+	var restrictedElems = document.getElementsByClassName('slidoc-restrictedonly');
+	[].forEach.call(restrictedElems, function(elem) { elem.style.display = null; });
     }
 
     if (Slidoc.siteCookie) {
@@ -2356,7 +2354,11 @@ Slidoc.viewHelp = function () {
 
     html += '<table class="slidoc-slide-help-table">';
     html += formatHelp('Navigating documents', docsPrefix+'/NavigationHelp.html');
-    html += formatHelp('Randomized exams', docsPrefix+'/RandomizedExams.html');
+    if (gradingAccess()) {
+	html += '<tr><td>&nbsp;</td></tr>';
+	html += formatHelp('Adaptive rubrics', docsPrefix+'/AdaptiveRubrics.html');
+	html += formatHelp('Randomized exams', docsPrefix+'/RandomizedExams.html');
+    }
     html += '</table>';
     Slidoc.showPopup(html);
 }
@@ -3884,6 +3886,12 @@ function isController() {
     return Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.gradableState && getUserId() == Sliobj.params.testUserId;
 }
 
+function gradingAccess() {
+    if (!Slidoc.serverCookie)
+	return false;
+    return Slidoc.serverCookie.siteRole == Sliobj.params.adminRole || Slidoc.serverCookie.siteRole == Sliobj.params.graderRole;
+}
+
 function collapsibleAccess() {
     if (getUserId() == Sliobj.params.testUserId)
 	return true;
@@ -4594,7 +4602,7 @@ function preAnswer() {
 	    // Question attempted; display answer
 	    var qAttempted = Sliobj.session.questionsAttempted[qnumber];
 	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	    Slidoc.answerClick(null, slide_id, 'setup', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
+	    Slidoc.answerClick(null, slide_id, 'preanswer', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
 	} else if (Sliobj.gradableState) {
 	    // Question not attempted; display null plugin response if grading
 	    var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
@@ -4706,8 +4714,12 @@ function displayAfterGrading() {
     return (Sliobj.params.showScore == 'after_grading' || 'remote_answers' in Sliobj.params.features) && (Sliobj.lockedView || !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr) );
 }
 
+function allowReanswer(qattrs) {
+    return Sliobj.params.paceLevel <= BASIC_PACE && qattrs.qtype == 'choice' && Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted);
+}
+
 function displayCorrect(qattrs) {
-    if (displayAfterGrading() || (Sliobj.delayScoring && (!Sliobj.session || !Sliobj.session.submitted)) )
+    if (allowReanswer(qattrs) || displayAfterGrading() || (Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted)) )
 	return false;
     // If non-submitted admin-paced and answering question on last slide, do not display correct answer
     if (controlledPace() && Sliobj.session && !Sliobj.session.submitted && Sliobj.session.lastSlide <= qattrs.slide)
@@ -4728,7 +4740,7 @@ function showCorrectAnswersAfterSubmission() {
 	var question_attrs = attr_vals[qnumber-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
-	Slidoc.answerClick(null, slide_id, 'submit', '', '', null, null, qfeedback);
+	Slidoc.answerClick(null, slide_id, 'postsubmit', '', '', null, null, qfeedback);
     }
 }
 
@@ -5882,6 +5894,14 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 		return false;
 	    }
 
+	    if (question_attrs.explain) {
+		var textareaElem = document.getElementById(slide_id+'-answer-textarea');
+		if (textareaElem && !textareaElem.value.trim() && getUserId() != Sliobj.params.testUserId) {
+		    showDialog('alert', 'explainDialog', 'Please provide an explanation for the choice');
+		    return false;
+		}
+	    }
+
 	    elem.classList.add('slidoc-choice-selected');
 
 	    // Immediate answer click for choice questions
@@ -5924,17 +5944,18 @@ function forceQuit(force, msg) {
 
 Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect, pluginResp, qfeedback) {
     // Handle answer types: number, text
-    // expect: should only be defined for setup
-    // force: '', 'setup', 'submit, 'finalize', 'controlled', 'choiceclick'
+    // force: '', 'preanswer', 'postsubmit', 'finalize', 'controlled', 'choiceclick'
+    // elem: null for preanswer/postsubmit
+    // explain: should be defined or null for preanswer/postsubmit
+    // expect: should only be defined for preanswer/postsubmit
     ///Slidoc.log('Slidoc.answerClick:', elem, slide_id, force, response, explain, expect, pluginResp, qfeedback);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
 	return;
     }
+    var setup = !elem;
     expect = expect || '';
     var question_attrs = getQuestionAttrs(slide_id);
-
-    var setup = !elem;
 
     if (!checkAnswerStatus(setup, slide_id, force, question_attrs, explain))
 	return false;
@@ -6011,9 +6032,11 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries = 0;   // Only one try for choice response
 	}
-	var allowChoice =  (question_attrs.qtype == 'multichoice') || (force && (force == 'setup' || force == 'choiceclick'));
-	if (!allowChoice || (Sliobj.session && Sliobj.session.submitted)) {
-	    // Disable further choice clicking if submitted or single choice and not setup/choiceclick
+	    
+	// Allow further choice clicking if multi-choice, or choice and preanswer/choiceclick
+	var allowChoice = (question_attrs.qtype == 'multichoice') || (force && (force == 'preanswer' || force == 'choiceclick'));
+	if (!allowChoice || !allowReanswer(question_attrs) || (Sliobj.session && Sliobj.session.submitted)) {
+	    // If not further choice, or no re-answers, or submitted, disable choice clicking
 	    for (var i=0; i < choices.length; i++) {
 		choices[i].removeAttribute("onclick");
 		choices[i].classList.remove("slidoc-clickable");
@@ -6083,6 +6106,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     var corr_answer      = expect || question_attrs.correct || '';
     var corr_answer_html = expect ? expect : (question_attrs.correct_html || '');
     var dispCorrect = displayCorrect(question_attrs);
+    var canReanswer = allowReanswer(question_attrs);
 
     var qscore = null;
     if (pluginResp) {
@@ -6169,9 +6193,9 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	    ansContainer.scrollIntoView(true)
     }
 
-    // Switch to answered slide view if not printing exam and non-choice question or not delayed scoring or submitted 
+    // Switch to answered slide view if not printing exam and re-answers not allowed
     var slideElem = document.getElementById(slide_id);
-    if (!Sliobj.assessmentView && (question_attrs.qtype != 'choice' || !Sliobj.delayScoring || (Sliobj.session && Sliobj.session.submitted)) )
+    if (!Sliobj.assessmentView && !canReanswer)
 	slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
@@ -7922,10 +7946,12 @@ Slidoc.selectPopupOption = function(closeArg) {
 
 Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
     // Show popup ending with a tabular list [ [html, insertText1, insertText2, ...], ... ]
-    // Safely populate list with plain text, or Markdown (last column only)
+    // Safely populate list with plain text, or Markdown (last column only, if !no_markdown)
     //Slidoc.log('showPopupWithList:', listElems, lastMarkdown);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
+    if (Sliobj.params.features.no_markdown)
+	lastMarkdown = false;
     var lines = [prefixHTML || ''];
     lines.push('<ul class="slidoc-popup-with-list">');
     for (var j=0; j<listElems.length; j++)
