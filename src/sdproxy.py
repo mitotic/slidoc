@@ -571,8 +571,8 @@ def downloadSheet(sheetName, backup=False):
     else:
         retval =  {'result': 'error', 'error': 'No Sheet URL'}
 
-    ##if Settings['debug']:
-    ##    print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
+    if Settings['debug'] and Settings['dry_run']:
+        print("DEBUG:downloadSheet", sheetName, retval['result'], retval.get('info',{}).get('version'), retval.get('bytes'), retval.get('messages'), file=sys.stderr)
 
     remoteVersion = retval.get('info',{}).get('version','')
     if sliauth.get_version(sub=1) != sliauth.sub_version(remoteVersion):
@@ -2547,7 +2547,7 @@ def sheetAction(params, notrace=False):
                                     # Reading existing row; force submit
                                     autoSubmission = True
                                     selectedUpdates = [ ['id', userId], ['Timestamp', None], ['submitTimestamp', None] ]
-                                    returnMessages.append("Warning:FORCED_SUBMISSION:Forced submission for user '"+(displayName or "")+"' to session '"+sheetName+"'")
+                                    returnMessages.append("Warning:FORCED_SUBMISSION:Forced submission of user "+(displayName or userId)+" for session "+sheetName)
                                 else:
                                     # Creating/modifying row
                                     raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+str(dueDate)+") for session "+sheetName)

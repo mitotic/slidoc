@@ -11,6 +11,7 @@ body.slidoc-locked-view .slidoc-nolocked,
 body.slidoc-remote-view .slidoc-noremote,
 body.slidoc-simple-view .slidoc-nosimple,
 body.slidoc-slide-view .slidoc-noslide,
+body.slidoc-submitted-view .slidoc-nosubmitted,
 body.slidoc-assessment-view .slidoc-noassessment,
 .slidoc-hidden {
     display: none; }
@@ -66,18 +67,29 @@ body:not(.slidoc-gradable-view):not(.slidoc-graded-view) .slidoc-gradable-graded
 
 body:not(.slidoc-interact-view) .slidoc-interactonly { display: none; }
 
-section:not(.slidoc-answered-slideview) .slidoc-answeredonly { display: none; }
 section:not(.slidoc-grading-slideview) .slidoc-gradingonly { display: none; }
+section:not(.slidoc-answered-slideview) .slidoc-answeredonly { display: none; }
 
-section.slidoc-answered-slideview .slidoc-noanswered { display: none; }
 section.slidoc-grading-slideview .slidoc-nograding { display: none; }
+section.slidoc-answered-slideview .slidoc-noanswered { display: none; }
+
+body:not(.slidoc-resubmit-view) section.slidoc-answered-slideview .slidoc-noansweredresubmit { display: none; }
+
+/* Answer prefix  and button */
+body.slidoc-resubmit-view:not(.slidoc-submitted-view) .slidoc-answer-prefix { display: none; }
+body:not(.slidoc-resubmit-view) section:not(.slidoc-answered-slideview) .slidoc-answer-prefix { display: none; }
+body:not(.slidoc-resubmit-view) section.slidoc-answered-slideview .slidoc-answer-button { display: none; }
 
 body.slidoc-gradable-view section:not(.slidoc-answered-slideview) .slidoc-render-button { display: none; }
 body:not(.slidoc-gradable-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }
 section.slidoc-answered-slideview:not(.slidoc-grading-slideview) .slidoc-render-button { display: none; }
 
+/* No render button for resubmittable answers; answering will trigger rendering */
+body.slidoc-resubmit-view:not(.slidoc-gradable-view) .slidoc-render-button { display: none; }
+body.slidoc-submitted-view:not(.slidoc-gradable-view) .slidoc-render-button { display: none; }
+
+section.slidoc-answered-slideview .slidoc-choice-selected {background: #ffbf00; border: 1px solid black; padding-right: 2px;}
 section:not(.slidoc-answered-slideview) .slidoc-choice-selected {background: #ffbf00; }
-section.slidoc-answered-slideview .slidoc-choice-selected {text-decoration: line-through; }
 
 div.slidoc-answer-container.slidoc-choice-answer .slidoc-answer-input { display: none; }
 div.slidoc-answer-container.slidoc-choice-answer:not(.slidoc-explain-answer) .slidoc-answer-textarea { display: none; }
@@ -91,7 +103,8 @@ div.slidoc-grade-element.slidoc-zero-gradeweight span,
 
 .slidoc-ansdisp-disabled { display: none; }
 
-.slidoc-answer-button.slidoc-ansdisp-choice { display: none; }
+/* Hide answer button for choice questions if re-submission is allowed */
+body.slidoc-resubmit-view .slidoc-answer-button.slidoc-ansdisp-choice { display: none; }
 
 .slidoc-answer-button.slidoc-ansdisp-disabled-choice,
   .slidoc-answer-correct.slidoc-ansdisp-disabled-choice { display: none; }

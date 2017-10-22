@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.14d'
+VERSION = '0.97.14e'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -136,9 +136,9 @@ def get_utc_date(date_time_str, pre_midnight=False):
 
     return date_time_str
 
-def parse_date(date_time_str, pre_midnight=False):
+def parse_date(date_time_str, pre_midnight=False, strict=False):
     """Parse ISO format date, with or without Z suffix denoting UTC, to return datetime object (containing local time)
-       Return None on error
+       On error, raise Exception if strict else return None
     """
     if not date_time_str:
         return None
@@ -146,6 +146,9 @@ def parse_date(date_time_str, pre_midnight=False):
     if isinstance(date_time_str, datetime.datetime):
         return date_time_str
 
+    if not isinstance(date_time_str, (str, unicode)):
+        raise Exception('Expecting date_time string but received '+str(type(date_time_str))+' instead')
+    
     if re.match(r'^\d\d\d\d-\d\d-\d\d$', date_time_str):
         date_time_str += 'T23:59' if pre_midnight else 'T00:00'
 
@@ -168,6 +171,8 @@ def parse_date(date_time_str, pre_midnight=False):
     try:
         return datetime.datetime.fromtimestamp(time.mktime(time.strptime(date_time_str, format)) + offset_sec)
     except Exception:
+        if strict:
+            raise Exception('Invalid date string "%s"; expecting YYYYMMDD[Thh:mm]' % date_time_str)
         return None
 
 def create_date(epoch_ms=None):
@@ -176,21 +181,18 @@ def create_date(epoch_ms=None):
 
 def epoch_ms(date_time=None):
     """Return epoch milliseconds (i.e., milliseconds since Jan. 1, 1970) for datetime object"""
-    if date_time and isinstance(date_time, (str, unicode)):
-        date_time = parse_date(date_time)
-
-    if date_time:
-        return time.mktime(date_time.timetuple())*1000.0 + date_time.microsecond/1000.0
-    else:
+    if not date_time:
         return epoch_ms(datetime.datetime.now())
+
+    date_time = parse_date(date_time, strict=True)
+    return time.mktime(date_time.timetuple())*1000.0 + date_time.microsecond/1000.0
 
 def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
     """Return ISO date time string YYYY-MM-DDThh:mm:ss for local time (or UTC time)"""
-    if not date_time:
+    if date_time:
+        date_time = parse_date(date_time, strict=True)
+    else:
         date_time = datetime.datetime.now()
-
-    if isinstance(date_time, (str, unicode)):
-        date_time = parse_date(date_time)
 
     if utc:
         retval = datetime.datetime.utcfromtimestamp(epoch_ms(date_time)/1000.0).isoformat() + 'Z'
@@ -200,13 +202,12 @@ def iso_date(date_time=None, utc=False, nosec=False, nosubsec=False):
     return retval[:16] if nosec else (retval[:19] if nosubsec else retval)
 
 def print_date(date_time=None, weekday=False, long_date=False, prefix_time=False, not_now=False):
-    if not date_time:
+    if date_time:
+        date_time = parse_date(date_time, strict=True)
+    else:
         if not_now:
             return ''
         date_time = datetime.datetime.now()
-
-    if isinstance(date_time, (str, unicode)):
-        date_time = parse_date(date_time)
 
     fmt = '%b %d, %Y' if long_date else '%d%b%y'
     if prefix_time:

@@ -728,9 +728,9 @@ class SlidocRenderer(MathRenderer):
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
     ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(ansdisp)s" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
-  <span id="%(sid)s-answer-prefix" class="slidoc-answeredonly" data-qnumber="%(qno)d">Answer:</span>
-  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-noanswered slidoc-noprint %(ansdisp)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
-  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(ansdisp)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <span id="%(sid)s-answer-prefix" class="" data-qnumber="%(qno)d">Answer:</span>
+  <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-nosubmitted slidoc-noprint %(ansdisp)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noansweredresubmit slidoc-nosubmitted slidoc-noprint slidoc-noplugin %(ansdisp)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
@@ -741,7 +741,7 @@ class SlidocRenderer(MathRenderer):
     <span id="%(sid)s-answer-correct" class="slidoc-answer-correct slidoc-correct-answer %(ansdisp)s"></span>
   </span>
   %(explain)s %(boxlabel)s
-  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-nogradable slidoc-noanswered slidoc-noprint slidoc-noplugin %(ansdisp)s" %(boxsize)s ></textarea>
+  <textarea id="%(sid)s-answer-textarea" name="textarea" class="slidoc-answer-textarea slidoc-answer-box slidoc-nogradable slidoc-noansweredresubmit slidoc-noprint slidoc-noplugin %(ansdisp)s" %(boxsize)s ></textarea>
 '''                
 
     grading_template = '''
@@ -801,6 +801,8 @@ class SlidocRenderer(MathRenderer):
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
         self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
+
+        self.sheet_attributes['resubmitAnswers'] = self.options['config'].pace <= BASIC_PACE and self.options['config'].show_score in ('after_submitting', 'after_grading')
         self.slide_number = 0
         self.slide_images = []
 
@@ -1899,7 +1901,7 @@ class SlidocRenderer(MathRenderer):
         elif self.cur_qtype == 'choice':
             ans_params['ansdisp'] = 'slidoc-ansdisp-choice'
         elif self.cur_qtype == 'multichoice':
-            ans_params['ansdisp'] += 'slidoc-ansdisp-multichoice'
+            ans_params['ansdisp'] = 'slidoc-ansdisp-multichoice'
 
         if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
             # Strip any correct answers
@@ -1921,6 +1923,7 @@ class SlidocRenderer(MathRenderer):
             ans_classes += ' slidoc-explain-answer'
         if self.cur_qtype in ('choice', 'multichoice'):
             ans_classes += ' slidoc-choice-answer'
+
         if plugin_name and plugin_action != 'expect':
             ans_classes += ' slidoc-answer-plugin'
         if self.slide_block_fillable:
@@ -2909,7 +2912,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     if config.make:
         # Process only modified input files
         if config.toc or config.index or config.qindex or config.all:
-            abort('ERROR --make option incompatible with indexing or "all" options')
+            abort('OPTION-ERROR: --make option incompatible with indexing or "all" options')
         
     site_prefix = '/'+config.site_name if config.site_name else ''
     dest_dir = ''
@@ -3018,7 +3021,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0, 'timedSec': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
-                 'releaseDate': '', 'dueDate': '', 'discussSlides': [],
+                 'releaseDate': '', 'dueDate': '', 'discussSlides': [], 'resubmitAnswers': None,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
                  'roster_sheet': ROSTER_SHEET, 'score_sheet': SCORE_SHEET,
                  'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
@@ -3257,7 +3260,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 abort('PACE-ERROR: --retakes=... incompatible with --timed=...')
 
             if file_config.show_score and file_config.show_score not in ('never', 'after_answering', 'after_submitting', 'after_grading'):
-                abort('SHOW-ERROR: Must have --show_score=never OR after_answering OR after_submitting OR after_grading')
+                abort('SHOW-ERROR: Must have --show_score=never OR after_answering OR after_submitting OR after_grading (found %s)' % file_config.show_score)
 
             if not file_config.show_score:
                 if file_config.pace >= QUESTION_PACE:
@@ -3371,7 +3374,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             math_inc = Mathjax_js % ('false' if 'immediate_math' in file_config.features else 'true', mathjax_config)
 
         if not file_config.features.issubset(set(Features_all)):
-            abort('Error: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
+            abort('FEATURE-ERROR: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
             
         filepath = input_paths[fnumber-1]
         filedir = os.path.dirname(os.path.realpath(filepath))
@@ -3443,6 +3446,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         js_params['disabledCount'] = renderer.sheet_attributes['disabledCount']
         js_params['discussSlides'] = renderer.sheet_attributes['discussSlides']
+        js_params['resubmitAnswers'] = renderer.sheet_attributes['resubmitAnswers']
 
         if config.separate:
             plugin_list = list(renderer.plugin_embeds)

@@ -140,7 +140,7 @@ a, a:visited,
 .slidoc-response-div       { background-color: #eee; margin: 7px; padding: 5px; }
 .slidoc-response-div:empty { background-color: #eee; margin: 7px; padding: 0px; }
 
-.slidoc-grade, .slidoc-comments { color: red; }
+.slidoc-grade, .slidoc-comments { color: #d00; }
 .slidoc-comments { border: solid 1px; padding: 0.5em; margin: 0.5em; }
 .slidoc-comments blockquote { background-color: #eee; color: black; text-indent: 2em; margin: 3px; }
 .slidoc-comments p { margin: 0px;}

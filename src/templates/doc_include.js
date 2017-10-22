@@ -3677,6 +3677,9 @@ function sheetActionsCallback(actions, sheetName, result, retStatus) {
     if (!result) {
 	alert('Error in '+msg+': '+retStatus.error);
 	return;
+    } else if (actions == 'gradebook') {
+	var html = 'Gradebook updated for session '+sheetName+'.<p></p><a href="'+Sliobj.sitePrefix+'/_sheet/scores_slidoc">Download</a> and and print a copy for the records';
+	Slidoc.showPopup(html);
     } else {
 	alert('Completed '+msg);
     }
@@ -4081,6 +4084,9 @@ function slidocSetupAux(session, feedback) {
 
     if (Sliobj.updateView)
 	toggleClass(true, 'slidoc-update-view');
+
+    if (Sliobj.params.resubmitAnswers)
+	toggleClass(true, 'slidoc-resubmit-view');
 
     if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session && Sliobj.session.submitted) {
 	toggleClass(true, 'slidoc-discuss-view');
@@ -4714,12 +4720,12 @@ function displayAfterGrading() {
     return (Sliobj.params.showScore == 'after_grading' || 'remote_answers' in Sliobj.params.features) && (Sliobj.lockedView || !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr) );
 }
 
-function allowReanswer(qattrs) {
-    return Sliobj.params.paceLevel <= BASIC_PACE && qattrs.qtype == 'choice' && Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted);
+function allowReanswer() {
+    return Sliobj.params.resubmitAnswers && !Sliobj.gradableState && Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted);
 }
 
 function displayCorrect(qattrs) {
-    if (allowReanswer(qattrs) || displayAfterGrading() || (Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted)) )
+    if (allowReanswer() || displayAfterGrading() || (Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted)) )
 	return false;
     // If non-submitted admin-paced and answering question on last slide, do not display correct answer
     if (controlledPace() && Sliobj.session && !Sliobj.session.submitted && Sliobj.session.lastSlide <= qattrs.slide)
@@ -5248,6 +5254,7 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		} else {
 		    Sliobj.session.lastSlide = Sliobj.params.pacedSlides;
 		}
+		toggleClass(true, 'slidoc-submitted-view');
 		showCorrectAnswersAfterSubmission();
 	    }
 	}
@@ -5277,6 +5284,8 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 			alerts.push('<em>Warning:</em><br>'+match[3]);
 		    }
 		} else if (msg_type == 'INVALID_LATE_TOKEN') {
+		    alerts.push('<em>Warning:</em><br>'+match[3]);
+		} else if (msg_type == 'FORCED_SUBMISSION') {
 		    alerts.push('<em>Warning:</em><br>'+match[3]);
 		}
 	    }
@@ -5894,7 +5903,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 		return false;
 	    }
 
-	    if (question_attrs.explain) {
+	    if (question_attrs.explain && allowReanswer()) {
 		var textareaElem = document.getElementById(slide_id+'-answer-textarea');
 		if (textareaElem && !textareaElem.value.trim() && getUserId() != Sliobj.params.testUserId) {
 		    showDialog('alert', 'explainDialog', 'Please provide an explanation for the choice');
@@ -5906,7 +5915,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 
 	    // Immediate answer click for choice questions
 	    var ansElem = document.getElementById(slide_id+'-answer-click');
-	    if (ansElem)
+	    if (ansElem && allowReanswer())
 		Slidoc.answerClick(ansElem, slide_id, 'choiceclick');
 	}
 	if (Sliobj.session && question_attrs.team == 'setup')
@@ -5987,14 +5996,12 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
     var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
     if (pluginMatch && pluginMatch[3] == 'expect') {
 	var pluginName = pluginMatch[2];
-	if (!setup) {
-	    var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
-	    var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
-	    if (val != null) {
-		expect = val+'';
-	    } else {
-		expect = pluginMatch[1].trim();
-	    }
+	var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
+	var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
+	if (val != null) {
+	    expect = val+'';
+	} else {
+	    expect = pluginMatch[1].trim();
 	}
     } else if (pluginMatch && pluginMatch[3] == 'response') {
 	var pluginName = pluginMatch[2];
@@ -6035,7 +6042,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    
 	// Allow further choice clicking if multi-choice, or choice and preanswer/choiceclick
 	var allowChoice = (question_attrs.qtype == 'multichoice') || (force && (force == 'preanswer' || force == 'choiceclick'));
-	if (!allowChoice || !allowReanswer(question_attrs) || (Sliobj.session && Sliobj.session.submitted)) {
+	if (!allowChoice || !allowReanswer() || (Sliobj.session && Sliobj.session.submitted)) {
 	    // If not further choice, or no re-answers, or submitted, disable choice clicking
 	    for (var i=0; i < choices.length; i++) {
 		choices[i].removeAttribute("onclick");
@@ -6055,6 +6062,11 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 			corr_choice.style['font-weight'] = 'bold';
 		}
 	    }
+	}
+	if (question_attrs.explain) {
+	    var explainElem = document.getElementById(slide_id+'-answer-textarea');
+	    if (explainElem && !allowReanswer())
+		explainElem.disabled = 'disabled';
 	}
     }  else {
 	var multiline = question_attrs.qtype.match(/^(text|Code)\//);
@@ -6082,8 +6094,11 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 		if (Sliobj.session.remainingTries > 0)
 		    Sliobj.session.remainingTries -= 1;
 	    }
-	    if (setup || !Sliobj.session || !Sliobj.session.paced || !Sliobj.session.remainingTries)
-		inpElem.disabled = 'disabled';
+	    if (setup || !Sliobj.session || !Sliobj.session.paced || !Sliobj.session.remainingTries) {
+		if (!allowReanswer())
+		    inpElem.disabled = 'disabled';
+		inpElem.value = '';
+	    }
 	}
 
     }
@@ -6106,7 +6121,6 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
     var corr_answer      = expect || question_attrs.correct || '';
     var corr_answer_html = expect ? expect : (question_attrs.correct_html || '');
     var dispCorrect = displayCorrect(question_attrs);
-    var canReanswer = allowReanswer(question_attrs);
 
     var qscore = null;
     if (pluginResp) {
@@ -6193,14 +6207,15 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	    ansContainer.scrollIntoView(true)
     }
 
-    // Switch to answered slide view if not printing exam and re-answers not allowed
+    // Switch to answered slide view if not printing exam
     var slideElem = document.getElementById(slide_id);
-    if (!Sliobj.assessmentView && !canReanswer)
+    if (!Sliobj.assessmentView)
 	slideElem.classList.add('slidoc-answered-slideview');
 
     if (pluginResp)
 	Slidoc.PluginMethod(pluginResp.name, slide_id, 'disable', dispCorrect && qscore !== 1);
 
+    // Render text/Code/explanation
     if (question_attrs.qtype.match(/^(text|Code)\//)) {
 	renderDisplay(slide_id, '-answer-textarea', '-response-div', usingMarkdown(question_attrs.qtype) && !Sliobj.params.features.no_markdown);
     } else {
@@ -6574,6 +6589,8 @@ function trackConcepts(qscores, questionConcepts, allQuestionConcepts) {
 //////////////////////////
 
 function showSubmitted() {
+    toggleClass(!!(Sliobj.session && Sliobj.session.submitted), 'slidoc-submitted-view');
+
     var submitElem = document.getElementById('slidoc-submit-display');
     if (!submitElem || !Sliobj.params.gd_sheet_url)
 	return;
@@ -6667,7 +6684,7 @@ Slidoc.submitStatus = function () {
 	var userId = getUserId() || '';
 	if (!Sliobj.gradableState)
 	    userId = '';
-        var disabled = (!Sliobj.currentSlide || !Sliobj.questionSlide);
+        var disabled = (!Sliobj.currentSlide || !Sliobj.questionSlide || !userId);
 	html += '<p></p>' + clickableSpan('Reset '+(userId?'user':'ALL')+' responses to current question',
 			  	       "Slidoc.resetQuestion('"+"'"+userId+"'"+"');", disabled) + '<br>';
 	html += '<p></p>' + clickableSpan('Rollback interactive portion of session',

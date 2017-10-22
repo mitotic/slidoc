@@ -1452,7 +1452,8 @@ class ActionHandler(BaseHandler):
                 startTimeStr = sliauth.print_date(startTime, prefix_time=True) if startTime else ''
                 dueDateStr = sliauth.print_date(dueDate, prefix_time=True) if dueDate else ''
                 connection = 'active' if sessionConnections.get(idVal, []) else ''
-                sessionStatus.append( [name, idVal, lastSlide, startTimeStr, submitTimeStr, lateToken[:16] if lateToken else '', connection] )
+                lateTokenStr =  sliauth.print_date(lateToken[:17], prefix_time=True) if lateToken and lateToken not in (LATE_SUBMIT,PARTIAL_SUBMIT) else lateToken
+                sessionStatus.append( [name, idVal, lastSlide, startTimeStr, submitTimeStr, lateTokenStr, connection] )
 
             self.render('responders.html', site_name=Options['site_name'], session_name=sessionName,
                          total_count=totalCount, started_count=startedCount, submitted_count=submittedCount,
@@ -3913,18 +3914,16 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['dueDate']:
                         # Check if past due date
+                        effectiveDueDate = sessionEntries['dueDate']
                         try:
                             userEntries = sdproxy.lookupValues(userId, ['lateToken'], sessionName)
-                            effectiveDueDate = userEntries['lateToken'] or sessionEntries['dueDate']
+                            if userEntries['lateToken'] and userEntries['lateToken'] not in (LATE_SUBMIT,PARTIAL_SUBMIT):
+                                # late/partial; use late submission option
+                                effectiveDueDate = userEntries['lateToken'][:17]
                         except Exception, excp:
                             print >> sys.stderr, 'sdserver.on_message_aux', str(excp)
-                            effectiveDueDate = sessionEntries['dueDate']
-                        if isinstance(effectiveDueDate, datetime.datetime):
-                            if sliauth.epoch_ms() > sliauth.epoch_ms(effectiveDueDate):
-                                params['pastDue'] = sliauth.iso_date(effectiveDueDate)
-                        elif effectiveDueDate:
-                            # late/partial; use late submission option
-                            params['pastDue'] = str(effectiveDueDate)
+                        if effectiveDueDate and sliauth.epoch_ms() > sliauth.epoch_ms(effectiveDueDate):
+                            params['pastDue'] = sliauth.iso_date(effectiveDueDate)
                 
                 if pluginMethodName.startswith('_upload'):
                     # plugin._upload*(arg1, ..., content=None)
@@ -5068,10 +5067,12 @@ def backupSite(dirname=''):
     backup_url = '/_browse/backup/' + backup_name
 
     if Options['site_name']:
-        dirpath = os.path.join(Options['site_name'], backup_name)
         backup_url = '/' + Options['site_name'] + backup_url
 
-    backup_path = os.path.join(Options['backup_dir'] or '_BACKUPS', backup_name)
+    if not BaseHandler.site_backup_dir:
+        return 'Error: No backup directory for site '+Options['site_name']
+
+    backup_path = os.path.join(BaseHandler.site_backup_dir, backup_name)
 
     if Options['site_list'] and not Options['site_number']:
         # Root server
