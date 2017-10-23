@@ -1401,7 +1401,8 @@ def update_remote_sheets_aux(force=False, synchronous=False):
             previewSession = previewingSession()
             if curTime-sheet.accessTime > 1000*sheet.holdSec and sheetName not in Lock_cache and sheetName not in Global.transactSessions and (not previewSession or sheetName not in (INDEX_SHEET, previewSession)):
                 # Cache entry has expired
-                delSheet(sheetName)
+                if Settings['gsheet_url']:
+                    delSheet(sheetName)
             continue
 
         # sheet_name, actions, modified_headers, headers_list, last_row, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
@@ -3696,7 +3697,7 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
 def importSheet(sheetName, headers, rows, overwrite=None):
     # Restore sheet from backup file
     if Settings['debug']:
-        print("DEBUG:importSheet", sheetName, headers, len(rows), overwrite, file=sys.stderr)
+        print("DEBUG:importSheet", sheetName, ','.join(headers), len(rows), overwrite, file=sys.stderr)
     oldSheet = getSheet(sheetName)
     if oldSheet:
         if overwrite:
@@ -3704,9 +3705,43 @@ def importSheet(sheetName, headers, rows, overwrite=None):
         else:
             raise Exception('Cannot overwrite sheet %s for import' % sheetName)
 
-    newSheet = createSheet(sheetName, headers, rows=rows)
-    # Expire sheet to force re-read from update remote cache (essential if sheet contains formulas)
-    newSheet.expire()
+    # Convert numeric strings to numbers
+    rows = [ [parseNumber(x) if isNumber(x) else x for x in row] for row in rows]
+
+    if Settings['gsheet_url']:
+        # Synchronously create sheet
+        user = ADMINUSER_ID
+        userToken = gen_proxy_token(user, ADMIN_ROLE)
+
+        post_data = {'sheet': sheetName, 'proxy': '1', 'createsheet': '1', 'admin': user, 'token': userToken}
+        post_data['headers'] = json.dumps(headers)
+        post_data['rows'] = json.dumps(rows, default=sliauth.json_default)
+        if overwrite:
+            post_data['overwrite'] = 1
+
+        http_client = tornado.httpclient.HTTPClient()
+        response = http_client.fetch(Settings['gsheet_url'], method='POST', headers=None, body=urllib.urlencode(post_data))
+        errMsg = ''
+        if response.error:
+            errMsg = str(response.error)
+        else:
+            try:
+                respObj = json.loads(response.body)
+                if respObj['result'] == 'error':
+                    errMsg = respObj['error']
+            except Exception, err:
+                errMsg = 'JSON parsing error: '+str(err)
+
+            if Settings['debug']:
+                print("DEBUG:importSheet: resp=", respObj, file=sys.stderr)
+
+        if errMsg:
+            raise Exception('Error in importing sheet %s: %s' % (sheetName, errMsg))
+        newSheet = getSheet(sheetName, require=True)
+    else:
+        newSheet = createSheet(sheetName, headers, rows=rows)
+        # Expire sheet to force re-read from update remote cache (essential if sheet contains formulas)
+        newSheet.expire()
 
 def createRoster(headers, rows):
     if headers[:4] != MIN_HEADERS:

@@ -1,8 +1,8 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.14d';
+var VERSION = '0.97.14f';
 
-var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', 'Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
+var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
 			 ['server_url', '', 'Base URL of server (if any); e.g., http://example.com'],
 			 [],
@@ -245,14 +245,18 @@ function resetSettings() {
 function defaultSettings(overwrite) {
     if (getSheet(SETTINGS_SHEET) && !overwrite)
 	return;
-    var settingsSheet = createSheet(SETTINGS_SHEET, ['name', 'value', 'description']);
+    var settingsSheet = createSheet(SETTINGS_SHEET, ['name', 'value', 'description'], overwrite);
     if (settingsSheet.getLastRow() > 1)
 	settingsSheet.deleteRows(2, settingsSheet.getLastRow()-1);
     for (var j=0; j<DEFAULT_SETTINGS.length; j++) {
 	var defaultRow = DEFAULT_SETTINGS[j];
 	settingsSheet.insertRows(j+2);
-	if (defaultRow.length && defaultRow[0].trim())
+	if (defaultRow.length && defaultRow[0].trim()) {
 	    settingsSheet.getRange(j+2, 1, 1, defaultRow.length).setValues([defaultRow]);
+	    // Hide key values
+	    if (defaultRow[0].trim().match(/_key$/i))
+		settingsSheet.getRange('B'+(j+2)+':B'+(j+2)).setNumberFormat(";;;");
+	}
     }
 }
 
@@ -674,6 +678,28 @@ function sheetAction(params) {
 		    }
 		}
 	    }
+
+	} else if (proxy && params.createsheet) {
+	    // Proxy create sheet
+	    var headers = params.headers ? JSON.parse(params.headers) : null;
+	    var rows = params.rows ? JSON.parse(params.rows) : [];
+	    var newSheet = createSheet(sheetName, headers, params.overwrite);
+	    if (rows.length) {
+		for (var j=0; j<headers.length; j++) {
+		    if (timeColumn(headers[j])) {
+			// Time/date column
+			for (var k=0; k<rows.length; k++) {
+			    if (rows[k][j]) {
+				try { rows[k][j] = createDate(rows[k][j]); } catch(err) {}
+			    }
+			}
+		    }
+		}
+		newSheet.insertRowsAfter(1, rows.length);
+		var allRange = newSheet.getRange(2, 1, rows.length, newSheet.getLastColumn());
+		allRange.setValues(rows);
+	    }
+	    returnValues = [];
 
 	} else if (proxy && params.allupdates && params.requestid && Settings['proxy_update_cache'] && Settings['proxy_update_cache'][0] == params.requestid) {
 	    // Proxy update request already handled; return cached response

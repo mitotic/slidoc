@@ -159,7 +159,7 @@ document.onreadystatechange = function(event) {
     <a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(subpath,plus=False) }}?download=1">&#x21E9;</a>
     </td>
     <td>
-    {% if root_admin or (site_admin and browse_path.startswith('files/')) %}
+    {% if (root_admin and not browse_path.startswith('backup')) or (site_admin and browse_path.startswith('files/')) %}
     <span class="clickable" onclick="deletePath('{{ subpath }}');">&#x1F5D1;</span>
     {% end %}
     </td>

@@ -35,7 +35,6 @@ Command arguments:
 
 import argparse
 import base64
-import cStringIO
 import csv
 import datetime
 import functools
@@ -79,6 +78,7 @@ import slidoc
 import plugins
 
 scriptdir = os.path.dirname(os.path.realpath(__file__))
+script_parentdir = os.path.abspath(os.path.join(scriptdir, os.pardir))
 
 Options = {
     '_index_html': '',  # Non-command line option
@@ -87,7 +87,7 @@ Options = {
     'allow_replies': None,
     'auth_key': '',
     'auth_type': '',
-    'backup_dir': '_BACKUPS',
+    'backup_dir': '_DEFAULT_BACKUPS',
     'backup_hhmm': '',
     'debug': False,
     'dry_run': False,
@@ -114,6 +114,7 @@ Options = {
     'reload': False,
     'request_timeout': 60,
     'libraries_dir': '',
+    'restore_backup': [],
     'root_users': [],
     'roster_columns': 'lastname,firstname,,id,email,altid',
     'server_key': None,
@@ -190,6 +191,8 @@ BATCH_AGE = 60      # Age of batch cookies (sec)
 
 WS_TIMEOUT_SEC = 1200    # Aggressive websocket timeout OK, since clients can re-connect (with session versioning)
 EVENT_BUFFER_SEC = 3
+
+BACKUP_VERSION_FILE = '_version.txt'
 
 SETTINGS_SHEET = 'settings_slidoc'
 SCORES_SHEET = 'scores_slidoc'
@@ -890,7 +893,9 @@ class ActionHandler(BaseHandler):
             if fext == '.zip':
                 fname1, fbody1, fname2, fbody2 = '', '', subsubpath, self.request.body
             else:
-                fname1, fbody1, fname2, fbody2 = subsubpath, sliauth.normalize_newlines(self.request.body), '', ''
+                fname1, fbody1, fname2, fbody2 = subsubpath, self.request.body, '', ''
+                if fbody1 and fext == '.md':
+                    fbody1 = sliauth.normalize_newlines(fbody1)
 
             try:
                 errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modimages='clear')
@@ -1875,10 +1880,10 @@ class ActionHandler(BaseHandler):
                     return
                 fileinfo = self.request.files['upload'][0]
                 fname = fileinfo['filename']
-                fbody = sliauth.normalize_newlines(fileinfo['body'])
+                fbody = fileinfo['body']
                 if Options['debug']:
                     print >> sys.stderr, 'ActionHandler:upload', action, fname, len(fbody), sessionName, submitDate
-                uploadedFile = cStringIO.StringIO(fbody)
+                uploadedFile = io.TextIOWrapper(io.BytesIO(fbody), newline=None)   # Universal newline mode for CSV files
 
                 if action == '_restore':
                     overwrite = self.get_argument('overwrite', '')
@@ -2000,7 +2005,7 @@ class ActionHandler(BaseHandler):
                     print >> sys.stderr, 'ActionHandler:upload', uploadType, sessionName, sessionModify, fname1, len(fbody1), fname2, len(fbody2)
 
                 try:
-                    if fbody1 and (fname1.endswith('.csv') or fname1.endswith('.md')):
+                    if fbody1 and fname1.endswith('.md'):
                         fbody1 = sliauth.normalize_newlines(fbody1)
                     errMsg = self.uploadSession(uploadType, sessionNumber, fname1, fbody1, fname2, fbody2, modify=sessionModify, create=sessionCreate, modimages='clear')
                 except Exception, excp:
@@ -4734,6 +4739,21 @@ def processTwitterMessage(msg):
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
 
+def restoreSite(bak_dir):
+    csv_list = glob.glob(bak_dir+'/*.csv')
+    csv_list.sort()
+
+    for fpath in csv_list:
+        fname = os.path.basename(fpath)
+        sheetName, _ = os.path.splitext(fname)
+        with open(fpath, 'rb') as f:       # Important to open in 'rb' mode for universal newline recognition
+            errMsg = restoreSheet(sheetName, fname, f, overwrite=False)
+            if errMsg:
+                raise Exception('Error in restoring %s: %s' % (fpath, errMsg))
+            else:
+                ##print >> sys.stderr, 'Restored sheet %s from backup directory %s' % (sheetName, bak_dir)
+                pass
+
 def restoreSheet(sheetName, filepath, csvfile, overwrite=None):
     # Restore sheet from backup CSV file
     try:
@@ -5063,7 +5083,7 @@ def backupSite(dirname=''):
     if Options['debug']:
         print >> sys.stderr, 'sdserver.backupSite:', Options['site_name'], dirname
 
-    backup_name = dirname or 'scheduled'
+    backup_name = dirname or 'daily'
     backup_url = '/_browse/backup/' + backup_name
 
     if Options['site_name']:
@@ -5073,6 +5093,25 @@ def backupSite(dirname=''):
         return 'Error: No backup directory for site '+Options['site_name']
 
     backup_path = os.path.join(BaseHandler.site_backup_dir, backup_name)
+
+    if backup_name == 'daily' and os.path.exists(backup_path):
+        # Copy previous daily backup to corresponding day/week backup before updating it
+        try:
+            with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'r') as f:
+                prev_bak_date = sliauth.parse_date(f.read().split()[0])
+                if prev_bak_date:
+                    day_path = os.path.join(BaseHandler.site_backup_dir, 'day'+prev_bak_date.strftime('%w'))
+                    week_path = os.path.join(BaseHandler.site_backup_dir, 'week'+prev_bak_date.strftime('%U'))
+                    for sync_path in (day_path, week_path):
+                        cmd = ['rsync', '-rpt', backup_path+'/', sync_path]
+                        print >> sys.stderr, 'backupSite:', Options['site_name'], ' '.join(cmd)
+                        try:
+                            output = subprocess.check_output(cmd)
+                        except Exception, excp:
+                            output = str(excp)
+                            print >> sys.stderr, 'ERROR:backupSite:', Options['site_name'], output
+        except Exception, excp:
+            print >> sys.stderr, 'ERROR:backupSite: weekly backup', Options['site_name'], excp
 
     if Options['site_list'] and not Options['site_number']:
         # Root server
@@ -5093,31 +5132,41 @@ def backupSite(dirname=''):
         # Sole or site server
         errorList = sdproxy.backupSheets(backup_path)
 
-        if dirname.lower().startswith('full'):
-            dirList = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir), (FILES_PATH, BaseHandler.site_files_dir)]
-            for name, relpath in dirList:
-                if relpath and os.path.isdir(relpath):
-                    cmd = ['rsync', relpath+'/', backup_path]
-                    print >> sys.stderr, 'backupSite', Options['site_name'], ' '.join(cmd)
-                    try:
-                        output = subprocess.check_output(cmd)
-                    except Exception, excp:
-                        output = str(excp)
-                        print >> sys.stderr, 'ERROR:backupSite', Options['site_name'], output
-                    if output.strip():
-                        errorList += 'Error in backing up %s directory %s: %s' % (name, relpath, output.strip())
+        dirList = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir), (FILES_PATH, BaseHandler.site_files_dir)]
+        for name, relpath in dirList:
+            # Backup source directory and any additional directories if "full" backup
+            if relpath and os.path.isdir(relpath) and (name in ['_source'] or dirname.lower().startswith('full')):
+                cmd = ['rsync', '-rpt', relpath+'/', os.path.join(backup_path, name)]
+                print >> sys.stderr, 'backupSite:', Options['site_name'], ' '.join(cmd)
+                try:
+                    output = subprocess.check_output(cmd)
+                except Exception, excp:
+                    output = str(excp)
+                    print >> sys.stderr, 'ERROR:backupSite', Options['site_name'], output
+                if output.strip():
+                    errorList += ['Error in backing up %s directory %s: %s' % (name, relpath, output.strip())]
 
+        # Backup slidoc source code
+        cmd = ['rsync', '-rpt', '--exclude=.*', '--exclude=.*/', '--exclude=*.pyc', '--exclude=*~', script_parentdir+'/src', script_parentdir+'/scripts', script_parentdir+'/docs', os.path.join(backup_path, '_slidoc')]
+        print >> sys.stderr, 'backupSite:', Options['site_name'], ' '.join(cmd)
+        try:
+            output = subprocess.check_output(cmd)
+        except Exception, excp:
+            output = str(excp)
+        if output.strip():
+            errorList += ['Error in backing up source code directory %s: %s' % (script_parentdir, output.strip())]
+        
     errorStr = '\n'.join(errorList)+'\n' if errorList else ''
     if errorStr:
         try:
-            with open(os.path.join(backup_path,'ERRORS_IN_BACKUP.txt'), 'w') as errfile:
+            with open(os.path.join(backup_path,'_ERRORS_IN_BACKUP.txt'), 'w') as errfile:
                 errfile.write(errorStr)
         except Exception, excp:
             print >> sys.stderr, "ERROR:backupSite: [%s] %s" % (Options['site_name'], excp)
 
     try:
-        with open(os.path.join(backup_path,'_version.txt'), 'w') as f:
-            f.write(sliauth.get_version()+'\n')
+        with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'w') as f:
+            f.write('%s v%s\n' % (sliauth.iso_date(nosec=True), sliauth.get_version()) )
     except Exception, excp:
         pass
 
@@ -5365,9 +5414,30 @@ def start_server(site_number=0, restart=False):
     if not restart:
         IOLoop.current().start()
 
-def getSheetSettings(gsheet_url, site_name='', adminonly_fail=False):
+def getBakDir(site_name):
+    if not Options['restore_backup']:
+        return None
+    bak_dir, bak_name = Options['restore_backup']
+    if site_name:
+        bak_dir = os.path.join(bak_dir, site_name)
+    bak_dir = os.path.join(bak_dir, bak_name)
+    return bak_dir
+
+def getSettingsSheet(gsheet_url, site_name='', adminonly_fail=False):
     try:
-        rows, headers = sliauth.read_sheet(gsheet_url, Options['root_auth_key'], sdproxy.SETTINGS_SHEET, site=site_name)
+        bak_dir = getBakDir(site_name)
+        if bak_dir:
+            settingsPath = os.path.join(bak_dir, sdproxy.SETTINGS_SHEET+'.csv')
+            if not os.path.exists(settingsPath):
+                raise Exception('Settings sheet %s not found in backup directory' % settingsPath )
+
+            rows = [row for row in csv.reader(settingsPath, delimiter=',')]
+            if not rows:
+                raise Exception('No rows in CSV file %s for settings sheet %s' % (settingsPath, sdproxy.SETTINGS_SHEET))
+            headers = rows[0]
+            rows = rows[1:]
+        else:
+            rows, headers = sliauth.read_sheet(gsheet_url, Options['root_auth_key'], sdproxy.SETTINGS_SHEET, site=site_name)
         return sliauth.get_settings(rows)
     except Exception, excp:
         ##if Options['debug']:
@@ -5402,7 +5472,7 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
     new_site = site_name not in Global.split_opts['site_list']
 
     errMsg = ''
-    sheetSettings = getSheetSettings(gsheet_url, site_name, adminonly_fail=Options['host'] != 'localhost') if gsheet_url else {}
+    sheetSettings = getSettingsSheet(gsheet_url, site_name, adminonly_fail=Options['host'] != 'localhost') if gsheet_url or Options['restore_backup'] else {}
     Global.siteSettings[site_name] = sheetSettings
     Global.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and options.multi_email_id else {}
 
@@ -5489,6 +5559,10 @@ def setup_site_server(sheetSettings, site_number):
                         opts_dict[name] = value
                 Global.session_options[sessionName] = opts_dict
 
+    bak_dir = getBakDir(Options['site_name'])
+    if bak_dir:
+        restoreSite(bak_dir)
+                
     if Options['backup_hhmm']:
         curTimeSec = sliauth.epoch_ms()/1000.0
         curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
@@ -5496,7 +5570,7 @@ def setup_site_server(sheetSettings, site_number):
         backupInterval = 86400
         if curTimeSec+60 > backupTimeSec:
             backupTimeSec += backupInterval
-        print >> sys.stderr, 'Scheduled backup in dir %s every %s hours, starting at %s' % (Options['backup_dir'], backupInterval/3600, sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
+        print >> sys.stderr, 'Scheduled daily backup in dir %s, starting at %s' % (Options['backup_dir'], sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
         def start_backup():
             if Options['debug']:
                 print >> sys.stderr, "Starting periodic backup"
@@ -5551,6 +5625,7 @@ def main():
     define("public", default=Options["public"], help="Public web site (no login required for home page etc., except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
+    define("restore_backup", default='', help="back_up_directory,back_up_name (to restore entire site from backup)")
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("single_site", default="", help="Single site name for testing")
@@ -5666,6 +5741,18 @@ def main():
     if options.forward_port:
         Global.relay_forward = ('localhost', forward_port)
 
+    if options.restore_backup:
+        Options['restore_backup'] = options.restore_backup.split(',')
+        if len(Options['restore_backup']) != 2:
+            raise Exception('Restore backup should be of the form : back_up_directory,back_up_name')
+        if not os.path.isdir(Options['restore_backup'][0]):
+            raise Exception('Backup directory %s for restore not found' % Options['restore_backup'][0])
+
+        if Options['gsheet_url']:
+            confirm = raw_input('CAUTION: To confirm Google Sheet restore from backup directory %s, please re-enter full directory name: ' % Options['restore_backup'][0])
+            if confirm.strip() != Options['restore_backup'][0]:
+                sys.exit('Cancelled restore from %s' % Options['restore_backup'][0])
+
     if Global.split_opts:
         print >> sys.stderr, 'DEBUG: sdserver.main:', Global.split_opts['site_list'], Global.relay_list
         relay_setup(0)
@@ -5684,7 +5771,7 @@ def main():
             start_multiproxy()
     else:
         # Start single site server
-        sheetSettings = getSheetSettings(Options['gsheet_url'], adminonly_fail=Options['host'] != 'localhost') if Options['gsheet_url'] else {}
+        sheetSettings = getSettingsSheet(Options['gsheet_url'], adminonly_fail=Options['host'] != 'localhost') if Options['gsheet_url'] or Options['restore_backup'] else {}
         Global.siteSettings[''] = sheetSettings
         Global.siteRosterMaps[''] = getSiteRosterMaps(Options['gsheet_url']) if Options['gsheet_url'] and options.multi_email_id else {}
         if sheetSettings:
