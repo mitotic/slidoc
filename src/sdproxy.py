@@ -3696,8 +3696,8 @@ def importUserAnswers(sessionName, userId, displayName='', answers={}, submitDat
 
 def importSheet(sheetName, headers, rows, overwrite=None):
     # Restore sheet from backup file
-    if Settings['debug']:
-        print("DEBUG:importSheet", sheetName, ','.join(headers), len(rows), overwrite, file=sys.stderr)
+    ##if Settings['debug']:
+    ##    print("DEBUG:importSheet", sheetName, ','.join(headers), len(rows), overwrite, file=sys.stderr)
     oldSheet = getSheet(sheetName)
     if oldSheet:
         if overwrite:
@@ -3732,16 +3732,16 @@ def importSheet(sheetName, headers, rows, overwrite=None):
             except Exception, err:
                 errMsg = 'JSON parsing error: '+str(err)
 
-            if Settings['debug']:
-                print("DEBUG:importSheet: resp=", respObj, file=sys.stderr)
+            ##if Settings['debug']:
+            ##    print("DEBUG:importSheet: resp=", respObj, file=sys.stderr)
 
         if errMsg:
             raise Exception('Error in importing sheet %s: %s' % (sheetName, errMsg))
         newSheet = getSheet(sheetName, require=True)
     else:
         newSheet = createSheet(sheetName, headers, rows=rows)
-        # Expire sheet to force re-read from update remote cache (essential if sheet contains formulas)
-        newSheet.expire()
+        ## Expire sheet to force re-read from update remote cache (essential if sheet contains formulas) NOT NEEDED ANYMORE
+        ## newSheet.expire()
 
 def createRoster(headers, rows):
     if headers[:4] != MIN_HEADERS:

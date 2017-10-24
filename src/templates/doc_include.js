@@ -4915,7 +4915,7 @@ function unpackSession(row) {
     // Also returns feedback for session:
     //   {session:, feedback:}
     Slidoc.log('unpackSession:', row);
-    var session_hidden = row.session_hidden.replace(/\s+/g, '');
+    var session_hidden = row.session_hidden;
     if (session_hidden.charAt(0) != '{')
 	session_hidden = atob(session_hidden);
 

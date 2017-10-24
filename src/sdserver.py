@@ -139,6 +139,8 @@ Options = {
 OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'start_date', 'end_date']
 SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title']
 
+SERVER_LOGFILE = 'screenlog.0'
+
 SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
 class Dummy():
@@ -1642,6 +1644,9 @@ class ActionHandler(BaseHandler):
             if uploadName:
                 if not os.path.isdir(fullpath):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Browse path not a directory %s' % fullpath)
+
+                if Options['dry_run'] and not Options['dry_run_file_modify']:
+                    raise Exception('Cannot upload files during dry run without file modify option')
 
                 file_list = []
                 if uploadName.endswith('.zip'):
@@ -5089,6 +5094,9 @@ def backupSite(dirname=''):
     if Options['site_name']:
         backup_url = '/' + Options['site_name'] + backup_url
 
+    if Options['site_list'] and backup_name in Options['site_list']:
+        raise Exception('Backup directory name %s conflicts with site name' % backup_name)
+
     if not BaseHandler.site_backup_dir:
         return 'Error: No backup directory for site '+Options['site_name']
 
@@ -5113,13 +5121,46 @@ def backupSite(dirname=''):
         except Exception, excp:
             print >> sys.stderr, 'ERROR:backupSite: weekly backup', Options['site_name'], excp
 
+    try:
+        with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'w') as f:
+            f.write('%s v%s\n' % (sliauth.iso_date(nosec=True), sliauth.get_version()) )
+    except Exception, excp:
+        print >> sys.stderr, 'backupSite: Error in writing backup version file', BACKUP_VERSION_FILE, excp
+
+    errorList = []
+    if not Options['site_name']:
+        # Root/single server; backup slidoc source code and log file
+        if not os.path.isdir(backup_path):
+            os.makedirs(backup_path)
+        cmd = ['rsync', '-rpt', '--executability', '--exclude=.*', '--exclude=.*/', '--exclude=*.pyc', '--exclude=*~', script_parentdir+'/src', script_parentdir+'/scripts', script_parentdir+'/docs', os.path.join(backup_path, '_slidoc')]
+        print >> sys.stderr, 'backupSite: source code', ' '.join(cmd)
+        try:
+            output = subprocess.check_output(cmd)
+        except Exception, excp:
+            output = str(excp)
+        if output.strip():
+            errorList += ['Error in backing up source code directory %s: %s' % (script_parentdir, output.strip())]
+
+        if os.path.exists(SERVER_LOGFILE):
+            try:
+                shutil.copy2(SERVER_LOGFILE, backup_path)
+            except Exception, excp:
+                print >> sys.stderr, 'backupSite: Error in copying server log file', SERVER_LOGFILE, excp
+
+        makefile_path = os.path.join(script_parentdir, 'Makefile')
+        if os.path.exists(makefile_path):
+            try:
+                shutil.copy2(makefile_path, backup_path)
+            except Exception, excp:
+                print >> sys.stderr, 'backupSite: Error in copying Makefile', makefile_path, excp
+
     if Options['site_list'] and not Options['site_number']:
         # Root server
         path = '/_backup'
         if dirname:
             path += '/' + urllib.quote(dirname)
         path += '?root='+Options['server_key']
-        errorList = []
+        
         for j, site in enumerate(Options['site_list']):
             relay_addr = Global.relay_list[j+1]
             try:
@@ -5130,32 +5171,27 @@ def backupSite(dirname=''):
             return 'Backed up module sessions for each site to directory %s\n' % backup_name
     else:
         # Sole or site server
-        errorList = sdproxy.backupSheets(backup_path)
+        errorList += sdproxy.backupSheets(backup_path)
 
-        dirList = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir), (FILES_PATH, BaseHandler.site_files_dir)]
+        dirList = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir)]
         for name, relpath in dirList:
             # Backup source directory and any additional directories if "full" backup
             if relpath and os.path.isdir(relpath) and (name in ['_source'] or dirname.lower().startswith('full')):
-                cmd = ['rsync', '-rpt', relpath+'/', os.path.join(backup_path, name)]
-                print >> sys.stderr, 'backupSite:', Options['site_name'], ' '.join(cmd)
+                reldir = os.path.join(Options['backup_dir'], backup_name, name)
+                if Options['site_name']:
+                    reldir = os.path.join(reldir, Options['site_name'])
+                if not os.path.isdir(reldir):
+                    os.makedirs(reldir)
+                cmd = ['rsync', '-rpt', relpath+'/', reldir]
+                print >> sys.stderr, 'backupSite:', reldir, ' '.join(cmd)
                 try:
                     output = subprocess.check_output(cmd)
                 except Exception, excp:
                     output = str(excp)
-                    print >> sys.stderr, 'ERROR:backupSite', Options['site_name'], output
+                    print >> sys.stderr, 'ERROR:backupSite', reldir, output
                 if output.strip():
                     errorList += ['Error in backing up %s directory %s: %s' % (name, relpath, output.strip())]
 
-        # Backup slidoc source code
-        cmd = ['rsync', '-rpt', '--exclude=.*', '--exclude=.*/', '--exclude=*.pyc', '--exclude=*~', script_parentdir+'/src', script_parentdir+'/scripts', script_parentdir+'/docs', os.path.join(backup_path, '_slidoc')]
-        print >> sys.stderr, 'backupSite:', Options['site_name'], ' '.join(cmd)
-        try:
-            output = subprocess.check_output(cmd)
-        except Exception, excp:
-            output = str(excp)
-        if output.strip():
-            errorList += ['Error in backing up source code directory %s: %s' % (script_parentdir, output.strip())]
-        
     errorStr = '\n'.join(errorList)+'\n' if errorList else ''
     if errorStr:
         try:
@@ -5163,12 +5199,6 @@ def backupSite(dirname=''):
                 errfile.write(errorStr)
         except Exception, excp:
             print >> sys.stderr, "ERROR:backupSite: [%s] %s" % (Options['site_name'], excp)
-
-    try:
-        with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'w') as f:
-            f.write('%s v%s\n' % (sliauth.iso_date(nosec=True), sliauth.get_version()) )
-    except Exception, excp:
-        pass
 
     if Options['debug']:
         if errorStr:
@@ -5431,7 +5461,8 @@ def getSettingsSheet(gsheet_url, site_name='', adminonly_fail=False):
             if not os.path.exists(settingsPath):
                 raise Exception('Settings sheet %s not found in backup directory' % settingsPath )
 
-            rows = [row for row in csv.reader(settingsPath, delimiter=',')]
+            with open(settingsPath, 'rb') as f:
+                rows = [row for row in csv.reader(f, delimiter=',')]
             if not rows:
                 raise Exception('No rows in CSV file %s for settings sheet %s' % (settingsPath, sdproxy.SETTINGS_SHEET))
             headers = rows[0]
