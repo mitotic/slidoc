@@ -1303,7 +1303,7 @@ class ActionHandler(BaseHandler):
                 uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
 
             if action == '_republish':
-                buildMsgs = self.rebuild(uploadType, make='all' if republishForce else '', log_dict=True)
+                buildMsgs = self.rebuild(uploadType, make='' if republishForce else 'all', log_dict=True)
                 # Re-index after complete rebuild
                 indMsgs = self.rebuild(uploadType, indexOnly=True)
             else:
@@ -2393,7 +2393,7 @@ class ActionHandler(BaseHandler):
             if msgs:
                 msg_list += msgs + ['']
 
-        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=False, make='all')
+        retval = self.compile(TOP_LEVEL, dest_dir=self.site_web_dir, indexOnly=False, make='')
         msgs = retval.get('messages',[])
         msg_dict[TOP_LEVEL] = msgs
         if msgs:
