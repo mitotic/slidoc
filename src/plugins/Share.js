@@ -253,7 +253,7 @@ Share = {
 		}
 		respCount += 1;
 		if (result[explainHeader] && result[explainHeader][j])
-		    explanations.push(result[explainHeader][j])
+		    explanations.push(''+result[explainHeader][j]);  // Convert to string
 		prevResp = respVal;
 	    }
 	    if (respCount)
@@ -315,9 +315,9 @@ Share = {
 	    // Not choice/number question and not voting; display responses
 	    var lines = [];
 	    for (var j=0; j<nResp; j++) {
-		lines.push([(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'), result[responseHeader][j]]);
+		lines.push([(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'), ''+result[responseHeader][j]]); // Convert to string
 	    }
-	    Slidoc.showPopupWithList('Responses (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, true);
+	    Slidoc.showPopupWithList('Responses (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, !codeResp);
 	    return;
 	}
 
@@ -356,11 +356,11 @@ Share = {
 	    // Column 3 (fill in with response/explanation)
 	    line += '<code class="slidoc-plugin-Share-prefix'+(isCorrect ? '-correct' : '')+'"></code>';
 	    var prefixVal = '';
-	    var suffixVal = respVal;
+	    var suffixVal = ''+respVal; // Convert to string
 	    if (result[explainHeader] || checkResp.length) {
 		line += ': ';
-		prefixVal = respVal;
-		suffixVal = result[explainHeader] ? result[explainHeader][j] : '';
+		prefixVal = ''+respVal; // Convert to string
+		suffixVal = result[explainHeader] ? ''+result[explainHeader][j] : '';
 	    }
 
 	    // Column 4 (fill in with response/explanation)
@@ -374,7 +374,7 @@ Share = {
 		ulistOther.push(comp);
 	}
 
-	Slidoc.showPopupWithList(lines.join('\n'), ulistCorr.concat(ulistOther), true);
+	Slidoc.showPopupWithList(lines.join('\n'), ulistCorr.concat(ulistOther), !codeResp || result[explainHeader]);
 
 	for (var k=0; k<this.voteCodes.length; k++) {
 	    if (!this.voteCodes[k])

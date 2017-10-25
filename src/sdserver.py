@@ -147,6 +147,7 @@ class Dummy():
     pass
     
 Global = Dummy()
+Global.config_file = ''
 Global.userRoles = None
 Global.backup = None
 Global.remoteShutdown = False
@@ -521,7 +522,23 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         cls.site_web_dir    = Options['static_dir'] + sitePrefix
         cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH if Options['plugindata_dir'] else None
         cls.site_backup_dir = Options['backup_dir'] + sitePrefix if Options['backup_dir'] else None
-        cls.site_files_dir  = Options['static_dir'] + sitePrefix + '/' + FILES_PATH
+
+        if site_name and Options['restore_backup']:
+            site_bak_dir = os.path.join(Options['restore_backup'][0], site_name, Options['restore_backup'][1])
+            if cls.site_src_dir and not os.path.exists(cls.site_src_dir):
+                temdir = os.path.join(site_bak_dir, '_source')
+                if os.path.exists(temdir):
+                    cls.site_src_dir = temdir
+            if cls.site_web_dir and not os.path.exists(cls.site_web_dir):
+                temdir = os.path.join(site_bak_dir, '_web')
+                if os.path.exists(temdir):
+                    cls.site_web_dir = temdir
+            if cls.site_data_dir and not os.path.exists(cls.site_data_dir):
+                temdir = os.path.join(site_bak_dir, PLUGINDATA_PATH)
+                if os.path.exists(temdir):
+                    cls.site_data_dir = temdir
+
+        cls.site_files_dir = os.path.join(cls.site_web_dir, FILES_PATH)
 
         if Options['dry_run'] and not Options['dry_run_file_modify']:
             return
@@ -860,7 +877,7 @@ class ActionHandler(BaseHandler):
                     next_url = '/'+Options['site_name']+next_url
                 self.redirect(Global.login_url+'?next='+urllib.quote_plus(next_url))
                 return
-            raise tornado.web.HTTPError(403, log_message='CUSTOM:<a href="/">Login</a> as admin to preview session %s' % self.previewActive())
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:<a href="/">Login</a> as admin to proceed %s' % self.previewActive())
 
         try:
             return self.getAction(subpath)
@@ -1441,6 +1458,7 @@ class ActionHandler(BaseHandler):
             startedCount = 0
             submittedCount = 0
             idResponders = set()
+            curTime = time.time()
             for idVal, name in nameMap.items():
                 normalUser = name and not name.startswith('#')
                 if normalUser:
@@ -1458,9 +1476,13 @@ class ActionHandler(BaseHandler):
                 submitTimeStr = sliauth.print_date(submitTime, prefix_time=True) if submitTime else ''
                 startTimeStr = sliauth.print_date(startTime, prefix_time=True) if startTime else ''
                 dueDateStr = sliauth.print_date(dueDate, prefix_time=True) if dueDate else ''
-                connection = 'active' if sessionConnections.get(idVal, []) else ''
+                accessTime = None
+                for connection in sessionConnections.get(idVal, []):
+                    elapsedTime = math.floor(curTime-connection.msgTime)
+                    accessTime = elapsedTime if accessTime is None else min(accessTime, elapsedTime)
+                idleStatus = '' if accessTime is None else ('idle %ds' % accessTime)
                 lateTokenStr =  sliauth.print_date(lateToken[:17], prefix_time=True) if lateToken and lateToken not in (LATE_SUBMIT,PARTIAL_SUBMIT) else lateToken
-                sessionStatus.append( [name, idVal, lastSlide, startTimeStr, submitTimeStr, lateTokenStr, connection] )
+                sessionStatus.append( [name, idVal, lastSlide, startTimeStr, submitTimeStr, lateTokenStr, idleStatus] )
 
             self.render('responders.html', site_name=Options['site_name'], session_name=sessionName,
                          total_count=totalCount, started_count=startedCount, submitted_count=submittedCount,
@@ -1682,9 +1704,9 @@ class ActionHandler(BaseHandler):
                 if isfile:
                     _, _, linkpath = subdirpath.partition('/')
                     if predir == 'data':
-                       linkpath = PLUGINDATA_PATH + '/' + linkpath
+                        linkpath = PLUGINDATA_PATH + '/' + linkpath
                     elif predir == 'files':
-                       linkpath = FILES_PATH + '/' + linkpath
+                        linkpath = FILES_PATH + '/' + linkpath
                     if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.jpeg','.jpg','.pdf','.png'):
                         viewpath = linkpath
 
@@ -3530,7 +3552,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if connection is excludeConnection:
                 continue
             connection.locked = lock_msg
-            connection.write_message(json.dumps([0, 'lock', [connection.locked, reload] ]))
+            connection.write_message_safe(json.dumps([0, 'lock', [connection.locked, reload] ]))
 
     @classmethod
     def lockSessionConnections(cls, sessionName, lock_msg, reload=False):
@@ -3541,7 +3563,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         for userId, connections in cls.get_connections(sessionName).items():
             for connection in connections:
                 connection.locked = lock_msg
-                connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
+                connection.write_message_safe(json.dumps([0, 'lock', [connection.locked, reload]] ))
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: lockSessionConnections', 'DONE'
 
@@ -3550,7 +3572,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         for path, user, connections in  cls.get_connections():
             for connection in connections:
                 connection.locked = lock_msg
-                connection.write_message(json.dumps([0, 'lock', [connection.locked, reload]] ))
+                connection.write_message_safe(json.dumps([0, 'lock', [connection.locked, reload]] ))
 
     @classmethod
     def getSessionVersion(cls, sessionName, update=False):
@@ -3771,7 +3793,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
         self.eventFlusher.start()
 
-        self.write_message(json.dumps([0, 'session_setup', [self.sessionVersion] ]))
+        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion] ]))
 
     def on_close(self):
         if Options['debug']:
@@ -3793,6 +3815,12 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         except Exception, err:
             pass
 
+    def write_message_safe(self, msg):
+        try:
+            self.write_message(msg)
+        except Exception, excp:
+            if Options['debug']:
+                print >> sys.stderr, 'DEBUG: write_message_safe: Error in write_message', self.pathUser, self.locked, str(excp)
 
     def flushEventBuffer(self):
         while self.eventBuffer:
@@ -3800,7 +3828,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             sendList = self.eventBuffer.pop(0)
             # Message: source, evName, [args]
             msg = [0, 'event', [sendList[0], sendList[1], sendList[2:]] ]
-            self.write_message(json.dumps(msg, default=sliauth.json_default))
+            self.write_message_safe(json.dumps(msg, default=sliauth.json_default))
 
     def _close_on_timeout(self):
         if self.ws_connection:
@@ -3832,7 +3860,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     def on_message(self, message):
         outMsg = self.on_message_aux(message)
         if outMsg:
-            self.write_message(outMsg)
+            self.write_message_safe(outMsg)
         self.timeout = IOLoop.current().call_later(WS_TIMEOUT_SEC, self._close_on_timeout)
 
     def on_message_aux(self, message):
@@ -3860,7 +3888,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         try:
             obj = json.loads(message)
             if obj[0] != self.sessionVersion:
-                self.write_message(json.dumps([0, 'close', ['Outdated version of session: %s vs %s' % (obj[0], self.sessionVersion), 'Outdated version of session. Reload page'] ]))
+                self.write_message_safe(json.dumps([0, 'close', ['Outdated version of session: %s vs %s' % (obj[0], self.sessionVersion), 'Outdated version of session. Reload page'] ]))
                 return
 
             callback_index = obj[1]
@@ -4103,6 +4131,10 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
         sessionName = self.get_path_base(self.request.path)
         filename = self.get_path_base(self.request.path, special=True)
 
+        if self.request.path.endswith('.md'):
+            # Failsafe - no direct web access to *.md files
+            raise tornado.web.HTTPError(404)
+
         batchMode = False
         cookieData = {}
         if Options['server_url'] == 'http://localhost' or Options['server_url'].startswith('http://localhost:'):
@@ -4160,10 +4192,6 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Click <a href="%s">here</a> to preview session %s' % (preview_url, ActionHandler.previewState['name']))
                 else:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Session not currently accessible')
-
-        if self.request.path.endswith('.md'):
-            # Failsafe - no direct web access to *.md files
-            raise tornado.web.HTTPError(404)
 
         if self.request.path.startswith('/'+ADMIN_PATH):
             # Admin path accessible only to dry_run (preview) or wet run using proxy_url
@@ -5081,6 +5109,67 @@ def sendPrivateRequest(relay_address, path='/', proto='http'):
         sock.close()
         return retval
 
+def exec_cmd(cmd_name, options=[], arg_list=[]):
+    # Execute command and return empty list on success or list of output/error messages
+    cmd = [cmd_name] + options + arg_list
+    print >> sys.stderr, 'exec_cmd:', ' '.join(cmd)
+    try:
+        output = subprocess.check_output(cmd)
+    except Exception, excp:
+        output = str(excp)
+        print >> sys.stderr, 'ERROR:exec_cmd', cmd_name, output
+    if output.strip():
+        return ['Error in command %s: %s' % (cmd_name, output.strip())]
+    else:
+        return []
+
+def backupCopy(filepath, dest_dir, if_exists=False):
+    if if_exists and (not filepath or not os.path.exists(filepath)):
+        return ''
+    try:
+        shutil.copy2(filepath, dest_dir)
+        return ''
+    except Exception, excp:
+        errMsg = 'backupCopy: Error in copying file %s to %s: %s' % (filepath, dest_dir, excp)
+        print >> sys.stderr, errMsg
+        return errMsg
+
+def backupWrite(dirpath, filename, content, create_dir=False):
+    if create_dir and not os.path.isdir(dirpath):
+        os.makedirs(dirpath)
+    try:
+        filepath = os.path.join(dirpath, filename)
+        with open(filepath, 'w') as f:
+            f.write(content)
+        return ''
+    except Exception, excp:
+        errMsg = 'backupWrite: Error in writing file %s: %s' % (filepath, excp)
+        print >> sys.stderr, errMsg
+        return errMsg
+    
+def backupLink(backup_path):
+    return  # DISABLED; symlinks do not work well with Dropbox
+    if not Options['site_name']:
+        return
+    backup_name = os.path.basename(backup_path)
+    subnames = ['_source', '_web', PLUGINDATA_PATH]
+    for subname in subnames:
+        try:
+            alt_link_dir = os.path.join(Options['backup_dir'], backup_name, subname)
+            alt_link = os.path.join(alt_link_dir, Options['site_name'])
+            source = os.path.join('..', '..', Options['site_name'], backup_name, subname)
+
+            if not os.path.isdir(alt_link_dir):
+                os.makedirs(alt_link_dir)
+
+            if os.path.exists(os.path.join(alt_link_dir, source)):
+                if os.path.islink(alt_link):
+                    os.remove(alt_link)
+                os.symlink(source, alt_link)
+
+        except Exception, excp:
+            print >> sys.stderr, 'backupLink: Error in creating symlink for', backup_name, subname, Options['site_name'], excp
+
 def backupSite(dirname=''):
     if dirname.endswith('-'):
         dirname += sliauth.iso_date(nosec=True).replace(':','-')
@@ -5108,51 +5197,44 @@ def backupSite(dirname=''):
             with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'r') as f:
                 prev_bak_date = sliauth.parse_date(f.read().split()[0])
                 if prev_bak_date:
+                    # Save last daily backup
                     day_path = os.path.join(BaseHandler.site_backup_dir, 'day'+prev_bak_date.strftime('%w'))
-                    week_path = os.path.join(BaseHandler.site_backup_dir, 'week'+prev_bak_date.strftime('%U'))
-                    for sync_path in (day_path, week_path):
-                        cmd = ['rsync', '-rpt', backup_path+'/', sync_path]
-                        print >> sys.stderr, 'backupSite:', Options['site_name'], ' '.join(cmd)
-                        try:
-                            output = subprocess.check_output(cmd)
-                        except Exception, excp:
-                            output = str(excp)
-                            print >> sys.stderr, 'ERROR:backupSite:', Options['site_name'], output
+                    exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', day_path])
+                    backupLink(day_path)
+
+                    if datetime.datetime.now().strftime('%U') != prev_bak_date.strftime('%U'):
+                        # New week; save last daily backup for previous week
+                        week_path = os.path.join(BaseHandler.site_backup_dir, 'week'+prev_bak_date.strftime('%U'))
+                        exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', week_path])
+                        backupLink(week_path)
+                        if os.path.exists(SERVER_LOGFILE):
+                            if not backupCopy(SERVER_LOGFILE, week_path):
+                                # Remove logfile on successful weekly backup copy (it should be recreated)
+                                try:
+                                    os.remove(SERVER_LOGFILE)
+                                except Exception, excp:
+                                    print >> sys.stderr, 'ERROR:backupSite: Failed to remove logfile', SERVER_LOGFILE, excp
+
         except Exception, excp:
             print >> sys.stderr, 'ERROR:backupSite: weekly backup', Options['site_name'], excp
 
-    try:
-        with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'w') as f:
-            f.write('%s v%s\n' % (sliauth.iso_date(nosec=True), sliauth.get_version()) )
-    except Exception, excp:
-        print >> sys.stderr, 'backupSite: Error in writing backup version file', BACKUP_VERSION_FILE, excp
+    backupWrite(backup_path, BACKUP_VERSION_FILE, '%s v%s\n' % (sliauth.iso_date(nosec=True), sliauth.get_version()),
+                create_dir=True)
+
+    backupWrite(backup_path, datetime.datetime.now().strftime('_date%Y-%m-%d'), '', create_dir=True)
 
     errorList = []
     if not Options['site_name']:
         # Root/single server; backup slidoc source code and log file
-        if not os.path.isdir(backup_path):
-            os.makedirs(backup_path)
-        cmd = ['rsync', '-rpt', '--executability', '--exclude=.*', '--exclude=.*/', '--exclude=*.pyc', '--exclude=*~', script_parentdir+'/src', script_parentdir+'/scripts', script_parentdir+'/docs', os.path.join(backup_path, '_slidoc')]
-        print >> sys.stderr, 'backupSite: source code', ' '.join(cmd)
-        try:
-            output = subprocess.check_output(cmd)
-        except Exception, excp:
-            output = str(excp)
-        if output.strip():
-            errorList += ['Error in backing up source code directory %s: %s' % (script_parentdir, output.strip())]
-
-        if os.path.exists(SERVER_LOGFILE):
-            try:
-                shutil.copy2(SERVER_LOGFILE, backup_path)
-            except Exception, excp:
-                print >> sys.stderr, 'backupSite: Error in copying server log file', SERVER_LOGFILE, excp
+        errorList += exec_cmd('rsync', ['-rpt', '--delete', '--executability', '--exclude=.*', '--exclude=.*/', '--exclude=*.pyc', '--exclude=*~'],
+                                       [script_parentdir+'/src', script_parentdir+'/scripts', script_parentdir+'/docs', os.path.join(backup_path, '_slidoc')])
 
         makefile_path = os.path.join(script_parentdir, 'Makefile')
-        if os.path.exists(makefile_path):
-            try:
-                shutil.copy2(makefile_path, backup_path)
-            except Exception, excp:
-                print >> sys.stderr, 'backupSite: Error in copying Makefile', makefile_path, excp
+
+        backupCopy(Global.config_file, backup_path, if_exists=True)
+        backupCopy(makefile_path, backup_path, if_exists=True)
+        if dirname.lower().startswith('full'):
+            backupCopy(SERVER_LOGFILE, backup_path, if_exists=True)
 
     if Options['site_list'] and not Options['site_number']:
         # Root server
@@ -5173,32 +5255,21 @@ def backupSite(dirname=''):
         # Sole or site server
         errorList += sdproxy.backupSheets(backup_path)
 
-        dirList = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir)]
-        for name, relpath in dirList:
+        sublist = [('_source', BaseHandler.site_src_dir), ('_web', BaseHandler.site_web_dir), (PLUGINDATA_PATH, BaseHandler.site_data_dir)]
+
+        for subname, relpath in sublist:
             # Backup source directory and any additional directories if "full" backup
-            if relpath and os.path.isdir(relpath) and (name in ['_source'] or dirname.lower().startswith('full')):
-                reldir = os.path.join(Options['backup_dir'], backup_name, name)
-                if Options['site_name']:
-                    reldir = os.path.join(reldir, Options['site_name'])
+            if relpath and os.path.isdir(relpath) and (subname in ['_source'] or dirname.lower().startswith('full')):
+                reldir = os.path.join(backup_path, subname)
                 if not os.path.isdir(reldir):
                     os.makedirs(reldir)
-                cmd = ['rsync', '-rpt', relpath+'/', reldir]
-                print >> sys.stderr, 'backupSite:', reldir, ' '.join(cmd)
-                try:
-                    output = subprocess.check_output(cmd)
-                except Exception, excp:
-                    output = str(excp)
-                    print >> sys.stderr, 'ERROR:backupSite', reldir, output
-                if output.strip():
-                    errorList += ['Error in backing up %s directory %s: %s' % (name, relpath, output.strip())]
+                errorList += exec_cmd('rsync', ['-rpt', '--delete'], [relpath+'/', reldir])
+
+        backupLink(backup_path)
 
     errorStr = '\n'.join(errorList)+'\n' if errorList else ''
     if errorStr:
-        try:
-            with open(os.path.join(backup_path,'_ERRORS_IN_BACKUP.txt'), 'w') as errfile:
-                errfile.write(errorStr)
-        except Exception, excp:
-            print >> sys.stderr, "ERROR:backupSite: [%s] %s" % (Options['site_name'], excp)
+        backupWrite(backup_path, '_ERRORS_IN_BACKUP.txt', errorStr)
 
     if Options['debug']:
         if errorStr:
@@ -5404,7 +5475,7 @@ def start_multiproxy():
             else:
                 # Root server
                 retval = Global.relay_list[0]
-            print >> sys.stderr, 'ABC: get_relay_addr_uri: ', sliauth.iso_date(nosubsec=True), self.request_uri, retval
+            print >> sys.stderr, 'ABC: get_relay_addr_uri:', sliauth.iso_date(nosubsec=True), self.ip_addr, self.request_uri, retval
             return retval
 
     Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,
@@ -5625,8 +5696,12 @@ def setup_site_server(sheetSettings, site_number):
         Global.twitterStream.start_stream()
 
 def main():
+    def config_parse(path):
+        Global.config_file = path
+        parse_config_file(path, final=False)
+
     define("config", type=str, help="Path to config file",
-        callback=lambda path: parse_config_file(path, final=False))
+        callback=config_parse)
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
     define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
@@ -5727,6 +5802,8 @@ def main():
 
     if sliauth.RESTRICTED_SESSIONS_RE:
         print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
+    if Global.config_file:
+        print >> sys.stderr, 'sdserver: Config file =', Global.config_file
 
     print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(options, x))
 

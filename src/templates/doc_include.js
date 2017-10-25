@@ -6097,7 +6097,8 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    if (setup || !Sliobj.session || !Sliobj.session.paced || !Sliobj.session.remainingTries) {
 		if (!allowReanswer())
 		    inpElem.disabled = 'disabled';
-		inpElem.value = '';
+		if (!multiline)
+		    inpElem.value = '';
 	    }
 	}
 
