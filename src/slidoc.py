@@ -1944,7 +1944,7 @@ class SlidocRenderer(MathRenderer):
 
         if maxchars:
             ncols = 60
-            nrows = 1 + int((maxchars-1)/ncols)
+            nrows = 1 + int((maxchars-1) / ncols)
             ans_params['boxsize'] = 'maxlength="%d" cols="%d" rows="%d"' % (maxchars, ncols, nrows)
             ans_params['boxlabel'] = '<em>(%d characters)</em>' % maxchars
         else:

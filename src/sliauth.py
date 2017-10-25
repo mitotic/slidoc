@@ -177,7 +177,7 @@ def parse_date(date_time_str, pre_midnight=False, strict=False):
 
 def create_date(epoch_ms=None):
     """Create datetime object from epoch milliseconds (i.e., milliseconds since Jan. 1, 1970)"""
-    return datetime.datetime.now() if epoch_ms is None else datetime.datetime.fromtimestamp(epoch_ms/1000)
+    return datetime.datetime.now() if epoch_ms is None else datetime.datetime.fromtimestamp(epoch_ms / 1000)
 
 def epoch_ms(date_time=None):
     """Return epoch milliseconds (i.e., milliseconds since Jan. 1, 1970) for datetime object"""

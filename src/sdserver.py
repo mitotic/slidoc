@@ -523,17 +523,18 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH if Options['plugindata_dir'] else None
         cls.site_backup_dir = Options['backup_dir'] + sitePrefix if Options['backup_dir'] else None
 
-        if site_name and Options['restore_backup']:
+        if site_name and Options['restore_backup'] and Options['dry_run'] and not Options['dry_run_file_modify']:
+            # Restoring from backup, dry run without file modification; override source/web/data directories with backup directories
             site_bak_dir = os.path.join(Options['restore_backup'][0], site_name, Options['restore_backup'][1])
-            if cls.site_src_dir and not os.path.exists(cls.site_src_dir):
+            if cls.site_src_dir:
                 temdir = os.path.join(site_bak_dir, '_source')
                 if os.path.exists(temdir):
                     cls.site_src_dir = temdir
-            if cls.site_web_dir and not os.path.exists(cls.site_web_dir):
+            if cls.site_web_dir:
                 temdir = os.path.join(site_bak_dir, '_web')
                 if os.path.exists(temdir):
                     cls.site_web_dir = temdir
-            if cls.site_data_dir and not os.path.exists(cls.site_data_dir):
+            if cls.site_data_dir:
                 temdir = os.path.join(site_bak_dir, PLUGINDATA_PATH)
                 if os.path.exists(temdir):
                     cls.site_data_dir = temdir
@@ -749,7 +750,7 @@ class SiteActionHandler(BaseHandler):
                 self.displayMessage(outHtml, back_url='/_setup')
 
         elif action == '_backup':
-            self.displayMessage(backupSite(subsubpath), back_url='/_setup')
+            self.displayMessage(backupSite(subsubpath, broadcast=True), back_url='/_setup')
 
         elif action == '_shutdown':
             self.clear_user_cookie()
@@ -5170,7 +5171,7 @@ def backupLink(backup_path):
         except Exception, excp:
             print >> sys.stderr, 'backupLink: Error in creating symlink for', backup_name, subname, Options['site_name'], excp
 
-def backupSite(dirname=''):
+def backupSite(dirname='', broadcast=False):
     if dirname.endswith('-'):
         dirname += sliauth.iso_date(nosec=True).replace(':','-')
 
@@ -5238,19 +5239,24 @@ def backupSite(dirname=''):
 
     if Options['site_list'] and not Options['site_number']:
         # Root server
-        path = '/_backup'
-        if dirname:
-            path += '/' + urllib.quote(dirname)
-        path += '?root='+Options['server_key']
-        
-        for j, site in enumerate(Options['site_list']):
-            relay_addr = Global.relay_list[j+1]
-            try:
-                retval = sendPrivateRequest(relay_addr, path='/'+site+path)
-            except Exception, excp:
-                errorList.append('Error in remote backup of site %s: %s' % (site, excp))
-        if not errorList:
-            return 'Backed up module sessions for each site to directory %s\n' % backup_name
+        if not broadcast:
+            if not errorList:
+                return 'Backed up root'
+        else:
+            # Broadcast backup command
+            path = '/_backup'
+            if dirname:
+                path += '/' + urllib.quote(dirname)
+            path += '?root='+Options['server_key']
+
+            for j, site in enumerate(Options['site_list']):
+                relay_addr = Global.relay_list[j+1]
+                try:
+                    retval = sendPrivateRequest(relay_addr, path='/'+site+path)
+                except Exception, excp:
+                    errorList.append('Error in remote backup of site %s: %s' % (site, excp))
+            if not errorList:
+                return 'Backed up module sessions for each site to directory %s\n' % backup_name
     else:
         # Sole or site server
         errorList += sdproxy.backupSheets(backup_path)
@@ -5624,6 +5630,25 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
         start_server(site_number, restart=restart)
         return errMsg  # If not restart, returns only when server stops
 
+def setup_backup():
+    if not Options['backup_hhmm']:
+        return
+    curTimeSec = sliauth.epoch_ms()/1000.0
+    curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
+    backupTimeSec = sliauth.epoch_ms(sliauth.parse_date(curDate+'T'+Options['backup_hhmm']))/1000.0
+    backupInterval = 86400
+    if curTimeSec+60 > backupTimeSec:
+        backupTimeSec += backupInterval
+    print >> sys.stderr, Options['site_name'] or 'ROOT', 'Scheduled daily backup in dir %s, starting at %s' % (Options['backup_dir'], sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
+    def start_backup():
+        if Options['debug']:
+            print >> sys.stderr, "Starting periodic backup"
+        backupSite()
+        Global.backup = PeriodicCallback(backupSite, backupInterval*1000.0)
+        Global.backup.start()
+
+    IOLoop.current().call_at(backupTimeSec, start_backup)
+
 def setup_site_server(sheetSettings, site_number):
     if Options['proxy_sheet']:
         # Copy options to proxy
@@ -5664,24 +5689,9 @@ def setup_site_server(sheetSettings, site_number):
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:
         restoreSite(bak_dir)
-                
-    if Options['backup_hhmm']:
-        curTimeSec = sliauth.epoch_ms()/1000.0
-        curDate = sliauth.iso_date(sliauth.create_date(curTimeSec*1000.0))[:10]
-        backupTimeSec = sliauth.epoch_ms(sliauth.parse_date(curDate+'T'+Options['backup_hhmm']))/1000.0
-        backupInterval = 86400
-        if curTimeSec+60 > backupTimeSec:
-            backupTimeSec += backupInterval
-        print >> sys.stderr, 'Scheduled daily backup in dir %s, starting at %s' % (Options['backup_dir'], sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
-        def start_backup():
-            if Options['debug']:
-                print >> sys.stderr, "Starting periodic backup"
-            backupSite()
-            Global.backup = PeriodicCallback(backupSite, backupInterval*1000.0)
-            Global.backup.start()
 
-        IOLoop.current().call_at(backupTimeSec, start_backup)
-
+    setup_backup()
+    
     if Options['twitter_config']:
         comps = [x.strip() for x in Options['twitter_config'].split(',')]
         Global.twitter_params = {
@@ -5877,6 +5887,7 @@ def main():
             # Root server
             print >> sys.stderr, 'DEBUG: sdserver.userRoles:', Global.userRoles.root_role, Global.userRoles.site_roles, Global.userRoles.external_users
             start_multiproxy()
+            setup_backup()
     else:
         # Start single site server
         sheetSettings = getSettingsSheet(Options['gsheet_url'], adminonly_fail=Options['host'] != 'localhost') if Options['gsheet_url'] or Options['restore_backup'] else {}
