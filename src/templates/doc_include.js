@@ -2011,7 +2011,7 @@ Slidoc.exitFullscreen = function() {
 
 
 Slidoc.toLocalISOString = function (dateObj, dateOnly) {
-    var date = dateObj || (new Date());
+    var date = dateObj ? (new Date(dateObj)) : (new Date());
     date.setTime( date.getTime() - date.getTimezoneOffset()*60*1000 );
     return dateOnly ? date.toISOString().slice(0,10) : date.toISOString().slice(0,16);
 }
@@ -5157,7 +5157,8 @@ function showPendingCalls() {
 	hourglasses += '&#x29D6;'
 	
     var pendingElem = document.getElementById("slidoc-pending-display");
-    pendingElem.innerHTML = hourglasses;
+    if (pendingElem)
+	pendingElem.innerHTML = hourglasses;
 }
 
 function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, retStatus) {
@@ -6318,10 +6319,10 @@ Slidoc.showScore = function () {
     var scoreElem = document.getElementById('slidoc-score-display');
     if (!scoreElem)
 	return;
-    if (Sliobj.scores.questionsCount) {
+    if (Sliobj.params.questionsMax) {
 	if (controlledPace())
 	    scoreElem.textContent = Sliobj.scores.questionsCount;
-	else if (Sliobj.session.submitted && Sliobj.params.totalWeight == Sliobj.params.scoreWeight && !displayAfterGrading())
+	else if (Sliobj.scores.questionsCount && Sliobj.session.submitted && Sliobj.params.totalWeight == Sliobj.params.scoreWeight && !displayAfterGrading())
 	    scoreElem.textContent = Sliobj.scores.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
 	else
 	    scoreElem.textContent = Sliobj.scores.questionsCount+'/'+(Sliobj.params.questionsMax-Sliobj.params.disabledCount);
@@ -6951,7 +6952,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
     if (!startGrading) {
 	var gradeValue = gradeInput.value.trim();
 
-	if (gradeValue && gradeValue > (question_attrs.gweight||0)) {
+	if (parseNumber(gradeValue) && parseNumber(gradeValue) > (question_attrs.gweight||0)) {
 	    if (!window.confirm('Entering grade '+gradeValue+' that exceeds the maximum '+(question_attrs.gweight||0)+'. Proceed anyway?'))
 		return;
 	}
@@ -6982,7 +6983,7 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	    Slidoc.log('Slidoc.gradeClick: ERROR grade field '+gradeField+' not found in sheet');
 	var updates = {id: userId};
 	if (question_attrs.gweight)
-	    updates[gradeField] = gradeValue;
+	    updates[gradeField] = (parseNumber(gradeValue) == null) ? '' : parseNumber(gradeValue);
 	updates[commentsField] = commentsValue;
 	var teamUpdate = '';
 	if (question_attrs.team == 'response' && Sliobj.session.team)
@@ -7121,7 +7122,7 @@ Slidoc.remarksClick = function (elem) {
 	if (!(gradeField in Sliobj.gradeFieldsObj))
 	    Slidoc.log('Slidoc.remarksClick: ERROR grade field '+gradeField+' not found in sheet');
 	var updates = {id: userId};
-	updates[gradeField] = gradeValue;
+	updates[gradeField] = (parseNumber(gradeValue) == null) ? '' : parseNumber(gradeValue);
 	updates[commentsField] = commentsValue;
 	remarksUpdate(updates);
     }
@@ -7171,7 +7172,7 @@ Slidoc.startPaced = function () {
 
     var curDate = new Date();
     if (!Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
-	sessionAbort('ERROR: Unsubmitted session past submit deadline '+Sliobj.sessionName);
+	sessionAbort('ERROR: Unsubmitted session past submit deadline '+Sliobj.sessionName+' (due: '+Sliobj.dueDate+')');
 	return;
     }
 
