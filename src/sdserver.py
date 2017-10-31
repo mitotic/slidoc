@@ -973,6 +973,9 @@ class ActionHandler(BaseHandler):
                 previewUpdate = self.get_argument('update', '')
                 if previewUpdate:
                     redirURL += '&update=' + previewUpdate
+                slideId = self.get_argument('slideid', '')
+                if slideId:
+                    redirURL += '&slideid=' + slideId
                 self.redirect(redirURL)
                 return
 
@@ -991,7 +994,7 @@ class ActionHandler(BaseHandler):
                 if not previewingSession:
                     self.displayMessage('Not previewing any session')
                     return
-                return self.acceptPreview(modified=modifiedNum)
+                return self.acceptPreview(modified=modifiedNum, slideId=self.get_argument('slideid', ''))
 
             elif action == '_edit':
                 if not Options['source_dir']:
@@ -2550,7 +2553,7 @@ class ActionHandler(BaseHandler):
                 f.write(zfile.read(name))
             
 
-    def acceptPreview(self, modified=0, acceptMessages=[]):
+    def acceptPreview(self, modified=0, acceptMessages=[], slideId=''):
         # Modified == -1 disables version checking
         if Options['dry_run'] and not Options['dry_run_file_modify']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept edits during dry run')
@@ -2632,13 +2635,21 @@ class ActionHandler(BaseHandler):
         if acceptMessages:
             msgs = acceptMessages + msgs
 
-        tocPath = getSessionPath(sessionName, site_prefix=True, toc=True)
+        logErrors = 'error' in ''.join(msgs).lower()
+            
+        if slideId and not logErrors:
+            # Redisplay slide
+            redirPath = getSessionPath(sessionName, site_prefix=True) + '#' + slideId
+        else:
+            # Display ToC
+            redirPath = getSessionPath(sessionName, site_prefix=True, toc=True)
+
         if rolloverParams:
             self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs, rollingOver=True)
-        elif msgs:
-            self.displayMessage(msgs, back_url=tocPath)
+        elif msgs and (logErrors or not slideId):
+            self.displayMessage(msgs, back_url=redirPath)
         else:
-            self.redirect(tocPath)
+            self.redirect(redirPath)
 
 
     def truncateSession(self, truncateParams, prevSessionName='', prevMsgs=[], rollingOver=False):
@@ -3551,15 +3562,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 else:
                     sdproxy.endTransactSession(interactiveSession)
 
-        elif action == 'answered':
-            if not interactiveSession:
-                return
-            if sdproxy.transactionalSession(interactiveSession):
-                sdproxy.endTransactSession(interactiveSession)
-                sdproxy.startTransactSession(interactiveSession)
-
     @classmethod
     def closeConnections(cls, path, userIdList, excludeId=None):
+        # Note: closed connections may be automatically re-opened; use lockConnection to force reloads
         sessionConnections = cls._connections.get(path,{})
         for userId in userIdList:
             if excludeId and userId == excludeId:
@@ -3749,7 +3754,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         teamModifiedIds = retval.get('info', {}).get('teamModifiedIds')
         if teamModifiedIds:
             # Close all connections for the team
-            cls.closeConnections(path, teamModifiedIds)
+            for teamModifiedId in teamModifiedIds:
+                cls.lockConnections(path, teamModifiedId, 'Team member responded. Reload page', reload=True)
 
         return ''
             
@@ -3941,7 +3947,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 teamModifiedIds = retObj.get('info', {}).get('teamModifiedIds')
                 if teamModifiedIds:
                     # Close other connections for the same team
-                    self.closeConnections(self.pathUser[0], teamModifiedIds, excludeId=self.userId)
+                    for teamModifiedId in teamModifiedIds:
+                        if teamModifiedId != self.userId:
+                            self.lockConnections(self.pathUser[0], teamModifiedId, 'Redundant team connection')
 
             elif method == 'interact':
                 # args: action, slideId, questionAttrs, rollbackOption
@@ -3954,7 +3962,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     # Rollback interactive session to the slide of the last answered question (or start slide)
                     WSHandler.setupInteractive(None, '', 'rollback', '', None, '')
                     # Close all session websockets (forcing reload)
-                    IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
+                    IOLoop.current().add_callback(WSHandler.lockSessionConnections, sessionName, 'Last question rolled back. Reload page', True)
 
             elif method == 'reset_question':
                 # args: qno, userid 
@@ -3963,7 +3971,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     WSHandler.setupInteractive(None, '', 'end', '', None, '')
                     sdproxy.clearQuestionResponses(sessionName, args[0], args[1])
                     # Close all session websockets (forcing reload)
-                    IOLoop.current().add_callback(WSHandler.closeSessionConnections, sessionName)
+                    IOLoop.current().add_callback(WSHandler.lockSessionConnections, sessionName, 'Question reset. Reload page', True)
 
             elif method == 'plugin':
                 if len(args) < 2:

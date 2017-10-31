@@ -231,12 +231,17 @@ def startTransactSession(sessionName):
     if sessionName == previewingSession():
         return 'Cannot transact when previewing session '+sessionName
 
+    if sessionName in Global.transactSessions:
+        raise Exception('Transaction already active for sheet %s' % sessionName)
+
     sessionSheet = getSheet(sessionName)
     if not sessionSheet:
         raise Exception('Transact sheet %s not in cache' % sessionName)
     Global.transactSessions[sessionName] = sessionSheet.copy()
     if Settings['debug']:
         print("DEBUG:startTransactSession: %s " % sessionName, file=sys.stderr)
+
+    return ''
 
 def rollbackTransactSession(sessionName, noupdate=False):
     # Revert to session state at start of transaction
@@ -993,7 +998,9 @@ class Sheet(object):
 
         if self.name in Global.transactSessions:
             # Obtain updates for transact session from original sheet
-            return Global.transactSessions[self.name].get_updates()
+            origSheet = Global.transactSessions[self.name]
+            if origSheet is not self:
+                return origSheet.get_updates()
 
         actions = self.actionsRequested
             
@@ -1294,7 +1301,7 @@ def suspend_cache(action=''):
     if action == 'shutdown':
         if previewingSession():
             revertPreview(noupdate=True)
-        for sessionName in Global.transactSessions:
+        for sessionName in list(Global.transactSessions):
             endTransactSession(sessionName, noupdate=True)
         schedule_update(synchronous=True)
     elif action:

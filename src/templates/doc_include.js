@@ -107,7 +107,8 @@ for (var j=0; j<Sliobj.params.gradeFields.length; j++)
 Sliobj.ajaxRequestActive = null;
 Sliobj.interactiveMessages = [];
 
-Sliobj.interactive = false;
+Sliobj.interactiveMode = false;
+Sliobj.interactiveSlide = false;
 Sliobj.gradableState = null;
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
@@ -1339,6 +1340,8 @@ Slidoc.slideEdit = function(action, slideId) {
 	// Window opening must be triggered by user input
 	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
 	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
+	if (action == 'save' && !Sliobj.previewState && !Sliobj.gradableState) // Redisplay slide if admin editing
+	    previewPath += '?slideid='+slideId;
 
 	if (!Sliobj.previewState && (action == 'open' || (!checkPreviewWin() && (action == 'update' || action == 'insert')) ) ) {
 	    var winName = Sliobj.params.siteName+'_preview';
@@ -1356,6 +1359,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    Sliobj.previewWin.document.body.textContent = 'Processing ...';
 
 	function slideSaveAux(result, errMsg) {
+	    Slidoc.log('slideSaveAux:', previewPath, result, errMsg);
 	    if (Sliobj.closePopup)
 		Sliobj.closePopup();
 	    var msg = '';
@@ -1473,8 +1477,11 @@ Slidoc.previewAction = function (action) {
 	    action = 'preview/index.html';
 	}
     }
+    var url = Sliobj.sitePrefix + '/_' + action + '?modified=' + Sliobj.previewModified;
+    if (action == 'accept' && getParameter('slideid'))
+	url += '&slideid=' + getParameter('slideid');
 
-    window.location = Sliobj.sitePrefix + '/_' + action + '?modified=' + Sliobj.previewModified;
+    window.location = url;
 }
 
 function previewMessages(optional) {
@@ -2726,7 +2733,7 @@ Slidoc.interact = function() {
     } else {
 	var siteTwitter = Sliobj.serverData.site_twitter || '';
 	var interactURL = location.protocol+'//'+location.host+'/send';
-	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactive?'End':'Begin')+' interact mode</span><p></p>';
+	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactiveMode?'End':'Begin')+' interact mode</span><p></p>';
 	html += 'To interact:<ul>';
 	if (siteTwitter) {
 	    html += '<li>Text 40404: <code>d '+siteTwitter+' answer</code></li>';
@@ -2735,7 +2742,7 @@ Slidoc.interact = function() {
 	html += '<li><a href="'+interactURL+'" target="_blank"><code>'+interactURL+'</code></a></li>';
 	html += '<li><a href="'+Sliobj.sitePrefix+'/_interactcode" target="_blank"><b>QR code</b></a></li>';
 	html += '</ul>';
-	html += clickableSpan('Live message display', 'interactiveMessageDisplay();', !Sliobj.interactive)+'<p></p>';
+	html += clickableSpan('Live message display', 'interactiveMessageDisplay();', !Sliobj.interactiveMode)+'<p></p>';
     }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -2810,24 +2817,35 @@ function resetQCallback(retObj, errMsg) {
 Slidoc.toggleInteract = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    enableInteract(!Sliobj.interactive);
+    Sliobj.interactiveMode = !Sliobj.interactiveMode;
+    toggleClass(Sliobj.interactiveMode, 'slidoc-interact-view');
+    enableInteract(Sliobj.interactiveMode);
 }
 
 function enableInteract(active) {
-    Slidoc.log('enableInteract:', active, Sliobj.session.lastSlide);
-    Sliobj.interactive = active;
-    toggleClass(active, 'slidoc-interact-view');
-    if (!Sliobj.interactive) {
-	GService.requestWS('interact', ['end', '', null, ''], interactCallback);
+    Slidoc.log('enableInteract:', active, Sliobj.interactiveSlide, Sliobj.session.lastSlide);
+    if (!active) {
+	if (Sliobj.interactiveSlide) {
+	    Sliobj.interactiveSlide = false;
+	    GService.requestWS('interact', ['end', '', null, ''], interactCallback);
+	}
 	return;
     }
-    if (!isController() || Sliobj.session.submitted)
+    if (!isController() || Sliobj.session.submitted || Sliobj.interactiveSlide)
 	return;
+
     var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
     var qattrs = getQuestionAttrs(lastSlideId);
     if (qattrs && qattrs.qnumber in Sliobj.session.questionsAttempted)
 	qattrs = null;
-    GService.requestWS('interact', ['start', lastSlideId, qattrs, Sliobj.params.features.interact_rollback||''], interactCallback);
+
+    if (!qattrs)
+	return;
+    
+    // Start 'interact' for unanswered question slides only
+    Sliobj.interactiveSlide = true;
+    GService.requestWS('interact', ['start', lastSlideId, qattrs, !!Sliobj.params.features.rollback_interact], interactCallback);
+
     // Note: Closing websocket will disable interactivity
 }
 
@@ -6293,8 +6311,8 @@ function saveSessionAnswered(slide_id, qattrs) {
 	return;
     Sliobj.session.lastTime = Date.now();
     if (isController()) {
-	if (Sliobj.interactive)
-	    enableInteract(true);
+	if (Sliobj.interactiveSlide)
+	    enableInteract(false);
 	Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
 
     } else if (!Sliobj.delaySec && Sliobj.params.slideDelay && MIN_ANSWER_NOTES_DELAY && allowDelay()) {
@@ -6696,7 +6714,7 @@ Slidoc.submitStatus = function () {
 	html += '<p></p>' + clickableSpan('Reset '+(userId?'user':'ALL')+' responses to current question',
 			  	       "Slidoc.resetQuestion('"+"'"+userId+"'"+"');", disabled) + '<br>';
 	html += '<p></p>' + clickableSpan('Rollback interactive portion of session',
-	  	  		          "Slidoc.rollbackInteractive();", !(Sliobj.interactive && Sliobj.params.features.interact_rollback)) + '<br>';
+	  	  		          "Slidoc.rollbackInteractive();", !(Sliobj.interactiveSlide && Sliobj.params.features.rollback_interact)) + '<br>';
     }
 
     if (Sliobj.session.submitted || Sliobj.gradableState)
@@ -7240,7 +7258,7 @@ Slidoc.endPaced = function (reload) {
 	///Sliobj.session.paced = 0;
     ///}
     Slidoc.reportTestAction('endPaced');
-    if (Sliobj.interactive)
+    if (Sliobj.interactiveSlide)
 	enableInteract(false);
     sessionPut(null, null, {force: true, retry: 'end_paced', submit: true, reload: !!reload});
     showCompletionStatus();
@@ -7441,7 +7459,6 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		var ansElem = document.getElementById(prev_slide_id+'-answer-click');
 		if (ansElem)
 		    Slidoc.answerClick(ansElem, prev_slide_id, 'controlled');
-		GService.requestWS('interact', ['answered', prev_slide_id, question_attrs, '']);
 	    } else  {
 		if (!setupOverride('Enable test user override to proceed without answering?')) {
 		    var tryCount = (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
@@ -7453,6 +7470,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		    return false;
 		}
 	    }
+
 	} else if (Sliobj.delaySec) {
 	    // Current (not new) slide has delay
 	    var delta = (Date.now() - Sliobj.session.lastTime)/1000;
@@ -7461,6 +7479,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 		return false;
 	    }
 	}
+
+	if (Sliobj.interactiveSlide)
+	    enableInteract(false);
 
 	if (0 && !controlledPace() && (slide_num == slides.length && Sliobj.params.paceLevel == BASIC_PACE && Sliobj.scores.questionsCount < Sliobj.params.questionsMax)) {
 	    // To last slide (DISABLED: no auto submit for BASIC PACE)
@@ -7538,11 +7559,12 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	} else if (Sliobj.sessionName && !Sliobj.params.gd_sheet_url) {
 	    // Not last slide; save updated session (if not transient and not remote)
 	    sessionPut();
+
 	} else if (isController()) {
 	    // Not last slide for test user in admin-paced; save lastSlide value
-	    if (Sliobj.interactive)
-		enableInteract(true);
 	    sessionPut();
+	    if (Sliobj.interactiveMode)
+		enableInteract(true);
 	}
 
 	if (isController()) {
