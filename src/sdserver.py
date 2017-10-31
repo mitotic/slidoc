@@ -1081,7 +1081,9 @@ class ActionHandler(BaseHandler):
         elif action == '_browse':
             delete = self.get_argument('delete', '')
             download = self.get_argument('download', '')
-            self.browse('_browse', subsubpath, site_admin=self.check_admin_access(), delete=delete, download=download)
+            newFolder = self.get_argument('newfolder', '')
+            self.browse('_browse', subsubpath, site_admin=self.check_admin_access(), delete=delete, download=download,
+                        newFolder=newFolder)
 
         elif action in ('_restore',):
             self.render('restore.html', site_name=Options['site_name'], session_name='')
@@ -1585,11 +1587,15 @@ class ActionHandler(BaseHandler):
         self.render('modules.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
 
 
-    def browse(self, url_path, filepath, site_admin=False, delete='', download='', uploadName='', uploadContent=''):
+    def browse(self, url_path, filepath, site_admin=False, delete='', download='', newFolder='', uploadName='', uploadContent=''):
         if '..' in filepath:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
 
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: browse', Options['site_name'], repr(url_path), repr(filepath), site_admin, delete, download, newFolder, uploadName, len(uploadContent)
+
         user_browse = (url_path != '_browse')
+        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         status = ''
         if not filepath and not user_browse:
             file_list = [ ['source', 'source', False, '', ''],
@@ -1651,45 +1657,63 @@ class ActionHandler(BaseHandler):
                 self.write(content)
                 return
 
-            if delete:
-                if not subpath:
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot delete root directory' % predir)
-                if not os.path.exists(fullpath):
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Path %s does not exist' % fullpath)
-                if os.path.isdir(fullpath):
-                    shutil.rmtree(fullpath)
-                else:
-                    os.remove(fullpath)
-                site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-                self.redirect(site_prefix+'/'+url_path+'/'+os.path.dirname(filepath))
-                return
-
-            if uploadName:
-                if not os.path.isdir(fullpath):
-                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Browse path not a directory %s' % fullpath)
-
-                if Options['dry_run'] and not Options['dry_run_file_modify']:
-                    raise Exception('Cannot upload files during dry run without file modify option')
-
-                file_list = []
-                if uploadName.endswith('.zip'):
+            if site_admin:
+                # Admin-only actions
+                if delete:
+                    if not subpath:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot delete root directory' % predir)
+                    if not os.path.exists(fullpath):
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Path %s does not exist' % fullpath)
                     try:
-                        zfile = zipfile.ZipFile(io.BytesIO(uploadContent))
-                        file_list = zfile.namelist()
-                        zfile.extractall(fullpath)
+                        if os.path.isdir(fullpath):
+                            shutil.rmtree(fullpath)
+                        else:
+                            os.remove(fullpath)
                     except Exception, excp:
-                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in unzipping archive to %s: %s' % (fullpath, excp))
-                else:
-                    try:
-                        outpath = os.path.join(fullpath, uploadName)
-                        with open(outpath, 'wb') as f:
-                            f.write(uploadContent)
-                    except Exception, excp:
-                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in writing file %s: %s' % (outpath, excp))
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in deleting file %s: %s' % (fullpath, excp))
+                    self.redirect(site_prefix+'/'+url_path+'/'+os.path.dirname(filepath))
+                    return
 
-                status = 'Uploaded '+uploadName
-                if file_list:
-                    status += ' (' + ' '.join(file_list) + ')'
+                if predir == 'files' and newFolder:
+                    if not os.path.isdir(fullpath):
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Path %s does not exist' % fullpath)
+
+                    newpath = os.path.join(fullpath, newFolder)
+                    if os.path.exists(newpath):
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Folder/file %s already exists' % newpath)
+                    try:
+                        os.makedirs(newpath)
+                    except Exception, excp:
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in creating folder %s: %s' % (newpath, excp))
+                    self.redirect(site_prefix+'/'+url_path+'/'+filepath)
+                    return
+
+                if uploadName:
+                    if not os.path.isdir(fullpath):
+                        raise tornado.web.HTTPError(404, log_message='CUSTOM:Browse path not a directory %s' % fullpath)
+
+                    if Options['dry_run'] and not Options['dry_run_file_modify']:
+                        raise Exception('Cannot upload files during dry run without file modify option')
+
+                    file_list = []
+                    if uploadName.endswith('.zip'):
+                        try:
+                            zfile = zipfile.ZipFile(io.BytesIO(uploadContent))
+                            file_list = zfile.namelist()
+                            zfile.extractall(fullpath)
+                        except Exception, excp:
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in unzipping archive to %s: %s' % (fullpath, excp))
+                    else:
+                        try:
+                            outpath = os.path.join(fullpath, uploadName)
+                            with open(outpath, 'wb') as f:
+                                f.write(uploadContent)
+                        except Exception, excp:
+                            raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in writing file %s: %s' % (outpath, excp))
+
+                    status = 'Uploaded '+uploadName
+                    if file_list:
+                        status += ' (' + ' '.join(file_list) + ')'
 
             if not os.path.isdir(fullpath):
                 self.displayMessage('Path %s not a directory!' % filepath)

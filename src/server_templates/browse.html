@@ -76,13 +76,30 @@ function dropCallback(files) {
     }
     var formData = new FormData();
     formData.append("upload", file);
-    post("{{site_prefix }}/{{url_path}}/{{ browse_path }}", formData, "Uploaded "+file.name);
+    post("POST", "{{site_prefix }}/{{url_path}}/{{ browse_path }}", formData, "Uploaded "+file.name);
+    var statusElem = document.getElementById("status-line");
+    if (statusElem)
+        statusElem.textContent = 'Uploading ...';
 }
 
-function post(url, formData, successMsg) {
-    console.log("post", url);
+function newFolder() {
+    var folderName = window.prompt('New folder name: ');
+    if (!folderName)
+        return;
+    window.location = "{{site_prefix }}/{{url_path}}/{{ browse_path }}?newfolder="+encodeURIComponent(folderName);
+}
+
+function post(method, url, formData, successMsg) {
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
+    if (method.toLowerCase() == "get") {
+	var urlEncodedDataPairs = [];
+	for (var name in formData) {
+	    urlEncodedDataPairs.push(encodeURIComponent(name) + '=' + encodeURIComponent(formData[name]));
+            url += '?' + urlEncodedDataPairs.join('&').replace(/%20/g, '+') 
+        }
+    }
+    console.log(method, url);
+    xhr.open(method, url);
     xhr.onload = function () {
         console.log("xhr", xhr.status);
         if (xhr.status === 200) {
@@ -93,7 +110,10 @@ function post(url, formData, successMsg) {
         }
     };
 
-  xhr.send(formData);
+    if (method.toLowerCase() == "get")
+        xhr.send();
+    else
+        xhr.send(formData);
 }
 
 document.onreadystatechange = function(event) {
@@ -112,7 +132,6 @@ document.onreadystatechange = function(event) {
 
 </head>
 <body>
-
   <b>
   {% include "linkback.html" %}
   </b>
@@ -175,6 +194,9 @@ document.onreadystatechange = function(event) {
     {% end %}
     </td>
   </tr>
+{% end %}
+{% if site_admin and browse_path and (browse_path == 'files' or browse_path.startswith('files/')) %}
+  <tr><td> &nbsp;<span class="clickable larger" onclick="newFolder();"><b>+</b></span></td></tr>
 {% end %}
 </table>
 </div>

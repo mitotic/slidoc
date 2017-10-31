@@ -1633,6 +1633,11 @@ function timedInit(remainingSec) {
     if (remainingSec > 2*60*60) {
         // Display timer only if 2 hours or less left
 	delaySec = remainingSec - 2*60*60;
+	var timeElem = document.getElementById('slidoc-timed-value');
+	if (timeElem && Sliobj.dueDate) {
+	    toggleClass(true, 'slidoc-timed-view');
+	    timeElem.textContent = 'due: '+Slidoc.toLocalISOString(Sliobj.dueDate);
+	}
     }
     Sliobj.timedTick = setTimeout(timedProgressFunc, delaySec*1000);
 
@@ -1673,7 +1678,7 @@ function timedProgressFunc() {
     var delaySec = 0;
     if (!Sliobj.timedClose || secsLeft <= 0) {
 	timeElem.textContent = '0';
-	unitsElem.textContent = 'sec';
+	unitsElem.textContent = 'sec left';
 
 	unitsElem.classList.remove('slidoc-gray');
 	unitsElem.classList.remove('slidoc-amber');
@@ -1682,17 +1687,18 @@ function timedProgressFunc() {
     } else if (secsLeft > 180) {
 	var minsLeft = Math.floor(secsLeft/60);
 	timeElem.textContent = ''+minsLeft;
-	unitsElem.textContent = 'min';
+	unitsElem.textContent = 'min left';
 	delaySec = 30;
 
     } else if (secsLeft > 60) {
 	timeElem.textContent = ''+(10*Math.floor(secsLeft/10));
-	unitsElem.textContent = 'sec';
+	unitsElem.textContent = 'sec left';
 	unitsElem.classList.add('slidoc-gray');
 	delaySec = 5;
+
     } else {
 	timeElem.textContent = ''+secsLeft;
-	unitsElem.textContent = 'sec';
+	unitsElem.textContent = 'sec left';
 	unitsElem.classList.remove('slidoc-gray');
 	unitsElem.classList.add('slidoc-amber');
 	delaySec = 0.5;
