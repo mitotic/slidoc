@@ -181,6 +181,8 @@ LIBRARIES_PATH = '_libraries'
 FILES_PATH = '_files'
 DOCS_PATH = '_docs'
 
+NOTEBOOKS_PATH = FILES_PATH + '/' + RESTRICTED_PATH + '/notebooks'
+
 ACME_PATH = '.well-known/acme-challenge'
 
 ADMIN_PATH = 'admin'
@@ -500,6 +502,33 @@ class UserIdMixin(object):
             print >> sys.stderr, 'sdserver: COOKIE ERROR - '+str(err)
             self.clear_user_cookie()
             return None
+
+    def check_site_access(self):
+        userId = self.get_id_from_cookie() or None
+        siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
+
+        # Check if pre-authorized for site access
+        if Options['site_name']:
+            # Check if site is explicitly authorized (user has global admin/grader role, or has explicit site listed, including guest users)
+            preAuthorized = siteRole is not None
+        else:
+            # Single site: check if userid is special (admin/grader/guest)
+            preAuthorized = Global.userRoles.is_special_user(userId)
+
+        if preAuthorized:
+            return
+
+        if Global.login_domain and '@' in userId:
+            # External user
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:User %s not pre-authorized to access site' % userId)
+
+        # Check if userId appears in roster
+        if sdproxy.getSheet(sdproxy.ROSTER_SHEET):
+            if not sdproxy.lookupRoster('id', userId):
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid %s not found in roster' % userId)
+        elif sdproxy.Settings['require_roster']:
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site')
+
 
     def custom_error(self, errCode, html_msg, clear_cookies=False):
         if clear_cookies:
@@ -1591,11 +1620,14 @@ class ActionHandler(BaseHandler):
 
 
     def browse(self, url_path, filepath, site_admin=False, delete='', download='', newFolder='', uploadName='', uploadContent=''):
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: browse', Options['site_name'], repr(url_path), repr(filepath), site_admin, delete, download, newFolder, uploadName, len(uploadContent)
+
         if '..' in filepath:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
 
-        if Options['debug']:
-            print >> sys.stderr, 'DEBUG: browse', Options['site_name'], repr(url_path), repr(filepath), site_admin, delete, download, newFolder, uploadName, len(uploadContent)
+        if not site_admin and ( ('/'+PRIVATE_PATH) in filepath or ('/'+RESTRICTED_PATH) in filepath):
+            self.check_site_access()
 
         user_browse = (url_path != '_browse')
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
@@ -1635,6 +1667,8 @@ class ActionHandler(BaseHandler):
                     os.makedirs(fullpath)
                     if predir == 'files':
                         os.makedirs(os.path.join(fullpath, PRIVATE_PATH))
+                        os.makedirs(os.path.join(fullpath, RESTRICTED_PATH))
+                        os.makedirs(os.path.join(fullpath, RESTRICTED_PATH, 'notebooks'))
                 else:
                     self.displayMessage('Path %s (%s) does not exist!' % (filepath, fullpath))
                     return
@@ -1699,6 +1733,7 @@ class ActionHandler(BaseHandler):
                         raise Exception('Cannot upload files during dry run without file modify option')
 
                     file_list = []
+                    errMsgs = []
                     if uploadName.endswith('.zip'):
                         try:
                             zfile = zipfile.ZipFile(io.BytesIO(uploadContent))
@@ -1713,10 +1748,19 @@ class ActionHandler(BaseHandler):
                                 f.write(uploadContent)
                         except Exception, excp:
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in writing file %s: %s' % (outpath, excp))
+                        uname = os.path.splitext(os.path.basename(uploadName))[0]
+                        match = sliauth.SESSION_NAME_RE.match(uname)
+                        if match:
+                            uploadType = match.group(1)
+                            filePaths = self.get_md_list(uploadType)
+                            if filePaths:
+                                errMsgs = self.rebuild(uploadType, indexOnly=True)
 
                     status = 'Uploaded '+uploadName
                     if file_list:
                         status += ' (' + ' '.join(file_list) + ')'
+                        if errMsgs and any(errMsgs):
+                            status += ' Notebook reindex log:' + '\n'.join(errMsgs)
 
             if not os.path.isdir(fullpath):
                 self.displayMessage('Path %s not a directory!' % filepath)
@@ -1735,14 +1779,47 @@ class ActionHandler(BaseHandler):
                         linkpath = PLUGINDATA_PATH + '/' + linkpath
                     elif predir == 'files':
                         linkpath = FILES_PATH + '/' + linkpath
-                    if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.jpeg','.jpg','.pdf','.png'):
-                        viewpath = linkpath
+
+                    if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.ipynb', '.jpeg','.jpg','.pdf','.png'):
+                        # Viewable files
+                        if predir == 'files':
+                            viewpath = self.viewer_link(linkpath)
+                        else:
+                            viewpath = linkpath
+
 
                 file_list.append( [fname, subdirpath, isfile, linkpath, viewpath] )
 
         self.render('browse.html', site_name=Options['site_name'], status=status, server_url=Options['server_url'],
                     url_path=url_path, site_admin=site_admin, root_admin=self.check_root_admin(),
                     up_path=up_path, browse_path=filepath, file_list=file_list)
+
+    def viewer_link(self, relpath):
+        # Returns URL link to restricted file with key appended as query parameter, given relative path
+        fext = os.path.splitext(relpath)[1]
+        viewpath = '/' + relpath
+        if Options['site_name']:
+            viewpath = '/' + Options['site_name'] + viewpath
+
+        if relpath.startswith(FILES_PATH+'/') and ('/'+RESTRICTED_PATH) in relpath:
+            # Restricted _files; viewable by anyone with file key in link
+            fileKey = PluginManager.getFileKey(viewpath)
+            
+            if fext.lower() != '.ipynb':
+                viewpath += '?' + fileKey
+            else:
+                # Render link for notebooks
+                if Options['server_url'].startswith('https://'):
+                    nbprefix = 'https://nbviewer.jupyter.org/urls/' + Options['server_url'][len('https://'):]
+                elif Options['server_url'].startswith('http://'):
+                    nbprefix = 'http://nbviewer.jupyter.org/url/' + Options['server_url'][len('http://'):]
+                else:
+                    raise Exception('Invalid server URL :' + Options['server_url'])
+
+                # Append "query" using "%3F" as nbviewer chomps up normal queries
+                viewpath = nbprefix + viewpath + '%3F' + fileKey
+
+        return viewpath
 
     def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:
@@ -2376,11 +2453,14 @@ class ActionHandler(BaseHandler):
         if not filePaths and src_path and sessionName != 'index':
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Empty session folder '+uploadType)
 
+        fileNames = [os.path.basename(fpath) for fpath in filePaths]
+
         configOpts, defaultOpts = self.get_config_opts(uploadType, text=contentText, topnav=True, dest_dir=dest_dir,
                                                        session_name=sessionName, image_dir=image_dir, make=make)
 
         configOpts.update(extraOpts)
 
+        nb_links = {}
         if uploadType != TOP_LEVEL:
             if sessionName == 'index':
                 configOpts['toc_header'] = io.BytesIO(contentText)
@@ -2390,7 +2470,17 @@ class ActionHandler(BaseHandler):
                 if os.path.exists(ind_path):
                     configOpts['toc_header'] = ind_path
 
-        fileNames = [os.path.basename(fpath) for fpath in filePaths]
+            if NOTEBOOKS_PATH:
+                notebooks_dir = Options['static_dir']
+                if Options['site_name']:
+                    notebooks_dir = os.path.join(notebooks_dir, Options['site_name'])
+                notebooks_dir = os.path.join(notebooks_dir, *NOTEBOOKS_PATH.split('/'))
+                if os.path.isdir(notebooks_dir):
+                    for fname in fileNames:
+                        sname = os.path.splitext(fname)[0]
+                        nb_name = sname+'.ipynb'
+                        if os.path.exists( os.path.join(notebooks_dir, nb_name) ):
+                            nb_links[sname] = self.viewer_link(NOTEBOOKS_PATH + '/' + nb_name)
 
         if src_path:
             fileHandles = [io.BytesIO(contentText) if fpath == src_path else None for fpath in filePaths]
@@ -2400,13 +2490,13 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, files=%s' % (uploadType, repr(src_path), indexOnly, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), fileNames)
+            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, nb=%s, files=%s' % (uploadType, repr(src_path), indexOnly, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), nb_links.keys(), fileNames)
 
         return_html = bool(src_path)
 
         try:
             retval = slidoc.process_input(fileHandles, filePaths, configOpts, default_args_dict=defaultOpts, return_html=return_html,
-                                          images_zipdict=images_zipdict, http_post_func=http_sync_post,
+                                          images_zipdict=images_zipdict, nb_links=nb_links, http_post_func=http_sync_post,
                                           restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, return_messages=True)
         except Exception, excp:
             if Options['debug']:
@@ -4252,12 +4342,12 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 return userId
             raise tornado.web.HTTPError(404)
 
-        elif ('/'+PRIVATE_PATH) in self.request.path:
+        if ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/'+PRIVATE_PATH are always protected and used for session-related content
             if not userId:
                 return None
 
-            if ('/'+PRIVATE_PATH) in self.request.path and sessionName and sessionName != 'index':
+            if sessionName and sessionName != 'index':
                 # Session access checks (for files with /_files in path, sessionName will be None)
                 gradeDate = None
                 releaseDate = None
@@ -4306,26 +4396,8 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                         else:
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted session '+sessionName+' not yet released')
                             
-            # Check if pre-authorized for site access
-            if Options['site_name']:
-                # Check if site is explicitly authorized (user has global admin/grader role, or has explicit site listed, including guest users)
-                preAuthorized = siteRole is not None
-            else:
-                # Single site: check if userid is special (admin/grader/guest)
-                preAuthorized = Global.userRoles.is_special_user(userId)
-
-            if not preAuthorized and not batchMode:
-                if Global.login_domain and '@' in userId:
-                    # External user
-                    raise tornado.web.HTTPError(403, log_message='CUSTOM:User not pre-authorized to access site')
-
-                # Check if userId appears in roster
-                if sdproxy.getSheet(sdproxy.ROSTER_SHEET):
-                    if not sdproxy.lookupRoster('id', userId):
-                        raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid not found in roster')
-                elif sdproxy.Settings['require_roster']:
-                        raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site')
-                    
+            if not batchMode:
+                self.check_site_access()  # For _private files
             return userId
 
         if not Options['auth_key']:

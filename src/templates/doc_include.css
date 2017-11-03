@@ -242,6 +242,9 @@ body.slidoc-sidebar-view .slidoc-all-container {
 
 .slidoc-due-sessions .slidoc-index-entry-active { font-weight: bold; }
 
+.slidoc-due-sessions .slidoc-index-entry-active td:first-child,
+ .slidoc-due-sessions .slidoc-index-entry-active td:nth-child(2) { color: tomato; }
+
 tr.slidoc-index-entry:nth-of-type(even) {
   background-color: lightgray;
 }

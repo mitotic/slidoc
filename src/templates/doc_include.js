@@ -1634,7 +1634,9 @@ function timedInit(remainingSec) {
 	return;
 
     Sliobj.timedEndTime = Date.now() + remainingSec*1000;
-    Sliobj.timedClose = setTimeout(timedCloseFunc, remainingSec*1000);
+
+    if (remainingSec*1000 < Math.pow(2,31))  // ms value >= 2^31 result in immediate exection
+	Sliobj.timedClose = setTimeout(timedCloseFunc, remainingSec*1000);
 
     var delaySec = 0.2;
     if (remainingSec > 2*60*60) {
@@ -1646,7 +1648,8 @@ function timedInit(remainingSec) {
 	    timeElem.textContent = 'due: '+Slidoc.toLocalISOString(Sliobj.dueDate);
 	}
     }
-    Sliobj.timedTick = setTimeout(timedProgressFunc, delaySec*1000);
+    if (delaySec*1000 < Math.pow(2,31))
+	Sliobj.timedTick = setTimeout(timedProgressFunc, delaySec*1000);
 
     window.addEventListener('beforeunload', function (evt) {
 	if (!Sliobj.timedClose)
@@ -4872,9 +4875,10 @@ function computeGrade(userId, breakup) {
 	var tot = q_grades + q_scores + q_other;
 	gradeStr += tot;
 	if (breakup) {
-	    gradeStr += '('+q_scores+')';
+	    gradeStr += ' ('+q_scores;
 	    if (q_other)
-		gradeStr += q_other;
+		gradeStr += ','+q_other;
+	    gradeStr += ')';
 	}
     }
     return gradeStr;

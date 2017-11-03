@@ -2869,8 +2869,8 @@ def process_input(*args, **argv):
         traceback.print_exc()
         raise Exception('System exit error in process input: %s' % excp)
 
-def process_input_aux(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={},
-                     restricted_sessions_re=None, return_html=False, return_messages=False, error_exit=False, http_post_func=None):
+def process_input_aux(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={}, nb_links={},
+                      restricted_sessions_re=None, return_html=False, return_messages=False, error_exit=False, http_post_func=None):
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
@@ -3726,17 +3726,21 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
                 entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
+
+                nb_str = ''
+                if orig_fnames[ifile] in nb_links:
+                    nb_str = ''' (<a class="slidoc-clickable" target="_blank" href="%s">notebook</a>)''' % nb_links[orig_fnames[ifile]]
                 doc_link = ''
                 if doc_str:
                     if doc_str == 'view':
-                        doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>)''' % (orig_fnames[ifile], 'view')
+                        doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>)%s''' % (orig_fnames[ifile], 'view', nb_str)
                     elif iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
                         # Preview and alt views
                         entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (set to blank for indefinite release)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', orig_fnames[ifile], 'alt views', doc_str, site_prefix, orig_fnames[ifile], 'release')
+                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>)%s <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (set to blank for indefinite release)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', nb_str, orig_fnames[ifile], 'alt views', doc_str, site_prefix, orig_fnames[ifile], 'release')
                     else:
                         # View and alt views
-                        doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>) <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view', orig_fnames[ifile], 'alt views', doc_str)
+                        doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>)%s <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view',  nb_str, orig_fnames[ifile], 'alt views', doc_str)
 
                 toc_html.append('<li %s>%s<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>%s<span class="slidoc-nosidebar"> %s</span></li>\n' % (entry_class, entry_prefix, fheader, SPACER6, doc_link))
                 # Five entries

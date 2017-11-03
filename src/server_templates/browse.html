@@ -168,7 +168,9 @@ document.onreadystatechange = function(event) {
     {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(subpath,plus=False) }}">&#x1F4C2;</a>{% end %}
     </td>
     <td id="file-{{ fname }}">
-    {% if viewpath %}
+    {% if viewpath.startswith('http:') or  viewpath.startswith('https:') %}
+      <a class="clickable" href="{{viewpath}}">{{ fname }}</a>
+    {% elif viewpath %}
       <a class="clickable" href="{{ site_prefix }}/{{ url_escape(viewpath,plus=False) }}">{{ fname }}</a>
     {% else %}
       {{ fname }}
@@ -217,7 +219,7 @@ Click to upload file/zip archive, or drag-and-drop it in box above</span>
 {% end %}
 <p></p>
 
-<em>Folder/file actions</em>: Traverse (&#x1F4C2;), Download (&#x21E9;) {% if site_admin %}, Delete (&#x1F5D1;){% end %}<p></p>
+<em>Folder/file actions</em>: Traverse (&#x1F4C2;), Download (&#x21E9;) {% if site_admin %}, Create (<b>+</b>), Delete (&#x1F5D1;){% end %}<p></p>
 {% if not browse_path %}
 <p></p>
 Notes:
