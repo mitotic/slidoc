@@ -192,7 +192,8 @@ class MDParser(object):
         self.skipping_notes = False
 
     def external_link(self, line, text, link, title):
-        if line.lstrip().startswith('!') and title.startswith('nb_output') and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code':
+        nb_output_append = title.startswith('nb_output') and self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'code'
+        if line.lstrip().startswith('!') and (self.cmd_args.embed_images or nb_output_append):
             fpath = link
             if self.filedir:
                 fpath = self.filedir + '/' + fpath
@@ -203,7 +204,11 @@ class MDParser(object):
                 f = open(fpath)
                 content = f.read()
                 f.close()
-                self.cells_buffer[-1]['outputs'].append(self.image_output(text, content_type, base64.b64encode(content)))
+                img_content = self.image_output(text, content_type, base64.b64encode(content))
+                if nb_output_append:
+                    self.cells_buffer[-1]['outputs'].append(img_content)
+                else:
+                    self.cells_buffer.append({'cell_type': 'code', 'source': '', 'outputs': [img_content]})
             else:
                 self.buffered_lines.append(line)
         else:
@@ -279,6 +284,7 @@ if __name__ == '__main__':
     strip_all = ['answer', 'extensions', 'internal_ref', 'markup', 'notes', 'plugin', 'rule', 'tags']
     
     parser = argparse.ArgumentParser(description='Convert from Markdown to Jupyter Notebook format')
+    parser.add_argument('--embed_images', help='Embed all images', action="store_true")
     parser.add_argument('--indented', help='Convert indented code blocks to notebook cells', action="store_true")
     parser.add_argument('--site_url', help='URL prefix for website (default: "")', default='')
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))
@@ -315,7 +321,7 @@ if __name__ == '__main__':
 
         flist.append( (fname, '<a href="%s%s%s.ipynb">%s.ipynb</a>' % (Nb_convert_url_prefix, url_prefix, fname, fname)) )
         outname = fname+".ipynb"
-        outfile = open(outname, "w")
+        outfile = open(outname, "wb")
         outfile.write(nb_text)
         outfile.close()
         print("Created ", outname, file=sys.stderr)

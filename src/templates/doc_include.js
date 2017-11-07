@@ -4874,7 +4874,7 @@ function computeGrade(userId, breakup) {
 	var q_other = rowObj.q_other||0;
 	var tot = q_grades + q_scores + q_other;
 	gradeStr += tot;
-	if (breakup) {
+	if (breakup && q_scores != tot) {
 	    gradeStr += ' ('+q_scores;
 	    if (q_other)
 		gradeStr += ','+q_other;

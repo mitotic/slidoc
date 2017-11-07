@@ -185,6 +185,8 @@ class MDParser(object):
                     raise Exception('Image %s not found in zip archive' % img_name)
             else:
                 img_handle = img_path
+                if self.args_dict.get('image_dir'):
+                    img_handle = os.path.join(self.args_dict['image_dir'], os.path.basename(img_handle))
 
             top = Inches(1)
             left = Inches(0.5)
@@ -282,6 +284,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Convert from Markdown to Powerpoint format')
+    parser.add_argument('--image_dir', help='image directory', default='')
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
     parser.add_argument('file', help='Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()

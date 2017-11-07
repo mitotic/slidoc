@@ -67,18 +67,21 @@
      <p></p>
      {% end %}
 
-     <label for="upload1">Markdown (.md) or powerpoint (.pptx) file:</label><br>
-     <input type="file" id="upload1" name="upload1"  accept=".md,.pptx" value="file1">
+     <label for="upload1">Markdown (.md) , or powerpoint (.pptx), or jupyter notebook (.ipynb) file:</label><br>
+     <input type="file" id="upload1" name="upload1"  accept=".md,.pptx,.ipynb" value="file1">
      <p></p>
      <label for="upload2">Zip archive with Markdown, images, HTML or data (.zip):</label><br>
      <input type="file" id="upload2" name="upload2"  accept=".zip" value="file2">
      <p></p>
+     <em>
      Modules as well as raw/Markdown top-level web pages may be uploaded as zip
-     archives. For modules, images in the zip archive should have names of the form
-     <code>moduleName/*.jpg</code> for pixelized <code>.pptx</code> files and of the
-     form <code>moduleName_images/*.jpg</code> for embedding in <code>.md</code> files,
-     The Markdown content may optionally be included in the archive, with the name <code>content.md</code>,
+     archives.<p></p>
+     For modules, pixelized Powerpoint slide images in the zip archive should have names of the form
+     <code>moduleName/*.jpg</code><p></p>
+     Other embedded Markdown images should have names of the form <code>moduleName_images/*.jpg</code><p></p>
+     The Markdown text content may optionally be included in the archive, with the name <code>content.md</code>,
      instead of being provided as a separate file.
+     </em>
    </fieldset>
    {% module xsrf_form_html() %}
    <p></p>

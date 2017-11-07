@@ -72,6 +72,8 @@ from tornado.options import define, options, parse_config_file, parse_command_li
 from tornado.ioloop import IOLoop, PeriodicCallback
 
 import md2md
+import md2nb
+import nb2md
 import sdproxy
 import sliauth
 import slidoc
@@ -1267,6 +1269,8 @@ class ActionHandler(BaseHandler):
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to download')
 
+            downloadFormat = self.get_argument('downloadformat','') or 'md'
+
             uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(subsubpath)
             sessionFile = os.path.basename(src_path)
             image_dir = os.path.basename(web_images)
@@ -1276,7 +1280,22 @@ class ActionHandler(BaseHandler):
             except Exception, excp:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading file %s: %s' % (src_path, excp))
 
-            if os.path.isdir(web_images):
+            if downloadFormat == 'pptx':
+                import md2pptx
+                outfile = subsubpath+'.pptx'
+                stream = io.BytesIO()
+                md_parser = md2pptx.MDParser(dict(image_dir=web_images if os.path.isdir(web_images) else ''))
+                md_parser.parse_md(sessionText, stream, outfile)
+                content = stream.getvalue()
+                self.set_header('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+
+            elif downloadFormat == 'ipynb':
+                outfile = subsubpath+'.ipynb'
+                md_parser = md2nb.MDParser(argparse.Namespace(embed_images=True, indented=True, site_url='', strip=''))
+                content = md_parser.parse_cells(sessionText, src_path)
+                self.set_header('Content-Type', 'application/x-ipynb+json')
+
+            elif os.path.isdir(web_images):
                 # Create zip archive with Markdown file and images
                 stream = io.BytesIO()
                 zfile = zipfile.ZipFile(stream, 'w')
@@ -1288,10 +1307,13 @@ class ActionHandler(BaseHandler):
                 content = stream.getvalue()
                 outfile = subsubpath+'.zip'
                 self.set_header('Content-Type', 'application/zip')
+
             else:
+                # Plain markdown
                 content = sessionText
                 outfile = sessionFile
                 self.set_header('Content-Type', 'text/plain')
+
             self.set_header('Content-Disposition', 'attachment; filename="%s"' % outfile)
             self.write(content)
 
@@ -1626,13 +1648,13 @@ class ActionHandler(BaseHandler):
         if '..' in filepath:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid path')
 
-        if not site_admin and ( ('/'+PRIVATE_PATH) in filepath or ('/'+RESTRICTED_PATH) in filepath):
+        if not site_admin:
             self.check_site_access()
 
         user_browse = (url_path != '_browse')
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
         status = ''
-        if not filepath and not user_browse:
+        if not filepath and not user_browse and site_admin:
             file_list = [ ['source', 'source', False, '', ''],
                           ['web', 'web', False, '', ''],
                           ['data', 'data', False, '', ''],
@@ -1782,32 +1804,40 @@ class ActionHandler(BaseHandler):
 
                     if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.ipynb', '.jpeg','.jpg','.pdf','.png'):
                         # Viewable files
-                        if predir == 'files':
-                            viewpath = self.viewer_link(linkpath)
-                        else:
-                            viewpath = linkpath
+                        linkpath, viewpath = self.viewer_link(linkpath, site_admin=site_admin)
+                    else:
+                        linkpath = urllib.quote(linkpath)
 
-
-                file_list.append( [fname, subdirpath, isfile, linkpath, viewpath] )
+                file_list.append( [fname, urllib.quote(subdirpath), isfile, linkpath, viewpath] )
 
         self.render('browse.html', site_name=Options['site_name'], status=status, server_url=Options['server_url'],
                     url_path=url_path, site_admin=site_admin, root_admin=self.check_root_admin(),
-                    up_path=up_path, browse_path=filepath, file_list=file_list)
+                    up_path=urllib.quote(up_path), browse_path=filepath, file_list=file_list)
 
-    def viewer_link(self, relpath):
-        # Returns URL link to restricted file with key appended as query parameter, given relative path
+    def viewer_link(self, relpath, site_admin=False):
+        # Returns (linkpath, viewpath) quoted URL links to restricted file with key appended as query parameter, given relative path
         fext = os.path.splitext(relpath)[1]
-        viewpath = '/' + relpath
+        toppath = '/' + relpath
         if Options['site_name']:
-            viewpath = '/' + Options['site_name'] + viewpath
+            toppath = '/' + Options['site_name'] + toppath
 
-        if relpath.startswith(FILES_PATH+'/') and ('/'+RESTRICTED_PATH) in relpath:
+        linkpath = urllib.quote(relpath)
+
+        files_path = relpath.startswith(FILES_PATH+'/')
+
+        if not (files_path or site_admin):
+            return linkpath, linkpath
+
+        # files_path or site_admin: generate viewable links
+        viewpath = urllib.quote(toppath)
+        if ('/'+RESTRICTED_PATH) in relpath:
             # Restricted _files; viewable by anyone with file key in link
-            fileKey = PluginManager.getFileKey(viewpath)
-            
-            if fext.lower() != '.ipynb':
-                viewpath += '?' + fileKey
-            else:
+            fileKey = '?' + PluginManager.getFileKey(toppath)
+
+            viewpath += fileKey
+            linkpath += fileKey
+
+            if fext.lower() == '.ipynb':
                 # Render link for notebooks
                 if Options['server_url'].startswith('https://'):
                     nbprefix = 'https://nbviewer.jupyter.org/urls/' + Options['server_url'][len('https://'):]
@@ -1817,9 +1847,9 @@ class ActionHandler(BaseHandler):
                     raise Exception('Invalid server URL :' + Options['server_url'])
 
                 # Append "query" using "%3F" as nbviewer chomps up normal queries
-                viewpath = nbprefix + viewpath + '%3F' + fileKey
+                viewpath = nbprefix + viewpath.replace('?', '%3F')
 
-        return viewpath
+        return linkpath, viewpath
 
     def getUploadType(self, sessionName, siteName=''):
         if not Options['source_dir']:
@@ -2310,6 +2340,11 @@ class ActionHandler(BaseHandler):
             if fext == '.pptx':
                 md_text, images_zipdata = self.pptx2md(sessionName, fbody1, slides_zip=fbody2, zip_images=True)
                 fbody1 = md_text.encode('utf8')
+            elif fext == '.ipynb':
+                nb_dict = json.loads(fbody1)
+                nb_parser = nb2md.NBParser(argparse.Namespace(image_dir=sessionName+'_images', output_notes=False, zip_images=True))
+                md_text, images_zipdata = nb_parser.parse(nb_dict)
+                fbody1 = md_text.encode('utf8')
             else:
                 if fext != '.md':
                     raise Exception('Invalid file extension %s; expecting .pptx or .md' % fext)
@@ -2480,7 +2515,7 @@ class ActionHandler(BaseHandler):
                         sname = os.path.splitext(fname)[0]
                         nb_name = sname+'.ipynb'
                         if os.path.exists( os.path.join(notebooks_dir, nb_name) ):
-                            nb_links[sname] = self.viewer_link(NOTEBOOKS_PATH + '/' + nb_name)
+                            _, nb_links[sname] = self.viewer_link(NOTEBOOKS_PATH + '/' + nb_name)
 
         if src_path:
             fileHandles = [io.BytesIO(contentText) if fpath == src_path else None for fpath in filePaths]

@@ -8,6 +8,16 @@
 {% include "base.html" %}
 {% include "actbase.html" %}
 
+<script>
+function slidocDownload() {
+   var query = '';
+   var formatElem = document.getElementById("downloadformat");
+   if (formatElem)
+      query = '?downloadformat=' + formatElem.value;
+   slidocAction('download', '{{session_name}}', 'downloading', query)
+}
+</script>
+
 </head>
 <body>
 
@@ -33,7 +43,14 @@
     <tr><td>&nbsp;</td><td> <td></tr>
     <tr><td><a class="clickable" href="javascript:slidocAction('edit')">&#9998;</a> </td><td> Edit module Markdown file</td></tr>
     <tr><td><a class="clickable" href="javascript:slidocAction('startpreview', '', 'start preview')">&#x1F441;</a> </td><td> Preview module Markdown file</td></tr>
-    <tr><td><a class="clickable" href="javascript:slidocAction('download')">&#x21E9;</a> </td><td> Download module Markdown file (with images)</td></tr>
+    <tr><td><a class="clickable" href="javascript:slidocDownload()">&#x21E9;</a> </td><td> Download module,
+      <label for="downloadformat">Format:</label>
+      <select id="downloadformat" name="downloadformat">
+        <option value="md" selected>Markdown, with images</option>
+        <option value="pptx">Powerpoint</option>
+        <option value="ipynb">Jupyter notebook</option> 
+      </select>
+    </td></tr>
     <tr><td>&nbsp;</td><td> <td></tr>
     <tr><td><a class="clickable" href="javascript:slidocConfirmAction('delete','reset','?reset=1')">&#x21BA;</a> </td><td> Reset module session, deleting all user responses (IRREVERSIBLE)</td></tr>
     <tr><td>&nbsp;</td><td> <td></tr>

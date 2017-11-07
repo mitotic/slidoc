@@ -11,7 +11,7 @@ unless the string 'Answer:' occurs in the text of the slide at the start of a li
 All the text in the notes portion of a Powerpoint slide is appended to the text in the main slide.
 (Explicitly use Notes: to delineate the notes portion of a Slidoc slide.)
 
-If a line beginning with 'Slidoc:' is encountered, all the text prior to that line is
+If a line beginning with 'Slidoc:' is encountered and there is text below that line, all the text prior to that line is
 essentially ignored and saved as the 'Extra:' portion of the slide. All the following text is retained.
 For the first slide, any options after Slidoc: are retained. This allows multiple versions of a slide: a ppt version and a slidoc version
  
@@ -99,8 +99,8 @@ class PPTXParser(object):
 
         nslides = len(self.prs.slides)
         self.img_count = 0
-        for j, slide in enumerate(self.prs.slides):
-            slide_num = j+1
+        for slide_indx, slide in enumerate(self.prs.slides):
+            slide_num = slide_indx+1
             full_slide = ('%s/Slide%02d' if nslides >= 10 else '%s/Slide%d') % (self.filename, slide_num)
             slide_images = []
             slide_text = ''
@@ -225,16 +225,17 @@ class PPTXParser(object):
 
             images_copied = set()
             md_lines = []
-            for line in slide_lines:
+            for line_num, line in enumerate(slide_lines):
                 dmatch = self.defaults_re.match(line)
                 if dmatch:
                     # Settings line
-                    if not j and not defaults_text:
+                    if slide_num == 1 and not defaults_text:
                         # First slide; retain default settings
                         defaults_text = dmatch.group(3) or dmatch.group(4) or ''
-                    # "discard" all text prior to Slidoc: (i.e., save as extra)
-                    extra_text = ''.join(md_lines)
-                    md_lines = []
+                    if any(x.strip() for x in slide_lines[line_num+1:]):
+                        # "discard" all text prior to Slidoc: (i.e., save as extra) and use text following Slidoc: for slide
+                        extra_text = ''.join(md_lines)
+                        md_lines = []
                     continue
 
                 lmatch = self.image_re.match(line)
@@ -269,16 +270,16 @@ class PPTXParser(object):
             if not images_copied and slide_images:
                 # Copy embedded images by default
                 md_images = ["\n"]
-                for j, slide_image in enumerate(slide_images):
+                for image_num, slide_image in enumerate(slide_images):
                     iheight = self.compute_img_height(slide_image['width'], slide_image['height'], self.img_height/max(1,len(slide_images)))
                     img_params = "'height=%d'" % iheight
-                    img_ref = self.copy_image(j+1, slide_image['blob'], img_params=img_params, img_ext=slide_image['ext'])
+                    img_ref = self.copy_image(image_num+1, slide_image['blob'], img_params=img_params, img_ext=slide_image['ext'])
                     md_images.append('\n'+img_ref+'\n\n')
                 offset = len(md_lines)
-                for j, md_line in enumerate(md_lines):
+                for line_num, md_line in enumerate(md_lines):
                     if md_line.startswith('Answer:'):
                         # Insert images before Answer:
-                        offset = j
+                        offset = line_num
                         break
                 md_lines = md_lines[:offset] + md_images + md_lines[offset:]
  

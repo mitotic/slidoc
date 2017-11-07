@@ -10,13 +10,16 @@ Output image files are saved as external files.
 from __future__ import print_function
 
 import base64
+import io
 import json
 import os
 import random
 import re
 import sys
+import zipfile
 
 import md2md
+import sliauth
 
 Fenced_re = re.compile( r'^ *(`{3,}|~{3,}) *(\S+)? *\n'
                         r'([\s\S]+?)\s*'
@@ -34,6 +37,12 @@ def rand_name():
 class NBParser(object):
     def __init__(self, cmd_args):
         self.cmd_args = cmd_args
+        self.content_zip_bytes = None
+        self.content_zip = None
+        self.content_image_paths = set()
+        if self.cmd_args.zip_images:
+            self.content_zip_bytes = io.BytesIO()
+            self.content_zip = zipfile.ZipFile(self.content_zip_bytes, 'w')
         self.outbuffer = []
         self.defbuffer = []
 
@@ -53,9 +62,13 @@ class NBParser(object):
                 self.outbuffer.append( source )
                     
             elif cell_type == 'markdown':
+                if self.outbuffer:
+                    self.outbuffer.append('\n\n---\n\n')
                 self.outbuffer.append( Fenced_re.sub(unfence, source) )
                     
             elif cell_type == 'code':
+                if self.outbuffer:
+                    self.outbuffer.append('\n\n---\n\n')
                 self.outbuffer.append( '\n```\n' + source + '```\n\n' )
 
                 outputs = cell.get('outputs', [])
@@ -83,10 +96,14 @@ class NBParser(object):
                                 img_filename =  self.cmd_args.image_dir + '/' + basename
                             else:
                                 img_filename = basename
-                            img_file = open(img_filename, 'w')
-                            img_file.write( base64.b64decode(data['image/png'].strip()) )
-                            img_file.close()
-                            print('Created', img_filename, file=sys.stderr)
+                            content = base64.b64decode(data['image/png'].strip())
+                            if self.content_zip:
+                                self.content_zip.writestr(img_filename, content)
+                                self.content_image_paths.add(img_filename)
+                            else:
+                                with open(img_filename, 'wb') as f:
+                                    f.write(content)
+                                print('Created', img_filename, file=sys.stderr)
                             title = 'nb_output file="%s"' % basename
                             self.outbuffer.append("![%s](%s '%s')\n\n" % (alt_text, img_filename, title) )
                         if data_text:
@@ -95,17 +112,24 @@ class NBParser(object):
         out_str = ''.join(self.outbuffer)
         if self.defbuffer:
             out_str += '\n' + ''.join(self.defbuffer)
-        return out_str
-            
+
+        img_data = None
+        if self.content_zip and self.content_image_paths:
+            # Include original content in zipped images file
+            self.content_zip.writestr('content.md', sliauth.str_encode(out_str))
+            self.content_zip.close()
+            img_data = self.content_zip_bytes.getvalue()
+
+        return out_str, img_data
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Convert from Jupyter Notebook format to Markdown')
-    parser.add_argument('--image_dir', help='image subdirectory (default: "images"', default='images')
-    parser.add_argument('--href', help='URL prefix to link image files (default: "./")', default='./')
+    parser.add_argument('--image_dir', help='image subdirectory (default: "_images")', default='_images')
     parser.add_argument('--output_notes', help='Treat cell output as notes', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
+    parser.add_argument('--zip_images', help='Create zip file with Markdown and images', action="store_true")
     parser.add_argument('file', help='Notebook filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
     cmd_args = parser.parse_args()
 
@@ -125,11 +149,16 @@ if __name__ == '__main__':
         fname = fnames[j]
         nb_dict = json.load(f)
         f.close()
-        md_text = nb_parser.parse(nb_dict)
+        md_text, img_data = nb_parser.parse(nb_dict)
 
-        outname = fname+".md"
-        outfile = open(outname, "w")
-        outfile.write(md_text)
-        outfile.close()
-        print("Created ", outname, file=sys.stderr)
+        if img_data:
+            outname = fname+'.zip'
+            with open(outname, 'wb') as f:
+                f.write(img_data)
+        else:
+            outname = fname+'.md'
+            with open(outname, 'w') as f:
+                f.write(md_text)
+
+        print('Created ', outname, file=sys.stderr)
             

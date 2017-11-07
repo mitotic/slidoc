@@ -4329,7 +4329,7 @@ def makeShortNames(nameMap, first=False):
         if first:
             # For Firstname, try suffixes in following order: middle_initials+Lastname
             comps = firstmiddle.split()
-            firstName = comps[0] or idValue
+            firstName = (comps and comps[0]) or idValue
             suffix = lastName
             if len(comps) > 1:
                 suffix = ''.join(x[0] for x in comps[1:]).upper() + suffix

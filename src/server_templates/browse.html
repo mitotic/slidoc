@@ -133,7 +133,7 @@ document.onreadystatechange = function(event) {
 </head>
 <body>
   <b>
-  {% include "linkback.html" %}
+  {% if site_admin %} {% include "linkback.html" %} {% else %} <a class="clickable" href="/{{site_name}}">{{ site_name or 'Home' }}</a> {% end %}
   </b>
 
   <p></p>
@@ -147,7 +147,7 @@ document.onreadystatechange = function(event) {
 <p></p>
 
 {% if browse_path.startswith('files/') %}
-<a class="clickable" href="{{ site_prefix }}/{{url_path}}"><b>Files folder</b></a>
+<a class="clickable" href="{{ site_prefix }}/{{url_path}}/files"><b>Files folder</b></a>
 <p></p>
 {% elif browse_path and browse_path != 'files' %}
 <a class="clickable" href="{{ site_prefix }}/{{url_path}}"><b>Home folder</b></a> (~)
@@ -155,7 +155,7 @@ document.onreadystatechange = function(event) {
 {% end %}
 
 {% if up_path %}
-<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(up_path,plus=False) }}"><b>Parent folder</b></a> (..)
+<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ up_path }}"><b>Parent folder</b></a> (..)
 <p></p>
 {% end %}
 
@@ -165,19 +165,19 @@ document.onreadystatechange = function(event) {
 {% for fname, subpath, isfile, linkpath, viewpath in file_list %}
   <tr class="rowhover">
     <td>
-    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(subpath,plus=False) }}">&#x1F4C2;</a>{% end %}
+    {% if not isfile %}<a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ subpath }}">&#x1F4C2;</a>{% end %}
     </td>
     <td id="file-{{ fname }}">
-    {% if viewpath.startswith('http:') or  viewpath.startswith('https:') %}
-      <a class="clickable" href="{{viewpath}}">{{ fname }}</a>
+    {% if viewpath.startswith('/') or viewpath.startswith('http:') or viewpath.startswith('https:') %}
+      <a class="clickable" target="_blank" href="{{viewpath}}">{{ fname }}</a>
     {% elif viewpath %}
-      <a class="clickable" href="{{ site_prefix }}/{{ url_escape(viewpath,plus=False) }}">{{ fname }}</a>
+      <a class="clickable" target="_blank" href="{{ site_prefix }}/{{ viewpath }}">{{ fname }}</a>
     {% else %}
       {{ fname }}
     {% end %}
     </td>
     <td>
-    <a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ url_escape(subpath,plus=False) }}?download=1">&#x21E9;</a>
+    <a class="clickable" href="{{ site_prefix }}/{{url_path}}/{{ subpath }}?download=1">&#x21E9;</a>
     </td>
     <td>
     {% if (root_admin and not browse_path.startswith('backup')) or (site_admin and browse_path.startswith('files/')) %}
@@ -185,12 +185,12 @@ document.onreadystatechange = function(event) {
     {% end %}
     </td>
     <td>
-    {% if linkpath and browse_path.startswith('files/') %}
+    {% if linkpath and browse_path and (browse_path == 'files' or browse_path.startswith('files/')) %}
     <span class="clickable" onclick="this.nextElementSibling.style.display=null;this.style.display='none';">&#x1F517;</span>
     <span style="display: none;">
-      <code>{{server_url}}{{site_prefix}}/<b>{{ url_escape(linkpath,plus=False) }} </b></code>
+      <code>{{server_url}}{{site_prefix}}/<b>{{ linkpath }}</b></code>
       {% if fname.split('.')[-1].lower() in ('gif', 'jpeg', 'jpg', 'png') %}
-      <img class="imgdisp" src="{{ site_prefix }}/{{ url_escape(linkpath,plus=False) }}">
+      <img class="imgdisp" src="{{ site_prefix }}/{{ linkpath }}">
       {% end %}
     </span>
     {% end %}
