@@ -613,7 +613,7 @@ class Sheet(object):
         self.modTime = modTime
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
 
-        self.actionsRequested = actions
+        self.actionsRequested = [x.strip() for x in actions.split(',')] if actions else []
         self.modifiedHeaders = modifiedHeaders
 
         self.readOnly = isReadOnly(name)
@@ -726,7 +726,10 @@ class Sheet(object):
 
     def requestActions(self, actions=''):
         # Actions to be carried out after cache updates to this sheet are completed
-        self.actionsRequested = actions
+        if actions:
+            self.actionsRequested += [x.strip() for x in actions.split(',')]
+        else:
+            self.actionsRequested = []
         schedule_update()
 
     def export(self, keepHidden=False, allUsers=False, csvFormat=False, idRename='', altidRename=''):
@@ -1002,7 +1005,7 @@ class Sheet(object):
             if origSheet is not self:
                 return origSheet.get_updates()
 
-        actions = self.actionsRequested
+        actions = ','.join(self.actionsRequested)
             
         headers = self.xrows[0]
         nameCol = 1+headers.index('name') if 'name' in headers else 0
@@ -1085,7 +1088,7 @@ class Sheet(object):
         return [updateRows, actions, self.modifiedHeaders, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
                     
     def clear_update(self):
-        self.actionsRequested = ''
+        self.actionsRequested = []
         self.modifiedHeaders = False
         for j, row in enumerate(self.xrows[1:]):
             key = row[self.keyCol-1] if self.keyCol else j+2
@@ -1094,8 +1097,10 @@ class Sheet(object):
 
     def complete_update(self, updateRows, actions, modifiedHeaders):
         # Update sheet status after remote update has completed
-        if actions and actions == self.actionsRequested:
-            self.actionsRequested = ''
+        if actions:
+            for action in actions.split(','):
+                if action in self.actionsRequested:
+                    self.actionsRequested.remove(action)
 
         if modifiedHeaders:
             self.modifiedHeaders = False
@@ -1773,8 +1778,8 @@ def sheetAction(params, notrace=False):
                 returnValues = getDiscussPosts(sheetName, params.get('slide', ''), paramId)
                 return {"result": "success", "value": returnValues, "headers": returnHeaders,
                         "info": returnInfo, "messages": '\n'.join(returnMessages)}
-            elif performActions not in ('answer_stats', 'correct'):
-                raise Exception('Error:ACTION:Actions %s not supported by proxy' % performActions)
+            elif not all(x in ('answer_stats', 'correct') for x in performActions.split(',')):
+                raise Exception('Error:ACTION:Some actions %s not supported by proxy' % performActions)
             else:
                 if not adminUser:
                     raise Exception("Error:ACTION:Must be admin user to perform action on sheet "+sheetName)

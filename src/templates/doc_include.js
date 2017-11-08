@@ -3558,6 +3558,14 @@ Slidoc.userProfile = function() {
 	} else {
 	    var html = '<b>Profile</b><p></p>';
 	    html += 'User: <b>'+userId+'</b><br>';
+	    var userRole = getUserRole(true);
+	    if (userRole) {
+		html += 'Role: '+userRole;
+		if (userRole != 'guest')
+		    html += ' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain/guest user</a>)';
+		html += '<br>\n';
+	    }
+	    html += '(<span class="slidoc-clickable" onclick="Slidoc.userLogout();">Logout</span>)<hr>';
 	    Slidoc.showPopup(html);
 	}
 	return;
@@ -3686,13 +3694,13 @@ Slidoc.manageSession = function() {
     Slidoc.showPopup(html);
 }
 
-Slidoc.sessionActions = function(actions, sessionName) {
+Slidoc.sessionActions = function(actions, sessionName, noconfirm) {
     Slidoc.log('Slidoc.sessionActions: ', actions, sessionName);
     if (sessionName == 'all')
 	var sheetName = '';
     else
 	var sheetName = sessionName || Sliobj.sessionName;
-    if (!window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'? (may take some time)'))
+    if (!noconfirm && !window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'? (may take some time)'))
 	return;
     var opts = {sheet: sheetName}
     Sliobj.indexSheet.actions(actions, opts, sheetActionsCallback.bind(null, actions, sheetName));
@@ -6733,10 +6741,12 @@ Slidoc.submitStatus = function () {
 	html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll(true);">Force submit session for ALL users</span>';
 	html += '<hr><span class="slidoc-clickable" onclick="Slidoc.forceSubmitAll(false);">Unsubmit session for ALL users (and clear late token)</span>';
 
-	if (Sliobj.gradeDateStr)
+	if (Sliobj.gradeDateStr) {
 	    html += '<hr>Grades released to students at '+Sliobj.gradeDateStr;
-	else
+	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades('+"'undo'"+');">Unrelease grades to students</span>';
+	} else {
 	    html += '<hr><span class="slidoc-clickable" onclick="Slidoc.releaseGrades();">Release grades to students</span>';
+	}
     }
     Slidoc.showPopup(html);
 }
@@ -6894,23 +6904,38 @@ Slidoc.submitClick = function(elem, noFinalize, force) {
 	submitElems[j].disabled = 'disabled';
 }
 
-Slidoc.releaseGrades = function () {
-    Slidoc.log('Slidoc.releaseGrades: ');
+Slidoc.releaseGrades = function (undo) {
+    Slidoc.log('Slidoc.releaseGrades: ', undo);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    if (!window.confirm('Confirm releasing grades to students?'))
+    if (!window.confirm('Confirm '+(undo?'UNRELEASING':'releasing')+' grades to students?'))
 	return;
     
-    var updates = {id: Sliobj.sessionName, gradeDate: new Date()};
-    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback.bind(null, Slidoc.toLocalISOString(updates.gradeDate) ));
+    var updates = {id: Sliobj.sessionName, gradeDate: (undo ? '':(new Date())) };
+    Sliobj.indexSheet.updateRow(updates, {}, releaseGradesCallback.bind(null, (undo ? '': Slidoc.toLocalISOString(updates.gradeDate)) ));
 }
 
-function releaseGradesCallback(gradeDateStr, result, retStatus){
-    Slidoc.log('releaseGradesCallback:', result, retStatus);
+function releaseGradesCallback(gradeDateStr, result, retStatus) {
+    Slidoc.log('releaseGradesCallback:', gradeDateStr, result, retStatus);
     if (result) {
 	Sliobj.gradeDateStr = gradeDateStr;
-	if (window.confirm('Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students. Also copy to gradebook?'))
-	Slidoc.sessionActions('gradebook');
+	if (gradeDateStr) {
+	    var msg = 'Grade Date updated in index sheet '+Sliobj.params.index_sheet+' to release grades to students.';
+
+	    if (Sliobj.params.features.share_answers) {
+		msg += ' Answer stats being updated.';
+		Slidoc.sessionActions('answer_stats', '', true);
+	    }
+		
+	    if (Slidoc.siteCookie.gradebook) {
+		if (window.confirm(msg+' Also copy grades to gradebook?'))
+		    Slidoc.sessionActions('gradebook');
+	    } else {
+		alert(msg);
+	    }
+	} else {
+	    alert('Unreleased grades');
+	}
 
     } else {
 	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');

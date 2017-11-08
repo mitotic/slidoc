@@ -2819,7 +2819,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
     topnav_html = '<ul class="slidoc-topnav slidoc-noprint" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
     topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
     topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
-    topnav_html += '<li id="helplink" class="" style=""><a href="_docs/index.html" target="_blank">%s</a></li>' % ('<b>?</b>',)
+    topnav_html += '<li id="helplink" class="" style=""><span class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.userProfile();">%s</span><a href="_docs/index.html" target="_blank">%s</a></li>' % (SYMS['bust'], '<b>?</b>')
     topnav_html += '<li id="dashlink" class="slidoc-restricted-top" style="display: none;"><a href="%s_addtype" target="_blank"><b>+</b></a> <a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
