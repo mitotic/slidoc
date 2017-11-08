@@ -1326,6 +1326,10 @@ class SlidocRenderer(MathRenderer):
         """
         text = text.strip()
         prev_slide_end = ''
+        if (self.cur_header or self.alt_header) and level <= 2 and text:
+            # Implicit horizontal rule before Level 1/2 header
+            prev_slide_end = self.hrule(implicit=True)
+
         if self.notes_end is None:
             # Render header HTML element
             html = super(SlidocRenderer, self).header(text.strip('#'), level, raw=raw)
@@ -1334,15 +1338,11 @@ class SlidocRenderer(MathRenderer):
             except Exception:
                 # failed to parse, just return it unmodified
                 return html
-
-            if (self.cur_header or self.alt_header) and level <= 2 and text:
-                # Implicit horizontal rule before Level 1/2 header
-                prev_slide_end = self.hrule(implicit=True)
         else:
-            # Header in Notes; treat as plain text for rendering
+            # Header in Notes; render as plain text
             hdr = ElementTree.Element('p', {})
             hdr.text = text.strip('#')
-        
+
         hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id()) + (' slidoc-header %s-header' % self.get_slide_id())
         if 'headers' in self.options['config'].strip:
             hdr_class += ' slidoc-hidden'
