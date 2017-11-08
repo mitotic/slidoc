@@ -26,7 +26,7 @@ Nb_metadata_format = '''
   }
  },
   "nbformat": 4,
-  "nbformat_minor": 0,
+  "nbformat_minor": 1,
   "cells" : [
 %(cells)s
 ]
@@ -47,7 +47,8 @@ Cell_formats['markdown'] = '''
 {
   "cell_type" : "markdown",
   "metadata" : {},
-  "source" : %(source)s
+  "source" : %(source)s,
+  "attachments" : %(attachments)s
 }
 '''
 
@@ -201,14 +202,23 @@ class MDParser(object):
             extn = extn.lower()
             if extn in ('.gif', '.jpg', '.jpeg', '.png', '.svg'):
                 content_type = 'image/jpeg' if extn == '.jpg' else 'image/'+extn[1:]
-                f = open(fpath)
-                content = f.read()
-                f.close()
-                img_content = self.image_output(text, content_type, base64.b64encode(content))
+                if self.cmd_args.image_dir:
+                    fpath =  os.path.join(self.cmd_args.image_dir, os.path.basename(fpath))
+                with open(fpath) as f:
+                    content = f.read()
+                attachment_name =  os.path.basename(fpath)
+                img_md = '![%s](attachment:%s)\n' % (text, attachment_name)
+                img_content = self.image_output(text, content_type, base64.b64encode(content), attachment=not nb_output_append)
                 if nb_output_append:
                     self.cells_buffer[-1]['outputs'].append(img_content)
+                elif self.cells_buffer and self.cells_buffer[-1]['cell_type'] == 'markdown':
+                    self.cells_buffer[-1]['source'].append(img_md)
+                    self.cells_buffer[-1]['attachments'][attachment_name] = img_content
                 else:
-                    self.cells_buffer.append({'cell_type': 'code', 'source': '', 'outputs': [img_content]})
+                    self.cells_buffer += {"cell_type" : "markdown",
+                                          "metadata" : {},
+                                          "source" : [img_md],
+                                          "attachments" : {attachment_name: img_content} }
             else:
                 self.buffered_lines.append(line)
         else:
@@ -231,8 +241,8 @@ class MDParser(object):
             self.buffered_lines.append(content)
 
     def markdown(self, content):
-        if 'markup' not in self.cmd_args.strip:
-            self.cells_buffer.append({'cell_type': 'markdown', 'source': self.split_str(content, backtick_off=True)})
+        if 'markup' not in self.cmd_args.strip and content.strip():
+            self.cells_buffer.append({'cell_type': 'markdown', 'source': self.split_str(content, backtick_off=True), 'attachments': {}})
 
     def split_str(self, content, backtick_off=False):
         # Split string into list of lines
@@ -252,22 +262,25 @@ class MDParser(object):
         "text": self.split_str(text)
         }
 
-    def image_output(self, text, content_type, data):
-        return {
-        "data": {
-        content_type: data,
-        "text/plain": [ text ]
-        },
-        "metadata": {},
-        "output_type": "display_data"
-        }
+    def image_output(self, text, content_type, data, attachment=False):
+        if attachment:
+            return { content_type: data }
+        else:
+            return {
+            "data": {
+            content_type: data,
+            "text/plain": [ text ]
+            },
+            "metadata": {},
+            "output_type": "display_data"
+            }
 
     def dump_cell(self, cell):
         if cell['cell_type'] == 'code':
             return Cell_formats['code'] % {'source': json.dumps(cell['source']),
                                            'outputs': json.dumps(cell['outputs'])}
         if cell['cell_type'] == 'markdown':
-            return Cell_formats['markdown'] % {'source': json.dumps(cell['source'])}
+            return Cell_formats['markdown'] % {'source': json.dumps(cell['source']), 'attachments': json.dumps(cell['attachments'])}
 
         return Cell_formats['raw'] % {'source': json.dumps(cell['source'])}
 
@@ -285,6 +298,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Convert from Markdown to Jupyter Notebook format')
     parser.add_argument('--embed_images', help='Embed all images', action="store_true")
+    parser.add_argument('--image_dir', help='image subdirectory (default: "_images")', default='_images')
     parser.add_argument('--indented', help='Convert indented code blocks to notebook cells', action="store_true")
     parser.add_argument('--site_url', help='URL prefix for website (default: "")', default='')
     parser.add_argument('--strip', help='Strip %s|all|all,but,...' % ','.join(strip_all))

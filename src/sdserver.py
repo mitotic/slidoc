@@ -1291,7 +1291,8 @@ class ActionHandler(BaseHandler):
 
             elif downloadFormat == 'ipynb':
                 outfile = subsubpath+'.ipynb'
-                md_parser = md2nb.MDParser(argparse.Namespace(embed_images=True, indented=True, site_url='', strip=''))
+                md_parser = md2nb.MDParser(argparse.Namespace(embed_images=True, indented=True, site_url='', strip='',
+                                                              image_dir=web_images if os.path.isdir(web_images) else ''))
                 content = md_parser.parse_cells(sessionText, src_path)
                 self.set_header('Content-Type', 'application/x-ipynb+json')
 

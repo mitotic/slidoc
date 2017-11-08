@@ -53,22 +53,42 @@ class NBParser(object):
             source += '\n'
         return source
         
+    def img_write(self, img_type, filename, content):
+        if self.cmd_args.image_dir:
+            img_path =  self.cmd_args.image_dir + '/' + filename
+        else:
+            img_path = filename
+        if self.content_zip:
+            self.content_zip.writestr(img_path, content)
+            self.content_image_paths.add(img_path)
+        else:
+            with open(img_path, 'wb') as f:
+                f.write(content)
+            print('Created', img_path, file=sys.stderr)
+
     def parse(self, nb_dict):
         for j, cell in enumerate(nb_dict['cells']):
             cell_type = cell['cell_type']
             source = self.normalize(cell.get('source', ''))
+            metadata = cell.get('metadata', {})
+            slideshow = metadata.get('slideshow', {})
+            attachments = cell.get('attachments', {})
+
+            if slideshow.get('slide_type') == 'slide':
+                if cell_type != 'markdown' or (not source.lstrip().startswith('---') and not re.match(r'#{1,2}[^#]', source.lstrip())):
+                    self.outbuffer.append('\n\n---\n\n')
 
             if cell_type == 'raw':
                 self.outbuffer.append( source )
                     
             elif cell_type == 'markdown':
-                if self.outbuffer:
-                    self.outbuffer.append('\n\n---\n\n')
-                self.outbuffer.append( Fenced_re.sub(unfence, source) )
+                self.outbuffer.append( Fenced_re.sub(unfence, source).replace('](attachment:', '](_images/') )
+                for fname, value in attachments.items():
+                    for img_type, img_data in value.items():
+                        content = base64.b64decode(img_data.strip())
+                        self.img_write(img_type, fname, content)
                     
             elif cell_type == 'code':
-                if self.outbuffer:
-                    self.outbuffer.append('\n\n---\n\n')
                 self.outbuffer.append( '\n```\n' + source + '```\n\n' )
 
                 outputs = cell.get('outputs', [])
@@ -90,20 +110,17 @@ class NBParser(object):
                         if re.match(r'^\s*<matplotlib.figure.Figure .*>\s*$', self.normalize(data_text, nonewline=True)):
                             alt_text = self.normalize(data_text, nonewline=True)
                             data_text = ''
-                        if 'image/png' in data:
-                            basename = 'nb_output-%s.png' % md2md.generate_random_label()
-                            if self.cmd_args.image_dir:
-                                img_filename =  self.cmd_args.image_dir + '/' + basename
-                            else:
-                                img_filename = basename
-                            content = base64.b64decode(data['image/png'].strip())
-                            if self.content_zip:
-                                self.content_zip.writestr(img_filename, content)
-                                self.content_image_paths.add(img_filename)
-                            else:
-                                with open(img_filename, 'wb') as f:
-                                    f.write(content)
-                                print('Created', img_filename, file=sys.stderr)
+                        img_type = ''
+                        if 'image/gif' in data:
+                            img_type = 'gif'
+                        elif 'image/jpeg' in data:
+                            img_type = 'jpeg'
+                        elif 'image/png' in data:
+                            img_type = 'png'
+                        if img_type:
+                            basename = 'nb_output-%s.%s' % (md2md.generate_random_label(), img_type)
+                            content = base64.b64decode(data['image/'+img_type].strip())
+                            self.img_write(img_type, basename, content)
                             title = 'nb_output file="%s"' % basename
                             self.outbuffer.append("![%s](%s '%s')\n\n" % (alt_text, img_filename, title) )
                         if data_text:

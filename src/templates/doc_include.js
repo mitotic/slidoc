@@ -6087,7 +6087,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 		var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
 		if (corr_choice) {
 		    // Highlight correct choice only if selected (for pre-quiz)
-		    if (!(question_attrs.disabled != 'choice') || corr_choice.classList.contains('slidoc-choice-selected'))
+		    if (!(question_attrs.disabled == 'choice') || corr_choice.classList.contains('slidoc-choice-selected'))
 			corr_choice.style['font-weight'] = 'bold';
 		}
 	    }
