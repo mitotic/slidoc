@@ -16,7 +16,10 @@ Upload = {
 	if (!this.qattributes || Slidoc.PluginManager.answered(this.qattributes.qnumber) || Slidoc.PluginManager.lateSession()) {
 	    // Upload only works with unanswered questions (for non-late sessions)
 	    this.uploadElem.style.display = 'none';
-	    document.getElementById(this.pluginId+'-uploadlabel').style.display = 'none';
+	    try {
+		document.getElementById(this.pluginId+'-uploadlabel').style.display = 'none';
+		document.getElementById(this.pluginId+'-uploadconfirm').style.display = 'none';
+	    } catch() {}
 	    return;
 	}
 

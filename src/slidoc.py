@@ -288,6 +288,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_options =  re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_discuss=   re.compile(r'^ {0,3}(Discuss):(.*?)(\n|$)')
+    slidoc_hidden =   re.compile(r'^ {0,3}(Hidden):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
     slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
@@ -300,7 +301,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_answer', 'slidoc_discuss', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_answer', 'slidoc_discuss', 'slidoc_hidden', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -416,6 +417,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_discuss(self, m):
          self.tokens.append({
             'type': 'slidoc_discuss',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_hidden(self, m):
+         self.tokens.append({
+            'type': 'slidoc_hidden',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -611,6 +619,9 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_discuss(self):
         return self.renderer.slidoc_discuss(self.token['name'], self.token['text'])
 
+    def output_slidoc_hidden(self):
+        return self.renderer.slidoc_hidden(self.token['name'], self.token['text'])
+
     def output_slidoc_tags(self):
         return self.renderer.slidoc_tags(self.token['name'], self.token['text'])
 
@@ -800,7 +811,7 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
+        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'hiddenSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
 
         self.sheet_attributes['resubmitAnswers'] = self.options['config'].pace <= BASIC_PACE and self.options['config'].show_score in ('after_submitting', 'after_grading')
         self.slide_number = 0
@@ -866,6 +877,7 @@ class SlidocRenderer(MathRenderer):
         self.slide_images.append([])
         self.slide_img_tag = ''
         self.slide_discuss = 'discuss_all' in self.options['config'].features
+        self.slide_hidden = False
 
     def close_zip(self, md_content=None):
         # Create zipped content (only if there are any images)
@@ -1020,7 +1032,12 @@ class SlidocRenderer(MathRenderer):
         elif header:
             # Nested header
             header = '&nbsp;&nbsp;&nbsp;' + header
-        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, header)
+
+        classes = []
+        if self.slide_hidden and self.slide_number > 1:
+            self.sheet_attributes['hiddenSlides'].append(self.slide_number)
+            classes.append('slidoc-slide-hidden')
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), header)
         return html
 
     def image(self, src, title, text):
@@ -1516,7 +1533,7 @@ class SlidocRenderer(MathRenderer):
         if name == 'Q':
             return (prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''') % params
         elif hide_answer:
-            return (prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');"+'">%(opt)s</span>. ''') % params
+            return (prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');">%(opt)s</span>. ''') % params
         else:
             return (prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''') % params
 
@@ -1592,6 +1609,10 @@ class SlidocRenderer(MathRenderer):
 
     def slidoc_discuss(self, name, text):
         self.slide_discuss = True
+        return ''
+
+    def slidoc_hidden(self, name, text):
+        self.slide_hidden = True
         return ''
 
     def slidoc_answer(self, name, text):
@@ -3022,7 +3043,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0, 'timedSec': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
-                 'releaseDate': '', 'dueDate': '', 'discussSlides': [], 'resubmitAnswers': None,
+                 'releaseDate': '', 'dueDate': '', 'discussSlides': [], 'hiddenSlides': [], 'resubmitAnswers': None,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
                  'roster_sheet': ROSTER_SHEET, 'score_sheet': SCORE_SHEET,
                  'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
@@ -3447,6 +3468,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         js_params['disabledCount'] = renderer.sheet_attributes['disabledCount']
         js_params['discussSlides'] = renderer.sheet_attributes['discussSlides']
+        js_params['hiddenSlides'] = renderer.sheet_attributes['hiddenSlides']
         js_params['resubmitAnswers'] = renderer.sheet_attributes['resubmitAnswers']
 
         if config.separate:

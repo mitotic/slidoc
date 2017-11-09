@@ -44,6 +44,9 @@ body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
 li.slidoc-restrictedonly { opacity: 0.6; }
 li.slidoc-restricted-top { background-color: #4f4f4f; }
 
+/* Hidden slides */
+body:not(.slidoc-showhidden-view) section.slidoc-slide-hidden { display: none; }
+
 /* Plugin display */
 div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
 
@@ -182,6 +185,7 @@ body:not(.slidoc-slide-view) section.slidoc-page-break-before {
 .slidoc-contents-currentslide { font-style: italic; text-decoration: underline; }
 .slidoc-contents-nextslide { font-weight: bold; }
 .slidoc-contents-hiddenslide { }
+.slidoc-contents-explicltlyhiddenslide { opacity: 0.5; }
 
 /* Navigation */
 .slidoc-slide-nav    { z-index: 1000; position: fixed; right: 10px; bottom: 5px; }

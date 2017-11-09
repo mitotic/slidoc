@@ -1873,6 +1873,16 @@ Slidoc.orderedStringify = function (value, space) {
     return JSON.stringify(value, orderedReplacer, space);
 }
 
+function flexFixed(num, prec) {
+    // Return integer string or prec-digit fractional decimal string (default 2)
+    var prec = prec || 2;
+    var numStr = ''+num;
+    if (numStr.indexOf('.') >= 0 && (numStr.length - numStr.indexOf('.')) > prec)
+	return num.toFixed(prec);
+    else
+	return numStr;
+}
+
 function zeroPad(num, pad) {
     // Pad num with zeros to make pad digits
     var maxInt = Math.pow(10, pad);
@@ -2856,6 +2866,17 @@ function interactCallback() {
     Slidoc.log('interactCallback:');
 }
 
+
+Slidoc.hideSlides = function() {
+    // Toggle explicitly hidden slides
+    if (getUserId() != Sliobj.params.testUserId)
+	return false;
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    var showHidden = document.body.classList.contains('slidoc-showhidden-view');
+    toggleClass(!showHidden, 'slidoc-showhidden-view');
+}
+
 ////////////////////////
 // Section 11: Plugins
 ////////////////////////
@@ -3641,6 +3662,10 @@ Slidoc.manageSession = function() {
 
     if (Sliobj.fullAccess) {
         html += '<p></p><hr>';
+	if (Sliobj.params.hiddenSlides && Sliobj.params.hiddenSlides.length) {
+	    var showHidden = document.body.classList.contains('slidoc-showhidden-view');
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.hideSlides();">'+(showHidden?'Hide':'Show')+' hidden slides</span><br>';
+	}
 	if (Sliobj.params.releaseDate) {
 	    var dateVal = parseDate(Sliobj.params.releaseDate);
 	    if (dateVal)
@@ -4044,6 +4069,14 @@ function slidocSetupAux(session, feedback) {
     for (var j=0; j<bodyClasses.length; j++) {
 	if (!bodyClasses[j].match(/-page$/))
 	    document.body.classList.remove(bodyClasses[j]);
+    }
+
+    // Hide explicitly hidden slides
+    var allSlides = getVisibleSlides(true);
+    for (var j=0; j<allSlides.length; j++) {
+	var footerElem = document.getElementById(allSlides[j].id+'-footer-toggle');
+	if (footerElem.classList.contains('slidoc-slide-hidden'))
+	    allSlides[j].classList.add('slidoc-slide-hidden');
     }
 
     if (Sliobj.session && !Sliobj.session.submitted && Sliobj.params.timedSec && Sliobj.timedSecLeft) {
@@ -4881,11 +4914,11 @@ function computeGrade(userId, breakup) {
 	var q_scores = rowObj.q_scores||0;
 	var q_other = rowObj.q_other||0;
 	var tot = q_grades + q_scores + q_other;
-	gradeStr += tot;
+	gradeStr += flexFixed(tot);
 	if (breakup && q_scores != tot) {
-	    gradeStr += ' ('+q_scores;
+	    gradeStr += ' ('+flexFixed(q_scores);
 	    if (q_other)
-		gradeStr += ','+q_other;
+		gradeStr += ','+flexFixed(q_other);
 	    gradeStr += ')';
 	}
     }
@@ -5697,6 +5730,7 @@ Slidoc.contentsDisplay = function() {
 	nVisible = Math.min(nVisible, Math.max(1,Sliobj.session.lastSlide));
     var headers = [];
     for (var j=0; j<allSlides.length; j++) {
+	var explictlyHidden = allSlides[j].classList.contains('slidoc-slide-hidden');
 	var hidden = (j >= nVisible) && !Sliobj.previewState;  // Do not hide any slides in preview mode
 	if (hidden && !isController())  // Skip hidden slides if not adminPaced controller
 	    break;
@@ -5712,7 +5746,9 @@ Slidoc.contentsDisplay = function() {
 	    headerText = headerText || ('Slide '+(j+1));
             var action = '';
 	    var classes = 'slidoc-contents-header';
-	    if (hidden) {
+	    if (explictlyHidden) {
+		classes += ' slidoc-contents-explicltlyhiddenslide';
+	    } else if (hidden) {
 		classes += ' slidoc-contents-hiddenslide';
 		if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && getUserId() == Sliobj.params.testUserId) {
 		    classes += ' slidoc-contents-nextslide';
@@ -6095,8 +6131,10 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 		var corr_choice = getChoiceElem(slide_id, corr_answer[j], shuffleStr);
 		if (corr_choice) {
 		    // Highlight correct choice only if selected (for pre-quiz)
-		    if (!(question_attrs.disabled == 'choice') || corr_choice.classList.contains('slidoc-choice-selected'))
+		    if (!(question_attrs.disabled == 'choice') || corr_choice.classList.contains('slidoc-choice-selected')) {
 			corr_choice.style['font-weight'] = 'bold';
+			corr_choice.style['color'] = 'green';
+		    }
 		}
 	    }
 	}
@@ -6353,7 +6391,7 @@ Slidoc.showScore = function () {
 	if (controlledPace())
 	    scoreElem.textContent = Sliobj.scores.questionsCount;
 	else if (Sliobj.scores.questionsCount && Sliobj.session.submitted && Sliobj.params.totalWeight == Sliobj.params.scoreWeight && !displayAfterGrading())
-	    scoreElem.textContent = Sliobj.scores.weightedCorrect+' ('+Sliobj.params.scoreWeight+')';
+	    scoreElem.textContent = flexFixed(Sliobj.scores.weightedCorrect)+' ('+Sliobj.params.scoreWeight+')';
 	else
 	    scoreElem.textContent = Sliobj.scores.questionsCount+'/'+(Sliobj.params.questionsMax-Sliobj.params.disabledCount);
     } else {
@@ -7463,6 +7501,16 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
     if (!slides || slide_num < 1 || slide_num > slides.length)
 	return false;
+
+    while (slides[slide_num-1].classList.contains('slidoc-slide-hidden') && !document.body.classList.contains('slidoc-showhidden-view')) {
+	// Skip explicitly hidden slides
+	if (slide_num <= 1 || slide_num >= slides.length)
+	    return false;
+	if (backward)
+	    slide_num -= 1;
+	else
+	    slide_num += 1;
+    }
 
     if (Sliobj.session && Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
