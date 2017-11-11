@@ -285,10 +285,9 @@ class MathBlockGrammar(mistune.BlockGrammar):
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
     slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
-    slidoc_options =  re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
+    slidoc_options=   re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
+    slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
-    slidoc_discuss=   re.compile(r'^ {0,3}(Discuss):(.*?)(\n|$)')
-    slidoc_hidden =   re.compile(r'^ {0,3}(Hidden):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
     slidoc_notes  =   re.compile(r'^ {0,3}(Notes):\s*?((?=\S)|\n)')
@@ -301,14 +300,14 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_answer', 'slidoc_discuss', 'slidoc_hidden', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
         self.slidoc_slide_text = []
         self.slidoc_blocks = []
         self.slidoc_recursion = 0
-        self.slidoc_slide_header = ''
+        self.slidoc_slide_header = None
         super(MathBlockLexer, self).__init__(rules, **kwargs)
 
     def get_slide_text(self):
@@ -328,20 +327,27 @@ class MathBlockLexer(mistune.BlockLexer):
                     continue
                 getattr(self, 'parse_%s' % key)(m)
                 if self.slidoc_recursion == 1:
-                    if key == 'heading' and len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
+                    if key == 'slidoc_slideopts':
+                        if self.slidoc_slide_header is not None:
+                            self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
+                            self.slidoc_blocks = []
+                        self.slidoc_slide_header = ''
+                    elif key == 'heading' and len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
                         if self.slidoc_slide_header:
-                            # Level 2 header not at start of block (implicit slide break)
+                            # Level 2 header not at start of block or after Slide: (implicit slide break)
                             self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
                             self.slidoc_blocks = []
                         self.slidoc_slide_header = m.group(2).strip('#').strip()
 
                     self.slidoc_blocks.append(m.group(0))
 
-                    if key == 'hrule':
+                    if key == 'paragraph' and self.slidoc_slide_header is None:
+                        self.slidoc_slide_header = ''
+                    elif key == 'hrule':
                         # Explicit slide break
                         self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
                         self.slidoc_blocks = []
-                        self.slidoc_slide_header = ''
+                        self.slidoc_slide_header = None
                 return m
             return False  # pragma: no cover
 
@@ -407,23 +413,16 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2).strip()
         })
 
+    def parse_slidoc_slideopts(self, m):
+         self.tokens.append({
+            'type': 'slidoc_slideopts',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
     def parse_slidoc_answer(self, m):
          self.tokens.append({
             'type': 'slidoc_answer',
-            'name': m.group(1).lower(),
-            'text': m.group(2).strip()
-        })
-
-    def parse_slidoc_discuss(self, m):
-         self.tokens.append({
-            'type': 'slidoc_discuss',
-            'name': m.group(1).lower(),
-            'text': m.group(2).strip()
-        })
-
-    def parse_slidoc_hidden(self, m):
-         self.tokens.append({
-            'type': 'slidoc_hidden',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -613,14 +612,11 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_options(self):
         return self.renderer.slidoc_options(self.token['name'], self.token['text'])
 
+    def output_slidoc_slideopts(self):
+        return self.renderer.slidoc_slideopts(self.token['name'], self.token['text'])
+
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
-
-    def output_slidoc_discuss(self):
-        return self.renderer.slidoc_discuss(self.token['name'], self.token['text'])
-
-    def output_slidoc_hidden(self):
-        return self.renderer.slidoc_hidden(self.token['name'], self.token['text'])
 
     def output_slidoc_tags(self):
         return self.renderer.slidoc_tags(self.token['name'], self.token['text'])
@@ -876,8 +872,9 @@ class SlidocRenderer(MathRenderer):
         self.slide_plugin_embeds = set()
         self.slide_images.append([])
         self.slide_img_tag = ''
-        self.slide_discuss = 'discuss_all' in self.options['config'].features
-        self.slide_hidden = False
+        self.slide_options = set()
+        if 'discuss_all' in self.options['config'].features:
+            self.slide_options.add('discuss')
 
     def close_zip(self, md_content=None):
         # Create zipped content (only if there are any images)
@@ -1034,7 +1031,7 @@ class SlidocRenderer(MathRenderer):
             header = '&nbsp;&nbsp;&nbsp;' + header
 
         classes = []
-        if self.slide_hidden:
+        if 'hidden' in self.slide_options:
             if self.slide_number > 1 and not self.qtypes[-1] and self.options['config'].pace != QUESTION_PACE:
                 # Explicitly hidden, not first slide, not question slide, and not question paced
                 self.sheet_attributes['hiddenSlides'].append(self.slide_number)
@@ -1146,7 +1143,7 @@ class SlidocRenderer(MathRenderer):
     def discuss_footer(self):
         html = ''
         slide_id = self.get_slide_id()
-        if self.slide_discuss:
+        if 'discuss' in self.slide_options:
             self.sheet_attributes['discussSlides'].append(self.slide_number)
             html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-discussonly" style="display: none;">\n''' % (slide_id, )
             html += '''  <span id="%s-discuss-show" class="slidoc-discuss-show slidoc-clickable" onclick="Slidoc.slideDiscuss('show','%s');">%s</span>\n''' % (slide_id, slide_id, SYMS['bubble'])
@@ -1612,13 +1609,23 @@ class SlidocRenderer(MathRenderer):
         args, sep, content = text.partition('\n')
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
-    def slidoc_discuss(self, name, text):
-        self.slide_discuss = True
-        return ''
+    def slidoc_slideopts(self, name, text):
+        prev_slide_end = ''
+        if self.cur_header or self.alt_header:
+            # Implicit horizontal rule
+            prev_slide_end = self.hrule(implicit=True)
 
-    def slidoc_hidden(self, name, text):
-        self.slide_hidden = True
-        return ''
+        opts = text.lower().split()
+        ALLOWED_OPTS = ('discuss', 'hidden')
+        for opt in opts:
+            if opt in ALLOWED_OPTS:
+                self.slide_options.add(opt)
+            elif opt.startswith('no_') and opt[len('no_'):] in ALLOWED_OPTS:
+                self.slide_options.discard( opt[len('no_'):] )
+            else:
+                message('    ****OPTION-WARNING: %s: Slide %s, Ignored invalid option Slide: %s; must be one of %s' % (self.options["filename"], self.slide_number, opt, '/'.join(ALLOWED_OPTS)))
+
+        return prev_slide_end
 
     def slidoc_answer(self, name, text):
         if self.qtypes[-1]:
@@ -2260,7 +2267,7 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-SLIDE_BREAK_RE =  re.compile(r'^ {0,3}(----* *|##[^#].*)\n?$')
+SLIDE_BREAK_RE =  re.compile(r'^ {0,3}(----* *|Slide:|##[^#].*)\n?$')
 HRULE_BREAK_RE =  re.compile(r'(\S *\n)( {0,3}----* *(\n|$))')
     
 def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id='',
@@ -2314,6 +2321,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         slide_lines = []
         first_slide = True
         prev_hrule = True
+        prev_slideopt = False
         prev_blank = True
         slide_header = ''
         while True:
@@ -2331,30 +2339,37 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
             else:
                 prev_blank = False
 
+            append_line = line
             new_slide = False
             lmatch = SLIDE_BREAK_RE.match(line)
             if lmatch:
                 if lmatch.group(1).startswith('---'):
-                    prev_hrule = True
                     new_slide = True
-                    slide_header = ''
-                else:
+                    prev_hrule = True
+                    prev_slideopt = False
+                    append_line = None        # Exclude hrule line from slide hash
+                elif lmatch.group(1).startswith('Slide:'):
                     if not prev_hrule:
                         new_slide = True
-                    slide_header = line
                     prev_hrule = False
+                    prev_slideopt = True
+                else:
+                    if not prev_hrule and not prev_slideopt:
+                        new_slide = True
+                    prev_hrule = False
+                    prev_slideopt = False
             elif not prev_blank:
                 prev_hrule = False
+                prev_slideopt = False
 
             if new_slide:
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 slide_lines = []
-                if slide_header:
-                    slide_lines.append(slide_header)
                 prev_blank = True
                 first_slide = False
-            else:
-                slide_lines.append(line)
+
+            if append_line is not None:
+                slide_lines.append(append_line)
 
         if renderer.slide_number == len(slide_hash):
             # Save question digests (for future use)
