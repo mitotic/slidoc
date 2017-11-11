@@ -19,7 +19,8 @@ Upload = {
 	    try {
 		document.getElementById(this.pluginId+'-uploadlabel').style.display = 'none';
 		document.getElementById(this.pluginId+'-uploadconfirm').style.display = 'none';
-	    } catch() {}
+	    } catch(err) {
+	    }
 	    return;
 	}
 

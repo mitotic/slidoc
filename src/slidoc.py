@@ -1034,9 +1034,14 @@ class SlidocRenderer(MathRenderer):
             header = '&nbsp;&nbsp;&nbsp;' + header
 
         classes = []
-        if self.slide_hidden and self.slide_number > 1:
-            self.sheet_attributes['hiddenSlides'].append(self.slide_number)
-            classes.append('slidoc-slide-hidden')
+        if self.slide_hidden:
+            if self.slide_number > 1 and not self.qtypes[-1] and self.options['config'].pace != QUESTION_PACE:
+                # Explicitly hidden, not first slide, not question slide, and not question paced
+                self.sheet_attributes['hiddenSlides'].append(self.slide_number)
+                classes.append('slidoc-slide-hidden')
+            else:
+                message('    ****HIDDEN-WARNING: %s: Slide %s, Hidden: ignored for first slide/question slide/question-paced sessions' % (self.options["filename"], self.slide_number))
+
         html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), header)
         return html
 

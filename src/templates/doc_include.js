@@ -107,6 +107,7 @@ for (var j=0; j<Sliobj.params.gradeFields.length; j++)
 Sliobj.ajaxRequestActive = null;
 Sliobj.interactiveMessages = [];
 
+Sliobj.showHiddenSlides = false;
 Sliobj.interactiveMode = false;
 Sliobj.interactiveSlide = false;
 Sliobj.gradableState = null;
@@ -2873,8 +2874,8 @@ Slidoc.hideSlides = function() {
 	return false;
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
-    var showHidden = document.body.classList.contains('slidoc-showhidden-view');
-    toggleClass(!showHidden, 'slidoc-showhidden-view');
+    Sliobj.showHiddenSlides = !Sliobj.showHiddenSlides;
+    toggleClass(Sliobj.showHiddenSlides, 'slidoc-showhidden-view');
 }
 
 ////////////////////////
@@ -3663,8 +3664,7 @@ Slidoc.manageSession = function() {
     if (Sliobj.fullAccess) {
         html += '<p></p><hr>';
 	if (Sliobj.params.hiddenSlides && Sliobj.params.hiddenSlides.length) {
-	    var showHidden = document.body.classList.contains('slidoc-showhidden-view');
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.hideSlides();">'+(showHidden?'Hide':'Show')+' hidden slides</span><br>';
+	    html += '<span class="slidoc-clickable" onclick="Slidoc.hideSlides();">'+(Sliobj.showHiddenSlides?'Hide':'Show')+' hidden slides</span><br>';
 	}
 	if (Sliobj.params.releaseDate) {
 	    var dateVal = parseDate(Sliobj.params.releaseDate);
@@ -4071,7 +4071,9 @@ function slidocSetupAux(session, feedback) {
 	    document.body.classList.remove(bodyClasses[j]);
     }
 
-    // Hide explicitly hidden slides
+    Sliobj.showHiddenSlides = false;
+    
+    // Mark explicitly hidden slides
     var allSlides = getVisibleSlides(true);
     for (var j=0; j<allSlides.length; j++) {
 	var footerElem = document.getElementById(allSlides[j].id+'-footer-toggle');
@@ -5730,10 +5732,12 @@ Slidoc.contentsDisplay = function() {
 	nVisible = Math.min(nVisible, Math.max(1,Sliobj.session.lastSlide));
     var headers = [];
     for (var j=0; j<allSlides.length; j++) {
-	var explictlyHidden = allSlides[j].classList.contains('slidoc-slide-hidden');
 	var hidden = (j >= nVisible) && !Sliobj.previewState;  // Do not hide any slides in preview mode
 	if (hidden && !isController())  // Skip hidden slides if not adminPaced controller
 	    break;
+	var explicitlyHidden = allSlides[j].classList.contains('slidoc-slide-hidden');
+	if (explicitlyHidden && !Sliobj.fullAccess)  // Only list expclitly hidden slides for admin
+	    continue;
 	var headerElems = document.getElementsByClassName(allSlides[j].id+'-header');
 	var headerText = headerElems.length ? headerElems[0].textContent : '';
 	if (!headerText && 'untitled_number' in Sliobj.params.features) {
@@ -5746,7 +5750,7 @@ Slidoc.contentsDisplay = function() {
 	    headerText = headerText || ('Slide '+(j+1));
             var action = '';
 	    var classes = 'slidoc-contents-header';
-	    if (explictlyHidden) {
+	    if (explicitlyHidden) {
 		classes += ' slidoc-contents-explicltlyhiddenslide';
 	    } else if (hidden) {
 		classes += ' slidoc-contents-hiddenslide';
@@ -7502,7 +7506,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     if (!slides || slide_num < 1 || slide_num > slides.length)
 	return false;
 
-    while (slides[slide_num-1].classList.contains('slidoc-slide-hidden') && !document.body.classList.contains('slidoc-showhidden-view')) {
+    while (slides[slide_num-1].classList.contains('slidoc-slide-hidden') && !Sliobj.showHiddenSlides) {
 	// Skip explicitly hidden slides
 	if (slide_num <= 1 || slide_num >= slides.length)
 	    return false;
@@ -7679,8 +7683,22 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     var next_elem = document.getElementById('slidoc-slide-nav-next');
     prev_elem.style.visibility = (slide_num == 1) ? 'hidden' : 'visible';
     next_elem.style.visibility = (slide_num == slides.length) ? 'hidden' : 'visible';
+
+    var actual_slide_num = 0;
+    var actual_slide_total = 0;
+    for (var j=0; j<slides.length; j++) {
+	if (Sliobj.showHiddenSlides || !slides[j].classList.contains('slidoc-slide-hidden')) {
+	    // Count only slides not explicitly hidden
+	    actual_slide_total += 1;
+	    if (j+1 <= slide_num)
+		actual_slide_num += 1;
+	}
+    }
+
     var counterElem = document.getElementById('slidoc-slide-nav-counter');
-    counterElem.textContent = ((slides.length <= 9) ? slide_num : zeroPad(slide_num,2))+'/'+slides.length;
+    counterElem.textContent = ((actual_slide_total <= 9) ? actual_slide_num : zeroPad(actual_slide_num,2))+'/'+actual_slide_total;
+    if (actual_slide_total < slides.length && getUserId() == Sliobj.params.testUserId)
+	counterElem.textContent += '*';
 
     Slidoc.log('Slidoc.slideViewGo:D', slide_num, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;

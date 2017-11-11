@@ -147,7 +147,7 @@ GService.openWebsocket = function (wsPath) {
 
 			// Flush message buffer
 			while (wsock.buffer.length > 0)
-			    wsock.connection.send( GService.stringifyWS(wsock.buffer.shift()) );
+			    GService.sendWS(wsock.buffer.shift());
 		    }
 
 		} else if (callback_method == 'lock') {
@@ -196,11 +196,15 @@ GService.closeWS = function (closeMsg, dispMsg) {
     wsock.connection.close();
 }
 
-GService.stringifyWS = function (message) {
-    if (Array.isArray(message)) // Pre-pend session version
-	return JSON.stringify( [wsock.remoteVersion].concat(message) );
-    else
-	return message;
+GService.sendWS = function (message) {
+    try {
+	if (Array.isArray(message)) // Pre-pend session version
+	    message = JSON.stringify( [wsock.remoteVersion].concat(message) );
+
+	wsock.connection.send(message);
+    } catch (err) {
+	alert('Error in sending message to server websocket. May need to reload page. ('+err+')');
+    }
 }
     
 GService.rawWS = function (message) {
@@ -209,10 +213,15 @@ GService.rawWS = function (message) {
 	return;
     }
     if (wsock.opened) {
-	wsock.connection.send( GService.stringifyWS(message) );
+	GService.sendWS(message);
     } else {
-	if (!wsock.connection)
-	    GService.openWebsocket(Slidoc.websocketPath);
+	if (!wsock.connection) {
+	    try {
+		GService.openWebsocket(Slidoc.websocketPath);
+	    } catch (err) {
+		alert('Error in opening server websocket: '+Slidoc.websocketPath+' ('+err+')');
+	    }
+	}
 	wsock.buffer.push(message);
     }
 }
