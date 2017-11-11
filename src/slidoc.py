@@ -2274,10 +2274,10 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     content_html = md_parser_obj.render(source, index_id=index_id, qindex_id=qindex_id)
 
     md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
-    match = sliauth.SLIDOC_OPTIONS_RE.match(md_slides[0])
-    if match:
-        md_defaults = match.group(0)
-        md_slides[0] = md_slides[0][len(match.group(0)):]
+    header_opts, nskip = sliauth.read_header_opts(io.BytesIO(md_slides[0]))
+    if nskip:
+        md_defaults = md_slides[0][:nskip]
+        md_slides[0] = md_slides[0][nskip:]
     else:
         md_defaults = ''
         
@@ -2289,7 +2289,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         md_defaults = ''
 
     elif (md_defaults+''.join(md_slides)).strip() != md_source:
-        tem_str = ''.join(md_slides).strip()
+        tem_str = md_defaults+''.join(md_slides).strip()
         for j in range(min(len(tem_str), len(md_source))):
             if tem_str[j] != md_source[j]:
                 break
@@ -3007,7 +3007,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         if start_date_obj:
             # Only process files with a release date after the minimum required release date
-            tem_config = parse_merge_args(sliauth.read_first_line(input_files[j]), fname, Conf_parser, {}, first_line=True)
+            tem_config = parse_merge_args(sliauth.read_header_opts(input_files[j])[0], fname, Conf_parser, {})
             tem_release_date_str = getattr(tem_config, 'release_date', None) or config.release_date
             if tem_release_date_str and tem_release_date_str != sliauth.FUTURE_DATE:
                 tem_release_date_obj = sliauth.parse_date(tem_release_date_str)
@@ -3263,8 +3263,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Separate files (may also be paced)
 
             # Merge file config with command line
-            file_config = parse_merge_args(sliauth.read_first_line(fhandle), fname, Conf_parser, vars(config), default_args_dict=default_args_dict,
-                                           first_line=True, verbose=config.verbose)
+            file_config = parse_merge_args(sliauth.read_header_opts(fhandle)[0], fname, Conf_parser, vars(config), default_args_dict=default_args_dict, verbose=config.verbose)
             if config.preview_port:
                 if file_config.gsheet_url:
                     file_config.gsheet_url = ''
@@ -4070,17 +4069,10 @@ function onGoogleAPILoad() {
 def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
-def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), first_line=False, verbose=False):
-    # Read file args and merge with command line args, with command line args being final
+def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), verbose=False):
+    # Process file args and merge with command line args, with command line args being final
     # If default_args_dict is specified, it is updated with file args
-    if first_line:
-        match = sliauth.SLIDOC_OPTIONS_RE.match(args_text)
-        if match:
-            args_text = (match.group(3) or match.group(4) or '').strip()
-        else:
-            args_text = ''
-    else:
-        args_text = args_text.strip().replace('\n', ' ')
+    args_text = args_text.strip().replace('\n', ' ')
 
     try:
         if args_text:
@@ -4436,8 +4428,8 @@ if __name__ == '__main__':
 
     if cmd_args.default_args == 'file':
         # Read default args from first line of first file
-        default_args = parse_merge_args(sliauth.read_first_line(cmd_args.file[0]), cmd_args.file[0].name, Conf_parser, vars(cmd_args),
-                                        first_line=True, verbose=cmd_args.verbose)
+        default_args = parse_merge_args(sliauth.read_header_opts(cmd_args.file[0])[0], cmd_args.file[0].name, Conf_parser, vars(cmd_args),
+                                        verbose=cmd_args.verbose)
     elif cmd_args.default_args:
         default_args = parse_merge_args(cmd_args.default_args, '--default_args', Conf_parser, {})
     else:
@@ -4458,9 +4450,9 @@ if __name__ == '__main__':
     input_files = []
     skipped = []
     for fhandle in fhandles:
-        first_line = sliauth.read_first_line(fhandle)
-        if cmd_args.publish and (not sliauth.SLIDOC_OPTIONS_RE.match(first_line) or 'publish' not in first_line):
-            # Skip files without --publish option in the first line
+        header_opts = sliauth.read_header_opts(fhandle)[0]
+        if cmd_args.publish and (not header_opts or 'publish' not in header_opts):
+            # Skip files without --publish in file header options
             skipped.append(fhandle.name)
             continue
         input_files.append(fhandle)

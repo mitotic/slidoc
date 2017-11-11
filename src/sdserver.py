@@ -863,7 +863,7 @@ class ActionHandler(BaseHandler):
             # Results in file options being treated like command line options for single files, but not rebuilds
             # leading to minimum pace level requirement not working for single file edits
             # TODO: Eliminate unused text argument for this function
-            fileOpts = vars(slidoc.parse_merge_args(text, '', slidoc.Conf_parser, {}, first_line=True))
+            fileOpts = vars(slidoc.parse_merge_args(sliauth.read_header_opts(io.BytesIO(text))[0], '', slidoc.Conf_parser, {}))
             for key, value in fileOpts.items():
                 if key not in self.fix_opts and value is not None:
                     # Override with file opts
@@ -3073,15 +3073,12 @@ class ActionHandler(BaseHandler):
         except Exception, excp:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading module file %s: %s' % (src_path, excp))
 
-        slidocOptions = ''
         newReleaseOpt = 'release_date='+releaseDate if releaseDate else ''
-        lines = sessionText.splitlines()
-        omatch = sliauth.SLIDOC_OPTIONS_RE.match(lines[0]) if lines else None
-        if omatch:
-            # First line with slidoc options found
-            slidocOptions = (omatch.group(3) or omatch.group(4) or '').strip()
-            lines = lines[1:]
 
+        slidocOptions, nskip = sliauth.read_header_opts(io.BytesIO(sessionText))
+        if nskip:
+            # First line(s) with slidoc options found
+            sessionText = sessionText[nskip:]
             rmatch = re.search(r'\b(release_date=(\S+))(\s|$)', slidocOptions)
             if rmatch:
                 # Replace option
@@ -3095,12 +3092,10 @@ class ActionHandler(BaseHandler):
             slidocOptions = newReleaseOpt
 
         if slidocOptions:
-            lines = ['<!--slidoc-options ' + slidocOptions + ' -->'] + lines
+            sessionText = '<!--Slidoc: ' + slidocOptions + ' -->\n' + sessionText
 
         if Options['debug']:
-            print >> sys.stderr, 'ActionHandler:releaseModule', releaseDate, sessionName, lines[0] if lines else ''
-
-        sessionText = '\n'.join(lines) + ('\n' if lines else '')
+            print >> sys.stderr, 'ActionHandler:releaseModule', releaseDate, sessionName, slidocOptions
 
         try:
             errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, '', '')

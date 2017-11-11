@@ -19,14 +19,12 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.14j'
+VERSION = '0.97.14k'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
 
 FUTURE_DATE = 'future'
-
-SLIDOC_OPTIONS_RE = re.compile(r'^ {0,3}(<!--slidoc-(defaults|options)\s+(.*?)-->|Slidoc:\s+(.*?))\s*(\n|\r|$)')
 
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE     = re.compile(r'^([a-zA-Z]\w*[a-zA-Z_])(\d\d)$')
@@ -223,11 +221,47 @@ def json_default(obj):
         return iso_date(obj, utc=True)
     raise TypeError("%s not serializable" % type(obj))
 
-def read_first_line(file):
-    # Read first line of file and rewind it
-    first_line = file.readline()
-    file.seek(0)
-    return first_line
+def read_header_opts(file_handle):
+    # Return (options_string, number_of_skipped_bytes)
+    # Read first few lines of file and rewind it
+    # Options format:
+    #    Slidoc: ...
+    #    Slidoc: ...
+    # OR
+    #    <!-- Slidoc: ...
+    #     -->
+    opts = []
+    skipped = []
+    line = file_handle.readline()
+    while line and line.lstrip().startswith('Slidoc:'):
+        text = line.lstrip()[len('Slidoc:'):].strip()
+        if text:
+            opts.append(text)
+        skipped.append(line)
+        line = file_handle.readline()
+
+    if not opts and line.lstrip().startswith('<!--'):
+        text = line.lstrip()[len('<!--'):].strip()
+        omatch = re.match(r'^(Slidoc:|slidoc-defaults|slidoc-options)', text)
+        if omatch:
+            text = text[len(omatch.group(0)):].strip()
+            while omatch or text:
+                omatch = None
+                if text.startswith('Slidoc:'):
+                    text = text[len('Slidoc:'):].strip()
+                ended = text.endswith('-->')
+                if ended:
+                    text = text[:-len('-->')].strip()
+                if text:
+                    opts.append(text)
+                skipped.append(line)
+                if ended:
+                    break
+                line = file_handle.readline()
+                text = line.strip()
+    file_handle.seek(0)
+
+    return ' '.join(opts), len(''.join(skipped))
 
 def http_post(url, params_dict=None, add_size_info=False):
     req = urllib2.Request(url, urllib.urlencode(params_dict)) if params_dict else urllib2.Request(url)
