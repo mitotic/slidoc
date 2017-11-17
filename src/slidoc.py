@@ -284,7 +284,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     plugin_embed      = re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
-    slidoc_header =   re.compile(r'^ {0,3}<!--(meldr|slidoc)-(\w[-\w]*)\s(.*?)-->\s*?(\n|$)')
+    slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:|Slide:)(.*?)-->\s*?(\n|$)', re.DOTALL)
     slidoc_options=   re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
@@ -341,8 +341,9 @@ class MathBlockLexer(mistune.BlockLexer):
 
                     self.slidoc_blocks.append(m.group(0))
 
-                    if key == 'paragraph' and self.slidoc_slide_header is None:
-                        self.slidoc_slide_header = ''
+                    if key == 'paragraph':
+                        if not self.slidoc_slide_header:
+                            self.slidoc_slide_header = m.group(1).strip()
                     elif key == 'hrule':
                         # Explicit slide break
                         self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
@@ -402,8 +403,8 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_header(self, m):
          self.tokens.append({
             'type': 'slidoc_header',
-            'name': m.group(2).lower(),
-            'text': m.group(3).strip()
+            'name': m.group(1).strip().lower(),
+            'text': m.group(2).strip()
         })
 
     def parse_slidoc_options(self, m):
@@ -1469,16 +1470,40 @@ class SlidocRenderer(MathRenderer):
         hdr.set('class', hdr_class)
         return prev_slide_end + pre_header + ElementTree.tostring(hdr) + '\n' + post_header
 
+    def slidoc_header(self, name, text):
+        if name == 'Slidoc:':
+            return self.slidoc_options(name, text)
+
+        if name == 'Slide:':
+            return self.slidoc_slideopts(name, text)
+
+        if name == 'meldr-type' and text:
+            params = text.split()
+            type_code = params[0]
+            if type_code in ('choice', 'multichoice', 'number', 'text', 'point', 'line'):
+                self.cur_qtype = type_code
+        return ''
+
     def slidoc_options(self, name, text):
         return ''
 
-    def slidoc_header(self, name, text):
-        if name == "type" and text:
-            params = text.split()
-            type_code = params[0]
-            if type_code in ("choice", "multichoice", "number", "text", "point", "line"):
-                self.cur_qtype = type_code
-        return ''
+    def slidoc_slideopts(self, name, text):
+        prev_slide_end = ''
+        if self.cur_header or self.alt_header:
+            # Implicit horizontal rule
+            prev_slide_end = self.hrule(implicit=True)
+
+        opts = text.lower().split()
+        ALLOWED_OPTS = ('discuss', 'hidden')
+        for opt in opts:
+            if opt in ALLOWED_OPTS:
+                self.slide_options.add(opt)
+            elif opt.startswith('no_') and opt[len('no_'):] in ALLOWED_OPTS:
+                self.slide_options.discard( opt[len('no_'):] )
+            else:
+                message('    ****OPTION-WARNING: %s: Slide %s, Ignored invalid option Slide: %s; must be one of %s' % (self.options["filename"], self.slide_number, opt, '/'.join(ALLOWED_OPTS)))
+
+        return prev_slide_end
 
     def slidoc_choice(self, name, star):
         value = name if star else ''
@@ -1608,24 +1633,6 @@ class SlidocRenderer(MathRenderer):
     def slidoc_plugin(self, name, text):
         args, sep, content = text.partition('\n')
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
-
-    def slidoc_slideopts(self, name, text):
-        prev_slide_end = ''
-        if self.cur_header or self.alt_header:
-            # Implicit horizontal rule
-            prev_slide_end = self.hrule(implicit=True)
-
-        opts = text.lower().split()
-        ALLOWED_OPTS = ('discuss', 'hidden')
-        for opt in opts:
-            if opt in ALLOWED_OPTS:
-                self.slide_options.add(opt)
-            elif opt.startswith('no_') and opt[len('no_'):] in ALLOWED_OPTS:
-                self.slide_options.discard( opt[len('no_'):] )
-            else:
-                message('    ****OPTION-WARNING: %s: Slide %s, Ignored invalid option Slide: %s; must be one of %s' % (self.options["filename"], self.slide_number, opt, '/'.join(ALLOWED_OPTS)))
-
-        return prev_slide_end
 
     def slidoc_answer(self, name, text):
         if self.qtypes[-1]:

@@ -718,7 +718,7 @@ class Sheet(object):
     def copy(self):
         # Returns "shallow" copy
         return Sheet(self.name, self.xrows, keyHeader=self.keyHeader, modTime=self.modTime, accessTime=self.accessTime, keyMap=self.keyMap,
-                     actions=self.actionsRequested, modifiedHeaders=self.modifiedHeaders)
+                     actions=','.join(self.actionsRequested), modifiedHeaders=self.modifiedHeaders)
 
     def expire(self):
         # Delete after any updates are processed
