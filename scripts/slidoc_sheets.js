@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.14j';
+var VERSION = '0.97.14m';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -41,7 +41,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for
 // 
 //     Overwrite the template code with this code and select `File->Save`, using new project name `Slidoc`
 // 
-// 3. In the script window, click `Run` and select `setup`
+// 3. In the script window, click `Run->Run function->setup`
 //    - It should show `Preparing for execution` and then put up a dialog `Authorization Required ...`
 //    - Select `Review permissions`
 //    - Select your *Google account*
@@ -202,14 +202,6 @@ function doPost(evt){
   return handleResponse(evt);
 }
 
-function doGet(evt){
-  return handleResponse(evt);
-}
-
-function onInstall(evt) {
-    return onOpen(evt);
-}
-
 // The onOpen function is executed automatically every time a Spreadsheet is loaded
 function onOpen(evt) {
    var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -233,6 +225,14 @@ function onOpen(evt) {
    menuEntries.push({name: "Migrate to new schema", functionName: "MigrateAll"});
 
    ss.addMenu("Slidoc", menuEntries);
+}
+
+function doGet(evt){
+  return handleResponse(evt);
+}
+
+function onInstall(evt) {
+    return onOpen(evt);
 }
 
 function getDoc() {
@@ -2921,9 +2921,11 @@ function createSheet(sheetName, headers, overwrite) {
     }
 
     if (sheetName == INDEX_SHEET) {
-	var protection = sheet.protect().setDescription('protected');
-	protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
-	protection.setDomainEdit(false);
+	try {
+	    var protection = sheet.protect().setDescription('protected');
+	    protection.setUnprotectedRanges([sheet.getRange('E2:F')]);
+	    protection.setDomainEdit(false);
+	} catch(err) {}
     }
 
     return sheet;

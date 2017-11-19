@@ -2225,9 +2225,9 @@ class ActionHandler(BaseHandler):
         return fnames
 
     def get_topnav_list(self, folders_only=False, uploadType='', session_name=''):
-        topFiles = [] if folders_only else [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/*.html')]
-        topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/*/index.html')]
-        topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/'+PRIVATE_PATH+'/*/index.html')]
+        topFiles = [] if folders_only else [os.path.basename(fpath) for fpath in glob.glob(self.site_web_dir+'/[!_]*.html')]
+        topFolders = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/[!_]*/index.html')]
+        topFolders2 = [ os.path.basename(os.path.dirname(fpath)) for fpath in glob.glob(self.site_web_dir+'/'+PRIVATE_PATH+'/[!_]*/index.html')]
         if 'index.html' in topFiles:
             del topFiles[topFiles.index('index.html')]
 
@@ -4893,9 +4893,12 @@ def processTwitterMessage(msg):
     message = msg['text']
     status = None
     fromRole = ''
-    if Options['auth_type'].startswith('twitter,'):
+    rosterSheet = sdproxy.getSheet(sdproxy.ROSTER_SHEET)
+
+    if Options['auth_type'].startswith('twitter,') or (not rosterSheet and not sdproxy.Settings['require_roster']):
         status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter', adminBroadcast=True)
-    else:
+
+    elif rosterSheet:
         idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
         userId = idMap.get(fromUser.lower())
         if not userId:
@@ -4905,6 +4908,7 @@ def processTwitterMessage(msg):
             status = WSHandler.processMessage(userId, fromRole, sdproxy.lookupRoster('name', userId), message, source='twitter', adminBroadcast=True)
         else:
             status = 'Error - twitter ID '+fromUser+' not found in roster'
+
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
 

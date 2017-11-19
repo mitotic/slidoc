@@ -284,7 +284,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     plugin_embed      = re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
-    slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:|Slide:)(.*?)-->\s*?(\n|$)', re.DOTALL)
+    slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:|Slide:)(.*?)(-->|\n)\s*?(\n|$)', re.DOTALL)
     slidoc_options=   re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
@@ -734,9 +734,9 @@ class SlidocRenderer(MathRenderer):
 '''
 
     # Templates: {'sid': slide_id, 'qno': question_number, 'inp_type': 'text'/'number', 'ansinput_style': , 'ansarea_style': }
-    ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="%(ansdisp)s" data-qnumber="%(qno)d">Answer:</span>'''
+    ansprefix_template = '''<span id="%(sid)s-answer-prefix" class="slidoc-answer-prefix %(ansdisp)s" data-qnumber="%(qno)d">Answer:</span>'''
     answer_template = '''
-  <span id="%(sid)s-answer-prefix" class="" data-qnumber="%(qno)d">Answer:</span>
+  <span id="%(sid)s-answer-prefix" class="slidoc-answer-prefix" data-qnumber="%(qno)d">Answer:</span>
   <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-nosubmitted slidoc-noprint %(ansdisp)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
   <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noansweredresubmit slidoc-nosubmitted slidoc-noprint slidoc-noplugin %(ansdisp)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 

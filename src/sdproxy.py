@@ -1329,21 +1329,24 @@ def sheet_proxy_error(errMsg=''):
     err = sliauth.iso_date(nosubsec=True) + ': ' + errMsg
     Global.cacheUpdateError = err
     print('sheet_proxy_error: '+err, file=sys.stderr)
+    notify_admin(err)
+
+def notify_admin(msg):
     url = Settings['server_url']
     if Settings['site_name']:
         url += '/' + Settings['site_name']
     url += '/_cache'
-    notify_admin('[Slidoc-notify] %s %s' % (Settings['site_name'], ' Cache update error'), content=url+'\n\n'+err)
+    email_admin('[Slidoc-notify] %s %s' % (Settings['site_name'], ' Cache update error'), content=url+'\n\n'+msg)
 
-def notify_admin(subject='', content=''):
+def email_admin(subject='', content=''):
     if not Settings['email_addr'] or Global.notifiedAdmin:
         return
     Global.notifiedAdmin = subject + ' ' + content
     try:
         send_email(Settings['email_addr'], subject=subject, content=content)
-        print('notify_admin:Sent email', subject, content, file=sys.stderr)
+        print('email_admin:Sent email', subject, content, file=sys.stderr)
     except Exception, excp:
-        print('notify_admin:Error: ', str(excp), file=sys.stderr)
+        print('email_admin:Error: ', str(excp), file=sys.stderr)
 
 def send_email(toAddr, subject='', content=''):
     if not Settings['email_url']:
@@ -1596,8 +1599,11 @@ class ProxyUpdater(object):
             refreshSheet(sheetName)
 
         for errSessionName, proxyErrMsg, proxyErrTrace in respObj['info'].get('updateErrors',[]):
-            Lock_cache[errSessionName] = proxyErrMsg
-            print("ProxyUpdater.handle_proxy_response_aux: Update LOCKED %s: %s %s" % (errSessionName, proxyErrMsg, proxyErrTrace), file=sys.stderr)
+            temMsg = 'Update LOCKED %s: %s %s' % (errSessionName, proxyErrMsg, proxyErrTrace)
+            if errSessionName not in Lock_cache:
+                Lock_cache[errSessionName] = proxyErrMsg
+                notify_admin(temMsg)
+            print('ProxyUpdater.handle_proxy_response_aux: '+temMsg, file=sys.stderr)
 
         ##if Settings['debug']:
         ##    print("ProxyUpdater.handle_proxy_response_aux: UPDATED", sliauth.iso_date(nosubsec=True), file=sys.stderr)
