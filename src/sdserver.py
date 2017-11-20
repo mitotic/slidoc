@@ -3322,6 +3322,10 @@ class UserActionHandler(ActionHandler):
             self.qstats(subsubpath)
             return
 
+        elif action in ('_user_status',):
+            self.user_status()
+            return
+
         elif action in ('_user_twitterlink',):
             yield self.twitter_link(subsubpath)
             return
@@ -3331,6 +3335,14 @@ class UserActionHandler(ActionHandler):
             return
 
         raise tornado.web.HTTPError(404)
+
+    def user_status(self):
+        retval = {'result': 'success'}
+        retval['previewingSession'] = ActionHandler.previewState.get('name', '')
+        retval['interactiveSession'] = WSHandler.getInteractiveSession()
+
+        self.set_header('Content-Type', 'application/json')
+        self.write( json.dumps(retval) )
 
     def qstats(self, sessionName):
         json_return = self.get_argument('json', '')
@@ -4551,7 +4563,7 @@ class AuthLoginHandler(BaseHandler):
 
         if auth:
             if Global.twitter_params:
-                data['site_twitter'] = Global.twitter_params['screen_name']
+                data['site_twitter'] = Global.twitter_params['site_twitter']
             self.set_id(username, data=data, role=role)
             self.redirect(next)
         else:
@@ -4648,10 +4660,13 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                         self.custom_error(500, html, clear_cookies=True)
                         return
 
+            if sdproxy.isSpecialUser(userId) and not displayName.startswith('#'):
+                displayName = '#' + displayName
+
             # Set cookie
             data = {}
             if Global.twitter_params:
-                data['site_twitter'] = Global.twitter_params['screen_name']
+                data['site_twitter'] = Global.twitter_params['site_twitter']
             self.set_id(userId, displayName=displayName, role=role, sites=sites, email=orig_email, data=data)
             self.redirect(self.get_argument('state', '') or self.get_argument('next', '/'))
             return
@@ -4796,6 +4811,7 @@ def createApplication():
                       (pathPrefix+r"/(_user_grades/[-\w.%]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_plain)", UserActionHandler),
                       (pathPrefix+r"/(_user_qstats/[-\w.]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_status)", UserActionHandler),
                       (pathPrefix+r"/(_user_twitterlink/[-\w.]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_twitterverify/[-\w.]+)", UserActionHandler),
                       ]
@@ -5735,6 +5751,8 @@ def fork_site_server(site_name, gsheet_url, **kwargs):
     if sheetSettings:
         for key in SPLIT_OPTS[1:]:
             if key in sheetSettings:
+                if Global.split_opts[key][site_number-1] and not sheetSettings[key]:
+                    print >> sys.stderr, 'sdserver: CLEARED SETTING', key, 'for site', site_name
                 Global.split_opts[key][site_number-1] = sheetSettings[key]
 
     Global.userRoles.update_site_roles(site_name, sheetSettings.get('admin_users',''), sheetSettings.get('grader_users',''), sheetSettings.get('guest_users','') )
@@ -5838,6 +5856,10 @@ def setup_site_server(sheetSettings, site_number):
             'consumer_token': {'consumer_key': comps[1], 'consumer_secret': comps[2]},
             'access_token': {'key': comps[3], 'secret': comps[4]}
             }
+
+        Global.twitter_params['site_twitter'] = Global.twitter_params['screen_name']
+        if not sdproxy.Settings['require_roster']:
+            Global.twitter_params['site_twitter'] = '@' + Global.twitter_params['site_twitter']
 
         import sdstream
         Global.twitterStream = sdstream.TwitterStreamReader(Global.twitter_params, processTwitterMessage,
@@ -6035,6 +6057,8 @@ def main():
         if sheetSettings:
             for key in SPLIT_OPTS[1:]:
                 if key in sheetSettings:
+                    if Options[key] and not sheetSettings[key]:
+                        print >> sys.stderr, 'sdserver: CLEARED SETTING', key, 'for site'
                     Options[key] = sheetSettings[key]
         setup_site_server(sheetSettings, 0)
 

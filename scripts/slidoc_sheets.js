@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.14m';
+var VERSION = '0.97.15a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -82,11 +82,11 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for
 //    - set `share_averages` to `yes` if class averages for tests should be shared 
 //    - set `site_menu` to `files,gradebook` to enable _files, gradebook sheet etc. in the top menu
 // 
-// 8. Click on `Tools->Script Editor` to open the script window and select on `Publish->Deploy as web app...`
+// 8. Close the spreadsheet and reopen it. Click on `Tools->Script Editor` to open the script window and select on `Publish->Deploy as web app...`
 //    - Copy the `Current web app URL` from the dialog, and then close it
 //      - (This URL will be used by the Slidoc web server to remotely execute the script)
 //    - Paste the URL in a browser to check it. It should generate a NEED_TOKEN message
-//    - If it does not work, close the spreadsheet and re-open it to copy the URL again from script window
+//    - If it does not work, close the spreadsheet and re-open it after some time to copy the URL again
 //
 // 9. If you make any further changes to this script, Save it and then select on `Publish->Deploy as web app...`
 //    - Change *Project Version* to `New` and click `Update` (the web app URL remains the same)

@@ -625,6 +625,18 @@ Sliobj.imageDropSetup = false;
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash, getParameter('update'));
 
+    function userStatusAux(retval, errmsg) {
+	Slidoc.log('userStatusAux:', retval, errmsg);
+	if (retval && retval.previewingSession && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
+	    var statusElem = document.getElementById('slidoc-test-status');
+	    if (statusElem && retval.previewingSession != Sliobj.sessionName) {
+		statusElem.style.display = null;
+		statusElem.innerHTML = 'Preview <a href="'+Sliobj.sitePrefix+'/_preview/index.html">'+retval.previewingSession+'</a>';
+	    }
+	}
+    }
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_status', {}, userStatusAux, true);
+
     if (Sliobj.reloadCheck) {
 	if (getParameter('remoteupload')) {
 	    var uploadButton = document.getElementById('slidoc-upload-button');
@@ -2749,7 +2761,9 @@ Slidoc.interact = function() {
 	var interactURL = location.protocol+'//'+location.host+'/send';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactiveMode?'End':'Begin')+' interact mode</span><p></p>';
 	html += 'To interact:<ul>';
-	if (siteTwitter) {
+	if (siteTwitter.match(/^@/)) {
+	    html += '<li>Tweet or text 40404: <code>'+siteTwitter+' answer</code></li>';
+	} else if (siteTwitter) {
 	    html += '<li>Text 40404: <code>d '+siteTwitter+' answer</code></li>';
 	    html += '<li>Twitter direct message @'+siteTwitter+': <code>answer</code></li>';
 	}
