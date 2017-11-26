@@ -1321,6 +1321,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	var unsaved = (Sliobj.origSlideText !== null);
 	if (!unchanged && !window.confirm('Discard edits?'))
 	    return;
+        resizeImageClear(slideId);
 	imageDropState(false, slideId);
 	editContainer.style.display = 'none';
 	editArea.value = '';
@@ -1372,7 +1373,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    Sliobj.previewWin.document.body.textContent = 'Processing ...';
 
 	function slideSaveAux(result, errMsg) {
-	    Slidoc.log('slideSaveAux:', previewPath, result, errMsg);
+	    Slidoc.log('slideSaveAux:', previewPath, slideId, result, errMsg);
 	    if (Sliobj.closePopup)
 		Sliobj.closePopup();
 	    var msg = '';
@@ -1418,7 +1419,7 @@ Slidoc.slideEdit = function(action, slideId) {
 		if (checkPreviewWin())
 		    Sliobj.previewWin.close();
 		Sliobj.previewWin = null;
-		loadPath(previewPath, '#'+slideId);
+		loadPath(previewPath, statefulHash(slideId));
 	    }
 	}
 	Slidoc.ajaxRequest('POST', Sliobj.sitePrefix + '/_edit', params, slideSaveAux, true);
@@ -1440,10 +1441,124 @@ Slidoc.slideEdit = function(action, slideId) {
 	    editArea.value = result.slideText;
 	    Sliobj.origSlideText = editArea.value;
 	    scrollTextArea(editArea);
+	    resizeImageSetup(slideId);
 	}
 	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_edit', params, slideEditAux, true);
     }
 }
+
+var resizeImageCounter = 0;
+
+function resizeImageSetup(slideId) {
+    var slideImageElems = document.getElementsByClassName(slideId+'-img');
+    [].forEach.call(slideImageElems, function(imageElem) {
+        if (imageElem.clientWidth) {
+            try{ resizeImage(imageElem, slideId); } catch(err) {}
+        } else {
+            imageElem.onload = function() { resizeImage(imageElem, slideId); };
+        }
+    });
+}
+
+function resizeImageClear(slideId) {
+    var slideImageElems = document.getElementsByClassName(slideId+'-img');
+    [].forEach.call(slideImageElems, function(imageElem) {
+        if (imageElem.style.display)
+            imageElem.style.display = null;
+    });
+    var resizeElems = document.getElementsByClassName('slidoc-image-resize');
+    [].forEach.call(resizeElems, function(elem) {
+       elem.parentNode.removeChild(elem);
+    });
+}
+
+function resizeImage(imageElem, slideId) {
+    var areaElem = document.getElementById(slideId+'-togglebar-edit-area');
+    if (!areaElem)
+        return;
+
+    var divId = 'slidoc-image-resize-div' + (++resizeImageCounter);
+    var imgId = divId+'-img';
+    var origWidth = imageElem.clientWidth;
+    var origHeight = imageElem.clientHeight;
+    var origAspRatio = origHeight/origWidth;
+    var naturalAspRatio = imageElem.naturalHeight / imageElem.naturalWidth;
+    var preserveAspRatio = true;
+    if (Math.abs(naturalAspRatio - origAspRatio) > 0.05)
+        preserveAspRatio = false;
+    if (imageElem.style['object-fit'])
+        preserveAspRatio = false;
+
+    var html = '<div class="slidoc-image-resize" id="'+divId+'" style="display:inline-block; padding-right:5px; padding-bottom:5px; overflow:hidden; width:'+origWidth+'px;';
+    if (preserveAspRatio)
+        html += ' resize:horizontal;">';
+    else
+        html += ' height:'+origHeight+'; resize:both;">';
+
+    html += '<img id="'+imgId+'" src="'+imageElem.src+'" style="width:100%;';
+    if (preserveAspRatio)
+        html += ' height:auto;';
+    else
+        html += ' height:100%;';
+    if (imageElem.style)
+        html += ' '+imageElem.style.cssText;
+    html += '"></div>';
+
+    imageElem.insertAdjacentHTML('afterend', html);
+    imageElem.style.display = 'none';
+
+    var divElem = document.getElementById(divId);
+    var innerImageElem = document.getElementById(imgId);
+    var fname = imageElem.src.split('/').slice(-1)[0];
+    var fregex = "^ *!\\[(.*)\\]\\((" + fname + "|.*/" + fname + ")( '(.*)'|"+' "(.*)"'+")? *\\) *$";
+    var fimage = new RegExp(fregex, "m");
+
+    var mutationHandler = null;
+    var observer = new MutationObserver(function(mutations) {
+        if (mutationHandler)
+            clearTimeout(mutationHandler);
+
+        var shiftKey = shiftKeyDown;
+        mutationHandler = setTimeout( function(mutations) {
+            mutationHandler = null;
+            if (shiftKey && !divElem.style.height  && divElem.style.width && divElem.style.width.match(/px$/)) {
+                // Stop preserving aspect ratio
+                divElem.style.height = (origAspRatio*divElem.style.width.slice(0,-2))+'px';
+                divElem.style.resize = 'both';
+                innerImageElem.style.height = '100%';
+            }
+
+            var areaElem = document.getElementById(slideId+'-togglebar-edit-area');
+            if (!areaElem)
+                return;
+
+            var val = areaElem.value;
+            val = val.replace(fimage, function(matched, p1, p2, p3, offset, s) {
+                if (p3) {
+                    if (p3.match(/width=\d+/)) {
+                        p3 = p3.replace(/width=\d+/, 'width='+divElem.clientWidth);
+                    } else {
+                        p3 = p3.slice(0,-1) + ' width=' + divElem.clientWidth + p3.slice(-1);
+                    }
+                    if (p3.match(/height=\d+/)) {
+                        p3 = p3.replace(/height=\d+/, 'height='+divElem.clientHeight);
+                    } else {
+                        p3 = p3.slice(0,-1) + ' height=' + divElem.clientHeight + p3.slice(-1);
+                    }
+                    var line = "![" + p1 + "](" + p2 + p3 + ")"; 
+                } else {
+                    var line = "![" + p1 + "](" + p2 + " 'width=" + divElem.clientWidth + " height=" + divElem.clientHeight + "')"; 
+                }
+                return line;
+            });
+            areaElem.value = val;
+
+        }, 200);
+    });
+
+    observer.observe(divElem, { attributes: true });
+}
+
 
 Slidoc.slideMove = function(dropElem, sourceNum, destNum, fromSession, fromSite) {
     Slidoc.log('slideMove', dropElem, sourceNum, destNum, fromSession, fromSite);
@@ -1459,7 +1574,7 @@ Slidoc.slideMove = function(dropElem, sourceNum, destNum, fromSession, fromSite)
 	    dropElem.classList.remove('slidoc-dragoverbottom');
 	    return;
 	}
-	loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#collapsed');
+	loadPath(Sliobj.sitePrefix + '/_preview/index.html', '#--');
     }
     var params = {slide: sourceNum, move: destNum, sessionname: Sliobj.params.fileName,
 		  fromsession: fromSession, sessiontext: ''};
@@ -1735,13 +1850,38 @@ function timedProgressFunc() {
 /////////////////////////////////////
 
 function restoreScroll() {
+    // hash = '#--' for collapsed view
+    //        '#--slidoc01-03' for collapsed with one slide open
+    //        '#-slidoc01-04' for document view, scrolled to slide
+    //        '#-1234' for document view, scrolled to particular location
+    Slidoc.log('restoreScroll:', location.hash);
+    if (location.hash.slice(0,2) != '#-')
+	return;
+
     var hashVal = location.hash.slice(2);
+    if (hashVal.slice(0,1) == '-') {
+	hashVal = hashVal.slice(1);
+	Slidoc.accordionView(true, false);  // Requires collapsible view to be set
+	if (hashVal.match(/^slidoc/))
+	    Slidoc.accordionToggle(hashVal, true);
+    }
+
     var scrollVal = parseNumber(hashVal);
     if (scrollVal) {
 	window.scrollTo(0,scrollVal);
-    } else {
+    } else if (hashVal) {
 	location.hash = '#' + hashVal;
     }
+}
+
+function statefulHash(slideId) {
+    var temHash = slideId || '';
+    if (!Sliobj.currentSlide && temHash) {
+	temHash = '-' + temHash;
+	if (document.body.classList.contains('slidoc-accordion-view'))
+	    temHash = '-' + temHash;
+    }
+    return temHash ? '#' + temHash : '';
 }
 
 function statefulReload(slideNum) {
@@ -1752,11 +1892,11 @@ function statefulReload(slideNum) {
 	    var firstSlideId = visibleSlides[0].id;
 	    var chapter_id = parseSlideId(firstSlideId)[0];
 	    var slide_id = chapter_id + '-' + zeroPad(slideNum, 2);
-	    hashVal = Sliobj.currentSlide ? '#'+slide_id : '##'+slide_id;
+	    hashVal = statefulHash(slide_id);
 	}
     }
     if (!hashVal && !Sliobj.currentSlide) {
-	 hashVal = '##'+window.scrollY;
+	 hashVal = '#-'+window.scrollY;
     }
     if (hashVal)
 	location.hash = hashVal;
@@ -2505,8 +2645,18 @@ function scrollTextArea(areaElem, top) {
     }, 200);
 }
 
+var shiftKeyDown = false;
+document.onkeyup = function(evt) {
+    //Slidoc.log('document.onkeyup:', evt);
+    if (evt.keyCode == 16)
+	shiftKeyDown = false;
+}
+
 document.onkeydown = function(evt) {
     //Slidoc.log('document.onkeydown:', evt);
+    if (evt.keyCode == 16)
+	shiftKeyDown = true;
+
     if (!Sliobj.currentSlide && (evt.keyCode == 32 || evt.keyCode > 44))
 	return;  // Handle printable input normally (for non-slide view)
 
@@ -4180,11 +4330,8 @@ function slidocSetupAux(session, feedback) {
     if (collapsibleAccess())
 	toggleClass(true, 'slidoc-collapsible-view');
 
-    if (Sliobj.previewState) {
+    if (Sliobj.previewState)
     	toggleClass(true, 'slidoc-preview-view');
-	if (location.hash == '#collapsed')
-	    Slidoc.accordionView(true);  // Requires collapsible view to be set
-    }
 
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
@@ -4277,7 +4424,7 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
-    if (Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') {
+    if ((Sliobj.updateView || Sliobj.previewState) && location.hash && location.hash.slice(0,2) == '#-') {
 	restoreScroll();
     } else if ('slides_only' in Sliobj.params.features && !Sliobj.assessmentView && !Sliobj.gradableState) {
 	Slidoc.slideViewStart();
@@ -4931,7 +5078,7 @@ function computeGrade(userId, breakup) {
 	var q_other = rowObj.q_other||0;
 	var tot = q_grades + q_scores + q_other;
 	gradeStr += flexFixed(tot);
-	if (breakup && q_scores != tot) {
+	if (breakup && (Sliobj.params.scoreWeight || q_other) && q_scores != tot) {
 	    gradeStr += ' ('+flexFixed(q_scores);
 	    if (q_other)
 		gradeStr += ','+flexFixed(q_other);
@@ -5123,12 +5270,12 @@ function cacheComments(qnumber, userId, comments, update) {
 	    var qCommentLine = qComments[line];
 	    qCommentLine.userIds[userId] = 1;
 	    if (qCommentLine.score != null && qCommentLine.score != cscore) {
-		alert("Conflicting scores for comment on question "+qnumber+" response: previously '"+qCommentLine.score+"' but now '"+cscore+"': "+line+' Fix score or change comment slightly.');
-		return false
-		///qCommentLine.score = null;
+		if (!qCommentLine.inconsistent)
+		    alert('Conflicting scores for comment on question '+qnumber+' for user '+userId+'; previously ('+qCommentLine.score+') but now: \n('+cscore+') '+line+'. \nFix score or change comment slightly.');
+		qCommentLine.inconsistent += 1;
 	    }
 	} else {
-	    var qCommentLine = {score: cscore, userIds: {}};
+	    var qCommentLine = {score: cscore, userIds: {}, inconsistent: 0};
 	    qComments[line] = qCommentLine;
 	    qCommentLine.userIds[userId] = 1;
 	}
@@ -5153,7 +5300,7 @@ function displayCommentSuggestions(slideId, qnumber) {
 	var lines = Object.keys(qComments);
 	for (var j=0; j<lines.length; j++) {
 	    var qCommentLine = qComments[lines[j]];
-	    dispComments.push( [Object.keys(qCommentLine.userIds).length, lines[j], qCommentLine.score] )
+	    dispComments.push( [Object.keys(qCommentLine.userIds).length, lines[j], qCommentLine.score, qCommentLine.inconsistent] )
 	}
 
 	// Sort by negative occurrence counts, and then negative absolute score, and then alphabetically
@@ -5163,7 +5310,11 @@ function displayCommentSuggestions(slideId, qnumber) {
 	var html = ['Suggested comments:<br>\n'];
 	for (var j=0; j<dispComments.length; j++) {
 	    var cscore = dispComments[j][2] || 0;
-	    html.push( '<code><span><span class="slidoc-clickable" onclick="Slidoc.appendComment(this,'+cscore+",'"+slideId+"');"+'">('+(cscore||'')+')</span> <span>'+escapeHtml(dispComments[j][1])+'</span></span> [<span class="slidoc-clickable" onclick="Slidoc.trackComment(this,'+qnumber+');">'+(dispComments[j][0])+'</span>]</code><br>\n' );
+	    var clabel = cscore||'';
+	    if (dispComments[j][3])
+		clabel += '*';
+	    var lineHtml = '<code><span><span class="slidoc-clickable" onclick="Slidoc.appendComment(this,'+cscore+",'"+slideId+"');"+'">('+clabel+')</span> <span>'+escapeHtml(dispComments[j][1])+'</span></span> [<span class="slidoc-clickable" onclick="Slidoc.trackComment(this,'+qnumber+');">'+(dispComments[j][0])+'</span>]</code><br>\n'
+	    html.push(lineHtml);
 	}
 	suggestElem.innerHTML = html.join('\n');
 	suggestElem.style.display = null;
@@ -5191,7 +5342,7 @@ Slidoc.appendComment = function (elem, cscore, slideId) {
     var commentsArea = document.getElementById(slideId+'-comments-textarea');
     var prevComments = commentsArea.value;
     if (prevComments && !/\n$/.exec(prevComments))
-	prevComments += '\n';
+	prevComments += '\n\n';
     commentsArea.value = prevComments + (cscore ? elem.parentNode.textContent : elem.parentNode.firstElementChild.nextElementSibling.textContent);
     if (cscore && maxScore) {
 	var scoreVal = parseFloat(cscore);
@@ -7322,7 +7473,7 @@ Slidoc.startPaced = function () {
     if (!singleChapterView(chapterId))
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
 
-    if ((Sliobj.updateView && location.hash && location.hash.slice(0,2) == '##') || (Sliobj.previewState && location.hash == '#collapsed')) {
+    if ((Sliobj.updateView || Sliobj.previewState) && location.hash && location.hash.slice(0,2) == '#-') {
 	// Unhide all slides
 	slidesVisible(true);
 	restoreScroll();

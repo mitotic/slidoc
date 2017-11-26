@@ -12,7 +12,7 @@ ADMINUSER_ID = 'admin'
 class Upload(object):
     lateDir = 'Late'
     def __init__(self, pluginManager, path, userId, userRole):
-        print >> sys.stderr, 'Upload.__init__:', path, userId
+        ## print >> sys.stderr, 'Upload.__init__:', path, userId
         self.pluginManager = pluginManager
         self.path = path
         self.userId = userId
@@ -24,7 +24,7 @@ class Upload(object):
         self.pluginManager.lockFile(fileURL)
 
     def lateUploads(self, serverParams, userId=''):
-        print >> sys.stderr, 'Upload.lateUploads:', serverParams, userId
+        ## print >> sys.stderr, 'Upload.lateUploads:', serverParams, userId
         if not userId or not self.pluginManager.adminRole(self.userRole, alsoGrader=True):
             # Only admin/grader can access all users
             userId = self.userId

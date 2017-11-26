@@ -1110,7 +1110,8 @@ class SlidocRenderer(MathRenderer):
                 else:
                     md2md.write_file(out_path, img_content)
 
-        img_tag = md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop'], image_url=self.options['config'].image_url)
+        slide_id = self.get_slide_id()
+        img_tag = md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop', slide_id+'-img'], image_url=self.options['config'].image_url)
         if not self.slide_img_tag:
             self.slide_img_tag = img_tag
         return img_tag

@@ -295,6 +295,27 @@ img.slidoc-img-drop.slidoc-dragover
     border: 1px dashed gray;
 }
 
+img.center,
+img.slidoc-img-center
+{
+    margin: 0 auto;
+    display: block;
+}
+
+body.slidoc-slide-view img.float-right
+{
+    float: right;
+    margin-left: 15px;
+    margin-right: 10px;
+}
+
+body.slidoc-slide-view img.float-left
+{
+    float: left;
+    margin-left: 10px;
+    margin-right: 15px;
+}
+
 /* Highlights */
 
 .slidoc-red { background: red; }
@@ -334,6 +355,7 @@ div.slidoc-img-droparea {
 .slidoc-droppable
 {
     margin: 0;
+    padding: 4px;
     border: 2px dashed transparent;
 }
 
@@ -347,6 +369,13 @@ div.slidoc-img-droparea {
 
 .slidoc-droppable.slidoc-dragoverbottom {
     border-bottom-color: gray;
+}
+
+.slidoc-droppable.slidoc-dragover *,
+.slidoc-droppable.slidoc-dragovertop *,
+.slidoc-droppable.slidoc-dragoverbottom *
+{
+ pointer-events: none;
 }
 
 body.slidoc-slide-view .slidoc-togglebar {display: none;}

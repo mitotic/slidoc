@@ -13,6 +13,7 @@ Upload = {
 	this.uploadElem.addEventListener('change', this.fileUpload.bind(this), false);
 
 	this.viewer = {};
+	Slidoc.log('Slidoc.Plugins.Upload.init:', this.displayName);
 	if (!this.qattributes || Slidoc.PluginManager.answered(this.qattributes.qnumber) || Slidoc.PluginManager.lateSession()) {
 	    // Upload only works with unanswered questions (for non-late sessions)
 	    this.uploadElem.style.display = 'none';

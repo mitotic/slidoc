@@ -103,11 +103,12 @@ Attr_re_format = r'''\s%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
 
 def get_html_tag_attr(attr_name, tag_text):
     match = re.search(Attr_re_format % attr_name, tag_text)
-    return match.group(1).strip('"').strip("'") if match else ''
+    return re.sub(r'''['"<>&]''', '', match.group(1)) if match else ''
 
 def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
     '''Return img tag string, supporting extension of including align/height/width attributes in title string'''
     attrs = ''
+    style = ''
     classList = classes[:]
     if title:
         for attr in shlex.split(title):
@@ -119,8 +120,16 @@ def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
             if value:
                 attrs += ' ' + attr + '=' + value
                 title = re.sub(Attr_re_format % attr, '', title)
+        for attr in ('crop',):
+            value = get_html_tag_attr(attr, ' '+title)
+            if value:
+                if attr == 'crop':
+                    style += 'object-fit:cover;object-position:' + ' '.join(value.strip().split(',')) + ';'
+                title = re.sub(Attr_re_format % attr, '', title)
         if title.strip():
             attrs += ' title="' + mistune.escape(title.strip(), quote=True) + '"'
+        if style:
+            attrs += ' style="' + style + '"'
 
     if get_url_scheme(src) == 'rel_path':
         if image_url:
