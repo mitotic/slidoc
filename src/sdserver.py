@@ -2960,8 +2960,8 @@ class ActionHandler(BaseHandler):
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid insert slide number %d' % newNumber)
                 insertText = pad_slide(slideText)
                 md_slides.insert(newNumber-1, insertText)
+                splice_slides(md_slides, newNumber-2)
                 splice_slides(md_slides, newNumber-1)
-                splice_slides(md_slides, newNumber)
 
             elif deleteSlide:
                 # Delete slide
@@ -3245,7 +3245,7 @@ class ActionHandler(BaseHandler):
         self.write( json.dumps( {'result': 'success'} ) )
 
             
-SECTION_HEADER_RE = re.compile(r' {0,3}#{1,2}[^#]')
+SECTION_HEADER_RE = re.compile(r''' {0,3}(Slide:|#{1,2}[^#])''')
 def splice_slides(md_slides, offset):
     # Ensure that either --- or ## is present at slide boundary
     if offset < 0:

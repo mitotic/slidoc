@@ -625,18 +625,6 @@ Sliobj.imageDropSetup = false;
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash, getParameter('update'));
 
-    function userStatusAux(retval, errmsg) {
-	Slidoc.log('userStatusAux:', retval, errmsg);
-	if (retval && retval.previewingSession && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
-	    var statusElem = document.getElementById('slidoc-test-status');
-	    if (statusElem && retval.previewingSession != Sliobj.sessionName) {
-		statusElem.style.display = null;
-		statusElem.innerHTML = 'Preview <a href="'+Sliobj.sitePrefix+'/_preview/index.html">'+retval.previewingSession+'</a>';
-	    }
-	}
-    }
-    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_status', {}, userStatusAux, true);
-
     if (Sliobj.reloadCheck) {
 	if (getParameter('remoteupload')) {
 	    var uploadButton = document.getElementById('slidoc-upload-button');
@@ -677,6 +665,20 @@ Slidoc.pageSetup = function() {
 	    Slidoc.classDisplay('slidoc-edit-update', 'none');
 	}
     }
+
+    function userStatusAux(retval, errmsg) {
+	Slidoc.log('userStatusAux:', retval, errmsg);
+	if (retval && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
+	    var statusElem = document.getElementById('slidoc-test-status');
+	    if (statusElem) {
+		if (!Sliobj.previewState && retval.previewingSession && retval.previewingSession != Sliobj.sessionName) {
+		    statusElem.style.display = null;
+		    statusElem.innerHTML = 'Preview <a href="'+Sliobj.sitePrefix+'/_preview/index.html">'+retval.previewingSession+'</a>';
+		}
+	    }
+	}
+    }
+    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_status', {}, userStatusAux, true);
 
     if (gradingAccess()) {
 	toggleClass(true, 'slidoc-restricted-view'); // Only for simple pages; for sessions all views will be cleared by slidocReady
@@ -1401,6 +1403,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	    }
 
 	    if (action == 'insert') {
+		resizeImageClear(slideId);
 		imageDropState(true, slideId);  // Preview state required for image uploads
 		setTimeout(function(){alert('To insert new images, drag-and-drop them into box below text edit area'+(Sliobj.previewState?'':', then update preview')+'. To overwrite old images, simply drop new image over old image in preview.'); }, 200);
 	    }
@@ -1917,7 +1920,7 @@ function reloadCheckFunc() {
 	    document.getElementById('slidoc-localpreview-status').textContent = ' '+result;
 	} else if (result && result.trim()) {
 	    // Reload
-	    statefulReload();
+	    statefulReload(Sliobj.currentSlide);
 	    return;
 	}
 	setTimeout(reloadCheckFunc, 333);
@@ -2478,7 +2481,15 @@ Slidoc.prevUser = function () {
     Slidoc.nextUser(false);
 }
 
+Slidoc.slideViewAdvance = function () {
+    if ('incremental_slides' in Sliobj.params.features && Sliobj.maxIncrement && Sliobj.curIncrement < Sliobj.maxIncrement)
+	Slidoc.slideViewIncrement();
+    else
+	Slidoc.slideViewGo(true);
+}
+
 Slidoc.slideViewIncrement = function () {
+    //console.log('Slidoc.slideViewIncrement: ', Sliobj.curIncrement, Sliobj.maxIncrement);
     if (Sliobj.gradingUser) {
 	Slidoc.nextUser(true);
 	return;
@@ -2596,9 +2607,9 @@ var Slide_view_handlers = {
     'e':     function() { Slidoc.slideViewGoLast(); },
     'left':  function() { Slidoc.slideViewGo(false); },
     'p':     function() { Slidoc.slideViewGo(false); },
-    'right': function() { Slidoc.slideViewGo(true); },
-    'n':     function() { Slidoc.slideViewGo(true); },
-    'space': function() { Slidoc.slideViewGo(true); },
+    'right': function() { Slidoc.slideViewAdvance(); },
+    'n':     function() { Slidoc.slideViewAdvance(); },
+    'space': function() { Slidoc.slideViewAdvance(); },
     'up':    function() { Slidoc.prevUser(); },
     'down':  function() { Slidoc.slideViewIncrement(); },
     'i':     function() { Slidoc.slideViewIncrement(); },
@@ -4424,8 +4435,11 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
-    if ((Sliobj.updateView || Sliobj.previewState) && location.hash && location.hash.slice(0,2) == '#-') {
-	restoreScroll();
+    if (location.hash && (Sliobj.updateView || Sliobj.previewState) && (!getUserId() || getUserId() == Sliobj.params.testUserId)) {
+	if (location.hash.slice(0,2) == '#-')
+	    restoreScroll();
+	else if (location.hash.slice(1).match(SLIDE_ID_RE))
+	    Slidoc.slideViewStart();
     } else if ('slides_only' in Sliobj.params.features && !Sliobj.assessmentView && !Sliobj.gradableState) {
 	Slidoc.slideViewStart();
     }
@@ -7868,8 +7882,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
     Slidoc.log('Slidoc.slideViewGo:D', slide_num, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
-    if ('incremental_slides' in Sliobj.params.features && (!Sliobj.session || (!Sliobj.session.submitted && Sliobj.session.lastSlide == slide_num))) {
-	// Incremental display only applied to last slide for unsubmitted sessions
+    if ('incremental_slides' in Sliobj.params.features && (!Sliobj.session || !Sliobj.session.paced || (!Sliobj.session.submitted && Sliobj.session.lastSlide == slide_num)) ) {
+	// Incremental display only applied to last slide for unsubmitted paced sessions
 	for (var j=1; j<=MAX_INC_LEVEL; j++) {
 	    if (slides[slide_num-1].querySelector('.slidoc-incremental'+j)) {
 		Sliobj.maxIncrement = j;

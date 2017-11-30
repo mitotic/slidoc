@@ -230,7 +230,7 @@ Specifying the command option `--features=incremental_slides` enables
 incremental display of lists and fragments in slideshows using
 [Pandoc syntax](http://pandoc.org/README.html#incremental-lists).
 
-> - Block quoted lists (like this) are displayed incrementally.
+> - Block quoted lists with bullets `"> -"` are displayed incrementally.
 
 > - Use the *Down* arrow to display incremental elements.
 
