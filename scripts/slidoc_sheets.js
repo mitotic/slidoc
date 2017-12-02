@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.15a';
+var VERSION = '0.97.15b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -2602,9 +2602,16 @@ function createSession(sessionName, params, questions, retakes, randomSeed) {
         qshuffle = {};
         for (var qno=1; qno < questions.length+1; qno++) {
             var choices = questions[qno-1].choices || 0;
+            var alternatives = Math.min(9, questions[qno-1].alternatives || 0);
             var noshuffle = questions[qno-1].noshuffle || 0;
+
+	    if (qno > 1 && questions[qno-1].followup) {
+		qshuffle[qno] = qshuffle[qno-1].charAt(0);
+	    } else {
+		qshuffle[qno] = ''+randFunc(0,alternatives);
+	    }
             if (choices) {
-                qshuffle[qno] = randFunc(0,1) + randomLetters(choices, noshuffle, randFunc);
+                qshuffle[qno] += randomLetters(choices, noshuffle, randFunc);
             }
         }
     }

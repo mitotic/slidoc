@@ -4883,29 +4883,34 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 	return;
     ///Slidoc.log('shuffleBlock: shuffleStr', slide_id, qnumber, ' ', shuffleStr);
     var childNodes = choiceBlock.childNodes;
+
+    // Start with question key
     var blankKey = ' ';
     var key = blankKey;
     var choiceElems = {}
     choiceElems[blankKey] = [];
-    var altChoice = shuffleStr.charAt(0) != '0';
+    var selAlternative = parseInt(shuffleStr.charAt(0)) || 0;
     for (var i=0; i < childNodes.length; i++) {
-	var childElem = childNodes[i];
-	if (childElem.classList && childElem.classList.contains('slidoc-chart-header'))
-	    continue;  // Skip leading chart header div
+	var choiceElem = childNodes[i];
+	if (!choiceElem.classList || !choiceElem.classList.contains('slidoc-choice-item'))
+	    continue;  // Skip leading chart header div etc.
+	var childElem = choiceElem.firstElementChild;
 	var spanElem = childElem.firstElementChild;
 	if (spanElem && spanElem.classList && spanElem.classList.contains('slidoc-chart-box'))
 	    spanElem = spanElem.nextElementSibling;  // Skip leading chart box span
-	if (spanElem && spanElem.classList) {
-	    var classList = spanElem.classList;
-	    if (classList.contains('slidoc-choice-elem-alt') || classList.contains('slidoc-choice-question-alt')) {
-		// Alternative choice
-		if (altChoice)
-		    choiceElems[key] = [];   // Skip first choice
-		else
+
+	if (spanElem && spanElem.classList && spanElem.classList.contains('slidoc-choice-inner')) {
+	    if (spanElem.dataset.alternative) {
+		// Alternative choice/question
+		if (parseInt(spanElem.dataset.alternative) == selAlternative) {
+		    key = spanElem.dataset.choice || blankKey;
+		    choiceElems[key] = [];   // Skip default choice
+		} else {
 		    key = null;              // Skip alternative choice
-	    } else if (classList.contains('slidoc-choice-elem')) {
-		// First choice
-		key = spanElem.dataset.choice;
+		}
+	    } else {
+		// Default choice/question
+		key = spanElem.dataset.choice || blankKey;
 		choiceElems[key] = [];
 	    }
 	}
@@ -5027,9 +5032,16 @@ function createSession(sessionName, retakes, randomSeed) {
         qshuffle = {};
         for (var qno=1; qno < questions.length+1; qno++) {
             var choices = questions[qno-1].choices || 0;
+            var alternatives = Math.min(9, questions[qno-1].alternatives || 0);
 	    var noshuffle = questions[qno-1].noshuffle || 0;
+
+	    if (qno > 1 && questions[qno-1].followup) {
+		qshuffle[qno] = qshuffle[qno-1].charAt(0);
+	    } else {
+		qshuffle[qno] = ''+randFunc(0,alternatives);
+	    }
             if (choices) {
-                qshuffle[qno] = randFunc(0,1) + randomLetters(choices, noshuffle, randFunc);
+                qshuffle[qno] += randomLetters(choices, noshuffle, randFunc);
             }
         }
     }
@@ -6193,8 +6205,8 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 function getChoiceElem(slideId, choiceValue, shuffleStr) {
     var elemId = slideId+'-choice-'+choiceValue.toUpperCase();
     var choiceElem = null;
-    if (shuffleStr && shuffleStr.charAt(0) == '1')  // Try alt element first
-	choiceElem = document.getElementById(elemId+'-alt');
+    if (shuffleStr && shuffleStr.charAt(0) != '0')  // Try alt element first
+	choiceElem = document.getElementById(elemId + (parseInt(shuffleStr.charAt(0))+1) );
     if (!choiceElem)
 	choiceElem = document.getElementById(elemId);
     return choiceElem;
@@ -6431,9 +6443,10 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	if (question_attrs.qtype == 'choice') {
 	    // Display choice notes
 	    var idPrefix = slide_id+'-choice-notes-';
-	    var altChoice = shuffleStr && shuffleStr.charAt(0) != '0';
-	    if (altChoice && document.getElementById(idPrefix+'Q2'))
-		Slidoc.elemDisplay(idPrefix+'Q2', 'block');
+	    var selAlternative = shuffleStr ? (parseInt(shuffleStr.charAt(0)) || 0) : 0;
+	    var altSuffix = selAlternative ? (''+(selAlternative+1)) : '';
+	    if (selAlternative && document.getElementById(idPrefix+'Q'+altSuffix))
+		Slidoc.elemDisplay(idPrefix+'Q'+altSuffix, 'block');
 	    else
 		Slidoc.elemDisplay(idPrefix+'Q', 'block');
 
@@ -6444,17 +6457,17 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 		    // Display choice notes
 
 		    // Display alternate notes, if present
-		    if (altChoice && document.getElementById(idPrefix+choiceSuffix+'2'))
-			Slidoc.elemDisplay(idPrefix+choiceSuffix+'2', 'block');
+		    if (selAlternative && document.getElementById(idPrefix+choiceSuffix+altSuffix))
+			Slidoc.elemDisplay(idPrefix+choiceSuffix+altSuffix, 'block');
 		    else
 			Slidoc.elemDisplay(idPrefix+choiceSuffix, 'block');
 
 		    // Redisplay choiceNotes JS
 		    // defining function 'choiceNotes: function(n) {..}' in a plugin allows choice-dependent notes display
-		    // (Negative n for alt choice)
+		    // (Negative n for alt choice; only works single alternative currently)
 		    var elems = document.getElementsByClassName(notes_id);
 		    for (var j=0; j<elems.length; j++)
-			expandInlineJS(elems[j], 'choiceNotes', (altChoice ? -choiceIndex : choiceIndex));
+			expandInlineJS(elems[j], 'choiceNotes', (selAlternative ? -choiceIndex : choiceIndex));
 		}
 	    }
 	}

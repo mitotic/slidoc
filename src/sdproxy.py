@@ -3183,9 +3183,16 @@ def createSession(sessionName, params, questions=None, retakes='', randomSeed=No
         qshuffle = {}
         for qno in range(1,len(questions)+1):
             choices = questions[qno-1].get('choices',0)
+            alternatives = min(9, questions[qno-1].get('alternatives') or 0)
             noshuffle = questions[qno-1].get('noshuffle',0)
+
+            if qno > 1 and questions[qno-1].get('followup',0):
+                qshuffle[qno] = qshuffle[qno-1][0]
+            else:
+                qshuffle[qno] = str(randFunc(0,alternatives))
+
             if choices:
-                qshuffle[qno] = str(randFunc(0,1)) + randomLetters(choices, noshuffle, randFunc)
+                qshuffle[qno] +=  randomLetters(choices, noshuffle, randFunc)
 
     return {'version': params.get('sessionVersion'),
 	    'revision': params.get('sessionRevision'),

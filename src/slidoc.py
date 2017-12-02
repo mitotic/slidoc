@@ -308,10 +308,16 @@ class MathBlockLexer(mistune.BlockLexer):
         self.slidoc_blocks = []
         self.slidoc_recursion = 0
         self.slidoc_slide_header = None
+        self.slidoc_notes = None
         super(MathBlockLexer, self).__init__(rules, **kwargs)
 
     def get_slide_text(self):
         return self.slidoc_slide_text
+
+    def slidoc_slide_end(self):
+        self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
+        self.slidoc_blocks = []
+        self.slidoc_notes = None
 
     def parse(self, text, rules=None):
         self.slidoc_recursion += 1
@@ -329,14 +335,12 @@ class MathBlockLexer(mistune.BlockLexer):
                 if self.slidoc_recursion == 1:
                     if key == 'slidoc_slideopts':
                         if self.slidoc_slide_header is not None:
-                            self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
-                            self.slidoc_blocks = []
+                            self.slidoc_slide_end()
                         self.slidoc_slide_header = ''
                     elif key == 'heading' and len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
-                        if self.slidoc_slide_header:
+                        if self.slidoc_slide_header and not self.slidoc_notes:
                             # Level 2 header not at start of block or after Slide: (implicit slide break)
-                            self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
-                            self.slidoc_blocks = []
+                            self.slidoc_slide_end()
                         self.slidoc_slide_header = m.group(2).strip('#').strip()
 
                     self.slidoc_blocks.append(m.group(0))
@@ -346,9 +350,10 @@ class MathBlockLexer(mistune.BlockLexer):
                             self.slidoc_slide_header = m.group(1).strip()
                     elif key == 'hrule':
                         # Explicit slide break
-                        self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
-                        self.slidoc_blocks = []
+                        self.slidoc_slide_end()
                         self.slidoc_slide_header = None
+                    elif key == 'slidoc_notes':
+                        self.slidoc_notes = True
                 return m
             return False  # pragma: no cover
 
@@ -360,8 +365,7 @@ class MathBlockLexer(mistune.BlockLexer):
             if text:  # pragma: no cover
                 raise RuntimeError('Infinite loop at: %s' % text)
         if self.slidoc_recursion == 1:
-            self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
-            self.slidoc_blocks = []
+            self.slidoc_slide_end()
         self.slidoc_recursion -= 1
         return self.tokens
 
@@ -832,6 +836,7 @@ class SlidocRenderer(MathRenderer):
         self.plugin_embeds = set()
         self.load_python = False
         self.slide_maximage = 0
+        self.last_question_props = {}
 
         self.images_zipfile = None
         self.images_map = {}
@@ -850,11 +855,20 @@ class SlidocRenderer(MathRenderer):
     def _new_slide(self):
         self.slide_number += 1
         self.qtypes.append('')
-        self.choices = None
         self.choice_end = None
         self.choice_questions = 0
         self.choice_notes = set()
         self.count_of_the_above = 0
+
+        self.choice_star = ''
+        self.choice_current = ''
+        self.choice_expect = 'A'
+        self.choice_alternatives = 0
+        self.choice_full_alt = 0
+        self.choice_opts = []
+        self.choice_no_top_q = False
+        self.choice_qprefix = ''
+
         self.cur_qtype = ''
         self.cur_header = ''
         self.untitled_header = ''
@@ -1197,29 +1211,35 @@ class SlidocRenderer(MathRenderer):
         self.incremental_level += 1
         return '<li class="slidoc-incremental%d">%s</li>\n' % (self.incremental_level, text)
 
-    def untitled_slide(self):
-        self.untitled_number += 1
-        if 'untitled_number' not in self.options['config'].features:
-            return
-        # Number untitled slides (e.g., as in question numbering) 
-        self.untitled_header = '%d. ' % self.untitled_number
-        if self.questions and len(self.questions)+1 != self.untitled_number:
-            abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
+    def untitled_slide(self, text):
+        if not self.cur_header:
+            self.untitled_number += 1
+            if 'untitled_number' in self.options['config'].features:
+                # Number untitled slides (e.g., as in question numbering)
+                if self.questions and len(self.questions)+1 != self.untitled_number:
+                    abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
+                    return ''
+
+                self.untitled_header = '%d. ' % self.untitled_number
+
+        tem_text = text.strip()
+        if not tem_text or tem_text.startswith('<'):
+            first_words = '...'
+        else:
+            comps = tem_text.split()
+            first_words = ' '.join(comps[:7])  # First seven words of paragraph
+            if len(comps) > 7:
+                 first_words += '...'
+
+        self.alt_header = self.untitled_header + first_words
+        return self.untitled_header
 
     def paragraph(self, text):
         """Rendering paragraph tags. Like ``<p>``."""
         if self.alt_header is None:
-            first_words = ' '.join(text.strip().split(' ')[:7]) + '...'       # First seven words of paragraph
-            if first_words.startswith('<'):
-                first_words = 'block...'
-            if not self.cur_header:
-                self.untitled_slide()
-                text = self.untitled_header + text
-                self.alt_header = self.untitled_header + first_words
-            else:
-                self.alt_header = first_words
+            text = self.untitled_slide(text) + text
 
-        if self.choices:
+        if self.choice_opts:
             _, _, tem_text = text.rpartition('>')  # Strip any preceding markup
             tem_text = tem_text.strip().strip('.').strip() # Strip leading/trailing periods
             tem_text = md2md.normalize_text(tem_text, lower=True)
@@ -1347,11 +1367,12 @@ class SlidocRenderer(MathRenderer):
         """
         text = text.strip()
         prev_slide_end = ''
-        if (self.cur_header or self.alt_header) and level <= 2 and text:
-            # Implicit horizontal rule before Level 1/2 header
-            prev_slide_end = self.hrule(implicit=True)
-
+        hdr_class = 'slidoc-referable-in-%s' % self.get_slide_id()
         if self.notes_end is None:
+            if (self.cur_header or self.alt_header) and level <= 2 and text:
+                # Implicit horizontal rule before Level 1/2 header
+                prev_slide_end = self.hrule(implicit=True)
+
             # Render header HTML element
             html = super(SlidocRenderer, self).header(text.strip('#'), level, raw=raw)
             try:
@@ -1359,12 +1380,15 @@ class SlidocRenderer(MathRenderer):
             except Exception:
                 # failed to parse, just return it unmodified
                 return html
+            hdr_class += ' slidoc-header %s-header' % self.get_slide_id()
         else:
             # Header in Notes; render as plain text
             hdr = ElementTree.Element('p', {})
             hdr.text = text.strip('#')
 
-        hdr_class = (hdr.get('class')+' ' if hdr.get('class') else '') + ('slidoc-referable-in-%s' % self.get_slide_id()) + (' slidoc-header %s-header' % self.get_slide_id())
+        if hdr.get('class'):
+            hdr_class += ' '+hdr.get('class') 
+
         if 'headers' in self.options['config'].strip:
             hdr_class += ' slidoc-hidden'
 
@@ -1426,9 +1450,13 @@ class SlidocRenderer(MathRenderer):
         else:
             # Level 1/2/3 header
             if level <= 2:
-                # New section
-                self.section_number += 1
-                hdr_prefix = self.get_header_prefix()
+                if self.untitled_header:
+                    hdr_prefix = self.untitled_header
+                else:
+                    # New section
+                    self.section_number += 1
+                    hdr_prefix = self.get_header_prefix()
+
                 self.cur_header = (hdr_prefix + text.strip('#')).strip()
                 if self.cur_header:
                     self.header_list.append( (self.get_slide_id(), self.cur_header) )
@@ -1507,63 +1535,119 @@ class SlidocRenderer(MathRenderer):
         return prev_slide_end
 
     def slidoc_choice(self, name, star):
-        value = name if star else ''
+        name = name.upper()
         if self.notes_end:
             # Choice notes
-            notes_name = name.upper()
-            if notes_name not in self.choice_notes:
-                self.choice_notes.add(notes_name)
-            else:
-                notes_name += '2'
-                if notes_name in self.choice_notes:
-                    return '''</p><p>'''
+            notes_name = name
+            j = 1
+            while notes_name in self.choice_notes:
+                j += 1
+                notes_name = name + str(j)
+            self.choice_notes.add(notes_name)
             return '''</p><p id="%s-choice-notes-%s" class="slidoc-choice-notes" style="display: none;">''' % (self.get_slide_id(), notes_name)
+
+        if name < 'A' or name > 'Q':
+            return name+'..'
 
         alt_choice = False
         if name == 'Q':
-            if self.choice_questions == 0:
-                self.choice_questions = 1
-            elif self.choice_questions == 1:
-                self.choice_questions = 2
-                alt_choice = True
+            choiceNum = 0
+            alt_choice = True
+            if self.choice_full_alt:
+                if self.choice_expect: 
+                    abort("    ****CHOICE-ERROR: %s: Expected choice %s for alternative question %d in slide %s" % (self.options["filename"], self.choice_expect, self.choice_full_alt, self.slide_number))
+                    return ''
+
             else:
-                return name+'..'
-        elif not self.choices:
-            if name != 'A':
-                return name+'..'
-            self.choices = [ [value, alt_choice] ]
+                if self.alt_header is None:
+                    self.choice_qprefix = self.untitled_slide('question...')
+                if len(self.choice_opts) > 1 and any(self.choice_opts):
+                    abort("    ****CHOICE-ERROR: %s: Cannot mix choice alternatives and full question alternatives in slide %s" % (self.options["filename"], self.slide_number))
+                    return ''
+
+            self.choice_current = ''
+
+            if not self.choice_opts:
+                self.choice_opts = [0]
+            else:
+                self.choice_opts[0] += 1
+
+            if len(self.choice_opts) > 1:
+                if self.choice_no_top_q:
+                    abort("    ****CHOICE-ERROR: %s: Must specify top Q.. for full question alternatives in slide %s" % (self.options["filename"], self.slide_number))
+                    return ''
+                self.choice_full_alt += 1
         else:
-            if ord(name) == ord('A')+len(self.choices):
-                self.choices.append([value, alt_choice])
-            elif ord(name) == ord('A')+len(self.choices)-1 and not self.choices[-1][1]:
-                # Alternative choice
+            choiceNum = 1 + ord(name) - ord('A')
+            if star and name not in self.choice_star and not self.choice_full_alt:
+                self.choice_star += name
+
+            if not self.choice_opts:
+                self.choice_no_top_q = True
+                self.choice_opts = [0]
+
+            if name == self.choice_current and not self.choice_full_alt:
                 alt_choice = True
-                self.choices[-1][0] = self.choices[-1][0] or value
-                self.choices[-1][1] = alt_choice
+                self.choice_opts[choiceNum] += 1
+            elif name == self.choice_expect:
+                if not self.choice_full_alt:
+                    self.choice_opts.append( 0 )
+                else:
+                    self.choice_opts[choiceNum] += 1
             else:
-                abort("    ****CHOICE-ERROR: %s: Out of sequence choice %s in slide %s" % (self.options["filename"], name, self.slide_number))
+                abort("    ****CHOICE-ERROR: %s: Out of sequence choice %s when expecting %s in slide %s" % (self.options["filename"], name, self.choice_expect, self.slide_number))
                 return name+'..'
+
+            self.choice_current = name
+
+        if self.choice_full_alt and choiceNum == len(self.choice_opts)-1:
+            self.choice_expect = ''
+        else:
+            self.choice_expect = chr(choiceNum+ord('A'))
 
         if alt_choice and 'shuffle_choice' not in self.options['config'].features:
-            message("    ****CHOICE-WARNING: %s: Specify --features=shuffle_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
+            abort("    ****CHOICE-ERROR: %s: Specify --features=shuffle_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
+            return ''
 
-        params = {'id': self.get_slide_id(), 'opt': name, 'alt': '-alt' if alt_choice else ''}
+        choice_opt = self.choice_opts[choiceNum]
+        params = {'id': self.get_slide_id(), 'idtype': self.choice_current or 'question', 'opt': self.choice_current,
+                  'alternative': str(choice_opt) if choice_opt else '', 'altid': str(choice_opt+1) if choice_opt else ''}
             
         prefix = ''
         if not self.choice_end:
-            prefix += '</p><blockquote id="%(id)s-choice-block" data-shuffle=""><div id="%(id)s-chart-header" class="slidoc-chart-header" style="display: none;"></div><p>\n'
-            self.choice_end = '</blockquote><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
+            prefix += '</p><div id="%(id)s-choice-block" data-shuffle=""><div id="%(id)s-chart-header" class="slidoc-chart-header" style="display: none;"></div>'
+            self.choice_end = '</div></div><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
+            if self.choice_current:
+                prefix += '<div class="slidoc-choice-item"><p class="slidoc-choice-option">\n'
+            else:
+                prefix += '<div class="slidoc-choice-item"><p class="slidoc-choice-question">\n'
+        else:
+            if self.choice_current:
+                prefix += '</p></div><div class="slidoc-choice-item"><p class="slidoc-choice-option">\n'
+            else:
+                prefix += '</p></div><div class="slidoc-choice-item"><p class="slidoc-choice-question">\n'
 
         hide_answer = self.options['config'].pace or not self.options['config'].show_score
+
         if name != 'Q' and hide_answer:
             prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
 
+        classes = '%(id)s-choice-inner slidoc-choice-inner'
+        attrs = 'data-alternative="%(alternative)s" data-choice="%(opt)s"'
+
         if name == 'Q':
-            return (prefix+'''<span id="%(id)s-choice-question%(alt)s" class="slidoc-choice-question%(alt)s" ></span>''') % params
-        elif hide_answer:
-            return (prefix+'''<span id="%(id)s-choice-%(opt)s%(alt)s" data-choice="%(opt)s" class="slidoc-clickable %(id)s-choice %(id)s-choice-elem%(alt)s slidoc-choice slidoc-choice-elem%(alt)s" onclick="Slidoc.choiceClick(this, '%(id)s');">%(opt)s</span>. ''') % params
+            suffix = self.choice_qprefix
+            classes += ' slidoc-choice-question'
         else:
-            return (prefix+'''<span id="%(id)s-choice-%(opt)s" class="%(id)s-choice slidoc-choice">%(opt)s</span>. ''') % params
+            suffix = '. '
+            classes += ' %(id)s-choice slidoc-choice'
+            if hide_answer:
+                classes += '  slidoc-clickable'
+                attrs += ''' onclick="Slidoc.choiceClick(this, '%(id)s');"'''
+
+        params['classes'] = classes % params
+        params['attrs'] = attrs % params
+        return (prefix+'''<span id="%(id)s-choice-%(idtype)s%(altid)s" class="%(classes)s" %(attrs)s>%(opt)s</span>'''+suffix) % params
 
     
     def plugin_definition(self, name, text):
@@ -1645,7 +1729,24 @@ class SlidocRenderer(MathRenderer):
             html_prefix = self.choice_end
             self.choice_end = ''
 
-        all_options = ('explain', 'retry', 'share', 'team', 'vote', 'weight')
+            if not self.choice_full_alt:
+                self.choice_alternatives = max(self.choice_opts)
+                for j, x in enumerate(self.choice_opts):
+                    if x and x != self.choice_alternatives:
+                        abort("    ****CHOICE-ERROR: %s: Mismatch in number of alternatives for %s in slide %s: expected %d but got %d" % (self.options["filename"], chr(j-1+ord('A')) if j else 'Q', self.slide_number, self.choice_alternatives, x))
+                        return ''
+
+            else:
+                self.choice_alternatives = self.choice_full_alt
+                if self.choice_expect:
+                    abort("    ****CHOICE-ERROR: %s: Expected choice %s for alternative question %d in slide %s" % (self.options["filename"], self.choice_expect, self.choice_full_alt, self.slide_number))
+                    return ''
+
+            if self.choice_alternatives > 9:
+                abort("    ****CHOICE-ERROR: %s: More than %d alternatives in slide %s" % (self.options["filename"], self.choice_alternatives, self.slide_number))
+                return ''
+
+        all_options = ('explain', 'followup', 'maxchars', 'noshuffle', 'participation', 'retry', 'share', 'team', 'vote', 'weight')
 
         # Syntax
         #   Answer: [(answer_type=answer_value|answer_type|answer_value)] [; option[=value] [option2[=value2]] ...]
@@ -1672,24 +1773,27 @@ class SlidocRenderer(MathRenderer):
         if self.options['config'].pace == ADMIN_PACE:
             # Change default share value for admin pace
             opt_values['share'] = ('after_answering', 'after_due_date', 'after_grading')
-        answer_opts = { 'disabled': '', 'explain': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
+        answer_opts = { 'disabled': '', 'explain': '', 'followup': '', 'participation': '', 'share': '', 'team': '', 'vote': ''}
         for opt in opt_comps:
-            num_match = re.match(r'^(maxchars|noshuffle|participation|retry|weight)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
+            num_match = re.match(r'^(followup|maxchars|noshuffle|participation|retry|weight)\s*=\s*((\d+(.\d+)?)(\s*,\s*\d+(.\d+)?)*)\s*$', opt)
             if num_match:
                 try:
-                    if num_match.group(1) == 'weight':
-                        weight_answer = num_match.group(2).strip()
-                    elif num_match.group(1) == 'maxchars':
+                    match_opt = num_match.group(1)
+                    if match_opt == 'followup':
+                        answer_opts['followup'] = abs(int(num_match.group(2).strip()))
+                    elif match_opt == 'maxchars':
                         maxchars = abs(int(num_match.group(2).strip()))
-                    elif num_match.group(1) == 'noshuffle':
+                    elif match_opt == 'noshuffle':
                         noshuffle = abs(int(num_match.group(2).strip()))
-                    elif num_match.group(1) == 'retry':
+                    elif match_opt == 'participation':
+                        answer_opts['participation'] = float(num_match.group(2).strip())
+                    elif match_opt == 'retry':
                         num_comps = [int(x.strip() or '0') for x in num_match.group(2).strip().split(',')]
                         retry_counts = [num_comps[0], 0]
                         if len(num_comps) > 1 and num_comps[0]:
                             retry_counts[1] = num_comps[1]
-                    else:
-                        answer_opts['participation'] = float(num_match.group(2).strip())
+                    elif match_opt == 'weight':
+                        weight_answer = num_match.group(2).strip()
                 except Exception, excp:
                     abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting numeric value for slide %s" % (self.options["filename"], num_match.group(1), num_match.group(2), self.slide_number))
             elif opt == 'retry':
@@ -1801,14 +1905,13 @@ class SlidocRenderer(MathRenderer):
             if self.options['config'].pace == ADMIN_PACE and 'Timer' not in self.slide_plugin_embeds:
                 html_suffix += self.embed_plugin_body('Timer', slide_id)
                 
-        if self.choices:
+        if self.choice_opts:
             if not qtype or qtype in ('choice', 'multichoice'):
                 # Correct choice(s)
-                choices_str = ''.join(x[0] for x in self.choices)
-                if choices_str:
-                    text = choices_str
+                if self.choice_star:
+                    text = self.choice_star
                 else:
-                    text = ''.join(x for x in text if ord(x) >= ord('A') and ord(x)-ord('A') < len(self.choices))
+                    text = ''.join(x for x in text if ord(x) >= ord('A') and ord(x)-ord('A') < len(self.choice_opts)-1)
 
                 if qtype == 'choice':
                     # Multiple answers for choice are allowed with a warning (to fix grading problems)
@@ -1824,7 +1927,7 @@ class SlidocRenderer(MathRenderer):
                         message("    ****CHOICE-WARNING: Choice question %d may need noshuffle=%d value for '... of the above' option(s)" % (len(self.questions)+1, self.count_of_the_above))
             else:
                 # Ignore choice options
-                self.choices = None
+                self.choice_opts = []
                 
         if qtype in ('text/markdown', 'text/multiline'):  # Legacy support
             qtype = 'text/plain'
@@ -1876,6 +1979,20 @@ class SlidocRenderer(MathRenderer):
             self.sheet_attributes['remoteAnswers'].append(correct_val)
             correct_val = ''
 
+        if answer_opts['followup']:
+            if not self.last_question_props:
+                abort("    ****FOLLOWUP-ERROR: %s: Answer: followup=%s not allowed for first question in slide %s" % (self.options["filename"], answer_opts['followup'], self.slide_number))
+
+            expect_followup = 1+(self.last_question_props['followup'] or 0)
+            if answer_opts['followup'] != expect_followup:
+                abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting followup=%s but found followup=%s in slide %s" % (self.options["filename"], expect_followup, answer_opts['followup'], self.slide_number))
+
+            if self.choice_alternatives != self.last_question_props['alternatives']:
+                abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting %s alternatives but found %s for followup=%s question in slide %s" % (self.options["filename"], self.last_question_props['alternatives'], self.choice_alternatives, answer_opts['followup'], self.slide_number))
+
+
+        self.last_question_props = {'alternatives': self.choice_alternatives, 'followup': answer_opts['followup'] or 0}
+
         self.questions[-1].update(qnumber=qnumber, qtype=self.cur_qtype, slide=self.slide_number, correct=correct_val,
                                   weight=1)
 
@@ -1885,6 +2002,8 @@ class SlidocRenderer(MathRenderer):
                 self.sheet_attributes['disabledCount'] += 1
         if answer_opts['explain']:
             self.questions[-1].update(explain=answer_opts['explain'])
+        if answer_opts['followup']:
+            self.questions[-1].update(followup=answer_opts['followup'])
         if answer_opts['participation']:
             self.questions[-1].update(participation=answer_opts['participation'])
         if answer_opts['share']:
@@ -1895,7 +2014,9 @@ class SlidocRenderer(MathRenderer):
             self.questions[-1].update(vote=answer_opts['vote'])
 
         if self.cur_qtype in ('choice', 'multichoice'):
-            self.questions[-1].update(choices=len(self.choices))
+            self.questions[-1].update(choices=len(self.choice_opts)-1)
+            if self.choice_alternatives:
+                self.questions[-1].update(alternatives=self.choice_alternatives)
         if noshuffle:
             self.questions[-1].update(noshuffle=noshuffle)
         if retry_counts[0]:
@@ -2495,7 +2616,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                 mod_question = j+1
                 break
             if row_count:
-                for optname in ('choices', 'explain', 'noshuffle'):
+                for optname in ('alternatives', 'choices', 'explain', 'followup', 'noshuffle'):
                     if prev_questions[j].get(optname) != questions[j].get(optname):
                         abort('ERROR:QUESTION_ERROR: Cannot change %s value for question %d in session %s with %s responders: %s=%s vs. %s. Reset session?' % (optname, j+1, session_name, row_count, optname, prev_questions[j].get(optname), questions[j].get(optname)))
 

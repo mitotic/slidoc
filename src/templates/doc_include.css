@@ -129,6 +129,8 @@ body:not(.slidoc-interact-view) #slidoc-interact-display { opacity: 0.8; }
 body.slidoc-interact-view #slidoc-interact-display { background: red; }
 
 /* Choice duplicates */
+.slidoc-choice-option { margin-left: 25px; }
+
 .slidoc-choice-duplicate-message {color: red; font-weight: bold; background: #aaa;}
 
 /* Testing */
