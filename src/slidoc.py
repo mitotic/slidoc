@@ -72,12 +72,21 @@ SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
+RESERVED_PLUGINS = ['Params']
+FORMULA_NAMESPACE = ['Math']
+
+ANSWER_TYPE_RE = re.compile(r'^([a-zA-Z\w]+)\s*=(.*)$')
+
+# Backticks are optional for backwards compatibility in plugin syntax
+ANSWER_PLUGIN_RE  = re.compile(r'^`?=?(\w+)\.(expect|response)\(\s*(\d*)\s*\)\s*(;;\s*([()eE0-9.*+/-]*))?\s*`?$')
+ANSWER_FORMULA_RE = re.compile(r'^`=([^`;\n]+)(;;\s*([()eE0-9.*+/-]*))?\s*`$')
+INLINE_METHOD_RE  = re.compile(r"^(\w+)\.(\w+)\(\s*(\d*)\s*\)")
+PARAM_RE = re.compile(r'^([_a-zA-Z]\w*)=([0-9.:eE+-]+)$')
+
 BASIC_PACE    = 1
 QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
-
-	
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'openfolder': '&#x1f4c2;', 'lightning': '&#9889;', 'pencil': '&#9998;',
@@ -284,9 +293,10 @@ class MathBlockGrammar(mistune.BlockGrammar):
     plugin_embed      = re.compile(r'^ {0,3}<script +type="x-slidoc-embed" *>\s*(\w+)\(([^\n]*)\)\s*\n(.*?)\n *</script> *(\n|$)',
                                                 re.DOTALL)
     plugin_insert =   re.compile(r'^=(\w+)\(([^\n]*)\)\s*(\n\s*\n|\n$|$)')
-    slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:|Slide:)(.*?)(-->|\n)\s*?(\n|$)', re.DOTALL)
+    slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:)(.*?)(-->|\n)\s*?(\n|$)', re.DOTALL)
     slidoc_options=   re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
+    slidoc_params =   re.compile(r'^ {0,3}(Params):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
@@ -300,7 +310,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_params', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -425,6 +435,13 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2).strip()
         })
 
+    def parse_slidoc_params(self, m):
+         self.tokens.append({
+            'type': 'slidoc_params',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
     def parse_slidoc_answer(self, m):
          self.tokens.append({
             'type': 'slidoc_answer',
@@ -478,7 +495,7 @@ class MathInlineGrammar(mistune.InlineGrammar):
     block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =   re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=re.compile(r"^\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
-    inline_js =     re.compile(r"^`=(\w+)\.(\w+)\(\s*(\d*)\s*\)(;([^`\n]*))?`")
+    inline_formula =re.compile(r"^`=([^`;\n]+)(;;\s*([()eE0-9.*+-]*))?\s*`")
     text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
     internal_ref =  re.compile(
         r'^\[('
@@ -493,7 +510,7 @@ class MathInlineLexer(mistune.InlineLexer):
         if rules is None:
             rules = MathInlineGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['slidoc_choice', 'block_math', 'inline_math', 'inline_js', 'internal_ref']
+        slidoc_rules = ['slidoc_choice', 'block_math', 'inline_math', 'inline_formula', 'internal_ref']
         if 'config' in renderer.options and 'tex_math' in renderer.options['config'].features:
             slidoc_rules += ['tex_inline_math']
         self.default_rules = slidoc_rules + mistune.InlineLexer.default_rules
@@ -508,8 +525,8 @@ class MathInlineLexer(mistune.InlineLexer):
     def output_tex_inline_math(self, m):
         return self.renderer.inline_math(m.group(1)+m.group(2))
 
-    def output_inline_js(self, m):
-        return self.renderer.inline_js(m.group(1), m.group(2), m.group(3), m.group(5))
+    def output_inline_formula(self, m):
+        return self.renderer.inline_formula(m.group(1), m.group(3))
 
     def output_block_math(self, m):
         return self.renderer.block_math(m.group(1))
@@ -585,7 +602,7 @@ class MathInlineLexer(mistune.InlineLexer):
                     num_label = "%d" % Global.ref_counter[text_key]
                 text += num_label
             self.renderer.add_ref_link(ref_id, num_label, key, ref_class)
-        return '''<span id="%s" class="slidoc-referable slidoc-referable-in-%s %s">%s</span>'''  % (ref_id, self.renderer.get_slide_id(), ref_class, text)
+        return '''<span id="%s" class="slidoc-referable %s" data-slide-id="%s">%s</span>'''  % (ref_id, ref_class, self.renderer.get_slide_id(), text)
 
     def output_reflink(self, m):
         return super(MathInlineLexer, self).output_reflink(m)
@@ -619,6 +636,9 @@ class MarkdownWithMath(mistune.Markdown):
 
     def output_slidoc_slideopts(self):
         return self.renderer.slidoc_slideopts(self.token['name'], self.token['text'])
+
+    def output_slidoc_params(self):
+        return self.renderer.slidoc_params(self.token['name'], self.token['text'])
 
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
@@ -812,7 +832,8 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'hiddenSlides': [], 'shareAnswers': {}, 'remoteAnswers': [], 'hints': defaultdict(list)}
+        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'hiddenSlides': [], 'hints': defaultdict(list),
+                                 'questionParams':[],  'remoteAnswers': [], 'shareAnswers': {}}
 
         self.sheet_attributes['resubmitAnswers'] = self.options['config'].pace <= BASIC_PACE and self.options['config'].show_score in ('after_submitting', 'after_grading')
         self.slide_number = 0
@@ -852,6 +873,9 @@ class SlidocRenderer(MathRenderer):
             self.content_zip_bytes = io.BytesIO()
             self.content_zip = zipfile.ZipFile(self.content_zip_bytes, 'w')
 
+        self.all_params = []
+        self.current_params = []
+
     def _new_slide(self):
         self.slide_number += 1
         self.qtypes.append('')
@@ -890,6 +914,8 @@ class SlidocRenderer(MathRenderer):
         self.slide_options = set()
         if 'discuss_all' in self.options['config'].features:
             self.slide_options.add('discuss')
+        self.slide_formulas = []
+        self.slide_params = {}
 
     def close_zip(self, md_content=None):
         # Create zipped content (only if there are any images)
@@ -919,22 +945,36 @@ class SlidocRenderer(MathRenderer):
                 else:
                     message("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number))
 
-    def inline_js(self, plugin_name, action, arg, text):
-        js_func = plugin_name + '.' + action
-        if action in ('answerSave', 'buttonClick', 'disable', 'display', 'enterSlide', 'expect', 'incrementSlide', 'init', 'initGlobal', 'initSetup', 'leaveSlide', 'response'):
-            message("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s()` in slide %s" % (self.options["filename"], js_func, self.slide_number))
+    def inline_formula(self, text, alt_text):
+        text = text.strip()
+        alt_text = alt_text.strip() if alt_text is not None else alt_text
+        js_format = alt_text or ''
+        slide_id = self.get_slide_id()
+        imatch = INLINE_METHOD_RE.match(text)
+        if imatch and imatch.group(1) not in FORMULA_NAMESPACE:
+            plugin_name = imatch.group(1)
+            action = imatch.group(2)
+            js_arg = imatch.group(3)
+            if action in ('answerSave', 'buttonClick', 'disable', 'display', 'enterSlide', 'expect', 'incrementSlide', 'init', 'initGlobal', 'initSetup', 'leaveSlide', 'response'):
+                abort("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s.%s()` in slide %s" % (self.options["filename"], plugin_name, action, self.slide_number))
+
+        else:
+            plugin_name = 'Params'
+            action = 'formula'
+            js_arg = text
             
-        if 'inline_js' in self.options['config'].strip:
-            return '<code>%s</code>' % (mistune.escape('='+js_func+'()' if text is None else text))
+        js_func = plugin_name + '.' + action
+        alt_html = mistune.escape('='+js_func+'()' if alt_text is None else alt_text)
+        if 'inline_formula' in self.options['config'].strip:
+            return '<code>%s</code>' % alt_html
+
+        if plugin_name == 'Params' and action == 'formula':
+            self.slide_formulas.append(js_arg)
 
         self.plugin_loads.add(plugin_name)
         self.slide_plugin_refs.add(plugin_name)
 
-        slide_id = self.get_slide_id()
-        classes = 'slidoc-inline-js'
-        if slide_id:
-            classes += ' slidoc-inline-js-in-'+slide_id
-        return '<code class="%s" data-slidoc-js-function="%s" data-slidoc-js-argument="%s">%s</code>' % (classes, js_func, arg or '', mistune.escape('='+js_func+'()' if text is None else text))
+        return '<code class="slidoc-inline-js" data-slidoc-js-function="%s" data-slidoc-js-argument="%s" data-slidoc-js-format="%s" data-slide-id="%s">%s</code>' % (js_func, mistune.escape(js_arg or ''), mistune.escape(js_format or ''), slide_id or '', alt_html)
 
     def get_chapter_id(self):
         return make_chapter_id(self.options['filenumber'])
@@ -1054,7 +1094,10 @@ class SlidocRenderer(MathRenderer):
             else:
                 message('    ****HIDDEN-WARNING: %s: Slide %s, Hidden: ignored for first slide/question slide/question-paced sessions' % (self.options["filename"], self.slide_number))
 
-        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), header)
+        attrs = ''
+        if self.all_params:
+            attrs += ' data-param-count="%d"' % len(self.all_params)
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" %s style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
         return html
 
     def image(self, src, title, text):
@@ -1175,17 +1218,33 @@ class SlidocRenderer(MathRenderer):
         return html
 
     def end_slide(self, suffix_html='', last_slide=False):
+        prefix_html = self.end_extra()+self.end_hint()  # Hints/Notes will be ignored after Extra:
+
+        if self.slide_params:
+            keys = self.slide_params.keys()
+            keys.sort()
+            param_defs = [key+'='+self.slide_params[key] for key in keys]
+            self.current_params.append(' '.join(param_defs))      # Used only for warning about structural changes
+            self.all_params.append(';'.join(param_defs))          # Used to define parameter values
+
+        if self.slide_formulas and 'Params' not in self.slide_plugin_embeds:
+            prefix_html += self.embed_plugin_body('Params', self.get_slide_id())
+
         if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
             message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
 
-        prefix_html = self.end_extra()+self.end_hint()  # Hints/Notes will be ignored after Extra:
         if self.qtypes[-1]:
             # Question slide
+            qnumber = len(self.questions)
             self.question_concepts.append(self.slide_concepts)
+
+            if self.current_params:
+                self.sheet_attributes['questionParams'].append(str(qnumber)+';'+';'.join(self.current_params))
+                self.current_params = []
 
             if self.options['config'].pace and self.slide_forward_links:
                 # Handle forward link in current question
-                self.qforward[self.slide_forward_links[0]].append(len(self.questions))
+                self.qforward[self.slide_forward_links[0]].append(qnumber)
                 if len(self.slide_forward_links) > 1:
                     message("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]))
 
@@ -1367,7 +1426,8 @@ class SlidocRenderer(MathRenderer):
         """
         text = text.strip()
         prev_slide_end = ''
-        hdr_class = 'slidoc-referable-in-%s' % self.get_slide_id()
+        slide_id = self.get_slide_id()
+        hdr_class = ''
         if self.notes_end is None:
             if (self.cur_header or self.alt_header) and level <= 2 and text:
                 # Implicit horizontal rule before Level 1/2 header
@@ -1380,7 +1440,7 @@ class SlidocRenderer(MathRenderer):
             except Exception:
                 # failed to parse, just return it unmodified
                 return html
-            hdr_class += ' slidoc-header %s-header' % self.get_slide_id()
+            hdr_class += ' slidoc-header %s-header' % slide_id
         else:
             # Header in Notes; render as plain text
             hdr = ElementTree.Element('p', {})
@@ -1424,6 +1484,7 @@ class SlidocRenderer(MathRenderer):
             self.add_ref_link(ref_id, '??', header_ref, '')
 
         hdr.set('id', ref_id)
+        hdr.set('data-slide-id', slide_id)
 
         hide_block = self.options['config'].hide and re.search(self.options['config'].hide, text)
         if level > 3 or (level == 3 and not (hide_block and self.hide_end is None)):
@@ -1459,7 +1520,7 @@ class SlidocRenderer(MathRenderer):
 
                 self.cur_header = (hdr_prefix + text.strip('#')).strip()
                 if self.cur_header:
-                    self.header_list.append( (self.get_slide_id(), self.cur_header) )
+                    self.header_list.append( (slide_id, self.cur_header) )
                 if 'sections' not in self.options['config'].strip:
                     clickable_secnum = True
             elif self.alt_header is None:
@@ -1470,7 +1531,7 @@ class SlidocRenderer(MathRenderer):
 
             if hide_block:
                 # New block to hide answer/solution
-                id_str = self.get_slide_id() + '-hide'
+                id_str = slide_id + '-hide'
                 pre_header, post_header, end_str = self.start_block('hidden', id_str)
                 self.hide_end = end_str
                 hdr_class += ' slidoc-clickable'
@@ -1489,7 +1550,7 @@ class SlidocRenderer(MathRenderer):
         elif hdr_prefix:
             hdr.text = hdr_prefix + (hdr.text or '')
 
-        ##a = ElementTree.Element("a", {"class" : "anchor-link", "href" : "#" + self.get_slide_id()})
+        ##a = ElementTree.Element("a", {"class" : "anchor-link", "href" : "#" + slide_id})
         ##a.text = u' '
         ##hdr.append(a)
 
@@ -1502,9 +1563,6 @@ class SlidocRenderer(MathRenderer):
     def slidoc_header(self, name, text):
         if name == 'Slidoc:':
             return self.slidoc_options(name, text)
-
-        if name == 'Slide:':
-            return self.slidoc_slideopts(name, text)
 
         if name == 'meldr-type' and text:
             params = text.split()
@@ -1533,6 +1591,20 @@ class SlidocRenderer(MathRenderer):
                 message('    ****OPTION-WARNING: %s: Slide %s, Ignored invalid option Slide: %s; must be one of %s' % (self.options["filename"], self.slide_number, opt, '/'.join(ALLOWED_OPTS)))
 
         return prev_slide_end
+
+    def slidoc_params(self, name, text):
+        for param_def in text.split():
+            match = PARAM_RE.match(param_def)
+            if not match:
+                abort("    ****PARAMS-ERROR: %s: Invalid Params: specification '%s' in slide %s; expecting name=value1[:value2[:count]] OR name=value1,value2,... " % (self.options["filename"], param_def, self.slide_number))
+                break
+            param_name = match.group(1)
+            param_value = match.group(2)
+            if param_name in self.slide_params:
+                abort("    ****PARAMS-ERROR: %s: Duplicate Params: specification '%s' in slide %s" % (self.options["filename"], param_def, self.slide_number))
+            self.slide_params[param_name] = param_value
+
+        return ''
 
     def slidoc_choice(self, name, star):
         name = name.upper()
@@ -1660,7 +1732,13 @@ class SlidocRenderer(MathRenderer):
         self.slide_plugin_embeds.add(plugin_name)
         self.plugin_embeds.add(plugin_name)
 
-        self.plugin_number += 1
+        if plugin_name in RESERVED_PLUGINS:
+            # Special plugins to be loaded first
+            plugin_num = 0
+        else:
+            # Load plugin in order of occurrence
+            self.plugin_number += 1
+            plugin_num = self.plugin_number
 
         plugin_def_name = plugin_name
         if plugin_def_name not in self.plugin_defs and plugin_def_name not in self.options['plugin_defs']:
@@ -1677,7 +1755,7 @@ class SlidocRenderer(MathRenderer):
                          'pluginLabel': 'slidoc-plugin-'+plugin_name,
                          'pluginId': slide_id+'-plugin-'+plugin_name,
                          'pluginInitArgs': sliauth.safe_quote(args),
-                         'pluginNumber': self.plugin_number,
+                         'pluginNumber': plugin_num,
                          'pluginButton': sliauth.safe_quote(plugin_def.get('BUTTON', ''))}
 
         if plugin_def_name not in self.plugin_loads:
@@ -1716,6 +1794,8 @@ class SlidocRenderer(MathRenderer):
         return self.plugin_content_template % plugin_params
 
     def slidoc_plugin(self, name, text):
+        if name in RESERVED_PLUGINS:
+            abort("    ****PLUGIN-ERROR: %s: Cannot embed reserved plugin %s in slide %s" % (self.options["filename"], self.untitled_number, name, self.slide_number))
         args, sep, content = text.partition('\n')
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
@@ -1750,7 +1830,13 @@ class SlidocRenderer(MathRenderer):
 
         # Syntax
         #   Answer: [(answer_type=answer_value|answer_type|answer_value)] [; option[=value] [option2[=value2]] ...]
-        text, _, opt_text = text.partition(';')
+        if '`' in text:
+            # Look for options after backticks
+            text, sep, tail_text = text.rpartition('`')
+            tail_text, _, opt_text = tail_text.partition(';')
+            text += sep + tail_text
+        else:
+            text, _, opt_text = text.partition(';')
 
         if ';' in opt_text:
             # Backwards compatibility (where semicolons are used as separators)
@@ -1822,23 +1908,40 @@ class SlidocRenderer(MathRenderer):
         plugin_name = ''
         plugin_action = ''
         plugin_arg = ''
-        plugin_match = re.match(r'^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$', text)
-        if plugin_match:
-            # [correct_answer_or_type]=Plugin_name.expect([n])
-            text = plugin_match.group(1).strip()
-            plugin_name = plugin_match.group(2)
-            plugin_action = plugin_match.group(3)
-            plugin_arg = plugin_match.group(4) or ''
+        plugin_format = ''
 
         valid_simple_types = ['choice', 'multichoice', 'number', 'text', 'point', 'line']
         valid_all_types = valid_simple_types + ['text/x-code', 'text/markdown', 'text/multiline', 'text/plain'] # markdown, multiline for legacy
         qtype = ''
-        if '=' in text:
-            # Check if 'answer_type=correct_answer'
-            # (Either answer_type or correct_answer  may be omitted, along with =, if there is no ambiguity)
-            qtype, _, text = text.partition('=')
+        type_match = ANSWER_TYPE_RE.match(text)
+        if type_match:
+            # Check if 'answer_type=correct_answer_or_formula'
+            # (Either answer_type or correct_answer_or_formula may be omitted, along with =, if there is no ambiguity)
+            qtype = type_match.group(1)
+            text = type_match.group(2).strip()
             if qtype not in valid_simple_types:
                 abort("    ****ANSWER-ERROR: %s: %s is not a valid answer type; expected %s=answer in slide %s" % (self.options["filename"], qtype, '|'.join(valid_simple_types), self.slide_number))
+
+        plugin_match = ANSWER_PLUGIN_RE.match(text)
+        formula_match = ANSWER_FORMULA_RE.match(text)
+        if plugin_match:
+            # `=Plugin_name.expect([n]);;format`
+            # format = number OR 1*10**(-1)+/-range
+            plugin_name = plugin_match.group(1)
+            plugin_action = plugin_match.group(2)
+            plugin_arg = plugin_match.group(3) or ''
+            plugin_format = plugin_match.group(5) if plugin_match.group(5) else ''
+            text = plugin_format.replace('*10**','e').replace('(','').replace(')','')
+        elif formula_match:
+            # `=...;;format`
+            plugin_name = 'Params'
+            plugin_action = 'formula'
+            plugin_arg = formula_match.group(1).strip()
+            plugin_format = formula_match.group(3) if formula_match.group(2) else ''
+            text = plugin_format.replace('*10**','e').replace('(','').replace(')','')
+            self.slide_formulas.append(plugin_arg)
+        elif text.startswith('`'):
+            abort("    ****ANSWER-ERROR: %s: Expecting Answer: ...`=formula`, but found %s in slide %s" % (self.options["filename"], text, self.slide_number))
 
         num_match = re.match(r'^([-+/\d\.eE\s%]+)$', text)
         if num_match and text.lower() != 'e' and (not qtype or qtype == 'number'):
@@ -1891,7 +1994,7 @@ class SlidocRenderer(MathRenderer):
                         abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
 
         if plugin_name:
-            if 'inline_js' in self.options['config'].strip and plugin_action == 'expect':
+            if 'inline_formula' in self.options['config'].strip and plugin_action in ('expect' 'formula'):
                 plugin_name = ''
                 plugin_action = ''
             elif plugin_name not in self.slide_plugin_embeds:
@@ -1968,9 +2071,16 @@ class SlidocRenderer(MathRenderer):
         self.qtypes[-1] = self.cur_qtype
         self.questions.append({})
         qnumber = len(self.questions)
+
         if plugin_name:
-            correct_val = '=' + plugin_name + '.' + plugin_action + '(' + plugin_arg + ')'
-            if correct_text:
+            if plugin_name == 'Params' and plugin_action == 'formula':
+                correct_val = '=' + plugin_arg
+            else:
+                correct_val = '=' + plugin_name + '.' + plugin_action + '(' + plugin_arg + ')'
+
+            if plugin_format:
+                correct_val += ';;' + plugin_format
+            elif correct_text:
                 correct_val = correct_text + correct_val
         else:
             correct_val = correct_text
@@ -1983,9 +2093,9 @@ class SlidocRenderer(MathRenderer):
             if not self.last_question_props:
                 abort("    ****FOLLOWUP-ERROR: %s: Answer: followup=%s not allowed for first question in slide %s" % (self.options["filename"], answer_opts['followup'], self.slide_number))
 
-            expect_followup = 1+(self.last_question_props['followup'] or 0)
-            if answer_opts['followup'] != expect_followup:
-                abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting followup=%s but found followup=%s in slide %s" % (self.options["filename"], expect_followup, answer_opts['followup'], self.slide_number))
+            last_followup = self.last_question_props['followup'] or 0
+            if answer_opts['followup'] not in (last_followup, last_followup+1):
+                abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting followup=%s/%s but found followup=%s in slide %s" % (self.options["filename"], last_followup, last_followup+1, answer_opts['followup'], self.slide_number))
 
             if self.choice_alternatives != self.last_question_props['alternatives']:
                 abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting %s alternatives but found %s for followup=%s question in slide %s" % (self.options["filename"], self.last_question_props['alternatives'], self.choice_alternatives, answer_opts['followup'], self.slide_number))
@@ -2087,7 +2197,7 @@ class SlidocRenderer(MathRenderer):
         if self.cur_qtype in ('choice', 'multichoice'):
             ans_classes += ' slidoc-choice-answer'
 
-        if plugin_name and plugin_action != 'expect':
+        if plugin_name and plugin_action not in ('expect', 'formula'):
             ans_classes += ' slidoc-answer-plugin'
         if self.slide_block_fillable:
             ans_classes += ' slidoc-answer-fillable'
@@ -2459,8 +2569,8 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 break
 
-            if not line.strip() or MathBlockGrammar.slidoc_header.match(line):
-                # Blank line (treat slidoc comment line as blank)
+            if not line.strip() or MathBlockGrammar.slidoc_params.match(line) or MathBlockGrammar.slidoc_header.match(line):
+                # Blank line (treat Params or slidoc comment line as blank)
                 if prev_blank:
                     # Skip multiple blank lines (for digest computation)
                     continue
@@ -2608,6 +2718,17 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             message('    ****WARNING: Module %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
         prev_questions = json.loads(prev_row[prev_headers.index('questions')])
+        prev_attributes = json.loads(prev_row[prev_headers.index('attributes')])
+        prev_qparams = prev_attributes.get('questionParams', [])
+        cur_qparams = sheet_attributes.get('questionParams', [])
+        if row_count and prev_qparams != cur_qparams:
+            min_count =  min(len(prev_qparams), len(cur_qparams))
+            errq = ''
+            for j in range(min_count):
+                if prev_qparams[j] != cur_qparams[j]:
+                    errq = cur_qparams[j].split(';')[0]
+                    break
+            abort('ERROR:PARAMS_ERROR: Cannot change Params: values affecting question %s in session %s with %s responders. Reset session?' % (errq, session_name, row_count))
 
         min_count =  min(len(prev_questions), len(questions))
         mod_question = 0
@@ -3618,6 +3739,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         js_params['discussSlides'] = renderer.sheet_attributes['discussSlides']
         js_params['hiddenSlides'] = renderer.sheet_attributes['hiddenSlides']
         js_params['resubmitAnswers'] = renderer.sheet_attributes['resubmitAnswers']
+        js_params['paramDefinitions'] = renderer.all_params
 
         if config.separate:
             plugin_list = list(renderer.plugin_embeds)
@@ -4447,7 +4569,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     
 # Strip options
 # For pure web pages, --strip=chapters,contents,navigate,sections
-Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_js', 'navigate', 'notes', 'rule', 'sections', 'tags']
+Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'navigate', 'notes', 'rule', 'sections', 'tags']
 
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points

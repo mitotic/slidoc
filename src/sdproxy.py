@@ -3140,8 +3140,12 @@ class LCRandomClass(object):
 LCRandom = LCRandomClass()
 
 RandomChoiceOffset = 1
+RandomParamOffset = 2
 def makeRandomChoiceSeed(randomSeed):
     return LCRandom.makeSeed(RandomChoiceOffset+randomSeed)
+
+def makeRandomParamSeed(randomSeed):
+    return LCRandom.makeSeed(RandomParamOffset+randomSeed)
 
 def makeRandomFunction(seed):
     LCRandom.setSeed(seed);
@@ -3194,6 +3198,45 @@ def createSession(sessionName, params, questions=None, retakes='', randomSeed=No
             if choices:
                 qshuffle[qno] +=  randomLetters(choices, noshuffle, randFunc)
 
+    paramValues = None
+    if params.get('paramDefinitions') and len(params.get('paramDefinitions')):
+        randFunc = makeRandomFunction(makeRandomParamSeed(randomSeed))
+        paramValues = []
+        paramDefinitions = params.get('paramDefinitions')
+        for j in range(0,len(paramDefinitions)):
+            slideValues = {}
+            try:
+                pcomps = paramDefinitions[j].split(';')
+                for k in range(0,len(pcomps)):
+                    dcomps = pcomps[k].split('=')
+                    defname  =  dcomps[0]
+                    defrange =  '='.join(dcomps[1:])
+                    rcomps = defrange.split(':')
+                    vals = []
+                    if len(rcomps) == 1:
+                        svals = rcomps[0].split(',')
+                        for m in range(0,len(svals)):
+                            val = parseNumber(svals[m])
+                            if val != None:
+                                vals.append(val)
+                    else:
+                        minval = parseNumber(rcomps[0])
+                        maxval = parseNumber(rcomps[1])
+                        if minval != None and maxval != None:
+                            if len(rcomps) == 2:
+                                nvals = maxval - minval + 1
+                            else:
+                                nvals = int(rcomps[2]) if rcomps[2].isdigit() else None
+                            if nvals != None and minval < maxval and nvals > 1:
+                                dval = (maxval - minval) / (nvals - 1)
+                                for m in range(0,nvals):
+                                    vals.append(minval + m*dval)
+                    if len(vals):
+                        slideValues[defname] = vals[ randFunc(0,len(vals)-1) ]
+            except Exception, excp:
+                pass
+            paramValues.append(slideValues)
+
     return {'version': params.get('sessionVersion'),
 	    'revision': params.get('sessionRevision'),
 	    'paced': params.get('paceLevel', 0),
@@ -3212,6 +3255,7 @@ def createSession(sessionName, params, questions=None, retakes='', randomSeed=No
         'remainingTries': 0,
         'tryDelay': 0,
 	    'showTime': None,
+	    'paramValues': paramValues,
         'questionShuffle': qshuffle,
         'questionsAttempted': {},
 	    'hintsUsed': {},

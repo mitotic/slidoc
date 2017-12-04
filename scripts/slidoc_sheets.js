@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.15b';
+var VERSION = '0.97.15c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -2549,8 +2549,13 @@ var LCRandom = (function() {
 
 
 var RandomChoiceOffset = 1;
+var RandomParamOffset = 2;
 function makeRandomChoiceSeed(randomSeed) {
     return LCRandom.makeSeed(RandomChoiceOffset+randomSeed);
+}
+
+function makeRandomParamSeed(randomSeed) {
+    return LCRandom.makeSeed(RandomParamOffset+randomSeed);
 }
 
 function makeRandomFunction(seed) {
@@ -2616,6 +2621,55 @@ function createSession(sessionName, params, questions, retakes, randomSeed) {
         }
     }
 
+    var paramValues = null;
+    if (params.paramDefinitions && params.paramDefinitions.length) {
+	var randFunc = makeRandomFunction(makeRandomParamSeed(randomSeed));
+	var paramDefinitions = params.paramDefinitions;
+	paramValues = [];
+	for (var j=0; j<paramDefinitions.length; j++) {
+	    var slideValues = {};
+	    try {
+		var pcomps = paramDefinitions[j].split(';');
+		for (var k=0; k<pcomps.length; k++) {
+		    var dcomps = pcomps[k].split('=');
+		    var defname  =  dcomps[0];
+		    var defrange =  dcomps.slice(1).join('=');
+		    var rcomps = defrange.split(':');
+		    var vals = [];
+		    if (rcomps.length == 1) {
+			var svals = rcomps[0].split(',');
+			for (var m=0; m<svals.length; m++) {
+			    var val = parseNumber(svals[m]);
+			    if (val !== null)
+				vals.push(val);
+			}
+		    } else {
+			var minval = parseNumber(rcomps[0]);
+			var maxval = parseNumber(rcomps[1]);
+			if (minval !== null && maxval !== null) {
+			    var nvals;
+			    if (rcomps.length == 2) {
+				nvals = maxval - minval + 1;
+			    } else {
+				nvals = parseInt(rcomps[2]);
+			    }
+			    if (!isNaN(nvals) && minval < maxval && nvals > 1) {
+				var dval = (maxval - minval) / (nvals - 1);
+				for (var m=0; m<nvals; m++)
+				    vals.push(minval + m*dval);
+			    }
+			}
+		    }
+		    if (vals.length) {
+			slideValues[defname] = vals[ randFunc(0,vals.length-1) ];
+		    }
+		}
+	    } catch(err) {
+	    }
+	    paramValues.push(slideValues); 
+	}
+    }
+
     return {'version': params.sessionVersion,
 	    'revision': params.sessionRevision,
 	    'paced': params.paceLevel || 0,
@@ -2634,6 +2688,7 @@ function createSession(sessionName, params, questions, retakes, randomSeed) {
             'remainingTries': 0,
             'tryDelay': 0,
 	    'showTime': null,
+	    'paramValues': paramValues,
             'questionShuffle': qshuffle,
             'questionsAttempted': {},
 	    'hintsUsed': {},

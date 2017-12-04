@@ -20,8 +20,9 @@ var MAX_SYS_ERROR_RETRIES = 5;    // Maximum number of system error retries
 
 var CACHE_GRADING = true; // If true, cache all rows for grading
 
-var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
-var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
+var PLUGIN_RE   = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)\s*(;;\s*([()eE0-9.*+/-]*))?\s*$/;
+var FORMULA_RE  = /^(.*)=\s*([^;]+)(;;\s*([()eE0-9.*+/-]*))?\s*$/
+var QFIELD_RE   = /^q(\d+)_([a-z]+)$/;
 var SLIDE_ID_RE = /(slidoc(\d+))(-(\d+))?$/;
 
 var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
@@ -134,7 +135,7 @@ Sliobj.testOverride = null;
 
 Sliobj.errorRetries = 0;
 
-Sliobj.seedOffset = {randomChoice: 1, plugins: 1000};  // Used to offset the session randomSeed to generate new seeds
+Sliobj.seedOffset = {randomChoice: 1, randomParams: 2, plugins: 1000};  // Used to offset the session randomSeed to generate new seeds
 
 ////////////////////////////////
 // Section 3: Scripted testing
@@ -2029,6 +2030,51 @@ Slidoc.orderedStringify = function (value, space) {
     return JSON.stringify(value, orderedReplacer, space);
 }
 
+function formatNum(format, value) {
+    // format = formatted_number OR 01*10**(-1)+/-range
+    // * is replaced by the 'times' symbol and ** by superscripting
+    // Leading zero forces scaled exponential display (with fixed exponent)
+    // Range portion is ignored
+    if ((typeof value) != 'number')
+	return value;
+    if (format.indexOf('+/-') >= 0)
+	format = format.split('+/-')[0];
+    var fmatch = format.match(/^[+-]?([\d.]+)([eE]([+-]?\d+)|\*10\*\*(\d+|\(([+-]?\d+)\)))?$/);
+    if (!fmatch)
+	return value+'';
+    var num = fmatch[1];
+    var exp = fmatch[2];
+    var comps = num.split('.');
+    var nprec = (comps.length < 2) ? 0 : comps[1].length;
+    if (!exp)
+	return value.toFixed(nprec)
+
+    if (num.charAt(0) == '0') {
+	// Scaled exponent
+	try {
+	    var expValue = fmatch[5] || fmatch[4] || fmatch[3];
+	    var scaled = (value / Math.pow(10, expValue)).toFixed(nprec)
+	    if (exp.charAt(0).toLowerCase() == 'e')
+		return scaled + exp.charAt(0) + expValue;
+	    else
+		return scaled + '&times;10<sup>' + expValue + '</sup>';
+	} catch(err) {
+	}
+    }
+    var retval = value.toExponential(nprec);
+    var comps = retval.split(/[eE]/);
+    if (comps.length != 2)
+	return retval;
+    if (exp.charAt(0).toLowerCase() == 'e')
+	return comps[0] + exp.charAt(0) + comps[1];
+
+    if (comps[1].charAt(0) == '+')
+	comps[1] = comps[1].slice(1);
+    return comps[0] + '&times;10<sup>' + comps[1] + '</sup>';
+}
+
+Slidoc.formatNum = formatNum;
+
 function flexFixed(num, prec) {
     // Return integer string or prec-digit fractional decimal string (default 2)
     var prec = prec || 2;
@@ -3250,8 +3296,8 @@ function evalPluginArgs(pluginName, argStr, slide_id) {
     }
 }
 
-function createPluginInstance(pluginName, nosession, slide_id, slideData) {
-    ///Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id);
+function createPluginInstance(pluginName, nosession, slide_id, slideData, slideParams) {
+    ///Slidoc.log('createPluginInstance:', pluginName, nosession, slide_id, slideParams);
     var pluginDef = Slidoc.PluginDefs[pluginName];
     if (!pluginDef) {
 	Slidoc.log('ERROR Plugin '+pluginName+' not found; define using PluginDef/PluginEndDef');
@@ -3316,22 +3362,35 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData) {
 	    // Global seed for all instances of the plugin
 	    defCopy.global = null;
 	    defCopy.slideId = '';
+	    defCopy.slideParams = null;
 	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset);
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	} else {
 	    // Seed for each slide instance of the plugin
 	    defCopy.global = Slidoc.Plugins[pluginName][''];
 	    defCopy.slideId = slide_id;
+	    defCopy.slideParams = slideParams || {};
 	    var comps = parseSlideId(slide_id);
 	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset + 256*((1+comps[1])*256 + comps[2]));
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	    defCopy.pluginId = slide_id + '-plugin-' + pluginName;
 	    defCopy.qattributes = getQuestionAttrs(slide_id);
 	    defCopy.correctAnswer = null;
-	    if (defCopy.qattributes && defCopy.qattributes.correct) {
-		// Correct answer: ans+/-err=plugin.response()
-		var comps = defCopy.qattributes.correct.split('=');
-		defCopy.correctAnswer = comps[0];
+	    defCopy.questionAlternative = null;
+	    if (defCopy.qattributes && defCopy.qattributes.qnumber) {
+		if (Sliobj.session.questionShuffle)
+		    defCopy.questionAlternative = Sliobj.session.questionShuffle[defCopy.qattributes.qnumber] ? Sliobj.session.questionShuffle[defCopy.qattributes.qnumber].charAt(0) : null;
+		if (defCopy.qattributes.correct) {
+		    // Correct answer: ans+/-err=plugin.response();;format
+		    var comps = defCopy.qattributes.correct.split('=');
+		    if (comps[0].trim()) {
+			defCopy.correctAnswer = comps[0].trim();
+		    } else {
+			comps = defCopy.qattributes.correct.split(';;');
+			if (comps.length > 1 && comps[1].trim())
+			    defCopy.correctAnswer = comps[1].trim();
+		    }
+		}
 	    }
 	}
     }
@@ -3592,7 +3651,7 @@ function showQDiffCallback(result, errMsg) {
 	html += '<tr><td>'+(result.qcorrect[j][0]*100).toFixed(0)+'%:</td><td><span class="slidoc-clickable" onClick="Slidoc.slideViewGo(true,'+question_attrs.slide+');">'+header+'</span></td><td>'+tags+'</td></tr>\n';
     }
     html += '</table>\n';
-    Slidoc.showPopup(html, '', true);;
+    Slidoc.showPopup(html, '', true);
 }
 
 Slidoc.showStats = function () {
@@ -3636,7 +3695,7 @@ function showStatsCallback(result, retStatus) {
     var labels = ['<hr><h3>Primary concepts missed</h3>', '<hr><h3>Secondary concepts missed</h3>'];
     for (var m=0; m<2; m++)
 	html += labels[m]+conceptStats(tags[m], tallies[m])+'<p></p>';
-    Slidoc.showPopup(html);;
+    Slidoc.showPopup(html);
 }
 
 Slidoc.showGrades = function () {
@@ -4464,6 +4523,17 @@ function initSessionPlugins(session) {
     Sliobj.buttonPlugins = {};
     Slidoc.Plugins = {};
 
+    Sliobj.slideParamValues = [];
+    if (session.paramValues) {
+	var paramsObj = {};
+	for (var j=0; j<session.paramValues.length; j++) {
+	    var keys = Object.keys(session.paramValues[j]);
+	    for (var k=0; k<keys.length; k++)
+		paramsObj[keys[k]] = session.paramValues[j][keys[k]];
+	    Sliobj.slideParamValues.push( copyObj(paramsObj) );
+	}
+    }
+
     Sliobj.slidePlugins[''] = [];
     for (var j=0; j<Sliobj.pluginList.length; j++) {
 	var pluginName = Sliobj.pluginList[j];
@@ -4479,18 +4549,24 @@ function initSessionPlugins(session) {
     for (var j=0; j<allContent.length; j++)
 	contentElems.push(allContent[j]);
 
-    contentElems.sort( function(a,b){return cmp(a.dataset.number, b.dataset.number);} );    
+    // Sort plugins in order of occurrence (except for special plugins like Params)
+    contentElems.sort( function(a,b){return cmp(a.dataset.number, b.dataset.number);} );
 
     var slideData = null;
     for (var j=0; j<contentElems.length; j++) {
 	var contentElem = contentElems[j];
 	var pluginName = contentElem.dataset.plugin;
 	var slide_id = contentElem.dataset.slideId;
+	var slideParams = null;
+	var footer_elem = document.getElementById(slide_id+'-footer-toggle');
+	if (footer_elem && footer_elem.dataset.paramCount && Sliobj.slideParamValues.length)
+	    slideParams = Sliobj.slideParamValues[footer_elem.dataset.paramCount-1] || {};
+
 	if (!(slide_id in Sliobj.slidePlugins)) {
 	    Sliobj.slidePlugins[slide_id] = [];
 	    slideData = {};  // New object to share persistent data for slide
 	}
-	var pluginInstance = createPluginInstance(pluginName, false, slide_id, slideData);
+	var pluginInstance = createPluginInstance(pluginName, false, slide_id, slideData, slideParams);
 	Sliobj.slidePlugins[slide_id].push(pluginInstance);
 	if ('incrementSlide' in pluginInstance)
 	    Sliobj.incrementPlugins[slide_id] = pluginInstance;
@@ -4507,29 +4583,34 @@ function initSessionPlugins(session) {
 
 function expandInlineJS(elem, methodName, argVal) {
     Slidoc.log('expandInlineJS:', methodName);
+    if (arguments.length < 3)
+	argVal = null;
     var jsSpans = elem.getElementsByClassName('slidoc-inline-js');
     for (var j=0; j<jsSpans.length; j++) {
 	var jsFunc = jsSpans[j].dataset.slidocJsFunction;
-	var jsArg = argVal || null;
-	if (jsArg == null) {
-	    jsArg = jsSpans[j].dataset.slidocJsArgument || null;
-	    if (jsArg !== null)
-		try {jsArg = parseInt(jsArg); } catch (err) { jsArg = null; }
-	}
-	var slide_id = '';
-	for (var k=0; k<jsSpans[j].classList.length; k++) {
-	    var refmatch = /slidoc-inline-js-in-(.*)$/.exec(jsSpans[j].classList[k]);
-	    if (refmatch) {
-		slide_id = refmatch[1];
-		break;
+	var comps = jsFunc.split('.');
+	var pluginName = comps[0];
+	var pluginMethod = comps[1];
+	if (methodName && methodName != pluginMethod)
+	    continue;
+
+	var slide_id = jsSpans[j].dataset.slideId;
+	var jsFormat = jsSpans[j].dataset.slidocJsFormat || '';
+	if (pluginName == 'Params') {
+	    // Evaluate expression using Params
+	    var jsArg = jsSpans[j].dataset.slidocJsArgument || '';
+	} else {
+	    // Invoke method with single (optional argument)
+	    var jsArg = argVal;
+	    if (jsArg == null) {
+		jsArg = jsSpans[j].dataset.slidocJsArgument || null;
+		if (jsArg !== null)
+		    try {jsArg = parseInt(jsArg); } catch (err) { jsArg = null; }
 	    }
 	}
-	var comps = jsFunc.split('.');
-	if (!methodName || methodName == comps[1]) {
-	    var val = Slidoc.PluginMethod(comps[0], slide_id, comps[1], jsArg);
-	    if (val != null)
-		jsSpans[j].innerHTML = val;
-	}
+	var val = Slidoc.PluginMethod(pluginName, slide_id, pluginMethod, jsArg);
+	if (val != null)
+	    jsSpans[j].innerHTML = formatNum(jsFormat, val);
     }
 }
 
@@ -5008,6 +5089,10 @@ function makeRandomChoiceSeed(randomSeed) {
     return Slidoc.Random.makeSeed(Sliobj.seedOffset.randomChoice+randomSeed);
 }
 
+function makeRandomParamSeed(randomSeed) {
+    return Slidoc.Random.makeSeed(Sliobj.seedOffset.randomParams+randomSeed);
+}
+
 function makeRandomFunction(seed) {
     Slidoc.Random.setSeed(seed);
     return Slidoc.Random.randomNumber.bind(null, seed);
@@ -5046,6 +5131,56 @@ function createSession(sessionName, retakes, randomSeed) {
         }
     }
 
+    var paramValues = null;
+    if (Sliobj.params.paramDefinitions && Sliobj.params.paramDefinitions.length) {
+	var randFunc = makeRandomFunction(makeRandomParamSeed(randomSeed));
+	var paramDefinitions = Sliobj.params.paramDefinitions;
+	paramValues = [];
+	for (var j=0; j<paramDefinitions.length; j++) {
+	    var slideValues = {};
+	    try {
+		var pcomps = paramDefinitions[j].split(';');
+		for (var k=0; k<pcomps.length; k++) {
+		    var dcomps = pcomps[k].split('=');
+		    var defname  =  dcomps[0];
+		    var defrange =  dcomps.slice(1).join('=');
+		    var rcomps = defrange.split(':');
+		    var vals = [];
+		    if (rcomps.length == 1) {
+			var svals = rcomps[0].split(',');
+			for (var m=0; m<svals.length; m++) {
+			    var val = parseNumber(svals[m]);
+			    if (val !== null)
+				vals.push(val);
+			}
+		    } else {
+			var minval = parseNumber(rcomps[0]);
+			var maxval = parseNumber(rcomps[1]);
+			if (minval !== null && maxval !== null) {
+			    var nvals;
+			    if (rcomps.length == 2) {
+				nvals = maxval - minval + 1;
+			    } else {
+				nvals = parseInt(rcomps[2]);
+			    }
+			    if (!isNaN(nvals) && minval < maxval && nvals > 1) {
+				var dval = (maxval - minval) / (nvals - 1);
+				for (var m=0; m<nvals; m++)
+				    vals.push(minval + m*dval);
+			    }
+			}
+		    }
+		    if (vals.length) {
+			slideValues[defname] = vals[ randFunc(0,vals.length-1) ];
+		    }
+		}
+	    } catch(err) {
+		    console.log(''+err+'\n\n'+err.stack);
+	    }
+	    paramValues.push(slideValues); 
+	}
+    }
+
     return {'version': Sliobj.params.sessionVersion,
 	    'revision': Sliobj.params.sessionRevision,
 	    'paced': Sliobj.params.paceLevel || 0,
@@ -5064,6 +5199,7 @@ function createSession(sessionName, retakes, randomSeed) {
             'remainingTries': 0,
             'tryDelay': 0,
 	    'showTime': null,
+	    'paramValues': paramValues,
             'questionShuffle': qshuffle,
             'questionsAttempted': {},
 	    'hintsUsed': {},
@@ -6262,12 +6398,15 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
     }
 
     var pluginMatch = PLUGIN_RE.exec(question_attrs.correct || '');
+    var formulaMatch = FORMULA_RE.exec(question_attrs.correct || '');
+    var format = '';
     if (pluginMatch && pluginMatch[3] == 'expect') {
 	var pluginName = pluginMatch[2];
 	var expectArg = pluginMatch[4] ? parseInt(pluginMatch[4]) : null;
+	format = pluginMatch[6] || '';
 	var val = Slidoc.PluginMethod(pluginName, slide_id, 'expect', expectArg);
 	if (val != null) {
-	    expect = val+'';
+	    expect = formatNum(format, val);
 	} else {
 	    expect = pluginMatch[1].trim();
 	}
@@ -6290,6 +6429,21 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	    Slidoc.PluginMethod(pluginName, slide_id, 'disable');
 
 	return false;
+    } else if (formulaMatch) {
+	var formula = formulaMatch[2];
+	format = formulaMatch[4] || '';
+	var val = Slidoc.PluginMethod('Params', slide_id, 'formula', formula);
+	if (val != null) {
+	    expect = formatNum(format, val);
+	} else {
+	    expect = formulaMatch[1].trim();
+	}
+    }
+
+    if (expect.indexOf('+/-') < 0 && format && format.indexOf('+/-') >= 0) {
+	var comps = format.split('+/-');
+	format = comps[0];
+	expect += '+/-' + comps[1].replace('*10**','e').replace('(','').replace(')','');
     }
 
     if (question_attrs.qtype.slice(-6) == 'choice') {
@@ -8006,20 +8160,13 @@ function goSlide(slideHash, chained, singleChapter) {
     Slidoc.log('goSlide:C ', match, slideId);
     if (match) {
         // Find slide containing reference
-	slideId = '';
-        for (var i=0; i<goElement.classList.length; i++) {
-	    var refmatch = /slidoc-referable-in-(.*)$/.exec(goElement.classList[i]);
-	    if (refmatch) {
-		slideId = refmatch[1];
-		slideHash = '#'+slideId;
-                Slidoc.log('goSlide:D ', slideHash);
-		break;
-	    }
-	}
-        if (!slideId) {
+        if (!goElement.dataset || !goElement.dataset.slideId) {
             Slidoc.log('goSlide: Error - unable to find slide containing header:', slideHash);
             return false;
         }
+	slideId = goElement.dataset.slideId;
+	slideHash = '#'+slideId;
+	Slidoc.log('goSlide:D ', slideHash);
     }
 
     if (Sliobj.curChapterId || singleChapter) {
