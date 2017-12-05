@@ -890,7 +890,7 @@ Notes:
 
 ## Interactive numerical response question
 
-What is the square root of `=SqrtTest.number();6.25`?
+What is the square root of `=SqrtTest.number();;6.25`?
 
 
 <script type="x-slidoc-plugin"> SqrtTest = {
@@ -926,7 +926,7 @@ var randVals = {}; // Optional persistent object
 // SqrtTest </script>
 
 
-Answer: 2.5 +/- 0.1 = SqrtTest.expect()
+Answer: `=SqrtTest.expect() ;; 2.5+/-0.1`
 
 Tags: questions, numeric response: questions, formulas; questions, randomized
 
@@ -937,9 +937,65 @@ Embedded javascript functions may be used as formulas, using the notation
 
     `=pluginName.funcName()`
 
-To display a default reference value, append it, separated by a
-semicolon (`;`). View the raw Markdown text for this document to see
+To display a default reference value, append it, separated by a double
+semicolon (`;;`). View the raw Markdown text for this document to see
 the embedded javascript code that randomizes the question.
+
+---
+
+## Parameters and dynamic inline formulas
+
+Params: m=25 a=9.81
+
+Newton's second law relates force \(F\) to mass \(m\) and acceleration \(a\):
+
+\[
+  F = m \times a
+\]
+
+For \(m\) = `=m` and \(a\) = `=a`, we have \(F\) = `=m*a;;01*10**1`
+
+Notes: Declare parameters as follows:
+
+    Params: m=value1 a=value2 ...
+
+Parameter definition lines may occur anywhere in a slide and multiple
+times, provided each parameter is defined only once per slide. The
+definitions persist until overridden in any subsequent slide.
+
+Parameters may be used as variables in Javascript-style expressions as follows:
+
+    ... we have F = `=m*a;;0.25`
+
+The *format value* after the double semicolon (`;;`) is optional. The format value determines
+the precision of the output and is of the form:
+
+    0.123 OR 1.2e10 OR 1*10**3 OR 01*10**(-3)
+
+The `*` is replaced by &times; and `**` by superscripts. The leading
+zero forces scaled exponential display (with fixed exponent).
+
+---
+
+## Interactive numerical response question using dynamic formulas
+
+Params: x=-9.5:9.5:0.5
+
+What is the square root of the absolute value `=x ;; 6.25`?
+
+Answer: `=(x < 0) ? (-x)**0.5 : x**0.5 ;; 2.50+/-0.2`
+
+Notes: A range of randomly selected parameter values can be
+specified as follows:
+
+    Params: x=value1:value2:step y=value1,value2,value3
+
+If omitted, the *step* is automatically computed to provide between 20-200
+intervals.
+
+Javascript-style dynamic formulas can occur as answers. The format value after
+`;;` also serves as the correct answer and can include an optional error
+range after `+/-`
 
 ---
 

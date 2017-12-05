@@ -2593,6 +2593,86 @@ function randomLetters(n, noshuffle, randFunc) {
     return letters.join('');
 }
 
+var NUM_RE = /^[+-]?(\d+)(\.\d*)?([eE][+-]?\d+)?$/;
+function defaultDelta(minval, maxval, mincount, maxcount) {
+    // Return "nice" delta interval (10/5/1/0.5/0.1, ...) for dividing the range minval to maxval
+    var minmatch = NUM_RE.exec(minval+'');
+    var maxmatch = NUM_RE.exec(maxval+'');
+    if (!minmatch || !maxmatch) {
+        return mincount;
+    }
+    var values = [];
+    var exponents = [];
+    var matches = [minmatch, maxmatch];
+    for (var j=0; j<matches.length; j++) {
+	var match = matches[j];
+        if (!match[2] && !match[3]) {
+            values.push( parseInt(match[1]) );
+        } else {
+            values.push( parseNumber(match[0]) );
+        }
+        if (match[2]) {
+            var exp = -(match[2].length-1);
+        } else {
+            var num = match[1];
+            var exp = 0;
+            while (num.slice(-1) == '0') {
+                exp += 1;
+                num = num.slice(0,-1);
+            }
+        }
+        if (match[3]) {
+            exp += parseInt(match[3].slice(1));
+        }
+        exponents.push(exp);
+    }
+    var diff = Math.abs(values[1] - values[0]);
+    if (!diff) {
+        return 1;
+    }
+    var minexp = Math.min(exponents[0], exponents[1]);
+    var delta = 10**minexp;
+    var mulfac = 5;
+
+    while ((diff/delta) > maxcount) {
+        delta = delta * mulfac;
+        mulfac = (mulfac == 5) ? 2 : 5;
+    }
+
+    while ((diff/delta) < mincount) {
+        mulfac = (mulfac == 5) ? 2 : 5;
+        delta = delta / mulfac;
+    }
+    return delta;
+}
+
+function rangeVals(minstr, maxstr, delstr, mincount, maxcount) {
+    // Returns range of values from minstr to maxstr, spaced by delstr
+    mincount = mincount || 20;
+    maxcount = maxcount || 200;
+    var minval = parseNumber(minstr);
+    var maxval = parseNumber(maxstr);
+    if (minval == null || maxval == null) {
+        return [];
+    }
+    if (!delstr) {
+        var delta = defaultDelta(minstr, maxstr, mincount, maxcount);
+    } else {
+        delta = parseNumber(delstr);
+    }
+    if (!delta || minval > maxval) {
+        return [];
+    } else if (minval == maxval) {
+        return [minval];
+    } else {
+        var nvals = Math.floor(1.001 + (maxval - minval) / Math.abs(delta));
+	var vals = [];
+	for (var m=0; m<nvals; m++)
+	    vals.push(minval + m*delta);
+        return vals;
+    }
+}
+
 function createSession(sessionName, params, questions, retakes, randomSeed) {
     var persistPlugins = {};
     for (var j=0; j<params.plugins.length; j++)
@@ -2635,8 +2715,8 @@ function createSession(sessionName, params, questions, retakes, randomSeed) {
 		    var defname  =  dcomps[0];
 		    var defrange =  dcomps.slice(1).join('=');
 		    var rcomps = defrange.split(':');
-		    var vals = [];
 		    if (rcomps.length == 1) {
+			var vals = [];
 			var svals = rcomps[0].split(',');
 			for (var m=0; m<svals.length; m++) {
 			    var val = parseNumber(svals[m]);
@@ -2644,21 +2724,7 @@ function createSession(sessionName, params, questions, retakes, randomSeed) {
 				vals.push(val);
 			}
 		    } else {
-			var minval = parseNumber(rcomps[0]);
-			var maxval = parseNumber(rcomps[1]);
-			if (minval !== null && maxval !== null) {
-			    var nvals;
-			    if (rcomps.length == 2) {
-				nvals = maxval - minval + 1;
-			    } else {
-				nvals = parseInt(rcomps[2]);
-			    }
-			    if (!isNaN(nvals) && minval < maxval && nvals > 1) {
-				var dval = (maxval - minval) / (nvals - 1);
-				for (var m=0; m<nvals; m++)
-				    vals.push(minval + m*dval);
-			    }
-			}
+			var vals = rangeVals(rcomps[0], rcomps[1], (rcomps.length > 2) ? rcomps[2] : '');
 		    }
 		    if (vals.length) {
 			slideValues[defname] = vals[ randFunc(0,vals.length-1) ];

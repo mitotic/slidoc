@@ -3173,6 +3173,68 @@ def randomLetters(n, noshuffle, randFunc=None):
         letters = cmix + letters[nmix:]
     return ''.join(letters)
 
+NUM_RE = re.compile(r'^[+-]?(\d+)(\.\d*)?([eE][+-]?\d+)?$')
+def defaultDelta(minval, maxval, mincount, maxcount):
+    # Return "nice" delta interval (10/5/1/0.5/0.1, ...) for dividing the range minval to maxval
+    minmatch = NUM_RE.match(str(minval))
+    maxmatch = NUM_RE.match(str(maxval))
+    if not minmatch or not maxmatch:
+        return mincount
+    values = []
+    exponents = []
+    for match in (minmatch, maxmatch):
+        if not match.group(2) and not match.group(3):
+            values.append( int(match.group(1)) )
+        else:
+            values.append( float(match.group(0)) )
+        if match.group(2):
+            exp = -(len(match.group(2))-1)
+        else:
+            num = match.group(1)
+            exp = 0
+            while num[-1] == '0':
+                exp += 1
+                num = num[:-1]
+        if match.group(3):
+            exp += int(match.group(3)[1:])
+        exponents.append(exp)
+    diff = abs(values[1] - values[0])
+    if not diff:
+        return 1
+    minexp = min(exponents)
+    delta = 10**minexp
+    mulfac = 5
+
+    while (diff/delta) > maxcount:
+        delta = delta * mulfac
+        mulfac = 2 if mulfac == 5 else 5
+
+    while (diff/delta) < mincount:
+        mulfac = 2 if mulfac == 5 else 5
+        if delta > 1:
+            delta = delta / mulfac
+        else:
+            delta = float(delta) / mulfac
+    return delta
+
+def rangeVals(minstr, maxstr, delstr='', mincount=20, maxcount=200):
+    # Returns range of values from minstr to maxstr, spaced by delstr
+    minval = parseNumber(minstr)
+    maxval = parseNumber(maxstr)
+    if minval == None or maxval == None:
+        return []
+    if not delstr:
+        delta = defaultDelta(minstr, maxstr, mincount, maxcount)
+    else:
+        delta = parseNumber(delstr)
+    if not delta or minval > maxval:
+        return []
+    elif minval == maxval:
+        return [minval]
+    else:
+        nvals = int(1.001 + (maxval - minval) / abs(delta))
+        return [minval + m*delta for m in range(0,nvals)]
+
 def createSession(sessionName, params, questions=None, retakes='', randomSeed=None):
     persistPlugins = {}
     for pluginName in params['plugins']:
@@ -3212,25 +3274,15 @@ def createSession(sessionName, params, questions=None, retakes='', randomSeed=No
                     defname  =  dcomps[0]
                     defrange =  '='.join(dcomps[1:])
                     rcomps = defrange.split(':')
-                    vals = []
                     if len(rcomps) == 1:
+                        vals = []
                         svals = rcomps[0].split(',')
                         for m in range(0,len(svals)):
                             val = parseNumber(svals[m])
                             if val != None:
                                 vals.append(val)
                     else:
-                        minval = parseNumber(rcomps[0])
-                        maxval = parseNumber(rcomps[1])
-                        if minval != None and maxval != None:
-                            if len(rcomps) == 2:
-                                nvals = maxval - minval + 1
-                            else:
-                                nvals = int(rcomps[2]) if rcomps[2].isdigit() else None
-                            if nvals != None and minval < maxval and nvals > 1:
-                                dval = (maxval - minval) / (nvals - 1)
-                                for m in range(0,nvals):
-                                    vals.append(minval + m*dval)
+                        vals = rangeVals(rcomps[0], rcomps[1], rcomps[2] if len(rcomps) > 2 else '')
                     if len(vals):
                         slideValues[defname] = vals[ randFunc(0,len(vals)-1) ]
             except Exception, excp:

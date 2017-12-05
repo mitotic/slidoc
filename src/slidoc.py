@@ -144,6 +144,12 @@ def font_css(fontsize):
 
     return '<style>\n'+tem_css+'</style>\n' if tem_css else ''
 
+def exponentiate(format, times=False):
+    if times and '*10**' in format:
+        return format.replace('*10**','&times;10<sup>').replace('(','').replace(')','')+'</sup>'
+    else:
+        return format.replace('*10**','e').replace('(','').replace(')','')
+
 def html2text(element):
     """extract inner text from html
     
@@ -962,7 +968,7 @@ class SlidocRenderer(MathRenderer):
         js_func = plugin_name + '.' + action
         alt_html = mistune.escape('='+js_func+'()' if alt_text is None else alt_text)
         if 'inline_formula' in self.options['config'].strip:
-            return '<code>%s</code>' % alt_html
+            return '<code>%s</code>' % exponentiate(alt_html, times=True)
 
         if plugin_name == 'Params' and action == 'formula':
             self.slide_formulas.append(js_arg)
@@ -1927,14 +1933,14 @@ class SlidocRenderer(MathRenderer):
             plugin_action = plugin_match.group(2)
             plugin_arg = plugin_match.group(3) or ''
             plugin_format = plugin_match.group(5) if plugin_match.group(5) else ''
-            text = plugin_format.replace('*10**','e').replace('(','').replace(')','')
+            text = exponentiate(plugin_format)
         elif formula_match:
             # `=...;;format`
             plugin_name = 'Params'
             plugin_action = 'formula'
             plugin_arg = formula_match.group(1).strip()
             plugin_format = formula_match.group(3) if formula_match.group(2) else ''
-            text = plugin_format.replace('*10**','e').replace('(','').replace(')','')
+            text = exponentiate(plugin_format)
             self.slide_formulas.append(plugin_arg)
         elif text.startswith('`'):
             abort("    ****ANSWER-ERROR: %s: Expecting Answer: ...`=formula`, but found %s in slide %s" % (self.options["filename"], text, self.slide_number))
