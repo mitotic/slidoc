@@ -318,7 +318,6 @@ class MathBlockLexer(mistune.BlockLexer):
         self.slidoc_blocks = []
         self.slidoc_recursion = 0
         self.slidoc_slide_header = None
-        self.slidoc_notes = None
         super(MathBlockLexer, self).__init__(rules, **kwargs)
 
     def get_slide_text(self):
@@ -327,7 +326,6 @@ class MathBlockLexer(mistune.BlockLexer):
     def slidoc_slide_end(self):
         self.slidoc_slide_text.append(''.join(self.slidoc_blocks))
         self.slidoc_blocks = []
-        self.slidoc_notes = None
 
     def parse(self, text, rules=None):
         self.slidoc_recursion += 1
@@ -348,7 +346,7 @@ class MathBlockLexer(mistune.BlockLexer):
                             self.slidoc_slide_end()
                         self.slidoc_slide_header = ''
                     elif key == 'heading' and len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
-                        if self.slidoc_slide_header and not self.slidoc_notes:
+                        if self.slidoc_slide_header:
                             # Level 2 header not at start of block or after Slide: (implicit slide break)
                             self.slidoc_slide_end()
                         self.slidoc_slide_header = m.group(2).strip('#').strip()
@@ -362,8 +360,6 @@ class MathBlockLexer(mistune.BlockLexer):
                         # Explicit slide break
                         self.slidoc_slide_end()
                         self.slidoc_slide_header = None
-                    elif key == 'slidoc_notes':
-                        self.slidoc_notes = True
                 return m
             return False  # pragma: no cover
 
@@ -1428,11 +1424,11 @@ class SlidocRenderer(MathRenderer):
         prev_slide_end = ''
         slide_id = self.get_slide_id()
         hdr_class = ''
-        if self.notes_end is None:
-            if (self.cur_header or self.alt_header) and level <= 2 and text:
-                # Implicit horizontal rule before Level 1/2 header
-                prev_slide_end = self.hrule(implicit=True)
+        if (self.cur_header or self.alt_header) and level <= 2 and text:
+            # Implicit horizontal rule before Level 1/2 header
+            prev_slide_end = self.hrule(implicit=True)
 
+        if self.notes_end is None:
             # Render header HTML element
             html = super(SlidocRenderer, self).header(text.strip('#'), level, raw=raw)
             try:
@@ -1601,7 +1597,7 @@ class SlidocRenderer(MathRenderer):
             param_name = match.group(1)
             param_value = match.group(2)
             if param_name in self.slide_params:
-                abort("    ****PARAMS-ERROR: %s: Duplicate Params: specification '%s' in slide %s" % (self.options["filename"], param_def, self.slide_number))
+                abort("    ****PARAMS-ERROR: %s: Duplicate Params: specification '%s' vs. '%s' in slide %s" % (self.options["filename"], param_def, self.slide_params[param_name], self.slide_number))
             self.slide_params[param_name] = param_value
 
         return ''
