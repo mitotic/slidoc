@@ -108,6 +108,7 @@ Options = {
     'min_wait_sec': 0,
     'missing_choice': '*',
     'no_auth': False,
+    'notebook_extn': 'ipynb',
     'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
@@ -1561,14 +1562,14 @@ class ActionHandler(BaseHandler):
             accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], accessCode)
             if Options['debug']:
                 print >> sys.stderr, 'DEBUG: locked access URL', accessURL
-            img_data_uri = sliauth.gen_qr_code(accessCode)
-            self.displayMessage('<h3>Access code for user %s, session "%s"</h3><a href="%s" target="_blank"><b>Click or copy this link for locked access</b></a><br><img class="slidoc-lockcode" src="%s">' % (userId, sessionName, accessURL, img_data_uri) )
+            img_data_uri = sliauth.gen_qr_code(accessCode, img_html='<img class="slidoc-lockcode" src="%s">')
+            self.displayMessage('<h3>Access code for user %s, session %s</h3><a href="%s" target="_blank"><b>Click or copy this link for locked access</b></a><p></p>%s' % (userId, sessionName, accessURL, img_data_uri) )
             return
 
         elif action == '_interactcode':
             interactURL = '%s%s/send' % (Options['server_url'], site_prefix)
-            img_data_uri = sliauth.gen_qr_code(interactURL)
-            self.displayMessage('<h3>To interact, type URL or scan code</h3><h2>%s</h2><img class="slidoc-lockcode" src="%s">' % (interactURL, img_data_uri) )
+            img_data_uri = sliauth.gen_qr_code(interactURL, img_html='<img class="slidoc-lockcode" src="%s">')
+            self.displayMessage('<h3>To interact, type URL or scan code</h3><h2>%s</h2>%s' % (interactURL, img_data_uri) )
             return
 
         elif action == '_submit':
@@ -2506,7 +2507,7 @@ class ActionHandler(BaseHandler):
                 if os.path.exists(ind_path):
                     configOpts['toc_header'] = ind_path
 
-            if NOTEBOOKS_PATH:
+            if Options['notebook_extn']:
                 notebooks_dir = Options['static_dir']
                 if Options['site_name']:
                     notebooks_dir = os.path.join(notebooks_dir, Options['site_name'])
@@ -2514,7 +2515,7 @@ class ActionHandler(BaseHandler):
                 if os.path.isdir(notebooks_dir):
                     for fname in fileNames:
                         sname = os.path.splitext(fname)[0]
-                        nb_name = sname+'.ipynb'
+                        nb_name = sname+'.'+Options['notebook_extn']
                         if os.path.exists( os.path.join(notebooks_dir, nb_name) ):
                             _, nb_links[sname] = self.viewer_link(NOTEBOOKS_PATH + '/' + nb_name)
 
@@ -5895,6 +5896,7 @@ def main():
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
     define("no_auth", default=False, help="No authentication mode (for testing)")
+    define("notebook_extn", default=Options["notebook_extn"], help="Extension for notebook/journal files (default: ipynb)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")

@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.15c'
+VERSION = '0.97.15d'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -66,10 +66,12 @@ def gen_locked_token(key, user_id, site, session):
     token = gen_hmac_token(key, 'locked:%s:%s:%s' % (user_id, site, session))
     return '%s:%s:%s' % (site, session, token)
 
-def gen_qr_code(text, border=4, pixel=15, raw_image=False):
+def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
     try:
         import qrcode
     except ImportError:
+        if img_html:
+            return 'Install <code>pillow/qrcode</code> packages for QR code'
         raise Exception('Please install pillow and qrcode packages, e.g., conda install pillow; pip install qrcode')
 
     qr = qrcode.QRCode(
@@ -92,7 +94,11 @@ def gen_qr_code(text, border=4, pixel=15, raw_image=False):
     if raw_image:
         return img_data
     else:
-        return "data:image/gif;base64,"+img_data.encode("base64")
+        data_uri = "data:image/gif;base64,"+img_data.encode("base64")
+        if img_html:
+            return img_html % data_uri
+        else:
+            return data_uri
 
 def gen_site_key(key, site):
     return gen_hmac_token(key, 'site:'+site)

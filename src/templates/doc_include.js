@@ -361,13 +361,15 @@ function sessionAbort(err_msg, err_trace) {
     try { slidesVisible(false); } catch(err) {}
     alert((Sliobj.params.debug ? 'DEBUG: ':'')+err_msg);
 
-    if (Slidoc.serverCookie) {
+    if (!Sliobj.reloadCheck && Slidoc.serverCookie) {
 	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
     var html = '<a href="/">Main</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
     if (Sliobj.previewState)
 	html += '<p></p><a href="'+(Sliobj.params.siteName?'/'+Sliobj.params.siteName:'')+'/_discard?modified='+Sliobj.previewModified+'">Discard preview</a>';
+    if (!Sliobj.params.gd_sheet_url)
+	html += '<p></p><a href="/?reset=1">Reset</a>';
     document.body.innerHTML = html;
 }
 
@@ -542,6 +544,14 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
 Slidoc.logoutURL = "/_auth/logout/";
 Slidoc.getParameter = getParameter;
 
+function resetLocalSession() {
+    localDel('auth');
+    var sessionObj = localGet('sessions');
+    if (sessionObj[Sliobj.params.fileName])
+	delete sessionObj[Sliobj.params.fileName];
+    localPut('sessions', sessionObj);
+}
+
 var resetParam = getParameter('reset');
 if (resetParam) {
     if (resetParam == 'all' && window.confirm('Reset all local sessions?')) {
@@ -550,10 +560,7 @@ if (resetParam) {
 	alert('All local sessions reset');
 	location = location.href.split('?')[0];
     } else if (window.confirm('Reset session '+Sliobj.params.fileName+'?')) {
-	localDel('auth');
-	var sessionObj = localGet('sessions');
-	delete sessionObj[Sliobj.params.fileName];
-	localPut('sessions', sessionObj);
+	resetLocalSession();
 	location = location.href.split('?')[0];
     }
 }
@@ -1932,6 +1939,9 @@ function reloadCheckFunc() {
 Sliobj.reloadCheck = (location.hostname == 'localhost') ? getParameter('reloadcheck') : '';
 Slidoc.remoteUpload = function() {
     window.location = '/_remoteupload?token='+Sliobj.reloadCheck;
+}
+if (Sliobj.reloadCheck) {
+    resetLocalSession();
 }
 
 Slidoc.localMessages = function(optional) {
@@ -6014,7 +6024,7 @@ function slidesVisible(visible, slideNumber, slides) {
 	if (!slides)
 	    slides = getVisibleSlides();
 	if (slideNumber > slides.length)
-	    throw('slidesVisible: Not enough slides: '+slideNumber+' > '+slides.length);
+	    throw('slidesVisible: Not enough slides: '+slideNumber+' > '+slides.length+'; may need to reset this session');
 	slides[slideNumber-1].style.display = dispStyle;
 	var togglebar = document.getElementById(slides[slideNumber-1].id+'-togglebar');
 	if (togglebar)
@@ -7932,7 +7942,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 
     if (Sliobj.session && Sliobj.session.paced && Sliobj.params.paceLevel >= QUESTION_PACE && slide_num > Sliobj.session.lastSlide+1 && slide_num > Sliobj.scores.skipToSlide) {
 	// Advance one slide at a time
-	if (!Sliobj.previewState && !setupOverride('Enable test user override to skip ahead?')) {
+	var reloadSkip = (location.hostname == 'localhost' && Sliobj.reloadCheck);
+	    
+	if (!reloadSkip && !Sliobj.previewState && !setupOverride('Enable test user override to skip ahead?')) {
 	    showDialog('alert', 'skipAheadDialog', 'Must have answered the recent batch of questions correctly to jump ahead in paced mode');
 	    return false;
 	}

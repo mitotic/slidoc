@@ -1088,7 +1088,7 @@ class SlidocRenderer(MathRenderer):
             header = '&nbsp;&nbsp;&nbsp;' + header
 
         classes = []
-        if 'hidden' in self.slide_options:
+        if 'hide' in self.slide_options and not self.options['config'].unhide_slides:
             if self.slide_number > 1 and not self.qtypes[-1] and self.options['config'].pace != QUESTION_PACE:
                 # Explicitly hidden, not first slide, not question slide, and not question paced
                 self.sheet_attributes['hiddenSlides'].append(self.slide_number)
@@ -1428,11 +1428,12 @@ class SlidocRenderer(MathRenderer):
         """
         text = text.strip()
         prev_slide_end = ''
-        slide_id = self.get_slide_id()
-        hdr_class = ''
         if (self.cur_header or self.alt_header) and level <= 2 and text:
             # Implicit horizontal rule before Level 1/2 header
             prev_slide_end = self.hrule(implicit=True)
+
+        slide_id = self.get_slide_id()
+        hdr_class = ''
 
         if self.notes_end is None:
             # Render header HTML element
@@ -1583,7 +1584,7 @@ class SlidocRenderer(MathRenderer):
             prev_slide_end = self.hrule(implicit=True)
 
         opts = text.lower().split()
-        ALLOWED_OPTS = ('discuss', 'hidden')
+        ALLOWED_OPTS = ('discuss', 'hide')
         for opt in opts:
             if opt in ALLOWED_OPTS:
                 self.slide_options.add(opt)
@@ -1653,8 +1654,11 @@ class SlidocRenderer(MathRenderer):
                 self.choice_full_alt += 1
         else:
             choiceNum = 1 + ord(name) - ord('A')
-            if star and name not in self.choice_star and not self.choice_full_alt:
-                self.choice_star += name
+            if star and name not in self.choice_star:
+                if not self.choice_full_alt:
+                    self.choice_star += name
+                else:
+                    abort("    ****CHOICE-ERROR: %s: Correct choice in alternative (%s) does not match main question (%s) in slide %s" % (self.options["filename"], name, self.choice_star, self.slide_number))
 
             if not self.choice_opts:
                 self.choice_no_top_q = True
@@ -4634,6 +4638,7 @@ Conf_parser.add_argument('--show_score', help='Show correct answers after: never
 Conf_parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
 Conf_parser.add_argument('--timed', type=int, help='No. of seconds for timed sessions (default: 0 for untimed)')
 Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
+Conf_parser.add_argument('--unhide_slides', help='Unhide all slides', action="store_true", default=None)
 
 alt_parser = argparse.ArgumentParser(parents=[Conf_parser], add_help=False)
 alt_parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
