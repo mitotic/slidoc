@@ -16,10 +16,11 @@ Upload = {
 	Slidoc.log('Slidoc.Plugins.Upload.init:', this.displayName);
 	if (!this.qattributes || Slidoc.PluginManager.answered(this.qattributes.qnumber) || Slidoc.PluginManager.lateSession()) {
 	    // Upload only works with unanswered questions (for non-late sessions)
+	    this.confirmMsgElem.textContent = Slidoc.PluginManager.lateSession() ? 'Late session - no uploads allowed' : ''
+	    this.confirmLoadElem.style.display = 'none';
 	    this.uploadElem.style.display = 'none';
 	    try {
 		document.getElementById(this.pluginId+'-uploadlabel').style.display = 'none';
-		document.getElementById(this.pluginId+'-uploadconfirm').style.display = 'none';
 	    } catch(err) {
 	    }
 	    return;
@@ -133,8 +134,8 @@ Upload = {
     response: function (retry, callback) {
 	Slidoc.log('Slidoc.Plugins.Upload.response:', retry, !!callback);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
-	if (!fileInfo && !window.confirm('Answer file not uploaded. Do you want to give up on trying to upload it?'))
-	    return;
+	if (!fileInfo && !window.confirm('Answer file not uploaded. Do you want to give up on trying to upload it?\nSelect Cancel to re-try file upload or OK to give up'))
+	    return false;
 
 	if (fileInfo) {
 	    var response = fileInfo.upload.origName;
@@ -149,6 +150,7 @@ Upload = {
 
 	if (callback)
 	    callback(response, pluginResp);
+	return true;
     }
 };
 

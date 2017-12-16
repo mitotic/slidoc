@@ -79,9 +79,10 @@ section.slidoc-answered-slideview .slidoc-noanswered { display: none; }
 body:not(.slidoc-resubmit-view) section.slidoc-answered-slideview .slidoc-noansweredresubmit { display: none; }
 
 /* Answer prefix  and button */
-body.slidoc-resubmit-view:not(.slidoc-submitted-view) .slidoc-answer-prefix { display: none; }
+body.slidoc-resubmit-view:not(.slidoc-submitted-view) section:not(.slidoc-answercomplete-slideview) .slidoc-answer-prefix { display: none; }
 body:not(.slidoc-resubmit-view) section:not(.slidoc-answered-slideview) .slidoc-answer-prefix { display: none; }
 body:not(.slidoc-resubmit-view) section.slidoc-answered-slideview .slidoc-answer-button { display: none; }
+section.slidoc-answercomplete-slideview .slidoc-answer-button { display: none; }
 
 body.slidoc-gradable-view section:not(.slidoc-answered-slideview) .slidoc-render-button { display: none; }
 body:not(.slidoc-gradable-view) div.slidoc-answer-plugin .slidoc-render-button { display: none; }

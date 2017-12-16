@@ -55,7 +55,8 @@ Code = {
 	var inputValue = this.getInput(this.pluginId);
 	this.displayInput(inputValue);
 	checkCode2.call(this, this.slideId+'', this.qattributes, inputValue, false,
-		  codeResponseCallback.bind(this, retry, callback, inputValue) );
+			codeResponseCallback.bind(this, retry, callback, inputValue) );
+	return true;
     },
 
     checkCode: function (elem) {

@@ -230,70 +230,46 @@ by the plugin.)
 The optional `arguments`, which must all be in the same line, are
 supplied to the `init` call for slide instances. The `init` calls
 occur in the same sequence in which the plugins are embedded in the
-slide. A special object `SlidePlugins`, containing all previously
+slide. A special object `$`, containing all previously
 initialized plugin instances in the same slide, may be used in the
 context of the arguments. For example, if the first embedded plugin is
 `Alpha`, the the second plugin `Beta` may use the following arguments:
 
-    =Beta(SlidePlugins.Alpha.method(), SlidePlugins.Alpha.attribute).
+    =Beta($.Alpha.method(), $.Alpha.attribute).
 
-Alternatively, using ``=Name.expect()`` or ``=Name.response()`` as the
-correct answer automatically embeds the plugin before the Answer (if
-it has not been explicitly embedded before).
+Alternatively, using ``Name/*`` as the answer type automatically
+embeds the plugin before the Answer (if it has not been explicitly
+embedded before).
 
-To embed multiple plugins using the same definition in a slide, append
-a digit to the plugin name when embedding, e.g., `PluginName2`,
-`PluginName3`, etc. This will automatically re-use the definition for
-`PluginName` for the new plugins, but with a different name.
+Another special object `$$` contains all global instances.
 
----
-
-## Formula plugins
-
-Anywhere within Markdown text, any functions attached to plugins
-embedded in the slide may be invoked using Excel-like backtick-equals
-notations:
-
-    `=PluginName.func()`
-
-This substitutes the return value from the function `func` attached to
-the slide instance of the plugin. An optional non-negative integer
-argument may be present. (`func` would always be called after
-the `init` call.)
-
-The correct answer can also be provided by a formula:
-
-    Answer: number=PluginName.expect(2)
-
-with the answer type appearing before the equals sign. An optional
-non-negative integer argument may be provided. This argument may be
-used to distinguish between multiple instances of the formula plugin
-appearing on different slides, when used in conjunction with
-`initGlobal()` to initialize a global instance for data shared across
-slides.
-
-Simple formula-substitution plugins usually define `init` and `expect`
-(returning the correct answer) and at least one other function
-returning a substitution value (see `test/ex01-basic.md`).
-
+Multiple instances of plugins using the same definition can be present
+a slide for use in formulas and for widgets, such as multiple
+sliders. (Multiple instances are not allowed for response plugins and
+reserved plugins.) Additional instances are referred to using plugin
+names `pluginName-1`, `pluginName-2`, `pluginName-3` and so on. In
+formulas, these can appear as `$.pluginName[1]`, `$.pluginName[2]` and
+so on.
 
 ---
 
 ## Response plugins
 
 Response plugins interact with the users and capture the response to a
-question. They appears in the Answer portion of the slide.
+question. They appears in the Answer portion of the slide in the form
+`pluginName/contentType`:
 
-    Answer: text/x-python=PluginName.response()
+    Answer: Code/python
 
-    Answer: 300+/-10=PluginName.response(1)
+    Answer: Upload/ipynb
 
-An optional non-negative integer argument may be provided.
-The `response` method uses callback to return the user response (as a
-string) and an optional `pluginResp` object of the form:
-`{name: pluginName, score: 1/0/0.75/.../null,
-answer: ans_plus_err, invalid: invalid_msg,
-output:output, tests:0/1/2}`
+The plugin should implement a `response(retry, callback)` method that
+returns `true` on successful response and uses callback to return the
+user response (as a string) and an optional `pluginResp` object of the
+form:
+
+`{name: pluginName, score: 1/0/0.75/.../null, answer: ans_plus_err,
+invalid: invalid_msg, output:output, tests:0/1/2}`
 
 `score` may be any value between `0.0` and `1.0`. A `null` value for
 `score` implies no grading for the question. (The `score` will be
@@ -304,7 +280,7 @@ code testing. `tests` indicates whether zero, primary (output visible
 to user), or secondary (output invisible to user) testing of code
 output was carried out.
 
-See `plugins/code.js` for an example of a response plugin.
+See `plugins/Code.js` for an example of a response plugin.
 
 ---
 

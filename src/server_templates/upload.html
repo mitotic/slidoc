@@ -17,7 +17,7 @@
   <p></p>
   <h2>Upload content</h2>
 
-  <b>Upload page/module files</b>
+  <b>Create page/module</b>
   <p></p>
   <hr>
 
@@ -25,7 +25,7 @@
 <div id="slidoc-upload-form">
   <p></p>
   <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
-  <form action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
+  <form id="upload-form" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}
         Uploading: <b>{{ upload_type }}{% if regular_session %}{{ '%02d' % int(session_number) }}{% elif upload_type not in ('top', 'raw') %}/index{% end %}</b>
@@ -56,11 +56,16 @@
      <p></p>
 
      {% if session_name == 'index' or upload_type not in ('raw', 'top') %}
-     <label for="sessioncreate">Create blank page/module?</label>
-     <input type="checkbox" id="sessioncreate" name="sessioncreate" value="upload">
+     <b><span class="clickable" onclick="document.getElementById('sessioncreate').checked=true;document.getElementById('upload-form').submit();">Create blank page/module</span></b>
+     <input type="checkbox" id="sessioncreate" name="sessioncreate" value="upload" style="display:none;">
      <p></p>
      {% end %}
-	
+
+     <b><span class="clickable" onclick="document.getElementById('upload-file').style.display=null;this.style.display='none';">Upload content file</span></b>
+
+     <div id="upload-file" style="display: none; border: 1px solid; padding: 4px;">
+     <b>Upload content file:</b><p></p>
+
      {% if regular_session %}
      <label for="sessionmodify">Modify questions?</label>
      <input type="checkbox" id="sessionmodify" name="sessionmodify" value="modify">
@@ -82,6 +87,7 @@
      The Markdown text content may optionally be included in the archive, with the name <code>content.md</code>,
      instead of being provided as a separate file.
      </em>
+     </div>
    </fieldset>
    {% module xsrf_form_html() %}
    <p></p>

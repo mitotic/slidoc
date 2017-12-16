@@ -72,15 +72,17 @@ SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
-RESERVED_PLUGINS = ['Params']
+SINGLETON_PLUGINS = ['Code', 'Params', 'Share', 'Timer', 'Upload']
 FORMULA_NAMESPACE = ['Math']
 
 ANSWER_TYPE_RE = re.compile(r'^([a-zA-Z\w]+)\s*=(.*)$')
+ANSWER_CONTENT_RE = re.compile(r'^(([a-zA-Z]\w*)(-\d+)?)/(.*)$')
 
 # Backticks are optional for backwards compatibility in plugin syntax
-ANSWER_PLUGIN_RE  = re.compile(r'^`?=?(\w+)\.(expect|response)\(\s*(\d*)\s*\)\s*(;;\s*([()eE0-9.*+/-]*))?\s*`?$')
+ANSWER_EXPECT_RE  = re.compile(r'^`?=?(\w+)\.(expect)\(\s*(\d*)\s*\)\s*(;;\s*([()eE0-9.*+/-]*))?\s*`?$')
 ANSWER_FORMULA_RE = re.compile(r'^`=([^`;\n]+)(;;\s*([()eE0-9.*+/-]*))?\s*`$')
-INLINE_METHOD_RE  = re.compile(r"^(\w+)\.(\w+)\(\s*(\d*)\s*\)")
+INLINE_METHOD_RE  = re.compile(r'^(\w+)\.(\w+)\(\s*(\d*)\s*\)')
+INLINE_PLUGIN_RE  = re.compile(r'\b(\$+)\.([a-zA-Z]\w*)(\[\d+\])?\.')    # Syntax: $.Plugin.method(1) OR $.Plugin[1].method(100) OR $$.Plugin.method()
 PARAM_RE = re.compile(r'^([_a-zA-Z]\w*)=([0-9.:eE+-]+)$')
 
 BASIC_PACE    = 1
@@ -685,6 +687,9 @@ class MarkdownWithSlidoc(MarkdownWithMath):
         html = super(MarkdownWithSlidoc, self).render(text)
         self.renderer.close_zip(text)
 
+        if not self.renderer.global_plugin_refs.issubset(self.renderer.plugin_embeds):
+            abort("    ****PLUGIN-ERROR: %s: Missing global plugins %s ." % (self.options["filename"], list(self.renderer.global_plugin_refs.difference(self.renderer.plugin_embeds))))
+
         first_slide_pre = '<span id="%s-attrs" class="slidoc-attrs" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(self.renderer.questions)))
 
         if self.renderer.options['config'].pace:
@@ -857,6 +862,8 @@ class SlidocRenderer(MathRenderer):
         self.plugin_tops = []
         self.plugin_loads = set()
         self.plugin_embeds = set()
+        self.plugin_names = set()
+        self.global_plugin_refs = set()
         self.load_python = False
         self.slide_maximage = 0
         self.last_question_props = {}
@@ -909,8 +916,8 @@ class SlidocRenderer(MathRenderer):
         self.slide_block_solution = 0
         self.slide_block_fillable = 0
         self.slide_forward_links = []
-        self.slide_plugin_refs = set()
-        self.slide_plugin_embeds = set()
+        self.slide_plugin_refs = {}
+        self.slide_plugin_embeds = {}
         self.slide_images.append([])
         self.slide_img_tag = ''
         self.slide_options = set()
@@ -952,29 +959,41 @@ class SlidocRenderer(MathRenderer):
         alt_text = alt_text.strip() if alt_text is not None else alt_text
         js_format = alt_text or ''
         slide_id = self.get_slide_id()
+        plugin_refs = []
         imatch = INLINE_METHOD_RE.match(text)
         if imatch and imatch.group(1) not in FORMULA_NAMESPACE:
-            plugin_name = imatch.group(1)
+            plugin_def_name = imatch.group(1)
             action = imatch.group(2)
             js_arg = imatch.group(3)
             if action in ('answerSave', 'buttonClick', 'disable', 'display', 'enterSlide', 'expect', 'incrementSlide', 'init', 'initGlobal', 'initSetup', 'leaveSlide', 'response'):
-                abort("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s.%s()` in slide %s" % (self.options["filename"], plugin_name, action, self.slide_number))
+                abort("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s.%s()` in slide %s" % (self.options["filename"], plugin_def_name, action, self.slide_number))
 
         else:
-            plugin_name = 'Params'
+            plugin_def_name = 'Params'
             action = 'formula'
             js_arg = text
+            for match in INLINE_PLUGIN_RE.findall(text):
+                if match.group(1) == '$':
+                    plugin_refs.append( [match.group(2), int(match.group(3) or 0)] )
+                elif match.group(1) == '$$':
+                    self.global_plugin_refs.add(match.group(2))
             
-        js_func = plugin_name + '.' + action
+        js_func = plugin_def_name + '.' + action
         alt_html = mistune.escape('='+js_func+'()' if alt_text is None else alt_text)
         if 'inline_formula' in self.options['config'].strip:
             return '<code>%s</code>' % exponentiate(alt_html, times=True)
 
-        if plugin_name == 'Params' and action == 'formula':
+        if plugin_def_name == 'Params' and action == 'formula':
             self.slide_formulas.append(js_arg)
 
-        self.plugin_loads.add(plugin_name)
-        self.slide_plugin_refs.add(plugin_name)
+        self.plugin_loads.add(plugin_def_name)
+
+        plugin_refs.append( [plugin_def_name, 0] )
+        for name, instance_num in plugin_refs:
+            if name not in self.slide_plugin_refs:
+                self.slide_plugin_refs[name] = instance_num
+            else:
+                self.slide_plugin_refs[name] = max(self.slide_plugin_refs[name], instance_num)
 
         return '<code class="slidoc-inline-js" data-slidoc-js-function="%s" data-slidoc-js-argument="%s" data-slidoc-js-format="%s" data-slide-id="%s">%s</code>' % (js_func, mistune.escape(js_arg or ''), mistune.escape(js_format or ''), slide_id or '', alt_html)
 
@@ -1232,8 +1251,10 @@ class SlidocRenderer(MathRenderer):
         if self.slide_formulas and 'Params' not in self.slide_plugin_embeds:
             prefix_html += self.embed_plugin_body('Params', self.get_slide_id())
 
-        if not self.slide_plugin_refs.issubset(self.slide_plugin_embeds):
-            message("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(self.slide_plugin_refs.difference(self.slide_plugin_embeds)), self.slide_number))
+        refs_set = set(self.slide_plugin_refs.keys())
+        embeds_set = set(self.slide_plugin_embeds.keys())
+        if not refs_set.issubset(embeds_set):
+            abort("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], list(refs_set.difference(embeds_set)), self.slide_number))
 
         if self.qtypes[-1]:
             # Question slide
@@ -1732,36 +1753,34 @@ class SlidocRenderer(MathRenderer):
         _, self.plugin_defs[name] = parse_plugin(name+' = {'+text)
         return ''
 
-    def embed_plugin_body(self, plugin_name, slide_id, args='', content=''):
-        if plugin_name in self.slide_plugin_embeds:
-            abort('ERROR Multiple instances of plugin '+plugin_name+' in slide '+str(self.slide_number))
-        self.slide_plugin_embeds.add(plugin_name)
-        self.plugin_embeds.add(plugin_name)
-
-        if plugin_name in RESERVED_PLUGINS:
-            # Special plugins to be loaded first
-            plugin_num = 0
+    def embed_plugin_body(self, plugin_def_name, slide_id, args='', content=''):
+        if plugin_def_name in self.slide_plugin_embeds:
+            if plugin_def_name in SINGLETON_PLUGINS:
+                abort('ERROR Multiple instances of reserved plugin '+plugin_def_name+' in slide '+str(self.slide_number))
+            self.slide_plugin_embeds[plugin_def_name] += 1
         else:
-            # Load plugin in order of occurrence
-            self.plugin_number += 1
-            plugin_num = self.plugin_number
+            self.slide_plugin_embeds[plugin_def_name] = 0
+        self.plugin_embeds.add(plugin_def_name)
 
-        plugin_def_name = plugin_name
-        if plugin_def_name not in self.plugin_defs and plugin_def_name not in self.options['plugin_defs']:
-            # Look for plugin definition with trailing digit stripped out from name
-            if plugin_name[-1].isdigit():
-                plugin_def_name = plugin_name[:-1]
-            if plugin_def_name not in self.plugin_defs and plugin_def_name not in self.options['plugin_defs']:
-                abort('ERROR Plugin '+plugin_name+' not defined/closed!')
-                return ''
+        # Load plugin in order of occurrence
+        self.plugin_number += 1
 
-        plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'][plugin_def_name]
+        plugin_name = plugin_def_name
+        if self.slide_plugin_embeds[plugin_def_name]:
+            plugin_name += '-' + str(self.slide_plugin_embeds[plugin_def_name])
+
+        self.plugin_names.add(plugin_name)
+
+        plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'].get(plugin_def_name)
+        if not plugin_def:
+            abort('ERROR Plugin '+plugin_def_name+' not defined/closed!')
+            return ''
 
         plugin_params = {'pluginName': plugin_name,
                          'pluginLabel': 'slidoc-plugin-'+plugin_name,
                          'pluginId': slide_id+'-plugin-'+plugin_name,
                          'pluginInitArgs': sliauth.safe_quote(args),
-                         'pluginNumber': plugin_num,
+                         'pluginNumber': self.plugin_number,
                          'pluginButton': sliauth.safe_quote(plugin_def.get('BUTTON', ''))}
 
         if plugin_def_name not in self.plugin_loads:
@@ -1800,8 +1819,8 @@ class SlidocRenderer(MathRenderer):
         return self.plugin_content_template % plugin_params
 
     def slidoc_plugin(self, name, text):
-        if name in RESERVED_PLUGINS:
-            abort("    ****PLUGIN-ERROR: %s: Cannot embed reserved plugin %s in slide %s" % (self.options["filename"], self.untitled_number, name, self.slide_number))
+        if name in SINGLETON_PLUGINS:
+            abort("    ****PLUGIN-ERROR: %s: Cannot embed special plugin %s in slide %s" % (self.options["filename"], self.untitled_number, name, self.slide_number))
         args, sep, content = text.partition('\n')
         return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
@@ -1928,15 +1947,16 @@ class SlidocRenderer(MathRenderer):
             if qtype not in valid_simple_types:
                 abort("    ****ANSWER-ERROR: %s: %s is not a valid answer type; expected %s=answer in slide %s" % (self.options["filename"], qtype, '|'.join(valid_simple_types), self.slide_number))
 
-        plugin_match = ANSWER_PLUGIN_RE.match(text)
+        expect_match = ANSWER_EXPECT_RE.match(text)
         formula_match = ANSWER_FORMULA_RE.match(text)
-        if plugin_match:
+        if expect_match:
+            # For backwards compatibility only
             # `=Plugin_name.expect([n]);;format`
             # format = number OR 1*10**(-1)+/-range
-            plugin_name = plugin_match.group(1)
-            plugin_action = plugin_match.group(2)
-            plugin_arg = plugin_match.group(3) or ''
-            plugin_format = plugin_match.group(5) if plugin_match.group(5) else ''
+            plugin_name = expect_match.group(1)
+            plugin_action = expect_match.group(2)
+            plugin_arg = expect_match.group(3) or ''
+            plugin_format = expect_match.group(5) if expect_match.group(5) else ''
             text = exponentiate(plugin_format)
         elif formula_match:
             # `=...;;format`
@@ -1970,41 +1990,40 @@ class SlidocRenderer(MathRenderer):
                 abort("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number))
 
         elif not qtype:
+            amatch = ANSWER_CONTENT_RE.match(text)
             if text.lower() in valid_all_types:
                 # Unspecified correct answer
                 qtype = text.lower()
                 text = ''
-            elif not plugin_name:
-                # Check if 'Plugin_name/arg'
-                tem_name, _, tem_args = text.partition('/')
-                tem_name = tem_name.strip()
-                tem_args = tem_args.strip()
+            elif not plugin_name and amatch:
+                # Plugin_name/arg
+                plugin_name = amatch.group(1)
+                tem_def_name = amatch.group(2)
+                tem_args = amatch.group(4).strip()
 
                 arg_pattern = None
-                if tem_name in self.plugin_defs:
-                    arg_pattern = self.plugin_defs[tem_name].get('ArgPattern', '')
-                elif tem_name in self.options['plugin_defs']:
-                    arg_pattern = self.options['plugin_defs'][tem_name].get('ArgPattern', '')
+                if tem_def_name in self.plugin_defs:
+                    arg_pattern = self.plugin_defs[tem_def_name].get('ArgPattern', '')
+                elif tem_def_name in self.options['plugin_defs']:
+                    arg_pattern = self.options['plugin_defs'][tem_def_name].get('ArgPattern', '')
+                else:
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: %s' missing definition for response plugin %s in slide %s" % (self.options["filename"], text, plugin_name, self.slide_number))
 
-                if arg_pattern is not None:
-                    plugin_name = tem_name
-                    plugin_action = 'response'
-                    if not arg_pattern:
-                        # Ignore argument
-                        qtype = plugin_name
-                        text = ''
-                    elif re.match(arg_pattern, tem_args):
-                        qtype = plugin_name + '/' + tem_args
-                        text = ''
-                    else:
-                        abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
+                if arg_pattern and not re.match(arg_pattern, tem_args):
+                    abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
+
+                plugin_action = 'response'
+                qtype = plugin_name + '/' + tem_args
+                text = ''
 
         if plugin_name:
-            if 'inline_formula' in self.options['config'].strip and plugin_action in ('expect' 'formula'):
+            if 'inline_formula' in self.options['config'].strip and plugin_action in ('expect', 'formula'):
                 plugin_name = ''
                 plugin_action = ''
-            elif plugin_name not in self.slide_plugin_embeds:
-                html_prefix += self.embed_plugin_body(plugin_name, slide_id)
+            else:
+                def_name = plugin_name.split('-')[0]
+                if def_name not in self.slide_plugin_embeds:
+                    html_prefix += self.embed_plugin_body(def_name, slide_id)
 
         html_suffix = ''
         if answer_opts['share']:
@@ -2081,8 +2100,15 @@ class SlidocRenderer(MathRenderer):
         if plugin_name:
             if plugin_name == 'Params' and plugin_action == 'formula':
                 correct_val = '=' + plugin_arg
+            elif plugin_action != 'response':
+                # For backwards compatibility only
+                formula = '$.' + plugin_name + '.' + plugin_action +'(' + plugin_arg + ')'
+                correct_val = '=' + formula
+                plugin_name = 'Params'
+                plugin_action = 'formula'
+                self.slide_formulas.append(formula)
             else:
-                correct_val = '=' + plugin_name + '.' + plugin_action + '(' + plugin_arg + ')'
+                correct_val = ''
 
             if plugin_format:
                 correct_val += ';;' + plugin_format
@@ -2740,6 +2766,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         mod_question = 0
         for j in range(min_count):
             if prev_questions[j]['qtype'] != questions[j]['qtype']:
+                message('    ****WARNING: Module %s: modifying question %d from type %s to %s' % (session_name, j+1, prev_questions[j]['qtype'], questions[j]['qtype']))
                 mod_question = j+1
                 break
             if row_count:
@@ -3528,6 +3555,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         release_date_str = ''
         due_date_str = ''
         vote_date_str = ''
+        file_plugin_defs = base_plugin_defs.copy()
         if not config.separate:
             file_config = config
         else:
@@ -3538,6 +3566,12 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             if config.preview_port:
                 if file_config.gsheet_url:
                     file_config.gsheet_url = ''
+
+            if file_config.plugins:
+                # Plugins with same name will override earlier plugins
+                plugin_paths = file_config.plugins.split(',')
+                for plugin_path in plugin_paths:
+                    plugin_name, file_plugin_defs[plugin_name] = parse_plugin( md2md.read_file(plugin_path.strip()) )
 
             file_config.features = file_config.features or set()
             if 'grade_response' in file_config.features and gd_hmac_key is None:
@@ -3701,7 +3735,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         # zipped_md containing will only be created if any images are present (and will also include the original (preprocessed) md_text as content.md)
         fheader, file_toc, renderer, md_params, md_html, zipped_md = md2html(md_text, filename=fname, config=file_config, filenumber=fnumber,
-                                                        filedir=filedir, plugin_defs=base_plugin_defs, prev_file=prev_file, next_file=next_file,
+                                                        filedir=filedir, plugin_defs=file_plugin_defs, prev_file=prev_file, next_file=next_file,
                                                         index_id=index_id, qindex_id=qindex_id, zip_content=config.preview_port,
                                                         images_zipdata=images_zipdict.get(fname))
         math_present = renderer.render_mathjax or MathInlineGrammar.any_block_math.search(md_text) or MathInlineGrammar.any_inline_math.search(md_text)
@@ -3748,7 +3782,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         js_params['paramDefinitions'] = renderer.all_params
 
         if config.separate:
-            plugin_list = list(renderer.plugin_embeds)
+            plugin_list = list(renderer.plugin_names)
             plugin_list.sort()
             js_params['chapterId'] = renderer.get_chapter_id()
             js_params['plugins'] = plugin_list
@@ -3917,11 +3951,11 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 combined_html.append(md_html)
                 combined_html.append(md_suffix)
             else:
-                file_plugin_defs = base_plugin_defs.copy()
-                file_plugin_defs.update(renderer.plugin_defs)
+                tem_plugin_defs = file_plugin_defs.copy()
+                tem_plugin_defs.update(renderer.plugin_defs)
                 file_head_html = (js_params_fmt % sliauth.ordered_stringify(js_params)) + css_html + font_css(file_config.fontsize) + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
-                pre_html = file_head_html + plugin_heads(file_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
+                pre_html = file_head_html + plugin_heads(tem_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment
                 if js_params['paceLevel']:
                     index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'] or '-', paced_files[fname]['release_date'] or '-']

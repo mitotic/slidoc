@@ -48,7 +48,7 @@ function equation(alpha, xmin, xmax) {
 	return [x, y];
 }
 /* HEAD:
-<slidoc-script src="https://cdn.plot.ly/plotly-1.2.0.min.js"></slidoc-script>
+<script src="https://cdn.plot.ly/plotly-1.2.0.min.js"></script>
 BODY:
 <div id="%(pluginSlideId)s-plot" style="width:600px;height:250px;"></div>
 */
@@ -63,5 +63,4 @@ BODY:
 
 </script>
 
-=Slider(SlidePlugins.InteractivePlot.slider)
-
+=Slider($.InteractivePlot.slider)

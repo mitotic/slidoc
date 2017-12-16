@@ -98,6 +98,7 @@ Slider = {
 	}
 	if (callback)
 	    callback(''+this.val, pluginResp);
+	return true;
     }
 };
 
