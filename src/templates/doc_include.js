@@ -5592,20 +5592,23 @@ function displayCommentSuggestions(slideId, qnumber) {
 	var lines = Object.keys(qComments);
 	for (var j=0; j<lines.length; j++) {
 	    var qCommentLine = qComments[lines[j]];
-	    dispComments.push( [Object.keys(qCommentLine.userIds).length, lines[j], qCommentLine.score, qCommentLine.inconsistent] )
+	    var pmatch = lines[j].match(/^([a-zA-Z][\w.-]*):/);
+	    var prefix = pmatch ? pmatch[1] : '';   // Prefix is a "word" followed by a colon, e,g, Q.3, Q3, or Part-3
+	    // [prefix, occurrences, score, text, inconsistent?]
+	    dispComments.push( [prefix, Object.keys(qCommentLine.userIds).length, qCommentLine.score, lines[j], qCommentLine.inconsistent] )
 	}
 
-	// Sort by negative occurrence counts, and then negative absolute score, and then alphabetically
-	dispComments.sort( function(a,b){ if (a[0] != b[0]) return cmp(-a[0], -b[0]); else if (a[2] != b[2]) return cmp(-Math.abs(a[2]), -Math.abs(b[2])); else return cmp(a[1].toLowerCase(),b[1].toLowerCase()); } );
+	// Sort by prefix, negative occurrence counts, and then negative absolute score, and then alphabetically
+	dispComments.sort( function(a,b){ if (a[0] != b[0]) return cmp(a[0], b[0]); else if (a[1] != b[1]) return cmp(-a[1], -b[1]); else if (a[2] != b[2]) return cmp(-Math.abs(a[2]), -Math.abs(b[2])); else return cmp(a[3].toLowerCase(),b[3].toLowerCase()); } );
     }
     if (suggestElem) {
 	var html = ['Suggested comments:<br>\n'];
 	for (var j=0; j<dispComments.length; j++) {
 	    var cscore = dispComments[j][2] || 0;
 	    var clabel = cscore||'';
-	    if (dispComments[j][3])
-		clabel += '*';
-	    var lineHtml = '<code><span><span class="slidoc-clickable" onclick="Slidoc.appendComment(this,'+cscore+",'"+slideId+"');"+'">('+clabel+')</span> <span>'+escapeHtml(dispComments[j][1])+'</span></span> [<span class="slidoc-clickable" onclick="Slidoc.trackComment(this,'+qnumber+');">'+(dispComments[j][0])+'</span>]</code><br>\n'
+	    if (dispComments[j][4])
+		clabel += '*';      // Inconsistent
+	    var lineHtml = '<code><span><span class="slidoc-clickable" onclick="Slidoc.appendComment(this,'+cscore+",'"+slideId+"');"+'">('+clabel+')</span> <span>'+escapeHtml(dispComments[j][3])+'</span></span> [<span class="slidoc-clickable" onclick="Slidoc.trackComment(this,'+qnumber+');">'+(dispComments[j][1])+'</span>]</code><br>\n'
 	    html.push(lineHtml);
 	}
 	suggestElem.innerHTML = html.join('\n');
@@ -5633,9 +5636,13 @@ Slidoc.appendComment = function (elem, cscore, slideId) {
     var gradeInput = document.getElementById(slideId+'-grade-input');
     var commentsArea = document.getElementById(slideId+'-comments-textarea');
     var prevComments = commentsArea.value;
-    if (prevComments && !/\n$/.exec(prevComments))
-	prevComments += '\n\n';
-    commentsArea.value = prevComments + (cscore ? elem.parentNode.textContent : elem.parentNode.firstElementChild.nextElementSibling.textContent);
+    if (prevComments) {
+	if (!prevComments.match(/\n$/))
+	    prevComments += '\n';
+	prevComments += '\n';
+    }
+    commentsArea.value = prevComments + (cscore ? elem.parentNode.textContent : elem.parentNode.firstElementChild.nextElementSibling.textContent) + '\n';
+    scrollTextArea(commentsArea);
     if (cscore && maxScore) {
 	var scoreVal = parseFloat(cscore);
 	if (gradeInput.value) {

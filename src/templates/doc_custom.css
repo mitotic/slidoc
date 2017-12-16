@@ -265,7 +265,8 @@ body.slidoc-sidebar-view .slidoc-sidebar-right-wrapper {
 /* Adaptive grading */
 .slidoc-comments-suggestions {
     overflow: scroll;
-    max-height: 150px;
+    height: 200px;
+    max-height: 800px;
     resize: both;
 }
 

@@ -293,7 +293,9 @@ class MathBlockGrammar(mistune.BlockGrammar):
         r'''(?: +['"(]([^\n]+)['")])? *(?:\n+|$)'''
     )
 
-    block_math =      re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
+    lheading =          re.compile(r'^([^\n]+)\n *(=|-){5,} *(?:\n+|$)')  # Require at least 5 equals/dashes for level 3/4 setext-style header
+
+    block_math =        re.compile(r'^\\\[(.*?)\\\]', re.DOTALL)
     latex_environment = re.compile(r'^\\begin\{([a-z]*\*?)\}(.*?)\\end\{\1\}',
                                                 re.DOTALL)
     plugin_definition = re.compile(r'^ {0,3}<script +type="x-slidoc-plugin" *>\s*(\w+)\s*=\s*\{(.*?)\n *(// *\1)? *</script> *(\n|$)',
@@ -481,6 +483,14 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2).strip()
         })
 
+    def parse_lheading(self, m):
+        """Parse setext heading (force level 3/4 to avoid slide break)"""
+        self.tokens.append({
+            'type': 'heading',
+            'level': 3 if m.group(2).startswith('=') else 4,
+            'text': m.group(1),
+        })
+         
     def parse_hrule(self, m):
         self.tokens.append({'type': 'hrule', 'text': m.group(0).strip()})
 
@@ -2963,12 +2973,8 @@ def strip_name(filepath, split_char=''):
     name = os.path.splitext(os.path.basename(filepath))[0]
     return name.split(split_char)[-1] if split_char else name
 
-def preprocess(source, hrule_setext=False):
-    source = mistune.preprocessing(md2md.asciify(source))
-    if not hrule_setext:
-        # Insert a blank line between hrule and any immediately preceding non-blank line (to avoid it being treated as a Markdown Setext-style header)
-        source = HRULE_BREAK_RE.sub(r'\1\n\2', source)
-    return source
+def preprocess(source):
+    return mistune.preprocessing(md2md.asciify(source))
 
 def extract_slides(src_path, web_path):
     # Extract text for individual slides from Markdown file
@@ -3712,8 +3718,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         md_text = fhandle.read()
         fhandle.close()
 
-        # Preprocess line breaks, tabs etc. (note: hrule_setext=True may break slide editing)
-        md_text = preprocess(md_text, hrule_setext=('underline_headers' in file_config.features))
+        # Preprocess line breaks, tabs etc.
+        md_text = preprocess(md_text)
         loc = md2md.find_non_ascii(md_text)
         if loc:
             message('ASCII-WARNING: Possible non-ascii character at position %d could create problems: %s' % (loc, repr(md_text[max(0,loc-10):loc+15])) )
@@ -4637,10 +4643,9 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
 #   two_column: Two column output
-#   underline_headers: Allow Setext-style underlined Level 2 headers permitted by standard Markdown
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'underline_headers', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
