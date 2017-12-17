@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.15c';
+var VERSION = '0.97.15e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -158,6 +158,7 @@ var ROSTER_SHEET = 'roster_slidoc';
 var SCORES_SHEET = 'scores_slidoc';
 
 var RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats'];
+var AUXILIARY_SHEETS = ['discuss'];    // Related sheets with original content
 
 var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
@@ -729,7 +730,7 @@ function sheetAction(params) {
 	    }
 
         } else if (removeSheet) {
-	    // Delete sheet (and session entry)
+	    // Delete sheet+related (and session entry)
 	    returnValues = [];
 	    if (!adminUser)
 		throw("Error:DELSHEET:Only admin can delete sheet "+sheetName);
@@ -773,6 +774,8 @@ function sheetAction(params) {
 	    // Update/access single sheet
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
 
+	    var indexedSession = !restrictedSheet && !protectedSheet && !loggingSheet && !discussionSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET);
+
 	    var modSheet = getSheet(sheetName);
 	    if (!modSheet) {
 		// Create new sheet
@@ -780,14 +783,23 @@ function sheetAction(params) {
 		    throw("Error:NOSHEET:Sheet '"+sheetName+"' not found");
 		if (!headers)
 		    throw("Error:NOSHEET:Headers must be specified for new sheet '"+sheetName+"'");
+
+                if (indexedSession) {
+		    for (var j=0; j<AUXILIARY_SHEETS.length; j++) {
+                        var temName = sheetName+'-'+AUXILIARY_SHEETS[j];
+                        var temSheet = getSheet(temName);
+                        if (temSheet)
+                            throw("Error:NOSHEET:Session '"+sheetName+"' cannot be created without deleting auxiliary sheet "+temName);
+		    }
+		}
+
 		modSheet = createSheet(sheetName, headers);
 	    }
 
 	    if (!modSheet.getLastColumn())
 		throw("Error::No columns in sheet '"+sheetName+"'");
 
-	    if (!restrictedSheet && !protectedSheet && !loggingSheet && !discussionSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET)) {
-		// Indexed session
+	    if (indexedSession) {
 		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
 		questions = JSON.parse(sessionEntries.questions);

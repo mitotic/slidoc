@@ -127,6 +127,7 @@ SCORES_SHEET = 'scores_slidoc'
 BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, SCORES_SHEET]
 
 RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats']
+AUXILIARY_SHEETS = ['discuss']    # Related sheets with original content
 
 ROSTER_START_ROW = 2
 SESSION_MAXSCORE_ROW = 2                                # Set to zero, if no MAXSCORE row
@@ -184,10 +185,23 @@ def copySheetOptions(sheetSettings):
             Settings[key] = sheetSettings[key]
     Settings['update_time'] = sliauth.create_date()
 
-def delSheet(sheetName):
+def delSheet(sheetName, deleteRemote=False):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
         if sheetName in cache:
             del cache[sheetName]
+
+    if deleteRemote:
+        if Settings['dry_run']:
+            Global.dryDeletedSheets.add(sheetName)
+        elif Settings['gsheet_url']:
+            user = ADMINUSER_ID
+            userToken = gen_proxy_token(user, ADMIN_ROLE)
+            delParams = {'sheet': sheetName, 'delsheet': '1', 'admin': user, 'token': userToken}
+            retval = sliauth.http_post(Settings['gsheet_url'], delParams)
+            print('sdproxy.delSheet: %s: %s' % (sheetName, retval), file=sys.stderr)
+            if retval['result'] != 'success':
+                return False
+    return True
 
 
 def initCache():
@@ -587,16 +601,22 @@ def downloadSheet(sheetName, backup=False):
     return retval
 
 def createSheet(sheetName, headers, overwrite=False, rows=[]):
+    # Overwrite should be true only for related sheets without original content (e.g., -answers, -correct, -stats)
     check_if_locked(sheetName)
 
     if not headers:
         raise Exception("Must specify headers to create sheet %s" % sheetName)
 
+    sheet = getSheet(sheetName)
+
+    if sheet:
+        if overwrite:
+            delSheet(sheetName, deleteRemote=True)
+        else:
+            raise Exception("Cannote create sheet %s because it is already present in the cache" % sheetName)
+
     if Settings['dry_run'] and sheetName in Global.dryDeletedSheets:
         Global.dryDeletedSheets.discard(sheetName)
-
-    if sheetName in Sheet_cache and not overwrite:
-        raise Exception("Cannote create sheet %s because it is already present in the cache" % sheetName)
 
     Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=getKeyHeader(sheetName), modTime=sliauth.epoch_ms())
     Sheet_cache[sheetName].modifiedSheet()
@@ -606,6 +626,8 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
     def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', updated=False, modifiedHeaders=False):
+        # updated => current, i.e., just created from downloaded sheet
+        # modifiedHeaders => headers different from before
         if not rows:
             raise Exception('Must specify at least header row for sheet')
         self.name = name
@@ -1848,7 +1870,7 @@ def sheetAction(params, notrace=False):
                 returnValues = allRange.getValues()
 
         elif removeSheet:
-            # Delete sheet (and session entry)
+            # Delete sheet+related (and session entry)
             processed = True
             returnValues = []
             if not adminUser:
@@ -1862,22 +1884,11 @@ def sheetAction(params, notrace=False):
                 if delRowCol:
                     indexSheet.deleteRow(delRowCol)
 
-            delSheet(sheetName)
+            delSheet(sheetName, deleteRemote=True)
                     
             for j in range(len(RELATED_SHEETS)):
                 if getSheet(sheetName+'-'+RELATED_SHEETS[j]):
-                    delSheet(sheetName+'-'+RELATED_SHEETS[j])
-
-            if Settings['dry_run']:
-                Global.dryDeletedSheets.add(sheetName)
-            elif Settings['gsheet_url']:
-                user = ADMINUSER_ID
-                userToken = gen_proxy_token(user, ADMIN_ROLE)
-                delParams = {'sheet': sheetName, 'delsheet': '1', 'admin': user, 'token': userToken}
-                retval = sliauth.http_post(Settings['gsheet_url'], delParams)
-                print('sdproxy: delsheet %s: %s' % (sheetName, retval), file=sys.stderr)
-                if retval['result'] != 'success':
-                    return retval
+                    delSheet(sheetName+'-'+RELATED_SHEETS[j], deleteRemote=True)
 
         elif params.get('copysheet'):
             # Copy sheet (but not session entry)
@@ -1913,18 +1924,29 @@ def sheetAction(params, notrace=False):
             # Update/access single sheet
             headers = json.loads(params.get('headers','')) if params.get('headers','') else None
 
+            indexedSession = not restrictedSheet and not protectedSheet and not loggingSheet and not discussionSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET)
+
             modSheet = getSheet(sheetName)
             if not modSheet:
-                if adminUser and headers is not None:
-                    modSheet = createSheet(sheetName, headers)
-                else:
+                # Create new sheet
+                if not adminUser:
                     raise Exception("Error:NOSHEET:Sheet '"+sheetName+"' not found")
+                if headers is None:
+                    raise Exception("Error:NOSHEET:Headers must be specified for new sheet '"+sheetName+"'")
+
+                if indexedSession:
+                    for j in range(len(AUXILIARY_SHEETS)):
+                        temName = sheetName+'-'+AUXILIARY_SHEETS[j]
+                        temSheet = getSheet(temName)
+                        if temSheet:
+                            raise Exception("Error:NOSHEET:Session '"+sheetName+"' cannot be created without deleting auxiliary sheet "+temName)
+
+                modSheet = createSheet(sheetName, headers)
 
             if not modSheet.getLastColumn():
                 raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
-            if not restrictedSheet and not protectedSheet and not loggingSheet and not discussionSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET):
-                # Indexed session
+            if indexedSession:
                 sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
                 sessionAttributes = json.loads(sessionEntries['attributes'])
                 questions = json.loads(sessionEntries['questions'])

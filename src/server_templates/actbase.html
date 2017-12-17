@@ -18,9 +18,10 @@ function slidocAction(actionName, sessionName, dispMsg, query) {
   window.location = url;
 }
 
-function slidocConfirmAction(actionName, dispMsg, query) {
+function slidocConfirmAction(actionName, dispMsg, query, sessionName) {
+  sessionName = (sessionName || slidocSessionName) || '';
   slidocStatus(dispMsg || actionName);
-  var suffix = slidocSessionName ? ' for '+slidocSessionName : '';
+  var suffix = sessionName ? ' for '+sessionName : '';
   if (!window.confirm('Confirm '+(dispMsg || actionName)+suffix+'?')) {
     slidocStatus('');
     return;
@@ -29,17 +30,20 @@ function slidocConfirmAction(actionName, dispMsg, query) {
     slidocStatus('');
     return;
   }
-  slidocAction(actionName, '', dispMsg, query);
+  slidocAction(actionName, sessionName, dispMsg, query);
 }
 
-function slidocPromptAction(actionName, prompt) {
+function slidocPromptAction(actionName, prompt, confirm) {
   slidocStatus(actionName);
   var sessionName = window.prompt(prompt);
   if (!sessionName) {
     slidocStatus('');
     return;
   }
-  slidocAction(actionName, sessionName);
+  if (confirm)
+    slidocConfirmAction(actionName, '', '', sessionName);
+   else
+    slidocAction(actionName, sessionName);
 }
 
 function slidocStatus(label) {
