@@ -4150,7 +4150,7 @@ def toggleAttendance(day, userId):
 
 
 AGGREGATE_COL_RE = re.compile(r'\b(_\w+)_(avg|normavg|sum)(_(\d+))?$', re.IGNORECASE)
-def lookupGrades(userId):
+def lookupGrades(userId, admin=False):
     scoreSheet = getSheet(SCORES_SHEET)
     if not scoreSheet:
         return None
@@ -4175,11 +4175,13 @@ def lookupGrades(userId):
     sessionGrades = []
     for j, header in enumerate(headers):
         if header in ('total', 'grade'):
-            if not lastUpdate:
+            if admin:
+                pass
+            elif not lastUpdate:
                 continue
-            if header == 'total' and not('cumulative_total' in gradebookRelease):
+            elif header == 'total' and not('cumulative_total' in gradebookRelease):
                 continue
-            if header != 'total' and not('cumulative_grade' in gradebookRelease):
+            elif header != 'total' and not('cumulative_grade' in gradebookRelease):
                 continue
         elif not header.startswith('_'):
             continue

@@ -714,7 +714,7 @@ class SiteActionHandler(BaseHandler):
             new_site_name = self.get_argument('sitename', '').strip()
             new_site_url = self.get_argument('siteurl', '').strip()
             if not new_site_name:
-                self.render('setup.html', site_name='', session_name='', status='...', site_updates=[('...', '...')])
+                self.render('setup.html', site_name='', session_name='', status='...', site_updates=[('...', '...')], aliases=Global.userRoles.list_aliases())
                 return
             elif new_site_name in Options['site_list']:
                 self.write('Site %s already active' % new_site_name)
@@ -780,6 +780,13 @@ class SiteActionHandler(BaseHandler):
                     IOLoop.current().add_callback(reload_server)
 
                 self.displayMessage(outHtml, back_url='/_setup')
+
+        elif action == '_alias':
+            origId, userId = subsubpath.split('=')
+            origId = origId.strip()
+            userId = userId.strip()
+            Global.userRoles.add_alias(origId, userId)
+            self.displayMessage('Aliased %s=%s' % (origId, userId), back_url='/_setup')
 
         elif action == '_backup':
             self.displayMessage(backupSite(subsubpath, broadcast=True), back_url='/_setup')
@@ -1234,7 +1241,7 @@ class ActionHandler(BaseHandler):
             sheetSettings = getSettingsSheet(Options['gsheet_url'], Options['site_name'])
             sdproxy.suspend_cache('clear')
             update_site_settings(sheetSettings)
-            self.displayMessage('Updated site settings and cleared cache', back_url=site_prefix+'/_dash')
+            self.displayMessage('Updated site settings and cleared cache<p></p>If certain options, like <code>start_date</code>, are changed, site may need to be re-built', back_url=site_prefix+'/_dash')
 
         elif action == '_freeze':
             sdproxy.freezeCache(fill=True)
@@ -3296,7 +3303,8 @@ class UserActionHandler(ActionHandler):
         if not action.startswith('_user_'):
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid user action %s' % action)
         if action == '_user_grades':
-            if self.check_admin_access():
+            admin_access = self.check_admin_access()
+            if admin_access:
                 if not subsubpath:
                     self.redirect(('/'+Options['site_name'] if Options['site_name'] else '') + '/_roster')
                     return
@@ -3304,14 +3312,16 @@ class UserActionHandler(ActionHandler):
             else:
                 userId = self.get_id_from_cookie()
             rawHTML = self.get_argument('raw','')
-            gradeVals = sdproxy.lookupGrades(userId)
+            gradeVals = sdproxy.lookupGrades(userId, admin=admin_access)
             if not gradeVals:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to access grades for user %s' % userId)
             sessionGrades = []
             for sessionName, vals in gradeVals['sessions']:
                 sessionPath = getSessionPath(sessionName[1:]) if sessionName.startswith('_') else ''
                 sessionGrades.append([sessionName, sessionPath, vals])
-            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals.get('total'), letter_grade=gradeVals.get('grade'), last_update=gradeVals['lastUpdate'], session_grades=sessionGrades)
+            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId,
+                        total_grade=gradeVals.get('total'), letter_grade=gradeVals.get('grade'), last_update=gradeVals['lastUpdate'],
+                        session_grades=sessionGrades, gradebook_release=sdproxy.Settings['gradebook_release'])
             return
 
         elif action == '_user_browse':
@@ -4732,8 +4742,8 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown))", SiteActionHandler) ]
-        home_handlers += [ (r"/(_(backup))/([-\w.]+)", SiteActionHandler) ]
-        home_handlers += [ (r"/(_(update))/([-\w.]+)", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(backup|update))/([-\w.]+)", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(alias))/([-\w.@=]+)", SiteActionHandler) ]
 
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
@@ -5516,6 +5526,20 @@ class UserRoles(object):
     def is_special_user(self, userId):
         return userId in self.root_role or userId in self.site_special_users
 
+    def list_aliases(self):
+        return ', '.join('%s=%s' % (k, v) for k, v in self.alias_map.items())
+
+    def add_alias(self, origId, userId):
+        if not userId:
+            if origId in self.alias_map:
+                del self.alias_map[origId]
+            if '@' in origId:
+                self.external_users.discard(origId)
+        else:
+            self.alias_map[origId] = userId
+            if '@' in origId:
+                self.external_users.add(origId)
+
     def update_root_roles(self, auth_users):
         # Process list of special authorized users
         if auth_users.endswith('.txt'):
@@ -5542,9 +5566,7 @@ class UserRoles(object):
                 userId = userId.strip()
                 if origId in self.alias_map:
                     raise Exception('Error: Duplicate aliasing to %s; alias already defined: %s -> %s' % (userId, origId, self.alias_map[origId]))
-                self.alias_map[origId] = userId
-                if '@' in origId:
-                    self.external_users.add(origId)
+                self.add_alias(origId, userId)
 
             if not userId:
                 raise Exception('Null username')

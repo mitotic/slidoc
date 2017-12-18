@@ -2,7 +2,7 @@
 <html>
 <head>
   <!-- setup template for slidoc server --->
-  <!-- setup parameters: site_name, session_name, status, site_updates -->
+  <!-- setup parameters: site_name, session_name, status, site_updates, aliases -->
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta charset="UTF-8">
 
@@ -35,8 +35,12 @@
     href="javascript:slidocAction('update/check')">update check</a>: Check for code updates from github</li>
     <p></p>
     <li><a class="clickable" href="javascript:slidocConfirmAction('update/pull')">update pull</a>: Pull updated code from github and restart proxy server</li>
+    <p></p>
+    <li><a class="clickable" href="javascript:slidocPromptAction('alias', 'Enter user@example.com=userid')">alias</a>: Define email alias (user@example.com=userid)</li>
   </ul>
 
+  Aliases: <code>{{ aliases }}</code>
+  <p></p>
   <form action="/_setup" method="get" id="setupform">
     <fieldset>
      <label for="sitename">New site name:</label>
