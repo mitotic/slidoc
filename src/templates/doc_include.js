@@ -3746,22 +3746,23 @@ function showGradesCallback(userId, result, retStatus) {
 	    sessionKeys.push(keys[j]);
     }
     sessionKeys.sort( function(a,b){return cmp(a.replace(AGGREGATE_COL_RE,'$1'),b.replace(AGGREGATE_COL_RE,'$1'));});
-    var html = '<b>Gradebook</b><br><em>User</em>: '+userId+' ('+(retStatus.info.lastUpdate||'')+')<p></p>';
-    var disabledClass = '';
+    var html = '<b>Gradebook</b><br><em>User</em>: '+userId+' ('+(retStatus.info.lastUpdate||'').slice(0,10)+')<p></p>';
+    var dClass = ' class="slidoc-disabled" ';
     if (result.total) {
-	if (!retStatus.info.lastUpdate || !retStatus.info.gradebookRelease || retStatus.info.gradebookRelease.indexOf('cumulative_') < 0)
-	    disabledClass = ' class="slidoc-disabled" ';
-	html += '<div '+disabledClass+' ><em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
+	var disabled = (!retStatus.info.lastUpdate || !retStatus.info.gradebookRelease || retStatus.info.gradebookRelease.indexOf('cumulative_total') < 0);
+	html += '<div '+(disabled?dClass:'')+'><em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
 	var totalIndex = retStatus.info.headers.indexOf('total');
 	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
 	    html += ' out of '+retStatus.info.maxScores[totalIndex].toFixed(2);
-	if (retStatus.info.average && retStatus.info.average[totalIndex])
-	    html += ' (average='+retStatus.info.average[totalIndex].toFixed(2)+')';
+	if (retStatus.info.averages && retStatus.info.averages[totalIndex])
+	    html += ' (average='+retStatus.info.averages[totalIndex].toFixed(2)+')';
 	if (retStatus.info.rescale && retStatus.info.rescale[totalIndex])
-	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting= '+retStatus.info.rescale[totalIndex].replace(/\+/g,' + ');
+	    html += '&nbsp;&nbsp;&nbsp;Weighting= '+retStatus.info.rescale[totalIndex].replace(/\+/g,' + ');
+	html += '</div>';
 
 	if (result.grade) {
-	    html += '<p></p><em>Potential grade</em>: '+result.grade+'<br>(This is a tentative grade estimate based on the performance so far; the final grade may be different, depending upon any additional credits/corrrections/curving)';
+	    disabled = (!retStatus.info.lastUpdate || !retStatus.info.gradebookRelease || retStatus.info.gradebookRelease.indexOf('cumulative_grade') < 0);
+	    html += '<p></p><div '+(disabled?dClass:'')+'><em>Potential grade</em>: '+result.grade+'<br>(This is a tentative grade estimate based on the performance so far; the final grade may be different, depending upon any additional credits/corrrections/curving)</div>';
 	}
 	html += '</div>';
     }

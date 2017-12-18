@@ -174,7 +174,7 @@ Global.split_opts = {}
 Global.previewModifiedCount = 0
 
 def get_site_menu():
-    return [x.strip().lower() for x in Global.siteSettings.get(Options['site_name'],{}).get('site_menu','').split(',')]
+    return sdproxy.split_list(Global.siteSettings.get(Options['site_name'],{}).get('site_menu',''))
     
 PLUGINDATA_PATH = '_plugindata'
 PRIVATE_PATH    = '_private'
@@ -3311,7 +3311,7 @@ class UserActionHandler(ActionHandler):
             for sessionName, vals in gradeVals['sessions']:
                 sessionPath = getSessionPath(sessionName[1:]) if sessionName.startswith('_') else ''
                 sessionGrades.append([sessionName, sessionPath, vals])
-            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], last_update=gradeVals['lastUpdate'], session_grades=sessionGrades)
+            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals.get('total'), letter_grade=gradeVals.get('grade'), last_update=gradeVals['lastUpdate'], session_grades=sessionGrades)
             return
 
         elif action == '_user_browse':

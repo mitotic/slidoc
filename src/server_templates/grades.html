@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<h2>{{site_name}} Gradebook: {{ user_id }} ({{ last_update }})</h2>
+<h2>{{site_name}} Gradebook: {{ user_id }} ({{ last_update[:10] }})</h2>
 
 <b>
 {% include "linkback.html" %}

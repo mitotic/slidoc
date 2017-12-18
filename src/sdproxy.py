@@ -109,6 +109,7 @@ ADMINUSER_ID = 'admin'
 MAXSCORE_ID = '_max_score'
 AVERAGE_ID = '_average'
 RESCALE_ID = '_rescale'
+TIMESTAMP_ID = '_timestamp'
 TESTUSER_ID = '_test_user'
 DISCUSS_ID = '_discuss'
 
@@ -189,6 +190,10 @@ def copySheetOptions(sheetSettings):
             Settings[key] = sheetSettings[key]
     Settings['update_time'] = sliauth.create_date()
 
+def split_list(list_str):
+    # Split comma-separated list, stripping and lowercasing it
+    return [x.strip().lower() for x in list_str.split(',') if x.strip()]
+    
 def delSheet(sheetName, deleteRemote=False):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
         if sheetName in cache:
@@ -1706,7 +1711,7 @@ def sheetAction(params, notrace=False):
         origUser = ''
         adminUser = ''
         readOnlyAccess = False
-        gradebookRelease = set([x.strip().lower() for x in Settings.get('gradebook_release', '').split(',') if x.strip()])
+        gradebookRelease = set( split_list(Settings.get('gradebook_release', '')) )
 
         paramId = params.get('id','')
         authToken = params.get('token', '')
@@ -2105,7 +2110,9 @@ def sheetAction(params, notrace=False):
                         returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
                     # TODO: Need to implement retrieving settings from settings_slidoc
                 except Exception, err:
-                    pass
+                    if Settings['debug']:
+                        import traceback
+                        traceback.print_exc()
 
         if processed:
             # Already processed
@@ -4154,9 +4161,11 @@ def lookupGrades(userId):
     if not userRow:
         return None
 
+    gradebookRelease = set( split_list(Settings.get('gradebook_release', '')) )
+
     headers = scoreSheet.getHeaders()
     nCols = len(headers)
-    lastUpdate = scoreSheet.getSheetValues(rowIndex['_timestamp'], colIndex['total'], 1, 1)[0][0]
+    lastUpdate = scoreSheet.getSheetValues(rowIndex['_timestamp'], colIndex['total'], 1, 1)[0][0].strip()
     userScores = scoreSheet.getSheetValues(userRow, 1, 1, nCols)[0]
     rescale = scoreSheet.getSheetValues(rowIndex['_rescale'], 1, 1, nCols)[0]
     average = scoreSheet.getSheetValues(rowIndex['_average'], 1, 1, nCols)[0]
@@ -4165,8 +4174,16 @@ def lookupGrades(userId):
     grades = {}
     sessionGrades = []
     for j, header in enumerate(headers):
-        if not header.startswith('_') and header not in ('total', 'grade'):
+        if header in ('total', 'grade'):
+            if not lastUpdate:
+                continue
+            if header == 'total' and not('cumulative_total' in gradebookRelease):
+                continue
+            if header != 'total' and not('cumulative_grade' in gradebookRelease):
+                continue
+        elif not header.startswith('_'):
             continue
+
         colGrades = {'score': parseNumber(userScores[j]) if header != 'grade' else userScores[j],
                      'rescale': rescale[j],
                      'average': parseNumber(average[j]),
@@ -4181,7 +4198,7 @@ def lookupGrades(userId):
             grades[header] = colGrades
 
     grades['sessions'] = sessionGrades
-    grades['lastUpdate'] = lastUpdate.strip()
+    grades['lastUpdate'] = lastUpdate
     return grades
 
 def lookupSessions(colNames):

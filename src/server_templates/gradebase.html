@@ -49,7 +49,7 @@ missed
      {% if sessionGrades['maxscore'] is not None %}
 / {{ '%0.4g' % sessionGrades['maxscore'] }}
     {% end %}
-    {% if sessionGrades['average'] is not None %}
+    {% if sessionGrades['average'] is not None and sessionGrades['average'] > 1 %}
 (avg={{ '%.2f' % sessionGrades['average'] }})
     {% end %}
     {% if sessionGrades['rescale'] %}
