@@ -1074,7 +1074,7 @@ class ActionHandler(BaseHandler):
             self.write('<h3>Previewing session <b>%s</b>: <a href="%s/_preview/index.html">Continue preview</a> OR <a href="%s/_discard?modified=-1">Discard</a></h3>' % (previewingSession, site_prefix, site_prefix))
             return
 
-        if action not in ('_dash', '_actions', '_addtype', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_upload', '_lock', '_interactcode'):
+        if action not in ('_dash', '_actions', '_addtype', '_modules', '_restore', '_attend', '_editroster', '_roster', '_browse', '_twitter', '_cache', '_freeze', '_clear', '_backup', '_edit', '_update_settings', '_upload', '_lock', '_interactcode'):
             if not sessionName:
                 self.displayMessage('Please specify /%s/session name' % action)
                 return
@@ -1100,7 +1100,9 @@ class ActionHandler(BaseHandler):
                         admin_users=Options['admin_users'], grader_users=Options['grader_users'], guest_users=Options['guest_users'],
                         start_date=sliauth.print_date(Options['start_date'],not_now=True),
                         freeze_date=sliauth.print_date(sdproxy.Settings['freeze_date'],not_now=True),
-                        end_date=sliauth.print_date(Options['end_date'],not_now=True), site_menu=get_site_menu() )
+                        end_date=sliauth.print_date(Options['end_date'],not_now=True),
+                        gradebook_release=sdproxy.Settings['gradebook_release'],
+                        site_menu=get_site_menu() )
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
@@ -1228,9 +1230,15 @@ class ActionHandler(BaseHandler):
                                      'Twitter stream log: '+'\n'.join(Global.twitterStream.log_buffer)+'\n'],
                                      back_url=site_prefix+'/_actions')
 
+        elif action == '_update_settings':
+            sheetSettings = getSettingsSheet(Options['gsheet_url'], Options['site_name'])
+            sdproxy.suspend_cache('clear')
+            update_site_settings(sheetSettings)
+            self.displayMessage('Updated site settings and cleared cache', back_url=site_prefix+'/_dash')
+
         elif action == '_freeze':
             sdproxy.freezeCache(fill=True)
-            self.displayMessage('Freezing cache<br>', back_url=site_prefix+'/_actions')
+            self.displayMessage('Freezing cache<br>', back_url=site_prefix+'/_dash')
 
         elif action == '_clear':
             sdproxy.suspend_cache('clear')
@@ -3303,7 +3311,7 @@ class UserActionHandler(ActionHandler):
             for sessionName, vals in gradeVals['sessions']:
                 sessionPath = getSessionPath(sessionName[1:]) if sessionName.startswith('_') else ''
                 sessionGrades.append([sessionName, sessionPath, vals])
-            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], session_grades=sessionGrades)
+            self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId, total_grade=gradeVals['total'], letter_grade=gradeVals['grade'], last_update=gradeVals['lastUpdate'], session_grades=sessionGrades)
             return
 
         elif action == '_user_browse':
@@ -4859,6 +4867,7 @@ def createApplication():
                       r"/(_startpreview/[-\w.]+)",
                       r"/(_submit/[-\w.:;]+)",
                       r"/(_twitter)",
+                      r"/(_update_settings)",
                       r"/(_unlock/[-\w.]+)",
                       r"/(_unsafe_trigger_updates/[-\w.]+)",
                       r"/(_upload)",
@@ -5807,42 +5816,41 @@ def setup_backup():
 
     IOLoop.current().call_at(backupTimeSec, start_backup)
 
+def update_site_settings(sheetSettings):
+    ## Copy sheet options to proxy
+    sdproxy.copySheetOptions(sheetSettings)
+
+    Global.session_options = {}
+    for key in sheetSettings:
+        smatch = SESSION_OPTS_RE.match(key)
+        if key in OPTIONS_FROM_SHEET:
+            # Copy sheet options
+            Options[key] = sheetSettings[key]
+        elif smatch:
+            # Default session options
+            sessionName = smatch.group(1)
+            opts_dict = {}
+            opts = [x.lstrip('-') for x in sheetSettings[key].split()]
+            for opt in opts:
+                name, sep, value = opt.partition('=')
+                if not sep:
+                    opts_dict[name] = True
+                else:
+                    if value.startswith("'"):
+                        value = value.strip("'")
+                    elif value.startswith('"'):
+                        value = value.strip('"')
+                    if isdigit(value):
+                        value = int(value)
+                    opts_dict[name] = value
+            Global.session_options[sessionName] = opts_dict
+
 def setup_site_server(sheetSettings, site_number):
     if Options['proxy_sheet']:
-        # Copy options to proxy
+        # Copy server options to proxy
         sdproxy.copyServerOptions(Options)
 
-        if sheetSettings:
-            sdproxy.copySheetOptions(sheetSettings)
-        else:
-            sheetSettings = {}
-
-        sdproxy.copySheetOptions(sheetSettings)
-
-        Global.session_options = {}
-        for key in sheetSettings:
-            smatch = SESSION_OPTS_RE.match(key)
-            if key in OPTIONS_FROM_SHEET:
-                # Copy sheet options
-                Options[key] = sheetSettings[key]
-            elif smatch:
-                # Default session options
-                sessionName = smatch.group(1)
-                opts_dict = {}
-                opts = [x.lstrip('-') for x in sheetSettings[key].split()]
-                for opt in opts:
-                    name, sep, value = opt.partition('=')
-                    if not sep:
-                        opts_dict[name] = True
-                    else:
-                        if value.startswith("'"):
-                            value = value.strip("'")
-                        elif value.startswith('"'):
-                            value = value.strip('"')
-                        if isdigit(value):
-                            value = int(value)
-                        opts_dict[name] = value
-                Global.session_options[sessionName] = opts_dict
+        update_site_settings(sheetSettings or {})
 
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:

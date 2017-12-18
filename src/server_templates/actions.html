@@ -38,13 +38,14 @@
 
   <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
   <b>Advanced dashboard actions:</b><p></p>
-
+Update site settings from settings sheet and clear cache
   {% if root_admin %}
   <ul>
     <li><b><a class="clickable" href="javascript:slidocAction('cache')">proxy status</a></b>: Status of proxy cache and active connections</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('freeze')">freeze</a></b>: Freeze all cached module sessions (clear to cancel freeze)</li>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('clear')">clear</a></b>: Clear all cached module sessions</li>
+    <li><b><a class="clickable" href="javascript:slidocConfirmAction('update_settings')">update settings</a></b>: Update site settings from settings sheet and clear cache</li>
     {% if not site_name %}
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a></b>: Shutdown proxy server</li>
     {% end %}

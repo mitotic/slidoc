@@ -1,5 +1,5 @@
 <!-- gradebase template for slidoc server (SNIPPET) --->
-<!-- gradebase parameters: site_name, session_name, user_id, total_grade, letter_grade, session_grades -->
+<!-- gradebase parameters: site_name, session_name, user_id, total_grade, letter_grade, last_update, session_grades -->
 
 <style>
 .clickable { cursor: pointer; color: #2980B9; text-decoration: none}
@@ -12,6 +12,7 @@
 {% if total_grade and total_grade['score'] is not None %}
 <em>Weighted total</em>: <b>{{ '%.2f' % total_grade['score'] }}</b>
  <b>{% if total_grade['score'] %}</b>out of {{ '%.2f' % total_grade['maxscore'] }}{% end %}
+    {% if total_grade['average'] %} (avg={{ '%.2f' % total_grade['average'] }}){% end %}
     {% if total_grade['rescale'] %}<br>&nbsp;&nbsp;&nbsp;Weighting= {{ total_grade['rescale'].replace('+',' + ') }}{% end %}
 <br>
 {% end %}
@@ -19,7 +20,7 @@
 {% if letter_grade and letter_grade['score'] %}
 <p></p><em>Potential grade</em>: {{ letter_grade['score'] }} &nbsp;&nbsp;
 <br>(This is a tentative letter grade estimate based on the
-credits/curving earned so far; the final grade may
+performance so far; the final grade may
 be different, depending upon any additional credits/corrrections/curving)
 <br>
 {% end %}

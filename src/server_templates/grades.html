@@ -1,14 +1,14 @@
 <html>
 <head>
 <!-- grades template for slidoc server --->
-<!-- grades parameters: site_name, session_name, user_id, grades -->
+<!-- grades parameters: site_name, session_name, user_id, total_grade, letter_grade, last_update, session_grades -->
 
 {% include "base.html" %}
 
 </head>
 <body>
 
-<h2>{{site_name}} Gradebook: {{ user_id }}</h2>
+<h2>{{site_name}} Gradebook: {{ user_id }} ({{ last_update }})</h2>
 
 <b>
 {% include "linkback.html" %}

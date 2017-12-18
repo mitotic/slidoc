@@ -1251,8 +1251,12 @@ Slidoc.assessmentMenu = function () {
 	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
 	    html += '<li>' + clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '</li>\n';
 
+	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('correct') >= 0);
+	    html += '<li>' + clickableSpan((create?'Create':'Update')+' correct answer key', "Slidoc.sessionActions('correct');") + '</li>\n';
+
 	    var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
 	    html += '<li>' + clickableSpan('View response statistics', "Slidoc.showStats();", disabled) + '</li>\n';
+	    html += '<li>' + clickableSpan('View correct answer key', "Slidoc.viewSheet('"+Sliobj.sessionName+"-correct');", !adminAccess) + '</li>';
             html += '<hr>';
 	    html += '<li>' + clickableSpan('View session scores', "Slidoc.viewSheet('"+Sliobj.sessionName+"');", !adminAccess) + '</li>';
 	    if (!Sliobj.gradeDateStr)
@@ -3729,7 +3733,10 @@ function showGradesCallback(userId, result, retStatus) {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     if (!result) {
-	alert('No grades found for user '+userId);
+	if (retStatus.error && retStatus.error.match(/^Error:UNAVAILABLE:/))
+	    alert('Gradebook temporarily not available');
+	else
+	    alert('No grades found for user '+userId);
 	return;
     }
     var sessionKeys = [];
@@ -3739,18 +3746,24 @@ function showGradesCallback(userId, result, retStatus) {
 	    sessionKeys.push(keys[j]);
     }
     sessionKeys.sort( function(a,b){return cmp(a.replace(AGGREGATE_COL_RE,'$1'),b.replace(AGGREGATE_COL_RE,'$1'));});
-    var html = '<b>Gradebook</b><br><em>User</em>: '+userId+'<p></p>';
+    var html = '<b>Gradebook</b><br><em>User</em>: '+userId+' ('+(retStatus.info.lastUpdate||'')+')<p></p>';
+    var disabledClass = '';
     if (result.total) {
-	html += '<em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
+	if (!retStatus.info.lastUpdate || !retStatus.info.gradebookRelease || retStatus.info.gradebookRelease.indexOf('cumulative_') < 0)
+	    disabledClass = ' class="slidoc-disabled" ';
+	html += '<div '+disabledClass+' ><em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
 	var totalIndex = retStatus.info.headers.indexOf('total');
 	if (retStatus.info.maxScores && retStatus.info.maxScores[totalIndex])
 	    html += ' out of '+retStatus.info.maxScores[totalIndex].toFixed(2);
+	if (retStatus.info.average && retStatus.info.average[totalIndex])
+	    html += ' (average='+retStatus.info.average[totalIndex].toFixed(2)+')';
 	if (retStatus.info.rescale && retStatus.info.rescale[totalIndex])
 	    html += '<br>&nbsp;&nbsp;&nbsp;Weighting= '+retStatus.info.rescale[totalIndex].replace(/\+/g,' + ');
-	html += '<br>';
-    }
-    if (result.grade) {
-	html += '<p></p><em>Potential grade</em>: '+result.grade+'<br>(This is a tentative grade estimate based on the credits/curving earned so far; the final grade may be different, depending upon any additional credits/corrrections/curving)<br>';
+
+	if (result.grade) {
+	    html += '<p></p><em>Potential grade</em>: '+result.grade+'<br>(This is a tentative grade estimate based on the performance so far; the final grade may be different, depending upon any additional credits/corrrections/curving)';
+	}
+	html += '</div>';
     }
     var prefix = '';
     for (var j=0; j<sessionKeys.length; j++) {

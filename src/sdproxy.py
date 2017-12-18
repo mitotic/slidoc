@@ -66,12 +66,12 @@ Settings = {
 
                           # Settings from SETTINGS_SLIDOC
     'freeze_date': '',    # Date when all user mods are disabled
+    'gradebook_release': '',   # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
     'request_timeout': 75,  # Proxy update request timeout (sec)
     'require_login_token': True,
     'require_late_token': True,
     'require_roster': True,
     'root_users': [],
-    'share_averages': True, # Share class averages for tests etc.
     'site_label': '',
     'site_access': '',      # '' OR 'adminonly' OR 'adminguest' OR 'readonly'
     'site_title': '',
@@ -80,8 +80,8 @@ Settings = {
     'guest_users': ''
     }
 
-COPY_FROM_SHEET = ['freeze_date',  'require_login_token', 'require_late_token', 'require_roster',
-                   'share_averages', 'site_label', 'site_title', 'site_access',
+COPY_FROM_SHEET = ['freeze_date',  'gradebook_release', 'require_login_token', 'require_late_token', 'require_roster',
+                   'site_label', 'site_title', 'site_access',
                    'admin_users', 'grader_users', 'guest_users']
     
 COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
@@ -113,7 +113,11 @@ TESTUSER_ID = '_test_user'
 DISCUSS_ID = '_discuss'
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
+STATUS_HEADER = 'status'
+GRADE_HEADERS = ['total', 'grade', 'numGrade']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
+
+DROPPED_STATUS = 'dropped'
 
 HIDE_HEADERS = ['attributes', 'questions', 'questionConcepts']
 
@@ -1702,6 +1706,7 @@ def sheetAction(params, notrace=False):
         origUser = ''
         adminUser = ''
         readOnlyAccess = False
+        gradebookRelease = set([x.strip().lower() for x in Settings.get('gradebook_release', '').split(',') if x.strip()])
 
         paramId = params.get('id','')
         authToken = params.get('token', '')
@@ -2087,11 +2092,16 @@ def sheetAction(params, notrace=False):
             if params.get('getstats',''):
                 try:
                     temIndexRow = indexRows(modSheet, indexColumns(modSheet)['id'], 2)
+                    if Settings.get('gradebook_release'):
+                        returnInfo['gradebookRelease'] = Settings.get('gradebook_release')
+
+                    if temIndexRow.get(TIMESTAMP_ID) and columnIndex.get('total'):
+                        returnInfo['lastUpdate'] = modSheet.getSheetValues(temIndexRow.get(TIMESTAMP_ID), columnIndex['total'], 1, 1)[0][0]
                     if temIndexRow.get(MAXSCORE_ID):
                         returnInfo['maxScores'] = modSheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
                     if temIndexRow.get(RESCALE_ID):
                         returnInfo['rescale'] = modSheet.getSheetValues(temIndexRow.get(RESCALE_ID), 1, 1, len(columnHeaders))[0]
-                    if Settings.get('share_averages') and temIndexRow.get(AVERAGE_ID):
+                    if temIndexRow.get(AVERAGE_ID) and 'average' in gradebookRelease:
                         returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
                     # TODO: Need to implement retrieving settings from settings_slidoc
                 except Exception, err:
@@ -3015,6 +3025,25 @@ def sheetAction(params, notrace=False):
                             returnValues[j] = None
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
+
+                if not adminUser and params.get('getstats',''):
+                    # Blank out cumulative grade-related columns from gradebook
+                    for j in range(len(GRADE_HEADERS)):
+                        cname = GRADE_HEADERS[j]
+                        cindex = columnIndex.get(cname)
+                        if not cindex:
+                            continue
+                        if ( (cname == 'total' and not('cumulative_total' in gradebookRelease)) or
+                             (cname != 'total' and not('cumulative_grade' in gradebookRelease)) or
+                             not returnInfo.get('lastUpdate') ):
+                            returnValues[cindex-1] = ''
+                            if returnInfo.get('maxScores'):
+                                returnInfo['maxScores'][cindex-1] = ''
+                            if returnInfo.get('rescale'):
+                                returnInfo['rescale'][cindex-1] = ''
+                            if returnInfo.get('averages'):
+                                returnInfo['averages'][cindex-1] = ''
+
 
                 if getRow and createRow and discussableSession and dueDate:
                     # Accessing submitted discussable session
@@ -4127,6 +4156,7 @@ def lookupGrades(userId):
 
     headers = scoreSheet.getHeaders()
     nCols = len(headers)
+    lastUpdate = scoreSheet.getSheetValues(rowIndex['_timestamp'], colIndex['total'], 1, 1)[0][0]
     userScores = scoreSheet.getSheetValues(userRow, 1, 1, nCols)[0]
     rescale = scoreSheet.getSheetValues(rowIndex['_rescale'], 1, 1, nCols)[0]
     average = scoreSheet.getSheetValues(rowIndex['_average'], 1, 1, nCols)[0]
@@ -4151,6 +4181,7 @@ def lookupGrades(userId):
             grades[header] = colGrades
 
     grades['sessions'] = sessionGrades
+    grades['lastUpdate'] = lastUpdate.strip()
     return grades
 
 def lookupSessions(colNames):
@@ -5006,10 +5037,13 @@ def updateCorrect(sessionName, create):
                 qno = k+1
                 correctAns = answers[k]
                 if qno in qShuffle and correctAns:
-                    if correctAns.upper() in qShuffle[qno]:
-                        correctAns = chr(ord('A') + qShuffle[qno].index(correctAns.upper()) - 1)
-                    else:
-                        correctAns = 'X'
+                    shuffledAns = ''
+                    for l in range(len(correctAns)):
+                        if correctAns[l].upper() in qShuffle[qno]:
+                            shuffledAns += chr(ord('A') + qShuffle[qno].index(correctAns[l].upper()) - 1)
+                        else:
+                            shuffledAns += 'X'
+                    correctAns = shuffledAns
                 elif qAttempted.get('expect'):
                     correctAns = qAttempted.get('expect')
                 elif qAttempted.get('pluginResp') and 'correctAnswer' in qAttempted.get('pluginResp'):

@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, freeze_date, end_date, admin_users, grader_users, guest_users, site_menu-->
+<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, freeze_date, end_date, admin_users, grader_users, guest_users, site_menu, gradebook_release-->
 
 {% include "base.html" %}
 
@@ -82,7 +82,8 @@ End: {{end_date}}<br>
 </td>
 </tr>
 </table>
-Site access: {{site_access}}<br>
+Site access: {{site_access}}<br> 
+Gradebook release: {{gradebook_release}}<br> 
 Slidoc version: {{version}}<br>
 </body>
 </html>
