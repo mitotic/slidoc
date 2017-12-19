@@ -1022,7 +1022,7 @@ considered correct.
 
 Write a python function to add two numbers.
 
-Answer: text/code
+Answer: text/x-code
 
 Tags: questions, text response 
 

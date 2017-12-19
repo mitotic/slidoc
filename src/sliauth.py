@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.15f'
+VERSION = '0.97.15g'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -99,6 +99,9 @@ def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
             return img_html % data_uri
         else:
             return data_uri
+
+def gen_server_key(key, nonce):
+    return gen_hmac_token(key, 'server:'+nonce)
 
 def gen_site_key(key, site):
     return gen_hmac_token(key, 'site:'+site)

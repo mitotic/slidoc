@@ -66,14 +66,14 @@ Settings = {
 
                           # Settings from SETTINGS_SLIDOC
     'freeze_date': '',    # Date when all user mods are disabled
-    'gradebook_release': '',   # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
-    'request_timeout': 75,  # Proxy update request timeout (sec)
+    'request_timeout': 75,   # Proxy update request timeout (sec)
     'require_login_token': True,
     'require_late_token': True,
     'require_roster': True,
+    'gradebook_release': '', # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
     'root_users': [],
     'site_label': '',
-    'site_access': '',      # '' OR 'adminonly' OR 'adminguest' OR 'readonly'
+    'site_access': '',       # '' OR 'adminonly' OR 'adminguest' OR 'readonly'
     'site_title': '',
     'admin_users': '',
     'grader_users': '',
@@ -190,9 +190,11 @@ def copySheetOptions(sheetSettings):
             Settings[key] = sheetSettings[key]
     Settings['update_time'] = sliauth.create_date()
 
-def split_list(list_str):
-    # Split comma-separated list, stripping and lowercasing it
-    return [x.strip().lower() for x in list_str.split(',') if x.strip()]
+def split_list(list_str, sep=',', lower=False):
+    # Split comma-separated list, stripping it
+    if lower:
+        list_str = list_str.lower()
+    return [x.strip() for x in list_str.split(sep) if x.strip()]
     
 def delSheet(sheetName, deleteRemote=False):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
@@ -569,7 +571,8 @@ def getSheet(sheetName, require=False, backup=False, display=False):
         Miss_cache[sheetName] = sliauth.epoch_ms()
         return None
 
-    Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=getKeyHeader(sheetName), updated=True)
+    Sheet_cache[sheetName] = Sheet(sheetName, rows, keyHeader=getKeyHeader(sheetName), updated=True,
+                                   relatedSheets=retval.get('info',{}).get('sheetsAvailable',[]))
     return Sheet_cache[sheetName]
 
 def downloadSheet(sheetName, backup=False):
@@ -634,7 +637,8 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
 
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
-    def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', updated=False, modifiedHeaders=False):
+    def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', updated=False,
+                 modifiedHeaders=False, relatedSheets=[]):
         # updated => current, i.e., just created from downloaded sheet
         # modifiedHeaders => headers different from before
         if not rows:
@@ -643,6 +647,7 @@ class Sheet(object):
         self.keyHeader = keyHeader
         self.modTime = modTime
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
+        self.relatedSheets = relatedSheets[:]
 
         self.actionsRequested = [x.strip() for x in actions.split(',')] if actions else []
         self.modifiedHeaders = modifiedHeaders
@@ -1711,7 +1716,7 @@ def sheetAction(params, notrace=False):
         origUser = ''
         adminUser = ''
         readOnlyAccess = False
-        gradebookRelease = set( split_list(Settings.get('gradebook_release', '')) )
+        gradebookRelease = set( split_list(Settings.get('gradebook_release', ''), lower=True) )
 
         paramId = params.get('id','')
         authToken = params.get('token', '')
@@ -3059,12 +3064,9 @@ def sheetAction(params, notrace=False):
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
 
-        if sessionEntries and getRow and ((not proxy and allRows) or (createRow and paramId == TESTUSER_ID)):
-            # Getting all session (non-proxy) rows or test user row (with creation option); return related sheet names
-            returnInfo['sheetsAvailable'] = []
-            for j in range(len(RELATED_SHEETS)):
-                if getSheet(sheetName+'-'+RELATED_SHEETS[j]):
-                    returnInfo['sheetsAvailable'].append(RELATED_SHEETS[j])
+        if sessionEntries and getRow and (allRows or (createRow and paramId == TESTUSER_ID)):
+            # Getting all session rows or test user row (with creation option); return related sheet names
+            returnInfo['sheetsAvailable'] = modSheet.relatedSheets[:]
 
         if getRow and createRow and proxy_error_status():
             returnInfo['proxyError'] = 'Read-only mode; session modifications are disabled'
@@ -4161,7 +4163,7 @@ def lookupGrades(userId, admin=False):
     if not userRow:
         return None
 
-    gradebookRelease = set( split_list(Settings.get('gradebook_release', '')) )
+    gradebookRelease = set( split_list(Settings.get('gradebook_release', ''), lower=True) )
 
     headers = scoreSheet.getHeaders()
     nCols = len(headers)

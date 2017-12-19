@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.15f';
+var VERSION = '0.97.15g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a root_key -t site_name)'],
 
@@ -22,6 +22,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', 'testkey', '(Hidden cell) Secret value for
 			 ['require_login_token', 'require', 'Non-null string for true'],
 			 ['require_late_token', 'require',  'Non-null string for true'],
 			 ['require_roster', 'require',  'Non-null string for true'],
+                         [],
 			 ['site_menu', '', 'List of top menu items: files,gradebook (comma-separated)'],
 			 ['gradebook_release', '', 'List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)'],
 		         ['cumulative_total', '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
@@ -2057,8 +2058,8 @@ function sheetAction(params) {
 	    }
 	}
 
-        if (sessionEntries && getRow && ((!proxy && allRows) || (createRow && paramId == TESTUSER_ID))) {
-            // Getting all session rows (non-proxy) or test user row (with creation option); return related sheet names
+        if (sessionEntries && getRow && (allRows || (createRow && paramId == TESTUSER_ID))) {
+            // Getting all session rows or test user row (with creation option); return related sheet names
             returnInfo['sheetsAvailable'] = [];
             for (var j=0; j<RELATED_SHEETS.length; j++) {
                 if (getSheet(sheetName+'-'+RELATED_SHEETS[j])) {
