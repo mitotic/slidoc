@@ -30,6 +30,14 @@ function slidocConfirmAction(actionName, dispMsg, query, sessionName) {
     slidocStatus('');
     return;
   }
+  if (actionName == 'sitedelete') {
+    if (!window.confirm('Re-confirm '+(dispMsg||'sitedelete')+suffix+'?')) {
+      slidocStatus('');
+      return;
+    }
+    window.location = '/_sitedelete/'+slidocSiteName;
+    return;
+  }
   slidocAction(actionName, sessionName, dispMsg, query);
 }
 

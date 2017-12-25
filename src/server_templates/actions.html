@@ -29,6 +29,8 @@
 
   <ul>
     <hr>
+    <li><b><a class="clickable" href="/_settings/{{site_name}}">settings</a></b>: Edit site settings</li>
+    <hr>
     <li><b><a class="clickable" href="javascript:slidocAction('twitter')">twitter</a></b>: View Twitter stream status</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a></b>: Backup of all module sessions to directory</li>
@@ -45,8 +47,9 @@ Update site settings from settings sheet and clear cache
     <hr>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('freeze')">freeze</a></b>: Freeze all cached module sessions (clear to cancel freeze)</li>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('clear')">clear</a></b>: Clear all cached module sessions</li>
-    <li><b><a class="clickable" href="javascript:slidocConfirmAction('settings')">update settings</a></b>: Update site settings from settings sheet and clear cache</li>
-    {% if not site_name %}
+    {% if site_name %}
+    <li><b><a class="clickable" href="javascript:slidocConfirmAction('sitedelete')">sitedelete</a></b>: Delete site (IRREVERSIBLE)</li>
+    {% else %}
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a></b>: Shutdown proxy server</li>
     {% end %}
     <hr>

@@ -40,12 +40,25 @@ body {
   text-align: right;
 }
 
+.clickable { padding: 0.2em 0 0 0.8em; }
+
+.clickable-sym { font-size: 140%; }
+
 a.clickable {
   color: #ffa500;
    text-decoration: none;
 }
 
 </style>
+
+<script>
+function newSite() {
+  var siteName = window.prompt('New site name: ');
+  if (!siteName)
+    return;
+  window.location = '/_settings/'+siteName+'?new_site=1';
+}
+</script>
 
 </head>
 <body>
@@ -71,8 +84,10 @@ a.clickable {
         {% end %}
       <p></p>
       {% end %}
-  <ul>
-
+  </ul>
+  {% if global_role == 'admin' %}
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a class="clickable clickable-sym" href="javascript:newSite()"><b>+</b></a>
+  {% end %}
 </body>
 </html>
 

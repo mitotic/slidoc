@@ -190,11 +190,14 @@ def copySheetOptions(sheetSettings):
             Settings[key] = sheetSettings[key]
     Settings['update_time'] = sliauth.create_date()
 
-def split_list(list_str, sep=',', lower=False):
+def split_list(list_str, sep=',', lower=False, keep_null=False):
     # Split comma-separated list, stripping it
     if lower:
         list_str = list_str.lower()
-    return [x.strip() for x in list_str.split(sep) if x.strip()]
+    if keep_null:
+        return [x.strip() for x in list_str.split(sep)]
+    else:
+        return [x.strip() for x in list_str.split(sep) if x.strip()]
     
 def delSheet(sheetName, deleteRemote=False):
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):

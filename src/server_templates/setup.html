@@ -14,15 +14,17 @@
 <body>
   <h2>Slidoc site setup</h2>
   <p></p>
-  <b><a class="clickable" href="/">Home</a></b>
+  <b><a class="clickable" href="/">Root</a></b>
   <p></p>
   <h3><span id="slidoc-action-status"></span>{{status}}</h3>
   <p></p>
+  {% if site_updates %}
   <table><th><td>Site name</td><td>Last update time</td></th>
-  {% for j, site_info in enumerate(site_updates) %}
+    {% for j, site_info in enumerate(site_updates) %}
     <tr><td>{{site_info[0]}}</td><td>{{site_info[1]}}</td></tr>
-  {% end %}
+    {% end %}
   </table>
+  {% end %}
 
   <ul>
     <li><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a>: Backup all sites</li>
@@ -35,10 +37,8 @@
     href="javascript:slidocAction('update/check')">update check</a>: Check for code updates from github</li>
     <p></p>
     <li><a class="clickable" href="javascript:slidocConfirmAction('update/pull')">update pull</a>: Pull updated code from github and restart proxy server</li>
-    <p></p>
+    <hr>
     <li><a class="clickable" href="javascript:slidocPromptAction('alias', 'Enter user@example.com=userid')">alias</a>: Define email alias (user@example.com=userid)</li>
-    <p></p>
-    <li><a class="clickable" href="javascript:slidocPromptAction('settings', 'Site to update')">settings</a>: Update site settings</li>
   </ul>
 
   Aliases: <code>{{ aliases }}</code>

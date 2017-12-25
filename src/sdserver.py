@@ -64,12 +64,11 @@ import tornado.gen
 import tornado.escape
 import tornado.httpserver
 import tornado.netutil
-import tornado.options
 import tornado.process
 import tornado.web
 import tornado.websocket
 
-from tornado.options import define, options, parse_config_file, parse_command_line
+from tornado.options import define, options, parse_command_line, parse_config_file
 from tornado.ioloop import IOLoop, PeriodicCallback
 
 import md2md
@@ -108,6 +107,7 @@ Options = {
     'log_call': 0,
     'min_wait_sec': 0,
     'missing_choice': '*',
+    'multisite': False,
     'no_auth': False,
     'notebook_extn': 'ipynb',
     'plugindata_dir': 'plugindata',
@@ -126,7 +126,6 @@ Options = {
     'server_start': None,
     'server_url': '',
     'site_label': '',        # E.g., Calculus 101
-    'site_list': [],         # List of site names
     'site_name': '',         # E.g., calc101
     'site_number': 0,
     'site_title': '',        # E.g., Elementary Calculus, Fall 2000
@@ -141,8 +140,45 @@ Options = {
     'xsrf': False,
     }
 
-OPTIONS_FROM_SHEET = ['admin_users', 'grader_users', 'guest_users', 'start_date', 'end_date']
-SPLIT_OPTS = ['gsheet_url', 'twitter_config', 'site_label', 'site_title']
+SITE_OPTS = ['gsheet_url', 'site_label', 'site_title', 'site_access', 'twitter_config', 'site_deleted']
+
+SHEET_OPTS = ['admin_users', 'grader_users', 'guest_users', 'start_date', 'freeze_date', 'end_date']
+
+SETTINGS_LABELS = [ ('gsheet_url', 'Google Sheet URL'),
+                    ('site_label', "Site label e.g., 'Calc101, F16'"),
+                    ('site_title', 'Site title (one line)'),
+                    ('site_access', "Blank '' OR 'adminonly' OR 'adminguest' OR 'readonly'"),
+                    ('', ''),
+                    ('admin_users', 'User IDs or email addresses with admin access (comma-separated)'),
+                    ('grader_users', 'User IDs or email addresses with grader access'),
+                    ('guest_users', 'User IDs or email addresses with guest access'),
+                    ('', ''),
+                    ('start_date', 'Date after which all session releases must start (yyyy-mm-dd)'),
+                    ('freeze_date', 'Date when all user modifications are disabled (yyyy-mm-dd)'),
+                    ('end_date', 'Date after which all user access is disabled (yyyy-mm-dd)'),
+                    ('', ''),
+                    ('server_url', "Base URL of server (if any); e.g., http://example.com"),
+                    ('twitter_config', 'Twitter config (user,cons_key,cons_secret,acc_key,acc_secret)'),
+                    ]
+
+SiteOpts = OrderedDict()
+
+def add_site(site_name, site_config, overwrite=False):
+    if site_name in SiteOpts and not overwrite:
+        raise Exception('Cannot add duplicate site: %s' % site_name)
+    SiteOpts[site_name] = {}
+    for key in SITE_OPTS:
+        SiteOpts[site_name][key] = site_config.get(key,'')
+
+def get_site_number(site_name):
+    if site_name in SiteOpts:
+        return 1+SiteOpts.keys().index(site_name)
+    else:
+        return 0
+
+SLIDOC_CONFIGFILE = '_slidoc_config.py'
+
+SITE_CONFIGFILE = '_site.json'
 
 SERVER_LOGFILE = 'screenlog.0'
 
@@ -150,9 +186,13 @@ SESSION_OPTS_RE = re.compile(r'^session_(\w+)$')
 
 class Dummy():
     pass
-    
+
+CommandOpts = options
+
 Global = Dummy()
+Global.config_path = ''
 Global.config_file = ''
+Global.config_data = ''
 Global.userRoles = None
 Global.backup = None
 Global.remoteShutdown = False
@@ -163,6 +203,8 @@ Global.server_socket = None
 Global.proxy_server = None
 Global.session_options = {}
 Global.email2id = None
+Global.predefined_sites = []
+Global.split_site_opts = {}
 
 Global.twitterStream = None
 Global.twitterSpecial = {}
@@ -449,7 +491,7 @@ class UserIdMixin(object):
         role, sites = Global.userRoles.id_role_sites(username)
         if role:
             # Global role; switch to guest in all sites
-            plainSites = ','.join(Options['site_list'])
+            plainSites = ','.join(SiteOpts.keys())
         else:
             # Site roles; switch to guest in sites
             plainSites = ','.join(site.split('+')[0] for site in sites.split(','))
@@ -578,7 +620,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
                     os.makedirs(cls.site_web_dir)
                 if not os.path.exists(homeWeb):
                     with open(homeWeb, 'w') as f:
-                        f.write('<b>%s Site Page</b>' % site_name)
+                        f.write('<b>%s Site Page</b> (<a href="_edit/index">edit</a> this page)' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeWeb
             except Exception, excp:
                 print >> sys.stderr, 'sdserver: Failed to create home web %s' % homeWeb
@@ -591,7 +633,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
                     os.makedirs(cls.site_src_dir)
                 if not os.path.exists(homeSrc):
                     with open(homeSrc, 'w') as f:
-                        f.write('**%s Site Page**' % site_name)
+                        f.write('**%s Site Page** ([edit](_edit/index) this page)' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeSrc
             except Exception, excp:
                 print >> sys.stderr, 'sdserver: Failed to create home source %s' % homeSrc
@@ -644,7 +686,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
 class InvalidHandler(BaseHandler):
     def get(self):
         self.set_header('Content-Type', 'text/plain')
-        self.write('Invalid path: %s (%d)' % (self.request.path, Options['site_number']))
+        self.write('Invalid path: %s (%d:%s)' % (self.request.path, Options['site_number'], Options['site_name']))
 
 class HomeHandler(BaseHandler):
     def get(self):
@@ -653,12 +695,13 @@ class HomeHandler(BaseHandler):
             self.redirect('/_auth/login/')
             return
             
-        if Options['site_list'] and not Options['site_number']:
+        if Options['multisite'] and not Options['site_number']:
             # Primary server
             siteHide = []
             siteRoles = []
             siteRestrictions = []
-            for j, siteName in enumerate(Options['site_list']):
+            for j, siteName in enumerate(SiteOpts.keys()):
+                siteConfig = SiteOpts[siteName]
                 siteRole = self.get_id_from_cookie(role=True, for_site=siteName)
                 siteSettings = SiteProps.siteSettings[siteName]
                 siteAccess = siteSettings.get('site_access','')
@@ -666,9 +709,12 @@ class HomeHandler(BaseHandler):
                 endDate = siteSettings.get('end_date','')
                 hideStr = restricted_user_access(startDate, endDate, siteRole, siteAccess)
                 siteRestriction = restricted_user_access(startDate, endDate)  # 'prerelease' or 'expired' or ''
-                if siteAccess:
+                if siteConfig.get('site_deleted'):
+                    siteRestriction = 'DELETED'
+                elif siteAccess:
                     # Expired
                     siteRestriction = siteAccess+' '+siteRestriction if siteRestriction else siteAccess
+
                 if siteSettings.keys() == ['site_access']:
                     # No access to settings
                     siteRestriction += ' nosettings'
@@ -677,11 +723,18 @@ class HomeHandler(BaseHandler):
                 siteRoles.append(siteRole)
                 siteRestrictions.append(siteRestriction)
 
-            site_labels = sdproxy.split_list(Options['site_label'], sep=';')
-            site_titles = sdproxy.split_list(Options['site_title'], sep=';')
+            all_sites = SiteOpts.keys()
+            all_sites.sort()
+            site_names = Global.predefined_sites[:]
+            for site_name in all_sites:
+                if site_name not in site_names:
+                    site_names.append(site_name)
+
+            site_labels = [SiteOpts[site_name]['site_label'] for site_name in site_names]
+            site_titles = [SiteOpts[site_name]['site_title'] for site_name in site_names]
             self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url, global_role=self.get_id_from_cookie(role=True),
-                         sites=Options['site_list'], site_roles=siteRoles, site_labels=site_labels,
+                         sites=site_names, site_roles=siteRoles, site_labels=site_labels,
                          site_titles=site_titles, site_hide=siteHide, site_restrictions=siteRestrictions)
             return
         elif Options.get('_index_html'):
@@ -699,7 +752,7 @@ class SiteActionHandler(BaseHandler):
     def get(self, action='', skip='', subsubpath=''):
         userId = self.get_current_user()
         if Options['debug']:
-            print >> sys.stderr, 'DEBUG: SiteActionHandler', userId, Options['site_number'], action
+            print >> sys.stderr, 'DEBUG: SiteActionHandler.get', userId, Options['site_number'], action
         if action == '_logout':
             self.clear_user_cookie()
             self.render('logout.html')
@@ -710,45 +763,14 @@ class SiteActionHandler(BaseHandler):
             raise tornado.web.HTTPError(403)
 
         # Global admin user
-        setup_html = '<p></p><a href="/_setup">Setup</a>'
+        link_html = '<p></p><b><a href="/">Root home</a><p></p><a href="/_setup">Setup</a></b>'
         if action == '_setup':
-            new_site_name = self.get_argument('sitename', '').strip()
-            new_site_url = self.get_argument('siteurl', '').strip()
-            if not new_site_name:
-                self.render('setup.html', site_name='', session_name='', status='...', site_updates=[('...', '...')], aliases=Global.userRoles.list_aliases())
-                return
-            elif new_site_name in Options['site_list']:
-                self.write('Site %s already active' % new_site_name)
-                self.write(setup_html)
-                return
-            elif not new_site_url:
-                self.write('Please specify Google Sheets URL for new site')
-                self.write(setup_html)
-                return
-
-            # New site
-            errMsg = ''
-            try:
-                site_number = 1+len(Options['site_list'])
-                start_secondary_server(site_number, new_site_name, gsheet_url=new_site_url)
-                SiteProps.root_site_setup(site_number, new_site_name, new_site_url)
-            except Exception, excp:
-                errMsg = str(excp)
-                if Options['debug']:
-                    import traceback
-                    traceback.print_exc()
-
-            if errMsg:
-                self.write(errMsg)
-            else:
-                self.write('Created new site: %s' % new_site_name)
-            self.write(setup_html)
-            return
+            self.render('setup.html', site_name='', session_name='', status='', site_updates=[], aliases=Global.userRoles.list_aliases())
 
         elif action in ('_reload', '_update'):
             if not Options['reload']:
                 self.write('Please restart server with --reload option')
-                self.write(setup_html)
+                self.write(link_html)
             else:
                 if Global.backup:
                     Global.backup.stop()
@@ -798,13 +820,69 @@ class SiteActionHandler(BaseHandler):
 
         elif action == '_settings':
             site_name = subsubpath
-            if site_name not in Options['site_list']:
-                self.displayMessage('Unknown/invalid site name %s' % site_name, back_url='/_setup')
+            new_site = self.get_argument('new_site', '')
+            if new_site or SiteOpts.get(site_name,{}).get('site_deleted'):
+                with open(Global.config_file) as f:
+                    if Global.config_data != f.read():
+                        err_msg = 'Config file %s has changed; unable to create site' % Global.config_file
+
+            site_config_file = os.path.join(Global.config_path, site_name+'.json') if os.path.isdir(Global.config_path) else ''
+            if new_site:
+                if site_name in SiteOpts:
+                    self.displayMessage('ERROR:Site %s already present!' % site_name, back_url='/_setup')
+                    return
+                    
+                if site_config_file and os.path.exists(site_config_file):
+                    self.displayMessage('ERROR:Configuration file %s already exists for new site!' % site_config_file, back_url='/_setup')
+                    return
+
+                site_config = {'gsheet_url': '', 'twitter_config': '',
+                               'site_label': site_name+'-label', 'site_title': 'Title for '+site_name}
             else:
-                site_number = 1+Options['site_list'].index(site_name)
-                gsheet_urls = sdproxy.split_list(Options['gsheet_url'], sep=';')
-                SiteProps.root_site_setup(site_number, site_name, gsheet_urls[site_number-1], update=True)
-                self.redirect('/'+site_name+'/_settings?root='+Options['server_key'])
+                # Old site
+                if site_name not in SiteOpts:
+                    self.displayMessage('Site %s not found!' % site_name, back_url='/_setup')
+                    return
+                if not site_config_file:
+                    site_config = SiteOpts[site_name]
+                else:
+                    if not os.path.exists(site_config_file):
+                        self.displayMessage('Site settings file %s not found!' % site_name, back_url='/_setup')
+                        return
+                    with open(site_config_file, 'r') as f:
+                        site_config = json.load(f)
+
+            self.render('settings.html', site_name=site_name, new_site=new_site, err_msg='',
+                        settings_labels=SETTINGS_LABELS, site_config=site_config)
+
+        elif action == '_sitedelete':
+            site_name = subsubpath
+            if site_name in Global.predefined_sites:
+                self.displayMessage('Cannot delete predefined site %s' % site_name, back_url='/_setup')
+                return
+            site_number = get_site_number(site_name)
+            if not site_number:
+                self.displayMessage('Site %s not found!' % site_name, back_url='/_setup')
+                return
+            if SiteOpts[site_name].get('site_deleted'):
+                self.displayMessage('Site %s already deleted!' % site_name, back_url='/_setup')
+                return
+            site_config_file = os.path.join(Global.config_path, site_name+'.json') if os.path.isdir(Global.config_path) else ''
+            if site_config_file and os.path.exists(site_config_file):
+                try:
+                    os.remove(site_config_file)
+                except Exception, excp:
+                    self.displayMessage('Error in deleting site %s config file: %s' % (site_name, excp), back_url='/_setup')
+                    return
+
+            Global.child_procs[site_name] = None
+            SiteOpts[site_name]['site_deleted'] = 'yes'
+            relay_addr = SiteProps.relay_map(site_number)
+            try:
+                retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
+            except Exception, excp:
+                print >> sys.stderr, 'sdserver.shutdown_all: Error in shutting down site', site, excp
+            self.displayMessage('Deleted site %s' % site_name, back_url='/_setup')
 
         elif action == '_backup':
             self.displayMessage(backupSite(subsubpath, broadcast=True), back_url='/_setup')
@@ -812,8 +890,8 @@ class SiteActionHandler(BaseHandler):
         elif action == '_shutdown':
             self.clear_user_cookie()
             self.write('Starting shutdown (also cleared cookies)<p></p>')
-            self.write(setup_html)
-            if Options['site_list'] and not Options['site_number']:
+            self.write(link_html)
+            if Options['multisite'] and not Options['site_number']:
                 # Primary server
                 shutdown_all()
             else:
@@ -830,7 +908,81 @@ class SiteActionHandler(BaseHandler):
 
                 sdproxy.suspend_cache('shutdown')
         else:
-            raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid home action '+action)
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid root action '+action)
+
+    def post(self, action='', skip='', subsubpath=''):
+        userId = self.get_current_user()
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: SiteActionHandler.post', userId, Options['site_number'], action
+
+        if not self.check_admin_access():
+            raise tornado.web.HTTPError(403)
+
+        if action == '_settings':
+            site_name = subsubpath
+            new_site = self.get_argument('new_site', '')
+
+            errMsg = ''
+            site_config = dict( (argname, self.get_argument(argname, '')) for argname, arglabel in SETTINGS_LABELS )
+
+            gsheet_url = site_config['gsheet_url']
+            if not Options['dry_run'] and not gsheet_url:
+                errMsg = 'gsheet_url must be specified to for site (if not dry run)'
+
+            elif new_site or SiteOpts.get(site_name,{}).get('site_deleted'):
+                with open(Global.config_file) as f:
+                    if Global.config_data != f.read():
+                        errMsg = 'Config file %s has changed; unable to create site' % Global.config_file
+
+            if errMsg:
+                self.render('settings.html', site_name=site_name, new_site=new_site, err_msg=errMsg,
+                            settings_labels=SETTINGS_LABELS, site_config=site_config)
+                return
+
+            redirect_url = ''
+            try:
+                if not new_site:
+                    site_number = get_site_number(site_name)
+                    if not site_number:
+                        self.displayMessage('Unknown/invalid site name %s' % site_name, back_url='/_setup')
+                        return
+                    if SiteOpts[site_name].get('site_deleted'):
+                        site_config['site_deleted'] = ''
+                        self.displayMessage('<b>Re-created deleted site: <a href="/%s">%s</a></b>' % (site_name, site_name), back_url='/')
+                    else:
+                        redirect_url = '/'+site_name+'/_settings?root='+Options['server_key']
+                    add_site(site_name, site_config, overwrite=True)
+                    SiteProps.root_site_setup(site_number, site_name, gsheet_url, update=True)
+                else:
+                    add_site(site_name, site_config)
+                    SiteProps.root_site_setup(get_site_number(site_name), site_name, gsheet_url, new=True)
+
+                    self.displayMessage('<b>Created new site: <a href="/%s">%s</a></b>' % (site_name, site_name), back_url='/')
+
+                if os.path.isdir(Global.config_path):
+                    site_config_file = os.path.join(Global.config_path, site_name+'.json')
+                    with open(site_config_file, 'w') as f:
+                        json.dump(site_config, f, indent=4, sort_keys=True)
+
+            except Exception, excp:
+                errMsg = str(excp)
+                if Options['debug']:
+                    import traceback
+                    traceback.print_exc()
+
+            if errMsg:
+                self.displayMessage('Error in creating/editing site settings: '+errMsg, back_url='/')
+                return
+
+            if redirect_url:
+                # Old site: update settings in secondary site server as well
+                self.redirect(redirect_url)
+            else:
+                # New site
+                start_secondary_server(get_site_number(site_name), site_name, site_config)
+        else:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid root action '+action)
+
 
 class ActionHandler(BaseHandler):
     previewState = {}
@@ -1000,7 +1152,7 @@ class ActionHandler(BaseHandler):
         else:
             slideNumber = None
         previewingSession = self.previewActive()
-        if not Options['site_list'] or Options['site_number']:
+        if not Options['multisite'] or Options['site_number']:
             # Secondary server
             root = str(self.get_argument('root', ''))
             modifiedStr = self.get_argument('modified', '')
@@ -1089,7 +1241,7 @@ class ActionHandler(BaseHandler):
                 releaseDate = self.get_argument('releasedate', '')
                 return self.releaseModule(sessionName, releaseDate=releaseDate)
 
-        if Options['site_list'] and not Options['site_number']:
+        if Options['multisite'] and not Options['site_number']:
             # Primary server
             if action not in ('_backup',):
                 raise tornado.web.HTTPError(403)
@@ -1221,11 +1373,11 @@ class ActionHandler(BaseHandler):
                     wheelNames.append(shortName+'/'+fullName)
                 wheelNames.sort()
 
-                siteName = Options['site_name'] or ''
-                qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(siteName)
+                site_name = Options['site_name'] or ''
+                qwheel_link = 'https://mitotic.github.io/wheel/?session=' + urllib.quote_plus(site_name)
                 qwheel_new = qwheel_link + '&names=' + ';'.join(urllib.quote_plus(x,safe='/') for x in wheelNames)
 
-                self.render('roster.html', site_name=siteName, gradebook='gradebook' in SiteProps.get_site_menu(),
+                self.render('roster.html', site_name=site_name, gradebook='gradebook' in SiteProps.get_site_menu(),
                              session_name='', qwheel_link=qwheel_link, qwheel_new=qwheel_new,
                              name_map=nameMap, last_map=lastMap, first_map=firstMap)
 
@@ -1257,7 +1409,7 @@ class ActionHandler(BaseHandler):
         elif action == '_settings':
             sheetSettings = getSettingsSheet(Options['gsheet_url'], Options['site_name'])
             sdproxy.suspend_cache('clear')
-            update_site_settings(sheetSettings)
+            update_site_settings(Options['site_name'], sheetSettings)
             self.displayMessage('Updated site settings and cleared cache<p></p>If certain options, like <code>start_date</code>, are changed, site may need to be re-built', back_url=site_prefix+'/_dash')
 
         elif action == '_freeze':
@@ -3779,7 +3931,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         if not sessionName:
             return ''
         
-        if not options.session_versioning:
+        if not CommandOpts.session_versioning:
             return 'noversioning'
 
         if sessionName not in cls._sessionVersions:
@@ -4551,7 +4703,7 @@ class AuthLoginHandler(BaseHandler):
         if not error_msg and username and (token or Options['no_auth']):
             self.login(username, token, next=next)
         else:
-            self.render("login.html", error_msg=error_msg, next=next, login_label=Options['site_label'],
+            self.render("login.html", error_msg=error_msg, next=next, login_label='Slidoc',
                         login_url='/_auth/login/', locked_access_link=locked_access_link,
                         password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
 
@@ -4564,7 +4716,7 @@ class AuthLoginHandler(BaseHandler):
             # Auth_key token option for testing local-only proxy
             generateToken = True
 
-        elif Options['no_auth'] and Options['debug'] and not Options['gsheet_url']:
+        elif Options['no_auth'] and Options['debug'] and Options['dry_run']:
             # No authentication option for testing local-only proxy
             generateToken = True
 
@@ -4760,7 +4912,7 @@ def createApplication():
         # Single/root server
         home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown))", SiteActionHandler) ]
         home_handlers += [ (r"/(_(backup|update))/([-\w.]+)", SiteActionHandler) ]
-        home_handlers += [ (r"/(_(alias|settings))/([-\w.@=]+)", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(alias|settings|sitedelete))/([-\w.@=]+)", SiteActionHandler) ]
 
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
@@ -4777,11 +4929,10 @@ def createApplication():
         home_handlers += [ (r"[^_]*/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': docs_dir}) ]
         home_handlers += [ (r"[^_]*/_private/[^_]*/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': docs_dir}) ]
 
-    primary_server = False
-    if Options['site_list']:
+    Root_server = Options['multisite'] and not Options['site_number']
+    if Options['multisite']:
         if not Options['site_number']:
-            # Primary server (no site associated with it)
-            primary_server = True
+            # Root server (no site associated with it)
             home_handlers += [ (pathPrefix+r"/index.html", HomeHandler) ]
         else:
             # Secondary server
@@ -4833,7 +4984,7 @@ def createApplication():
         debug=Options['debug'],
     )
 
-    if Options['proxy_sheet'] and not primary_server:
+    if Options['proxy_sheet'] and not Root_server:
         site_handlers = [
                       (pathPrefix+r"/(_proxy)", ProxyHandler),
                       (pathPrefix+r"/(_dryproxy)", ProxyHandler),
@@ -4923,7 +5074,7 @@ def createApplication():
         # Default static path
         site_handlers += [ (r'/%s([^_].*)' % sprefix, file_handler, {'path': Options['static_dir']+pathPrefix}) ]
 
-    if Options['site_list']:
+    if Options['multisite']:
         if not Options['site_number']:
             handlers = home_handlers + auth_handlers + action_handlers
         else:
@@ -4933,7 +5084,7 @@ def createApplication():
 
     handlers += [ (r'.*', InvalidHandler) ]
     ##if Options['debug']:
-    ##    print >> sys.stderr, 'createApplication', Options['site_number'], [x[0] for x in handlers]
+    ##    print >> sys.stderr, 'createApplication', Options['site_number'], Options['site_name'], [x[0] for x in handlers]
 
     return tornado.web.Application(handlers, **appSettings)
 
@@ -5084,7 +5235,7 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
             if idCol:
                 userId = row[idCol-1].strip().lower()
 
-            if not userId and name and options.multi_email_id:
+            if not userId and name and CommandOpts.multi_email_id:
                 userId = sdproxy.makeId(name, idVals)
 
             if not userId:
@@ -5378,7 +5529,7 @@ def backupSite(dirname='', broadcast=False):
     if Options['site_name']:
         backup_url = '/' + Options['site_name'] + backup_url
 
-    if Options['site_list'] and backup_name in Options['site_list']:
+    if backup_name in SiteOpts:
         raise Exception('Backup directory name %s conflicts with site name' % backup_name)
 
     if not BaseHandler.site_backup_dir:
@@ -5426,12 +5577,19 @@ def backupSite(dirname='', broadcast=False):
 
         makefile_path = os.path.join(script_parentdir, 'Makefile')
 
-        backupCopy(Global.config_file, backup_path, if_exists=True)
+        if os.path.isdir(Global.config_path):
+            config_files = [SLIDOC_CONFIGFILE] + sorted([os.path.basename(f) for f in glob.glob(Global.config_path+'/[!_]*.json')])
+            config_dir = os.path.join(backup_path, 'config')
+            os.makedirs(config_dir)
+            for fname in config_files:
+                backupCopy(os.path(Global.config_path,fname), os.path(config_dir,fname), if_exists=True)
+        else:
+            backupCopy(Global.config_path, backup_path, if_exists=True)
         backupCopy(makefile_path, backup_path, if_exists=True)
         if dirname.lower().startswith('full'):
             backupCopy(SERVER_LOGFILE, backup_path, if_exists=True)
 
-    if Options['site_list'] and not Options['site_number']:
+    if Options['multisite'] and not Options['site_number']:
         # Root server
         if not broadcast:
             if not errorList:
@@ -5443,7 +5601,7 @@ def backupSite(dirname='', broadcast=False):
                 path += '/' + urllib.quote(dirname)
             path += '?root='+Options['server_key']
 
-            for j, site in enumerate(Options['site_list']):
+            for j, site in enumerate(SiteOpts.keys()):
                 relay_addr = SiteProps.relay_map(j+1)
                 try:
                     retval = sendPrivateRequest(relay_addr, path='/'+site+path)
@@ -5487,7 +5645,7 @@ def shutdown_all(keep_root=False):
 
     if not Global.remoteShutdown:
         Global.remoteShutdown = True
-        for j, site in enumerate(Options['site_list']):
+        for j, site in enumerate(SiteOpts.keys()):
             # Shutdown child servers
             relay_addr = SiteProps.relay_map(j+1)
             try:
@@ -5647,7 +5805,7 @@ class UserRoles(object):
             return self.root_role[userId], ''
 
         siteRoles = []
-        for siteName in Options['site_list']:
+        for siteName in SiteOpts:
             if userId in self.site_roles[siteName]:
                 siteRole = siteName
                 if self.site_roles[siteName][userId]:
@@ -5676,10 +5834,14 @@ def start_multiproxy():
             Raises exception if connection not allowed.
             """
             comps = self.request_uri.split('/')
-            if len(comps) > 1 and comps[1] and comps[1] in Options['site_list']:
+            if len(comps) > 1 and comps[1] and comps[1] in SiteOpts:
                 # Site server
-                site_number = 1+Options['site_list'].index(comps[1])
-                retval = SiteProps.relay_map(site_number)
+                siteName = comps[1]
+                siteNumber = get_site_number(siteName)
+                if SiteOpts[siteName].get('site_deleted'):
+                    retval = SiteProps.relay_map(0)
+                else:
+                    retval = SiteProps.relay_map(siteNumber)
             elif Global.relay_forward and not self.request_uri.startswith('/_'):
                 # Not URL starting with '_'; forward to underlying website
                 retval = Global.relay_forward
@@ -5695,7 +5857,7 @@ def start_multiproxy():
 def start_server(site_number=0, restart=False):
     # Start site/root server
     Options['server_start'] = sliauth.create_date()
-    if Options['ssl_options'] and not Options['site_list']:
+    if Options['ssl_options'] and not Options['multisite']:
         Global.http_server = tornado.httpserver.HTTPServer(createApplication(), ssl_options=Options['ssl_options'])
     else:
         Global.http_server = tornado.httpserver.HTTPServer(createApplication())
@@ -5705,10 +5867,10 @@ def start_server(site_number=0, restart=False):
         handlers = [ (r'/'+ACME_PATH+'/(.*)', UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
         handlers += [ (r'/.*', PlainHTTPHandler) ]
         plain_http_app = tornado.web.Application(handlers)
-        plain_http_app.listen(80 + (options.port - (options.port % 1000)), address=Options['host'])
+        plain_http_app.listen(80 + (CommandOpts.port - (CommandOpts.port % 1000)), address=Options['host'])
         print >> sys.stderr, 'Listening on HTTP port'
 
-    if not Options['site_list']:
+    if not Options['multisite']:
         # Start single site server
         print >> sys.stderr, "Listening on host, port:", Options['host'], Options['port'], Options['site_name']
         Global.http_server.listen(Options['port'], address=Options['host'])
@@ -5720,7 +5882,7 @@ def start_server(site_number=0, restart=False):
             import multiproxy
             Global.server_socket = multiproxy.make_unix_server_socket(relay_addr)
             Global.http_server.add_socket(Global.server_socket)
-        print >> sys.stderr, "  Site %02d:%s listening on %s (%s: admins=%s, graders=%s, guests=%s, start=%s, end=%s)" % (site_number, Options['site_list'][site_number-1], relay_addr,
+        print >> sys.stderr, "  Site %02d:%s listening on %s (%s: admins=%s, graders=%s, guests=%s, start=%s, end=%s)" % (site_number, Options['site_name'], relay_addr,
                 Options['site_name'], Options['admin_users'], Options['grader_users'], Options['guest_users'], Options['start_date'], Options['end_date'])
 
     if not restart:
@@ -5799,56 +5961,58 @@ class SiteProps(object):
             return ('localhost', port)
 
     @classmethod
-    def root_site_setup(cls, site_number, site_name, gsheet_url, update=False):
+    def root_site_setup(cls, site_number, site_name, gsheet_url, new=False, update=False):
+        # For single or root server
         sheetSettings = getSettingsSheet(gsheet_url, site_name, adminonly_fail=Options['host'] != 'localhost') if gsheet_url or Options['restore_backup'] else {}
 
         cls.siteSettings[site_name] = sheetSettings
-        cls.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and options.multi_email_id else {}
+        cls.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and CommandOpts.multi_email_id else {}
 
         if site_name:
             Global.userRoles.update_site_roles(site_name, sheetSettings.get('admin_users',''), sheetSettings.get('grader_users',''), sheetSettings.get('guest_users','') )
 
         if sheetSettings:
-            for key in SPLIT_OPTS[1:]:
-                if key in sheetSettings:
-                    if not site_number:
+            if site_name:
+                for key in SiteOpts[site_name]:
+                    if key != 'gsheet_url' and key in sheetSettings:
+                        if SiteOpts[site_name][key] and not sheetSettings[key]:
+                            print >> sys.stderr, 'sdserver: CLEARED SETTING', key, 'for site'
+                        SiteOpts[site_name][key] = sheetSettings[key]
+            else:
+                for key in SITE_OPTS[1:]:
+                    if key in sheetSettings:
                         if Options[key] and not sheetSettings[key]:
                             print >> sys.stderr, 'sdserver: CLEARED SETTING', key, 'for site'
                         Options[key] = sheetSettings[key]
-                    else:
-                        split_opts = sdproxy.split_list(Options[key], sep=';')
-                        if site_number <= len(split_opts):
-                            split_opts[site_number-1] = sheetSettings[key]
-                        elif site_number == 1+len(split_opts):
-                            split_opts.append(sheetSettings[key])
-                        else:
-                            split_opts = ['']*(site_number-1) + [sheetSettings[key]]
-                        Options[key] = ';'.join(split_opts)
 
-def start_secondary_server(site_number, site_name, **kwargs):
+def start_secondary_server(site_number, site_name, site_config={}):
     # Return error message or null string
-    # kwargs must match SPLIT_OPTS
-    new_site = site_name not in Options['site_list']
-    if new_site:
-        Options['site_list'].append(site_name)
-        if site_number != len(Options['site_list']):
-            raise Exception('Inconsistent site number %d for site_list %s' % (site_number, Options['site_list']))
-        for key in SPLIT_OPTS:
-            Options[key] += ';' + kwargs.get(key,'')
-    elif site_name != Options['site_list'][site_number-1]:
-        raise Exception('ERROR: inconsistent name %s for site number %d: expecting %s' % (site_name, site_number, Options['site_list'][site_number-1]))
+    # site_config should be specified for transient (no conf file) sites, and must match SITE_OPTS
+    if site_name not in SiteOpts:
+        raise Exception('ERROR: Cannot start site %s not found in root site list' % (site_name, SiteOpts.keys()))
+    if site_name != SiteOpts.keys()[site_number-1]:
+        raise Exception('ERROR: Inconsistent name %s for site number %d: expecting %s' % (site_name, site_number, SiteOpts.keys()[site_number-1]))
 
-    args = sys.argv[:]+['--site_number='+str(site_number), '--site_name='+site_name]
-    mod_args = []
-    for arg in args:
+    mod_args = sys.argv[:1]
+    for arg in sys.argv[1:]:
         argname, _, val = arg.lstrip('-').partition('=')
-        if argname != 'sites' and argname not in kwargs:
+        if argname != 'sites' and argname not in site_config:
             mod_args.append(arg)
-    mod_args += ['--sites='+','.join(Options['site_list'])]
-    mod_args += ['--%s=%s' % (k, v) for k, v in kwargs.items()]
+    mod_args += ['--multisite']
+    mod_args += ['--server_version='+sliauth.get_version()]
     mod_args += ['--server_nonce='+Options['server_nonce']]
+    mod_args += ['--site_number='+str(site_number)]
+    mod_args += ['--site_name='+site_name]
+    if site_config:
+        mod_args += ['--%s=%s' % (k, v) for k, v in site_config.items() if v]
+    else:
+        for key in SITE_OPTS:
+            # Handle split options for backwards compatibility
+            if key in Global.split_site_opts and site_name in Global.split_site_opts[key]:
+                mod_args += ['--%s=%s' % (key, Global.split_site_opts[key][site_name]) ]
+
     child_proc = tornado.process.Subprocess(mod_args)
-    Global.child_procs.append(child_proc)
+    Global.child_procs[site_name] = child_proc
 
 def setup_backup():
     if not Options['backup_hhmm']:
@@ -5869,19 +6033,16 @@ def setup_backup():
 
     IOLoop.current().call_at(backupTimeSec, start_backup)
 
-def update_site_settings(sheetSettings):
+def update_site_settings(site_name, sheetSettings):
+    # For single or secondary server
+
     ## Copy sheet options to proxy
     sdproxy.copySheetOptions(sheetSettings)
 
     Global.session_options = {}
     for key in sheetSettings:
         smatch = SESSION_OPTS_RE.match(key)
-        if key in SPLIT_OPTS[1:]:
-            # Copy sheet options
-            if Options[key] and not sheetSettings[key]:
-                print >> sys.stderr, 'sdserver: CLEARED SETTING', key, 'for site'
-            Options[key] = sheetSettings[key]
-        elif key in OPTIONS_FROM_SHEET:
+        if key in SHEET_OPTS:
             # Copy sheet options
             Options[key] = sheetSettings[key]
         elif smatch:
@@ -5904,11 +6065,12 @@ def update_site_settings(sheetSettings):
             Global.session_options[sessionName] = opts_dict
 
 def setup_site_server(sheetSettings, site_number):
+    # For single or secondary server
     if Options['proxy_sheet']:
         # Copy server options to proxy
         sdproxy.copyServerOptions(Options)
 
-        update_site_settings(sheetSettings or {})
+        update_site_settings(Options['site_name'], sheetSettings or {})
 
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:
@@ -5933,13 +6095,40 @@ def setup_site_server(sheetSettings, site_number):
                                                      allow_replies=Options['allow_replies'])
         Global.twitterStream.start_stream()
 
+def get_file_config(site_name, commandOpts, cmd_arg_set):
+    file_config = {}
+    if os.path.isdir(Global.config_path):
+        site_config_file = os.path.join(Global.config_path, site_name+'.json')
+        if os.path.exists(site_config_file):
+            with open(site_config_file, 'r') as f:
+                file_config = json.load(f)
+    for key in file_config:
+        if key in cmd_arg_set:
+            # Site config file overrides root config settings, but not command line settings
+            file_config[key] = getattr(commandOpts, key)
+    for key in SITE_OPTS+SHEET_OPTS:
+        # Ensure that SITE_OPTS+SHEET_OPTS are always defined
+        if key not in file_config:
+            if hasattr(commandOpts, key):
+                file_config[key] = getattr(commandOpts, key)
+            elif key in ('site_label', 'site_title'):
+                file_config[key] = key + ' for ' + site_name
+            else:
+                file_config[key] = ''
+    return file_config
+
 def main():
     def config_parse(path):
-        Global.config_file = path
-        parse_config_file(path, final=False)
+        Global.config_path = path
+        if os.path.isdir(path):
+            Global.config_file = os.path.join(path, SLIDOC_CONFIGFILE)
+        else:
+            Global.config_file = path
+        with open(Global.config_file) as f:
+            Global.config_data = f.read()
+        parse_config_file(Global.config_file, final=False)
 
-    define("config", type=str, help="Path to config file",
-        callback=config_parse)
+    define("config", type=str, help="Path to config file", callback=config_parse)
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
     define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
@@ -5960,13 +6149,14 @@ def main():
     define("log_call", default=0, help="Log selected calls to sheet 'call_log'")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
+    define("multisite", default=False, help="Enable multiple sites")
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
     define("no_auth", default=False, help="No authentication mode (for testing)")
     define("notebook_extn", default=Options["notebook_extn"], help="Extension for notebook/journal files (default: ipynb)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
-    define("proxy_sheet", default=False, help="Use proxy to communicate with Google Sheet")
+    define("proxy_sheet", default=False, help="Use proxy to cache session data")
     define("public", default=Options["public"], help="Public web site (no login required for home page etc., except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
@@ -5980,6 +6170,7 @@ def main():
     define("site_number", default=0, help="Site number")
     define("site_title", default='', help="Site title")
     define("server_nonce", default='', help="Server nonce (random value)")
+    define("server_version", default='', help="Server version (for checking)")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")
     define("session_versioning", default=True, help="Session versioning on proxy server, with version updated after modifications (default: True)")
     define("socket_dir", default="", help="Directory for creating unix-domain socket pairs")
@@ -5993,43 +6184,95 @@ def main():
 
     define("port", default=Options['port'], help="Web server port", type=int)
     parse_command_line()
-    
-    if not options.auth_key and not options.public:
-        sys.exit('Must specify one of --public or --auth_key=...')
 
-    if hasattr(options, 'sites'):
-        Options['site_list'] = sdproxy.split_list(getattr(options, 'sites'))
+    # Set of command line arguments
+    cmd_arg_set = set()
+    for arg in sys.argv[1:]:
+        argname, _, val = arg.lstrip('-').partition('=')
+        cmd_arg_set.add(argname)
 
-    if options.site_number > len(Options['site_list']):
-        sys.exit('Site number %d exceeds number of sites %d' % (options.site_number, len(Options['site_list'])))
+    if not CommandOpts.auth_key and not CommandOpts.public:
+        sys.exit('Site %s: ERROR: Must specify one of --public or --auth_key=...' % CommandOpts.site_name)
+
+    if CommandOpts.server_version and CommandOpts.server_version != sliauth.get_version():
+        sys.exit('Site %s: ERROR: Expecting server version %s but found %s' % (CommandOpts.site_name, CommandOpts.server_version, sliauth.get_version()))
+
+    Global.split_site_opts = {}
+    sites = getattr(CommandOpts, 'sites', '')
+    if sites:
+        # Pre-defined site names
+        Global.predefined_sites = sdproxy.split_list(sites, sep=',' if ',' in sites else ';') # Allow comma separation for backwards compatibility
+        CommandOpts.multisite = True
+
+        # Handle split options for backwards compatibility
+        for key in SITE_OPTS:
+            optval = getattr(CommandOpts, key, '')
+            if ';' in optval:
+                comps = optval.split(';')
+                if len(comps) != len(Global.predefined_sites):
+                    sys.exit('ERROR: Incorrect number of values for site option %s=%s: expecting %d values' % (key, optval, len(Global.predefined_sites)))
+                Global.split_site_opts[key] = {}
+                for j, sname in enumerate(Global.predefined_sites):
+                    Global.split_site_opts[key][sname] = comps[j]
+                setattr(CommandOpts, key, '')
+        
+    Root_server = CommandOpts.multisite and not CommandOpts.site_number
+
+    if not CommandOpts.multisite:
+        # Single site
+        cur_site_config = get_file_config(SITE_CONFIG, CommandOpts, cmd_arg_set)
+    else:
+        # Multi-site
+        if CommandOpts.site_name:
+            cur_site_config = get_file_config(CommandOpts.site_name, CommandOpts, cmd_arg_set)
+        else:
+            # Root server: create sites
+            site_names = Global.predefined_sites[:]
+            cur_site_config = {}
+            if os.path.isdir(Global.config_path):
+                # Initialize additional sites from config directory filenames
+                for spath in sorted(glob.glob(Global.config_path+'/[!_]*.json')):
+                    site_name = os.path.splitext(os.path.basename(spath))[0]
+                    if site_name not in site_names:
+                        site_names.append(site_name)
+
+            for site_name in site_names:
+                file_config = get_file_config(site_name, CommandOpts, cmd_arg_set)
+                for key in SITE_OPTS:
+                    # Handle split options for backwards compatibility
+                    if key in Global.split_site_opts and site_name in Global.split_site_opts[key]:
+                        if file_config[key]:
+                            # Site config overrides root config
+                            del Global.split_site_opts[key][site_name]
+                        else:
+                            file_config[key] = Global.split_site_opts[key][site_name]
+                add_site(site_name, file_config)
 
     for key in Options:
-        if not key.startswith('_') and hasattr(options, key):
-            # Command line overrides settings
-            optval = getattr(options, key)
-            if key in SPLIT_OPTS and optval and ';' in optval and options.site_number:
-                optlist = sdproxy.split_list(optval, sep=';')
-                if options.site_number > len(optlist):
-                    if key == 'gsheet_url':
-                        sys.exit('Must specify at least %d values for --%s=...' % (options.site_number, key))
-                    else:
-                        optval = ''
-                else:
-                    optval = optlist[options.site_number-1]
-            Options[key] = optval
+        # Set site options and other options
+        if key.startswith('_'):
+            continue
+
+        if key in cur_site_config:
+            Options[key] = cur_site_config[key]
+        elif hasattr(CommandOpts, key):
+            # Root config + command line
+            Options[key] = getattr(CommandOpts, key)
 
     if not Options['site_number']:
         Options['server_nonce'] = str(random.randrange(0,2**60))
 
-    if options.single_site:
+    if not Options['dry_run'] and (not Options['multisite'] or Options['site_number']):
+        if not Options['gsheet_url']:
+            sys.exit('Site %s: ERROR: Must specify gsheet_url for proxied site in config file' % (Options['site_name']))
+
+    if CommandOpts.single_site:
         # Access gsheet for a single site only (TESTING OPTION)
         if not Options['site_number']:
-            print >> sys.stderr, 'DEBUG: sdserver.main: SINGLE SITE TESTING', options.single_site
-        elif options.single_site != Options['site_name']:
+            print >> sys.stderr, 'DEBUG: sdserver.main: SINGLE SITE TESTING', CommandOpts.single_site
+        elif CommandOpts.single_site != Options['site_name']:
             Options['gsheet_url'] = ''
-
-    if len(Options['roster_columns'].split(',')) != 6:
-        sys.exit('Must specify --roster_columns=lastname_col,firstname_col,midname_col,id_col,email_col,altid_col')
+            Options['restore_backup'] = ''
 
     Options['root_auth_key'] = Options['auth_key']
     if Options['site_number']:
@@ -6037,17 +6280,29 @@ def main():
 
     Options['server_key'] = sliauth.gen_server_key(Options['root_auth_key'], Options['server_nonce'])
         
-    if not options.debug:
+    if not CommandOpts.debug:
         logging.getLogger('tornado.access').disabled = True
 
-    if options.auth_users:
-        Global.userRoles.update_root_roles(options.auth_users)
+    if CommandOpts.auth_users:
+        Global.userRoles.update_root_roles(CommandOpts.auth_users)
+
+    if Options['restore_backup']:
+        Options['restore_backup'] = Options['restore_backup'].split(',')
+        if len(Options['restore_backup']) != 2:
+            sys.exit('ERROR: Restore backup should be of the form : back_up_directory,back_up_name')
+        if not os.path.isdir(Options['restore_backup'][0]):
+            sys.exit('ERROR: Backup directory %s for restore not found' % Options['restore_backup'][0])
+
+        if Options['gsheet_url'] and not Options['site_number']:
+            confirm = raw_input('CAUTION: To confirm Google Sheet restore from backup directory %s, please re-enter full directory name: ' % Options['restore_backup'][0])
+            if confirm.strip() != Options['restore_backup'][0]:
+                sys.exit('ERROR: Cancelled restore from %s' % Options['restore_backup'][0])
 
     pluginsDir = scriptdir + '/plugins'
     pluginPaths = [pluginsDir+'/'+fname for fname in os.listdir(pluginsDir) if fname[0] not in '._' and fname.endswith('.py')]
-    if options.plugins:
+    if CommandOpts.plugins:
         # Plugins with same name will override earlier plugins
-        pluginPaths += options.plugins.split(',')
+        pluginPaths += CommandOpts.plugins.split(',')
 
     plugins = []
     for pluginPath in pluginPaths:
@@ -6055,83 +6310,76 @@ def main():
         plugins.append(pluginName)
         importlib.import_module('plugins.'+pluginName)
 
-    if options.restore_backup:
-        Options['restore_backup'] = options.restore_backup.split(',')
-        if len(Options['restore_backup']) != 2:
-            raise Exception('Restore backup should be of the form : back_up_directory,back_up_name')
-        if not os.path.isdir(Options['restore_backup'][0]):
-            raise Exception('Backup directory %s for restore not found' % Options['restore_backup'][0])
+    socket_name_fmt = CommandOpts.socket_dir + '/uds_socket'
 
-        if Options['gsheet_url']:
-            confirm = raw_input('CAUTION: To confirm Google Sheet restore from backup directory %s, please re-enter full directory name: ' % Options['restore_backup'][0])
-            if confirm.strip() != Options['restore_backup'][0]:
-                sys.exit('Cancelled restore from %s' % Options['restore_backup'][0])
-
-    socket_name_fmt = options.socket_dir + '/uds_socket'
-
-    Global.child_procs = []
+    Global.child_procs = OrderedDict()
 
     BaseHandler.setup_dirs(Options['site_name'])
 
     sheetSettings = {}
-    if not Options['site_list'] or Options['site_number']:
+    if not Options['multisite'] or Options['site_number']:
+        # Single or secondary server
         if Options['gsheet_url'] or Options['restore_backup']:
             sheetSettings = getSettingsSheet(Options['gsheet_url'], Options['site_name'], adminonly_fail=Options['host'] != 'localhost')
+
         if Options['site_number']:
             # Start secondary server
             setup_site_server(sheetSettings, Options['site_number'])
             start_server(Options['site_number'])
             return
 
-    # Primary or single server
+    # Single or primary server
+    if len(Options['roster_columns'].split(',')) != 6:
+        sys.exit('ERROR: Must specify --roster_columns=lastname_col,firstname_col,midname_col,id_col,email_col,altid_col')
+
     print >> sys.stderr, ''
     print >> sys.stderr, 'sdserver: Version %s **********************************************' % sliauth.get_version()
-    if options.timezone:
-        os.environ['TZ'] = options.timezone
+    if CommandOpts.timezone:
+        os.environ['TZ'] = CommandOpts.timezone
         time.tzset()
-        print >> sys.stderr, 'sdserver: Timezone =', options.timezone
+        print >> sys.stderr, 'sdserver: Timezone =', CommandOpts.timezone
 
     if Options['email_addr']:
         print >> sys.stderr, 'sdserver: admin email', Options['email_addr']
 
     if sliauth.RESTRICTED_SESSIONS_RE:
         print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
-    if Global.config_file:
-        print >> sys.stderr, 'sdserver: Config file =', Global.config_file
+    if Global.config_path:
+        print >> sys.stderr, 'sdserver: Config path =', Global.config_path
 
-    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(options, x))
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_NONCE', Options['server_nonce']
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
-    if options.start_delay:
-        print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % options.start_delay
-        time.sleep(options.start_delay)
+    if CommandOpts.start_delay:
+        print >> sys.stderr, 'sdserver: Start DELAY = %s sec ...' % CommandOpts.start_delay
+        time.sleep(CommandOpts.start_delay)
     print >> sys.stderr, ''
 
-    if options.forward_port:
+    if CommandOpts.forward_port:
         Global.relay_forward = ('localhost', forward_port)
 
     Options['ssl_options'] = None
-    if options.port % 1000 == 443:
-        if not options.ssl:
+    if CommandOpts.port % 1000 == 443:
+        if not CommandOpts.ssl:
             sys.exit('SSL options must be specified for http port ending in 443')
-        certfile, keyfile = options.ssl.split(',')
+        certfile, keyfile = CommandOpts.ssl.split(',')
         Options['ssl_options'] = {"certfile": certfile, "keyfile": keyfile}
 
-    if not Options['site_number'] and options.backup:
-        comps = options.backup.split(',')
+    if not Options['site_number'] and CommandOpts.backup:
+        comps = CommandOpts.backup.split(',')
         Options['backup_dir'] = comps[0]
         Options['backup_hhmm'] = comps[1] if len(comps) > 1 else '03:00'
 
-    if Options['site_list']:
-        print >> sys.stderr, 'DEBUG: sdserver.main:', Options['site_list']
-        gsheet_urls = sdproxy.split_list(Options['gsheet_url'], sep=';')
-        for j, site_name in enumerate(Options['site_list']):
-            start_secondary_server(j+1, site_name)
+    if Options['multisite']:
+        print >> sys.stderr, 'DEBUG: sdserver.main:', SiteOpts.keys()
+        gsheet_urls = [site_config['gsheet_url'] for site_config in SiteOpts.values()]
+        for j, site_name in enumerate(SiteOpts.keys()):
             SiteProps.root_site_setup(j+1, site_name, gsheet_urls[j])
-        print >> sys.stderr, 'DEBUG: sdserver.relay:', [SiteProps.relay_map(j) for j in range(1+len(Options['site_list']))]
+            start_secondary_server(j+1, site_name)
+        print >> sys.stderr, 'DEBUG: sdserver.relay:', [SiteProps.relay_map(j) for j in range(1+len(SiteOpts))]
 
         print >> sys.stderr, 'DEBUG: sdserver.userRoles:', Global.userRoles.root_role, Global.userRoles.site_roles, Global.userRoles.external_users
         start_multiproxy()
@@ -6142,7 +6390,7 @@ def main():
         SiteProps.root_site_setup(0, '', Options['gsheet_url'])
         setup_site_server(sheetSettings, 0)
 
-    if options.multi_email_id:
+    if CommandOpts.multi_email_id:
         print >> sys.stderr, 'DEBUG: sdserver.id2email: Allowing multiple ids for a single email address'
         Global.email2id = defaultdict(lambda : defaultdict(list))
         id2email = {}

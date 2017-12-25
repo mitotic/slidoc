@@ -1,0 +1,49 @@
+<html>
+<head>
+<!-- upload template for slidoc server --->
+<!-- upload parameters: site_name, new_site, err_msg, settings_labels, site_config -->
+
+{% include "base.html" %}
+
+</head>
+<body>
+
+  <b>
+  <a class="clickable" href="/_setup">Back</a>
+  </b>
+
+  <p></p>
+  <h2>Site settings</h2>
+
+  <hr>
+
+<div id="slidoc-upload-form">
+  <p></p>
+  <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
+  <form id="upload-form" action="/_settings/{{site_name}}" method="post" enctype="multipart/form-data" >
+  <fieldset>
+    Site name: <b>{{site_name}}</b> {% if new_site %}(NEW){% end %}
+    <br>
+    <input type="hidden" id="new_site" name="new_site" value="{{new_site}}" >
+     {% for opt_name, opt_label in settings_labels %}
+       {% if opt_name %}
+       <p></p>
+       <label for="{{opt_name}}">{{opt_name}}:</label>
+       <input type="text" id="{{opt_name}}" name="{{opt_name}}" value="{{site_config.get(opt_name,'')}}">
+       ({{opt_label}})
+       {% else %}
+        <hr>
+         {% if opt_label %}{{opt_label}}<br>{% end %}
+       {% end %}
+     {% end %}
+   </fieldset>
+   {% module xsrf_form_html() %}
+   <p></p>
+   <div>
+     <input id="slidoc-upload-submit" type="submit" value="{% if new_site %}Create{% else %}Save{% end %}">
+   </div>
+  </form>
+</div>
+
+</body>
+</html>
