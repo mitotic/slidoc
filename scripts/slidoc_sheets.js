@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.16a';
+var VERSION = '0.97.17a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -176,9 +176,9 @@ var SITE_LOCKED = 'locked';
 var SITE_INACTIVE = 'inactive';
 var SITE_ACCESS = [SITE_ADMINONLY, SITE_ADMINGUEST, SITE_LOCKED];
 
-var TRUNCATE_DIGEST = 8;
-var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.MD5;
-var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_MD5;
+var TRUNCATE_DIGEST = 10;
+var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.SHA_256;
+var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_SHA_256;
 
 var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
@@ -2660,10 +2660,6 @@ var LCRandom = (function() {
 
     setSeed: setSeed,
 
-    setSeedMD5: function(seedKey, labelStr) {  // NOT USED YET
-	// Set seed to HMAC of labelStr and seedKey
-	return setSeed( parseInt(md5(labelStr, ''+seedKey).slice(0,nbytes*2), 16) );
-    },
     randomNumber: function(seedValue, min, max) {
 	// Equally probable integer values between min and max (inclusive)
 	// If min is omitted, equally probable integer values between 1 and max

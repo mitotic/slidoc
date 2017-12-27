@@ -3419,7 +3419,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
     templates = {}
     for tname in ('doc_include.css', 'wcloud.css', 'doc_custom.css',
-                  'doc_include.js', 'wcloud.js', 'doc_google.js', 'md5.js', 'doc_test.js',
+                  'doc_include.js', 'wcloud.js', 'doc_google.js', 'md5.js', 'sha256.js', 'doc_test.js',
                   'doc_include.html', 'doc_template.html', 'reveal_template.html'):
         templates[tname] = md2md.read_file(scriptdir+'/templates/'+tname)
 
@@ -3466,6 +3466,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             add_scripts += '<script src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"></script>\n'
         if gd_hmac_key:
             add_scripts += insert_resource('md5.js')
+            add_scripts += insert_resource('sha256.js')
     answer_elements = {}
     for suffix in SlidocRenderer.content_suffixes:
         answer_elements[suffix] = 0;

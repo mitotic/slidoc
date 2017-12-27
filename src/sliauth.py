@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.16a'
+VERSION = '0.97.17a'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -43,9 +43,8 @@ def sub_version(version):
     # (For versions with letter suffix, just drop letter; otherwise, drop last number)
     return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
 
-TRUNCATE_DIGEST = 8
-
-DIGEST_ALGORITHM = hashlib.md5
+TRUNCATE_DIGEST = 10
+DIGEST_ALGORITHM = hashlib.sha256
 
 def digest_hex(s, n=TRUNCATE_DIGEST):
     return DIGEST_ALGORITHM(s).hexdigest()[:n]

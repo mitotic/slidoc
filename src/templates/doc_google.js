@@ -3,12 +3,24 @@
 //   function onGoogleAPILoad() { GService.onGoogleAPILoad(); }
 // After this script, include script with src="https://apis.google.com/js/client.js?onload=onGoogleAPILoad"
 
-var TRUNCATE_DIGEST = 8;
 var MAXSCORE_ID = '_max_score';
+
+var TRUNCATE_DIGEST = 10;
+var DIGEST_ALGORITHM = 'sha256';  // 'md5' or 'sha256'
 
 function genHmacToken(key, message) {
     // Generates token using HMAC key
-    return btoa(md5(message, key, true)).slice(0,TRUNCATE_DIGEST);
+    if (DIGEST_ALGORITHM == 'md5') {
+	var hmac_bytes = md5(message, key, true);
+    } else if (DIGEST_ALGORITHM == 'sha256') {
+	var shaObj = new jsSHA("SHA-256", "TEXT");
+	shaObj.setHMACKey(key, "TEXT");
+	shaObj.update(message);
+	hmac_bytes = shaObj.getHMAC("BYTES");
+    } else {
+	throw('Unknown digest algorithm: '+DIGEST_ALGORITHM);
+    }
+    return btoa(hmac_bytes).slice(0,TRUNCATE_DIGEST);
 }
 
 function genAuthPrefix(userId, role, sites) {

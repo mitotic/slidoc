@@ -8725,10 +8725,6 @@ var LCRandom = (function() {
 
     setSeed: setSeed,
 
-    setSeedMD5: function(seedKey, labelStr) {  // NOT USED YET
-	// Set seed to HMAC of labelStr and seedKey
-	return setSeed( parseInt(md5(labelStr, ''+seedKey).slice(0,nbytes*2), 16) );
-    },
     randomNumber: function(seedValue, min, max) {
 	// Equally probable integer values between min and max (inclusive)
 	// If min is omitted, equally probable integer values between 1 and max
