@@ -50,43 +50,60 @@ scriptdir = os.path.dirname(os.path.realpath(__file__))
 
 # Usually modified by importing module
 Settings = {
-    'update_time': None,
+    'update_time': '',
                           # Site specific settings from server
-    'auth_key': None,     # Site digest authentication key
-    'gsheet_url': None,   # Site google Sheet URL
+    'auth_key': '',     # Site digest authentication key
+    'gsheet_url': '',   # Site google Sheet URL
+
     'site_name': '',      # Site name
+    'site_access': '',    # '' OR 'adminonly' OR 'adminguest' OR 'locked' OR 'inactive'
+
+    'site_label': '',
+    'site_title': '',
+
+    'admin_users': '',
+    'grader_users': '',
+    'guest_users': '',
+
+    'server_url': '',     # Base URL of server (if any); e.g., http://example.com'
+    'lock_date': '',    # Date when all user mods are disabled
+    'end_date': '',       # Date when all mods are disabled
+
+    'no_login_token': False,
+    'no_late_token': False,
+    'no_roster': False,
+
+    'gradebook_release': '', # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
 
                           # General settings from server
-    'debug': None,      
-    'dry_run': None,      # Dry run (read from, but do not update, Google Sheets)
+    'debug': '',
+    'dry_run': '',      # Dry run (read from, but do not update, Google Sheets)
+    'email_addr': '',
+    'email_url': '',
+    'root_users': [],
+
     'lock_proxy_url': '', # URL of proxy server to lock sheet (used to "safely" allow direct access to Google Sheets from an auxiliary server)
     'log_call': 0,        # Enable call debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
-    'server_url': '',     # Base URL of server (if any); e.g., http://example.com'
 
-                          # Settings from SETTINGS_SLIDOC
-    'freeze_date': '',    # Date when all user mods are disabled
     'request_timeout': 75,   # Proxy update request timeout (sec)
-    'require_login_token': True,
-    'require_late_token': True,
-    'require_roster': True,
-    'gradebook_release': '', # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
-    'root_users': [],
-    'site_label': '',
-    'site_access': '',       # '' OR 'adminonly' OR 'adminguest' OR 'readonly'
-    'site_title': '',
-    'admin_users': '',
-    'grader_users': '',
-    'guest_users': ''
     }
 
-COPY_FROM_SHEET = ['freeze_date',  'gradebook_release', 'require_login_token', 'require_late_token', 'require_roster',
-                   'site_label', 'site_title', 'site_access',
-                   'admin_users', 'grader_users', 'guest_users']
+COPY_FROM_CONFIG = ['gsheet_url', 'site_label', 'site_title', 'site_access',
+                    'admin_users', 'grader_users', 'guest_users',
+                    'lock_date', 'end_date', 'gradebook_release',
+                    'no_login_token', 'no_late_token', 'no_roster',
+                   ]
     
-COPY_FROM_SERVER = ['auth_key', 'gsheet_url', 'site_name', 'root_users',
-                    'debug', 'dry_run', 'email_addr', 'email_url',
-                    'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout', 'server_url']
+COPY_FROM_SERVER = ['auth_key', 'site_name',  'server_url',
+                    'debug', 'dry_run', 'email_addr', 'email_url', 'root_users',
+                    'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout',]
+
+SITE_ADMINONLY = 'adminonly'
+SITE_ADMINGUEST = 'adminguest'
+SITE_LOCKED = 'locked'
+SITE_INACTIVE = 'inactive'
+SITE_ACCESS = [SITE_ADMINONLY, SITE_ADMINGUEST, SITE_LOCKED]
 
 DAY_PREFIX = '_day_'
 ACTION_FORMULAS = False
@@ -177,18 +194,15 @@ Global.dryDeletedSheets = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
 
+def copySiteConfig(siteConfig):
+    for key in COPY_FROM_CONFIG:
+        if key in siteConfig:
+            Settings[key] = siteConfig[key]
+    Settings['update_time'] = sliauth.create_date()
+
 def copyServerOptions(serverOptions):
     for key in COPY_FROM_SERVER:
         Settings[key] = serverOptions[key]
-
-def copySheetOptions(sheetSettings):
-    # May need to restart server if certain SETTINGS_SHEET parameters changed
-    if not sheetSettings:
-        return
-    for key in COPY_FROM_SHEET:
-        if key in sheetSettings:
-            Settings[key] = sheetSettings[key]
-    Settings['update_time'] = sliauth.create_date()
 
 def split_list(list_str, sep=',', lower=False, keep_null=False):
     # Split comma-separated list, stripping it
@@ -1049,6 +1063,7 @@ class Sheet(object):
         headers = self.xrows[0]
         nameCol = 1+headers.index('name') if 'name' in headers else 0
 
+        incompleteUpdate = False
         updateRows = {}
         updateColSet = set()
         insertNames = []
@@ -1076,6 +1091,7 @@ class Sheet(object):
             if self.keyCol and row_limit and (len(insertRows) >= row_limit or updateElemCount >= 10*row_limit):
                 # Update request limit reached, with at least one update left; delay any actions (for keyed sheets only)
                 actions = ''
+                incompleteUpdate = True
                 break
 
             # Update key and modtime
@@ -1124,7 +1140,8 @@ class Sheet(object):
         # Send updateColList if non-null and non-full row
         updateColList = sorted(list(updateColSet)) if (updateColSet and len(updateColSet) < self.nCols) else None
 
-        return [updateRows, actions, self.modifiedHeaders, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
+        updateParams = {'incompleteUpdate': incompleteUpdate, 'actions': actions, 'modifiedHeaders': self.modifiedHeaders}
+        return [updateRows, updateParams, headers, self.getLastRow(), allKeys, insertNames, updateColList, insertRows, updateSel]
                     
     def clear_update(self):
         self.actionsRequested = []
@@ -1134,14 +1151,15 @@ class Sheet(object):
             if self.keyMap[key][1] or self.keyMap[key][2]:
                 self.keyMap[key][1:3] = [0, set()]
 
-    def complete_update(self, updateRows, actions, modifiedHeaders):
+    def complete_update(self, updateRows, updateParams):
         # Update sheet status after remote update has completed
+        actions = updateParams.get('actions', '')
         if actions:
             for action in actions.split(','):
                 if action in self.actionsRequested:
                     self.actionsRequested.remove(action)
 
-        if modifiedHeaders:
+        if not updateParams.get('incompleteUpdate') and updateParams.get('modifiedHeaders'):
             self.modifiedHeaders = False
 
         for j, row in enumerate(self.xrows[1:]):
@@ -1459,8 +1477,9 @@ def update_remote_sheets_aux(force=False, synchronous=False):
                     delSheet(sheetName)
             continue
 
-        # sheet_name, actions, modified_headers, headers_list, last_row, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
-        sheetUpdateInfo[sheetName] = updates[0:3]
+        # update_rows, update_params
+        sheetUpdateInfo[sheetName] = updates[0:2]
+        # sheet_name, update_params, headers_list, last_row, all_keys, insert_names_keys, update_cols_list or None, insert_rows, modified_rows
         modVals = [sheetName] + updates[1:]
 
         if sheetName.endswith('_slidoc'):
@@ -1710,6 +1729,15 @@ def sheetAction(params, notrace=False):
     completeActions = []
 
     try:
+        if params.get('settings',''):
+            raise Exception('Error:SETTINGS:Settings cannot be changed for proxy')
+
+        if Settings['site_access'] == SITE_INACTIVE:
+            raise Exception('Error:INACTIVE:Site deactivated')
+
+        if not Settings['no_login_token'] and not Settings['auth_key']:
+            raise Exception('Error:SETUP:No auth_key for login')
+
         sheetName = params.get('sheet','')
         if not sheetName:
             raise Exception('Error:SHEETNAME:No sheet name specified')
@@ -1756,7 +1784,7 @@ def sheetAction(params, notrace=False):
         elif params.get('admin'):
             raise Exception('Error:NEED_TOKEN:Need admin token for admin authentication')
 
-        elif Settings['require_login_token']:
+        elif not Settings['no_login_token']:
             if not authToken:
                 raise Exception('Error:NEED_TOKEN:Need token for id authentication')
             if not paramId:
@@ -1798,26 +1826,34 @@ def sheetAction(params, notrace=False):
         curDate = createDate()
         curTime = sliauth.epoch_ms(curDate)
 
-        frozenSessions = Settings['site_access'] == 'readonly' or (Settings['freeze_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['freeze_date']))
-
         modifyingRow = delRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow)
+        if adminUser or paramId == TESTUSER_ID:
+            if modifyingRow and not TOTAL_COLUMN:
+                # Refresh cached gradebook (because scores/grade may be updated)
+                refreshGradebook(sheetName)
+            if removeSheet and previewingSheet:
+                raise Exception('Error:PREVIEW_MODS:Cannot delete sheet when previewing it');
+
+        lockedSite = Settings['site_access'] == SITE_LOCKED or (Settings['lock_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['lock_date']))
+
+        expiredSite = Settings['end_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['end_date'])
+
+        limitedAccess = ''
+        if readOnlyAccess:
+            limitedAccess = 'Error::Admin user '+origUser+' cannot modify row for user '+paramId
+        elif expiredSite:
+            limitedAccess = 'Error:EXPIRED:Cannot modify expired site '+Settings['site_name']
+        elif not adminUser and paramId != TESTUSER_ID:
+            if lockedSite:
+                limitedAccess = 'Error:LOCKED_MODS:All sessions are locked. No user modifications permitted'
+            elif previewingSheet:
+                limitedAccess = 'Error:PREVIEW_MODS:No user modifications permitted at this time'
+
         if modifyingRow or removeSheet:
             if Global.cacheUpdateError:
                 raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
-            if readOnlyAccess:
-                raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-            if adminUser or paramId == TESTUSER_ID:
-                if modifyingRow and not TOTAL_COLUMN:
-                    # Refresh cached gradebook (because scores/grade may be updated)
-                    refreshGradebook(sheetName)
-                if removeSheet and previewingSheet:
-                    raise Exception('Error:PREVIEW_MODS:Cannot delete sheet when previewing it');
-            else:
-                # Not admin/test user
-                if frozenSessions:
-                    raise Exception('Error:FROZEN_MODS:All sessions are frozen. No user modifications permitted');
-                if previewingSheet:
-                    raise Exception('Error:PREVIEW_MODS:No user modifications permitted at this time');
+            if limitedAccess:
+                raise Exception(limitedAccess)
 
         if performActions:
             if performActions == 'discuss_posts':
@@ -1865,7 +1901,7 @@ def sheetAction(params, notrace=False):
                     raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
                 # Copy user info from roster
                 rosterValues = getRosterEntry(paramId)
-            elif Settings['require_roster']:
+            elif not Settings['no_roster']:
                 raise Exception('Error:NEED_ROSTER:Need roster for non-admin access')
 		
         returnInfo['prevTimestamp'] = None
@@ -2470,7 +2506,14 @@ def sheetAction(params, notrace=False):
             ##returnMessages.append('Debug::userRow, userid, rosterValues: '+userRow+', '+userId+', '+str(rosterValues))
             newRow = (not userRow)
 
-            if (readOnlyAccess or adminUser) and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
+            if newRow or resetRow or selectedUpdates or (rowUpdates and not nooverwriteRow):
+                # Modifying sheet (somewhat redundant due to prior checks; just to be safe due to newRow creation)
+                if Global.cacheUpdateError:
+                    raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
+                if limitedAccess:
+                    raise Exception(limitedAccess)
+
+            if adminUser and not restrictedSheet and newRow and userId != MAXSCORE_ID and not importSession:
                 raise Exception("Error:ADMIN_NEW_ROW:Admin user not allowed to create new row in sheet '"+sheetName+"'")
 
             retakesCol = columnIndex.get('retakes')
@@ -2538,18 +2581,6 @@ def sheetAction(params, notrace=False):
                         rowUpdates[columnIndex['id']-1] = userId
                         rowUpdates[columnIndex['name']-1] = displayName
                         
-            if newRow or rowUpdates or selectedUpdates:
-                # Modifying sheet (somewhat redundant due to prior checks; just to be safe due to newRow creation)
-                if Global.cacheUpdateError:
-                    raise Exception('Error::All sessions are frozen due to cache update error: '+Global.cacheUpdateError);
-                if readOnlyAccess:
-                    raise Exception('Error::Admin user '+origUser+' cannot modify row for user '+paramId)
-                if not adminUser and paramId != TESTUSER_ID:
-                    # Not admin/test user
-                    if frozenSessions:
-                        raise Exception('Error:FROZEN_MODS:All sessions are frozen. No user modifications permitted');
-                    if previewingSheet:
-                        raise Exception('Error:PREVIEW_MODS:No user modifications permitted at this time');
             teamCol = columnIndex.get('team')
             if newRow and rowUpdates and teamCol and sessionAttributes and sessionAttributes.get('sessionTeam') == 'roster':
                 # Copy team name from roster
@@ -2606,7 +2637,7 @@ def sheetAction(params, notrace=False):
 
                         returnInfo['dueDate'] = dueDate # May have been updated
 
-                        allowLateMods = adminUser or importSession or not Settings['require_late_token'] or lateToken == LATE_SUBMIT
+                        allowLateMods = adminUser or importSession or Settings['no_late_token'] or lateToken == LATE_SUBMIT
                         if not allowLateMods:
                             if pastSubmitDeadline:
                                 if getRow and not (newRow or rowUpdates or selectedUpdates):
@@ -3460,11 +3491,11 @@ def updateUserRow(sessionName, headers, updateObj, opts={}, notrace=False):
         if header in updateObj:
             updates.append( [header, updateObj[header]] )
 
-    updateParams = {'id': updateObj['id'], 'token': token,'sheet': sessionName,
+    params = {'id': updateObj['id'], 'token': token,'sheet': sessionName,
                     'update': json.dumps(updates, default=sliauth.json_default)}
-    updateParams.update(opts)
+    params.update(opts)
 
-    return sheetAction(updateParams, notrace=notrace)
+    return sheetAction(params, notrace=notrace)
 
 def makeRosterMap(colName, lowercase=False, unique=False):
     # Return map of other IDs from colName to roster ID

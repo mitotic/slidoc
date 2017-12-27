@@ -67,7 +67,7 @@ function newSite() {
     <h2 class="home-title">Slidoc sites {% if global_role == 'admin' %} <a class="clickable" href="/_setup">&#9881;&nbsp;&nbsp;</a>{% end %}</h2>
 
     <div class="home-user">
-      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/special{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a>)
+      <span><b>{% if user %}User: {{ user}}{% if any(site_roles) %}/special{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a> )
       {% else %}
       <a class="clickable" href="{{ login_url }}">Login</a>
       {% end %}

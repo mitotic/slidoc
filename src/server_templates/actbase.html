@@ -30,12 +30,12 @@ function slidocConfirmAction(actionName, dispMsg, query, sessionName) {
     slidocStatus('');
     return;
   }
-  if (actionName == 'sitedelete') {
-    if (!window.confirm('Re-confirm '+(dispMsg||'sitedelete')+suffix+'?')) {
+  if (actionName == 'site_delete') {
+    if (!window.confirm('Re-confirm '+(dispMsg||'deletion of site '+slidocSiteName)+'?')) {
       slidocStatus('');
       return;
     }
-    window.location = '/_sitedelete/'+slidocSiteName;
+    window.location = '/_site_delete/'+slidocSiteName;
     return;
   }
   slidocAction(actionName, sessionName, dispMsg, query);

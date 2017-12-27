@@ -29,8 +29,6 @@
 
   <ul>
     <hr>
-    <li><b><a class="clickable" href="/_settings/{{site_name}}">settings</a></b>: Edit site settings</li>
-    <hr>
     <li><b><a class="clickable" href="javascript:slidocAction('twitter')">twitter</a></b>: View Twitter stream status</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a></b>: Backup of all module sessions to directory</li>
@@ -40,16 +38,13 @@
 
   <div id="advanced-opts" style="display: none; border: 1px solid; padding: 4px;">
   <b>Advanced dashboard actions:</b><p></p>
-Update site settings from settings sheet and clear cache
   {% if root_admin %}
   <ul>
     <li><b><a class="clickable" href="javascript:slidocAction('cache')">proxy status</a></b>: Status of proxy cache and active connections</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('freeze')">freeze</a></b>: Freeze all cached module sessions (clear to cancel freeze)</li>
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('clear')">clear</a></b>: Clear all cached module sessions</li>
-    {% if site_name %}
-    <li><b><a class="clickable" href="javascript:slidocConfirmAction('sitedelete')">sitedelete</a></b>: Delete site (IRREVERSIBLE)</li>
-    {% else %}
+    {% if not site_name %}
     <li><b><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a></b>: Shutdown proxy server</li>
     {% end %}
     <hr>
@@ -60,7 +55,7 @@ Update site settings from settings sheet and clear cache
     <li><b><a class="clickable" href="javascript:slidocPromptAction('delete','Session name:',true)">delete</a></b>: Delete session and all related files (IRREVERSIBLE)</li>
     <hr>
     <li><b><a class="clickable" href="javascript:slidocPromptAction('sheet','Sheet name:')">sheet</a></b>: Display sheet</li>
-    <li><b><a class="clickable" href="javascript:slidocPromptAction('getrow','Sheet name:')">getrow</a></b>: Get rows from sheet (e.g., <code>settings_slidoc, sessions_slidoc, roster_slidoc</code>)</li>
+    <li><b><a class="clickable" href="javascript:slidocPromptAction('getrow','Sheet name:')">getrow</a></b>: Get rows from sheet (e.g., <code>roster_slidoc, sessions_slidoc, settings_slidoc</code>)</li>
     <li><b><a class="clickable" href="javascript:slidocPromptAction('getcol''Sheet name:')">getcol</a></b>: Get columns from sheet</li>
   </ul>
   {% else %}
