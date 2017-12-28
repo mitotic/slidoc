@@ -660,7 +660,7 @@ function sheetAction(params) {
 
 	var lockedSite = Settings['site_access'] == SITE_LOCKED || (Settings['lock_date'] && curDate.getTime() > Settings['lock_date'].getTime());
 
-	var expiredSite = Settings['end_date'] && curDate.getTime() > Settings['end_date'].getTime();
+	var expiredSite = !Settings['site_access'] && Settings['end_date'] && curDate.getTime() > Settings['end_date'].getTime();
 
 	var limitedAccess = '';
         if (readOnlyAccess) {

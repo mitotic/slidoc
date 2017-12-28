@@ -141,7 +141,7 @@ Options = {
     'xsrf': False,
     }
 
-SITE_OPTS = ['gsheet_url', 'site_label', 'site_title', 'site_access', 'twitter_config', 'server_url']
+SITE_OPTS = ['gsheet_url', 'site_label', 'site_title', 'site_access', 'sort_key', 'twitter_config', 'server_url']
 
 SHEET_OPTS = ['admin_users', 'grader_users', 'guest_users', 'start_date', 'lock_date', 'end_date']
 
@@ -149,6 +149,7 @@ SETTINGS_LABELS = [ ('gsheet_url', 'Google Sheet URL'),
                     ('site_label', "Site label e.g., 'Calc101, F16'"),
                     ('site_title', 'Site title (one line)'),
                     ('site_access', "blank '' OR 'adminonly' OR 'adminguest' OR 'locked' OR 'inactive'"),
+                    ('sort_key', 'Alternative label to be used for determining order of site display'),
                     ('', ''),
                     ('admin_users', 'User IDs or email addresses with admin access (comma-separated)'),
                     ('grader_users', 'User IDs or email addresses with grader access'),
@@ -184,13 +185,9 @@ def root_remove_site(site_name):
     root_update_site_list()
 
 def root_update_site_list():
-    site_list = Global.predefined_sites[:]
-    all_sites = SiteOpts.keys()
-    all_sites.sort()    # Sort non-predefined sites in alphabetical order
-    for site_name in all_sites:
-        if SiteOpts[site_name] and site_name not in site_list:
-            site_list.append(site_name)
-    Options['site_list'] = site_list
+    all_sites = [ (site_config['sort_key'] or site_name, site_name) for site_name, site_config in SiteOpts.items() if site_config]
+    all_sites.sort()    # Sort sites in lexical order of sort_key or site_name
+    Options['site_list'] = [site_name for sort_key, site_name in all_sites]
 
 def get_site_number(site_name):
     if SiteOpts.get(site_name):
@@ -201,6 +198,8 @@ def get_site_number(site_name):
 SLIDOC_CONFIGFILE = '_slidoc_config.py'
 
 SINGLE_CONFIGFILE = '_slidoc_site.json'
+
+SESSION_RESTART_DELAY_SEC = 5
 
 SERVER_LOGFILE = 'screenlog.0'
 
@@ -267,7 +266,7 @@ SCORES_SHEET = 'scores_slidoc'
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
-COOKIE_VERSION = '0.97.11b'             # Update version if cookie format changes (automatically deletes previous secure cookies)
+COOKIE_VERSION = '0.97.17a'             # Update version if cookie format changes (automatically deletes previous secure cookies)
 SERVER_NAME = 'Webster0.9'
 
 RAW_UPLOAD = 'raw'
@@ -988,11 +987,9 @@ class SiteActionHandler(BaseHandler):
                     relay_addr = SiteProps.relay_map(site_number)
                     try:
                         retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
-                        time.sleep(5)
                     except Exception, excp:
                         print >> sys.stderr, 'sdserver.site_settings: Error in shutting down site', site_name, excp
 
-                    Global.child_procs[site_name] = None
                     root_add_site(site_name, site_config, overwrite=True)
                     SiteProps.root_site_setup(site_number, site_name, gsheet_url, update=True)
                 else:
@@ -1015,8 +1012,12 @@ class SiteActionHandler(BaseHandler):
                 self.displayMessage('Error in creating/editing site settings: '+errMsg, back_url='/')
                 return
 
-            root_start_secondary(get_site_number(site_name), site_name, sec_config)
-            self.displayMessage('<b>Created/updated site: <a href="/%s">%s</a></b>' % (site_name, site_name), back_url='/')
+            if new_site or Global.child_procs.get(site_name):
+                Global.child_procs[site_name] = None
+                IOLoop.current().add_timeout(time.time()+SESSION_RESTART_DELAY_SEC,
+                    functools.partial(root_start_secondary, get_site_number(site_name), site_name, sec_config) )
+
+            self.displayMessage('<b>Created/updated site: <a href="/%s">%s</a><br>Please wait %d seconds</b>' % (site_name, site_name, SESSION_RESTART_DELAY_SEC), back_url='/')
 
         else:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid root site action '+action)
@@ -4943,9 +4944,9 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown))", RootActionHandler) ]
-        home_handlers += [ (r"/(_(backup|update))/([-\w.]+)", RootActionHandler) ]
         home_handlers += [ (r"/(_(alias))/([-\w.@=]+)", RootActionHandler) ]
-        home_handlers += [ (r"/(_(site_settings|site_delete))/([-\w.]+)", SiteActionHandler) ]
+        home_handlers += [ (r"/(_(backup|update))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
+        home_handlers += [ (r"/(_(site_settings|site_delete))/([a-zA-Z][-\w.]*)", SiteActionHandler) ]
 
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]

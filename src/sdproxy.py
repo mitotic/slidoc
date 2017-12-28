@@ -1836,7 +1836,7 @@ def sheetAction(params, notrace=False):
 
         lockedSite = Settings['site_access'] == SITE_LOCKED or (Settings['lock_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['lock_date']))
 
-        expiredSite = Settings['end_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['end_date'])
+        expiredSite = not Settings['site_access'] and Settings['end_date'] and sliauth.epoch_ms(curDate) > sliauth.epoch_ms(Settings['end_date'])
 
         limitedAccess = ''
         if readOnlyAccess:

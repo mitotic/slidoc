@@ -54,9 +54,13 @@ a.clickable {
 <script>
 function newSite() {
   var siteName = window.prompt('New site name: ');
+  siteName = siteName.trim();
   if (!siteName)
     return;
-  window.location = '/_settings/'+siteName+'?new_site=1';
+  if (siteName.match(/^[a-zA-Z][-\w.]*$/))
+    window.location = '/_settings/'+siteName+'?new_site=1';
+  else
+    alert('Site name must start with letter and include only letters/digits/underscores/hyphens/periods');
 }
 </script>
 
