@@ -19,7 +19,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.17a'
+VERSION = '0.97.18a'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -43,13 +43,15 @@ def sub_version(version):
     # (For versions with letter suffix, just drop letter; otherwise, drop last number)
     return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
 
-TRUNCATE_DIGEST = 10
+TRUNCATE_DIGEST = 12
 DIGEST_ALGORITHM = hashlib.sha256
 
 def digest_hex(s, n=TRUNCATE_DIGEST):
     return DIGEST_ALGORITHM(s).hexdigest()[:n]
 
 def gen_hmac_token(key, message):
+    if not key:
+        raise Exception('Null key for HMAC token')
     token = base64.b64encode(hmac.new(key, message, DIGEST_ALGORITHM).digest())
     return token[:TRUNCATE_DIGEST]
 
@@ -64,6 +66,33 @@ def gen_auth_token(key, user_id, role='', sites='', prefixed=False):
 def gen_locked_token(key, user_id, site, session):
     token = gen_hmac_token(key, 'locked:%s:%s:%s' % (user_id, site, session))
     return '%s:%s:%s' % (site, session, token)
+
+def gen_server_key(key, nonce):
+    return gen_hmac_token(key, 'server:'+nonce)
+
+def gen_site_key(key, site):
+    return gen_hmac_token(key, 'site:'+site)
+
+def gen_file_key(site_key, session_name, user_id, timestamp=''):
+    prefix = ''
+    if session_name:
+        prefix += 's'
+    if user_id:
+        prefix += 'u'
+    key = gen_hmac_token(site_key, 'file:'+timestamp+':'+session_name+':'+user_id)
+    if timestamp:
+        key = timestamp + '-' + key
+    if prefix:
+        key = prefix + '-' + key
+    return key
+
+def gen_site_auth_token(site, key, user_id, role='', prefixed=False):
+    return gen_auth_token(gen_site_key(key, site), user_id, role=role, prefixed=prefixed)
+
+def gen_late_token(key, user_id, site_name, session_name, date_str):
+    # Use date string of the form '1995-12-17T03:24'
+    token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s:%s' % (user_id, site_name, session_name, date_str) )
+    return token
 
 def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
     try:
@@ -98,20 +127,6 @@ def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
             return img_html % data_uri
         else:
             return data_uri
-
-def gen_server_key(key, nonce):
-    return gen_hmac_token(key, 'server:'+nonce)
-
-def gen_site_key(key, site):
-    return gen_hmac_token(key, 'site:'+site)
-
-def gen_site_auth_token(site, key, user_id, role='', prefixed=False):
-    return gen_auth_token(gen_site_key(key, site), user_id, role=role, prefixed=prefixed)
-
-def gen_late_token(key, user_id, site_name, session_name, date_str):
-    # Use date string of the form '1995-12-17T03:24'
-    token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s:%s' % (user_id, site_name, session_name, date_str) )
-    return token
 
 def normalize_newlines(s):
     return s.replace('\r\n', '\n').replace('\r', '\n')

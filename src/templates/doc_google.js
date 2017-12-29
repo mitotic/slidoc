@@ -5,45 +5,6 @@
 
 var MAXSCORE_ID = '_max_score';
 
-var TRUNCATE_DIGEST = 10;
-var DIGEST_ALGORITHM = 'sha256';  // 'md5' or 'sha256'
-
-function genHmacToken(key, message) {
-    // Generates token using HMAC key
-    if (DIGEST_ALGORITHM == 'md5') {
-	var hmac_bytes = md5(message, key, true);
-    } else if (DIGEST_ALGORITHM == 'sha256') {
-	var shaObj = new jsSHA("SHA-256", "TEXT");
-	shaObj.setHMACKey(key, "TEXT");
-	shaObj.update(message);
-	hmac_bytes = shaObj.getHMAC("BYTES");
-    } else {
-	throw('Unknown digest algorithm: '+DIGEST_ALGORITHM);
-    }
-    return btoa(hmac_bytes).slice(0,TRUNCATE_DIGEST);
-}
-
-function genAuthPrefix(userId, role, sites) {
-    return ':' + userId + ':' + (role||'') + ':' + (sites||'');
-}
-
-function genAuthToken(key, userId, role, sites, prefixed) {
-    var prefix = genAuthPrefix(userId, role, sites);
-    var token = genHmacToken(key, prefix);
-    return prefixed ? (prefix+':'+token) : token;
-}
-
-
-function genLateToken(key, user_id, site_name, session_name, date_str) {
-    // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
-    var date = new Date(date_str);
-    if (date_str.slice(-1) != 'Z') {  // Convert local time to UTC
-	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
-	date_str = date.toISOString().slice(0,16)+'Z';
-    }
-    return date_str+':'+genHmacToken(key, 'late:'+user_id+':'+site_name+':'+session_name+':'+date_str);
-}
-
 var GService = {};
 
 function GServiceJSONP(callback_index, json_text) {

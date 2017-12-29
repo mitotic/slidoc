@@ -45,9 +45,9 @@ Upload = {
     display: function (response, pluginResp) {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
-	if (fileInfo) {
-	    this.confirmMsgElem.textContent = 'Successfully uploaded '+(fileInfo.upload.origName||fileInfo.origName)+' on '+(new Date(fileInfo.uploadTime)); // fileInfo.origName for backward compatibility
-	    this.confirmLoadElem.href = this.loadPath(fileInfo);
+	if (fileInfo || pluginResp) {
+	    this.confirmMsgElem.textContent = 'Successfully uploaded '+(fileInfo ? (fileInfo.upload.origName||fileInfo.origName) : (pluginResp.origName||''))+' on '+(new Date(fileInfo ? fileInfo.uploadTime : pluginResp.time)); // fileInfo.origName for backward compatibility
+	    this.confirmLoadElem.href = this.loadPath(fileInfo, pluginResp);
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
 	    this.confirmLoadElem.href = "javascript:alert('Nothing uploaded')";
@@ -55,8 +55,8 @@ Upload = {
 	this.lateElem.innerHTML = '';
 	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), this.userId);
 	if (this.viewer.displayURL) {
-	    if (fileInfo)
-		this.viewer.displayURL(this.loadPath(fileInfo), fileInfo.upload.fileType|| fileInfo.fileType); // fileInfo.fileType for backward compatibility
+	    if (fileInfo || pluginResp)
+		this.viewer.displayURL(this.loadPath(fileInfo, pluginResp), pluginResp ? pluginResp.fileType : (fileInfo.upload.fileType|| fileInfo.fileType)); // fileInfo.fileType for backward compatibility
 	    else
 		this.viewer.displayURL('', '');
 	}
@@ -79,6 +79,7 @@ Upload = {
     },
 
     loadPrefix: function (loadURL, fileKey, notebook) {
+	///Slidoc.log('Slidoc.Plugins.Upload.loadPrefix:', loadURL, fileKey, notebook);
 	if (notebook) {
 	    // Append "query" using "%3F" as nbviewer chomps up normal queries
 	    loadURL += '%3F' + fileKey;
@@ -91,16 +92,28 @@ Upload = {
 	}
     },
 
-    loadPath: function(fileInfo) {
-	if (!fileInfo)
+    loadPath: function(fileInfo, pluginResp) {
+	///Slidoc.log('Slidoc.Plugins.Upload.loadPath:', fileInfo, pluginResp);
+	if (!fileInfo && !pluginResp)
 	    return '';
 
-	if (fileInfo.loadURL)         // Backwards compatibility
-	    return fileInfo.loadURL;
-	var value = fileInfo.upload;
-	var loadURL = location.host + Slidoc.PluginManager.sitePrefix + Slidoc.PluginManager.pluginDataPath + '/' + this.name + value.url;
+	if (pluginResp) {
+	    var url = pluginResp.url;
+	    var filename = pluginResp.filename;
+	    var fileType = pluginResp.fileType;
+	} else {
+	    if (fileInfo.loadURL)         // Backwards compatibility
+		return fileInfo.loadURL;
 
-	return this.loadPrefix(loadURL, value.fileKey, value.fileType == 'ipynb');
+	    url = fileInfo.upload.url;
+	    filename = fileInfo.upload.name;
+	    fileType = fileInfo.upload.fileType;
+	}
+
+	var loadURL = location.host + Slidoc.PluginManager.sitePrefix + Slidoc.PluginManager.pluginDataPath + '/' + this.name + url;
+
+	var fileKey = Slidoc.PluginManager.getFileKey(filename, this.qattributes.team == 'response');
+	return this.loadPrefix(loadURL, fileKey, fileType == 'ipynb');
     },
 
     uploaded: function(value) {
@@ -120,9 +133,9 @@ Upload = {
 	var filePrefix = '';
 	var qno = this.qattributes ? 'q'+this.qattributes.qnumber : '';
 	if (qno)
-	    filePrefix += qno + '/' + this.sessionName + '-' + qno;
+	    filePrefix += qno + '/' + this.sessionName + '--' + qno + '-';
 	else
-	    filePrefix += this.sessionName;
+	    filePrefix += this.sessionName + '--';
 
 	filePrefix += Slidoc.makeUserFileSuffix(this.displayName);
 
@@ -139,9 +152,8 @@ Upload = {
 
 	if (fileInfo) {
 	    var response = fileInfo.upload.origName;
-	    var pluginResp = {name: this.name, score: 1, correctAnswer: '', filename: fileInfo.upload.name,
-			      time: fileInfo.uploadTime, fileType: fileInfo.upload.fileType, url: fileInfo.upload.url,
-			      fileKey: fileInfo.upload.fileKey};
+	    var pluginResp = {name: this.name, score: 1, correctAnswer: '', filename: fileInfo.upload.name, origName: fileInfo.upload.origName,
+			      time: fileInfo.uploadTime, fileType: fileInfo.upload.fileType, url: fileInfo.upload.url};
 	    ///this.remoteCall('lockFile', null, fileInfo.upload.url); //Disabled to allow unsubmission etc.
 	} else {
 	    var response = '';

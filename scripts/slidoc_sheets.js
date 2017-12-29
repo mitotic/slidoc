@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.17a';
+var VERSION = '0.97.18a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -176,7 +176,7 @@ var SITE_LOCKED = 'locked';
 var SITE_INACTIVE = 'inactive';
 var SITE_ACCESS = [SITE_ADMINONLY, SITE_ADMINGUEST, SITE_LOCKED];
 
-var TRUNCATE_DIGEST = 10;
+var TRUNCATE_DIGEST = 12;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.SHA_256;
 var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_SHA_256;
 
@@ -1129,7 +1129,7 @@ function sheetAction(params) {
 	    }
 
 	} else if (getShare) {
-	    // Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
+	    // Sharing: return adjacent columns (if permitted by session index and corresponding user entry is non-null)
 	    if (!sessionAttributes || !sessionAttributes.shareAnswers)
 		throw('Error::Denied access to answers of session '+sheetName);
 	    var shareParams = sessionAttributes.shareAnswers[getShare];
@@ -1446,6 +1446,7 @@ function sheetAction(params) {
 		}
 	    }
 	} else {
+	    // Process row get/put
 	    if (rowUpdates && selectedUpdates) {
 		throw('Error::Cannot specify both rowUpdates and selectedUpdates');
 	    } else if (rowUpdates) {

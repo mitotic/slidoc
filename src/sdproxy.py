@@ -165,7 +165,7 @@ LATE_SUBMIT = 'late'
 
 FUTURE_DATE = 'future'
 
-TRUNCATE_DIGEST = 8
+USERID_RE = re.compile(r'^[-\w.@]+$')
 
 PLUGIN_RE = re.compile(r"^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$")
 QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
@@ -2209,7 +2209,7 @@ def sheetAction(params, notrace=False):
                 if computeTotalScore:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
         elif getShare:
-            # Return adjacent columns (if permitted by session index and corresponding user entry is non-null)
+            # Sharing: return adjacent columns (if permitted by session index and corresponding user entry is non-null)
             if not sessionAttributes or not sessionAttributes.get('shareAnswers'):
                 raise Exception('Error::Denied access to answers of session '+sheetName)
             shareParams = sessionAttributes['shareAnswers'].get(getShare)
@@ -2476,6 +2476,7 @@ def sheetAction(params, notrace=False):
                     returnValues.append( shareSubrow[j] )
 
         else:
+            # Process row get/put
             if rowUpdates and selectedUpdates:
                 raise Exception('Error::Cannot specify both rowUpdates and selectedUpdates')
             elif rowUpdates:
@@ -3060,6 +3061,14 @@ def sheetAction(params, notrace=False):
                     # Set adminPaced for testuser only upon submission
                     returnInfo['adminPaced'] = adminPaced
 
+                if sessionEntries and getRow:
+                    # Return user/team file access keys
+                    today = str(datetime.date.today())
+                    returnInfo['userFileKey'] = sliauth.gen_file_key(Settings['auth_key'], sheetName, paramId, timestamp=today)
+                    if teamCol and rowValues[teamCol-1]:
+                        returnInfo['team'] = rowValues[teamCol-1]
+                        returnInfo['teamFileKey'] = sliauth.gen_file_key(Settings['auth_key'], sheetName, rowValues[teamCol-1], timestamp=today)
+
                 # Return updated timestamp
                 returnInfo['timestamp'] = sliauth.epoch_ms(rowValues[columnIndex['Timestamp']-1]) if ('Timestamp' in columnIndex) else None
                 returnValues = rowValues if getRow else []
@@ -3097,6 +3106,9 @@ def sheetAction(params, notrace=False):
 
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
+
+        if sessionEntries and getRow and allRows and adminUser:
+            returnInfo['sessionFileKey'] = sliauth.gen_file_key(Settings['auth_key'], sheetName, '')
 
         if sessionEntries and getRow and (allRows or (createRow and paramId == TESTUSER_ID)):
             # Getting all session rows or test user row (with creation option); return related sheet names

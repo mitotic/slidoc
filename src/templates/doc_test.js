@@ -169,7 +169,7 @@ TestScript.prototype.eventAction = function(commands) {
 	var testkey   = Slidoc.getParameter('testkey') || '';
 	var testtoken = Slidoc.getParameter('testtoken') || '';
 	if (testkey && !testtoken)
-	    testtoken = (testuser == '_test_user') ? testkey :  genAuthToken(testkey, testuser);
+	    testtoken = (testuser == '_test_user') ? testkey : Slidoc.genAuthToken(testkey, testuser);
 	var testlate  = Slidoc.getParameter('testlate') || '';
 
 	switch (action) {
@@ -196,7 +196,7 @@ TestScript.prototype.eventAction = function(commands) {
 		    date = newDate.toISOString().slice(0,16);
 		}
 		if (date)
-		    value = genLateToken(testkey, GService.gprofile.auth.id, '', Sliobj.sessionName, date);
+		    value = Slidoc.genLateToken(testkey, GService.gprofile.auth.id, '', Sliobj.sessionName, date);
 	    }
 	    return value;
 	case 'dialogReturn':

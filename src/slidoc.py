@@ -2201,7 +2201,7 @@ class SlidocRenderer(MathRenderer):
             elif not self.sheet_attributes.get('sessionTeam'):
                 self.sheet_attributes['sessionTeam'] = 'roster'
 
-        ans_grade_fields = self.process_weights(weight_answer)
+        ans_grade_fields = self.process_weights(weight_answer, plugin_action)
 
         id_str = self.get_slide_id()
         ans_params = { 'sid': id_str, 'qno': len(self.questions), 'ansdisp': ''}
@@ -2293,7 +2293,7 @@ class SlidocRenderer(MathRenderer):
         return html_prefix+ans_html+html_suffix+'\n'
 
 
-    def process_weights(self, text):
+    def process_weights(self, text, plugin_action=''):
         # Note: gweight=0 is treated differently from omitted gweight;
         # grade column is created for gweight=0 to allow later changes in grade weights
         sweight, gweight, vweight = 1, None, 0
@@ -2349,7 +2349,7 @@ class SlidocRenderer(MathRenderer):
             elif self.questions[-1].get('vote') or self.questions[-1].get('disabled') or self.questions[-1].get('team') or 'share_all' in self.options['config'].features:
                 ans_grade_fields += [qno+'_response']
 
-            if self.questions[-1].get('team') and re.match(r'^(.*)=\s*(\w+)\.response\(\s*\)$', self.questions[-1].get('correct', '')):
+            if self.questions[-1].get('team') and plugin_action == 'response':
                 ans_grade_fields += [qno+'_plugin']
 
             if ans_grade_fields:

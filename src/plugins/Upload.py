@@ -64,19 +64,18 @@ class Upload(object):
         try:
             filename = dataParams.get('teamName') or userId
             extn = os.path.splitext(dataParams.get('filename',''))[1]
-            if extn:
-                filename += extn
+            filename += (extn or '.dat')   # Enforce non-null extension 
+                
             if filePrefix:
-                filename = filePrefix + '-' +filename
+                filename = filePrefix + '--' +filename
             filename = filename.replace('..', '') # For file access security
 
             # Prepend session name to file path
             filepath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + filename
 
-            fileKey = self.pluginManager.getFileKey(filepath)
             fileURL = self.pluginManager.writeFile(filepath, content, restricted=True)
 
-            return {'result': 'success', 'value': {'name': os.path.basename(filepath), 'url': fileURL, 'fileKey': fileKey}}
+            return {'result': 'success', 'value': {'name': os.path.basename(filepath), 'url': fileURL}}
         except Exception, err:
             print >> sys.stderr, 'Upload._uploadData: ERROR', str(err)
             return {'result': 'error', 'error': 'Error in saving uploaded data'}

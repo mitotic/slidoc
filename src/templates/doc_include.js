@@ -280,6 +280,8 @@ function setupCache(auth, callback) {
 	    Sliobj.maxLastSlide = Math.min(retStatus.info.maxLastSlide, Sliobj.params.pacedSlides);
 	if (retStatus.info.remoteAnswers)
 	    Sliobj.remoteAnswers = retStatus.info.remoteAnswers;
+	if (retStatus.info.sessionFileKey)
+	    Sliobj.sessionFileKey = retStatus.info.sessionFileKey;
 	if (retStatus.info.sheetsAvailable)
 	    Sliobj.sheetsAvailable = retStatus.info.sheetsAvailable;
 	if (allRows) {
@@ -3199,7 +3201,7 @@ Slidoc.PluginManager.invoke = function (pluginInstance, action) //... extra argu
 
     if (!(action in pluginInstance)) {
 	Slidoc.log('ERROR Plugin action '+pluginInstance.name+'.'+action+' not defined');
-	return;
+	return null;
     }
 
     try {
@@ -3242,6 +3244,19 @@ Slidoc.PluginManager.pastDueDate = function() {
 
 Slidoc.PluginManager.getLiveResponses = function(qnumber) {
     return Sliobj.liveResponses[qnumber] || null;
+}
+
+Slidoc.PluginManager.getFileKey = function(filename, teamResponse) {
+    if (Sliobj.sessionFileKey) {
+	return Slidoc.genFileKey(Sliobj.sessionFileKey, filename,);
+    } else if (teamResponse) {
+	if (Sliobj.teamFileKey)
+	    return Slidoc.genFileKey(Sliobj.teamFileKey, filename);
+    } else {
+	if (Sliobj.userFileKey)
+	    return Slidoc.genFileKey(Sliobj.userFileKey, filename);
+    }
+    return '';
 }
 
 Slidoc.PluginManager.disable = function(pluginName, slide_id, displayCorrect) {
@@ -3426,6 +3441,55 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
 //////////////////////////////////
 // Section 12: Helper functions
 //////////////////////////////////
+
+var TRUNCATE_DIGEST = 12;
+var DIGEST_ALGORITHM = 'sha256';  // 'md5' or 'sha256'
+
+Slidoc.genHmacToken = function (key, message) {
+    // Generates token using HMAC key
+    if (DIGEST_ALGORITHM == 'md5') {
+	var hmac_bytes = md5(message, key, true);
+    } else if (DIGEST_ALGORITHM == 'sha256') {
+	var shaObj = new jsSHA("SHA-256", "TEXT");
+	shaObj.setHMACKey(key, "TEXT");
+	shaObj.update(message);
+	hmac_bytes = shaObj.getHMAC("BYTES");
+    } else {
+	throw('Unknown digest algorithm: '+DIGEST_ALGORITHM);
+    }
+    return btoa(hmac_bytes).slice(0,TRUNCATE_DIGEST);
+}
+
+function genAuthPrefix(userId, role, sites) {
+    return ':' + userId + ':' + (role||'') + ':' + (sites||'');
+}
+
+Slidoc.genAuthToken = function (key, userId, role, sites, prefixed) {
+    var prefix = genAuthPrefix(userId, role, sites);
+    var token = Slidoc.genHmacToken(key, prefix);
+    return prefixed ? (prefix+':'+token) : token;
+}
+
+Slidoc.genLateToken = function (key, user_id, site_name, session_name, date_str) {
+    // Use UTC date string of the form '1995-12-17T03:24' (append Z for UTC time)
+    var date = new Date(date_str);
+    if (date_str.slice(-1) != 'Z') {  // Convert local time to UTC
+	date.setTime( date.getTime() + date.getTimezoneOffset()*60*1000 );
+	date_str = date.toISOString().slice(0,16)+'Z';
+    }
+    return date_str+':'+Slidoc.genHmacToken(key, 'late:'+user_id+':'+site_name+':'+session_name+':'+date_str);
+}
+
+Slidoc.genFileKey = function (key, filename, prefix) {
+    var salt = Math.round(Math.random() * 100000000);
+    var match = key.match(/^([su]+-)(\d\d\d\d-\d\d-\d\d-)?/);
+    if (match) {
+	if (match[2])
+	    salt = match[2] + salt;
+	salt = match[1] + salt;
+    }
+    return encodeURIComponent(salt+':' + Slidoc.genHmacToken(key, salt+':'+filename) );
+}
 
 function clearAnswerElements() {
     Slidoc.log('clearAnswerElements:');
@@ -4034,6 +4098,9 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
     Sliobj.remoteAnswers = '';
+    Sliobj.userFileKey = '';
+    Sliobj.teamFileKey = '';
+    Sliobj.sessionFileKey = '';
     Sliobj.discussStats = null;
     Sliobj.sheetsAvailable = null;
     Sliobj.voteDate = null;
@@ -4707,10 +4774,10 @@ Slidoc.fileTypeMap = {
 }
 Slidoc.makeUserFileSuffix = function(displayName) {
     var match = /^([- #\w]+)(,\s*([A-Z]).*)$/i.exec(displayName||'');
+    var suffix = '';
     if (match)
-	return '-' + match[1].trim().replace('#','').replace(' ','-').toLowerCase() + (match[3] ? '-'+match[3].toLowerCase() : '');
-    else
-	return '';
+	suffix = match[1].trim().replace('#','').replace(' ','-').toLowerCase() + (match[3] ? '-'+match[3].toLowerCase() : '');
+    return suffix || 'user';
 }
 
 
@@ -4723,7 +4790,7 @@ Slidoc.uploadFile = function() {
 		'<input type="file" id="slidoc-uploadpopup-uploadbutton" class="slidoc-clickable slidoc-button slidoc-plugin-Upload-button slidoc-uploadpopup-uploadbutton" onclick="Slidoc.uploadAction();"></input>'];
     Slidoc.showPopup(html.join(''));
 
-    var filePrefix = 'Late/'+Sliobj.sessionName+'-late'+Slidoc.makeUserFileSuffix(Sliobj.session.displayName);
+    var filePrefix = 'Late/'+Sliobj.sessionName+'--late-'+Slidoc.makeUserFileSuffix(Sliobj.session.displayName);
     var uploadElem = document.getElementById('slidoc-uploadpopup-uploadbutton');
     uploadElem.addEventListener('change', Slidoc.uploadAction, false);
     Sliobj.uploadHandlerActive = Slidoc.uploadHandler.bind(null, 'Upload', Sliobj.uploadFileCallback, filePrefix, '', null);
@@ -5759,6 +5826,12 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 
 	    if (retStatus.info.remoteAnswers)
 		Sliobj.remoteAnswers = retStatus.info.remoteAnswers;
+
+	    if (retStatus.info.userFileKey)
+		Sliobj.userFileKey = retStatus.info.userFileKey;
+
+	    if (retStatus.info.teamFileKey)
+		Sliobj.teamFileKey = retStatus.info.teamFileKey;
 
 	    if (retStatus.info.discussStats)
 		Sliobj.discussStats = retStatus.info.discussStats;

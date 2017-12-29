@@ -213,7 +213,7 @@ CommandOpts = options
 Global = Dummy()
 Global.config_path = ''
 Global.config_file = ''
-Global.config_data = ''
+Global.config_digest = ''
 Global.site_config = {}
 Global.userRoles = None
 Global.backup = None
@@ -266,7 +266,7 @@ SCORES_SHEET = 'scores_slidoc'
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
-COOKIE_VERSION = '0.97.17a'             # Update version if cookie format changes (automatically deletes previous secure cookies)
+COOKIE_VERSION = '0.97.18a'             # Update version if cookie format changes (automatically deletes previous secure cookies)
 SERVER_NAME = 'Webster0.9'
 
 RAW_UPLOAD = 'raw'
@@ -528,10 +528,10 @@ class UserIdMixin(object):
         data = self.get_id_from_cookie(data=True)
         self.set_id(username, displayName=name, role='', sites=plainSites, email=self.get_id_from_cookie(email=True), data=data)
 
-    def check_locked(self, username, token, site, session):
+    def check_locked_token(self, username, token, site, session):
         return token == sliauth.gen_locked_token(sliauth.gen_site_key(Options['root_auth_key'], site), username, site, session)
 
-    def check_access(self, username, token, role=''):
+    def check_access_token(self, username, token, role=''):
         return token == gen_proxy_auth_token(username, role, root=True)
 
     def get_id_from_cookie(self, role=False, for_site='', sites=False, name=False, email=False, altid=False, data=False):
@@ -701,7 +701,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         return False
 
     def check_root_admin(self, token=''):
-        if token == Options['root_auth_key']:
+        if Options['root_auth_key'] and token == Options['root_auth_key']:
             return True
         return self.get_id_from_cookie(role=True) == sdproxy.ADMIN_ROLE
 
@@ -883,7 +883,7 @@ class SiteActionHandler(BaseHandler):
             new_site = self.get_argument('new_site', '')
             if new_site:
                 with open(Global.config_file) as f:
-                    if Global.config_data != f.read():
+                    if Global.config_digest != sliauth.digest_hex(f.read()):
                         err_msg = 'Config file %s has changed; unable to create site' % Global.config_file
 
             site_config_file = os.path.join(Global.config_path, site_name+'.json') if os.path.isdir(Global.config_path) else ''
@@ -970,7 +970,7 @@ class SiteActionHandler(BaseHandler):
 
             elif new_site:
                 with open(Global.config_file) as f:
-                    if Global.config_data != f.read():
+                    if Global.config_digest != sliauth.digest_hex(f.read()):
                         errMsg = 'Config file %s has changed; unable to create site' % Global.config_file
 
             if errMsg:
@@ -3729,6 +3729,7 @@ class UserActionHandler(ActionHandler):
 def modify_user_auth(args, socketId=None):
     # Re-create args.token for each site
     # Replace root-signed tokens with site-specific tokens
+    # Note: Requires site server to have access to root key, for now
     if not Options['site_name'] or not args.get('token'):
         return
 
@@ -4393,22 +4394,44 @@ class PluginManager(object):
         return cls._managers[pluginName]
 
     @classmethod
-    def getFileKey(cls, filepath, salt=''):
+    def getFileKey(cls, filepath, salt='', custom_key=''):
+        today = str(datetime.date.today())
         filename = os.path.basename(filepath)
-        salt = salt or uuid.uuid4().hex[:12]
-        key = sliauth.gen_hmac_token(Options['auth_key'], salt+':'+filename)
-        if salt == '_filename':
-            # Backwards compatibility
-            return sliauth.safe_quote(key)
+        if not salt:
+            salt = today + '-' + uuid.uuid4().hex[:8]
+            if custom_key:
+                salt = custom_key + '-' + salt
+        if salt.startswith('s-') or salt.startswith('su-'):
+            # Session-user key
+            fhead = os.path.splitext(filename)[0]
+            if '--' in fhead:
+                sep = '--'
+            else:
+                sep = '-'   # For legacy compatibility only
+
+            fprefix, _, uname = fhead.rpartition(sep)
+            sname, _, __ = fprefix.partition(sep)
+            if salt.startswith('s-'):
+                hmac_key = sliauth.gen_file_key(Options['auth_key'], sname, '')
+            else:
+                hmac_key = sliauth.gen_file_key(Options['auth_key'], sname, uname, timestamp=today)
         else:
-            return sliauth.safe_quote(salt+':'+key)
+            hmac_key = Options['auth_key']
+        subkey = sliauth.gen_hmac_token(hmac_key, salt+':'+filename)
+        return sliauth.safe_quote(salt+':'+subkey)
 
     @classmethod
     def validFileKey(cls, filepath, key):
+        today = str(datetime.date.today())
         if ':' not in key and '%' in key:
             key = sliauth.safe_unquote(key)
-        salt, _, oldpath = key.partition(':')
-        return sliauth.safe_quote(key) == cls.getFileKey(filepath, salt=salt)
+        salt, _, subkey = key.partition(':')
+        if sliauth.safe_quote(key) == cls.getFileKey(filepath, salt=salt):
+            return True
+        if salt.startswith('su-') and not salt.startswith('su-'+today):
+            # Key may not be current
+            return None
+        return False
 
     @classmethod
     def adminRole(cls, userRole, alsoGrader=False):
@@ -4586,9 +4609,6 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 raise tornado.web.HTTPError(404)
 
         denyStr = restricted_user_access(Options['start_date'], Options['end_date'], siteRole, sdproxy.Settings['site_access'])
-        if denyStr:
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Site %s not accessible (%s)' % (Options['site_name'], denyStr))
-
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
             path = self.request.path
@@ -4597,14 +4617,23 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 path, _, tail = path.partition('%3F')
                 query = getattr(self,'abs_query','')
 
-            if PluginManager.validFileKey(path, query) or query == PluginManager.getFileKey(path, salt='_filename'):
-                # Last check for backward compatibility with earlier non-salted version of file key
+            if userId and siteRole == sdproxy.ADMIN_ROLE:
+                return userId
+
+            if not denyStr and userId and filename.endswith('--'+userId):
+                return userId
+
+            valid = PluginManager.validFileKey(path, query)
+            if valid:
                 return "noauth"
+            elif valid is None:
+                tornado.web.HTTPError(404, log_message='CUSTOM:Invalid/expired file access key; reloading page may help')
             elif not userId:
                 return None
-            elif filename.endswith('-'+userId) or siteRole == sdproxy.ADMIN_ROLE:
-                return userId
             raise tornado.web.HTTPError(404)
+
+        if denyStr:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Site %s not accessible (%s)' % (Options['site_name'], denyStr))
 
         if ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/'+PRIVATE_PATH are always protected and used for session-related content
@@ -4716,6 +4745,7 @@ class AuthMessageHandler(BaseHandler):
 
 
 class AuthLoginHandler(BaseHandler):
+    # Token-based login
     def get(self):
         error_msg = self.get_argument('error', '')
         username = str(self.get_argument('username', ''))
@@ -4765,6 +4795,7 @@ class AuthLoginHandler(BaseHandler):
         data = {}
         comps = token.split(':')
         if not role and (self.is_web_view() or len(comps) > 1):
+            # Locked access
             if len(comps) != 3:
                 self.redirect('/_auth/login/' + '?error=' + tornado.escape.url_escape('Invalid locked access token. Expecting site:session:code'))
                 return
@@ -4778,9 +4809,9 @@ class AuthLoginHandler(BaseHandler):
                 if siteName:                         # Add site prefix separately because this is root site
                     next = '/' + siteName + next
             data['locked_access'] = next
-            auth = self.check_locked(username, token, siteName, sessionName)
+            auth = self.check_locked_token(username, token, siteName, sessionName)
         else:
-            auth = self.check_access(username, token, role=role)
+            auth = self.check_access_token(username, token, role=role)
 
         if auth:
             if Global.twitter_params:
@@ -5013,7 +5044,7 @@ def createApplication():
     appSettings.update(
         template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
         xsrf_cookies=Options['xsrf'],
-        cookie_secret=(Options['root_auth_key'] or 'testkey')+COOKIE_VERSION,
+        cookie_secret=(Options['root_auth_key'])+COOKIE_VERSION,
         login_url=Global.login_url,
         debug=Options['debug'],
     )
@@ -5276,6 +5307,8 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
 
             if not userId:
                 raise Exception('No userId for name: %s %s' % (name, email))
+            elif not sdproxy.USERID_RE.match(userId) or '--' in userId:
+                raise Exception("Invalid character sequence in userId '%s'; only digits/letters/hyphen/periods/at-symbols are allowed" % userId)
 
             rosterRow = [name, userId, email, altid]
             if twitterCol:
@@ -6020,6 +6053,7 @@ def root_start_secondary(site_number, site_name, site_config={}):
     mod_args += ['--multisite']
     mod_args += ['--server_version='+sliauth.get_version()]
     mod_args += ['--server_nonce='+Options['server_nonce']]
+    mod_args += ['--config_digest='+Global.config_digest]
     mod_args += ['--site_number='+str(site_number)]
     mod_args += ['--site_name='+site_name]
     if site_config:
@@ -6141,7 +6175,7 @@ def main():
         else:
             Global.config_file = path
         with open(Global.config_file) as f:
-            Global.config_data = f.read()
+            Global.config_digest = sliauth.digest_hex(f.read())
         parse_config_file(Global.config_file, final=False)
 
     define("config", type=str, help="Path to config file", callback=config_parse)
@@ -6151,6 +6185,7 @@ def main():
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
+    define("config_digest", default="", help="Config file digest (used for secondary server only)")
     define("debug", default=False, help="Debug mode")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("dry_run_file_modify", default=False, help="Allow source/web/plugin file mods even for dry run (e.g., local copy)")
@@ -6212,6 +6247,9 @@ def main():
 
     if CommandOpts.server_version and CommandOpts.server_version != sliauth.get_version():
         sys.exit('Site %s: ERROR: Expecting server version %s but found %s' % (CommandOpts.site_name, CommandOpts.server_version, sliauth.get_version()))
+
+    if CommandOpts.site_name and CommandOpts.config_digest != Global.config_digest:
+        sys.exit('Site %s: ERROR: Config file %s has changed compared to root; start cancelled' % (CommandOpts.site_name, Global.config_file))
 
     Global.split_site_opts = {}
     sites = getattr(CommandOpts, 'sites', '')
