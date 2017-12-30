@@ -33,22 +33,21 @@
     <li><a class="clickable" href="javascript:slidocPromptAction('site_settings','Enter site to edit')">&#9998;</a>: Edit site settings</li>
     <li><a class="clickable" href="javascript:slidocPromptAction('site_delete','Enter site to delete',true)">&#x1F5D1;</a>: Delete site (IRREVERSIBLE)</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocPromptAction('reload','Enter site to reload')">site_reload</a>: Reload site (graceful)</li>
-    <li><a class="clickable" href="javascript:slidocPromptAction('terminate','Enter site to terminate',true)">site_terminate</a>: Terminate site (ungraceful)</li>
+    <li><a class="clickable" href="javascript:slidocPromptAction('terminate','Enter site to terminate',true)">site_terminate</a>: Terminate site (ungracefully)</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('terminate')">terminate</a>:Terminate all sites (ungraceful)</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('terminate')">terminate</a>: Terminate all, except root (ungracefully)</li>
     {% end %}
     <hr>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown all sites (graceful)</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown all</li>
     <hr>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('reload')">reload</a>: Reload all sites (graceful)</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('reload')">reload</a>: Reload all</li>
     <hr>
     <li><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a>: Backup all sites</li>
     <hr>
     <li><a class="clickable"
     href="javascript:slidocAction('update/check')">update check</a>: Check for code updates from github</li>
     <p></p>
-    <li><a class="clickable" href="javascript:slidocConfirmAction('update/pull')">update pull</a>: Pull updated code from github and restart proxy server</li>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('update/pull')">update pull</a>: Pull updated code from github and restart</li>
     <hr>
     <li><a class="clickable" href="javascript:slidocPromptAction('alias', 'Enter user@example.com=userid')">alias</a>: Define email alias (user@example.com=userid)</li>
   </ul>

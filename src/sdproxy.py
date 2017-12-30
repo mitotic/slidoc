@@ -71,6 +71,7 @@ Settings = {
     'no_login_token': False,
     'no_late_token': False,
     'no_roster': False,
+    'log_call': '',        # > 0 to log calls to sheet call_log; may generate large output over time
 
     'gradebook_release': '', # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
 
@@ -82,7 +83,6 @@ Settings = {
     'root_users': [],
 
     'lock_proxy_url': '', # URL of proxy server to lock sheet (used to "safely" allow direct access to Google Sheets from an auxiliary server)
-    'log_call': 0,        # Enable call debugging (logs calls to sheet 'call_log'; may generate very large amounts of output)
     'min_wait_sec': 0,    # Minimum time (sec) between successful Google Sheet requests
 
     'request_timeout': 75,   # Proxy update request timeout (sec)
@@ -91,12 +91,12 @@ Settings = {
 COPY_FROM_CONFIG = ['gsheet_url', 'site_label', 'site_title', 'site_access',
                     'admin_users', 'grader_users', 'guest_users',
                     'lock_date', 'end_date', 'gradebook_release',
-                    'no_login_token', 'no_late_token', 'no_roster',
+                    'no_login_token', 'no_late_token', 'no_roster', 'log_call',
                    ]
     
 COPY_FROM_SERVER = ['auth_key', 'site_name',  'server_url',
                     'debug', 'dry_run', 'email_addr', 'email_url', 'root_users',
-                    'lock_proxy_url', 'log_call', 'min_wait_sec', 'request_timeout',]
+                    'lock_proxy_url', 'min_wait_sec', 'request_timeout',]
 
 SITE_ADMINONLY = 'adminonly'
 SITE_ADMINGUEST = 'adminguest'
@@ -150,6 +150,8 @@ BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, SCORES_SHEET]
 RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats']
 AUXILIARY_SHEETS = ['discuss']    # Related sheets with original content
 
+LOG_MAX_ROWS = 1000
+
 ROSTER_START_ROW = 2
 SESSION_MAXSCORE_ROW = 2                                # Set to zero, if no MAXSCORE row
 SESSION_START_ROW = 3 if SESSION_MAXSCORE_ROW else 2
@@ -159,9 +161,7 @@ QUESTION_PACE = 2
 ADMIN_PACE    = 3
 
 SKIP_ANSWER = 'skip'
-
 LATE_SUBMIT = 'late'
-
 FUTURE_DATE = 'future'
 
 USERID_RE = re.compile(r'^[-\w.@]+$')
@@ -607,7 +607,7 @@ def downloadSheet(sheetName, backup=False):
     if backup:
         getParams['formula'] = 1
 
-    if Settings['log_call'] > 1:
+    if parseNumber(Settings['log_call']) and parseNumber(Settings['log_call']) > 1:
         getParams['logcall'] = str(Settings['log_call'])
 
     ##if Settings['debug']:
@@ -1500,7 +1500,8 @@ def update_remote_sheets_aux(force=False, synchronous=False):
     ##    print("update_remote_sheets_aux: REQUEST %s partial=%s, log=%s, sheets=%s, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], sorted(sheetUpdateInfo.keys()), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
-    ##    print("update_remote_sheets_aux: REQUEST2", [(x[0], x[4:]) for x in modRequests], file=sys.stderr)
+    ##    for x in modRequests
+    ##        print("update_remote_sheets_aux: REQUEST2", (x[0], x[1], len(x[2]), x[3], len(x[4]), x[5], x[6], len(x[7]), len(x[7][0])if x[7] else 0, len(x[8]), len(x[8][0]) if x[8] else 0), file=sys.stderr)
 
     if not Settings['gsheet_url'] or Settings['dry_run']:
         # "Immediate" updates if no sheet URL or dry run
@@ -2475,7 +2476,7 @@ def sheetAction(params, notrace=False):
                     returnValues.append( shareSubrow[j] )
 
         else:
-            # Process row get/put
+            # Process single row get/put
             if rowUpdates and selectedUpdates:
                 raise Exception('Error::Cannot specify both rowUpdates and selectedUpdates')
             elif rowUpdates:
@@ -2497,6 +2498,9 @@ def sheetAction(params, notrace=False):
 
             if not userId:
                 raise Exception('Error::userID must be specified for updates/gets')
+
+            if loggingSheet and modSheet.getLastRow() > LOG_MAX_ROWS:
+                raise Exception('Error:LOGGING:Number of rows in logging sheet '+sheetName+' exceeds '+LOG_MAX_ROWS)
 
             userRow = 0
             if modSheet.getLastRow() > numStickyRows and not loggingSheet:

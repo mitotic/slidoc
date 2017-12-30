@@ -352,19 +352,24 @@ class MathBlockLexer(mistune.BlockLexer):
                 getattr(self, 'parse_%s' % key)(m)
                 if self.slidoc_recursion == 1:
                     if key == 'slidoc_slideopts':
+                        # Slide: => slide break if not right after hrule
                         if self.slidoc_slide_header is not None:
                             self.slidoc_slide_end()
                         self.slidoc_slide_header = ''
-                    elif key == 'heading' and len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
-                        if self.slidoc_slide_header:
-                            # Level 2 header not at start of block or after Slide: (implicit slide break)
-                            self.slidoc_slide_end()
-                        self.slidoc_slide_header = m.group(2).strip('#').strip()
+                    elif key == 'heading':
+                        if len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
+                            # Level 1 or 2 header
+                            if self.slidoc_slide_header:
+                                # Not right after hrule or after Slide: => implicit slide break
+                                self.slidoc_slide_end()
+                        # Non-blank text content
+                        self.slidoc_slide_header = m.group(2).strip('#').strip() 
 
                     self.slidoc_blocks.append(m.group(0))
 
                     if key == 'paragraph':
                         if not self.slidoc_slide_header:
+                            # Non-blank text content
                             self.slidoc_slide_header = m.group(1).strip()
                     elif key == 'hrule':
                         # Explicit slide break

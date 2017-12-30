@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.18b';
+var VERSION = '0.97.18c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -18,6 +18,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure
 			 ['no_login_token', '', 'Non-null string for true'],
 			 ['no_late_token',  '', 'Non-null string for true'],
 			 ['no_roster',      '', 'Non-null string for true'],
+			 ['log_call', '', '> 0 to log calls to sheet call_log; may generate large output over time'],
                          [],
 			 ['gradebook_release',  '', 'List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)'],
 		         ['cumulative_total',   '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
@@ -156,6 +157,8 @@ var SCORES_SHEET = 'scores_slidoc';
 var RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats'];
 var AUXILIARY_SHEETS = ['discuss'];    // Related sheets with original content
 
+var LOG_MAX_ROWS = 1000;
+
 var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
 var SESSION_START_ROW = SESSION_MAXSCORE_ROW ? 3 : 2;
@@ -165,9 +168,7 @@ var QUESTION_PACE = 2;
 var ADMIN_PACE    = 3;
 
 var SKIP_ANSWER = 'skip';
-
 var LATE_SUBMIT = 'late';
-
 var FUTURE_DATE = 'future';
 
 var SITE_ADMINONLY = 'adminonly';
@@ -278,9 +279,12 @@ function defaultSettings(overwrite, defaultVals) {
 		if (defaultVals && settingsName in defaultVals)
 		    settingsValue = defaultVals[settingsName];
 		settingsSheet.getRange(j+2, 1, 1, defaultRow.length).setValues([[settingsName, settingsValue, defaultRow[2]]]);
-		// Hide key values
-		if (settingsName.match(/_key$/i))
+		if (settingsName.match(/_key$/i)) {
+		    // Hide key values
+		    // NOTE: Alternatively, keys could be stored using PropertiesService and accessed using a menu
 		    settingsSheet.getRange('B'+(j+2)+':B'+(j+2)).setNumberFormat(";;;");
+		    settingsSheet.hideRows(j+2);
+		}
 	    }
 	}
     }
@@ -460,6 +464,10 @@ function startCallTracking(logLevel, params, sheetName, origUser) {
 	callSheet = createSheet('call_log', callHeaders);
     }
     var callRows = callSheet.getLastRow();
+    if (callRows > LOG_MAX_ROWS) {
+	callSheet.deleteRows(1, callRows-LOG_MAX_ROWS);
+	callRows = callSheet.getLastRow();
+    }
     callSheet.insertRowBefore(callRows+1);
     callSheet.getRange(callRows+1, 1, 1, callValues.length).setValues([callValues]);
     var callEndRange = callSheet.getRange(callRows+1, callValues.length+1, 1, 2);
@@ -804,6 +812,7 @@ function sheetAction(params) {
 	    }
 	    returnValues = [];
 	    var data = JSON.parse(params.data);
+	    trackCall(1, 'handleProxyUpdates: params.data.length='+params.data.length);
 	    var retval = handleProxyUpdates(data, params.create, returnMessages);
 	    returnInfo.refreshSheets = retval[0];
 	    returnInfo.updateErrors = retval[1];
@@ -1446,7 +1455,7 @@ function sheetAction(params) {
 		}
 	    }
 	} else {
-	    // Process row get/put
+	    // Process single row get/put
 	    if (rowUpdates && selectedUpdates) {
 		throw('Error::Cannot specify both rowUpdates and selectedUpdates');
 	    } else if (rowUpdates) {
@@ -1469,6 +1478,10 @@ function sheetAction(params) {
 
 	    if (!userId)
 		throw('Error::userID must be specified for updates/gets');
+
+	    if (loggingSheet && modSheet.getLastRow() > LOG_MAX_ROWS)
+		throw('Error:LOGGING:Number of rows in logging sheet '+sheetName+' exceeds '+LOG_MAX_ROWS);
+
 	    var userRow = 0;
 	    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate unique ID row (except for log files)
@@ -2186,8 +2199,8 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var proxyActions    = updateParams.actions || '';
 	var modifiedHeaders = updateParams.modifiedHeaders || '';
 
-	var debugMsg = 'Debug::updateSheet, actions, modHeaders, headers, updateAllKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+updateAllKeys+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
-	trackCall(1, debugMsg);
+	var debugMsg = 'updateSheet: actions, modHeaders, headers, updateAllKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+updateAllKeys.length+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
+	trackCall(2, debugMsg);
 	//returnMessages.push(debugMsg);
 
 	try {
@@ -2199,7 +2212,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    throw("Error:PROXY_MISSING_SHEET:Sheet not found: '"+updateSheetName+"'");
 	    }
 
-	    trackCall(1, 'updateSheet: start total_col='+TOTAL_COLUMN+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn());
+	    trackCall(2, 'updateSheet: start total_col='+TOTAL_COLUMN+', '+ProxyCacheRange+', '+updateSheetName+', '+updateSheet.getLastRow()+', '+updateSheet.getLastColumn());
 
 	    var temHeaders = updateSheet.getSheetValues(1, 1, 1, updateSheet.getLastColumn())[0];
 
@@ -2302,7 +2315,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    updateKeysObj[updateAllKeys[k]] = k+1;
 
 		var headerOffset = 1;
-		trackCall(2, 'updateSheet: keyed update '+headerOffset+' '+lastRowNum+' '+idCol+' '+nameCol)
+		trackCall(3, 'updateSheet: keyed update '+headerOffset+' '+lastRowNum+' '+idCol+' '+nameCol)
 
 		var updateStickyRows = lastRowNum;
 		if (lastRowNum > headerOffset) {
@@ -2317,7 +2330,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			}
 		    }
 
-		    ///trackCall(1, 'updateSheet: ids ['+temIdVals.join(',')+']');
+		    ///trackCall(2, 'updateSheet: ids ['+temIdVals.join(',')+']');
 		    var deletedIds = [];
 		    for (var rowNum=lastRowNum; rowNum > updateStickyRows; rowNum--) {
 			// Delete rows for which keys are not found (backwards)
@@ -2330,7 +2343,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    }
 
 		    if (deletedIds.length)
-			trackCall(1, 'updateSheet: deleted ids '+deletedIds.length+' ['+deletedIds.join(',')+']');
+			trackCall(2, 'updateSheet: deleted ids '+deletedIds.length+' ['+deletedIds.join(',')+']');
 		}
 		lastRowNum = lastRowNum - deletedRows;
 
@@ -2361,7 +2374,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			}
 			if (rowCount) {
 			    // Overwrite contiguous "insert" block
-			    trackCall(2, updateSheetName+':insertoverwrite '+' '+startRow+' '+rowCount);
+			    trackCall(3, updateSheetName+':insertoverwrite '+' '+startRow+' '+rowCount);
 			    updateSheet.getRange(startRow, 1, rowCount, updateHeaders.length).setValues(updateInsertRows.slice(kinsert-rowCount,kinsert));
 			    startRow = 0;
 			    rowCount = 0;
@@ -2395,7 +2408,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			if (insertCount) {
 			    var beforeRow = jrow+1+insertedRows+updateStickyRows;
 			    updateSheet.insertRowsBefore(beforeRow, insertCount);
-			    trackCall(2, updateSheetName+':insertbefore '+' '+beforeRow+' '+insertCount);
+			    trackCall(3, updateSheetName+':insertbefore '+' '+beforeRow+' '+insertCount);
 			    updateSheet.getRange(beforeRow, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
 
 			    insertedRows += insertCount;
@@ -2411,7 +2424,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var insertCount = updateInsertNames.length-jinsert;
 			insertedRows += insertCount;
 			var temInsertCount = afterRow+insertCount - updateSheet.getMaxRows();
-			trackCall(1, updateSheetName+':afterRow '+afterRow+' '+insertCount+' '+temInsertCount);
+			trackCall(2, updateSheetName+':afterRow '+afterRow+' '+insertCount+' '+temInsertCount);
 			if (temInsertCount > 0)
 			    updateSheet.insertRowsAfter(afterRow, temInsertCount);
 			updateSheet.getRange(afterRow+1, 1, insertCount, updateHeaders.length).setValues(updateInsertRows.slice(jinsert,jinsert+insertCount));
@@ -2425,7 +2438,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    nameValues = updateSheet.getSheetValues(1+updateStickyRows, nameCol, lastRowNum-updateStickyRows, 1);
 		}
 
-		trackCall(2, updateSheetName+':ids ['+updateAllKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
+		trackCall(3, updateSheetName+':ids ['+updateAllKeys.join(',')+'], ['+idValues.join(',')+'] '+lastRowNum+' '+updateStickyRows);
 
 		if (updateAllKeys.length !=  idValues.length)
 		    throw('Error:PROXY_UPDATE_MISMATCH:Mismatched id count '+updateAllKeys.length+' vs. '+idValues.length+' in sheet '+updateSheetName);
@@ -2444,7 +2457,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 
 		}
 
-		trackCall(2, updateSheetName+':deleteinsert -'+deletedRows+', +'+insertedRows);
+		trackCall(3, updateSheetName+':deleteinsert -'+deletedRows+', +'+insertedRows);
 
 		var modBlocks = [];
 		var maxEndCol = 0;
@@ -2516,7 +2529,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			    }
 			}
 			modRange.setValues(modVals);
-			trackCall(2, updateSheetName+':partial '+modStartRow+' '+nUpdateRows+' '+pStartCol+' '+pEndCol);
+			trackCall(3, updateSheetName+':partial '+modStartRow+' '+nUpdateRows+' '+pStartCol+' '+pEndCol);
 
 		    } else {
 			// Pre-existing row (full update)
@@ -2570,7 +2583,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 			var row = modBlocks[k];
 			if (blockRowVals.length && (endRow+1 != row[0] || startCol != row[1] || endCol != row[2])) {
 
-			    trackCall(2, updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+			    trackCall(3, updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
 
 			    updateSheet.getRange(startRow, startCol, endRow-startRow+1, endCol-startCol+1).setValues(blockRowVals);
 			    blockRowVals = [];
@@ -2586,12 +2599,12 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    }
 
 		    if (blockRowVals.length) {
-			trackCall(2, updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
+			trackCall(3, updateSheetName+':block '+startRow+' '+endRow+' '+startCol+' '+endCol);
 			updateSheet.getRange(startRow, startCol, endRow-startRow+1, endCol-startCol+1).setValues(blockRowVals);
 		    }
 
 		}
-		trackCall(2, updateSheetName+':end');
+		trackCall(3, updateSheetName+':end');
 
 		if (!TOTAL_COLUMN && totalCol && (deletedRows || insertedRows))
 		    updateTotalFormula(updateSheet, lastRowNum);
@@ -4557,7 +4570,7 @@ function actionHandler(actions, sheetName, create) {
     var refreshSheets = []
     for (var k=0; k<actionList.length; k++) {
 	var action = actionList[k];
-	trackCall(2, 'actionHandler: '+action);
+	trackCall(1, 'actionHandler: '+action);
 	if (action == 'answer_stats') {
 	    for (var j=0; j<sessions.length; j++) {
 		updateAnswers(sessions[j], create);

@@ -104,7 +104,7 @@ Options = {
     'import_params': '',
     'insecure_cookie': False,
     'lock_proxy_url': '',
-    'log_call': 0,
+    'log_call': '',
     'min_wait_sec': 0,
     'missing_choice': '*',
     'multisite': False,
@@ -169,6 +169,7 @@ SETTINGS_LABELS = [ ('gsheet_url', 'Google Sheet URL'),
                     ('no_login_token', 'Non-null string for true'),
                     ('no_late_token',  'Non-null string for true'),
                     ('no_roster',      'Non-null string for true'),
+                    ('log_call',       '> 0 to log calls to sheet call_log; may generate large output over time'),
                     ]
 
 SiteOpts = OrderedDict()
@@ -195,8 +196,7 @@ def get_site_number(site_name):
     else:
         return 0
 
-RELOAD_WATCH_DIR = 'RELOAD_WATCH'
-RELOAD_WATCH_FILE = 'reload'
+RELOAD_WATCH_FILE = '_slidoc_reload'
 
 SLIDOC_CONFIGFILE = '_slidoc_config.py'
 
@@ -747,8 +747,8 @@ class HomeHandler(BaseHandler):
                 if siteAccess:
                     # Expired
                     siteRestriction = siteAccess+' '+siteRestriction if siteRestriction else siteAccess
-                proc = Global.child_procs.get(siteName)
-                if not proc or proc.proc.poll() is not None:
+                child = Global.child_procs.get(siteName)
+                if not child or child.proc.poll() is not None:
                     siteRestriction += ' <a href="/_restart/%s">RESTART</a>' % siteName
 
                 siteHide.append(hideStr)
@@ -791,11 +791,7 @@ class RootActionHandler(BaseHandler):
         # Global admin user
         link_html = '<p></p><b><a href="/">Root home</a><p></p><a href="/_setup">Setup</a></b>'
 
-        if not Options['reload'] and action in ('_reload', '_update'):
-                self.write('Please restart server with --reload option for action '+action)
-                self.write(link_html)
-
-        elif action == '_setup':
+        if action == '_setup':
             self.render('setup.html', site_name='', session_name='', status='', site_updates=[],
                         multisite=Options['multisite'], aliases=Global.userRoles.list_aliases())
 
@@ -813,10 +809,10 @@ class RootActionHandler(BaseHandler):
             # Terminate site(s) gracelessly
             site_name = subsubpath
             if site_name:
-                proc = Global.child_procs.get(site_name)
-                if proc and proc.proc.poll() is None:
+                child = Global.child_procs.get(site_name)
+                if child and child.proc.poll() is None:
                     try:
-                        proc.proc.kill()
+                        child.proc.kill()
                         self.displayMessage('Terminated site %s' % site_name, back_url='/_setup')
                     except Exception, excp:
                         self.displayMessage('Error in restarting site %s: %s' % (site_name, excp), back_url='/_setup')
@@ -825,42 +821,56 @@ class RootActionHandler(BaseHandler):
             else:
                 self.write('Starting termination for all sites<p></p>')
                 self.write(link_html)
-                for site_name, proc in Global.child_procs.items():
+                for site_name, child in Global.child_procs.items():
                     try:
-                        proc.proc.kill()
+                        child.proc.kill()
                     except Exception, excp:
                         self.write('Error in terminating site %s: %s<br>' % (site_name, excp))
 
         elif action == '_restart':
             site_name = subsubpath
-            proc = Global.child_procs.get(site_name)
-            if not proc:
+            child = Global.child_procs.get(site_name)
+            if not child:
                 self.displayMessage('Site %s not found!' % site_name, back_url='/_setup')
-            elif proc.proc.poll() is None:
+            elif child.proc.poll() is None:
                 self.displayMessage('Site %s already active' % site_name, back_url='/_setup')
             else:
                 root_start_secondary(get_site_number(site_name), site_name)
                 self.displayMessage('<b>Restarting site: <a href="/%s">%s</a><br>Please wait a bit before accessing it</b>' % (site_name, site_name), back_url='/_setup')
 
         elif action == '_reload':
-            if subsubpath or not Options['multisite']:
-                reload_server(subsubpath)
-                self.displayMessage('Reloading site %s' % subsubpath, back_url='/_setup')
-            else:
-                for site_name in Options['site_list']:
-                    reload_server(site_name)
-                self.displayMessage('Reloading all sites', back_url='/_setup')
+            print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
+            shutdown_sites(wait=True)
+            reload_server()
+            self.displayMessage('Reloading...', back_url='/_setup')
 
         elif action == '_update':
             outHtml = ''
             try:
-                if subsubpath == 'pull':
-                    if os.environ.get('SUDO_USER'):
-                        cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
-                    else:
-                        cmd = ['git', 'pull']
+                cmd = ['git', 'status', '-uno', '--porcelain']
+
+                print >> sys.stderr, 'Executing: '+' '.join(cmd)
+                statusOutput = subprocess.check_output(cmd, cwd=scriptdir)
+
+                if not statusOutput.strip():
+                    self.displayMessage('Software is up to date', back_url='/_setup')
+                    return
+
+                if subsubpath != 'pull':
+                    self.displayMessage('Software updates are available'+('\n\n'+statusOutput if Options['debug'] else ''), back_url='/_setup')
+                    return
+
+                print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
+                shutdown_sites(wait=True)
+
+                if Global.backup:
+                    Global.backup.stop()
+                    Global.backup = None
+
+                if os.environ.get('SUDO_USER'):
+                    cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
                 else:
-                    cmd = ['git', 'status', '-uno']
+                    cmd = ['git', 'pull']
 
                 print >> sys.stderr, 'Executing: '+' '.join(cmd)
                 outHtml += preElement('Executing: '+' '.join(cmd))
@@ -869,17 +879,9 @@ class RootActionHandler(BaseHandler):
                 print >> sys.stderr, 'Output:\n%s' % gitOutput
                 outHtml += preElement('Output:\n'+gitOutput)
 
-                if subsubpath == 'pull':
-                    # Schedule reload (update may already have triggered reloading)
-                    if Global.backup:
-                        Global.backup.stop()
-                        Global.backup = None
-                    outHtml += 'Reloading server(s) ... (wait 30-60s)'
-                    if Options['multisite']:
-                        for site_name in Options['site_list']:
-                            reload_server(site_name)
-                    else:
-                        reload_server('')
+                # Schedule reload (update may already have triggered reloading)
+                outHtml += 'Reloading server(s) ... (wait 30-60s)'
+                reload_server()
 
             except Exception, excp:
                 errMsg = 'Updating via git pull failed: '+str(excp)
@@ -889,13 +891,13 @@ class RootActionHandler(BaseHandler):
             self.displayMessage(outHtml, back_url='/_setup')
 
         elif action == '_shutdown':
-            # Shutdown gracefully
+            # Shutdown gracefully (specfy root as subsubpath to shutdown root as well)
             self.clear_user_cookie()
             self.write('Starting shutdown (also cleared cookies)<p></p>')
             self.write(link_html)
             if Options['multisite'] and not Options['site_number']:
-                # Primary server
-                shutdown_all()
+                # Root server
+                shutdown_all(wait=True)
             else:
                 if Global.backup:
                     Global.backup.stop()
@@ -991,7 +993,7 @@ class SiteActionHandler(BaseHandler):
             try:
                 retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
             except Exception, excp:
-                print >> sys.stderr, 'sdserver.shutdown_all: Error in shutting down site', site_name, excp
+                print >> sys.stderr, 'sdserver.site_delete: Error in shutting down site', site_name, excp
             uploadSettings(site_settings['gsheet_url'], site_name, deactivated=True)
             root_remove_site(site_name)
             Global.child_procs[site_name] = None
@@ -999,6 +1001,7 @@ class SiteActionHandler(BaseHandler):
         else:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid root site action '+action)
 
+    @tornado.gen.coroutine
     def post(self, action='', skip='', subsubpath=''):
         userId = self.get_current_user()
         site_name = subsubpath
@@ -1050,6 +1053,17 @@ class SiteActionHandler(BaseHandler):
                         if not site_number:
                             self.displayMessage('Unknown/invalid site name %s' % site_name, back_url='/_setup')
                             return
+
+                        child = Global.child_procs.get(site_name)
+                        if child and child.proc.poll() is None:
+                            # Shutdown site
+                            relay_addr = SiteProps.relay_map(site_number)
+                            retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
+
+                            # Wait for running process to exit
+                            print >> sys.stderr, 'sdserver.site_settings: Waiting for site %s process to exit' % site_name
+                            ret = yield child.wait_for_exit(raise_error=False)
+
                         root_add_site(site_name, site_settings, overwrite=True)
                         SiteProps.root_site_setup(site_number, site_name, gsheet_url, update=True)
                     else:
@@ -1072,10 +1086,7 @@ class SiteActionHandler(BaseHandler):
                 self.displayMessage('Error in creating/editing site settings: '+errMsg, back_url='/')
                 return
 
-            if new_site:
-                root_start_secondary(get_site_number(site_name), site_name, sec_config)
-            else:
-                reload_server(site_name)
+            root_start_secondary(get_site_number(site_name), site_name, sec_config)
 
             self.displayMessage('<b>Created/updated site: <a href="/%s">%s</a><br>Please wait a bit before accessing it</b>' % (site_name, site_name or 'Home'), back_url='/')
 
@@ -5036,7 +5047,7 @@ def createApplication():
         # Single/root server
         home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown|terminate|update))", RootActionHandler) ]
         home_handlers += [ (r"/(_(alias))/([-\w.@=]+)", RootActionHandler) ]
-        home_handlers += [ (r"/(_(backup|reload|restart|terminate))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
+        home_handlers += [ (r"/(_(backup|restart|terminate))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
         if Options['multisite']:
             home_handlers += [ (r"/(_(site_settings|site_delete))/([a-zA-Z][-\w.]*)", SiteActionHandler) ]
         else:
@@ -5774,22 +5785,33 @@ def backupSite(dirname='', broadcast=False):
     else:
         return '<p></p><b>Backed up module sessions to directory <a href="%s">%s</a></b>\n' % (backup_url, backup_name)
 
-def shutdown_all(keep_root=False):
+def shutdown_all(keep_root=False, wait=False):
     if Options['debug']:
         print >> sys.stderr, 'sdserver.shutdown_all:'
 
     if not Global.remoteShutdown:
         Global.remoteShutdown = True
-        for site_name in Options['site_list']:
-            # Shutdown child servers
+        shutdown_sites(wait=wait)
+
+    if not keep_root:
+        shutdown_root()
+
+def shutdown_sites(wait=False):
+    # Shutdown child servers
+    active = []
+    for site_name, child in Global.child_procs.items():
+        if child and child.proc.poll() is None:
+            active.append( (site_name, child) )
             relay_addr = SiteProps.relay_map(get_site_number(site_name))
             try:
                 retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
             except Exception, excp:
-                print >> sys.stderr, 'sdserver.shutdown_all: Error in shutting down site', site_name, excp
+                print >> sys.stderr, 'sdserver.shutdown_sites: Error in shutting down site', site_name, excp
 
-    if not keep_root:
-        shutdown_root()
+    if wait:
+        for site_name, child in active:
+            print >> sys.stderr, 'sdserver.shutdown_sites: Waiting for site %s to exit (blocking)' % site_name
+            child.proc.wait()
 
 def shutdown_root():
         IOLoop.current().add_callback(shutdown_loop)
@@ -5814,12 +5836,12 @@ def shutdown_server():
         print >> sys.stderr, 'sdserver.shutdown_server:'
     
 
-def reload_server(site_name):
+def reload_server():
     try:
-        os.utime(reload_watch_path(site_name), None)
-        print >> sys.stderr, 'Site %s: Reloading server...' % site_name
+        os.utime(RELOAD_WATCH_FILE, None)
+        print >> sys.stderr, 'sdserver.Reloading server...'
     except Exception, excp:
-        print >> sys.stderr, 'Site %s: ERROR: Reload server failed - %s' % (site_name, excp)
+        print >> sys.stderr, 'sdserver.ERROR: Reload server failed - %s' % excp
 
 class UserRoles(object):
     def __init__(self):
@@ -5984,9 +6006,6 @@ def start_multiproxy():
     Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,
                       io_loop=IOLoop.current(), xheaders=True, masquerade="server/1.2345", ssl_options=Options['ssl_options'], debug=True)
 
-def reload_watch_path(site_name):
-    return os.path.join(RELOAD_WATCH_DIR, RELOAD_WATCH_FILE+('_'+site_name if site_name else ''))
-
 def start_server(site_number=0, restart=False):
     # Start site/root server
     Options['server_start'] = sliauth.create_date()
@@ -6003,13 +6022,12 @@ def start_server(site_number=0, restart=False):
         plain_http_app.listen(80 + (CommandOpts.port - (CommandOpts.port % 1000)), address=Options['host'])
         print >> sys.stderr, 'Listening on HTTP port'
 
-    if Options['reload']:
-        reload_watch = reload_watch_path(Options['site_name'])
+    if Options['reload'] and not site_number:
         try:
-            open(reload_watch, 'a').close()
-            tornado.autoreload.watch(reload_watch)
+            open(RELOAD_WATCH_FILE, 'a').close()
+            tornado.autoreload.watch(RELOAD_WATCH_FILE)
         except Exception, excp:
-            print >> sys.stderr, 'Site %s: ERROR: Failed to create reload file %s - %s' % (Options['site_name'], reload_watch, excp)
+            print >> sys.stderr, 'Site %s: ERROR: Failed to create reload watch file %s - %s' % (Options['site_name'], RELOAD_WATCH_FILE, excp)
 
     if not Options['multisite']:
         # Start single site server
@@ -6119,8 +6137,8 @@ def root_start_secondary(site_number, site_name, site_settings={}):
     if site_name != SiteOpts.keys()[site_number-1]:
         raise Exception('ERROR: Inconsistent name %s for site number %d: expecting %s' % (site_name, site_number, SiteOpts.keys()[site_number-1]))
 
-    proc = Global.child_procs.get(site_name)
-    if proc and proc.proc.poll() is None:
+    child = Global.child_procs.get(site_name)
+    if child and child.proc.poll() is None:
         # Running process
         raise Exception('ERROR: Site %s process still running' % site_name)
 
@@ -6283,7 +6301,6 @@ def main():
     define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")
     define("insecure_cookie", default=False, help="Insecure cookies (for direct PDF printing)")
     define("lock_proxy_url", default="", help="Proxy URL to lock sheet(s), e.g., http://example.com")
-    define("log_call", default=0, help="Log selected calls to sheet 'call_log'")
     define("min_wait_sec", default=0, help="Minimum time (sec) between Google Sheet updates")
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("multisite", default=False, help="Enable multiple sites")
@@ -6418,13 +6435,6 @@ def main():
     if not CommandOpts.debug:
         logging.getLogger('tornado.access').disabled = True
 
-    if Options['reload']:
-        if not os.path.exists(RELOAD_WATCH_DIR):
-            try:
-                os.makedirs(RELOAD_WATCH_DIR)
-            except Exception, excp:
-                sys.exit('ERROR:Failed to create reload watch directory %s: %s' % (RELOAD_WATCH_DIR, excp))
-        
     if CommandOpts.auth_users:
         Global.userRoles.update_root_roles(CommandOpts.auth_users)
 
