@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- upload template for slidoc server --->
-<!-- upload parameters: site_name, new_site, err_msg, settings_labels, site_config -->
+<!-- upload parameters: site_name, new_site, err_msg, settings_labels, site_settings -->
 
 {% include "base.html" %}
 
@@ -29,7 +29,7 @@
        {% if opt_name %}
        <p></p>
        <label for="{{opt_name}}">{{opt_name}}:</label>
-       <input type="text" id="{{opt_name}}" name="{{opt_name}}" value="{{site_config.get(opt_name,'')}}">
+       <input type="text" id="{{opt_name}}" name="{{opt_name}}" value="{{site_settings.get(opt_name,'')}}">
        ({{opt_label}})
        {% else %}
         <hr>

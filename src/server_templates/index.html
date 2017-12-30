@@ -57,10 +57,10 @@ function newSite() {
   siteName = siteName.trim();
   if (!siteName)
     return;
-  if (siteName.match(/^[a-zA-Z][-\w.]*$/))
+  if (siteName.match(/^[a-zA-Z][-a-zA-Z0-9]*$/))
     window.location = '/_settings/'+siteName+'?new_site=1';
   else
-    alert('Site name must start with letter and include only letters/digits/underscores/hyphens/periods');
+    alert('Site name must start with letter and include only letters/digits/hyphens');
 }
 </script>
 
@@ -84,7 +84,7 @@ function newSite() {
   <ul>
       {% for j, site in enumerate(sites) %}
         {% if not site_hide[j] %}
-        <li {% if site_restrictions[j] and site_restrictions[j] != 'readonly' %} class="restricted-site"{% end %}>{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a> {% end %}<a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({{site_restrictions[j]}}) {% end %}{{ site_titles[j] }}</li>
+        <li {% if site_restrictions[j] and site_restrictions[j] != 'readonly' %} class="restricted-site"{% end %}>{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a> {% end %}<a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({% raw site_restrictions[j] %}) {% end %}{{ site_titles[j] }}</li>
         {% end %}
       <p></p>
       {% end %}

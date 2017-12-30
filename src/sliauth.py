@@ -19,12 +19,14 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.18a'
+VERSION = '0.97.18b'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
 
 FUTURE_DATE = 'future'
+
+SITE_NAME_RE = re.compile(r'^[a-zA-Z][-a-zA-Z0-9]*$')
 
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE     = re.compile(r'^([a-zA-Z]\w*[a-zA-Z_])(\d\d)$')

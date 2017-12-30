@@ -41,7 +41,6 @@ from collections import defaultdict, OrderedDict
 import tornado.httpclient
 from tornado.ioloop import IOLoop
 
-import reload
 import sliauth
 
 UPDATE_PARTIAL_ROWS = True
