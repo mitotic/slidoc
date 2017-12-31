@@ -851,17 +851,24 @@ class RootActionHandler(BaseHandler):
         elif action == '_update':
             outHtml = ''
             try:
-                cmd = ['git', 'status', '-uno', '--porcelain']
+                sudo_prefix = ['sudo', '-u', os.environ['SUDO_USER']] if os.environ.get('SUDO_USER') else []
+
+                cmd = sudo_prefix + ['git', 'fetch', 'origin']
 
                 print >> sys.stderr, 'Executing: '+' '.join(cmd)
-                statusOutput = subprocess.check_output(cmd, cwd=scriptdir)
+                fetchOutput = subprocess.check_output(cmd, cwd=scriptdir)
 
-                if not statusOutput.strip():
+                cmd = sudo_prefix + ['git', 'log', 'HEAD..origin/master', '--oneline']
+
+                print >> sys.stderr, 'Executing: '+' '.join(cmd)
+                logOutput = subprocess.check_output(cmd, cwd=scriptdir)
+
+                if not logOutput.strip():
                     self.displayMessage('Software is up to date', back_url='/_setup')
                     return
 
                 if subsubpath != 'pull':
-                    self.displayMessage('Software updates are available'+('\n\n'+statusOutput if Options['debug'] else ''), back_url='/_setup')
+                    self.displayMessage('Software updates are available'+('\n\n'+logOutput if Options['debug'] else ''), back_url='/_setup')
                     return
 
                 print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
@@ -871,17 +878,14 @@ class RootActionHandler(BaseHandler):
                     Global.backup.stop()
                     Global.backup = None
 
-                if os.environ.get('SUDO_USER'):
-                    cmd = ['sudo', '-u', os.environ['SUDO_USER'], 'git', 'pull']
-                else:
-                    cmd = ['git', 'pull']
+                cmd = sudo_prefix + ['git', 'pull']
 
                 print >> sys.stderr, 'Executing: '+' '.join(cmd)
                 outHtml += preElement('Executing: '+' '.join(cmd))
-                gitOutput = subprocess.check_output(cmd, cwd=scriptdir)
+                pullOutput = subprocess.check_output(cmd, cwd=scriptdir)
 
-                print >> sys.stderr, 'Output:\n%s' % gitOutput
-                outHtml += preElement('Output:\n'+gitOutput)
+                print >> sys.stderr, 'Output:\n%s' % pullOutput
+                outHtml += preElement('Output:\n'+pullOutput)
 
                 # Schedule reload (update may already have triggered reloading)
                 outHtml += 'Reloading server(s) ... (wait 30-60s)'
