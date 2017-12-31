@@ -44,6 +44,11 @@
   <b><a class="clickable" href="{{ site_prefix }}/_actions">Site actions</a></b>
   <p></p>
 
+  {% if not site_name %}
+  <b><a class="clickable" href="{{ site_prefix }}/_setup">Site setup</a></b>
+  <p></p>
+  {% end %}
+
   <hr>
 
   <b><a class="clickable" href="{{ site_prefix }}/_user_plain">Re-login as plain user</a></b>

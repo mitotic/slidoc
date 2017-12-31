@@ -20,7 +20,7 @@
 <div id="slidoc-upload-form">
   <p></p>
   <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
-  <form id="upload-form" action="/_site_settings/{{site_name}}" method="post" enctype="multipart/form-data" >
+  <form id="upload-form" action="/_site_settings{% if site_name %}/{{site_name}}{% end %}" method="post" enctype="multipart/form-data" >
   <fieldset>
     Site name: <b>{{site_name}}</b> {% if new_site %}(NEW){% end %}
     <br>

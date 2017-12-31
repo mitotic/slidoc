@@ -2553,8 +2553,9 @@ def Missing_ref_num(match):
     else:
         return '(%s)??' % ref_id
 
-SLIDE_BREAK_RE =  re.compile(r'^ {0,3}(----* *|Slide:|##[^#].*)\n?$')
-HRULE_BREAK_RE =  re.compile(r'(\S *\n)( {0,3}----* *(\n|$))')
+HTML_COMMENT_RE =  re.compile(r'^\s*<!--.*-->\s*\n?$')
+SLIDE_BREAK_RE  =  re.compile(r'^ {0,3}(----* *|Slide:|##[^#].*)\n?$')
+HRULE_BREAK_RE  =  re.compile(r'(\S *\n)( {0,3}----* *(\n|$))')
     
 def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id='',
             zip_content=False, images_zipdata=None):
@@ -2616,8 +2617,8 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 break
 
-            if not line.strip() or MathBlockGrammar.slidoc_params.match(line) or MathBlockGrammar.slidoc_header.match(line):
-                # Blank line (treat Params or slidoc comment line as blank)
+            if not line.strip() or HTML_COMMENT_RE.match(line) or MathBlockGrammar.slidoc_params.match(line) or MathBlockGrammar.slidoc_header.match(line):
+                # Blank line (treat HTML comment or Params or slidoc comment line as blank)
                 if prev_blank:
                     # Skip multiple blank lines (for digest computation)
                     continue

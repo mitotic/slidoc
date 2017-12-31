@@ -791,6 +791,10 @@ class RootActionHandler(BaseHandler):
         # Global admin user
         link_html = '<p></p><b><a href="/">Root home</a><p></p><a href="/_setup">Setup</a></b>'
 
+        if not Options['reload'] and (action == '_reload' or (action == '_update' and subsubpath == 'pull')):
+            self.write('Please restart server with --reload option for action '+action)
+            self.write(link_html)
+
         if action == '_setup':
             self.render('setup.html', site_name='', session_name='', status='', site_updates=[],
                         multisite=Options['multisite'], aliases=Global.userRoles.list_aliases())
@@ -922,7 +926,7 @@ class SiteActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: SiteActionHandler.get', userId, action, site_name
 
-        if site_name not in Options['site_list']:
+        if Options['multisite'] and site_name not in Options['site_list']:
             raise tornado.web.HTTPError(404)
 
         if not self.check_site_admin(site_name):
@@ -1008,7 +1012,7 @@ class SiteActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: SiteActionHandler.post', userId, action, site_name
 
-        if site_name not in Options['site_list']:
+        if Options['multisite'] and site_name not in Options['site_list']:
             raise tornado.web.HTTPError(404)
 
         if not self.check_site_admin(site_name):
@@ -1086,9 +1090,16 @@ class SiteActionHandler(BaseHandler):
                 self.displayMessage('Error in creating/editing site settings: '+errMsg, back_url='/')
                 return
 
-            root_start_secondary(get_site_number(site_name), site_name, sec_config)
+            msg = '<b>Created/updated site: <a href="/%s">%s</a><br>'  % (site_name, site_name or 'Home')
+            if Options['multisite']:
+                root_start_secondary(get_site_number(site_name), site_name, sec_config)
+                msg += 'Please wait a bit before accessing it</b>'
+            elif Options['reload'] and not sec_config:
+                msg += 'Reloading server'
+            else:
+                msg += 'Restart server for changes to take effect'
 
-            self.displayMessage('<b>Created/updated site: <a href="/%s">%s</a><br>Please wait a bit before accessing it</b>' % (site_name, site_name or 'Home'), back_url='/')
+            self.displayMessage(msg, back_url='/')
 
         else:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid root site action '+action)
@@ -5051,7 +5062,7 @@ def createApplication():
         if Options['multisite']:
             home_handlers += [ (r"/(_(site_settings|site_delete))/([a-zA-Z][-\w.]*)", SiteActionHandler) ]
         else:
-            home_handlers += [ (r"/(_(site_settings)))", SiteActionHandler) ]
+            home_handlers += [ (r"/(_(site_settings))", SiteActionHandler) ]
 
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
         home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
@@ -5724,13 +5735,19 @@ def backupSite(dirname='', broadcast=False):
         makefile_path = os.path.join(script_parentdir, 'Makefile')
 
         if os.path.isdir(Global.config_path):
-            config_files = [SLIDOC_CONFIGFILE, SINGLE_SETTINGSFILE] + sorted([os.path.basename(f) for f in glob.glob(Global.config_path+'/[!_]*.json')])
+            config_files = [SLIDOC_CONFIGFILE]
+            if Options['multisite']:
+                config_files += sorted([os.path.basename(f) for f in glob.glob(Global.config_path+'/[!_]*.json')])
+            elif Global.site_settings_file:
+                config_files.append(os.path.basename(Global.site_settings_file))
+
             config_dir = os.path.join(backup_path, 'config')
             os.makedirs(config_dir)
             for fname in config_files:
                 backupCopy(os.path(Global.config_path,fname), os.path(config_dir,fname), if_exists=True)
         else:
             backupCopy(Global.config_path, backup_path, if_exists=True)
+
         backupCopy(makefile_path, backup_path, if_exists=True)
         if dirname.lower().startswith('full'):
             backupCopy(SERVER_LOGFILE, backup_path, if_exists=True)
@@ -6028,6 +6045,8 @@ def start_server(site_number=0, restart=False):
             tornado.autoreload.watch(RELOAD_WATCH_FILE)
         except Exception, excp:
             print >> sys.stderr, 'Site %s: ERROR: Failed to create reload watch file %s - %s' % (Options['site_name'], RELOAD_WATCH_FILE, excp)
+        if Global.site_settings_file:
+            tornado.autoreload.watch(Global.site_settings_file)
 
     if not Options['multisite']:
         # Start single site server
@@ -6125,15 +6144,15 @@ class SiteProps(object):
 
         cls.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and CommandOpts.multi_email_id else {}
 
-        siteConfig = SiteOpts[site_name]
         if site_name:
+            siteConfig = SiteOpts[site_name]
             Global.userRoles.update_site_roles(site_name, siteConfig.get('admin_users',''), siteConfig.get('grader_users',''), siteConfig.get('guest_users','') )
 
 def root_start_secondary(site_number, site_name, site_settings={}):
     # Return error message or null string
     # site_settings should be specified for transient (no conf file) sites
     if not SiteOpts.get(site_name):
-        raise Exception('ERROR: Cannot start site %s not found in root site list' % (site_name, Options['site_list']))
+        raise Exception('ERROR: Cannot start site %s not found in root site list %s' % (site_name, Options['site_list']))
     if site_name != SiteOpts.keys()[site_number-1]:
         raise Exception('ERROR: Inconsistent name %s for site number %d: expecting %s' % (site_name, site_number, SiteOpts.keys()[site_number-1]))
 
@@ -6242,24 +6261,28 @@ def site_server_setup():
         Global.twitterStream.start_stream()
 
 def get_site_settings(site_name, commandOpts, cmd_arg_set):
-    site_settings = {}
     site_settings_file = ''
     if os.path.isdir(Global.config_path):
         if site_name:
             filename = site_name+'.json'
-        elif not CommandOpts.multisite:
-            filename = SINGLE_SETTINGSFILE
+        elif not commandOpts.multisite:
+            single_site = getattr(commandOpts, 'single_site', '')
+            filename = single_site+'.json' if single_site else SINGLE_SETTINGSFILE
         else:
             raise Exception('No config for root server')
         site_settings_file = os.path.join(Global.config_path, filename)
-        if os.path.exists(site_settings_file):
-            with open(site_settings_file, 'r') as f:
-                site_settings = json.load(f)
+
+    if site_settings_file and os.path.exists(site_settings_file):
+        with open(site_settings_file, 'r') as f:
+            site_settings = json.load(f)
+    else:
+        site_settings = {}
 
     for key in site_settings:
         if key in cmd_arg_set:
             # Site config file overrides root config settings, but not command line settings
             site_settings[key] = getattr(commandOpts, key)
+
     for key in SITE_OPTS+SHEET_OPTS:
         # Ensure that SITE_OPTS+SHEET_OPTS are always defined
         if key not in site_settings:
@@ -6269,6 +6292,10 @@ def get_site_settings(site_name, commandOpts, cmd_arg_set):
                 site_settings[key] = key + ' for ' + site_name
             else:
                 site_settings[key] = ''
+
+    if site_name and commandOpts.dry_proxy_url and 'gsheet_url' not in cmd_arg_set:
+        site_settings['gsheet_url'] = commandOpts.dry_proxy_url+'/'+site_name+'/_dryproxy'
+
     return site_settings_file, site_settings
 
 def main():
@@ -6291,6 +6318,7 @@ def main():
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
     define("config_digest", default="", help="Config file digest (used for secondary server only)")
     define("debug", default=False, help="Debug mode")
+    define("dry_proxy_url", default="", help="Dry proxy server URL (used for secondary server only)")
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("dry_run_file_modify", default=False, help="Allow source/web/plugin file mods even for dry run (e.g., local copy)")
     define("email_addr", default="", help="Admin notification email address for server errors")
@@ -6375,7 +6403,7 @@ def main():
         
     Root_server = CommandOpts.multisite and not CommandOpts.site_number
 
-    if CommandOpts.single_site:
+    if CommandOpts.multisite and CommandOpts.single_site:
         Global.predefined_sites = [ CommandOpts.single_site ]
         if Root_server:
             print >> sys.stderr, 'DEBUG: sdserver.main: SINGLE SITE TESTING', CommandOpts.single_site
@@ -6425,6 +6453,9 @@ def main():
     if not Options['dry_run'] and not Root_server:
         if not Options['gsheet_url']:
             sys.exit('Site %s: ERROR: Must specify gsheet_url for proxied site in config file' % (Options['site_name']))
+
+    if not CommandOpts.multisite and CommandOpts.single_site:
+        Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], CommandOpts.single_site)
 
     Options['root_auth_key'] = Options['auth_key']
     if Options['site_number']:
@@ -6493,7 +6524,7 @@ def main():
     if Global.config_path:
         print >> sys.stderr, 'sdserver: Config path =', Global.config_path
 
-    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_NONCE', Options['server_nonce']
