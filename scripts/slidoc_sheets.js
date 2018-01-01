@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.19a';
+var VERSION = '0.97.19c';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -2200,7 +2200,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var proxyActions    = updateParams.actions || '';
 	var modifiedHeaders = updateParams.modifiedHeaders || '';
 
-	var debugMsg = 'updateSheet: actions, modHeaders, headers, updateAllKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+updateAllKeys.length+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
+	var debugMsg = 'updateSheet: actions, modHeaders, headers, updateAllKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+(updateAllKeys?updateAllKeys.length:0)+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
 	trackCall(2, debugMsg);
 	//returnMessages.push(debugMsg);
 

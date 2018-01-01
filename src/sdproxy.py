@@ -1502,8 +1502,8 @@ def update_remote_sheets_aux(force=False, synchronous=False):
     ##    print("update_remote_sheets_aux: REQUEST %s partial=%s, log=%s, sheets=%s, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], sorted(sheetUpdateInfo.keys()), len(json_data)), file=sys.stderr)
 
     ##if Settings['debug']:
-    ##    for x in modRequests
-    ##        print("update_remote_sheets_aux: REQUEST2", (x[0], x[1], len(x[2]), x[3], len(x[4]), x[5], x[6], len(x[7]), len(x[7][0])if x[7] else 0, len(x[8]), len(x[8][0]) if x[8] else 0), file=sys.stderr)
+    ##    for x in modRequests:
+    ##        print("update_remote_sheets_aux: REQUEST2", (x[0], x[1], len(x[2]), x[3], len(x[4]) if x[4] else 0, x[5], x[6], len(x[7]), len(x[7][0])if x[7] else 0, len(x[8]), len(x[8][0]) if x[8] else 0), file=sys.stderr)
 
     if not Settings['gsheet_url'] or Settings['dry_run']:
         # "Immediate" updates if no sheet URL or dry run
@@ -1515,14 +1515,15 @@ def update_remote_sheets_aux(force=False, synchronous=False):
         updates_current()
         return
 
-    proxy_updater = ProxyUpdater(sheetUpdateInfo, json_data, synchronous=synchronous)
+    proxy_updater = ProxyUpdater(sheetUpdateInfo, json_data, modRequests, synchronous=synchronous)
     proxy_updater.update(curTime)
 
 
 class ProxyUpdater(object):
-    def __init__(self, sheetUpdateInfo, json_data, synchronous=False):
+    def __init__(self, sheetUpdateInfo, json_data, modRequests, synchronous=False):
         self.sheetUpdateInfo = sheetUpdateInfo
         self.json_data = json_data
+        self.modRequests = modRequests
         self.synchronous = synchronous
 
         user = ADMINUSER_ID
@@ -1588,6 +1589,7 @@ class ProxyUpdater(object):
 
         errMsg = ''
         errTrace = ''
+        messages = ''
         respObj = None
         if response.error:
             errMsg = str(response.error)  # Need to convert to string for later use
@@ -1597,6 +1599,7 @@ class ProxyUpdater(object):
                 if respObj['result'] == 'error':
                     errMsg = respObj['error']
                     errTrace = respObj.get('errtrace','')
+                    messages = respObj.get('messages','')
             except Exception, err:
                 errMsg = 'JSON parsing error: '+str(err)
 
@@ -1623,7 +1626,19 @@ class ProxyUpdater(object):
             self.cacheWaitTime += retry_after
             Global.totalCacheRetryCount += 1
 
-            print("ProxyUpdater.handle_proxy_response_aux: Update ERROR (tries %d of %d; retry_after=%ss): %s" % (self.cacheRetryCount, RETRY_MAX_COUNT, self.cacheWaitTime, errMsg), file=sys.stderr)
+            print("ProxyUpdater.handle_proxy_response_aux: %s Update ERROR (tries %d of %d; retry_after=%ss): %s" % (Settings['site_name'], self.cacheRetryCount, RETRY_MAX_COUNT, self.cacheWaitTime, errMsg), file=sys.stderr)
+
+            if Settings['debug'] and self.cacheRetryCount == 1:
+                if errTrace:
+                    print('ProxyUpdater.handle_proxy_response_aux: errtrace\n', errTrace)
+                if messages:
+                    print('ProxyUpdater.handle_proxy_response_aux: messages\n', messages)
+
+                print("ProxyUpdater.handle_proxy_response_aux: REQUEST %s partial=%s, log=%s, sheets=%s, ndata=%d" % (sliauth.iso_date(nosubsec=True), Global.updatePartial, Settings['log_call'], sorted(self.sheetUpdateInfo.keys()), len(self.json_data)), file=sys.stderr)
+
+                for x in self.modRequests:
+                    print("ProxyUpdater.handle_proxy_response_aux: REQUEST2", (x[0], x[1], len(x[2]), x[3], len(x[4]) if x[4] else 0, x[5], x[6], len(x[7]), len(x[7][0])if x[7] else 0, len(x[8]), len(x[8][0]) if x[8] else 0), file=sys.stderr)
+
 
             # Retry same request after some time
             IOLoop.current().call_later(self.cacheWaitTime, self.async_fetch)
@@ -4844,6 +4859,7 @@ def getSessionNames():
 def actionHandler(actions, sheetName='', create=False):
     sessions = [sheetName]  if sheetName else getSessionNames()
     actionList = actions.split(',')
+    print('sdproxy.actionHandler: %s' % actions, file=sys.stderr)
     refreshSheets = []
     for k in range(0,len(actionList)):
         action = actionList[k]
