@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.18c';
+var VERSION = '0.97.19a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -107,10 +107,10 @@ var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure
 //  - After installing this script, quit the spreadsheet and re-open to activate the Slidoc menu. You will see:
 //
 //  - "Display session answers" to create/overwrite the sheet
-//    'sessionName-answers' displaying all the answers
+//    'sessionName_answers' displaying all the answers
 //
 //  - "Display session statistics" to create/overwrite the sheet
-//    'sessionName-stats' displaying session statistics
+//    'sessionName_stats' displaying session statistics
 //
 //  - "Update scores for sessions" to update score for all sessions
 //    in the 'scores_slidoc' sheet (which is automatically created, if need be)
@@ -152,7 +152,7 @@ var TESTUSER_ROSTER = {'name': '#user, test', 'id': TESTUSER_ID, 'email': '', 'a
 var SETTINGS_SHEET = 'settings_slidoc';
 var INDEX_SHEET = 'sessions_slidoc';
 var ROSTER_SHEET = 'roster_slidoc';
-var SCORES_SHEET = 'scores_slidoc';
+var GRADES_SHEET = 'grades_slidoc';
 
 var RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats'];
 var AUXILIARY_SHEETS = ['discuss'];    // Related sheets with original content
@@ -226,6 +226,7 @@ function onOpen(evt) {
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
    menuEntries.push({name: "Insert late token", functionName: "insertLateToken"});
    menuEntries.push(null); // line separator
+   menuEntries.push({name: "Migrate sheet names", functionName: "MigrateSheetNames"});
    menuEntries.push({name: "Migrate to new schema", functionName: "MigrateAll"});
 
    var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -635,13 +636,13 @@ function sheetAction(params) {
 	var proxy = params.proxy || '';
 
 	// Read-only sheets
-	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != INDEX_SHEET) || sheetName.match(/-answers$/) || sheetName.match(/-stats$/);
+	var protectedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != INDEX_SHEET) || sheetName.match(/_answers$/) || sheetName.match(/_stats$/);
 
 	// Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
-	var restrictedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != SCORES_SHEET);
+	var restrictedSheet = (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET && sheetName != GRADES_SHEET);
 
 	var loggingSheet = sheetName.match(/_log$/);
-	var discussionSheet = sheetName.match(/-discuss$/);
+	var discussionSheet = sheetName.match(/_discuss$/);
 
 	var getRow = params.get || '';
 	var createRow = params.create || '';
@@ -842,8 +843,8 @@ function sheetAction(params) {
 
 	    // Delete any related sheets
             for (var j=0; j<RELATED_SHEETS.length; j++) {
-                if (getSheet(sheetName+'-'+RELATED_SHEETS[j])) {
-                    deleteSheet(sheetName+'-'+RELATED_SHEETS[j]);
+                if (getSheet(sheetName+'_'+RELATED_SHEETS[j])) {
+                    deleteSheet(sheetName+'_'+RELATED_SHEETS[j]);
                 }
 	    }
         } else if (params.copysheet) {
@@ -881,7 +882,7 @@ function sheetAction(params) {
 
                 if (indexedSession) {
 		    for (var j=0; j<AUXILIARY_SHEETS.length; j++) {
-                        var temName = sheetName+'-'+AUXILIARY_SHEETS[j];
+                        var temName = sheetName+'_'+AUXILIARY_SHEETS[j];
                         var temSheet = getSheet(temName);
                         if (temSheet)
                             throw("Error:NOSHEET:Session '"+sheetName+"' cannot be created without deleting auxiliary sheet "+temName);
@@ -1024,8 +1025,8 @@ function sheetAction(params) {
 		    voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
 		}
 
-                if (sheetName.match(/-discuss$/) && selectedUpdates[1][0].match(/^discuss/)) {
-                    discussionPost = [sheetName.slice(0, -('-discuss'.length)), parseInt(selectedUpdates[1][0].slice('discuss'.length) )];
+                if (sheetName.match(/_discuss$/) && selectedUpdates[1][0].match(/^discuss/)) {
+                    discussionPost = [sheetName.slice(0, -('_discuss'.length)), parseInt(selectedUpdates[1][0].slice('discuss'.length) )];
                 }
 
 		if (selectedUpdates[1][0] == 'submitTimestamp')
@@ -1161,9 +1162,9 @@ function sheetAction(params) {
 		returnMessages.push("Warning:SHARE_NO_ROWS:");
 		returnValues = [];
             } else if (sessionAttributes && sessionAttributes['params']['features'].share_answers) {
-                var answerSheet = getSheet(sheetName+'-answers');
+                var answerSheet = getSheet(sheetName+'_answers');
                 if (!answerSheet) {
-                    throw('Error::Sharing not possible without answer sheet '+sheetName+'-answers');
+                    throw('Error::Sharing not possible without answer sheet '+sheetName+'_answers');
                 }
                 var ansColumnHeaders = answerSheet.getSheetValues(1, 1, 1, answerSheet.getLastColumn())[0];
                 var ansCol = 0;
@@ -1174,7 +1175,7 @@ function sheetAction(params) {
                     }
                 }
                 if (!ansCol) {
-                    throw('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'-answers');
+                    throw('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'_answers');
                 }
                 returnHeaders = [ getShare+'_response' ];
                 var nRows = answerSheet.getLastRow()-1;
@@ -1565,7 +1566,7 @@ function sheetAction(params) {
 		    for (var j=0; j<columnHeaders.length; j++) {
 			rowUpdates.push(null);
 		    }
-                    if (sheetName.match(/-discuss$/)) {
+                    if (sheetName.match(/_discuss$/)) {
                         displayName = params.name || '';
                         rowUpdates[columnIndex['id']-1] = userId;
                         rowUpdates[columnIndex['name']-1] = displayName;
@@ -1875,9 +1876,9 @@ function sheetAction(params) {
                                     discussRow.push(0);
                                     discussRow.push('');
                                 }
-				if (getSheet(sheetName+'-discuss'))
+				if (getSheet(sheetName+'_discuss'))
 				    throw('Discussions already posted for session '+sheetName+'; delete session to overwrite');
-                                discussSheet = createSheet(sheetName+'-discuss', discussHeaders);
+                                discussSheet = createSheet(sheetName+'_discuss', discussHeaders);
 				discussSheet.insertRowBefore(2)
                                 discussSheet.getRange(2, 1, 1, discussRow.length).setValues([discussRow]);
                                 discussRowCount = discussRowOffset;
@@ -1904,7 +1905,7 @@ function sheetAction(params) {
                         }
 
                     } else if (sessionEntries && adminPaced && dueDate && discussableSession && params.submit) {
-                        var discussSheet = getSheet(sheetName+'-discuss');
+                        var discussSheet = getSheet(sheetName+'_discuss');
                         if (discussSheet) {
                             var discussRows = discussSheet.getLastRow();
                             var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1);
@@ -2155,7 +2156,7 @@ function sheetAction(params) {
             // Getting all session rows or test user row (with creation option); return related sheet names
             returnInfo['sheetsAvailable'] = [];
             for (var j=0; j<RELATED_SHEETS.length; j++) {
-                if (getSheet(sheetName+'-'+RELATED_SHEETS[j])) {
+                if (getSheet(sheetName+'_'+RELATED_SHEETS[j])) {
                     returnInfo['sheetsAvailable'].push(RELATED_SHEETS[j]);
                 }
             }
@@ -3366,7 +3367,7 @@ function safeName(s, capitalize) {
 
 function getDiscussStats(sessionName, userId) {
     // Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
-    var sheetName = sessionName+'-discuss';
+    var sheetName = sessionName+'_discuss';
     var discussSheet = getSheet(sheetName);
     var discussStats = {};
     if (!discussSheet) {
@@ -3403,10 +3404,10 @@ function getDiscussStats(sessionName, userId) {
 
 function getDiscussPosts(sessionName, slideNum, userId) {
     // Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
-    var sheetName = sessionName+'-discuss';
+    var sheetName = sessionName+'_discuss';
     var discussSheet = getSheet(sheetName);
     if (!discussSheet) {
-        throw('Discuss sheet '+sessionName+'-discuss not found');
+        throw('Discuss sheet '+sessionName+'_discuss not found');
     }
     var colIndex = indexColumns(discussSheet);
     var axsColName = 'access' + zeroPad(slideNum,3);
@@ -3642,7 +3643,7 @@ function updateAnswers(sessionName, create) {
 	if (!sessionSheet.getLastColumn())
 	    throw('No columns in sheet: '+sessionName);
 
-	var answerSheetName = sessionName+'-answers';
+	var answerSheetName = sessionName+'_answers';
 	var answerSheet = getSheet(answerSheetName);
 	if (!answerSheet && !create)
 	    return '';
@@ -3786,7 +3787,7 @@ function updateCorrect(sessionName, create) {
 	if (!sessionSheet.getLastColumn())
 	    throw('No columns in sheet: '+sessionName);
 
-	var correctSheetName = sessionName+'-correct';
+	var correctSheetName = sessionName+'_correct';
 	var correctSheet = getSheet(correctSheetName);
 	if (!correctSheet && !create)
 	    return '';
@@ -3892,7 +3893,7 @@ function updateStats(sessionName, create) {
 	if (!sessionSheet.getLastColumn())
 	    throw('No columns in sheet '+sessionName);
 
-	var statSheetName = sessionName+'-stats';
+	var statSheetName = sessionName+'_stats';
 	var statSheet = getSheet(statSheetName);
 	if (!statSheet && !create)
 	    return '';
@@ -4575,20 +4576,20 @@ function actionHandler(actions, sheetName, create) {
 	    for (var j=0; j<sessions.length; j++) {
 		updateAnswers(sessions[j], create);
 		updateStats(sessions[j], create);
-		refreshSheets.push(sessions[j]+'-answers');
-		refreshSheets.push(sessions[j]+'-stats');
+		refreshSheets.push(sessions[j]+'_answers');
+		refreshSheets.push(sessions[j]+'_stats');
 	    }
 	} else if (action == 'correct') {
 	    for (var j=0; j<sessions.length; j++) {
 		updateCorrect(sessions[j], create);
-		refreshSheets.push(sessions[j]+'-correct');
+		refreshSheets.push(sessions[j]+'_correct');
 	    }
 	} else if (action == 'gradebook') {
-	    var retval = updateScores(sessions, create);
+	    var retval = updateGrades(sessions, create);
 	    if (retval) {
 		if (!retval.length && sessions.length)
 		    throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
-		refreshSheets.push(SCORES_SHEET);
+		refreshSheets.push(GRADES_SHEET);
 	    }
 	} else {
 	    throw('Error:ACTION:Invalid action '+action+' for session(s) '+sessions);
@@ -4670,7 +4671,7 @@ function updateScorePostAll() {
 }
 
 function updateScoreAux(sessionName, create) {
-    var updatedNames = updateScores([sessionName], create||false, true);
+    var updatedNames = updateGrades([sessionName], create||false, true);
     if (updatedNames && updatedNames.length)
 	notify('Updated scores for session '+sessionName, 'Slidoc Scores');
     else
@@ -4694,7 +4695,7 @@ function updateScoreAllAux(totalOnly) {
 
     try {
 	loadSettings();
-	var updatedNames = updateScores(getSessionNames(), false, true, totalOnly);
+	var updatedNames = updateGrades(getSessionNames(), false, true, totalOnly);
 	if (updatedNames && updatedNames.length)
 	    notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
 	else
@@ -4709,12 +4710,12 @@ function updateScoreAllAux(totalOnly) {
 
 var AGGREGATE_COL_RE = /\b(_([a-zA-Z]\w*))_(avg|normavg|sum)(_(\d+))?$/i;
 
-function updateScores(sessionNames, create, interactive, totalOnly) {
+function updateGrades(sessionNames, create, interactive, totalOnly) {
     // Update scores sheet for sessions in list
     // Returns list of updated sessions
 
     try {
-	var scoreSheet = getSheet(SCORES_SHEET);
+	var scoreSheet = getSheet(GRADES_SHEET);
 
 	if (!create) {
 	    // Refresh only already posted sessions
@@ -4826,7 +4827,7 @@ function updateScores(sessionNames, create, interactive, totalOnly) {
 	if (!validSheet)
 	    throw('No valid session sheet');
 	if (!SESSION_MAXSCORE_ROW)
-	    throw('Must set SESSION_MAXSCORE_ROW to create/refresh sheet'+SCORES_SHEET)
+	    throw('Must set SESSION_MAXSCORE_ROW to create/refresh sheet'+GRADES_SHEET)
 
 	var rosterStartRow = ROSTER_START_ROW;
 	var sessionStartRow = SESSION_START_ROW;
@@ -4879,7 +4880,7 @@ function updateScores(sessionNames, create, interactive, totalOnly) {
 	// New score sheet
 	if (!scoreSheet) {
 	    // Create session score sheet
-	    scoreSheet = createSheet(SCORES_SHEET, scoreHeaders);
+	    scoreSheet = createSheet(GRADES_SHEET, scoreHeaders);
 
 	    // Score sheet headers
 	    scoreSheet.getRange(rescaleRow, idCol, 1, 1).setValues([[RESCALE_ID]]);
@@ -5326,6 +5327,34 @@ function smallBlank(values, n) {
 	return minVals[0];
     else
 	return 0;
+}
+
+function MigrateSheetNames() {
+    var lock = LockService.getPublicLock();
+    lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
+
+    try {
+	var doc = SpreadsheetApp.getActiveSpreadsheet();
+	var sheets = doc.getSheets();
+	var renamed = [];
+	for (var j=0 ; j< sheets.length+1 ; j++ ) {
+	    if (!sheets[j])
+		continue;
+	    var name = sheets[j].getName();
+	    var match = name.match(/^(.*)-(answers|correct|discuss|stats)$/);
+	    if (match) {
+		sheets[j].setName(match[1]+'_'+match[2]);
+		renamed.push(match[1]+'_'+match[2]);
+	    } else if (name == 'scores_slidoc') {
+		sheets[j].setName('grades_slidoc');
+	    }
+	}
+	notify('Renamed sheets: '+renamed.join(','), 'Slidoc Migrate');
+    } catch(err) {
+	SpreadsheetApp.getUi().alert(''+err);
+    } finally { //release lock
+	lock.releaseLock();
+    }
 }
 
 function MigrateAll() {

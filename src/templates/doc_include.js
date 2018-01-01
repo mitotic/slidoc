@@ -1258,7 +1258,7 @@ Slidoc.assessmentMenu = function () {
 
 	    var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
 	    html += '<li>' + clickableSpan('View response statistics', "Slidoc.showStats();", disabled) + '</li>\n';
-	    html += '<li>' + clickableSpan('View correct answer key', "Slidoc.viewSheet('"+Sliobj.sessionName+"-correct');", !adminAccess) + '</li>';
+	    html += '<li>' + clickableSpan('View correct answer key', "Slidoc.viewSheet('"+Sliobj.sessionName+"_correct');", !adminAccess) + '</li>';
             html += '<hr>';
 	    html += '<li>' + clickableSpan('View session scores', "Slidoc.viewSheet('"+Sliobj.sessionName+"');", !adminAccess) + '</li>';
 	    if (!Sliobj.gradeDateStr)
@@ -3787,7 +3787,7 @@ Slidoc.showGrades = function () {
     if (!Sliobj.closePopup)
 	Slidoc.showPopup('Looking up gradebook...');
     var userId = getUserId();
-    Sliobj.scoreSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
+    Sliobj.gradeSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
 }
 
 var AGGREGATE_COL_RE = /\b(_\w+)_(avg|normavg|sum)(_(\d+))?$/i
@@ -4031,7 +4031,7 @@ Slidoc.manageSession = function() {
 	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
 	    html += clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '<br>\n';
 
-	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-correct'"+');">correct</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"-stats'"+');">stats</span><br>';
+	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_correct'"+');">correct</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_stats'"+');">stats</span><br>';
 	    html += hr;
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');">Post scores from this session to gradebook</span><br>';
 	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook', 'all'"+');">Post scores from all sessions to gradebook</span>';
@@ -4063,7 +4063,7 @@ function sheetActionsCallback(actions, sheetName, result, retStatus) {
 	alert('Error in '+msg+': '+retStatus.error);
 	return;
     } else if (actions == 'gradebook') {
-	var html = 'Gradebook updated for session '+sheetName+'.<p></p><a href="'+Sliobj.sitePrefix+'/_sheet/scores_slidoc">Download</a> and and print a copy for the records';
+	var html = 'Gradebook updated for session '+sheetName+'.<p></p><a href="'+Sliobj.sitePrefix+'/_sheet/grades_slidoc">Download</a> and and print a copy for the records';
 	Slidoc.showPopup(html);
     } else {
 	alert('Completed '+msg);
@@ -4092,7 +4092,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.gradingUser = 0;
     Sliobj.indexSheet = null;
     Sliobj.rosterSheet = null;
-    Sliobj.scoreSheet = null;
+    Sliobj.gradeSheet = null;
     Sliobj.statSheet = null;
     Sliobj.discussSheet = null;
     Sliobj.dueDate = null;
@@ -4108,12 +4108,12 @@ Slidoc.slidocReady = function (auth) {
     if (Sliobj.params.gd_sheet_url) {
 	Sliobj.rosterSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.roster_sheet,
 						     [], [], useJSONP);
-	Sliobj.scoreSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.score_sheet,
+	Sliobj.gradeSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.grades_sheet,
 						     [], [], useJSONP);
-	Sliobj.statSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'-stats',
+	Sliobj.statSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'_stats',
 						     [], [], useJSONP);
 	if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length) {
-	    Sliobj.discussSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'-discuss',
+	    Sliobj.discussSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'_discuss',
 							   [], [], useJSONP);
 	}
     }

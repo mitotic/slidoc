@@ -143,12 +143,14 @@ TESTUSER_ROSTER = {'name': '#user, test', 'id': TESTUSER_ID, 'email': '', 'altid
 SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
-SCORES_SHEET = 'scores_slidoc'
+GRADES_SHEET = 'grades_slidoc'
 
-BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, SCORES_SHEET]
+BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, GRADES_SHEET]
 
 RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats']
 AUXILIARY_SHEETS = ['discuss']    # Related sheets with original content
+
+RESERVED_SUFFIXES = ['log', 'slidoc'] + RELATED_SHEETS
 
 LOG_MAX_ROWS = 1000
 
@@ -447,7 +449,7 @@ def backupSheets(dirpath):
         for name, attributes in (sessionAttributes or []):
             backupSheet(name, dirpath, errorList)
             if attributes.get('discussSlides'):
-                backupSheet(name+'-discuss', dirpath, errorList, optional=True)
+                backupSheet(name+'_discuss', dirpath, errorList, optional=True)
     except Exception, excp:
         errorList.append('Error in backup: '+str(excp))
 
@@ -629,7 +631,7 @@ def downloadSheet(sheetName, backup=False):
     return retval
 
 def createSheet(sheetName, headers, overwrite=False, rows=[]):
-    # Overwrite should be true only for related sheets without original content (e.g., -answers, -correct, -stats)
+    # Overwrite should be true only for related sheets without original content (e.g., _answers, _correct, _stats)
     check_if_locked(sheetName)
 
     if not headers:
@@ -1796,12 +1798,12 @@ def sheetAction(params, notrace=False):
         proxy = params.get('proxy','');
 
         # Read-only sheets
-        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('-answers') or sheetName.endswith('-stats')
+        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('_answers') or sheetName.endswith('_stats')
         # Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
         restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != SCORES_SHEET)
 
         loggingSheet = sheetName.endswith('_log')
-        discussionSheet = sheetName.endswith('-discuss')
+        discussionSheet = sheetName.endswith('_discuss')
 
         previewingSheet = (sheetName == previewingSession())
 
@@ -1941,8 +1943,8 @@ def sheetAction(params, notrace=False):
             delSheet(sheetName, deleteRemote=True)
                     
             for j in range(len(RELATED_SHEETS)):
-                if getSheet(sheetName+'-'+RELATED_SHEETS[j]):
-                    delSheet(sheetName+'-'+RELATED_SHEETS[j], deleteRemote=True)
+                if getSheet(sheetName+'_'+RELATED_SHEETS[j]):
+                    delSheet(sheetName+'_'+RELATED_SHEETS[j], deleteRemote=True)
 
         elif params.get('copysheet'):
             # Copy sheet (but not session entry)
@@ -1990,7 +1992,7 @@ def sheetAction(params, notrace=False):
 
                 if indexedSession:
                     for j in range(len(AUXILIARY_SHEETS)):
-                        temName = sheetName+'-'+AUXILIARY_SHEETS[j]
+                        temName = sheetName+'_'+AUXILIARY_SHEETS[j]
                         temSheet = getSheet(temName)
                         if temSheet:
                             raise Exception("Error:NOSHEET:Session '"+sheetName+"' cannot be created without deleting auxiliary sheet "+temName)
@@ -2108,8 +2110,8 @@ def sheetAction(params, notrace=False):
                     qprefix = selectedUpdates[1][0].split('_')[0]
                     voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
 
-                if sheetName.endswith('-discuss') and selectedUpdates[1][0].startswith('discuss'):
-                    discussionPost = [sheetName[:-len('-discuss')], int(selectedUpdates[1][0][len('discuss'):])]
+                if sheetName.endswith('_discuss') and selectedUpdates[1][0].startswith('discuss'):
+                    discussionPost = [sheetName[:-len('_discuss')], int(selectedUpdates[1][0][len('discuss'):])]
 
                 if selectedUpdates[1][0] == 'submitTimestamp':
                     alterSubmission = True
@@ -2232,9 +2234,9 @@ def sheetAction(params, notrace=False):
                 returnMessages.append("Warning:SHARE_NO_ROWS:")
                 returnValues = []
             elif sessionAttributes and sessionAttributes['params']['features'].get('share_answers'):
-                answerSheet = getSheet(sheetName+'-answers')
+                answerSheet = getSheet(sheetName+'_answers')
                 if not answerSheet:
-                    raise Exception('Error::Sharing not possible without answer sheet '+sheetName+'-answers')
+                    raise Exception('Error::Sharing not possible without answer sheet '+sheetName+'_answers')
                 ansColumnHeaders = answerSheet.getSheetValues(1, 1, 1, answerSheet.getLastColumn())[0]
                 ansCol = 0
                 for j in range(len(ansColumnHeaders)):
@@ -2242,7 +2244,7 @@ def sheetAction(params, notrace=False):
                         ansCol = j+1
                         break
                 if not ansCol:
-                    raise Exception('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'-answers')
+                    raise Exception('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'_answers')
                 returnHeaders = [ getShare+'_response' ]
                 nRows = answerSheet.getLastRow()-1
                 names = answerSheet.getSheetValues(2, 1, nRows, 1)
@@ -2580,7 +2582,7 @@ def sheetAction(params, notrace=False):
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
                         rowUpdates.append(None)
-                    if sheetName.endswith('-discuss'):
+                    if sheetName.endswith('_discuss'):
                         displayName = params.get('name', '')
                         rowUpdates[columnIndex['id']-1] = userId
                         rowUpdates[columnIndex['name']-1] = displayName
@@ -2865,7 +2867,7 @@ def sheetAction(params, notrace=False):
                                     discussHeaders.append('discuss%03d' % slideNum)
                                     discussRow.append(0)
                                     discussRow.append('')
-                                discussSheet = createSheet(sheetName+'-discuss', discussHeaders)
+                                discussSheet = createSheet(sheetName+'_discuss', discussHeaders)
                                 discussSheet.insertRowBefore(2, keyValue=DISCUSS_ID)
                                 discussSheet.getRange(2, 1, 1, len(discussRow)).setValues([discussRow])
                                 discussRowCount = discussRowOffset
@@ -2886,7 +2888,7 @@ def sheetAction(params, notrace=False):
                                         discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]])
 
                     elif sessionEntries and adminPaced and dueDate and discussableSession and params.get('submit'):
-                        discussSheet = getSheet(sheetName+'-discuss')
+                        discussSheet = getSheet(sheetName+'_discuss')
                         if discussSheet:
                             discussRows = discussSheet.getLastRow()
                             discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1)
@@ -4464,7 +4466,7 @@ def safeName(s, capitalize=False):
 
 def getDiscussStats(sessionName, userId):
     # Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
-    sheetName = sessionName+'-discuss'
+    sheetName = sessionName+'_discuss'
     discussSheet = getSheet(sheetName)
     discussStats = {}
     if not discussSheet:
@@ -4495,10 +4497,10 @@ def getDiscussStats(sessionName, userId):
 
 def getDiscussPosts(sessionName, slideNum, userId=None):
     # Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
-    sheetName = sessionName+'-discuss'
+    sheetName = sessionName+'_discuss'
     discussSheet = getSheet(sheetName)
     if not discussSheet:
-        raise Exception('Discuss sheet '+sessionName+'-discuss not found')
+        raise Exception('Discuss sheet '+sessionName+'_discuss not found')
     colIndex = indexColumns(discussSheet)
     axsColName = 'access%03d' % slideNum
     axsCol = colIndex.get(axsColName)
@@ -4849,12 +4851,12 @@ def actionHandler(actions, sheetName='', create=False):
             for j in range(0,len(sessions)):
                 updateAnswers(sessions[j], create)
                 updateStats(sessions[j], create)
-                refreshSheets.append(sessions[j]+'-answers')
-                refreshSheets.append(sessions[j]+'-stats')
+                refreshSheets.append(sessions[j]+'_answers')
+                refreshSheets.append(sessions[j]+'_stats')
         elif action == 'correct':
             for j in range(0,len(sessions)):
                 updateCorrect(sessions[j], create)
-                refreshSheets.append(sessions[j]+'-correct')
+                refreshSheets.append(sessions[j]+'_correct')
         elif action == 'gradebook':
             raise Exception('Error:ACTION:gradebook action not implemented in proxy')
         else:
@@ -4909,7 +4911,7 @@ def updateAnswers(sessionName, create):
         if not sessionSheet.getLastColumn():
             raise Exception('No columns in sheet: '+sessionName)
 
-        answerSheetName = sessionName+'-answers'
+        answerSheetName = sessionName+'_answers'
         answerSheet = getSheet(answerSheetName)
         if not answerSheet and not create:
             return ''
@@ -5039,7 +5041,7 @@ def updateCorrect(sessionName, create):
         if not sessionSheet.getLastColumn():
             raise Exception('No columns in sheet: '+sessionName)
 
-        correctSheetName = sessionName+'-correct'
+        correctSheetName = sessionName+'_correct'
         correctSheet = getSheet(correctSheetName)
         if not correctSheet and not create:
             return ''
@@ -5135,7 +5137,7 @@ def updateStats(sessionName, create):
         if not sessionSheet.getLastColumn():
             raise Exception('No columns in sheet '+sessionName)
 
-        statSheetName = sessionName+'-stats'
+        statSheetName = sessionName+'_stats'
         statSheet = getSheet(statSheetName)
         if not statSheet and not create:
             return ''

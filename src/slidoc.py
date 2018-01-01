@@ -65,7 +65,7 @@ TESTUSER_ID = '_test_user'
 SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
-SCORE_SHEET = 'scores_slidoc'
+GRADES_SHEET = 'grades_slidoc'
 LOG_SHEET = 'slidoc_log'
 MAX_QUERY = 500   # Maximum length of query string for concept chains
 SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
@@ -3360,7 +3360,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '', 'discussSlides': [], 'hiddenSlides': [], 'resubmitAnswers': None,
                  'gd_client_id': None, 'gd_api_key': None, 'gd_sheet_url': '',
-                 'roster_sheet': ROSTER_SHEET, 'score_sheet': SCORE_SHEET,
+                 'roster_sheet': ROSTER_SHEET, 'grades_sheet': GRADES_SHEET,
                  'index_sheet': INDEX_SHEET, 'indexFields': Index_fields,
                  'log_sheet': LOG_SHEET, 'logFields': Log_fields,
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 

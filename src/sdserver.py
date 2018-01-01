@@ -263,7 +263,6 @@ EVENT_BUFFER_SEC = 3
 BACKUP_VERSION_FILE = '_version.txt'
 
 SETTINGS_SHEET = 'settings_slidoc'
-SCORES_SHEET = 'scores_slidoc'
 
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
@@ -310,6 +309,10 @@ def preElement(content):
     return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
 
 def getSessionType(sessionName):
+    suffix = sessionName.rpartition('_')[2]
+    if suffix in sdproxy.RESERVED_SUFFIXES:
+        raise Exception('Invalid session name "%s"; must not end in reserved suffix _%s' % suffix)
+
     smatch = sliauth.SESSION_NAME_RE.match(sessionName)
     if not smatch:
         if sliauth.SESSION_NAME_TOP_RE.match(sessionName):
@@ -868,7 +871,7 @@ class RootActionHandler(BaseHandler):
                     return
 
                 if subsubpath != 'pull':
-                    self.displayMessage('Software updates are available'+('\n\n'+logOutput if Options['debug'] else ''), back_url='/_setup')
+                    self.displayMessage('Software updates are available:'+('\n\n'+logOutput if Options['debug'] else ''), back_url='/_setup')
                     return
 
                 print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
@@ -1631,7 +1634,7 @@ class ActionHandler(BaseHandler):
 
         elif action in ('_sheet',):
             allUsers = self.get_argument("allusers", '')
-            if sessionName.endswith('-discuss'):
+            if sessionName.endswith('_discuss'):
                 allUsers = True
             self.displaySheet(sessionName, download=self.get_argument("download", ''),
                                allUsers=allUsers, keepHidden=self.get_argument("keephidden", ''))
@@ -2194,7 +2197,7 @@ class ActionHandler(BaseHandler):
                 return
             lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
             timestamp = ''
-            if sessionName.endswith('-answers') or sessionName.endswith('-correct') or sessionName.endswith('-stats'):
+            if sessionName.endswith('_answers') or sessionName.endswith('_correct') or sessionName.endswith('_stats'):
                 try:
                     timestamp = sliauth.iso_date(sdproxy.lookupValues('_average', ['Timestamp'], sessionName)['Timestamp'])
                 except Exception, excp:
@@ -3654,7 +3657,7 @@ class UserActionHandler(ActionHandler):
 
     def qstats(self, sessionName):
         json_return = self.get_argument('json', '')
-        sheetName = sessionName + '-answers'
+        sheetName = sessionName + '_answers'
         sheet = sdproxy.getSheet(sheetName)
         if not sheet:
             if json_return:
