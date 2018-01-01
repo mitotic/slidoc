@@ -309,20 +309,27 @@ def preElement(content):
     return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
 
 def getSessionType(sessionName):
+    if '--' in sessionName:
+        raise Exception('Invalid session name "%s"; must not include double hyphen "--"' % sessionName)
+
+    if '_' in sessionName:
+        # This restriction could be relaxed in the future
+        raise Exception('Invalid session name "%s"; must not include underscore (for now)' % sessionName)
+
     suffix = sessionName.rpartition('_')[2]
     if suffix in sdproxy.RESERVED_SUFFIXES:
-        raise Exception('Invalid session name "%s"; must not end in reserved suffix _%s' % suffix)
+        raise Exception('Invalid session name "%s"; must not end in reserved suffix _%s' % (sessionName, suffix))
 
     smatch = sliauth.SESSION_NAME_RE.match(sessionName)
-    if not smatch:
-        if sliauth.SESSION_NAME_TOP_RE.match(sessionName):
-            return (TOP_LEVEL, 0)
-        raise Exception('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension' % sessionName)
+    if smatch:
+        sessionType = smatch.group(1)
+        sessionNumber = int(smatch.group(2))
+        return (sessionType, sessionNumber)
 
-    sessionType = smatch.group(1)
-    sessionNumber = int(smatch.group(2))
+    if sliauth.SESSION_NAME_TOP_RE.match(sessionName):
+        return (TOP_LEVEL, 0)
 
-    return (sessionType, sessionNumber)
+    raise Exception('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension and a letter before the digits' % sessionName)
 
 def getSessionLabel(sessionName, sessionType):
     sessionLabel = sessionName
@@ -800,7 +807,8 @@ class RootActionHandler(BaseHandler):
 
         if action == '_setup':
             self.render('setup.html', site_name='', session_name='', status='', site_updates=[],
-                        multisite=Options['multisite'], aliases=Global.userRoles.list_aliases())
+                        multisite=Options['multisite'], aliases=Global.userRoles.list_aliases(),
+                        sites=Options['site_list'], versions=SiteProps.siteScriptVersions)
 
         elif action == '_alias':
             origId, userId = subsubpath.split('=')
@@ -1717,19 +1725,15 @@ class ActionHandler(BaseHandler):
         elif action == '_upload':
             if not Options['source_dir']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
-            smatch = sliauth.SESSION_NAME_RE.match(sessionName)
-            if smatch:
-                upload_type = smatch.group(1)
-                session_number = smatch.group(2)
-            elif sessionName == RAW_UPLOAD:
+            if sessionName == RAW_UPLOAD:
                 upload_type = RAW_UPLOAD
                 session_number = ''
-            elif sliauth.SESSION_NAME_TOP_RE.match(sessionName):
-                upload_type = TOP_LEVEL 
-                session_number = ''
             else:
-                self.displayMessage('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension' % sessionName)
-                return
+                try:
+                    upload_type, session_number = getSessionType(sessionName)
+                except Exception, excp:
+                    self.displayMessage(str(excp))
+                    return
             self.render('upload.html', site_name=Options['site_name'],
                         upload_type=upload_type, session_name=sessionName, session_number=session_number, session_types=SESSION_TYPES, err_msg='')
 
@@ -2080,9 +2084,12 @@ class ActionHandler(BaseHandler):
                         except Exception, excp:
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in writing file %s: %s' % (outpath, excp))
                         uname = os.path.splitext(os.path.basename(uploadName))[0]
-                        match = sliauth.SESSION_NAME_RE.match(uname)
-                        if match:
-                            uploadType = match.group(1)
+                        try:
+                            uploadType, _ = getSessionType(sessionName)
+                        except Exception, excp:
+                            self.displayMessage(str(excp))
+                            return
+                        if uploadType != TOP_LEVEL:
                             filePaths = self.get_md_list(uploadType)
                             if filePaths:
                                 errMsgs = self.rebuild(uploadType, indexOnly=True)
@@ -6094,7 +6101,7 @@ def getBakDir(site_name):
 
 def uploadSettings(gsheet_url, site_name='', deactivated=False):
     if not gsheet_url or Options['dry_run']:
-        return False
+        return {}
 
     if deactivated:
         settingsVals = {'site_access': sdproxy.SITE_INACTIVE}
@@ -6110,9 +6117,10 @@ def uploadSettings(gsheet_url, site_name='', deactivated=False):
     retval = sliauth.http_post(gsheet_url, set_params)
     if retval['result'] != 'success':
         if Options['debug'] and retval.get('errtrace'):
-            print >> sys.stderr, "Error in uploading settings:", retval.get('info',{}).get('abc1'), retval.get('errtrace')
+            print >> sys.stderr, "Error in uploading settings:", retval.get('errtrace')
         raise Exception("Error in uploading settings for site %s: %s" % (site_name, retval['error']))
-    return retval.get('info',{}).get('sessionsAvailable')
+    retInfo = retval.get('info',{})
+    return {'version': retInfo.get('version'), 'sessionsAvailable': retInfo.get('sessionsAvailable')} 
 
 
 def getSiteRosterMaps(gsheet_url, site_name=''):
@@ -6135,6 +6143,7 @@ def getSiteRosterMaps(gsheet_url, site_name=''):
 
 class SiteProps(object):
     siteRosterMaps = {}
+    siteScriptVersions = {}
 
     @classmethod
     def reset_site(cls):
@@ -6155,10 +6164,11 @@ class SiteProps(object):
     @classmethod
     def root_site_setup(cls, site_number, site_name, gsheet_url, new=False, update=False):
         # For single or root server
-        sessionsAvailable = uploadSettings(gsheet_url, site_name)
-        if sessionsAvailable and Options['restore_backup']:
+        retval = uploadSettings(gsheet_url, site_name)
+        if retval.get('sessionsAvailable') and Options['restore_backup']:
             raise Exception('ERROR: Cannot restore from backup for site %s because sessions are already present' % site_name)
 
+        cls.siteScriptVersions[site_name] = retval.get('version', '')
         cls.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and CommandOpts.multi_email_id else {}
 
         if site_name:

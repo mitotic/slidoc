@@ -503,12 +503,12 @@ def isReadOnly(sheetName):
     return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
 
 def isFormulaSheet(sheetName):
-    return sheetName == SCORES_SHEET or (not TOTAL_COLUMN and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
+    return sheetName == GRADES_SHEET or (not TOTAL_COLUMN and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
 
 def refreshGradebook(sessionName):
     if previewOrTransactionalSession(sessionName):
         return False
-    scoreSheet = Sheet_cache.get(SCORES_SHEET)
+    scoreSheet = Sheet_cache.get(GRADES_SHEET)
     if not scoreSheet:
         return False
     if '_'+sessionName not in scoreSheet.xrows[0]:
@@ -524,7 +524,7 @@ def getSheetCache(sheetName):
 def getKeyHeader(sheetName):
     if sheetName.startswith('settings_') or sheetName.endswith('_log'):
         return ''
-    comps = sheetName.split('-')
+    comps = sheetName.split('_')
     if len(comps) > 1 and comps[-1] in ('answers', 'correct', 'stats'):
         return ''
     return 'id'
@@ -909,14 +909,14 @@ class Sheet(object):
     def checkRange(self, rowMin, colMin, rowCount, colCount):
         rng = [rowMin, colMin, rowCount, colCount]
         if rowMin < 1 or rowMin > len(self.xrows):
-            raise Exception('Invalid min row number for range %s in sheet %s' % (rng, self.name))
+            raise Exception('Invalid min row number for range %s in sheet %s (maxrows=%s)' % (rng, self.name, len(self.xrows)))
         if rowCount < 0 or rowCount > len(self.xrows)-rowMin+1:
-            raise Exception('Invalid row count for range %s in sheet %s' % (rng, self.name))
+            raise Exception('Invalid row count for range %s in sheet %s (maxrows=%s)' % (rng, self.name, len(self.xrows)))
 
         if colMin < 1 or colMin > self.nCols:
-            raise Exception('Invalid min col number for range %s in sheet %s' % (rng, self.name))
+            raise Exception('Invalid min col number for range %s in sheet %s (maxcols=%s)' % (rng, self.name, self.nCols))
         if colCount < 0 or colCount > self.nCols-colMin+1:
-            raise Exception('Invalid col count for range %s in sheet %s' % (rng, self.name))
+            raise Exception('Invalid col count for range %s in sheet %s (maxcols=%s)' % (rng, self.name, self.nCols))
 
     def getRange(self, rowMin, colMin=None, rowCount=None, colCount=None):
         if isinstance(rowMin, (str, unicode)):
@@ -1800,7 +1800,7 @@ def sheetAction(params, notrace=False):
         # Read-only sheets
         protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('_answers') or sheetName.endswith('_stats')
         # Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
-        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != SCORES_SHEET)
+        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != GRADES_SHEET)
 
         loggingSheet = sheetName.endswith('_log')
         discussionSheet = sheetName.endswith('_discuss')
@@ -2837,7 +2837,7 @@ def sheetAction(params, notrace=False):
                     if userId == MAXSCORE_ID and not TOTAL_COLUMN:
                         # Refresh sheet cache if max score row is updated (for re-computed totals)
                         modSheet.expire()
-                        expireSheet(SCORES_SHEET)
+                        expireSheet(GRADES_SHEET)
 
                     discussRowOffset = 2
                     discussNameCol = 1
@@ -4204,7 +4204,7 @@ def toggleAttendance(day, userId):
 
 AGGREGATE_COL_RE = re.compile(r'\b(_\w+)_(avg|normavg|sum)(_(\d+))?$', re.IGNORECASE)
 def lookupGrades(userId, admin=False):
-    scoreSheet = getSheet(SCORES_SHEET)
+    scoreSheet = getSheet(GRADES_SHEET)
     if not scoreSheet:
         return None
 
@@ -4847,16 +4847,23 @@ def actionHandler(actions, sheetName='', create=False):
     refreshSheets = []
     for k in range(0,len(actionList)):
         action = actionList[k]
-        if action == 'answer_stats':
-            for j in range(0,len(sessions)):
-                updateAnswers(sessions[j], create)
-                updateStats(sessions[j], create)
-                refreshSheets.append(sessions[j]+'_answers')
-                refreshSheets.append(sessions[j]+'_stats')
-        elif action == 'correct':
-            for j in range(0,len(sessions)):
-                updateCorrect(sessions[j], create)
-                refreshSheets.append(sessions[j]+'_correct')
+        if action in ('answer_stats', 'correct'):
+            try:
+                if action == 'answer_stats':
+                    for j in range(0,len(sessions)):
+                        updateAnswers(sessions[j], create)
+                        updateStats(sessions[j], create)
+                        refreshSheets.append(sessions[j]+'_answers')
+                        refreshSheets.append(sessions[j]+'_stats')
+                elif action == 'correct':
+                    for j in range(0,len(sessions)):
+                        updateCorrect(sessions[j], create)
+                        refreshSheets.append(sessions[j]+'_correct')
+            except Exception, excp:
+                if Settings['debug']:
+                    import traceback
+                    traceback.print_exc()
+                raise Exception('Error:ACTION:Error in action %s for session(s) %s; may need to delete related sheet(s): %s' % (action, sessions, excp))
         elif action == 'gradebook':
             raise Exception('Error:ACTION:gradebook action not implemented in proxy')
         else:
