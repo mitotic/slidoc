@@ -47,11 +47,11 @@ body {
 	<p></p>
         <fieldset>
           <label for="username">Username:</label>
-          <input autocapitalize="off" autocorrect="off" class="sdserver-input" id="username" name="username" tabindex="1" type="text" value="{{username}}" {% if not password_label %}autofocus{% end %}>
+          <input autocapitalize="off" autocorrect="off" class="sdserver-input" id="username" name="username" tabindex="1" type="text" value="{{username}}" {% if password_label != 'Token' %}autofocus{% end %}>
           <p></p>
           {% if password_label %}
           <label for="token">{{password_label}}</label>
-          <input class="sdserver-input" id="token" name="token" tabindex="2" type="password_label" value="" autofocus>
+          <input class="sdserver-input" id="token" name="token" tabindex="2" type="password_label" value="" {% if password_label != 'Token' %}autofocus{% end %}s>
           {% else %}
           <input class="sdserver-input" id="token" name="token" tabindex="2" type="hidden" value="">
           {% end %}

@@ -996,7 +996,7 @@ class SiteActionHandler(BaseHandler):
 
             relay_addr = SiteProps.relay_map(site_number)
             try:
-                retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
+                retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+sliauth.safe_quote(Options['server_key']))
             except Exception, excp:
                 print >> sys.stderr, 'sdserver.site_delete: Error in shutting down site', site_name, excp
             uploadSettings(site_settings['gsheet_url'], site_name, deactivated=True)
@@ -1061,7 +1061,7 @@ class SiteActionHandler(BaseHandler):
                         if child and child.proc.poll() is None:
                             # Shutdown site
                             relay_addr = SiteProps.relay_map(site_number)
-                            retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
+                            retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+sliauth.safe_quote(Options['server_key']))
 
                             # Wait for running process to exit
                             print >> sys.stderr, 'sdserver.site_settings: Waiting for site %s process to exit' % site_name
@@ -4872,7 +4872,7 @@ class AuthLoginHandler(BaseHandler):
 
     def login(self, username, token, next="/"):
         generateToken = False
-        if token == Options['auth_key'] and Options['no_authentication'] == 'user':
+        if token == Options['auth_key'] and (not Options['auth_type'] or Options['no_authentication'] == 'user'):
             # Auth_key token option for admin user
             generateToken = True
 
@@ -5776,7 +5776,7 @@ def backupSite(dirname='', broadcast=False):
             path = '/_backup'
             if dirname:
                 path += '/' + urllib.quote(dirname)
-            path += '?root='+Options['server_key']
+            path += '?root='+sliauth.safe_quote(Options['server_key'])
 
             for site_name in Options['site_list']:
                 relay_addr = SiteProps.relay_map(get_site_number(site_name))
@@ -5835,7 +5835,7 @@ def shutdown_sites(wait=False):
             active.append( (site_name, child) )
             relay_addr = SiteProps.relay_map(get_site_number(site_name))
             try:
-                retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+Options['server_key'])
+                retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+sliauth.safe_quote(Options['server_key']))
             except Exception, excp:
                 print >> sys.stderr, 'sdserver.shutdown_sites: Error in shutting down site', site_name, excp
 
