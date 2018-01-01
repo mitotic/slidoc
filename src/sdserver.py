@@ -108,7 +108,7 @@ Options = {
     'min_wait_sec': 0,
     'missing_choice': '*',
     'multisite': False,
-    'no_auth': False,
+    'no_authentication': '',
     'notebook_extn': 'ipynb',
     'plugindata_dir': 'plugindata',
     'port': 8888,
@@ -595,7 +595,7 @@ class UserIdMixin(object):
         if sdproxy.getSheet(sdproxy.ROSTER_SHEET):
             if not sdproxy.lookupRoster('id', userId):
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid %s not found in roster' % userId)
-        elif sdproxy.Settings['require_roster']:
+        elif not sdproxy.Settings['no_roster']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site')
 
 
@@ -940,9 +940,6 @@ class SiteActionHandler(BaseHandler):
         if action == '_site_settings':
             new_site = self.get_argument('new_site', '')
             if not site_name:
-                if not Options['dry_run'] and not Global.site_settings_file:
-                    self.displayMessage('Site settings file %s not found!' % Global.site_settings_file, back_url='/_actions')
-                    return
                 site_settings = Global.site_settings
             else:
                 if new_site:
@@ -1049,11 +1046,9 @@ class SiteActionHandler(BaseHandler):
                             settings_labels=SETTINGS_LABELS, site_settings=site_settings)
                 return
 
+            site_settings_file = ''
             try:
                 if not site_name:
-                    if not Options['dry_run'] and not Global.site_settings_file:
-                        self.displayMessage('Site settings file %s not found!' % Global.site_settings_file, back_url='/_actions')
-                        return
                     SiteProps.root_site_setup(0, '', gsheet_url)
                 else:
                     if not new_site:
@@ -1078,11 +1073,15 @@ class SiteActionHandler(BaseHandler):
                         root_add_site(site_name, site_settings, overwrite=True)
                         SiteProps.root_site_setup(get_site_number(site_name), site_name, gsheet_url, new=True)
 
-                if os.path.isdir(Global.config_path) and not Options['dry_run']:
-                    sec_config = {}
-                    site_settings_file = os.path.join(Global.config_path, site_name+'.json') if site_name else Global.site_settings_file
-                    with open(site_settings_file, 'w') as f:
-                        json.dump(site_settings, f, indent=4, sort_keys=True)
+                if not Options['dry_run']:
+                    if site_name and os.path.isdir(Global.config_path):
+                        site_settings_file = os.path.join(Global.config_path, site_name+'.json')
+                    else:
+                        site_settings_file = Global.site_settings_file
+                    if site_settings_file:
+                        sec_config = {}
+                        with open(site_settings_file, 'w') as f:
+                            json.dump(site_settings, f, indent=4, sort_keys=True)
 
             except Exception, excp:
                 errMsg = str(excp)
@@ -1095,9 +1094,11 @@ class SiteActionHandler(BaseHandler):
                 return
 
             msg = '<b>Created/updated site: <a href="/%s">%s</a><br>'  % (site_name, site_name or 'Home')
+            if site_settings_file:
+                msg += 'Updated site settings file '+tornado.escape.xhtml_escape(site_settings_file)+'<br>'
             if Options['multisite']:
                 root_start_secondary(get_site_number(site_name), site_name, sec_config)
-                msg += 'Please wait a bit before accessing it</b>'
+                msg += 'Please wait a bit before accessing site</b>'
             elif Options['reload'] and not sec_config:
                 msg += 'Reloading server'
             else:
@@ -4849,24 +4850,30 @@ class AuthLoginHandler(BaseHandler):
 
         if Options['debug']:
             print >> sys.stderr, "AuthLoginHandler.get", username, token, usertoken, next, 'devid='+device_id, error_msg
-        if not error_msg and username and (token or Options['no_auth']):
+
+        no_auth_user = Options['no_authentication'] == 'user' and username not in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE)
+        if not error_msg and username and (token or no_auth_user):
             self.login(username, token, next=next)
         else:
             self.render("login.html", error_msg=error_msg, next=next, login_label='Slidoc',
                         login_url='/_auth/login/', locked_access_link=locked_access_link,
-                        password='NO AUTHENTICATION' if Options['no_auth'] else 'Token:')
+                        username=username, password_label='' if no_auth_user else 'Token:')
 
     def post(self):
-        self.login(self.get_argument("username", ""), self.get_argument("token", ""), next=self.get_argument("next", "/"))
+        username = str(self.get_argument('username', ''))
+        token = str(self.get_argument('token', ''))
+        next = self.get_argument('next', '/')
+        if not username or (not token and username in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE)):
+            self.render("login.html", error_msg='', next=next, login_label='Slidoc',
+                        login_url='/_auth/login/', locked_access_link=None,
+                        username=username, password_label='Auth key:' if username else 'Token:')
+        else:
+            self.login(username, token, next=next)
 
     def login(self, username, token, next="/"):
         generateToken = False
-        if token == Options['auth_key']:
-            # Auth_key token option for testing local-only proxy
-            generateToken = True
-
-        elif Options['no_auth'] and Options['debug'] and Options['dry_run']:
-            # No authentication option for testing local-only proxy
+        if token == Options['auth_key'] and Options['no_authentication'] == 'user':
+            # Auth_key token option for admin user
             generateToken = True
 
         role = ''
@@ -4874,6 +4881,9 @@ class AuthLoginHandler(BaseHandler):
             role = sdproxy.ADMIN_ROLE
         elif username == sdproxy.GRADER_ROLE:
             role = sdproxy.GRADER_ROLE
+        elif Options['no_authentication'] == 'user':
+            # Allow no-password access for normal user
+            generateToken = True
 
         if generateToken:
             token = gen_proxy_auth_token(username, role=role)
@@ -5060,9 +5070,9 @@ def createApplication():
                     ]
     if not Options['site_number']:
         # Single/root server
-        home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown|terminate|update))", RootActionHandler) ]
+        home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown|terminate))", RootActionHandler) ]
         home_handlers += [ (r"/(_(alias))/([-\w.@=]+)", RootActionHandler) ]
-        home_handlers += [ (r"/(_(backup|restart|terminate))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
+        home_handlers += [ (r"/(_(backup|restart|terminate|update))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
         if Options['multisite']:
             home_handlers += [ (r"/(_(site_settings|site_delete))/([a-zA-Z][-\w.]*)", SiteActionHandler) ]
         else:
@@ -5210,7 +5220,7 @@ def createApplication():
         site_handlers = []
         action_handlers = []
 
-    file_handler = SiteStaticFileHandler if Options['no_auth'] else AuthStaticFileHandler
+    file_handler = SiteStaticFileHandler if Options['no_authentication'] == 'all' else AuthStaticFileHandler
 
     if Options['static_dir']:
         sprefix = Options['site_name']+'/' if Options['site_name'] else ''
@@ -5254,7 +5264,7 @@ def processTwitterMessage(msg):
     fromRole = ''
     rosterSheet = sdproxy.getSheet(sdproxy.ROSTER_SHEET)
 
-    if Options['auth_type'].startswith('twitter,') or (not rosterSheet and not sdproxy.Settings['require_roster']):
+    if Options['auth_type'].startswith('twitter,') or (not rosterSheet and sdproxy.Settings['no_roster']):
         status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter', adminBroadcast=True)
 
     elif rosterSheet:
@@ -6256,7 +6266,7 @@ def site_server_setup():
             }
 
         Global.twitter_params['site_twitter'] = Global.twitter_params['screen_name']
-        if not sdproxy.Settings['require_roster']:
+        if sdproxy.Settings['no_roster']:
             Global.twitter_params['site_twitter'] = '@' + Global.twitter_params['site_twitter']
 
         import sdstream
@@ -6270,11 +6280,12 @@ def get_site_settings(site_name, commandOpts, cmd_arg_set):
         if site_name:
             filename = site_name+'.json'
         elif not commandOpts.multisite:
-            single_site = getattr(commandOpts, 'single_site', '')
-            filename = single_site+'.json' if single_site else SINGLE_SETTINGSFILE
+            filename = getattr(commandOpts, 'settings_file', '') or SINGLE_SETTINGSFILE
         else:
             raise Exception('No config for root server')
         site_settings_file = os.path.join(Global.config_path, filename)
+    elif not commandOpts.multisite:
+        site_settings_file = getattr(commandOpts, 'settings_file', '')
 
     if site_settings_file and os.path.exists(site_settings_file):
         with open(site_settings_file, 'r') as f:
@@ -6299,6 +6310,9 @@ def get_site_settings(site_name, commandOpts, cmd_arg_set):
 
     if site_name and commandOpts.dry_proxy_url and 'gsheet_url' not in cmd_arg_set:
         site_settings['gsheet_url'] = commandOpts.dry_proxy_url+'/'+site_name+'/_dryproxy'
+
+    if commandOpts.no_authentication:
+        site_settings['no_roster'] = 'yes'
 
     return site_settings_file, site_settings
 
@@ -6337,7 +6351,7 @@ def main():
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("multisite", default=False, help="Enable multiple sites")
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
-    define("no_auth", default=False, help="No authentication mode (for testing)")
+    define("no_authentication", default='', help="=all/user; no authentication mode (UNSAFE)")
     define("notebook_extn", default=Options["notebook_extn"], help="Extension for notebook/journal files (default: ipynb)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
@@ -6350,6 +6364,7 @@ def main():
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")
     define("roster_columns", default=Options["roster_columns"], help="Roster column names: lastname_col,firstname_col,midname_col,id_col,email_col,altid_col")
     define("single_site", default="", help="Single site name for testing")
+    define("settings_file", default="", help="Site settings file (for single server; name only if config_path is directory)")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
     define("site_label", default='', help="Site label")
     define("site_name", default='', help="Site name")
@@ -6386,6 +6401,12 @@ def main():
     if CommandOpts.site_name and CommandOpts.config_digest != Global.config_digest:
         sys.exit('Site %s: ERROR: Config file %s has changed compared to root; start cancelled' % (CommandOpts.site_name, Global.config_file))
 
+    if CommandOpts.no_authentication:
+        if CommandOpts.no_authentication not in ('all', 'user'):
+            sys.exit("ERROR: Invalid option --no_authentication=%s; must be 'all' or 'user'" % CommandOpts.no_authentication)
+        if CommandOpts.auth_type:
+            sys.exit('ERROR: auth_type=... incompatible with --no_authentication=%s' % CommandOpts.no_authentication)
+
     Global.split_site_opts = {}
     sites = getattr(CommandOpts, 'sites', '')
     if sites:
@@ -6414,6 +6435,7 @@ def main():
 
     if CommandOpts.site_name or not CommandOpts.multisite:
         Global.site_settings_file, Global.site_settings = get_site_settings(CommandOpts.site_name, CommandOpts, cmd_arg_set)
+
 
     if Root_server:
         # Create sites
@@ -6457,6 +6479,9 @@ def main():
     if not Options['dry_run'] and not Root_server:
         if not Options['gsheet_url']:
             sys.exit('Site %s: ERROR: Must specify gsheet_url for proxied site in config file' % (Options['site_name']))
+
+    if CommandOpts.no_authentication != 'all' and not Options['auth_key']:
+        sys.exit("ERROR: --auth_key=... must be specified")
 
     if not CommandOpts.multisite and CommandOpts.single_site:
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], CommandOpts.single_site)
@@ -6520,6 +6545,9 @@ def main():
         time.tzset()
         print >> sys.stderr, 'sdserver: Timezone =', CommandOpts.timezone
 
+    if CommandOpts.no_authentication:
+        print >> sys.stderr, 'sdserver: ---------- NO AUTHENTICATION (%s) ----------' % CommandOpts.no_authentication
+
     if Options['email_addr']:
         print >> sys.stderr, 'sdserver: admin email', Options['email_addr']
 
@@ -6528,7 +6556,7 @@ def main():
     if Global.config_path:
         print >> sys.stderr, 'sdserver: Config path =', Global.config_path
 
-    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'no_auth', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_NONCE', Options['server_nonce']

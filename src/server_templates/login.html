@@ -3,7 +3,7 @@
 <head>
 
 <!-- login template for slidoc server --->
-<!-- login parameters: login_label, login_url, password, error_msg, next, locked_access_link-->
+<!-- login parameters: login_label, login_url, username, password_label, error_msg, next, locked_access_link-->
 
 <style>
 body {
@@ -47,10 +47,14 @@ body {
 	<p></p>
         <fieldset>
           <label for="username">Username:</label>
-          <input autocapitalize="off" autocorrect="off" class="sdserver-input" id="username" name="username" tabindex="1" type="text" value="">
+          <input autocapitalize="off" autocorrect="off" class="sdserver-input" id="username" name="username" tabindex="1" type="text" value="{{username}}" {% if not password_label %}autofocus{% end %}>
           <p></p>
-          <label for="token">{{password}}</label>
-          <input class="sdserver-input" id="token" name="token" tabindex="2" type="password" value="">
+          {% if password_label %}
+          <label for="token">{{password_label}}</label>
+          <input class="sdserver-input" id="token" name="token" tabindex="2" type="password_label" value="" autofocus>
+          {% else %}
+          <input class="sdserver-input" id="token" name="token" tabindex="2" type="hidden" value="">
+          {% end %}
         </fieldset>
         {% module xsrf_form_html() %}
         <input id="next" name="next" type="hidden" value="{{next}}"></input>

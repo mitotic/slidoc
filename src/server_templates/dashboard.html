@@ -38,16 +38,17 @@
   <p></p>
   <hr>
 
+  {% if not site_name %}
+  <b><a class="clickable" href="{{ site_prefix }}/_setup">Site setup</a></b>
+  <hr>
+  <p></p>
+  {% end %}
+
   <b><a class="clickable" href="{{ site_prefix }}/_modules">Site content</a></b>
   <p></p>
 
   <b><a class="clickable" href="{{ site_prefix }}/_actions">Site actions</a></b>
   <p></p>
-
-  {% if not site_name %}
-  <b><a class="clickable" href="{{ site_prefix }}/_setup">Site setup</a></b>
-  <p></p>
-  {% end %}
 
   <hr>
 
