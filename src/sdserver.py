@@ -118,6 +118,7 @@ Options = {
     'reload': False,
     'request_timeout': 60,
     'libraries_dir': '',
+    'remote_logging': 0,
     'restore_backup': [],
     'root_users': [],
     'roster_columns': 'lastname,firstname,,id,email,altid',
@@ -1187,6 +1188,9 @@ class ActionHandler(BaseHandler):
         configOpts.update(site_name=Options['site_name'])
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list(uploadType=uploadType, session_name=session_name)))
+
+        if Options['remote_logging']:
+            configOpts.update(remote_logging=Options['remote_logging'])
 
         if Options['start_date']:
             configOpts.update(start_date=Options['start_date'])
@@ -6372,6 +6376,7 @@ def main():
     define("proxy_sheet", default=False, help="Use proxy to cache session data")
     define("public", default=Options["public"], help="Public web site (no login required for home page etc., except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
+    define("remote_logging", default=0, help="Remote logging level (0/1/2)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
     define("restore_backup", default='', help="back_up_directory,back_up_name (to restore entire site from backup)")
     define("libraries_dir", default=Options["libraries_dir"], help="Path to shared libraries directory, e.g., 'libraries')")

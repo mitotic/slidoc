@@ -152,7 +152,7 @@ AUXILIARY_SHEETS = ['discuss']    # Related sheets with original content
 
 RESERVED_SUFFIXES = ['log', 'slidoc'] + RELATED_SHEETS
 
-LOG_MAX_ROWS = 1000
+LOG_MAX_ROWS = 500
 
 ROSTER_START_ROW = 2
 SESSION_MAXSCORE_ROW = 2                                # Set to zero, if no MAXSCORE row
@@ -656,13 +656,14 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
     def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', updated=False,
-                 modifiedHeaders=False, relatedSheets=[]):
+                 deletedRowCount=0, modifiedHeaders=False, relatedSheets=[]):
         # updated => current, i.e., just created from downloaded sheet
         # modifiedHeaders => headers different from before
         if not rows:
             raise Exception('Must specify at least header row for sheet')
         self.name = name
         self.keyHeader = keyHeader
+        self.deletedRowCount = deletedRowCount
         self.modTime = modTime
         self.accessTime = sliauth.epoch_ms() if accessTime is None else accessTime
         self.relatedSheets = relatedSheets[:]
@@ -707,7 +708,7 @@ class Sheet(object):
             inserted = 0 if updated else 1
             self.keyMap = {}
             for j, row in enumerate(self.xrows[1:]):
-                key = row[self.keyCol-1] if self.keyCol else j+2
+                key = row[self.keyCol-1] if self.keyCol else j+2+self.deletedRowCount
                 self.keyMap[key] = [modTime, inserted, set()]  # [modTime, insertedFlag, modColsSet]
 
         if self.keyCol and 1+len(self.keyMap) != len(self.xrows):
@@ -761,7 +762,7 @@ class Sheet(object):
         # Modify total value
         row[totalCol-1] = newVal
         modTime = sliauth.epoch_ms()
-        key = self.xrows[rowNum-1][self.keyCol-1] if self.keyCol else rowNum
+        key = self.xrows[rowNum-1][self.keyCol-1] if self.keyCol else rowNum+self.deletedRowCount
         if not self.keyMap[key][1]:
             # Not inserted row; mark total column as modified
             self.keyMap[key][2].add(totalCol)
@@ -772,7 +773,7 @@ class Sheet(object):
     def copy(self):
         # Returns "shallow" copy
         return Sheet(self.name, self.xrows, keyHeader=self.keyHeader, modTime=self.modTime, accessTime=self.accessTime, keyMap=self.keyMap,
-                     actions=','.join(self.actionsRequested), modifiedHeaders=self.modifiedHeaders)
+                     deletedRowCount=self.deletedRowCount, actions=','.join(self.actionsRequested), modifiedHeaders=self.modifiedHeaders)
 
     def expire(self):
         # Delete after any updates are processed
@@ -848,6 +849,21 @@ class Sheet(object):
         del self.keyMap[keyValue]
         self.modifiedSheet()
 
+    def deleteRows(self, startRow, nRows):
+        if self.keyHeader:
+            raise Exception('Cannot delete multiple rows for keyed spreadsheet '+self.name)
+        if startRow != 2:
+            raise Exception('Invalid start row value '+startRow+' for deleteRows in spreadsheet '+self.name)
+        lastDelRow = 2+nRows-1  # Delete rows starting from row 2
+        if lastDelRow > len(self.xrows):
+            raise Exception('Invalid delete rows %s for deletion in sheet %s (maxrows=%s)' % (nRows, self.name, len(self.xrows)))
+        self.xrows = [self.xrows[0]] + self.xrows[lastDelRow:]
+        for j in range(nRows):
+            key = 2+self.deletedRowCount
+            del self.keyMap[key]
+            self.deletedRowCount += 1
+        self.modifiedSheet()
+
     def insertRowBefore(self, rowNum, keyValue=None):
         self.check_lock_status(keyValue)
         if self.keyHeader:
@@ -868,7 +884,7 @@ class Sheet(object):
             newRow[self.keyCol-1] = keyValue
             self.keyMap[keyValue] = [modTime, 1, set()]
         else:
-            self.keyMap[rowNum] = [modTime, 1, set()]
+            self.keyMap[rowNum+self.deletedRowCount] = [modTime, 1, set()]
 
         if self.totalCols:
             newRow[self.totalCols[0]-1] = 0
@@ -896,11 +912,14 @@ class Sheet(object):
 
         modTime = sliauth.epoch_ms()
         self.nCols -= ncols
+        trimmedCols = set( range(self.nCols+1, self.nCols+ncols+1) )
         self.xrows[0] = self.xrows[0][:-ncols]
         for j in range(1, len(self.xrows)):
             self.xrows[j] = self.xrows[j][:-ncols]
-            key = self.xrows[j][self.keyCol-1] if self.keyCol else j+1
-            self.keyMap[key] = [modTime, 1, set()]  # Pretend all rows are newly "inserted", to force complete update
+            if j:
+                key = self.xrows[j][self.keyCol-1] if self.keyCol else j+1+self.deletedRowCount
+                if self.keyMap[key][2]:
+                    self.keyMap[key][2].difference_update(trimmedCols)
 
         self.update_total_formula()
         self.modifiedHeaders = True
@@ -980,7 +999,7 @@ class Sheet(object):
         for irow, rowValues in enumerate(values):
             rowNum = irow+rowMin
             if not self.keyCol:
-                keyValue = rowNum
+                keyValue = rowNum+self.deletedRowCount
             else:
                 keyValue = self.xrows[irow+rowMin-1][self.keyCol-1]
                 if self.keyCol >= colMin and self.keyCol <= colMin+colCount-1:
@@ -1023,8 +1042,6 @@ class Sheet(object):
                 self.xrows[rowNum-1][colMin-1:colMin+colCount-1] = rowValues
 
                 if updateTotal:
-                    totalCol = self.totalCols[0]
-                    prevTotal = self.xrows[rowNum-1][totalCol-1]
                     if self.update_total(rowNum):
                         refreshGradebook(self.name)
         if modTime:
@@ -1076,7 +1093,8 @@ class Sheet(object):
         allKeys = [row[self.keyCol-1] for row in self.xrows[1:] if row[self.keyCol-1]] if self.keyCol else None
 
         for j, row in enumerate(self.xrows[1:]):
-            key = row[self.keyCol-1] if self.keyCol else j+2
+            rowNum = j+2
+            key = row[self.keyCol-1] if self.keyCol else rowNum+self.deletedRowCount
             if not key:  # Do not update any non-key rows
                 continue
 
@@ -1099,7 +1117,7 @@ class Sheet(object):
             updateRows[key] = self.keyMap[key][0]
 
             if Global.updatePartial and self.keyCol and not inserted:
-                # Partial update
+                # Partial update (note: do not use partial update for non-keyed sheets as last row number must be valid)
                 if colSet is not None and colSet.issuperset(newColSet) and len(colSet)-len(newColSet) <= 2:
                     # Extend "contiguous" block for modified/unmodified row; append to previous row update
                     curUpdate[0].append(key)
@@ -1120,19 +1138,20 @@ class Sheet(object):
                 updateElemCount += len(colSet)
 
             else:
-                # Full/insertion updates
+                # Full/insertion/non-keyed updates
                 colSet, colList, curUpdate = None, None, None
-                if self.keyCol and inserted:
-                    # Insert keyed row
-                    insertNames.append( [row[nameCol-1] if nameCol else '', key] )
+                keyRow = key if self.keyCol else rowNum
+                if inserted:
+                    # Insert row
+                    insertNames.append( [row[nameCol-1] if nameCol else '', keyRow] )
                     insertRows.append( row )
-                elif not self.keyCol and updateSel and updateSel[-1][0][-1] == key-1:
-                    # Consecutive non-keyed row
-                    updateSel[-1][0].append(key)
+                elif not self.keyCol and updateSel and updateSel[-1][0][-1] == keyRow-1:
+                    # Consecutive non-keyed modified row
+                    updateSel[-1][0].append(keyRow)
                     updateSel[-1][2].append(row)
                 else:
                     # Non-partial or non-keyed; update full rows
-                    updateSel.append( [[key], None, [row]] )
+                    updateSel.append( [[keyRow], None, [row]] )
 
         if not insertRows and not updateSel and not actions and not self.modifiedHeaders and (not self.modTime or self.modTime < Global.cacheUpdateTime):
             # No updates
@@ -1148,7 +1167,7 @@ class Sheet(object):
         self.actionsRequested = []
         self.modifiedHeaders = False
         for j, row in enumerate(self.xrows[1:]):
-            key = row[self.keyCol-1] if self.keyCol else j+2
+            key = row[self.keyCol-1] if self.keyCol else j+2+self.deletedRowCount
             if self.keyMap[key][1] or self.keyMap[key][2]:
                 self.keyMap[key][1:3] = [0, set()]
 
@@ -1164,12 +1183,16 @@ class Sheet(object):
             self.modifiedHeaders = False
 
         for j, row in enumerate(self.xrows[1:]):
-            key = row[self.keyCol-1] if self.keyCol else j+2
+            key = row[self.keyCol-1] if self.keyCol else j+2+self.deletedRowCount
 
-            if key in updateRows and updateRows[key] == self.keyMap[key][0]:
-                # Row update completed for row not modified since update
-                # (Note: Rows that were not updated due request limits being reached will not be subject to this reset)
-                self.keyMap[key][1:3] = [0, set()]
+            if key in updateRows:
+                if updateRows[key] == self.keyMap[key][0]:
+                    # Row update completed for row not modified since update
+                    # (Note: Rows that were not updated due request limits being reached will not be subject to this reset)
+                    self.keyMap[key][1:3] = [0, set()]
+                elif not self.keyCol:
+                    # Non-keyed row has been inserted, but modified later
+                    self.keyMap[key][1:3] = [0, set(range(1,self.nCols+1))]
 
 
 class Range(object):
@@ -2516,9 +2539,6 @@ def sheetAction(params, notrace=False):
             if not userId:
                 raise Exception('Error::userID must be specified for updates/gets')
 
-            if loggingSheet and modSheet.getLastRow() > LOG_MAX_ROWS:
-                raise Exception('Error:LOGGING:Number of rows in logging sheet '+sheetName+' exceeds '+LOG_MAX_ROWS)
-
             userRow = 0
             if modSheet.getLastRow() > numStickyRows and not loggingSheet:
                 # Locate unique ID row (except for log files)
@@ -2583,6 +2603,7 @@ def sheetAction(params, notrace=False):
                 # Preserve name and lateToken on reset
                 rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1]
                 rowUpdates[columnIndex['lateToken']-1] = params.get('late') or origVals[columnIndex['lateToken']-1]
+                returnInfo['resetRow'] = 1
 
             elif newRow and (not rowUpdates) and createRow:
                 # Initialize new row
@@ -2593,6 +2614,7 @@ def sheetAction(params, notrace=False):
                     displayName = rowUpdates[columnIndex['name']-1] or ''
                     if params.get('late') and columnIndex.get('lateToken'):
                         rowUpdates[columnIndex['lateToken']-1] = params['late']
+                    returnInfo['createRow'] = 1
                 else:
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
@@ -2675,8 +2697,14 @@ def sheetAction(params, notrace=False):
                 numRows = modSheet.getLastRow()
                 if newRow and not resetRow:
                     # New user; insert row in sorted order of name (except for log files)
-                    if (userId != MAXSCORE_ID and not displayName) or not rowUpdates:
+                    if (userId != MAXSCORE_ID and not displayName and not loggingSheet) or not rowUpdates:
                         raise Exception('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName)
+
+                    if loggingSheet and numRows > LOG_MAX_ROWS+10:
+                        # Limit size of log file
+                        nDelRows = numRows - LOG_MAX_ROWS
+                        modSheet.deleteRows(2, nDelRows)
+                        numRows -= nDelRows
 
                     if numRows > numStickyRows and not loggingSheet:
                         displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], numRows-numStickyRows, 1)

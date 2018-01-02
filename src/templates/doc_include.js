@@ -5851,6 +5851,9 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		}
 	    }
 
+	    if (retStatus.info.createRow && Sliobj.params.remoteLogLevel >= 2)
+		Slidoc.remoteLog('sessionGet', '', 'createRow', '');
+
 	    var limitSlides = (controlledPace() || (isController() && session && session.submitted));
 	    if (retStatus.info.adminPaced && limitSlides) {
 		// This should occur before Sliobj.session.lastSlide is set; used by visibleSlideCount

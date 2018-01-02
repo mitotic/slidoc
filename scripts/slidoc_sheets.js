@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.19c';
+var VERSION = '0.97.20a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -157,7 +157,7 @@ var GRADES_SHEET = 'grades_slidoc';
 var RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats'];
 var AUXILIARY_SHEETS = ['discuss'];    // Related sheets with original content
 
-var LOG_MAX_ROWS = 1000;
+var LOG_MAX_ROWS = 500;
 
 var ROSTER_START_ROW = 2;
 var SESSION_MAXSCORE_ROW = 2;  // Set to zero, if no MAXSCORE row
@@ -644,6 +644,8 @@ function sheetAction(params) {
 	var loggingSheet = sheetName.match(/_log$/);
 	var discussionSheet = sheetName.match(/_discuss$/);
 
+	var indexedSession = !restrictedSheet && !protectedSheet && !loggingSheet && !discussionSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET);
+
 	var getRow = params.get || '';
 	var createRow = params.create || '';
 	var allRows = params.all || '';
@@ -869,8 +871,6 @@ function sheetAction(params) {
 	} else {
 	    // Update/access single sheet
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
-
-	    var indexedSession = !restrictedSheet && !protectedSheet && !loggingSheet && !discussionSheet && sheetName != ROSTER_SHEET && getSheet(INDEX_SHEET);
 
 	    var modSheet = getSheet(sheetName);
 	    if (!modSheet) {
@@ -1480,9 +1480,6 @@ function sheetAction(params) {
 	    if (!userId)
 		throw('Error::userID must be specified for updates/gets');
 
-	    if (loggingSheet && modSheet.getLastRow() > LOG_MAX_ROWS)
-		throw('Error:LOGGING:Number of rows in logging sheet '+sheetName+' exceeds '+LOG_MAX_ROWS);
-
 	    var userRow = 0;
 	    if (modSheet.getLastRow() > numStickyRows && !loggingSheet) {
 		// Locate unique ID row (except for log files)
@@ -1551,6 +1548,7 @@ function sheetAction(params) {
 		// Preserve name and lateToken on reset
 		rowUpdates[columnIndex['name']-1] = origVals[columnIndex['name']-1];
 		rowUpdates[columnIndex['lateToken']-1] = params.late || origVals[columnIndex['lateToken']-1];
+		returnInfo['resetRow'] = 1;
 
 	    } else if (newRow && !rowUpdates && createRow) {
 		// Initialize new row
@@ -1561,6 +1559,7 @@ function sheetAction(params) {
 		    displayName = rowUpdates[columnIndex['name']-1] || '';
 		    if (params.late && columnIndex['lateToken'])
 			rowUpdates[columnIndex['lateToken']-1] = params.late;
+		    returnInfo['createRow'] = 1;
 		} else {
 		    rowUpdates = [];
 		    for (var j=0; j<columnHeaders.length; j++) {
@@ -1658,9 +1657,16 @@ function sheetAction(params) {
 		var numRows = modSheet.getLastRow();
 		if (newRow && !resetRow) {
 		    // New user; insert row in sorted order of name (except for log files)
-		    if ((userId != MAXSCORE_ID && !displayName) || !rowUpdates)
+		    if ((userId != MAXSCORE_ID && !displayName && !loggingSheet) || !rowUpdates)
 			throw('Error::User name and row parameters required to create a new row for id '+userId+' in sheet '+sheetName);
 			
+		    if (loggingSheet && modSheet.getLastRow() > LOG_MAX_ROWS) {
+			// Limit size of log file
+                        var nDelRows = numRows - LOG_MAX_ROWS;
+                        modSheet.deleteRows(2, nDelRows);
+                        numRows -= nDelRows;
+		    }
+
 		    if (numRows > numStickyRows && !loggingSheet) {
 			var displayNames = modSheet.getSheetValues(1+numStickyRows, columnIndex['name'], numRows-numStickyRows, 1);
 			var userIds = modSheet.getSheetValues(1+numStickyRows, columnIndex['id'], numRows-numStickyRows, 1);
@@ -2152,7 +2158,7 @@ function sheetAction(params) {
 	    }
 	}
 
-        if (sessionEntries && getRow && (allRows || (createRow && paramId == TESTUSER_ID))) {
+        if (indexedSession && getRow && (allRows || (createRow && paramId == TESTUSER_ID))) {
             // Getting all session rows or test user row (with creation option); return related sheet names
             returnInfo['sheetsAvailable'] = [];
             for (var j=0; j<RELATED_SHEETS.length; j++) {
@@ -2253,24 +2259,35 @@ function handleProxyUpdates(data, create, returnMessages) {
 	    if (updateAllKeys === null) {
 		// Update non-keyed sheet
 
-		if (updateInsertNames.length)
-		    throw('Error: Update cannot insert rows for non-keyed sheet '+updateSheetName);
-
-		if (updateSheet.getLastRow() > updateLastRow) {
+		if (updateSheet.getLastRow()+updateInsertNames.length > updateLastRow) {
 		    // Delete excess rows
-		    updateSheet.deleteRows(updateLastRow+1, updateSheet.getLastRow()-updateLastRow);
+		    updateSheet.deleteRows(2, updateSheet.getLastRow()+updateInsertNames.length-updateLastRow);
 
-		} else if (updateLastRow > updateSheet.getMaxRows()) {
-		    // Insert extra rows
+		}
+		if (updateLastRow > updateSheet.getMaxRows()) {
+		    // Insert extra rows as needed
 		    updateSheet.insertRowsAfter(updateSheet.getMaxRows(), updateLastRow-updateSheet.getMaxRows());
 		}
 
-		for (var krow=0; krow<updateRows.length; krow++) {
-		    var rowNums = updateRows[krow][0];
-		    var rowCols = updateRows[krow][1];
-		    var rowSel  = updateRows[krow][2];
+		var nUpdateCols = updateHeaders.length;
+		for (var krow=0; krow<updateRows.length+1; krow++) {
+		    if (krow<updateRows.length) {
+			// Handle modified rows
+			var rowNums = updateRows[krow][0];
+			var rowCols = updateRows[krow][1];
+			var rowSel  = updateRows[krow][2];
+		    } else if (updateInsertRows) {
+			// Handle appended rows
+			var insertStartRow = updateLastRow - updateInsertNames.length + 1;
+			rowNums = [];
+			for (var mrow=0; mrow<updateInsertRows.length; mrow++)
+			    rowNums.push(mrow+insertStartRow);
+			rowCols = null;
+			rowSel  = updateInsertRows;
+		    } else {
+			break;
+		    }
 
-		    var nUpdateCols = updateHeaders.length;
 		    var nUpdateRows = rowSel.length;
 
 		    if (rowCols)
