@@ -268,7 +268,7 @@ SETTINGS_SHEET = 'settings_slidoc'
 LATE_SUBMIT = 'late'
 PARTIAL_SUBMIT = 'partial'
 
-COOKIE_VERSION = '0.97.18a'             # Update version if cookie format changes (automatically deletes previous secure cookies)
+COOKIE_VERSION = '0.97.21a'             # Update version if cookie format changes (automatically deletes previous secure cookies)
 SERVER_NAME = 'Webster0.9'
 
 RAW_UPLOAD = 'raw'
@@ -5158,7 +5158,7 @@ def createApplication():
         else:
             raise Exception('sdserver: Invalid auth_type: '+comps[0])
 
-    cookie_secret = sliauth.gen_hmac_token(Options['root_auth_key'], 'cookie:'+COOKIE_VERSION)
+    cookie_secret = sliauth.gen_hmac_token(Options['root_auth_key'], 'cookie:'+COOKIE_VERSION, truncate=sliauth.TRUNCATE_SITE)
     appSettings.update(
         template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
         xsrf_cookies=Options['xsrf'],
@@ -6352,7 +6352,7 @@ def main():
     define("config", type=str, help="Path to config file", callback=config_parse)
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
-    define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 18 decimal digits if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
+    define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 38 decimal digits if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
@@ -6502,8 +6502,8 @@ def main():
 
     if Options['auth_key']:
         if not Options['server_url'].startswith('http://localhost:'):
-            if not Options['auth_key'].isdigit() or len(Options['auth_key']) < 18:
-                sys.exit("ERROR: --auth_key=... must be a number with at least 18 digits (use sliauth.py -g to generate it)")
+            if not Options['auth_key'].isdigit() or len(Options['auth_key']) < 38:
+                sys.exit("ERROR: --auth_key=... must be a number with at least 38 digits (use sliauth.py -g to generate it)")
     else:
         if CommandOpts.no_authentication != 'all':
             sys.exit("ERROR: --auth_key=... must be specified for authentication")

@@ -47,16 +47,18 @@ def sub_version(version):
     return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
 
 TRUNCATE_DIGEST = 12
+TRUNCATE_HMAC = 12    #  72 bits (12 b64 digits)
+TRUNCATE_SITE = 20    # 120 bits (20 b64 digits)
 DIGEST_ALGORITHM = hashlib.sha256
 
 def digest_hex(s, n=TRUNCATE_DIGEST):
     return DIGEST_ALGORITHM(s).hexdigest()[:n]
 
-def gen_hmac_token(key, message):
+def gen_hmac_token(key, message, truncate=TRUNCATE_HMAC):
     if not key:
         raise Exception('Null key for HMAC token')
     token = base64.urlsafe_b64encode(hmac.new(key, message, DIGEST_ALGORITHM).digest())
-    return token[:TRUNCATE_DIGEST]
+    return token[:truncate]
 
 def gen_auth_prefix(user_id, role, sites):
     return ':%s:%s:%s' % (user_id, role, sites)
@@ -74,7 +76,7 @@ def gen_server_key(key, nonce):
     return gen_hmac_token(key, 'server:'+nonce)
 
 def gen_site_key(key, site):
-    return gen_hmac_token(key, 'site:'+site)
+    return gen_hmac_token(key, 'site:'+site, truncate=TRUNCATE_SITE)
 
 def gen_file_key(site_key, session_name, user_id, timestamp=''):
     prefix = ''
@@ -97,8 +99,8 @@ def gen_late_token(key, user_id, site_name, session_name, date_str):
     token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s:%s' % (user_id, site_name, session_name, date_str) )
     return token
 
-def gen_random_number(low=2**57, high=2**62):
-    # Returns secure random number using system call (default: 18 or 19 decimal digits)
+def gen_random_number(low=2**123, high=2**128):
+    # Returns secure random number using system call (default: 38 or 39 decimal digits)
     return random.SystemRandom().randrange(low, high)
 
 def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):

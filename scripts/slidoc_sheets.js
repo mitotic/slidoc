@@ -178,6 +178,7 @@ var SITE_INACTIVE = 'inactive';
 var SITE_ACCESS = [SITE_ADMINONLY, SITE_ADMINGUEST, SITE_LOCKED];
 
 var TRUNCATE_DIGEST = 12;
+var TRUNCATE_HMAC = 12;
 var DIGEST_ALGORITHM = Utilities.DigestAlgorithm.SHA_256;
 var HMAC_ALGORITHM   = Utilities.MacAlgorithm.HMAC_SHA_256;
 
@@ -3137,7 +3138,7 @@ function genHmacToken(key, message) {
     var rawHMAC = Utilities.computeHmacSignature(HMAC_ALGORITHM,
 						 message, key,
 						 Utilities.Charset.US_ASCII);
-    return urlsafe_b64encode(rawHMAC).slice(0,TRUNCATE_DIGEST);
+    return urlsafe_b64encode(rawHMAC).slice(0,TRUNCATE_HMAC);
 }
 
 function genLateToken(key, userId, siteName, sessionName, dateStr) {
