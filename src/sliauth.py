@@ -13,13 +13,14 @@ import hashlib
 import hmac
 import io
 import json
+import random
 import re
 import sys
 import time
 import urllib
 import urllib2
 
-VERSION = '0.97.20a'
+VERSION = '0.97.21a'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -54,7 +55,7 @@ def digest_hex(s, n=TRUNCATE_DIGEST):
 def gen_hmac_token(key, message):
     if not key:
         raise Exception('Null key for HMAC token')
-    token = base64.b64encode(hmac.new(key, message, DIGEST_ALGORITHM).digest())
+    token = base64.urlsafe_b64encode(hmac.new(key, message, DIGEST_ALGORITHM).digest())
     return token[:TRUNCATE_DIGEST]
 
 def gen_auth_prefix(user_id, role, sites):
@@ -95,6 +96,10 @@ def gen_late_token(key, user_id, site_name, session_name, date_str):
     # Use date string of the form '1995-12-17T03:24'
     token = date_str+':'+gen_hmac_token(key, 'late:%s:%s:%s:%s' % (user_id, site_name, session_name, date_str) )
     return token
+
+def gen_random_number(low=2**57, high=2**62):
+    # Returns secure random number using system call (default: 18 or 19 decimal digits)
+    return random.SystemRandom().randrange(low, high)
 
 def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
     try:
@@ -338,6 +343,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Generate slidoc HMAC authentication tokens')
     parser.add_argument('-a', '--auth_key', help='Root authentication key')
+    parser.add_argument('-g', '--gen_auth_key', action="store_true", help='Generate random authentication key')
     parser.add_argument('-k', '--site_auth_key', help='Site authentication key')
     parser.add_argument('-q', '--qrcode', help='write QR code for locked token to stdout', action='store_true')
     parser.add_argument('-r', '--role', help='Role admin/grader')
@@ -346,6 +352,10 @@ if __name__ == '__main__':
     parser.add_argument('--due_date', metavar='DATE_TIME', help="Due date yyyy-mm-ddThh:mm local time (append ':00.000Z' for UTC)")
     parser.add_argument('user', help='user name(s)', nargs=argparse.ZERO_OR_MORE)
     cmd_args = parser.parse_args()
+
+    if cmd_args.gen_auth_key:
+        print ('auth_key = %s' % gen_random_number())
+        sys.exit(0)
 
     if not cmd_args.auth_key and not cmd_args.site_auth_key:
         sys.exit('Must specify either root authentication key or site authentication key')

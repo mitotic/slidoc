@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, lock_date, end_date, admin_users, grader_users, guest_users, site_menu, gradebook_release-->
+<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, lock_date, end_date, admin_users, grader_users, guest_users, site_menu, upload_key, gradebook_release-->
 
 {% include "base.html" %}
 
@@ -73,6 +73,9 @@
   </div>
 
 <hr>
+<b><span class="clickable" onclick="confirmToggleDisplay('upload-key')">Upload key:</span></b> <span id="upload-key" style="display: none;">{{upload_key}}</span>
+
+<p></p>
 <table>
 <tr>
 <td>

@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.20a';
+var VERSION = '0.97.21a';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -250,14 +250,7 @@ function initSettings() {
     var siteName = getPrompt('Enter site name (or blank)', 'Site Name');
     if (siteName == null)
 	return;
-    var authKey = getPrompt('Enter root key (or blank, to enter site key)', 'Root Key');
-    if (siteName) {
-	if (authKey) {
-	    authKey = genHmacToken(authKey, 'site:'+siteName)
-	} else {
-	    authKey = getPrompt('Enter site key', 'Site Key');
-	}
-    }
+    var authKey = getPrompt('Enter site key', 'Site Key');
     if (authKey == null)
 	return;
     var defaultVals = {'auth_key': authKey, 'site_name': siteName};
@@ -581,11 +574,11 @@ function sheetAction(params) {
         if (authToken.indexOf(':') >= 0) {
             var comps = authToken.split(':');    // effectiveId:userid:role:sites:hmac
             if (comps.length != 5) {
-                throw('Error:INVALID_TOKEN:Invalid auth token format '+authToken);
+                throw('Error:INVALID_TOKEN:Invalid auth token format');
             }
             var subToken = ':' + comps.slice(1).join(':');
             if (!validateHMAC(subToken, Settings['auth_key'])) {
-                throw('Error:INVALID_TOKEN:Invalid authentication token '+subToken);
+                throw('Error:INVALID_TOKEN:Invalid authentication token');
             }
 
             var effectiveUser = comps[0];
@@ -625,7 +618,7 @@ function sheetAction(params) {
                 throw('Error:NEED_ID:Need id for authentication');
             }
             if (!validateHMAC(genAuthPrefix(paramId,'','')+':'+authToken, Settings['auth_key'])) {
-                throw('Error:INVALID_TOKEN:Invalid token '+authToken+' for authenticating id '+paramId);
+                throw('Error:INVALID_TOKEN:Invalid token for authenticating id '+paramId);
             }
             origUser = paramId;
         }
@@ -1624,7 +1617,7 @@ function sheetAction(params) {
                                 // Check against new due date
                                 var newDueDate = getNewDueDate(userId, Settings['site_name'], sheetName, lateToken);
                                 if (!newDueDate) {
-                                    throw("Error:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user "+(displayName || "")+" to session '"+sheetName+"'");
+                                    throw("Error:INVALID_LATE_TOKEN:Invalid token for late submission by user "+(displayName || "")+" to session '"+sheetName+"'");
                                 }
 
                                 dueDate = newDueDate;
@@ -3122,6 +3115,14 @@ function parseInput(value, headerName) {
     return value;
 }
 
+function urlsafe_b64encode(s) {
+    return Utilities.base64Encode(s).replace(/\+/g,'-').replace(/\//g,'_');
+}
+
+function urlsafe_b64decode(s) {
+    return Utilities.base64Decode(s.replace(/-/g,'+').replace(/_/g,'/'));
+}
+
 function genAuthPrefix(userId, role, sites) {
     return ':' + userId + ':' + (role||'') + ':' + (sites||'');
 }
@@ -3136,7 +3137,7 @@ function genHmacToken(key, message) {
     var rawHMAC = Utilities.computeHmacSignature(HMAC_ALGORITHM,
 						 message, key,
 						 Utilities.Charset.US_ASCII);
-    return Utilities.base64Encode(rawHMAC).slice(0,TRUNCATE_DIGEST);
+    return urlsafe_b64encode(rawHMAC).slice(0,TRUNCATE_DIGEST);
 }
 
 function genLateToken(key, userId, siteName, sessionName, dateStr) {

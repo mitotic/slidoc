@@ -3445,6 +3445,14 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
 var TRUNCATE_DIGEST = 12;
 var DIGEST_ALGORITHM = 'sha256';  // 'md5' or 'sha256'
 
+function urlsafe_b64encode(s) {
+    return btoa(s).replace(/\+/g,'-').replace(/\//g,'_');
+}
+
+function urlsafe_b64decode(s) {
+    return atob(s.replace(/-/g,'+').replace(/_/g,'/'));
+}
+
 Slidoc.genHmacToken = function (key, message) {
     // Generates token using HMAC key
     if (DIGEST_ALGORITHM == 'md5') {
@@ -3457,7 +3465,7 @@ Slidoc.genHmacToken = function (key, message) {
     } else {
 	throw('Unknown digest algorithm: '+DIGEST_ALGORITHM);
     }
-    return btoa(hmac_bytes).slice(0,TRUNCATE_DIGEST);
+    return urlsafe_b64encode(hmac_bytes).slice(0,TRUNCATE_DIGEST);
 }
 
 function genAuthPrefix(userId, role, sites) {

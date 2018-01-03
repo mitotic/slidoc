@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- upload template for slidoc server --->
-<!-- upload parameters: site_name, new_site, err_msg, settings_labels, site_settings -->
+<!-- upload parameters: site_name, new_site, err_msg, settings_labels, site_key, site_settings -->
 
 {% include "base.html" %}
 
@@ -17,8 +17,11 @@
 
   <hr>
 
+<p></p>
+<b><span class="clickable" onclick="confirmToggleDisplay('site-key')">Site key:</span></b> <span id="site-key" style="display: none;">{{site_key}}</span>
+
+<p></p>
 <div id="slidoc-upload-form">
-  <p></p>
   <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
   <form id="upload-form" action="/_site_settings{% if site_name %}/{{site_name}}{% end %}" method="post" enctype="multipart/form-data" >
   <fieldset>

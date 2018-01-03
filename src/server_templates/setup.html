@@ -2,7 +2,7 @@
 <html>
 <head>
   <!-- setup template for slidoc server --->
-  <!-- setup parameters: site_name, session_name, status, site_updates, multisite, aliases, sites, versions -->
+  <!-- setup parameters: site_name, session_name, status, site_updates, multisite, aliases, sites , server version, versions -->
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta charset="UTF-8">
 
@@ -55,6 +55,9 @@
   </ul>
 
   Aliases: <code>{{ aliases }}</code>
+  <p></p>
+
+  Server version: <code>{{ server_version }}</code>
   <p></p>
 
   Script version: <code>{{ ', '.join('%s: %s' % (s, versions[s]) for s in sites) if sites else versions[''] }}</code>

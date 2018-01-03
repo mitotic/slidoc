@@ -809,7 +809,7 @@ class RootActionHandler(BaseHandler):
         if action == '_setup':
             self.render('setup.html', site_name='', session_name='', status='', site_updates=[],
                         multisite=Options['multisite'], aliases=Global.userRoles.list_aliases(),
-                        sites=Options['site_list'], versions=SiteProps.siteScriptVersions)
+                        sites=Options['site_list'], server_version=sliauth.VERSION, versions=SiteProps.siteScriptVersions)
 
         elif action == '_alias':
             origId, userId = subsubpath.split('=')
@@ -986,8 +986,9 @@ class SiteActionHandler(BaseHandler):
 
                     site_settings = SiteOpts[site_name]
 
+            site_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
             self.render('settings.html', site_name=site_name, new_site=new_site, err_msg='',
-                        settings_labels=SETTINGS_LABELS, site_settings=site_settings)
+                        settings_labels=SETTINGS_LABELS, site_key=site_key, site_settings=site_settings)
 
         elif action == '_site_delete':
             if site_name in Global.predefined_sites:
@@ -1054,8 +1055,9 @@ class SiteActionHandler(BaseHandler):
                 errMsg = 'Enable --reload sdserver option to modify site settings'
 
             if errMsg:
+                site_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
                 self.render('settings.html', site_name=site_name, new_site=new_site, err_msg=errMsg,
-                            settings_labels=SETTINGS_LABELS, site_settings=site_settings)
+                            settings_labels=SETTINGS_LABELS, site_key=site_key, site_settings=site_settings)
                 return
 
             site_settings_file = ''
@@ -1253,7 +1255,8 @@ class ActionHandler(BaseHandler):
             print >> sys.stderr, 'DEBUG: putAction', Options['site_number'], subpath, len(self.request.body), self.request.arguments, self.request.headers.get('Content-Type')
         action, sep, subsubpath = subpath.partition('/')
         if action == '_remoteupload':
-            token = sliauth.gen_hmac_token(Options['auth_key'], 'upload:'+sliauth.digest_hex(self.request.body))
+            uploadKey = sliauth.gen_hmac_token(Options['auth_key'], 'upload:')
+            token = sliauth.gen_hmac_token(uploadKey, 'upload:'+sliauth.digest_hex(self.request.body))
             if self.get_argument('token') != token:
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid remote upload token')
             fname, fext = os.path.splitext(subsubpath)
@@ -1411,6 +1414,7 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Unsafe column updates triggered for session %s: <br>%s' % (sessionName, preElement(valTable)))
 
         elif action == '_dash':
+            upload_key = sliauth.gen_hmac_token(Options['auth_key'], 'upload:')
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'],
                         site_title=Options['site_title'], site_access=sdproxy.Settings['site_access'],
                         version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession(),
@@ -1418,8 +1422,8 @@ class ActionHandler(BaseHandler):
                         start_date=sliauth.print_date(Options['start_date'],not_now=True),
                         lock_date=sliauth.print_date(sdproxy.Settings['lock_date'],not_now=True),
                         end_date=sliauth.print_date(Options['end_date'],not_now=True),
-                        gradebook_release=sdproxy.Settings['gradebook_release'],
-                        site_menu=SiteProps.get_site_menu() )
+                        site_menu=SiteProps.get_site_menu(), upload_key=upload_key,
+                        gradebook_release=sdproxy.Settings['gradebook_release'])
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
@@ -5154,10 +5158,11 @@ def createApplication():
         else:
             raise Exception('sdserver: Invalid auth_type: '+comps[0])
 
+    cookie_secret = sliauth.gen_hmac_token(Options['root_auth_key'], 'cookie:'+COOKIE_VERSION)
     appSettings.update(
         template_path=os.path.join(os.path.dirname(__file__), "server_templates"),
         xsrf_cookies=Options['xsrf'],
-        cookie_secret=(Options['root_auth_key'])+COOKIE_VERSION,
+        cookie_secret=cookie_secret,
         login_url=Global.login_url,
         debug=Options['debug'],
     )
@@ -6119,11 +6124,11 @@ def uploadSettings(gsheet_url, site_name='', deactivated=False):
     user_token = sliauth.gen_auth_token(auth_key, 'admin', 'admin', prefixed=True)
     set_params = {'sheet': sdproxy.SETTINGS_SHEET, 'settings': json.dumps(settingsVals), 'admin': 'admin', 'token': user_token}
     retval = sliauth.http_post(gsheet_url, set_params)
+    retInfo = retval.get('info',{})
     if retval['result'] != 'success':
         if Options['debug'] and retval.get('errtrace'):
             print >> sys.stderr, "Error in uploading settings:", retval.get('errtrace')
-        raise Exception("Error in uploading settings for site %s: %s" % (site_name, retval['error']))
-    retInfo = retval.get('info',{})
+        raise Exception("Error in uploading settings for site %s (script version %s): %s" % (site_name, retInfo.get('version'), retval['error']))
     return {'version': retInfo.get('version'), 'sessionsAvailable': retInfo.get('sessionsAvailable')} 
 
 
@@ -6347,7 +6352,7 @@ def main():
     define("config", type=str, help="Path to config file", callback=config_parse)
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
-    define("auth_key", default=Options["auth_key"], help="Digest authentication key for admin user")
+    define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 18 decimal digits if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
@@ -6491,24 +6496,34 @@ def main():
             # Root config + command line
             Options[key] = getattr(CommandOpts, key)
 
-    if not Options['site_number']:
-        Options['server_nonce'] = str(random.randrange(0,2**60))
-
     if not Options['dry_run'] and not Root_server:
         if not Options['gsheet_url']:
             sys.exit('Site %s: ERROR: Must specify gsheet_url for proxied site in config file' % (Options['site_name']))
 
-    if CommandOpts.no_authentication != 'all' and not Options['auth_key']:
-        sys.exit("ERROR: --auth_key=... must be specified")
+    if Options['auth_key']:
+        if not Options['server_url'].startswith('http://localhost:'):
+            if not Options['auth_key'].isdigit() or len(Options['auth_key']) < 18:
+                sys.exit("ERROR: --auth_key=... must be a number with at least 18 digits (use sliauth.py -g to generate it)")
+    else:
+        if CommandOpts.no_authentication != 'all':
+            sys.exit("ERROR: --auth_key=... must be specified for authentication")
+
 
     if not CommandOpts.multisite and CommandOpts.single_site:
+        # Single site selected from multisite config
         Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], CommandOpts.single_site)
 
     Options['root_auth_key'] = Options['auth_key']
     if Options['site_number']:
-        Options['auth_key'] = sliauth.gen_site_key(Options['auth_key'], Options['site_name'])
+        Options['auth_key'] = sliauth.gen_site_key(Options['root_auth_key'], Options['site_name'])
 
-    Options['server_key'] = sliauth.gen_server_key(Options['root_auth_key'], Options['server_nonce'])
+    if Options['server_url'].startswith('http://localhost:'):
+        Options['server_nonce'] = ''
+        Options['server_key'] = Options['root_auth_key']
+    else:
+        if not Options['site_number']:
+            Options['server_nonce'] = str(sliauth.gen_random_number())
+        Options['server_key'] = sliauth.gen_server_key(Options['root_auth_key'], Options['server_nonce'])
         
     if not CommandOpts.debug:
         logging.getLogger('tornado.access').disabled = True
@@ -6577,7 +6592,7 @@ def main():
     print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
     if Options['debug']:
-        print >> sys.stderr, 'sdserver: SERVER_NONCE', Options['server_nonce']
+        print >> sys.stderr, 'sdserver: SERVER_NONCE =', Options['server_nonce']
     if plugins:
         print >> sys.stderr, 'sdserver: Loaded plugins: '+', '.join(plugins)
     if CommandOpts.start_delay:

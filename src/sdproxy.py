@@ -1795,10 +1795,10 @@ def sheetAction(params, notrace=False):
         if ':' in authToken:
             comps = authToken.split(':')   # effectiveId:userid:role:sites:hmac
             if len(comps) != 5:
-                raise Exception('Error:INVALID_TOKEN:Invalid auth token format '+authToken);
+                raise Exception('Error:INVALID_TOKEN:Invalid auth token format');
             subToken = ':' + ':'.join(comps[1:])
             if not validateHMAC(subToken, Settings['auth_key']):
-                raise Exception('Error:INVALID_TOKEN:Invalid authentication token '+subToken)
+                raise Exception('Error:INVALID_TOKEN:Invalid authentication token')
 
             effectiveUser = comps[0]
             origUser = comps[1]
@@ -1830,7 +1830,7 @@ def sheetAction(params, notrace=False):
             if not paramId:
                 raise Exception('Error:NEED_ID:Need id for authentication')
             if not validateHMAC(sliauth.gen_auth_prefix(paramId,'','')+':'+authToken, Settings['auth_key']):
-                raise Exception('Error:INVALID_TOKEN:Invalid token '+authToken+' for authenticating id '+paramId)
+                raise Exception('Error:INVALID_TOKEN:Invalid token for authenticating id '+paramId)
             origUser = paramId
 
         proxy = params.get('proxy','');
@@ -2673,7 +2673,7 @@ def sheetAction(params, notrace=False):
                                 # Check against new due date
                                 newDueDate = getNewDueDate(userId, Settings['site_name'], sheetName, lateToken)
                                 if not newDueDate:
-                                    raise Exception("Error:INVALID_LATE_TOKEN:Invalid token '"+lateToken+"' for late submission by user "+(displayName or "")+" to session '"+sheetName+"'")
+                                    raise Exception("Error:INVALID_LATE_TOKEN:Invalid token for late submission by user "+(displayName or "")+" to session '"+sheetName+"'")
 
                                 dueDate = newDueDate
                                 pastSubmitDeadline = curTime > sliauth.epoch_ms(dueDate)

@@ -46,6 +46,18 @@ function localISOString(dateOnly) {
     date.setTime( date.getTime() - date.getTimezoneOffset()*60*1000 );
     return dateOnly ? date.toISOString().slice(0,10) : date.toISOString().slice(0,16);
 }
+
+function toggleDisplay(elemId) {
+   var elem = document.getElementById(elemId);
+   elem.style.display = elem.style.display ? null : 'none';
+}
+
+function confirmToggleDisplay(elemId) {
+   var elem = document.getElementById(elemId);
+   if (elem.style.display && !window.confirm('Display sensitive info?'))
+      return;
+   toggleDisplay(elemId);
+}
 </script>
 
 {% set site_prefix = '/'+site_name if site_name else '' %}
