@@ -110,6 +110,7 @@ Options = {
     'multisite': False,
     'no_authentication': '',
     'notebook_extn': 'ipynb',
+    'old_auth_key': '',
     'plugindata_dir': 'plugindata',
     'port': 8888,
     'private_port': 8900,
@@ -759,6 +760,8 @@ class HomeHandler(BaseHandler):
                     # Expired
                     siteRestriction = siteAccess+' '+siteRestriction if siteRestriction else siteAccess
                 child = Global.child_procs.get(siteName)
+                if siteName in SiteProps.sitesDeactivated:
+                    siteRestriction += ' DEACTIVATED'
                 if not child or child.proc.poll() is not None:
                     siteRestriction += ' <a href="/_restart/%s">RESTART</a>' % siteName
 
@@ -820,6 +823,18 @@ class RootActionHandler(BaseHandler):
 
         elif action == '_backup':
             self.displayMessage(backupSite(subsubpath, broadcast=True), back_url='/_setup')
+
+        elif action == '_deactivate':
+            msgs = []
+            if Options['multisite']:
+                sites = Options['site_list']
+            else:
+                sites = ['']
+            for site_name in sites:
+                site_settings = SiteOpts[site_name] if site_name else Global.site_settings
+                if SiteProps.root_site_deactivate(site_name, site_settings['gsheet_url']):
+                    msgs.append('Deactivated site %s' % site_name)
+            self.displayMessage('\n'.join(msgs), back_url='/_setup')
 
         elif action == '_terminate':
             # Terminate site(s) gracelessly
@@ -942,7 +957,8 @@ class SiteActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: SiteActionHandler.get', userId, action, site_name
 
-        if Options['multisite'] and site_name not in Options['site_list']:
+        new_site = self.get_argument('new_site', '')
+        if Options['multisite'] and site_name not in Options['site_list'] and not new_site:
             raise tornado.web.HTTPError(404)
 
         if not self.check_site_admin(site_name):
@@ -950,7 +966,6 @@ class SiteActionHandler(BaseHandler):
 
         # Global admin user
         if action == '_site_settings':
-            new_site = self.get_argument('new_site', '')
             if not site_name:
                 site_settings = Global.site_settings
             else:
@@ -991,31 +1006,8 @@ class SiteActionHandler(BaseHandler):
                         settings_labels=SETTINGS_LABELS, site_key=site_key, site_settings=site_settings)
 
         elif action == '_site_delete':
-            if site_name in Global.predefined_sites:
-                self.displayMessage('Cannot delete predefined site %s' % site_name, back_url='/_setup')
-                return
-            site_number = get_site_number(site_name)
-            if not site_number:
-                self.displayMessage('Site %s not found!' % site_name, back_url='/_setup')
-                return
-            site_settings = SiteOpts[site_name]
-            site_settings_file = os.path.join(Global.config_path, site_name+'.json') if os.path.isdir(Global.config_path) else ''
-            if site_settings_file and os.path.exists(site_settings_file) and not Options['dry_run']:
-                try:
-                    os.remove(site_settings_file)
-                except Exception, excp:
-                    self.displayMessage('Error in deleting site %s config file: %s' % (site_name, excp), back_url='/_setup')
-                    return
+            self.displayMessage(SiteProps.root_site_delete(site_name), back_url='/_setup')
 
-            relay_addr = SiteProps.relay_map(site_number)
-            try:
-                retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+sliauth.safe_quote(Options['server_key']))
-            except Exception, excp:
-                print >> sys.stderr, 'sdserver.site_delete: Error in shutting down site', site_name, excp
-            uploadSettings(site_settings['gsheet_url'], site_name, deactivated=True)
-            root_remove_site(site_name)
-            Global.child_procs[site_name] = None
-            self.displayMessage('Deleted site %s' % site_name, back_url='/_setup')
         else:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid root site action '+action)
 
@@ -1026,14 +1018,14 @@ class SiteActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'DEBUG: SiteActionHandler.post', userId, action, site_name
 
-        if Options['multisite'] and site_name not in Options['site_list']:
+        new_site = self.get_argument('new_site', '')
+        if Options['multisite'] and site_name not in Options['site_list'] and not new_site:
             raise tornado.web.HTTPError(404)
 
         if not self.check_site_admin(site_name):
             raise tornado.web.HTTPError(403)
 
         if action == '_site_settings':
-            new_site = self.get_argument('new_site', '')
 
             errMsg = ''
             site_settings = dict( (argname, self.get_argument(argname, '')) for argname, arglabel in SETTINGS_LABELS if argname)
@@ -5088,7 +5080,7 @@ def createApplication():
                     ]
     if not Options['site_number']:
         # Single/root server
-        home_handlers += [ (r"/(_(backup|logout|reload|setup|shutdown|terminate))", RootActionHandler) ]
+        home_handlers += [ (r"/(_(backup|deactivate|logout|reload|setup|shutdown|terminate))", RootActionHandler) ]
         home_handlers += [ (r"/(_(alias))/([-\w.@=]+)", RootActionHandler) ]
         home_handlers += [ (r"/(_(backup|restart|terminate|update))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
         if Options['multisite']:
@@ -6108,30 +6100,6 @@ def getBakDir(site_name):
     bak_dir = os.path.join(bak_dir, bak_name)
     return bak_dir
 
-def uploadSettings(gsheet_url, site_name='', deactivated=False):
-    if not gsheet_url or Options['dry_run']:
-        return {}
-
-    if deactivated:
-        settingsVals = {'site_access': sdproxy.SITE_INACTIVE}
-    else:
-        site_settings = SiteOpts[site_name] if site_name else Global.site_settings
-        settingsVals = site_settings.copy()
-        settingsVals['server_url'] = Options['server_url']
-        settingsVals['site_name'] = site_name
-
-    auth_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
-    user_token = sliauth.gen_auth_token(auth_key, 'admin', 'admin', prefixed=True)
-    set_params = {'sheet': sdproxy.SETTINGS_SHEET, 'settings': json.dumps(settingsVals), 'admin': 'admin', 'token': user_token}
-    retval = sliauth.http_post(gsheet_url, set_params)
-    retInfo = retval.get('info',{})
-    if retval['result'] != 'success':
-        if Options['debug'] and retval.get('errtrace'):
-            print >> sys.stderr, "Error in uploading settings:", retval.get('errtrace')
-        raise Exception("Error in uploading settings for site %s (script version %s): %s" % (site_name, retInfo.get('version'), retval['error']))
-    return {'version': retInfo.get('version'), 'sessionsAvailable': retInfo.get('sessionsAvailable')} 
-
-
 def getSiteRosterMaps(gsheet_url, site_name=''):
     try:
         rows, headers = sliauth.read_sheet(gsheet_url, Options['root_auth_key'], sdproxy.ROSTER_SHEET, site=site_name)
@@ -6153,6 +6121,7 @@ def getSiteRosterMaps(gsheet_url, site_name=''):
 class SiteProps(object):
     siteRosterMaps = {}
     siteScriptVersions = {}
+    sitesDeactivated = set()
 
     @classmethod
     def reset_site(cls):
@@ -6173,9 +6142,15 @@ class SiteProps(object):
     @classmethod
     def root_site_setup(cls, site_number, site_name, gsheet_url, new=False, update=False):
         # For single or root server
-        retval = uploadSettings(gsheet_url, site_name)
-        if retval.get('sessionsAvailable') and Options['restore_backup']:
-            raise Exception('ERROR: Cannot restore from backup for site %s because sessions are already present' % site_name)
+        retval = {}
+        if gsheet_url and not Options['dry_run']:
+            site_settings = SiteOpts[site_name] if site_name else Global.site_settings
+            retval = sliauth.uploadSettings(sdproxy.SETTINGS_SHEET, site_name, gsheet_url, Options['root_auth_key'],
+                                            old_auth_key=Options['old_auth_key'], site_settings=site_settings,
+                                            server_url=Options['server_url'], debug=Options['debug'])
+            cls.sitesDeactivated.discard(site_name)
+            if retval.get('sessionsAvailable') and Options['restore_backup']:
+                raise Exception('ERROR: Cannot restore from backup for site %s because sessions are already present' % site_name)
 
         cls.siteScriptVersions[site_name] = retval.get('version', '')
         cls.siteRosterMaps[site_name] = getSiteRosterMaps(gsheet_url, site_name) if gsheet_url and CommandOpts.multi_email_id else {}
@@ -6183,6 +6158,40 @@ class SiteProps(object):
         if site_name:
             siteConfig = SiteOpts[site_name]
             Global.userRoles.update_site_roles(site_name, siteConfig.get('admin_users',''), siteConfig.get('grader_users',''), siteConfig.get('guest_users','') )
+
+    @classmethod
+    def root_site_delete(cls, site_name):
+        if site_name in Global.predefined_sites:
+            return 'Cannot delete predefined site %s' % site_name
+        site_number = get_site_number(site_name)
+        if not site_number:
+            return 'Site %s not found!' % site_name
+        site_settings = SiteOpts[site_name]
+        site_settings_file = os.path.join(Global.config_path, site_name+'.json') if os.path.isdir(Global.config_path) else ''
+        if site_settings_file and os.path.exists(site_settings_file) and not Options['dry_run']:
+            try:
+                os.remove(site_settings_file)
+            except Exception, excp:
+                return 'Error in deleting site %s config file: %s' % (site_name, excp)
+
+        relay_addr = SiteProps.relay_map(site_number)
+        try:
+            retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+sliauth.safe_quote(Options['server_key']))
+        except Exception, excp:
+            print >> sys.stderr, 'sdserver.site_delete: Error in shutting down site', site_name, excp
+        cls.root_site_deactivate(site_name, site_settings['gsheet_url'])
+        root_remove_site(site_name)
+        Global.child_procs[site_name] = None
+        return 'Deleted site %s' % site_name
+
+    @classmethod
+    def root_site_deactivate(cls, site_name, gsheet_url):
+        if not gsheet_url or Options['dry_run']:
+            return False
+        sliauth.uploadSettings(sdproxy.SETTINGS_SHEET, site_name, gsheet_url, Options['root_auth_key'],
+                               site_access=sdproxy.SITE_INACTIVE, server_url=Options['server_url'], debug=Options['debug'])
+        cls.sitesDeactivated.add(site_name)
+        return True
 
 def root_start_secondary(site_number, site_name, site_settings={}):
     # Return error message or null string
@@ -6352,7 +6361,7 @@ def main():
     define("config", type=str, help="Path to config file", callback=config_parse)
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
-    define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 38 decimal digits if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
+    define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 20 characters if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
     define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
@@ -6375,6 +6384,7 @@ def main():
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
     define("no_authentication", default='', help="=all/user; no authentication mode (UNSAFE)")
     define("notebook_extn", default=Options["notebook_extn"], help="Extension for notebook/journal files (default: ipynb)")
+    define("old_auth_key", default='', help="Old auth_key (for key migration)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
@@ -6501,9 +6511,9 @@ def main():
             sys.exit('Site %s: ERROR: Must specify gsheet_url for proxied site in config file' % (Options['site_name']))
 
     if Options['auth_key']:
-        if not Options['server_url'].startswith('http://localhost:'):
-            if not Options['auth_key'].isdigit() or len(Options['auth_key']) < 38:
-                sys.exit("ERROR: --auth_key=... must be a number with at least 38 digits (use sliauth.py -g to generate it)")
+        if not CommandOpts.no_authentication and not Options['server_url'].startswith('http://localhost:'):
+            if not Options['auth_key'].isdigit() or len(Options['auth_key']) < 20:
+                sys.exit("ERROR: --auth_key=... must be a number with at least 20 characters (use sliauth.py -g to generate it)")
     else:
         if CommandOpts.no_authentication != 'all':
             sys.exit("ERROR: --auth_key=... must be specified for authentication")

@@ -40,6 +40,8 @@
     <li><a class="clickable" href="javascript:slidocConfirmAction('terminate')">terminate</a>: Terminate all, except root (ungracefully)</li>
     {% end %}
     <hr>
+    <li><a class="clickable" href="javascript:slidocConfirmAction('deactivate')">deactivate</a>: Deactivate all</li>
+    <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown{{All}}</li>
     <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('reload')">reload</a>: Reload{{All}}</li>
@@ -60,7 +62,7 @@
   Server version: <code>{{ server_version }}</code>
   <p></p>
 
-  Script version: <code>{{ ', '.join('%s: %s' % (s, versions[s]) for s in sites) if sites else versions[''] }}</code>
+  Script versions: <code>{{ ', '.join('%s: %s' % (s, versions[s]) for s in sites) if sites else versions.get('','') }}</code>
   <p></p>
 
 </body>

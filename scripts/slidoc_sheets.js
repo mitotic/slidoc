@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21a';
+var VERSION = '0.97.21b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -221,7 +221,7 @@ function onOpen(evt) {
    menuEntries.push({name: "Refresh all posted sessions in gradebook", functionName: "updateScoreAll"});
    menuEntries.push({name: "Refresh only total score in gradebook (NOT RELEASED)", functionName: "updateScoreAllPartial"});
    menuEntries.push(null); // line separator
-   menuEntries.push({name: "Initialize settings", functionName: "initSettings"});
+   menuEntries.push({name: "Init/reset site settings", functionName: "resetSettings"});
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Email authentication tokens", functionName: "emailTokens"});
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
@@ -246,7 +246,7 @@ function getDoc() {
     return SpreadsheetApp.openById(SCRIPT_PROP.getProperty("key"));
 }
 
-function initSettings() {
+function resetSettings() {
     // Create default settings sheet, if not already present
     var siteName = getPrompt('Enter site name (or blank)', 'Site Name');
     if (siteName == null)
@@ -321,11 +321,12 @@ function loadSettings() {
     }
 }
 
-var protectedSettings = {'auth_key': 1, 'proxy_mod_time': 1, 'proxy_update_cache': 1, 'site_name': 1};
+var protectedSettings = {'proxy_mod_time': 1, 'proxy_update_cache': 1};
 function updateSettings(settingsData) {
     var settingsSheet = getSheet(SETTINGS_SHEET);
     if (!settingsSheet)
 	throw('Error:SETTINGS:Sheet '+SETTINGS_SHEET+' not found!');
+    var inactiveSite = Settings['site_access'] == SITE_INACTIVE;
     var settingsRange = settingsSheet.getRange(2, 1, settingsSheet.getLastRow()-1, 2);
     var settingsValues = settingsRange.getValues();
     for (var j=0; j<settingsValues.length; j++) {
@@ -334,10 +335,15 @@ function updateSettings(settingsData) {
 	var settingsName = settingsValues[j][0].trim();
 	if (!(settingsName in settingsData))
 	    continue;
-	if (settingsName in protectedSettings) {
-	    if (settingsName == 'site_name' && settingsValues[j][1] != settingsData['site_name'])
-		throw('Error:SETTINGS:Mismatch in site name '+settingsValues[j][1]+' vs. '+settingsData['site_name']);
+	if (settingsName in protectedSettings)
 	    continue;
+	if (settingsName == 'site_name') {
+	    if (!inactiveSite && settingsValues[j][1] != settingsData['site_name'])
+		throw('Error:SETTINGS:Mismatch in site name '+settingsValues[j][1]+' vs. '+settingsData['site_name']);
+	}
+	if (settingsName == 'auth_key') {
+	    if (!inactiveSite)
+		throw('Error:SETTINGS:Cannot change auth_key for active site');
 	}
 	settingsValues[j][1] = settingsData[settingsName];
     }
@@ -549,12 +555,12 @@ function sheetAction(params) {
     var completeActions = [];
     try {
 	loadSettings();
+	if (!Settings['auth_key'])
+	    throw('Error:SETTINGS:No auth_key specified; may need to reset site settings');
+
 	var siteSettings = params.settings || null;
 	if (!siteSettings && Settings['site_access'] == SITE_INACTIVE)
-	    throw('Error:INACTIVE:Site deactivated; may need to initialize settings');
-
-	if (!Settings['no_login_token'] && !Settings['auth_key'])
-	    throw('Error:SETUP:No auth_key for login; may need to initialize settings');
+	    throw('Error:INACTIVE:Site deactivated; may need to reset site settings');
 
 	var sheetName = params.sheet || '';
 	returnInfo['sheet'] = sheetName;

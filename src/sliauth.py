@@ -20,7 +20,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.21a'
+VERSION = '0.97.21b'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -51,8 +51,11 @@ TRUNCATE_HMAC = 12    #  72 bits (12 b64 digits)
 TRUNCATE_SITE = 20    # 120 bits (20 b64 digits)
 DIGEST_ALGORITHM = hashlib.sha256
 
-def digest_hex(s, n=TRUNCATE_DIGEST):
-    return DIGEST_ALGORITHM(s).hexdigest()[:n]
+def digest_hex(message, truncate=TRUNCATE_DIGEST):
+    return DIGEST_ALGORITHM(message).hexdigest()[:truncate]
+
+def digest_b64(message, truncate=TRUNCATE_DIGEST):
+    return base64.urlsafe_b64encode(DIGEST_ALGORITHM(message).digest())[:truncate]
 
 def gen_hmac_token(key, message, truncate=TRUNCATE_HMAC):
     if not key:
@@ -323,6 +326,31 @@ def read_sheet(sheet_url, hmac_key, sheet_name, site=''):
         raise Exception("No data when reading sheet %s %s: %s" % (site, sheet_name, retval['error']))
     return retval['value'][1:], retval['value'][0]
 
+def uploadSettings(sheet_name, site_name, gsheet_url, root_auth_key, old_auth_key='', site_settings={}, site_access='', server_url='', debug=False):
+    tem_root_key = old_auth_key or root_auth_key
+    auth_key = gen_site_key(tem_root_key, site_name) if site_name else tem_root_key
+
+    if site_access:
+        settingsVals = {'site_access': site_access}
+    else:
+        settingsVals = site_settings.copy()
+        settingsVals['site_name'] = site_name
+        if server_url:
+            settingsVals['server_url'] = server_url
+        if old_auth_key:
+            settingsVals['auth_key'] = gen_site_key(root_auth_key, site_name) if site_name else root_auth_key
+
+    user_token = gen_auth_token(auth_key, 'admin', 'admin', prefixed=True)
+    set_params = {'sheet': sheet_name, 'settings': json.dumps(settingsVals), 'admin': 'admin', 'token': user_token}
+    retval = http_post(gsheet_url, set_params)
+    retInfo = retval.get('info',{})
+    if retval['result'] != 'success':
+        if debug and retval.get('errtrace'):
+            print >> sys.stderr, "Error in uploading settings:", retval.get('errtrace')
+        raise Exception("Error in uploading settings for site %s (script version %s): %s" % (site_name, retInfo.get('version'), retval['error']))
+    return {'version': retInfo.get('version'), 'sessionsAvailable': retInfo.get('sessionsAvailable')} 
+
+
 def get_settings(rows):
     if not rows:
         raise Exception("Error: Empty settings sheet")
@@ -356,7 +384,7 @@ if __name__ == '__main__':
     cmd_args = parser.parse_args()
 
     if cmd_args.gen_auth_key:
-        print ('auth_key = %s' % gen_random_number())
+        print ("auth_key = '%s'" % digest_b64(str(gen_random_number()), truncate=TRUNCATE_SITE) )
         sys.exit(0)
 
     if not cmd_args.auth_key and not cmd_args.site_auth_key:

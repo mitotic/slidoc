@@ -58,7 +58,7 @@ function newSite() {
   if (!siteName)
     return;
   if (siteName.match(/^[a-zA-Z][-a-zA-Z0-9]*$/))
-    window.location = '/_settings/'+siteName+'?new_site=1';
+    window.location = '/_site_settings/'+siteName+'?new_site=1';
   else
     alert('Site name must start with letter and include only letters/digits/hyphens');
 }
