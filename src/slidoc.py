@@ -84,8 +84,8 @@ ANSWER_FORMULA_RE = re.compile(r'^`=([^`;\n]+)(;;\s*([()eE0-9.*+/-]*))?\s*`$')
 INLINE_METHOD_RE  = re.compile(r'^(\w+)\.(\w+)\(\s*(\d*)\s*\)')
 INLINE_PLUGIN_RE  = re.compile(r'(^|\b)(\$+)\.([a-zA-Z]\w*)(\[\d+\])?\.')    # Syntax: $.Plugin.method(1) OR $.Plugin[1].method(100) OR $$.Plugin.method()
 
-PARAM_RE          = re.compile(r'^([_a-zA-Z]\w*)=([0-9.:eE+-]+)$')
-PARAM_FUNCTION_RE = re.compile(r'^\s*function\s+([a-zA-Z]\w*)\s*(\([\w\s,]*\)\s*\{.*\})\s*$')
+DEFINE_PARAM_RE   = re.compile(r'^([_a-zA-Z]\w*)=([0-9.:eE+-]+)$')
+DEFINE_FUNCTION_RE = re.compile(r'^\s*function\s+([a-zA-Z]\w*)\s*(\([\w\s,]*\)\s*\{.*\})\s*$')
 
 BASIC_PACE    = 1
 QUESTION_PACE = 2
@@ -308,7 +308,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:)(.*?)(-->|\n)\s*?(\n|$)', re.DOTALL)
     slidoc_options=   re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
-    slidoc_params =   re.compile(r'^ {0,3}(Params):(.*?)(\n|$)')
+    slidoc_define =   re.compile(r'^ {0,3}(Define):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
@@ -322,7 +322,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_params', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_define', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -448,9 +448,9 @@ class MathBlockLexer(mistune.BlockLexer):
             'text': m.group(2).strip()
         })
 
-    def parse_slidoc_params(self, m):
+    def parse_slidoc_define(self, m):
          self.tokens.append({
-            'type': 'slidoc_params',
+            'type': 'slidoc_define',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -658,8 +658,8 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_slideopts(self):
         return self.renderer.slidoc_slideopts(self.token['name'], self.token['text'])
 
-    def output_slidoc_params(self):
-        return self.renderer.slidoc_params(self.token['name'], self.token['text'])
+    def output_slidoc_define(self):
+        return self.renderer.slidoc_define(self.token['name'], self.token['text'])
 
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
@@ -1642,21 +1642,21 @@ class SlidocRenderer(MathRenderer):
 
         return prev_slide_end
 
-    def slidoc_params(self, name, text):
-        fmatch = PARAM_FUNCTION_RE.match(text)
+    def slidoc_define(self, name, text):
+        fmatch = DEFINE_FUNCTION_RE.match(text)
         if fmatch:
             self.all_functions.append( [fmatch.group(1), 'function '+fmatch.group(2).strip()] )
             return ''
 
         for param_def in text.split():
-            match = PARAM_RE.match(param_def)
+            match = DEFINE_PARAM_RE.match(param_def)
             if not match:
-                abort("    ****PARAMS-ERROR: %s: Invalid Params: specification '%s' in slide %s; expecting name=value1[:value2[:count]] OR name=value1,value2,... " % (self.options["filename"], param_def, self.slide_number))
+                abort("    ****DEFINE-ERROR: %s: Invalid Define: specification '%s' in slide %s; expecting name=value1[:value2[:count]] OR name=value1,value2,...  OR function name (arg1,arg2) {...}" % (self.options["filename"], param_def, self.slide_number))
                 break
             param_name = match.group(1)
             param_value = match.group(2)
             if param_name in self.slide_params:
-                abort("    ****PARAMS-ERROR: %s: Duplicate Params: specification '%s' vs. '%s' in slide %s" % (self.options["filename"], param_def, self.slide_params[param_name], self.slide_number))
+                abort("    ****DEFINE-ERROR: %s: Duplicate Define: specification '%s' vs. '%s' in slide %s" % (self.options["filename"], param_def, self.slide_params[param_name], self.slide_number))
             self.slide_params[param_name] = param_value
 
         return ''
@@ -2644,7 +2644,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 break
 
-            if not line.strip() or HTML_COMMENT_RE.match(line) or MathBlockGrammar.slidoc_params.match(line) or MathBlockGrammar.slidoc_header.match(line):
+            if not line.strip() or HTML_COMMENT_RE.match(line) or MathBlockGrammar.slidoc_define.match(line) or MathBlockGrammar.slidoc_header.match(line):
                 # Blank line (treat HTML comment or Params or slidoc comment line as blank)
                 if prev_blank:
                     # Skip multiple blank lines (for digest computation)
@@ -2803,7 +2803,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                 if prev_qparams[j] != cur_qparams[j]:
                     errq = cur_qparams[j].split(';')[0]
                     break
-            abort('ERROR:PARAMS_ERROR: Cannot change Params: values affecting question %s in session %s with %s responders. Reset session?' % (errq, session_name, row_count))
+            abort('ERROR:DEFINE-ERROR: Cannot change Define: values affecting question %s in session %s with %s responders. Reset session?' % (errq, session_name, row_count))
 
         min_count =  min(len(prev_questions), len(questions))
         mod_question = 0
