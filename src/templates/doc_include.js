@@ -3268,6 +3268,10 @@ Slidoc.PluginManager.disable = function(pluginName, slide_id, displayCorrect) {
 	slideElem.classList.add('slidoc-answercomplete-slideview');
 }
 
+Slidoc.PluginManager.adminAccess = function() {
+    return !Sliobj.params.gd_sheet_url || Sliobj.fullAccess;
+}
+
 Slidoc.PluginManager.graded = function() {
     return Sliobj.gradeDateStr;
 }
@@ -3357,10 +3361,16 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
     defCopy.pluginLabel = 'slidoc-plugin-'+pluginName;
     defCopy.slideData = slideData || null;
 
+    defCopy.initArgs = [];
     if (slide_id) {
-	defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id);
-    } else {
-	defCopy.initArgs = [];
+	if (pluginName == 'Params') {
+	    var footer_elem = getSlideFooter(slide_id);
+	    if (footer_elem && footer_elem.dataset.functionCount && Sliobj.params.paramFunctions) {
+		defCopy.initArgs = [ Sliobj.params.paramFunctions.slice(0,footer_elem.dataset.functionCount) ];
+	    }
+	} else {
+	    defCopy.initArgs = evalPluginArgs(pluginName, Sliobj.activePlugins[pluginName].args[slide_id], slide_id);
+	}
     }
 
     var auth = window.GService && GService.gprofile && GService.gprofile.auth;
