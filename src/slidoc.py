@@ -2581,7 +2581,7 @@ def Missing_ref_num(match):
         return '(%s)??' % ref_id
 
 HTML_COMMENT_RE =  re.compile(r'^\s*<!--.*-->\s*\n?$')
-SLIDE_BREAK_RE  =  re.compile(r'^ {0,3}(----* *|Slide:|##[^#].*)\n?$')
+SLIDE_BREAK_RE  =  re.compile(r'^ {0,3}(----* *|Slide:|#[^#].*|##[^#].*)\n?$')
 HRULE_BREAK_RE  =  re.compile(r'(\S *\n)( {0,3}----* *(\n|$))')
     
 def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, prev_file='', next_file='', index_id='', qindex_id='',

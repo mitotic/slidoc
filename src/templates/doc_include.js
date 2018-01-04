@@ -6829,7 +6829,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	setAnswerElement(slide_id, "-answer-correct", disp_corr_answer||'', disp_corr_answer_html);
     }
 
-    var notes_id = slide_id+"-notes";
+    var notes_id = slide_id+'-notes';
     var notes_elem = document.getElementById(notes_id);
     if (notes_elem && dispCorrect) {
 	// Display of any notes associated with this question
@@ -6956,7 +6956,7 @@ function saveSessionAnswered(slide_id, qattrs) {
 
     } else if (!Sliobj.delaySec && Sliobj.params.slideDelay && MIN_ANSWER_NOTES_DELAY && allowDelay()) {
 	// Minimum delay to view notes after answering
-	var notes_elem = document.getElementById(slide_id+"-notes");
+	var notes_elem = document.getElementById(slide_id+'-notes');
 	if (notes_elem && displayCorrect(qattrs)) {
 	    Sliobj.delaySec = Math.min(MIN_ANSWER_NOTES_DELAY, Sliobj.params.slideDelay);
 	    Slidoc.delayIndicator(Sliobj.delaySec, 'slidoc-slide-nav-prev', 'slidoc-slide-nav-next');
@@ -7899,7 +7899,7 @@ Slidoc.startPaced = function () {
 	slidesVisible(true);
 	restoreScroll();
     } else if (!Sliobj.batchMode && !Sliobj.assessmentView) {
-	Slidoc.slideViewStart();
+	Slidoc.slideViewStart(true);
     }
 }
 
@@ -7966,7 +7966,7 @@ function showCompletionStatus() {
 //////////////////////////////////////
 
 
-Slidoc.slideViewStart = function () {
+Slidoc.slideViewStart = function (pacedStart) {
    if (Sliobj.currentSlide) 
       return false;
    Sliobj.prevSidebar = Sliobj.sidebar;
@@ -7984,12 +7984,14 @@ Slidoc.slideViewStart = function () {
 	startSlide = Math.min(slides.length, parseSlideId(location.hash.slice(1))[2]);
     } else if (Sliobj.updateView) {
 	startSlide = 1;
-   } else if (Sliobj.session && Sliobj.session.paced) {
-       startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
-   } else {
+    } else if (Sliobj.session && Sliobj.session.paced) {
+        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
+    }
+
+    if (!pacedStart || !(Sliobj.session && Sliobj.session.paced)) {
        // Hide notes (for paced view, this is handled earlier)
        Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
-   }
+    }
     var chapterId = parseSlideId(firstSlideId)[0];
     var contentElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
     for (var j=0; j<contentElems.length; j++)
