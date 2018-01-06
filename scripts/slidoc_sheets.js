@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21b';
+var VERSION = '0.97.21e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -3146,11 +3146,12 @@ function genAuthToken(key, userId, role, sites, prefixed) {
     return prefixed ? (prefix+':'+token) : token;
 }
 
-function genHmacToken(key, message) {
+function genHmacToken(key, message, truncate) {
+    truncate = truncate || TRUNCATE_HMAC;
     var rawHMAC = Utilities.computeHmacSignature(HMAC_ALGORITHM,
 						 message, key,
 						 Utilities.Charset.US_ASCII);
-    return urlsafe_b64encode(rawHMAC).slice(0,TRUNCATE_HMAC);
+    return urlsafe_b64encode(rawHMAC).slice(0,truncate);
 }
 
 function genLateToken(key, userId, siteName, sessionName, dateStr) {

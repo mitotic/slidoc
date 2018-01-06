@@ -18,15 +18,15 @@ Command arguments:
     debug: Enable debug mode (can be used for testing local proxy data without gsheet_url)
     gsheet_url: Google sheet URL (required if proxy and not debugging)
     auth_key: Digest authentication key for admin user (enables login protection for website)
-    port: Web server port number to listen on (default=8888)
+    port: Web server port number to listen on (default=8899)
     private_port: Base port number for private servers
-    public: Public web site (no login required, except for paths containing _private/_restricted)
+    public_pages: Public pages (no login required for home page etc., except for paths containing _private/_restricted)
     proxy: Enable proxy mode (cache copies of Google Sheets)
     sites: Site names, e.g., 'chem101,math101,...'
     site_label: Site label, e.g., 'MATH101'
     libraries_dir: path to shared libraries directory
-    source_dir: path to static files directory containing Slidoc .md files (default='source')
-    static_dir: path to static files directory containing Slidoc html files (default='static')
+    source_dir: path to source files directory containing Slidoc .md files (default='source')
+    web_dir: path to web files directory containing Slidoc html files (default='web')
     xsrf: Enable XSRF cookies for security
 
     For Twitter auth workflow, see sdstream.py
@@ -108,14 +108,13 @@ Options = {
     'min_wait_sec': 0,
     'missing_choice': '*',
     'multisite': False,
-    'no_authentication': '',
     'notebook_extn': 'ipynb',
     'old_auth_key': '',
     'plugindata_dir': 'plugindata',
-    'port': 8888,
+    'port': 8899,
     'private_port': 8900,
     'proxy_sheet': False,
-    'public': False,
+    'public_pages': False,
     'reload': False,
     'request_timeout': 60,
     'libraries_dir': '',
@@ -137,7 +136,7 @@ Options = {
     'source_dir': '',
     'ssl_options': None,
     'start_date': '',
-    'static_dir': 'static',
+    'web_dir': 'web',
     'timezone': '',
     'twitter_config': '',
     'xsrf': False,
@@ -629,7 +628,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
     def setup_dirs(cls, site_name=''):
         sitePrefix = '/'+site_name if site_name else ''
         cls.site_src_dir    = Options['source_dir'] + sitePrefix if Options['source_dir'] else None
-        cls.site_web_dir    = Options['static_dir'] + sitePrefix
+        cls.site_web_dir    = Options['web_dir'] + sitePrefix
         cls.site_data_dir   = Options['plugindata_dir'] + sitePrefix + '/' + PLUGINDATA_PATH if Options['plugindata_dir'] else None
         cls.site_backup_dir = Options['backup_dir'] + sitePrefix if Options['backup_dir'] else None
 
@@ -654,7 +653,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         if Options['dry_run'] and not Options['dry_run_file_modify']:
             return
 
-        if Options['static_dir'] and os.path.exists(Options['static_dir']):
+        if Options['web_dir'] and os.path.exists(Options['web_dir']) and Options['auth_type'] != 'none':
             homeWeb = cls.site_web_dir+'/index.html'
             try:
                 # Create dummy home web page
@@ -665,7 +664,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
                         f.write('<b>%s Site Page</b> (<a href="_edit/index">edit</a> this page)' % site_name)
                     print >> sys.stderr, 'sdserver: Created %s' % homeWeb
             except Exception, excp:
-                print >> sys.stderr, 'sdserver: Failed to create home web %s' % homeWeb
+                print >> sys.stderr, 'sdserver: Failed to create home web page %s' % homeWeb
 
         if Options['source_dir'] and os.path.exists(Options['source_dir']):
             homeSrc = cls.site_src_dir+'/index.md' if cls.site_src_dir else None
@@ -695,7 +694,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
         err_cls, err, traceback = kwargs['exc_info']
         if getattr(err, 'log_message', None) and err.log_message.startswith('CUSTOM:'):
             print >> sys.stderr, err.log_message
-            customMsg = err.log_message[len('CUSTOM:'):]
+            customMsg = err.log_message[len('CUSTOM:'):].strip()
             if customMsg.startswith('<'):
                 self.write('<html><body><h3>%s</h3></body></html>' % customMsg)
             else:
@@ -780,12 +779,16 @@ class HomeHandler(BaseHandler):
             # Not authenticated
             self.write(Options['_index_html'])
         else:
-            url = '/'+Options['site_name']+'/index.html' if Options['site_number'] else '/index.html'
-            if sdproxy.proxy_error_status():
-                self.write('Read-only mode; session modifications are disabled. Proceed to <a href="%s">Site Page</a>' % url)
+            index_path = os.path.join(self.site_web_dir, 'index.html')
+            if not os.path.exists(index_path):
+                self.write('No home page found for site %s' % Options['site_name'])
             else:
-                # Authenticated by static file handler, if need be
-                self.redirect(url)
+                url = '/'+Options['site_name']+'/index.html' if Options['site_number'] else '/index.html'
+                if sdproxy.proxy_error_status():
+                    self.write('Read-only mode; session modifications are disabled. Proceed to <a href="%s">Site Page</a>' % url)
+                else:
+                    # Authenticated by static file handler, if need be
+                    self.redirect(url)
 
 class RootActionHandler(BaseHandler):
     def get(self, action='', skip='', subsubpath=''):
@@ -2178,7 +2181,7 @@ class ActionHandler(BaseHandler):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Denied access to site %s to retrieve session %s' % (siteName, sessionName))
 
             src_dir = Options['source_dir'] + '/' + siteName
-            web_dir = Options['static_dir'] + '/' + siteName
+            web_dir = Options['web_dir'] + '/' + siteName
         else:
             src_dir = self.site_src_dir
             web_dir = self.site_web_dir
@@ -2822,7 +2825,7 @@ class ActionHandler(BaseHandler):
                     configOpts['toc_header'] = ind_path
 
             if Options['notebook_extn']:
-                notebooks_dir = Options['static_dir']
+                notebooks_dir = Options['web_dir']
                 if Options['site_name']:
                     notebooks_dir = os.path.join(notebooks_dir, Options['site_name'])
                 notebooks_dir = os.path.join(notebooks_dir, *NOTEBOOKS_PATH.split('/'))
@@ -4733,7 +4736,8 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
             if not userId:
                 # Force login
                 return None
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:Site %s not accessible (%s)' % (Options['site_name'], denyStr))
+
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:<b>Site %s not accessible (%s)<br><a href="/_logout">Logout</a><b>' % (Options['site_name'], denyStr))
 
         if ('/'+PRIVATE_PATH) in self.request.path:
             # Paths containing '/'+PRIVATE_PATH are always protected and used for session-related content
@@ -4793,10 +4797,8 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 self.check_site_access()  # For _private files
             return userId
 
-        if not Options['auth_key']:
-            self.clear_user_cookie()   # Clear any user cookies
-            return "noauth"
-        elif Options['public']:
+        # Not restricted or private files
+        if Options['public_pages'] or Options['auth_type'] == 'none':
             return "noauth"
 
         return userId
@@ -4864,7 +4866,7 @@ class AuthLoginHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, "AuthLoginHandler.get", username, token, usertoken, next, 'devid='+device_id, error_msg
 
-        no_auth_user = Options['no_authentication'] == 'user' and username not in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE)
+        no_auth_user = Options['auth_type'] == 'adminonly' and username not in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE)
         if not error_msg and username and (token or no_auth_user):
             self.login(username, token, next=next)
         else:
@@ -4885,7 +4887,7 @@ class AuthLoginHandler(BaseHandler):
 
     def login(self, username, token, next="/"):
         generateToken = False
-        if token == Options['auth_key'] and (not Options['auth_type'] or Options['no_authentication'] == 'user'):
+        if token == Options['auth_key'] and Options['auth_type'] in ('none', 'adminonly', 'token'):
             # Auth_key token option for admin user
             generateToken = True
 
@@ -4894,7 +4896,7 @@ class AuthLoginHandler(BaseHandler):
             role = sdproxy.ADMIN_ROLE
         elif username == sdproxy.GRADER_ROLE:
             role = sdproxy.GRADER_ROLE
-        elif Options['no_authentication'] == 'user':
+        elif Options['auth_type'] == 'adminonly':
             # Allow no-password access for normal user
             generateToken = True
 
@@ -5100,9 +5102,9 @@ def createApplication():
         # Site server
         home_handlers += [ (pathPrefix+r"/(_shutdown)", RootActionHandler) ]
 
-    if Options['static_dir']:
+    if Options['web_dir']:
         # Maps any path containing .../_docs/... (can be used as /site_name/session_name/_docs/... for session-aware help docs)
-        docs_dir = os.path.join(Options['static_dir'],'_docs')
+        docs_dir = os.path.join(Options['web_dir'],'_docs')
         home_handlers += [ (r"[^_]*/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': docs_dir}) ]
         home_handlers += [ (r"[^_]*/_private/[^_]*/"+DOCS_PATH+"/(.*)", UncachedStaticFileHandler, {'path': docs_dir}) ]
 
@@ -5128,7 +5130,7 @@ def createApplication():
     Global.login_domain = ''
     Global.login_url = '/_auth/login/'
     Global.logout_url = '/_logout'
-    if Options['auth_type']:
+    if ',' in Options['auth_type']:
         Global.login_url = '/_oauth/login'
         comps = Options['auth_type'].split(',')
 
@@ -5151,7 +5153,7 @@ def createApplication():
             auth_handlers += [ (Global.login_url, TwitterLoginHandler) ]
 
         else:
-            raise Exception('sdserver: Invalid auth_type: '+comps[0])
+            raise Exception('sdserver: Invalid login auth_type: '+comps[0])
 
     cookie_secret = sliauth.gen_hmac_token(Options['root_auth_key'], 'cookie:'+COOKIE_VERSION, truncate=sliauth.TRUNCATE_SITE)
     appSettings.update(
@@ -5234,9 +5236,9 @@ def createApplication():
         site_handlers = []
         action_handlers = []
 
-    file_handler = SiteStaticFileHandler if Options['no_authentication'] == 'all' else AuthStaticFileHandler
+    file_handler = SiteStaticFileHandler if Options['auth_type'] == 'none' else AuthStaticFileHandler
 
-    if Options['static_dir']:
+    if Options['web_dir']:
         sprefix = Options['site_name']+'/' if Options['site_name'] else ''
         # Handle special paths
         for path in [FILES_PATH, PRIVATE_PATH, RESTRICTED_PATH, PLUGINDATA_PATH]:
@@ -5245,11 +5247,11 @@ def createApplication():
                     continue
                 dir = Options['plugindata_dir'] + pathPrefix
             else:
-                dir = Options['static_dir'] + pathPrefix
+                dir = Options['web_dir'] + pathPrefix
             site_handlers += [ (r'/%s(%s/.*)' % (sprefix, path), file_handler, {'path': dir}) ]
 
-        # Default static path
-        site_handlers += [ (r'/%s([^_].*)' % sprefix, file_handler, {'path': Options['static_dir']+pathPrefix}) ]
+        # Default web path
+        site_handlers += [ (r'/%s([^_].*)' % sprefix, file_handler, {'path': Options['web_dir']+pathPrefix}) ]
 
     if Options['multisite']:
         if not Options['site_number']:
@@ -6345,7 +6347,7 @@ def get_site_settings(site_name, commandOpts, cmd_arg_set):
     if site_name and commandOpts.dry_proxy_url and 'gsheet_url' not in cmd_arg_set:
         site_settings['gsheet_url'] = commandOpts.dry_proxy_url+'/'+site_name+'/_dryproxy'
 
-    if commandOpts.no_authentication:
+    if commandOpts.auth_type in ('none', 'adminonly'):
         site_settings['no_roster'] = 'yes'
 
     return site_settings_file, site_settings
@@ -6365,7 +6367,7 @@ def main():
 
     define("allow_replies", default=False, help="Allow replies to twitter direct messages")
     define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 20 characters if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
-    define("auth_type", default=Options["auth_type"], help="@example.com|google|twitter,key,secret,,...")
+    define("auth_type", default=Options["auth_type"], help="none|adminonly|token|@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
     define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
     define("config_digest", default="", help="Config file digest (used for secondary server only)")
@@ -6385,14 +6387,13 @@ def main():
     define("missing_choice", default=Options['missing_choice'], help="Missing choice value (default: *)")
     define("multisite", default=False, help="Enable multiple sites")
     define("multi_email_id", default=False, help="Allow multiple ids for same email")
-    define("no_authentication", default='', help="=all/user; no authentication mode (UNSAFE)")
     define("notebook_extn", default=Options["notebook_extn"], help="Extension for notebook/journal files (default: ipynb)")
     define("old_auth_key", default='', help="Old auth_key (for key migration)")
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
     define("proxy_sheet", default=False, help="Use proxy to cache session data")
-    define("public", default=Options["public"], help="Public web site (no login required for home page etc., except for _private/_restricted)")
+    define("public_pages", default=Options["public_pages"], help="Public pages (no login required for home page etc., except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("remote_logging", default=0, help="Remote logging level (0/1/2)")
     define("request_timeout", default=Options["request_timeout"], help="Proxy update request timeout (sec)")
@@ -6414,7 +6415,7 @@ def main():
     define("source_dir", default=Options["source_dir"], help="Path to source files directory (required for edit/upload)")
     define("ssl", default="", help="SSLcertfile,SSLkeyfile")
     define("start_delay", default=0, help="Delay at start (in sec) to cleanly restart for port binding etc.")
-    define("static_dir", default=Options["static_dir"], help="Path to static files directory")
+    define("web_dir", default=Options["web_dir"], help="Path to web files directory")
     define("timezone", default=Options["timezone"], help="Local timezone for date/time values, e.g., US/Central")
     define("twitter_config", default="", help="Twitter stream access info: username,consumer_key,consumer_secret,access_key,access_secret;...")
     define("xsrf", default=False, help="XSRF cookies for security")
@@ -6428,20 +6429,17 @@ def main():
         argname, _, val = arg.lstrip('-').partition('=')
         cmd_arg_set.add(argname)
 
-    if not CommandOpts.auth_key and not CommandOpts.public:
-        sys.exit('Site %s: ERROR: Must specify one of --public or --auth_key=...' % CommandOpts.site_name)
-
     if CommandOpts.server_version and CommandOpts.server_version != sliauth.get_version():
         sys.exit('Site %s: ERROR: Expecting server version %s but found %s' % (CommandOpts.site_name, CommandOpts.server_version, sliauth.get_version()))
 
     if CommandOpts.site_name and CommandOpts.config_digest != Global.config_digest:
         sys.exit('Site %s: ERROR: Config file %s has changed compared to root; start cancelled' % (CommandOpts.site_name, Global.config_file))
 
-    if CommandOpts.no_authentication:
-        if CommandOpts.no_authentication not in ('all', 'user'):
-            sys.exit("ERROR: Invalid option --no_authentication=%s; must be 'all' or 'user'" % CommandOpts.no_authentication)
-        if CommandOpts.auth_type:
-            sys.exit('ERROR: auth_type=... incompatible with --no_authentication=%s' % CommandOpts.no_authentication)
+    if not CommandOpts.auth_type:
+        sys.exit('ERROR: Must specify --auth_type=...; use --auth_type=none if no authentication required')
+
+    if ',' not in CommandOpts.auth_type and CommandOpts.auth_type not in ('none', 'adminonly', 'token'):
+        sys.exit('ERROR: Invalid auth_type=%s; must be none|adminonly|token|@example.com|google|twitter,key,secret,,...')
 
     Global.split_site_opts = {}
     sites = getattr(CommandOpts, 'sites', '')
@@ -6510,17 +6508,20 @@ def main():
             Options[key] = getattr(CommandOpts, key)
 
     if not Options['dry_run'] and not Root_server:
-        if not Options['gsheet_url']:
+        if not Options['gsheet_url'] and Options['auth_type'] != 'none':
             sys.exit('Site %s: ERROR: Must specify gsheet_url for proxied site in config file' % (Options['site_name']))
 
-    if Options['auth_key']:
-        if not CommandOpts.no_authentication and not Options['server_url'].startswith('http://localhost:'):
-            if not Options['auth_key'].isdigit() or len(Options['auth_key']) < 20:
-                sys.exit("ERROR: --auth_key=... must be a number with at least 20 characters (use sliauth.py -g to generate it)")
+    if Options['auth_type'] == 'none':
+        if not Options['auth_key']:
+            Options['auth_key'] = 'testkey'
     else:
-        if CommandOpts.no_authentication != 'all':
+        if not Options['auth_key']:
             sys.exit("ERROR: --auth_key=... must be specified for authentication")
 
+        if not Options['server_url'].startswith('http://localhost:'):
+            if len(Options['auth_key']) < 20:
+                sys.exit("ERROR: --auth_key=... must be a RANDOM string with at least 20 characters (use sliauth.py -g to generate it)")
+                
 
     if not CommandOpts.multisite and CommandOpts.single_site:
         # Single site selected from multisite config
@@ -6532,7 +6533,7 @@ def main():
 
     if Options['server_url'].startswith('http://localhost:'):
         Options['server_nonce'] = ''
-        Options['server_key'] = Options['root_auth_key']
+        Options['server_key'] = Options['root_auth_key'] or 'testkey'
     else:
         if not Options['site_number']:
             Options['server_nonce'] = str(sliauth.gen_random_number())
@@ -6591,8 +6592,7 @@ def main():
         time.tzset()
         print >> sys.stderr, 'sdserver: Timezone =', CommandOpts.timezone
 
-    if CommandOpts.no_authentication:
-        print >> sys.stderr, 'sdserver: ---------- NO AUTHENTICATION (%s) ----------' % CommandOpts.no_authentication
+    print >> sys.stderr, 'sdserver: ---------- AUTHENTICATION %s ----------' % CommandOpts.auth_type.split(',')[0]
 
     if Options['email_addr']:
         print >> sys.stderr, 'sdserver: admin email', Options['email_addr']
@@ -6602,7 +6602,7 @@ def main():
     if Global.config_path:
         print >> sys.stderr, 'sdserver: Config path =', Global.config_path
 
-    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'public', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'public_pages', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_NONCE =', Options['server_nonce']
