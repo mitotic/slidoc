@@ -4730,6 +4730,9 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
             raise tornado.web.HTTPError(404)
 
         if denyStr:
+            if not userId:
+                # Force login
+                return None
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Site %s not accessible (%s)' % (Options['site_name'], denyStr))
 
         if ('/'+PRIVATE_PATH) in self.request.path:

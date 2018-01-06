@@ -3248,7 +3248,7 @@ Slidoc.PluginManager.getLiveResponses = function(qnumber) {
 
 Slidoc.PluginManager.getFileKey = function(filename, teamResponse) {
     if (Sliobj.sessionFileKey) {
-	return Slidoc.genFileKey(Sliobj.sessionFileKey, filename,);
+	return Slidoc.genFileKey(Sliobj.sessionFileKey, filename);
     } else if (teamResponse) {
 	if (Sliobj.teamFileKey)
 	    return Slidoc.genFileKey(Sliobj.teamFileKey, filename);
@@ -5299,7 +5299,7 @@ function defaultDelta(minval, maxval, mincount, maxcount) {
         return 1;
     }
     var minexp = Math.min(exponents[0], exponents[1]);
-    var delta = 10**minexp;
+    var delta = Math.pow(10, minexp);
     var mulfac = 5;
 
     while ((diff/delta) > maxcount) {

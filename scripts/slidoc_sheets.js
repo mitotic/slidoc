@@ -171,6 +171,12 @@ var SKIP_ANSWER = 'skip';
 var LATE_SUBMIT = 'late';
 var FUTURE_DATE = 'future';
 
+// Site access:
+//  adminonly: Only admin/grader has access
+//  adminguest: Only admin/grader and guest users have access
+//  locked: no user modifications permitted
+//  inactive: script access deactivated
+
 var SITE_ADMINONLY = 'adminonly';
 var SITE_ADMINGUEST = 'adminguest';
 var SITE_LOCKED = 'locked';

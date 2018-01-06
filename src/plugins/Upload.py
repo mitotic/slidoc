@@ -5,12 +5,22 @@ Upload plugin
 import datetime
 import os
 import os.path
+import re
 import sys
 
 ADMINUSER_ID = 'admin'
 
 class Upload(object):
+    allowedExtn = set(['.dat', '.doc', '.docx', '.gif', '.json', '.jpeg', 'jpg', '.pdf', '.ppt', '.pptx', '.png', '.txt', '.xls', '.xlsx', '.zip'])
     lateDir = 'Late'
+    QDIR_RE = re.compile(r'^q\d+$')
+    @classmethod
+    def safeName(cls, s, userId=False):
+        if userId:
+            return re.sub(r'[^\w.@-]', '_', s)
+        else:
+            return re.sub(r'[^\w-]', '_', s)
+
     def __init__(self, pluginManager, path, userId, userRole):
         ## print >> sys.stderr, 'Upload.__init__:', path, userId
         self.pluginManager = pluginManager
@@ -47,28 +57,51 @@ class Upload(object):
         return retvals
 
     def _uploadData(self, serverParams, dataParams, contentLength, content=None):
+        # Note: dataParams is under user control, and should be considered untrusted for non-admin users
         print >> sys.stderr, 'Upload._uploadData:', serverParams, dataParams, contentLength, type(content)
-        filePrefix = dataParams.get('filePrefix')
-        if serverParams.get('pastDue') and not filePrefix.startswith(self.lateDir+'/'):
-            raise Exception('Upload._uploadData: ERROR Please use "Late file upload" option in "Submitted" menu past the due date - '+serverParams['pastDue'])
         if content is None:
             raise Exception('Upload._uploadData: ERROR no content')
         if len(content) != contentLength:
             return {'result': 'error', 'error': 'Incorrect data upload: expected '+str(contentLength)+' but received '+str(len(content))+ 'bytes'}
 
-        if not self.pluginManager.adminRole(self.userRole, alsoGrader=True):
+        prefixDir, _, prefixName = dataParams.get('filePrefix').rpartition('/')
+        filePrefix = self.safeName(prefixName)
+
+        if prefixDir:
+            if prefixDir != self.lateDir and not self.QDIR_RE.match(dir):
+                raise Exception('Upload._uploadData: ERROR Disallowed directory prefix '+prefixDir)
+
+            filePrefix = os.path.join(prefixDir, filePrefix)
+
+        if serverParams.get('pastDue') and prefixDir != self.lateDir:
+            raise Exception('Upload._uploadData: ERROR Please use "Late file upload" option in "Submitted" menu past the due date - '+serverParams['pastDue'])
+        temname = dataParams.get('filename','')
+
+        extn = os.path.splitext(temname)[1] or '.dat'  # Enforce non-null file extension for safety
+        if extn == '.ipynb':
+            # Make notebooks not easily openable by user (for security, as they contain executable code)
+            extn = '.json'
+
+        if extn not in self.allowedExtn:
+            raise Exception('Upload._uploadData: ERROR Disallowed file extension in '+temname)
+
+        teamName = self.safeName(dataParams.get('teamName', ''))
+
+        if self.pluginManager.adminRole(self.userRole, alsoGrader=True):
             # Only admin/grader can access other users
-            userId = self.userId
+            userId = self.safeName(dataParams.get('userId', ''), userId=True) or self.userId
         else:
-            userId = dataParams.get('userId') or self.userId
+            # Non-admin; use userId from servver
+            userId = self.userId
+
         try:
-            filename = dataParams.get('teamName') or userId
-            extn = os.path.splitext(dataParams.get('filename',''))[1]
-            filename += (extn or '.dat')   # Enforce non-null extension 
+            # Safe file name: (Late|q1)/sessionName--name-initial--userId.extn
+            filename = teamName or userId   # Note: userId may contain periods; enforce non-null file extension for safety
+            filename += extn
                 
             if filePrefix:
                 filename = filePrefix + '--' +filename
-            filename = filename.replace('..', '') # For file access security
+            filename = filename.replace('..', '') # Redundant (for extra file access security)
 
             # Prepend session name to file path
             filepath = (os.path.splitext(self.path)[0]+'/' if self.path else '') + filename

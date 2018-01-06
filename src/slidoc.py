@@ -2644,7 +2644,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
                 slide_hash.append( sliauth.digest_hex((''.join(slide_lines)).strip()) )
                 break
 
-            if not line.strip() or HTML_COMMENT_RE.match(line) or MathBlockGrammar.slidoc_define.match(line) or MathBlockGrammar.slidoc_header.match(line):
+            if not line.strip() or HTML_COMMENT_RE.match(line) or MathBlockGrammar.slidoc_define.match(line) or MathBlockGrammar.slidoc_header.match(line) or MathBlockGrammar.slidoc_options.match(line):
                 # Blank line (treat HTML comment or Params or slidoc comment line as blank)
                 if prev_blank:
                     # Skip multiple blank lines (for digest computation)

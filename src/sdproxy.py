@@ -98,6 +98,12 @@ COPY_FROM_SERVER = ['auth_key', 'site_name',  'server_url',
                     'debug', 'dry_run', 'email_addr', 'email_url', 'root_users',
                     'lock_proxy_url', 'min_wait_sec', 'request_timeout',]
 
+# Site access:
+#  adminonly: Only admin/grader has access
+#  adminguest: Only admin/grader and guest users have access
+#  locked: no user modifications permitted
+#  inactive: script access deactivated
+
 SITE_ADMINONLY = 'adminonly'
 SITE_ADMINGUEST = 'adminguest'
 SITE_LOCKED = 'locked'
@@ -4504,7 +4510,7 @@ def locateNewRow(newName, newId, nameValues, idValues):
     return len(nameValues)+1
 
 def safeName(s, capitalize=False):
-    s = re.sub(r'[^A-Za-z0-9-]', '_', s)
+    s = re.sub(r'[^\w-]', '_', s)
     return s.capitalize() if capitalize else s
 
 def getDiscussStats(sessionName, userId):

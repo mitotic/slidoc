@@ -46,6 +46,7 @@ Upload = {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
 	if (fileInfo || pluginResp) {
+	    // origName is untrusted content; always display as plain text, not HTML
 	    this.confirmMsgElem.textContent = 'Successfully uploaded '+(fileInfo ? (fileInfo.upload.origName||fileInfo.origName) : (pluginResp.origName||''))+' on '+(new Date(fileInfo ? fileInfo.uploadTime : pluginResp.time)); // fileInfo.origName for backward compatibility
 	    this.confirmLoadElem.href = this.loadPath(fileInfo, pluginResp);
 	} else {
@@ -109,6 +110,9 @@ Upload = {
 	    filename = fileInfo.upload.name;
 	    fileType = fileInfo.upload.fileType;
 	}
+
+	// Sanitize URL as it is untrusted content
+	url = url.replace(/\.\./g, '');
 
 	var loadURL = location.host + Slidoc.PluginManager.sitePrefix + Slidoc.PluginManager.pluginDataPath + '/' + this.name + url;
 
