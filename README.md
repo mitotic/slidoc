@@ -12,8 +12,7 @@ Markdown files are plain text files saved using extension `.md`. They
 can be edited using text editors like Emacs, vi,
 [Atom](https://atom.io/), and
 [StackEdit](https://stackedit.io). Slidoc can publish the Markdown
-files as static HTML files,
-[reveal.js](http://lab.hakim.se/reveal-js/) slideshows and/or
+files as static HTML files and
 [Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/).
 It can also create a table of contents, generate an index, manage
 questions and analyze concept dependencies.
@@ -56,26 +55,58 @@ Tags: Slidoc, design goals; slides, Markdown
 
 ---
 
-## Installation and dependencies
+## Installation
 
-Slidoc has minimal dependencies. All the Slidoc scripts are located in
-the `src` directory. The `templates` sub-directory is also
-needed. Download from [Github](https://github.com/mitotic/slidoc) and
-unzip/untar to install. To test, publish this `README.md` file in a
-temporary directory using the following command:
+*Slidoc* currently works only on Unix-like systems, such as OS X,
+Linux, etc. (A Windows port should not be too difficult, but is not
+currenly a priority.)
+
+To install, download the latest release from
+https://github.com/mitotic/slidoc/releases and unzip/untar it to
+create the `slidoc-version-number` directory containing several
+Python, HTML, CSS, and Javascript files.
+
+To test the installation, create a temporary directory
+`slidoc-version-number/temp` and set that as your working directory:
+
+    cd slidoc-version-number/temp
+
+`src/slidoc.py` is the command line Markdown to HTML converter. To
+test it, type the following terminal command in the `temp`
+directory:
 
     ../src/slidoc.py ../README.md
 
-Open the `README.html` file created by the above command in a browser.
+This will create the file `README.html`. This is a (mostly)
+self-contained HTML file with Javascript embedded for interactivity,
+and can be viewed in a browser.
 
-Slidoc uses [mistune](https://github.com/lepture/mistune) for HTML
-exports, which is included in the `src` directory for
+`slidoc.py` includes a simple web server for displaying HTML ouput,
+and can be invoked using the following terminal command:
+
+    ../src/slidoc.py -p 8082 README.md
+
+This will display the converted version of `README.md` in a browser
+window using the URL `http://localhost:8082`. You can edit `README.md`
+file using any text editor, and the browser display will automatically
+update every time you save the file in the text editor, providing a
+*live preview* of the HTML document.
+
+---
+
+## Dependencies
+
+Slidoc has minimal external dependencies. The HTML converter
+`slidoc.py` uses [mistune](https://github.com/lepture/mistune) for
+HTML exports, which is already included in the `src` directory for
 convenience. Optionally, you may install the `pygments`
 [module](http://pygments.org/) for code highlighting.
 
 HTML documents produced by Slidoc automatically load the
 [Mathjax](https://www.mathjax.org) library to display equations.
+This means that equations will not render without an internet connection.
 
+The server program `sdserver.py` requires the Tornado web server to be installed.
 
 ---
 
@@ -467,14 +498,11 @@ Tags: answers, hiding; answers, stripping
 
 ---
 
-## Converting to Jupyter Notebooks
+## Converting to and from Jupyter Notebooks
 
-Lecture files may be converted to
-[Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/)
-by specifying the `--notebook` option to `slidoc.py`.
-By default, tag lists are stripped during this conversion process.
-
-Alternatively, to simply convert to notebooks, use the `md2nb.py` command:
+Alternatively, to simply convert Slidoc Markdown to
+[Jupyter notebooks](https://jupyter-notebook-beginner-guide.readthedocs.org/en/latest/),
+use the `md2nb.py` command:
 
     md2nb.py ../Lectures/prefix-lecture03.md ../Lectures/prefix-lecture04.md
 
@@ -548,81 +576,6 @@ self-contained HTML document.
 files, and convert all Markdown image references to HTML `<img>` tags.
 
 - `--strip=extensions`: Strip `slidoc`-specific extensions.
-
----
-
-## Viewing slides with reveal.js
-
-Slidoc supports creating slideshows using
-[reveal.js](http://lab.hakim.se/reveal-js/). To enable it, specify
-`--slides=THEME,CODE_THEME,FSIZE,NOTES_PLUGIN` the option. This will
-create a `*-slides.html` file will be created for each source file.
-
-a. `THEME`: Text theme for `reveal.js`, e.g., `black`, `white`, [(more)](http://lab.hakim.se/reveal-js/#/themes)
-
-b. `CODE_THEME`: Code theme for `highlight.js`, e.g., `github`, `zenburn`, [(more)](https://highlightjs.org/static/demo/)
-
-c. `FSIZE`: Font size, e.g., `200%`
-
-d. `NOTES_PLUGIN`: Local directory where the `notes` plugin is
-installed (for presentation mode, see below)
-
-Any of the above can be a null string, or be omitted, e.g. `--slides=,`
-or `--slides=,,190%`
-
-Tags: reveal.js; slideshow, reveal.js
-
-Notes: To customize the presentation further, edit the
-`templates/reveal_template.html` template file.
-
-Notes appear as a vertical slide. The separator `--` may be used to
-split up the notes as multiple slides in the vertical. An alternative
-presentation mode, with two views, is also available. In this case,
-notes are not displayed in the normal view but only displayed in the
-presenter view.
-
----
-
-## reveal.js shortcuts
-
-In a `reveal.js` slideshow, the following keyboard shortcuts may be
-useful:
-
-- `f` to enter fullscreen mode, `ESC` to exit
-
-- `o` to enter outline mode, `ESC` to exit
-
-- `Home` (or `Fn+Left Arrow`) for first slide 
-
-- `End` (or `Fn+Right Arrow`) for last slide 
-
-- `?` to display keyboard shortcuts
-
-Tags: reveal.js, keyboard shortcuts: slideshow, reveal.js
-
----
-
-## reveal.js presentation mode
-
-`reveal.js` has a presentation mode which displays a timer, notes for
-the current slide, as well as a preview of the next slide. This mode
-requires the installation of the notes plugin files in a local
-subdirectory where the contents files are located (symlinking should
-also work).
-
-If the plugin is installed in `reveal.js/plugin/notes`, use the
-command
-
-    slidoc.py --slides=,,,reveal.js/plugin/notes
-
-to generate the slides file.
-
-When viewing slides, type `s` to open a new browser window with the
-presentation mode. Turn off any mirroring of displays. Display the
-standard window on the projected window and the presentation window in
-the desktop/laptop window.
-
-Tags: reveal.js, presentation mode
 
 ---
 
@@ -1110,37 +1063,83 @@ open response question
 ## Linking Slidoc sessions a Google Docs spreadsheet
 
 Slidoc paced sessions may be linked to a Google Docs spreadsheet. The
-spreadhseet will be updated with information for each user such as the
+spreadsheet will be updated with information for each user such as the
 last access time, slides viewed, questions answered etc. To create the
-link, first create a Google Docs spreadsheet, say `sheets101`. Then
-attach the script `scripts/slidoc_sheets.js` to `sheets101` using the
+link, first create a Google Docs spreadsheet, say `course101`. Then
+attach the script `scripts/slidoc_sheets.js` to `course101` using the
 `Tools->Script Editor...` menu item. Complete instructions are
-provided in the comments in `slidoc_sheets.js`.  Additional
-information may also be found in this
-[blog post](http://railsrescue.com/blog/2015-05-28-step-by-step-setup-to-send-form-data-to-google-sheets/).
-After attaching the script, you can use the *Current web app URL* for
-`sheets101` in the command line to generate the HTML documents:
+provided in the initial comments in `slidoc_sheets.js`. You will need
+to specify a secret *authentication key* (`auth_key`) during setup to
+control programmatic access to the spreadsheet. Choose a random
+string, without spaces, for the key. The following command can be used
+to generate a random string:
 
-    slidoc.py --gsheet_url=spreadsheet_url ... 
+    src/sliauth.py -g
+
+After linking the script, you can use the *Current web app URL* for
+`course101`
+
+---
+
+## Slidoc server
+
+`src/sdserver.py` is a server program that implements a basic Learning
+Management System with a Google Docs spreadsheet as the back end
+database. It uses the python
+[Tornado web server](http://tornadoweb.org) framework, which is
+included in many python packages, like Anaconda. If not already
+installed, install it using:
+
+    pip install tornado
+
+To test run `sdserver`, first create the source directory `source` for
+Markdown files and the static directory `web` for web files in the
+`temp` directory:
+
+	mkdir source web
+
+	../src/sdserver.py --source_dir=./source --web_dir=./web --dry_run --dry_run_file_modify --server_url=http://localhost:8899 --auth_type=adminonly --auth_key=testkey
+
+By default, the server listens on domain `localhost` and port `8899`,
+but the port can be changed using the `--port=...` option. The
+`--dry_run...` options enable testing the server without a Google
+Sheets back end.
+
+To administer the web site, login with username `admin` and
+authentication key `testkey`. The `--auth_type=adminonly` option all
+usernames to login without any password.
+
+For help info on all the server options, type:
+
+    ../src/sdserver.py --help
+
+---
+
+## Tracking Slidoc paced sessions without a web server
+
+It is possible to use record user responses to interactive Slidoc
+questions even without a web server, by directly linking Slidoc
+documents to a Google Docs spreadsheet. Use the *Current web app URL*
+for `course101` from the previous step when generating the HTML
+documents:
+
+    slidoc.py --gsheet_url=web_app_url ... 
 
 By default, users will use a unique user name or other identifier
 (such as the email address) when they start a paced session. The
-Google Docs spreadsheet `sheets101` will contain a separate sheet for
+Google Docs spreadsheet `course101` will contain a separate sheet for
 each session, and also an index sheet named `sessions_slidoc`, with
-information about all sessions, including any submission due dates
-(which can be edited). You can also choose to create a `roster_slidoc`
-sheet to restrict user access (see comments in `slidoc_sheets.js` for
-more).  The spreadsheet will display a `Slidoc` menu for managing
-users and analyzing sessions.
+information about all sessions, including any submission due
+dates. You can also choose to create (or upload) a `roster_slidoc`
+sheet to restrict user access. The spreadsheet will display a `Slidoc`
+menu for managing users and analyzing session responses.
 
-When you set up `slidoc_sheets.js`, you have the option of specifying
-a secret Digest Authentication key that you can use to generate login and/or late
-submission tokens. The secret can be any printable character string
-(usually without spaces). If you use a secret key, include it in the
+The authentication key can use to generate login and/or late
+submission tokens. If you use a secret key, include it in the
 `slidoc` command, and use the `sliauth.py` command to generate access
 tokens:
 
-    slidoc.py --gsheet_url=spreadsheet_url --auth_key=digest_auth_key --due_date 2016-05-03T23:59 ...
+    slidoc.py --gsheet_url=web_app_url --auth_key=auth_key --due_date 2016-05-03T23:59 ...
     sliauth.py -a auth_key user_name(s) # For login tokens 
     sliauth.py -a auth_key -s session_name --due_date 2016-05-10T23:59 user_name(s) # For late submission tokens 
 
@@ -1150,29 +1149,7 @@ generate and email login tokens and late submission tokens to users
 submission token `none` to submit late without credit.
 
 Submitted sessions can be graded by logging in with user name `admin`
-and Digest Authentication Key as the token. Change the `gradeDate` entry in the
-`sessions_slidoc` sheet to a non-null date value to release the grades
-to users after completion of grading.
-
-Notes: Instead of token access, you can require users to authenticate using
-their Google account. You will need to create a Web Application attached to your
-Google account, obtain its `ClientID` and `API key` and use it as
-follows:
-
-    slidoc.py --gsheet_url=spreadsheet_url --auth_key=digest_auth_key --google_login=client_id,apiKey ...
-
-[Getting access keys for your application:](https://developers.google.com/api-client-library/javascript/features/authentication#overview)
-To get access keys, go to the
-[Google Developers Console](https://console.developers.google.com/)
-and specify your application's name and the Google APIs it will
-access. For simple access, Google generates an API key that uniquely
-identifies your application in its transactions with the Google Auth
-server.
-
-For authorized access, you must also tell Google your website's
-protocol and domain. In return, Google generates a client ID. Your
-application submits this to the Google Auth server to get an OAuth 2.0
-access token.
+and the authentication key as the token.
 
 Tags: google docs: due date; login token; late submission token
 
@@ -1180,7 +1157,8 @@ Tags: google docs: due date; login token; late submission token
 
 ## Embed Jupyter Notebook
 
-A Jupyter Notebook can be embedded in a slide. To enable that, copy
+Since `Slidoc` generates self-contained HTML files, it is possible to
+embed a Jupyter Notebook within a slide. To test that, copy
 the `Slidoc`-generated `README.html` version of this file to a
 subdirectory `files` of the notebook server working directory. The
 start the server as follows:
@@ -1190,8 +1168,90 @@ start the server as follows:
 The notebook server will then statically serve the HTML file from the
 following link: `http://localhost:8888/static/README.html`
 
-Within the slide, include the following `iframe` HTML element:
+To display the notebook `Untitled.ipyb` (say), edit this slide to
+include the following `iframe` HTML element:
 
-    <iframe src="http://localhost:8888/notebooks/README.ipynb" style="width:720px; height:600px;"></iframe>
+    <iframe src="http://localhost:8888/notebooks/Untitled.ipynb" style="width:720px; height:600px;"></iframe>
+
+(just unindenting the above line should do it)
 
 Tags: notebook, embed
+
+---
+
+## Viewing slides with reveal.js
+
+*Note: Support for `reveal.js` may not be current, since the Slidoc
+slide view automatically supports many slide show features.*
+
+Slidoc supports creating slideshows using
+[reveal.js](http://lab.hakim.se/reveal-js/). To enable it, specify
+`--slides=THEME,CODE_THEME,FSIZE,NOTES_PLUGIN` the option. This will
+create a `*-slides.html` file will be created for each source file.
+
+a. `THEME`: Text theme for `reveal.js`, e.g., `black`, `white`, [(more)](http://lab.hakim.se/reveal-js/#/themes)
+
+b. `CODE_THEME`: Code theme for `highlight.js`, e.g., `github`, `zenburn`, [(more)](https://highlightjs.org/static/demo/)
+
+c. `FSIZE`: Font size, e.g., `200%`
+
+d. `NOTES_PLUGIN`: Local directory where the `notes` plugin is
+installed (for presentation mode, see below)
+
+Any of the above can be a null string, or be omitted, e.g. `--slides=,`
+or `--slides=,,190%`
+
+Tags: reveal.js; slideshow, reveal.js
+
+Notes: To customize the presentation further, edit the
+`templates/reveal_template.html` template file.
+
+Notes appear as a vertical slide. The separator `--` may be used to
+split up the notes as multiple slides in the vertical. An alternative
+presentation mode, with two views, is also available. In this case,
+notes are not displayed in the normal view but only displayed in the
+presenter view.
+
+---
+
+## reveal.js shortcuts
+
+In a `reveal.js` slideshow, the following keyboard shortcuts may be
+useful:
+
+- `f` to enter fullscreen mode, `ESC` to exit
+
+- `o` to enter outline mode, `ESC` to exit
+
+- `Home` (or `Fn+Left Arrow`) for first slide 
+
+- `End` (or `Fn+Right Arrow`) for last slide 
+
+- `?` to display keyboard shortcuts
+
+Tags: reveal.js, keyboard shortcuts: slideshow, reveal.js
+
+---
+
+## reveal.js presentation mode
+
+`reveal.js` has a presentation mode which displays a timer, notes for
+the current slide, as well as a preview of the next slide. This mode
+requires the installation of the notes plugin files in a local
+subdirectory where the contents files are located (symlinking should
+also work).
+
+If the plugin is installed in `reveal.js/plugin/notes`, use the
+command
+
+    slidoc.py --slides=,,,reveal.js/plugin/notes
+
+to generate the slides file.
+
+When viewing slides, type `s` to open a new browser window with the
+presentation mode. Turn off any mirroring of displays. Display the
+standard window on the projected window and the presentation window in
+the desktop/laptop window.
+
+Tags: reveal.js, presentation mode
+

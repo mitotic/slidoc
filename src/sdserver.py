@@ -6,7 +6,7 @@ sdserver: Tornado-based web server to serve Slidoc html files (with authenticati
           - Can be used as a simple static file server (with authentication), AND
           - As a proxy server that handles spreadsheet operations on cached data and copies them to Google sheets
 
-        Use 'sdserver.py --proxy_sheet --gsheet_url=...' and
+        Use 'sdserver.py --gsheet_url=...' and
             'slidoc.py --gsheet_url=... --proxy_url=/_websocket/ ...' to proxy user calls to Google sheet (but not slidoc.py setup calls, which are still directed to gsheet_url)
         Can specify 'slidoc.py --gsheet_url=http:/hostname/_proxy/ --proxy_url=/_websocket/ ...' to re-direct session setup calls to proxy as well.
 
@@ -113,7 +113,6 @@ Options = {
     'plugindata_dir': 'plugindata',
     'port': 8899,
     'private_port': 8900,
-    'proxy_sheet': False,
     'public_pages': False,
     'reload': False,
     'request_timeout': 60,
@@ -5164,7 +5163,7 @@ def createApplication():
         debug=Options['debug'],
     )
 
-    if Options['proxy_sheet'] and not Root_server:
+    if Options['auth_type'] != 'none' and not Root_server:
         site_handlers = [
                       (pathPrefix+r"/(_proxy)", ProxyHandler),
                       (pathPrefix+r"/(_dryproxy)", ProxyHandler),
@@ -6278,7 +6277,7 @@ def update_session_settings(site_settings):
 
 def site_server_setup():
     # For single or secondary server
-    if Options['proxy_sheet']:
+    if Options['auth_type'] != 'none':
         # Copy server options to proxy
         sdproxy.copyServerOptions(Options)
 
@@ -6392,7 +6391,6 @@ def main():
     define("plugindata_dir", default=Options["plugindata_dir"], help="Path to plugin data files directory")
     define("plugins", default="", help="List of plugin paths (comma separated)")
     define("private_port", default=Options["private_port"], help="Base private port for multiproxy)")
-    define("proxy_sheet", default=False, help="Use proxy to cache session data")
     define("public_pages", default=Options["public_pages"], help="Public pages (no login required for home page etc., except for _private/_restricted)")
     define("reload", default=False, help="Enable autoreload mode (for updates)")
     define("remote_logging", default=0, help="Remote logging level (0/1/2)")
