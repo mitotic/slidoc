@@ -1,4 +1,4 @@
-Slidoc: features=equation_number,incremental_slides
+<!-- Slidoc: features=equation_number,incremental_slides -->
 
 # Slidoc: A slide-oriented document management system using Markdown
 
