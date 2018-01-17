@@ -3584,7 +3584,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     pagedown_load = False
     skulpt_load = False
     flist = []
-    paced_files = {}
+    file_props = {}
+    paced_files = set()
     admin_due_date = {}
     out_index = {}
     for j, fnumber in enumerate(fnumbers):
@@ -3936,8 +3937,9 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             update_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields, row=max_score_fields, modify=modify_col)
             update_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
 
+        doc_desc = []
         if js_params['paceLevel']:
-            # Additional info for paced files
+            paced_files.add(fname)
             if gd_sheet_url:
                 if js_params['gradeWeight']:
                     file_type = 'graded'
@@ -3946,32 +3948,36 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             else:
                 file_type = 'paced'
 
-            doc_str = file_type + ' exercise'
-            iso_release_str = '-'
+            doc_desc.append(file_type + ' exercise')
+        else:
+            file_type = ''
 
-            if release_date_str == sliauth.FUTURE_DATE or (not release_date_str and config.start_date and restricted_sessions_re and restricted_sessions_re.search(fname)):
-                # Future release date or restricted session with start date but no release date
-                doc_str += ', UNRELEASED'
-                iso_release_str = release_date_str
-            elif release_date_str:
-                release_date = sliauth.parse_date(release_date_str)
-                iso_release_str = sliauth.iso_date(release_date)
-                if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
-                    # Module not yet released
-                    doc_str += ', available ' + sliauth.print_date(release_date, weekday=True, prefix_time=True)
+        iso_release_str = '-'
+        if release_date_str == sliauth.FUTURE_DATE or (not release_date_str and config.start_date and restricted_sessions_re and restricted_sessions_re.search(fname)):
+            # Future release date or restricted session with start date but no release date
+            doc_desc.append('UNRELEASED')
+            iso_release_str = release_date_str
+        elif release_date_str:
+            release_date = sliauth.parse_date(release_date_str)
+            iso_release_str = sliauth.iso_date(release_date)
+            if sliauth.epoch_ms(release_date) > sliauth.epoch_ms():
+                # Module not yet released
+                doc_desc.append('available ' + sliauth.print_date(release_date, weekday=True, prefix_time=True))
 
+        iso_due_str = '-'
+        if js_params['paceLevel']:
+            # Additional info for paced files
             admin_ended = bool(admin_due_date.get(fname))
             doc_date_str = admin_due_date[fname] if admin_ended else due_date_str
-            iso_due_str = '-'
             if doc_date_str:
                 date_time = doc_date_str if isinstance(doc_date_str, datetime.datetime) else sliauth.parse_date(doc_date_str)
                 if admin_ended:
-                    doc_str += ', ended '+sliauth.print_date(date_time)
+                    doc_desc.append('ended '+sliauth.print_date(date_time))
                 else:
-                    doc_str += ', due '+sliauth.print_date(date_time, prefix_time=True)
+                    doc_desc.append('due '+sliauth.print_date(date_time, prefix_time=True))
                     iso_due_str = sliauth.iso_date(date_time)
 
-            paced_files[fname] = {'type': file_type, 'release_date': iso_release_str, 'due_date': iso_due_str, 'doc_str': doc_str}
+        file_props[fname] = {'type': file_type, 'release_date': iso_release_str, 'due_date': iso_due_str, 'doc_str': ', '.join(doc_desc) or 'view'}
 
         if config.dry_run and not return_html:
             message("Indexed ", outname+":", fheader)
@@ -3998,10 +4004,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
                 pre_html = file_head_html + plugin_heads(tem_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment
-                if js_params['paceLevel']:
-                    index_entries = [fname, fheader, paced_files[fname]['doc_str'], paced_files[fname]['due_date'] or '-', paced_files[fname]['release_date'] or '-']
-                else:
-                    index_entries = [fname, fheader, 'view', due_date_str or '-', release_date_str or '-']
+                index_entries = [fname, fheader, file_props[fname]['doc_str'], file_props[fname]['due_date'] or '-', file_props[fname]['release_date'] or '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
                 index_dict = {'md_digest': md_params['md_digest'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
                               'md_images': md_params['md_images'], 'new_image_number': md_params['new_image_number']}
@@ -4146,7 +4149,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     nb_link = ' (<a href="%s%s%s.ipynb" class="slidoc-clickable">%s</a>)' % (md2nb.Nb_convert_url_prefix, nb_server_url[len('http://'):], fname, 'notebook')
 
                 if fname in paced_files:
-                    doc_link = nav_link(paced_files[fname]['doc_str'], config.server_url, outname, target='_blank', separate=True)
+                    doc_link = nav_link(file_props[fname]['doc_str'], config.server_url, outname, target='_blank', separate=True)
                     toggle_link = '<span id="slidoc-toc-chapters-toggle" class="slidoc-toc-chapters">%s</span>' % (fheader,)
                     if test_params:
                         for label, query, proxy_query in test_params:
