@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21e';
+var VERSION = '0.97.21g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -2216,7 +2216,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 	var proxyActions    = updateParams.actions || '';
 	var modifiedHeaders = updateParams.modifiedHeaders || '';
 
-	var debugMsg = 'updateSheet: actions, modHeaders, headers, updateAllKeys, insertNames, updatecols, ninserts, nupdates: '+updateSheetName+', '+proxyActions+', '+modifiedHeaders+', '+updateHeaders+', '+(updateAllKeys?updateAllKeys.length:0)+', '+updateInsertNames+', '+updateCols+', '+updateInsertRows.length+', '+updateRows.length;
+	var debugMsg = 'updateSheetDebug: sheet='+updateSheetName+', actions='+proxyActions+', modHeaders='+modifiedHeaders+', headers='+updateHeaders+', nUpdateAllKeys='+(updateAllKeys?updateAllKeys.length:0)+', insertNames='+updateInsertNames+', cols='+updateCols+', ninserts='+updateInsertRows.length+', nupdates='+updateRows.length;
 	trackCall(2, debugMsg);
 	//returnMessages.push(debugMsg);
 
@@ -2318,7 +2318,8 @@ function handleProxyUpdates(data, create, returnMessages) {
 			    }
 			}
 		    }
-		    updateSheet.getRange(rowNums[0], 1, nUpdateRows, nUpdateCols).setValues(rowSel);
+		    if (rowNums.length)
+			updateSheet.getRange(rowNums[0], 1, nUpdateRows, nUpdateCols).setValues(rowSel);
 		}
 
 	    } else {
@@ -2650,7 +2651,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 	} catch(err) {
 	    var errMsg = ''+err;
 	    ///if (errMsg.match(/^Error:PROXY_/))
-	    updateErrors.push([updateSheetName, errMsg, ''+(err.stack||'')]);
+	    updateErrors.push([updateSheetName, errMsg, ''+(err.stack||''), debugMsg]);
 	    ///else
 	    ///throw(errMsg);
 	}

@@ -4420,8 +4420,8 @@ def write_doc(path, head, tail):
     md2md.write_file(path, Html_header, head, tail, Html_footer)
 
 def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict={}, exclude_args=set(), include_args=set(), verbose=False):
-    # Process file args and merge with command line args, with command line args being final
-    # If default_args_dict is specified, it is updated with file args
+    # Process file line args and merge with command line args, with command line args being final
+    # If default_args_dict is specified, it is updated (overridden) with file line args
     args_text = args_text.strip().replace('\n', ' ')
 
     try:
@@ -4446,14 +4446,17 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
     except Exception, excp:
         abort('slidoc: ERROR in parsing command options in first line of %s: %s' % (source, excp))
 
+    # Process arguments specified in file line or defaults
+    arg_names = set(line_args_dict.keys()).union( set(default_args_dict.keys()) )
     merged_args_dict = {}
-    for arg_name in line_args_dict:
-        if line_args_dict[arg_name] is None:
-            # Merge default value for unspecified arg
+    for arg_name in arg_names:
+        line_arg_value = line_args_dict.get(arg_name)
+        if line_arg_value is None:
+            # Merge default value for arg not specified in file line
             merged_args_dict[arg_name] = default_args_dict.get(arg_name)
         else:
-            # Use arg from line
-            merged_args_dict[arg_name] = line_args_dict[arg_name]
+            # Use arg from file line
+            merged_args_dict[arg_name] = line_arg_value
 
         if arg_name == 'features':
             # Convert feature string to set

@@ -1702,8 +1702,8 @@ class ProxyUpdater(object):
             refreshNeeded.append(sheetName)
             refreshSheet(sheetName)
 
-        for errSessionName, proxyErrMsg, proxyErrTrace in respObj['info'].get('updateErrors',[]):
-            temMsg = 'Update LOCKED %s: %s %s' % (errSessionName, proxyErrMsg, proxyErrTrace)
+        for errSessionName, proxyErrMsg, proxyErrTrace, proxyDebugMsg in respObj['info'].get('updateErrors',[]):
+            temMsg = 'Update LOCKED %s: %s \n%s\n%s\n' % (errSessionName, proxyErrMsg, proxyErrTrace, proxyDebugMsg)
             if errSessionName not in Lock_cache:
                 Lock_cache[errSessionName] = proxyErrMsg
                 notify_admin(temMsg)
@@ -4419,7 +4419,10 @@ def getColumns(header, sheet, colCount=1, startRow=2):
         return sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, colCount)
     else:
         # Single column
-        vals = sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, 1)
+        if sheet.getLastRow() < startRow:
+            vals = []
+        else:
+            vals = sheet.getSheetValues(startRow, colIndex[header], sheet.getLastRow()-startRow+1, 1)
         retvals = []
         for val in vals:
             retvals.append(val[0])

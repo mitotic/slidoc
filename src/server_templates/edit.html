@@ -79,6 +79,19 @@ function openWin(url, name) {
    return win;
 }
 
+function scrollTextArea(areaElem, top) {
+    setTimeout(function() {
+	if (top) {
+	    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
+	    areaElem.scrollIntoView(true);
+	} else {
+	    areaElem.scrollTop = areaElem.scrollHeight;
+	    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
+	}
+	areaElem.focus();
+    }, 200);
+}
+
 document.onkeydown = function(evt) {
    if ((evt.keyCode == 10 || evt.keyCode == 13) && evt.ctrlKey) {
       evt.stopPropagation();
@@ -89,8 +102,11 @@ document.onkeydown = function(evt) {
    if ((evt.keyCode == 10 || evt.keyCode == 13) && evt.altKey) {
       evt.stopPropagation();
       evt.preventDefault();
-      if (PreviewWin && PreviewWin.Slidoc && PreviewWin.Slidoc.imageLink)
-         document.getElementById('sessiontext').value += '\n\n' + PreviewWin.Slidoc.imageLink;
+      if (PreviewWin && PreviewWin.Slidoc && PreviewWin.Slidoc.imageLink) {
+         var textarea = document.getElementById('sessiontext');
+         textarea.value += '\n\n' + PreviewWin.Slidoc.imageLink;
+         scrollTextArea(textarea);
+      }
       return false;
    }
 }

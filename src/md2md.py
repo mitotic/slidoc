@@ -99,7 +99,7 @@ def quote_pad_title(title, parentheses=False):
         return " ("+title+")"
     return ''
 
-Attr_re_format = r'''\s%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
+Attr_re_format = r'''\b%s=([^'"\s]+|'[^'\n]*'|"[^"\n]*")'''
 
 def get_html_tag_attr(attr_name, tag_text):
     match = re.search(Attr_re_format % attr_name, tag_text)
@@ -111,21 +111,28 @@ def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
     style = ''
     classList = classes[:]
     if title:
-        for attr in shlex.split(title):
+        titlecomps = []
+        for attrval in shlex.split(title):
+            attr, _, value = attrval.partition('=')
+            if value.startswith('"'):
+                value = value.strip('"')
+            if value.startswith("'"):
+                value = value.strip("'")
+
             if attr.startswith('.'):
                 classList.append(attr[1:])
-                title = title.replace(attr, '')
-        for attr in ('align', 'height', 'width'):
-            value = get_html_tag_attr(attr, ' '+title)
-            if value:
+            elif attr in ('height', 'width'):
                 attrs += ' ' + attr + '=' + value
-                title = re.sub(Attr_re_format % attr, '', title)
-        for attr in ('crop',):
-            value = get_html_tag_attr(attr, ' '+title)
-            if value:
-                if attr == 'crop':
+            elif attr == 'crop':
+                if value:
                     style += 'object-fit:cover;object-position:' + ' '.join(value.strip().split(',')) + ';'
-                title = re.sub(Attr_re_format % attr, '', title)
+            elif attr.startswith('css-'):
+                if value:
+                    style += attr.partition('-')[-1] + ':' + value + ';'
+            else:
+                titlecomps.append(attrval)
+
+        title = ' '.join(titlecomps)
         if title.strip():
             attrs += ' title="' + mistune.escape(title.strip(), quote=True) + '"'
         if style:

@@ -935,10 +935,10 @@ function handleImageDrop(evt) {
 		imageElem.src = imageElem.src;
 	    } else {
 		// Display uploadable image
-		var imagePath = '_images/'+result.imageFile;
-		Slidoc.imageLink = '![' + imageHead + '](' + imagePath + ')';
+		var relPath = '_images/'+result.imageFile;
+		Slidoc.imageLink = '![' + imageHead + '](' + relPath + ')';
 
-		imagePath = Sliobj.params.fileName + imagePath
+		var imagePath = Sliobj.params.fileName + relPath;
 		if (!Sliobj.previewState) {
 		    imagePath = '/_preview/'+imagePath;
 		    if (Sliobj.params.siteName)
@@ -951,12 +951,10 @@ function handleImageDrop(evt) {
 		dropParent.appendChild(newImg);
 		addImageDropHandlers(newImg);
 
-		var newLabel = document.createElement('code');
+		var newLabel = document.createElement('pre');
 		newLabel.className = 'slidoc-imgupload-imglink';
-		newLabel.textContent = Slidoc.imageLink
+		newLabel.textContent = Slidoc.imageLink + '\n\n<img src="' + imagePath + '">\n';
 		dropParent.appendChild(newLabel);
-
-		dropParent.appendChild(document.createElement('br'));
 
 		// Append image link to edit textarea (if present)
 		if (slideId) {
@@ -3945,6 +3943,7 @@ function userProfileCallback(userId, result, retStatus) {
     Slidoc.log('userProfileCallback:', userId, result, retStatus);
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
+    var userRole = getUserRole(true);
     var html = '<b>Profile</b><p></p>';
     html += 'User: <b>'+userId+'</b>';
     html += '&nbsp;&nbsp;&nbsp;(<span class="slidoc-clickable" onclick="Slidoc.userLogout();">Logout</span>)<hr>';
@@ -3957,9 +3956,10 @@ function userProfileCallback(userId, result, retStatus) {
 	    html += 'Name: '+escapeHtml(Sliobj.session.displayName);
 	if (Sliobj.session.email)
 	    html += ' ('+escapeHtml(Sliobj.session.email)+')';
+	if (userRole)
+	    html += '<br>Twitter: (<span class="slidoc-clickable" onclick="Slidoc.linkTwitter();">Temporary link</span>)\n';
 	html += '<br>\n';
     }
-    var userRole = getUserRole(true);
     if (userRole)
 	html += 'Role: '+userRole+' (<a class="slidoc-clickable"  href="'+Sliobj.sitePrefix+'/_user_plain">Revert to plain/guest user</a>)<br>\n';
 
