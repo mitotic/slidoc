@@ -137,6 +137,7 @@ DISCUSS_ID = '_discuss'
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
 STATUS_HEADER = 'status'
+TWITTER_HEADER = 'twitter'
 GRADE_HEADERS = ['total', 'grade', 'numGrade']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
 
@@ -2160,7 +2161,7 @@ def sheetAction(params, notrace=False):
                 if selectedUpdates[1][0] == 'submitTimestamp':
                     alterSubmission = True
 
-                if selectedUpdates[1][0] == 'twitter' and sheetName == ROSTER_SHEET:
+                if selectedUpdates[1][0] == TWITTER_HEADER and sheetName == ROSTER_SHEET:
                     twitterSetting = True
 
             if not adminUser and selectedUpdates and not voteSubmission and not discussionPost and not twitterSetting:
@@ -4024,7 +4025,7 @@ def importSheet(sheetName, headers, rows, overwrite=None):
         ## Expire sheet to force re-read from update remote cache (essential if sheet contains formulas) NOT NEEDED ANYMORE
         ## newSheet.expire()
 
-def createRoster(headers, rows):
+def createRoster(headers, rows, overwrite=False):
     if headers[:4] != MIN_HEADERS:
         raise Exception('Error: Invalid headers for roster_slidoc; first four should be "'+', '.join(MIN_HEADERS)+'", but found "'+', '.join(headers or [])+'"')
 
@@ -4056,9 +4057,9 @@ def createRoster(headers, rows):
     rosterRows.insert(0, test_user_row)
     rosterRows.sort()
     rosterSheet = getSheet(ROSTER_SHEET)
-    if rosterSheet:
-        raise Exception('Roster sheet already present; delete it before importing')
-    return createSheet(ROSTER_SHEET, headers, rows=rosterRows)
+    if rosterSheet and not overwrite:
+        raise Exception('Roster sheet already present; specify overwrite during import')
+    return createSheet(ROSTER_SHEET, headers, overwrite=overwrite, rows=rosterRows)
         
 def getRowMap(sheetName, colName, regular=False, startRow=2):
     # Return dict of id->value in sheet (if regular, only for names defined and not starting with #)

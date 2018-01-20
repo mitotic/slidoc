@@ -1495,10 +1495,11 @@ class ActionHandler(BaseHandler):
                         selected_day=selectedDay, attendance_info=attendanceInfo, recent=recent)
 
         elif action in ('_roster',):
+            overwrite = self.get_argument('overwrite', '')
             nameMap = sdproxy.lookupRoster('name', userId=None)
-            if not nameMap:
+            if not nameMap or overwrite:
                 lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
-                self.render('newroster.html', site_name=Options['site_name'],
+                self.render('newroster.html', site_name=Options['site_name'], overwrite=overwrite,
                              lastname_col=lastname_col, firstname_col=firstname_col, midname_col=midname_col,
                              id_col=id_col, email_col=email_col, altid_col=altid_col)
             else:
@@ -2383,13 +2384,14 @@ class ActionHandler(BaseHandler):
                         self.displayMessage(errMsg+'\n')
 
                 elif action == '_roster':
+                    overwrite = self.get_argument('overwrite', '')
                     lastname_col = self.get_argument('lastnamecol','').strip().lower() 
                     firstname_col = self.get_argument('firstnamecol','').strip().lower() 
                     midname_col = self.get_argument('midnamecol','').strip().lower() 
                     id_col = self.get_argument('idcol','').strip().lower() 
                     email_col = self.get_argument('emailcol','').strip().lower() 
                     altid_col = self.get_argument('altidcol','').strip().lower() 
-                    errMsg = importRoster(fname, uploadedFile, lastname_col=lastname_col, firstname_col=firstname_col,
+                    errMsg = importRoster(fname, uploadedFile, overwrite=overwrite, lastname_col=lastname_col, firstname_col=firstname_col,
                                            midname_col=midname_col, id_col=id_col, email_col=email_col, altid_col=altid_col)
                     if not errMsg:
                         self.displayMessage('Imported roster from '+fname)
@@ -3743,7 +3745,7 @@ class UserActionHandler(ActionHandler):
             print >> sys.stderr, 'DEBUG: twitter_link:', twitterName, userId
 
         try:
-            twitterVals = getColumns('twitter', sdproxy.getSheet(sdproxy.ROSTER_SHEET))
+            twitterVals = getColumns(sdproxy.TWITTER_HEADER, sdproxy.getSheet(sdproxy.ROSTER_SHEET))
             if twitterName in twitterVals:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Twitter name %s already linked' % twitterName)
         except tornado.web.HTTPError:
@@ -3832,7 +3834,7 @@ class UserActionHandler(ActionHandler):
             if retval.get('values'):
                 rosterHeaders = retval.get('headers')
 
-                if 'twitter' not in rosterHeaders:
+                if sdproxy.TWITTER_HEADER not in rosterHeaders:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:No twitter column in roster')
 
                 updateObj = {'id': userId, 'twitter': twitterName}
@@ -5340,7 +5342,7 @@ def processTwitterMessage(msg):
         status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter', adminBroadcast=True)
 
     elif rosterSheet:
-        idMap = sdproxy.makeRosterMap('twitter', lowercase=True)
+        idMap = sdproxy.makeRosterMap(sdproxy.TWITTER_HEADER, lowercase=True)
         userId = idMap.get(fromUser.lower())
         if not userId:
             userId = Global.twitterSpecial.get(fromUser.lower())
@@ -5387,7 +5389,7 @@ def restoreSheet(sheetName, filepath, csvfile, overwrite=None):
             traceback.print_exc()
         return 'Error in restoreSheet: '+str(excp)
 
-def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_col='',
+def importRoster(filepath, csvfile, overwrite=False, lastname_col='', firstname_col='', midname_col='',
                  id_col='', email_col='', altid_col=''):
     try:
         ##dialect = csv.Sniffer().sniff(csvfile.read(1024))
@@ -5447,9 +5449,8 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
         if not idCol and not emailCol:
             raise Exception('ID column %s not found in CSV file %s' % (id_col, filepath))
 
-        rosterHeaders = ['name', 'id', 'email', 'altid']
-        if twitterCol:
-            rosterHeaders.append('twitter')
+        rosterHeaders = sdproxy.MIN_HEADERS + [sdproxy.STATUS_HEADER, sdproxy.TWITTER_HEADER]
+        rosterTwitterCol = 1 + rosterHeaders.index(sdproxy.TWITTER_HEADER)
         rosterRows = []
         singleDomain = None
 
@@ -5481,9 +5482,9 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
             elif not sdproxy.USERID_RE.match(userId) or '--' in userId:
                 raise Exception("Invalid character sequence in userId '%s'; only digits/letters/hyphen/periods/at-symbols are allowed" % userId)
 
-            rosterRow = [name, userId, email, altid]
+            rosterRow = [name, userId, email, altid] + ['']*(len(rosterHeaders)-4)
             if twitterCol:
-                rosterRow.append(row[twitterCol-1] if twitterCol else '')
+                rosterRow[rosterTwitterCol-1] = row[twitterCol-1]
             rosterRows.append(rosterRow)
 
         if (not idCol or idCol == emailCol) and singleDomain:
@@ -5494,7 +5495,7 @@ def importRoster(filepath, csvfile, lastname_col='', firstname_col='', midname_c
                 if rosterRows[j][1].endswith(endStr):
                     rosterRows[j][1] = rosterRows[j][1][:-endLen]
 
-        sdproxy.createRoster(rosterHeaders, rosterRows)
+        sdproxy.createRoster(rosterHeaders, rosterRows, overwrite=overwrite)
         return ''
 
     except Exception, excp:
@@ -5601,7 +5602,7 @@ def importAnswers(sessionName, filepath, csvfile, importParams, submitDate=''):
         keyMap = sdproxy.makeRosterMap(importParams['importKey'], lowercase=True, unique=True)
         if not keyMap:
             raise Exception('Key column %s not found in roster for import' % importParams['importKey'])
-        if importParams['importKey'] == 'twitter':
+        if importParams['importKey'] == sdproxy.TWITTER_HEADER:
             # Special case of test user; not really Twitter ID
             keyMap[sdproxy.TESTUSER_ID] = sdproxy.TESTUSER_ID
 

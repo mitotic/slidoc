@@ -146,6 +146,7 @@ var DISCUSS_ID = '_discuss';
 
 var MIN_HEADERS = ['name', 'id', 'email', 'altid'];
 var STATUS_HEADER = 'status';
+var TWITTER_HEADER = 'twitter';
 var GRADE_HEADERS = ['total', 'grade', 'numGrade'];
 var COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes'];
 
@@ -1042,7 +1043,7 @@ function sheetAction(params) {
 		if (selectedUpdates[1][0] == 'submitTimestamp')
 		    alterSubmission = true;
 
-		if (selectedUpdates[1][0] == 'twitter' && sheetName == ROSTER_SHEET)
+		if (selectedUpdates[1][0] == TWITTER_HEADER && sheetName == ROSTER_SHEET)
 		    twitterSetting = true;
 	    }
 

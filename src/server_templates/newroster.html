@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- newroster template for slidoc server --->
-<!-- newroster parameters: site_name, lastname_col, firstname_col, midname_col, id_col, email_col, altid_col -->
+<!-- newroster parameters: site_name, overwrite, lastname_col, firstname_col, midname_col, id_col, email_col, altid_col -->
 
 {% include "base.html" %}
 
@@ -45,6 +45,9 @@
       be unique (unless they are to be used for importing answers etc.)
     </fieldset>
     {% module xsrf_form_html() %}
+      <p></p>
+      <label for="overwrite">Overwrite?</label>
+      <input type="checkbox" id="overwrite" name="overwrite" {{'checked' if overwrite else ''}} value="{{overwrite}}">
     <div>
       <input id="slidoc-roster-submit" type="submit" value="Import">
     </div>

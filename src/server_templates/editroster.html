@@ -28,7 +28,7 @@
       <label>Alternate Id: <input type="text" name="altid" value="{{values[3]}}"></label><br>
       <hr>
     {% for j, header in enumerate(headers[4:]) %}
-      <label>{{header}}: <input type="text" name="altid" value="{{values[4+j]}}"></label><br>
+      <label>{{header}}: <input type="text" name="{{header}}" value="{{values[4+j]}}"></label><br>
     {% end %}
     <hr>
       <label><em>Edit</em>: <input type="checkbox" {{'checked' if edit else ''}} name="edit" value="edit"></label>
