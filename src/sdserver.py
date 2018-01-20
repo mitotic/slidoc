@@ -1334,6 +1334,12 @@ class ActionHandler(BaseHandler):
                     self.displayMessage('Already previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
                     return
 
+            elif action == '_downloadpreview':
+                if not previewingSession:
+                    self.displayMessage('Not previewing any session')
+                    return
+                return self.downloadPreview()
+
             elif action == '_accept':
                 if not Options['source_dir']:
                     raise tornado.web.HTTPError(403, log_message='CUSTOM:Must specify source_dir to upload')
@@ -1411,7 +1417,7 @@ class ActionHandler(BaseHandler):
             upload_key = sliauth.gen_hmac_token(Options['auth_key'], 'upload:')
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'],
                         site_title=Options['site_title'], site_access=sdproxy.Settings['site_access'],
-                        version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession(),
+                        version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession()[0],
                         admin_users=Options['admin_users'], grader_users=Options['grader_users'], guest_users=Options['guest_users'],
                         start_date=sliauth.print_date(Options['start_date'],not_now=True),
                         lock_date=sliauth.print_date(sdproxy.Settings['lock_date'],not_now=True),
@@ -2996,6 +3002,40 @@ class ActionHandler(BaseHandler):
                 f.write(zfile.read(name))
             
 
+    def downloadPreview(self):
+        if not self.previewState:
+            raise tornado.web.HTTPError(403, log_message='CUSTOM:No preview state to download')
+
+        sessionName = self.previewState['name']
+
+        if Options['debug']:
+            print >> sys.stderr, 'ActionHandler:downloadPreview', sessionName, self.previewState['type']
+
+        if self.previewState['image_zipfile']:
+            # Create zip archive with Markdown file and images
+            stream = io.BytesIO()
+            zfile = zipfile.ZipFile(stream, 'w')
+            zfile.writestr(sessionName+'.md', self.previewState['md'])
+            for name in self.previewState['image_zipfile'].namelist():
+                if '/' not in name or name.endswith('/'):
+                    continue
+                imgPath = sessionName+'_images/' + name.split('/')[-1]
+                zfile.writestr(imgPath, self.previewState['image_zipfile'].read(name))
+            zfile.close()
+            content = stream.getvalue()
+            outfile = sessionName+'-preview.zip'
+            self.set_header('Content-Type', 'application/zip')
+
+        else:
+            # Plain markdown
+            content = self.previewState['md']
+            outfile = sessionName+'-preview.md'
+            self.set_header('Content-Type', 'text/plain')
+
+        self.set_header('Content-Disposition', 'attachment; filename="%s"' % outfile)
+        self.write(content)
+
+
     def acceptPreview(self, modified=0, acceptMessages=[], slideId=''):
         # Modified == -1 disables version checking
         if Options['dry_run'] and not Options['dry_run_file_modify']:
@@ -3659,7 +3699,7 @@ class UserActionHandler(ActionHandler):
     def user_status(self):
         retval = {'result': 'success'}
         retval['previewingSession'] = ActionHandler.previewState.get('name', '')
-        retval['interactiveSession'] = WSHandler.getInteractiveSession()
+        retval['interactiveSession'] = WSHandler.getInteractiveSession()[0]
 
         self.set_header('Content-Type', 'application/json')
         self.write( json.dumps(retval) )
@@ -3982,11 +4022,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     @classmethod
     def getInteractiveSession(cls):
-        # Return name of interactive session (if any)
+        # Return (name of interactive session or '', question attributes)
         if cls._interactiveSession[2]:
-            return UserIdMixin.get_path_base(cls._interactiveSession[1])
+            return (UserIdMixin.get_path_base(cls._interactiveSession[1]) or '', cls._interactiveSession[3])
         else:
-            return ''
+            return ('', {})
 
     @classmethod
     def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None, rollbackOption=None):
@@ -4821,28 +4861,44 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
 class AuthMessageHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath=''):
-        note = self.get_argument("note", "")
-        interactiveSession = WSHandler.getInteractiveSession()
-        label = 'User %s: %s' % (self.get_id_from_cookie(), interactiveSession if interactiveSession else 'No interactive session')
-        self.render("interact.html", note=note, site_name=Options['site_name'], site_label=Options['site_label'], session_label=label)
+        status = self.get_argument("status", "")
+        sessionName, questionAttrs = WSHandler.getInteractiveSession()
+        label = 'User %s: %s' % (self.get_id_from_cookie(), sessionName or 'No interactive session')
+        self.render("send.html", status=status, site_name=Options['site_name'], site_label=Options['site_label'], session_label=label,
+                    session_name=sessionName, qnumber=questionAttrs.get('qnumber',0),  qtype=questionAttrs.get('qtype',''),
+                    choices=questionAttrs.get('choices',0), explain=bool(questionAttrs.get('explain')))
 
     @tornado.web.authenticated
     def post(self, subpath=''):
-        try:
-            userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
-            msg = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), self.get_argument("message", ""), allStatus=True, source='interact', adminBroadcast=True)
-            if not msg:
-                msg = 'Previous message accepted'
-        except Exception, excp:
-            if Options['debug']:
-                import traceback
-                traceback.print_exc()
-                msg = 'Error in processing message: '+str(excp)
-                print >> sys.stderr, "AuthMessageHandler.post", msg
-            else:
-                msg = 'Error in processing message'
+        sessionName, questionAttrs = WSHandler.getInteractiveSession()
+        qnumberStr = self.get_argument('qnumber', '')
+        if not sessionName:
+            status = 'Error: No interactive session'
+        elif qnumberStr != str(questionAttrs.get('qnumber',0)):
+            status = 'Error: Discarded answer for inactive Question %s; re-submit answer' % qnumberStr
+        else:
+            try:
+                userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
+                choice = self.get_argument('choice', '')
+                number = self.get_argument('number', '')
+                message = self.get_argument('message', '')
+                if choice:
+                    message = choice + ' ' + message
+                elif number:
+                    message = number + ' ' + message
+                status = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), message, allStatus=True, source='interact', adminBroadcast=True)
+                if not status:
+                    status = 'Accepted answer: '+message
+            except Exception, excp:
+                if Options['debug']:
+                    import traceback
+                    traceback.print_exc()
+                    status = 'Error in processing message: '+str(excp)
+                    print >> sys.stderr, "AuthMessageHandler.post", status
+                else:
+                    status = 'Error in processing message'
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        self.redirect(site_prefix+'/interact/?note='+sliauth.safe_quote(msg))            
+        self.redirect(site_prefix+'/send/?status='+sliauth.safe_quote(status))
 
 
 class AuthLoginHandler(BaseHandler):
@@ -5195,6 +5251,7 @@ def createApplication():
                       r"/(_discard)",
                       r"/(_discard/[-\w.]+)",
                       r"/(_download/[-\w.]+)",
+                      r"/(_downloadpreview)",
                       r"/(_edit)",
                       r"/(_edit/[-\w.]+)",
                       r"/(_editroster)",
@@ -5269,7 +5326,7 @@ def createApplication():
 
 def processTwitterMessage(msg):
     # Return null string on success or error message
-    interactiveSession = WSHandler.getInteractiveSession()
+    interactiveSession = WSHandler.getInteractiveSession()[0]
     print >> sys.stderr, 'sdserver.processTwitterMessage:', interactiveSession, msg
 
     fromUser = msg['sender']

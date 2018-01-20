@@ -1,0 +1,90 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+
+<!-- send template for slidoc server --->
+<!-- send parameters: site_name , site_label, session_label, session_name, qnumber, qtype, choices, explain, status-->
+
+{% include "base.html" %}
+
+<style>
+    textarea { font-size: 14px; }
+</style>
+
+<script>
+function check() {
+  {% if explain %}
+  if (!document.getElementById('message').value.trim()) {
+    alert('Please provide an explanation for your answer');
+    return false;
+  }
+  {% end %}
+  return true;
+}
+
+function choose(choice) {
+  if (!check())
+    return
+  document.getElementById('choice').value = choice;
+  document.getElementById('sendform').submit();
+}
+</script>
+
+</head>
+<body>
+
+<div id="main-container">
+  <h2><a class="clickable" href="/{{site_name}}">{{site_label}}</a></h2>
+  <h3>{{session_label}} &nbsp;&nbsp;&nbsp; <a class="clickable" href="/{{site_name}}/send">(Refresh)</a></h3>
+  <div id="main">
+    <div id="message-form">
+      <div>
+        {% if qnumber %}
+        <h3>Question {{qnumber}}</h3>
+        {% end %}
+        {% if status %}
+        Status: <span><em>{{status}}</em></span>
+        {% end %}
+      </div>
+      {% if session_name %}
+      <form  id="sendform" action="{{site_prefix}}/send" method="post">
+	<hr>
+	<p></p>
+        <input id="qnumber" name="qnumber" type="hidden" value="{{qnumber}}">
+        <input id="choice" name="choice" type="hidden" value="">
+        {% if choices %}
+          Select:
+          <ul>
+          {% for j in range(choices) %}
+            {% set choiceval = chr(j+ord('A')) %}
+            <li><span class="clickable" onclick="choose('{{choiceval}}')">{{choiceval}}</span></li>
+            <br>
+          {% end %}
+          </ul>
+        {% elif qtype == 'number' %}
+          Enter a numeric value: <input id="number" name="number" type="number" value="">
+        {% end %}
+        {% if explain or qtype not in ('choice', 'number') %}
+          {% if explain %}
+            Explain your answer:
+          {% else %}
+            Enter your answer:
+          {% end %}
+          <br>
+          <textarea id="message" name="message" cols=40 autocapitalize="off" autocorrect="off"></textarea>
+        {% end %}
+        {% module xsrf_form_html() %}
+	<p></p>
+        {% if not choices %}
+        <div id="form_btn">
+	  <input id="submit-btn" type="submit" value="Submit">
+	</div>
+        {% end %}
+      </form>
+      {% end %}
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

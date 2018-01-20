@@ -94,7 +94,7 @@ ADMIN_PACE    = 3
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'openfolder': '&#x1f4c2;', 'lightning': '&#9889;', 'pencil': '&#9998;',
-        'phone': '&#128241;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
+        'phone': '&#x1f4f1;', 'phonearrow': '&#x1f4f2;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'rightarrow': '&#x27A4;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
 
 def parse_number(s):
@@ -1760,7 +1760,7 @@ class SlidocRenderer(MathRenderer):
         hide_answer = self.options['config'].pace or not self.options['config'].show_score
 
         if name != 'Q' and hide_answer:
-            prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
+            prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="%(id)s-chartbar slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
 
         classes = '%(id)s-choice-inner slidoc-choice-inner'
         attrs = 'data-alternative="%(alternative)s" data-choice="%(opt)s"'
@@ -3182,7 +3182,7 @@ def render_topnav(topnav_list, filepath='', site_name=''):
     topnav_html = '<ul class="slidoc-topnav slidoc-noprint" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
     topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
     topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
-    topnav_html += '<li id="helplink" class="" style=""><span class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.userProfile();">%s</span><a href="_docs/index.html" target="_blank">%s</a></li>' % (SYMS['bust'], '<b>?</b>')
+    topnav_html += '<li id="helplink" class="" style=""><a href="%ssend">%s</a> <span class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.userProfile();">%s</span><a href="_docs/index.html" target="_blank">%s</a></li>' % (site_prefix, SYMS['phonearrow'], SYMS['bust'], '<b>?</b>')
     topnav_html += '<li id="dashlink" class="slidoc-restricted-top" style="display: none;"><a href="%s_addtype" target="_blank"><b>+</b></a> <a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, site_prefix, SYMS['gear'], SYMS['pencil'])
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'

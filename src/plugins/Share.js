@@ -271,7 +271,7 @@ Share = {
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
 		    var label = this.responseTally[j][0] + ' ('+this.responseTally[j][2]+')';
 		    var color = 'slidoc-bar-'+(this.responseTally[j][1] ? 'green' : 'orange')
-		    lines.push( ('<li class="slidoc-numeric-chart"><span class="slidoc-chart-box %(id)s-chart-box"><span id="%(id)s-chartbar-%(index)s" class="slidoc-chart-bar '+color+'" onclick="Slidoc.PluginMethod('+"'Share', '%(id)s', 'shareExplain'"+', %(index)s);" style="width: %(percent)s;">'+label+'</span></span></li>\n').replace(/%\(id\)s/g,this.slideId).replace(/%\(index\)s/g,''+(j+1)).replace(/%\(percent\)s/g,percent) );
+		    lines.push( ('<li class="slidoc-numeric-chart"><span class="slidoc-chart-box %(id)s-chart-box"><span id="%(id)s-chartbar-%(index)s" class="%(id)s-chartbar slidoc-chart-bar '+color+'" onclick="Slidoc.PluginMethod('+"'Share', '%(id)s', 'shareExplain'"+', %(index)s);" style="width: %(percent)s;">'+label+'</span></span></li>\n').replace(/%\(id\)s/g,this.slideId).replace(/%\(index\)s/g,''+(j+1)).replace(/%\(percent\)s/g,percent) );
 		}
 		lines.push('</ul>\n');
 		var popupContent = Slidoc.showPopup(lines.join('\n'), null, true);
@@ -288,6 +288,12 @@ Share = {
 		var boxes = document.getElementsByClassName(this.slideId+'-chart-box');
 		for (var j=0; j<boxes.length; j++)
 		    boxes[j].style.display = null;
+
+		var bars = document.getElementsByClassName(this.slideId+'-chartbar');
+		for (var j=0; j<bars.length; j++) {
+		    bars[j].textContent = '';
+		    bars[j].style.width = '0%';
+		}
 
 		var choiceBlock = document.getElementById(this.slideId+'-choice-block');
 		var shuffleStr = choiceBlock.dataset.shuffle;

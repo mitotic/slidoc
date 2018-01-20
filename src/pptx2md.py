@@ -51,7 +51,7 @@ class PPTXParser(object):
     notes_re    = re.compile(r'^Notes: *(.*)$')
     break_start_re = re.compile(r'''^[\w`'"]''')
     break_end_re   = re.compile(r'''^.*[\w`'"]$''')
-    default_img_height = 540
+    default_img_height = 440
 
     rules_re = [ ('external_link', re.compile( r'''^ {0,3}(!?)\[([^\]]+)\]\(\s*(<)?([\s\S]*?)(?(3)>)(?:\s+['"]([\s\S]*?)['"])?\s*\) *(\n|$)''') )
                 ]
@@ -420,7 +420,7 @@ if __name__ == '__main__':
     parser.add_argument('-x', '--expand_images', help='Expand images to fill slide', action="store_true")
     parser.add_argument('-i', '--img_inline', help='Insert images inline', action="store_true")
     parser.add_argument('--img_dir', help='Image directory: omit to embed images; name.zip to create zip archive', default=None)
-    parser.add_argument('--img_height', help='Image height', default=540)
+    parser.add_argument('--img_height', help='Image height', default=440)
     parser.add_argument('-l', '--line_breaks', help='Break lines within text box paragraphs', action="store_true")
     parser.add_argument('-n', '--notes', help='Treat slide notes as Notes: (instead of as text)', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")

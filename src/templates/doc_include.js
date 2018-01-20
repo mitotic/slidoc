@@ -1201,7 +1201,10 @@ Slidoc.slideEditMenu = function() {
 	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('truncate','"+slideId+"');"+'">Truncate remaining slides</span></li><p></p><hr>\n';
     }
     html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('edit');"+'">Edit all slides</span></li><p></p>\n';
-    html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('startpreview');"+'">Preview all slides</span></li>\n';
+    if (Sliobj.previewState)
+	html += '<li><a class="slidoc-clickable" target="_blank" href="'+Sliobj.sitePrefix+'/_downloadpreview">Download preview</a></li>\n';
+    else
+	html += '<li><span class="slidoc-clickable " onclick="'+"Slidoc.slideEdit('startpreview');"+'">Preview all slides</span></li>\n';
     html += '</ul>';
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -2982,7 +2985,7 @@ Slidoc.interact = function() {
 	html += 'Interactivity not available for submitted sessions';
     } else {
 	var siteTwitter = Sliobj.serverData.site_twitter || '';
-	var interactURL = location.protocol+'//'+location.host+'/send';
+	var interactURL = location.protocol+'//'+location.host+Sliobj.sitePrefix+'/send';
 	html += '<span class="slidoc-clickable" onclick="Slidoc.toggleInteract();">'+(Sliobj.interactiveMode?'End':'Begin')+' interact mode</span><p></p>';
 	html += 'To interact:<ul>';
 	if (siteTwitter.match(/^@/)) {
@@ -3017,7 +3020,7 @@ function rollbackCallback(retObj, errMsg) {
 	    msg += retObj.error;
 	}
 	if (errMsg) {
-	    msg += retObj.error;
+	    msg += errMsg;
 	}
     }
     alert(msg || 'Unknown error in rollback');
@@ -3066,19 +3069,26 @@ function resetQCallback(retObj, errMsg) {
     alert(msg || 'Unknown error in question reset');
 }
 
-Slidoc.toggleInteract = function () {
+Slidoc.toggleInteract = function (viewOnly) {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Sliobj.interactiveMode = !Sliobj.interactiveMode;
     toggleClass(Sliobj.interactiveMode, 'slidoc-interact-view');
-    enableInteract(Sliobj.interactiveMode);
+    var interactDispElem = document.getElementById('slidoc-interact-display');
+    if (interactDispElem)
+	interactDispElem.classList.add('slidoc-interact-suspend');
+    if (!viewOnly)
+	enableInteract(Sliobj.interactiveMode);
 }
 
 function enableInteract(active) {
     Slidoc.log('enableInteract:', active, Sliobj.interactiveSlide, Sliobj.session.lastSlide);
+    var interactDispElem = document.getElementById('slidoc-interact-display');
     if (!active) {
 	if (Sliobj.interactiveSlide) {
 	    Sliobj.interactiveSlide = false;
+	    if (interactDispElem)
+		interactDispElem.classList.add('slidoc-interact-suspend');
 	    GService.requestWS('interact', ['end', '', null, ''], interactCallback);
 	}
 	return;
@@ -3096,13 +3106,26 @@ function enableInteract(active) {
     
     // Start 'interact' for unanswered question slides only
     Sliobj.interactiveSlide = true;
+    if (interactDispElem)
+	interactDispElem.classList.remove('slidoc-interact-suspend');
     GService.requestWS('interact', ['start', lastSlideId, qattrs, !!Sliobj.params.features.rollback_interact], interactCallback);
 
     // Note: Closing websocket will disable interactivity
 }
 
-function interactCallback() {
-    Slidoc.log('interactCallback:');
+function interactCallback(retObj, errMsg) {
+    Slidoc.log('interactCallback:', retObj, errMsg);
+    if (retObj && retObj.result == 'success')
+	return;
+    var msg = '';
+    if (retObj && retObj.error) {
+	msg += retObj.error;
+    }
+    if (errMsg) {
+	msg += errMsg;
+    }
+    Slidoc.toggleInteract(true);
+    alert(msg || 'Unknown error in interact');
 }
 
 
