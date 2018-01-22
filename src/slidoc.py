@@ -1067,7 +1067,7 @@ class SlidocRenderer(MathRenderer):
         chapter_id, sep, slideNumStr = slide_id.partition('-')
         slide_number = int(slideNumStr)
         prefix = str(slide_number)+'. ' if 'untitled_number' not in self.options['config'].features else ''
-        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
+        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d" style="clear:both;">\n''' % (slide_id, slide_number)
         html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
         html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, SYMS['rightarrow'])
         right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
@@ -1091,7 +1091,7 @@ class SlidocRenderer(MathRenderer):
         html += '''    <span id="%s-toptoggle-header" class="slidoc-toptoggle-header slidoc-toggle-hidden slidoc-toggle-draggable" draggable="true" data-slide="%d">%s</span>''' % (slide_id, slide_number, prefix)
         html += '''  </span>\n'''
         html += '''</div>\n'''
-        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="display: none;">\n''' % (slide_id, slide_id)
+        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="clear:both;display: none;">\n''' % (slide_id, slide_id)
         html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
         html += '''  <div>\n'''
         html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button>''' % (slide_id, slide_id)
@@ -1099,8 +1099,8 @@ class SlidocRenderer(MathRenderer):
         html += '''    <button id="%s-togglebar-edit-clear" onclick="Slidoc.slideEdit('clear', '%s');">Clear text</button>\n''' % (slide_id, slide_id)
         html += '''  </div><div>\n'''
         html += '''    <button id="%s-togglebar-edit-insert" class="slidoc-edit-update" onclick="Slidoc.slideEdit('insert', '%s');">Insert image</button>\n''' % (slide_id, slide_id)
-        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update slidoc-nopreview" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
-        html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update slidoc-nopreview" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-update" class="slidoc-edit-update slidoc-nomodpreview" onclick="Slidoc.slideEdit('update', '%s');">Update preview</button>\n''' % (slide_id, slide_id)
+        html += '''    <button id="%s-togglebar-edit-open" class="slidoc-edit-update slidoc-nomodpreview" onclick="Slidoc.slideEdit('open', '%s');">Open preview</button>\n''' % (slide_id, slide_id)
         html += '''  </div>\n'''
         html += '''  <textarea id="%s-togglebar-edit-area" class="slidoc-togglebar-edit-area"></textarea>\n''' % (slide_id,)
         html += '''  <div id="%s-togglebar-edit-img" class="slidoc-togglebar-edit-img" style="display: none;">''' % (slide_id,)
@@ -1110,10 +1110,10 @@ class SlidocRenderer(MathRenderer):
         html += '''</div>\n'''
 
         # Slides need to be unhidden in Javascript for paced/slides_only sessions
-        style_str = ''
+        style = 'clear:both;'
         if self.options['config'].pace or 'slides_only' in self.options['config'].features:
-            style_str = 'style="display: none;"'
-        html += '\n<section id="%s" class="slidoc-slide %s-slide %s" %s> <!--slide start-->\n' % (slide_id, chapter_id, classes, style_str)
+            style += 'display: none;'
+        html += '\n<section id="%s" class="slidoc-slide %s-slide %s" style="%s"> <!--slide start-->\n' % (slide_id, chapter_id, classes, style)
         return html
 
     def slide_footer(self):
@@ -1141,7 +1141,7 @@ class SlidocRenderer(MathRenderer):
             attrs += ' data-param-count="%d"' % len(self.all_params)
         if self.all_functions:
             attrs += ' data-function-count="%d"' % len(self.all_functions)
-        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" %s style="display: none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" %s style="clear:both;display:none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
         return html
 
     def image(self, src, title, text):

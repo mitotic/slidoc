@@ -651,13 +651,17 @@ Slidoc.pageSetup = function() {
     var match = location.pathname.match(/\/_preview\b/);
     if (match) {
 	Sliobj.previewState = true;
-	var labelElem = document.getElementById('slidoc-preview-label');
-	if (labelElem)
-	    labelElem.textContent = 'Previewing '+Sliobj.sessionLabel;
-	previewMessages(true);
-	if (!Sliobj.params.fileName)
-	    toggleClass(true, 'slidoc-preview-view');
 	Sliobj.previewModified = parseNumber(getParameter('modified')) || 0;
+	var labelElem = document.getElementById('slidoc-preview-label');
+	if (labelElem) {
+	    labelElem.textContent = (Sliobj.previewModified ? 'Previewing': 'Viewing')+' '+Sliobj.sessionLabel;
+	}
+	previewMessages(true);
+	if (!Sliobj.params.fileName) {
+	    toggleClass(true, 'slidoc-preview-view');
+	    if (Sliobj.previewModified)
+		toggleClass(true, 'slidoc-modpreview-view');
+	}
 
 	if (!Sliobj.previewModified) {
 	    var acceptButton = document.getElementById('slidoc-preview-accept');
@@ -1359,11 +1363,12 @@ Slidoc.slideEdit = function(action, slideId) {
 	    Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_discard', {}, null, true);
 
     } else if (action == 'open' || action == 'update' || action == 'insert' || action == 'save' || action == 'delete' || action == 'rollover' || action == 'truncate') {
+	// Edit actions cancel unmodified preview; so modified preview can be opened from unmodified preview window
 	params.sessiontext = editArea.value;
 	Sliobj.origSlideText = null;  // Changes are being saved as preview
 
-	if (!Sliobj.previewState && (action == 'open' || action == 'update' || action == 'insert'))
-	    params.update = '1';
+	if (!Sliobj.previewModified && (action == 'open' || action == 'update' || action == 'insert'))
+	    params.update = '1';  // Update modified preview window
 	if (action == 'delete')
 	    params.deleteslide = 'delete';
 	if (action == 'rollover')
@@ -1374,10 +1379,10 @@ Slidoc.slideEdit = function(action, slideId) {
 	// Window opening must be triggered by user input
 	var previewPath = Sliobj.sitePrefix+'/_preview/index.html';
 	var previewURL = location.origin+previewPath+'?update=1#'+slideId;
-	if (action == 'save' && !Sliobj.previewState && !Sliobj.gradableState) // Redisplay slide if admin editing
+	if (action == 'save' && !Sliobj.previewModified && !Sliobj.gradableState) // Redisplay slide if admin editing
 	    previewPath += '?slideid='+slideId;
 
-	if (!Sliobj.previewState && (action == 'open' || (!checkPreviewWin() && (action == 'update' || action == 'insert')) ) ) {
+	if (!Sliobj.previewModified && (action == 'open' || (!checkPreviewWin() && (action == 'update' || action == 'insert')) ) ) {
 	    var winName = Sliobj.params.siteName+'_preview';
 	    if (window.name == winName)
 		winName += '2';
@@ -1423,11 +1428,11 @@ Slidoc.slideEdit = function(action, slideId) {
 	    if (action == 'insert') {
 		resizeImageClear(slideId);
 		imageDropState(true, slideId);  // Preview state required for image uploads
-		setTimeout(function(){alert('To insert new images, drag-and-drop them into box below text edit area'+(Sliobj.previewState?'':', then update preview')+'. To overwrite old images, simply drop new image over old image in preview.'); }, 200);
+		setTimeout(function(){alert('To insert new images, drag-and-drop them into box below text edit area'+(Sliobj.previewModified?'':', then update preview')+'. To overwrite old images, simply drop new image over old image in preview.'); }, 200);
 	    }
 
 	    if (action == 'open' || action == 'update'|| action == 'insert') {
-		if (!Sliobj.previewState && checkPreviewWin()) {
+		if (!Sliobj.previewModified && checkPreviewWin()) {
                     if (checkPreviewWin() == 'about:blank') {
 			Sliobj.previewWin.location = previewURL;
 		    } else if (!Sliobj.params.fileName || !Sliobj.previewWin.Slidoc) {
@@ -1488,7 +1493,11 @@ function resizeImageClear(slideId) {
             imageElem.style.display = null;
     });
     var resizeElems = document.getElementsByClassName('slidoc-image-resize');
-    [].forEach.call(resizeElems, function(elem) {
+    // Copy list because resizeElems is a live list
+    var elemList = [];
+    for (var j=0; j<resizeElems.length; j++)
+	elemList.push(resizeElems[j]);
+    [].forEach.call(elemList, function(elem) {
        elem.parentNode.removeChild(elem);
     });
 }
@@ -1510,19 +1519,32 @@ function resizeImage(imageElem, slideId) {
     if (imageElem.style['object-fit'])
         preserveAspRatio = false;
 
-    var html = '<div class="slidoc-image-resize" id="'+divId+'" style="display:inline-block; padding-right:5px; padding-bottom:5px; overflow:hidden; width:'+origWidth+'px;';
+    var divClasses = 'slidoc-image-resize';
+    var imgClasses = ['slidoc-center', 'slidoc-left']; // slidoc-right resize handle position is awkward
+    for (var j=0; j<imgClasses.length; j++) {
+	if (imageElem.classList.contains(imgClasses[j]))
+	    divClasses += ' ' + imgClasses[j];
+    }
+    var html = '<div class="'+divClasses+'" id="'+divId+'" style="display:inline-block; padding-right:5px; padding-bottom:5px; overflow:hidden; width:'+origWidth+'px;';
     if (preserveAspRatio)
         html += ' resize:horizontal;">';
     else
         html += ' height:'+origHeight+'; resize:both;">';
 
-    html += '<img id="'+imgId+'" src="'+imageElem.src+'" style="width:100%;';
+    var imgSrc = imageElem.src;
+    if (Sliobj.previewState && !Sliobj.previewModified) {
+	// Fix for unmodified preview being closed before slide edit
+	var prefix = getParameter('prefix');
+	if (prefix)
+	    imgSrc = imgSrc.replace('/_preview/','/'+prefix+'/');
+    }
+    html += '<img id="'+imgId+'" src="'+imgSrc+'" style="width:100%;';
     if (preserveAspRatio)
         html += ' height:auto;';
     else
         html += ' height:100%;';
     if (imageElem.style)
-        html += ' '+imageElem.style.cssText;
+        html += ' '+imageElem.style.cssText.replace(/(^|;)\s*width:[^;]*;/g,'$1').replace(/(^|;)\s*height:[^;]*;/g,'$1');
     html += '"></div>';
 
     imageElem.insertAdjacentHTML('afterend', html);
@@ -1553,22 +1575,30 @@ function resizeImage(imageElem, slideId) {
             if (!areaElem)
                 return;
 
+	    var freeAspect = divElem.style.resize && divElem.style.resize == 'both';
+	    var newWidth = freeAspect ? 'width='+divElem.clientWidth : 'css-width='+Math.floor(100*divElem.clientWidth/document.body.clientWidth)+'%';
+	    var newHeight = freeAspect ? 'height='+divElem.clientHeight : '';
+	    var paddedHeight = newHeight ? ' ' + newHeight : '';
+
             var val = areaElem.value;
             val = val.replace(fimage, function(matched, p1, p2, p3, offset, s) {
+		var line;
                 if (p3) {
-                    if (p3.match(/width=\d+/)) {
-                        p3 = p3.replace(/width=\d+/, 'width='+divElem.clientWidth);
+                    if        (p3.match(/('|\s+)css-width=[\w%]+/)) {
+                        p3 = p3.replace(/('|\s+)css-width=[\w%]+/, '$1'+newWidth);
+                    } else if (p3.match(/('|\s+)width=[\w%]+/)) {
+                        p3 = p3.replace(/('|\s+)width=[\w%]+/, '$1'+newWidth);
                     } else {
-                        p3 = p3.slice(0,-1) + ' width=' + divElem.clientWidth + p3.slice(-1);
+                        p3 = p3.slice(0,-1).trim() + ' ' + newWidth + p3.slice(-1);
                     }
-                    if (p3.match(/height=\d+/)) {
-                        p3 = p3.replace(/height=\d+/, 'height='+divElem.clientHeight);
+                    if        (p3.match(/('|\s+)height=[\w%]+/)) {
+                        p3 = p3.replace(/('|\s+)height=[\w%]+/, '$1'+newHeight);
                     } else {
-                        p3 = p3.slice(0,-1) + ' height=' + divElem.clientHeight + p3.slice(-1);
+                        p3 = p3.slice(0,-1).trim() + paddedHeight + p3.slice(-1);
                     }
-                    var line = "![" + p1 + "](" + p2 + p3 + ")"; 
+                    line = "![" + p1 + "](" + p2 + ' ' + p3.trim() + ")";
                 } else {
-                    var line = "![" + p1 + "](" + p2 + " 'width=" + divElem.clientWidth + " height=" + divElem.clientHeight + "')"; 
+		    line = "![" + p1 + "](" + p2 + " '" + newWidth + paddedHeight + "')";
                 }
                 return line;
             });
@@ -2936,7 +2966,8 @@ Sliobj.eventReceiver = function(eventMessage) {
 	}
 
     } else if (eventName == 'ReloadPage') {
-	statefulReload(eventArgs.length ? eventArgs[0] : '');
+	if (!Sliobj.previewState || Sliobj.previewModified)  // Do not reload unmodified preview
+	    statefulReload(eventArgs.length ? eventArgs[0] : '');
 
     } else if (eventName == 'InteractiveMessage') {
 	console.log('InteractiveMessage:', eventArgs[0]);
@@ -4536,8 +4567,11 @@ function slidocSetupAux(session, feedback) {
     if (collapsibleAccess())
 	toggleClass(true, 'slidoc-collapsible-view');
 
-    if (Sliobj.previewState)
+    if (Sliobj.previewState) {
     	toggleClass(true, 'slidoc-preview-view');
+	if (Sliobj.previewModified)
+	    toggleClass(true, 'slidoc-modpreview-view');
+    }
 
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
@@ -8003,8 +8037,11 @@ Slidoc.slideViewStart = function (pacedStart) {
    Slidoc.breakChain();
 
    var startSlide = getCurrentlyVisibleSlide(slides) || 1;
+   var incrementAll = false;
+
     if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
 	startSlide = Math.min(slides.length, parseSlideId(location.hash.slice(1))[2]);
+	incrementAll = true;
     } else if (Sliobj.updateView) {
 	startSlide = 1;
     } else if (Sliobj.session && Sliobj.session.paced) {
@@ -8022,7 +8059,7 @@ Slidoc.slideViewStart = function (pacedStart) {
 
     document.body.classList.add('slidoc-slide-view');
 
-    Slidoc.slideViewGo(false, startSlide, true);
+    Slidoc.slideViewGo(false, startSlide, true, incrementAll);
     Slidoc.reportTestAction('initSlideView');
     return false;
 }
@@ -8094,7 +8131,7 @@ Slidoc.slideViewGoLast = function () {
     return false;
 }
 
-Slidoc.slideViewGo = function (forward, slide_num, start) {
+Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     var slides = getVisibleSlides();
     Slidoc.log('Slidoc.slideViewGo:', forward, slide_num, slides.length, Sliobj.session ? Sliobj.session.lastSlide : -1);
     var prev_slide_id = Sliobj.currentSlide ? slides[Sliobj.currentSlide-1].id : null;
@@ -8321,13 +8358,13 @@ Slidoc.slideViewGo = function (forward, slide_num, start) {
 	for (var j=1; j<=MAX_INC_LEVEL; j++) {
 	    if (slides[slide_num-1].querySelector('.slidoc-incremental'+j)) {
 		Sliobj.maxIncrement = j;
-		toggleClass(backward, 'slidoc-display-incremental'+j);
+		toggleClass(backward||incrementAll, 'slidoc-display-incremental'+j);
 		if (Sliobj.currentSlide > slide_num) {
 		    Sliobj.curIncrement = j;
 		}
 	    }
 	}
-	toggleClass(Sliobj.curIncrement < Sliobj.maxIncrement, 'slidoc-incremental-view');
+	toggleClass((Sliobj.curIncrement < Sliobj.maxIncrement) && !incrementAll, 'slidoc-incremental-view');
     } else {
 	toggleClass(slide_id in Sliobj.incrementPlugins, 'slidoc-incremental-view');
     }

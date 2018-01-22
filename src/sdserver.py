@@ -331,6 +331,13 @@ def getSessionType(sessionName):
 
     raise Exception('Invalid session name "%s"; must be of the form "word.md" or "word01.md", with exactly two digits before the file extension and a letter before the digits' % sessionName)
 
+def getResponderCount(sessionName, uploadType):
+    if sessionName != 'index' and uploadType != TOP_LEVEL:
+        sheet = sdproxy.getSheet(sessionName)
+        if sheet and sheet.getLastRow() > 2:
+            return sheet.getLastRow() - 2
+    return 0
+
 def getSessionLabel(sessionName, sessionType):
     sessionLabel = sessionName
     if sessionType != TOP_LEVEL and sessionName == 'index':
@@ -1315,7 +1322,13 @@ class ActionHandler(BaseHandler):
                 if modifiedStr and modifiedNum == self.previewState['modified']:
                     return self.displayPreview(subsubpath)
 
-                redirURL = site_prefix + '/_preview/index.html?modified=%d' % self.previewState['modified']
+                sessionType, _ = getSessionType(self.previewState['name'])
+                if sessionType != TOP_LEVEL:
+                    prefix = sliauth.safe_quote( (privatePrefix(sessionType) + '/' + sessionType)[1:] )
+                else:
+                    prefix = ''
+                    
+                redirURL = site_prefix + '/_preview/index.html?modified=%d&prefix=%s' % (self.previewState['modified'], prefix)
                 previewUpdate = self.get_argument('update', '')
                 if previewUpdate:
                     redirURL += '&update=' + previewUpdate
@@ -2722,6 +2735,7 @@ class ActionHandler(BaseHandler):
             self.previewState['modimages'] = modimages
             self.previewState['overwrite'] = overwrite
             self.previewState['rollover'] = None
+            self.previewState['session_responders'] = getResponderCount(sessionName, uploadType)
             return ''
 
         except Exception, err:
@@ -2781,6 +2795,8 @@ class ActionHandler(BaseHandler):
         self.previewState['modimages'] = ''
         self.previewState['overwrite'] = False
         self.previewState['rollover'] = None
+        self.previewState['session_responders'] = getResponderCount(sessionName, uploadType)
+
 
     def reloadPreview(self, slideNumber=0):
         previewingSession = self.previewActive()
@@ -3223,18 +3239,12 @@ class ActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:editSession: session=%s, type=%s, start=%s, startPreview=%s, update=%s, modify=%s, ntext=%s, from=%s:%s, slide=%s, new=%s, del=%s' % (sessionName, sessionType, start, startPreview, update, modify, len(sessionText), fromSession, fromSite, slideNumber, newNumber, deleteSlide)
 
-        sessionResponders = 0
         sessionLabel = sessionName
         temSessionName = sessionType+'00' if sessionName == 'index' and sessionType else sessionName
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(temSessionName)
-        if uploadType != TOP_LEVEL:
-            if not sessionNumber:
-                sessionName = 'index'
-                sessionLabel = uploadType+'/index'
-            else:
-                sheet = sdproxy.getSheet(sessionName)
-                if sheet and sheet.getLastRow() > 2:
-                    sessionResponders = sheet.getLastRow() - 2
+        if uploadType != TOP_LEVEL and not sessionNumber:
+            sessionName = 'index'
+            sessionLabel = uploadType+'/index'
 
         sameSession = (not fromSession or fromSession == sessionName) and (not fromSite or fromSite == Options['site_name'])
 
@@ -3252,9 +3262,11 @@ class ActionHandler(BaseHandler):
                     if slideNumber > len(md_slides):
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid preview slide number %d of %d' % (slideNumber, len(md_slides)) )
                     sessionText = md_slides[slideNumber-1]
+                    sessionResponders = self.previewState['session_responders']
 
                 else:
                     md_defaults, sessionText, _, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
+                    sessionResponders = getResponderCount(sessionName, uploadType)
 
                 sessionText = strip_slide(sessionText)
                 if not startPreview:
@@ -3267,6 +3279,7 @@ class ActionHandler(BaseHandler):
             else:
                 if self.previewState:
                     sessionText = self.previewState['md']
+                    sessionResponders = self.previewState['session_responders']
 
                 else:
                     # Setup preview by uploading file
@@ -3277,6 +3290,7 @@ class ActionHandler(BaseHandler):
                             sessionText = sessionText.encode('utf-8')
                     except Exception, excp:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading session file %s: %s' % (src_path, excp))
+                    sessionResponders = getResponderCount(sessionName, uploadType)
 
 
                 if not startPreview:

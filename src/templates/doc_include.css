@@ -5,6 +5,7 @@ body.slidoc-all-view .slidoc-noall,
 body.slidoc-fullscreen-view .slidoc-nofullscreen,
 body.slidoc-paced-view .slidoc-nopaced,
 body.slidoc-preview-view .slidoc-nopreview,
+body.slidoc-modpreview-view .slidoc-nomodpreview,
 body.slidoc-localpreview-view .slidoc-nolocalpreview,
 body.slidoc-update-view .slidoc-noupdate,
 body.slidoc-locked-view .slidoc-nolocked,
@@ -24,6 +25,7 @@ body:not(.slidoc-paced-view) .slidoc-pacedonly,
 body:not(.slidoc-timed-view) .slidoc-timedonly,
 body:not(.slidoc-discuss-view) .slidoc-discussonly,
 body:not(.slidoc-localpreview-view) .slidoc-localpreviewonly,
+body:not(.slidoc-modpreview-view) .slidoc-modpreviewonly,
 body:not(.slidoc-preview-view) .slidoc-previewonly,
 body:not(.slidoc-update-view) .slidoc-updateonly,
 body:not(.slidoc-proxy-view) .slidoc-proxyonly,
@@ -300,24 +302,30 @@ img.slidoc-img-drop.slidoc-dragover
 }
 
 img.center,
-img.slidoc-img-center
+img.slidoc-img-center,
+img.slidoc-center,
+div.slidoc-center
 {
     margin: 0 auto;
     display: block;
 }
 
-body.slidoc-slide-view img.float-right
-{
-    float: right;
-    margin-left: 15px;
-    margin-right: 10px;
-}
-
-body.slidoc-slide-view img.float-left
+body img.float-left,
+body img.slidoc-left,
+body div.slidoc-left
 {
     float: left;
     margin-left: 10px;
     margin-right: 15px;
+}
+
+body img.float-right,
+body img.slidoc-right,
+body div.slidoc-right
+{
+    float: right;
+    margin-left: 15px;
+    margin-right: 10px;
 }
 
 /* Highlights */
