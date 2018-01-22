@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21g';
+var VERSION = '0.97.21i';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -843,7 +843,7 @@ function sheetAction(params) {
 	    returnValues = [];
 	    if (!adminUser)
 		throw("Error:DELSHEET:Only admin can delete sheet "+sheetName);
-	    if (sheetName.match(/_slidoc$/))
+	    if (sheetName.match(/_slidoc$/) && sheetName != ROSTER_SHEET)
 		throw("Error:DELSHEET:Cannot delete special sheet "+sheetName);
 	    var indexSheet = getSheet(INDEX_SHEET);
 	    if (indexSheet) {

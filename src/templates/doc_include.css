@@ -279,6 +279,10 @@ input[type="button"]:disabled.slidoc-button {
 
 .slidoc-disabled { opacity: 0.4; }
 
+/* centering */
+
+.slidoc-center-text { text-align: center; }
+
 /* Incremental display */
 body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental1) .slidoc-incremental1 { visibility: hidden; }
 body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental2) .slidoc-incremental2 { visibility: hidden; }

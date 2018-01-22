@@ -255,9 +255,9 @@ class PPTXParser(object):
                     elif image_num <= len(slide_images):
                         # Embedded image: ![image1]()
                         slide_image = slide_images[image_num-1]
-                        iheight = self.compute_img_height(slide_image['width'], slide_image['height'], self.img_height/max(1,len(slide_images)))
+                        fwidth = self.compute_img_fracwidth(slide_image['width'], slide_image['height'], len(slide_images))
                         if not img_params:
-                            img_params = "'height=%d'" % iheight
+                            img_params = "'width=%s'" % fwidth
                         img_ref = self.copy_image(image_num, slide_image['blob'], img_params=img_params, img_name=img_name, img_ext=slide_image['ext'])
                     else:
                         img_ref = 'Missing/annotated image%d(%s)' % (image_num, img_name or '')
@@ -271,8 +271,8 @@ class PPTXParser(object):
                 # Copy embedded images by default
                 md_images = ["\n"]
                 for image_num, slide_image in enumerate(slide_images):
-                    iheight = self.compute_img_height(slide_image['width'], slide_image['height'], self.img_height/max(1,len(slide_images)))
-                    img_params = "'height=%d'" % iheight
+                    fwidth = self.compute_img_fracwidth(slide_image['width'], slide_image['height'], len(slide_images))
+                    img_params = "'width=%s'" % fwidth
                     img_ref = self.copy_image(image_num+1, slide_image['blob'], img_params=img_params, img_ext=slide_image['ext'])
                     md_images.append('\n'+img_ref+'\n\n')
                 offset = len(md_lines)
@@ -307,6 +307,11 @@ class PPTXParser(object):
             self.img_zip.close()
             zipped_md = self.img_bytes.getvalue()
         return all_text, zipped_md
+
+    def compute_img_fracwidth(self, width, height, nimages):
+        tem_width = (3.0/4.0)*width/(1.0*height)
+        perc = (100.0 if self.args_dict.get('expand_images') else 70.0) / nimages
+        return '%d%%' % int( round(perc*min(1,tem_width)))
 
     def compute_img_height(self, width, height, max_height):
         max_width = int(max_height * (4.0/3.0))

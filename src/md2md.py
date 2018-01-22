@@ -121,14 +121,17 @@ def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
 
             if attr.startswith('.'):
                 classList.append(attr[1:])
-            elif attr in ('height', 'width'):
-                attrs += ' ' + attr + '=' + value
-            elif attr == 'crop':
+            elif attr.startswith('css-') or attr in ('height', 'width', 'crop'):
                 if value:
-                    style += 'object-fit:cover;object-position:' + ' '.join(value.strip().split(',')) + ';'
-            elif attr.startswith('css-'):
-                if value:
-                    style += attr.partition('-')[-1] + ':' + value + ';'
+                    if attr.startswith('css-'):
+                        style += attr.partition('-')[-1] + ':' + value + ';'
+                    elif attr in ('height', 'width'):
+                        if value.isdigit():
+                            attrs += ' ' + attr + '=' + value
+                        else:
+                            style += attr + ':' + value + ';'
+                    elif attr == 'crop':
+                        style += 'object-fit:cover;object-position:' + ' '.join(value.strip().split(',')) + ';'
             else:
                 titlecomps.append(attrval)
 

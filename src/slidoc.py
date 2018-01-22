@@ -75,6 +75,8 @@ SPACER3 = '&nbsp;&nbsp;&nbsp;'
 SINGLETON_PLUGINS = ['Code', 'Params', 'Share', 'Timer', 'Upload']
 FORMULA_NAMESPACE = ['Math']
 
+ANGLE_TEXT_RE = re.compile(r'^\s*<(center|code|strong)>(.*)</\1>\s*$')
+
 ANSWER_TYPE_RE = re.compile(r'^([a-zA-Z\w]+)\s*=(.*)$')
 ANSWER_CONTENT_RE = re.compile(r'^([a-zA-Z]\w*)/(.*)$')
 
@@ -1052,7 +1054,7 @@ class SlidocRenderer(MathRenderer):
 
     def minirule(self):
         """Treat minirule as a linebreak"""
-        return '<br>\n'
+        return '<br style="clear:both;">\n'
 
     def pause(self, text):
         """Pause in display"""
@@ -1226,9 +1228,9 @@ class SlidocRenderer(MathRenderer):
         if implicit or 'rule' in self.options['config'].strip or (self.hide_end and 'hidden' in self.options['config'].strip):
             rule_html = ''
         elif self.options.get('use_xhtml'):
-            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly"/>\n'
+            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly" style="clear:both;"/>\n'
         else:
-            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly">\n'
+            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly" style="clear:both;">\n'
 
         end_html = self.end_slide(rule_html)
         self._new_slide()
@@ -1331,6 +1333,8 @@ class SlidocRenderer(MathRenderer):
                 self.untitled_header = '%d. ' % self.untitled_number
 
         tem_text = text.strip()
+        while ANGLE_TEXT_RE.match(tem_text):
+            tem_text = ANGLE_TEXT_RE.sub(r'\2', tem_text)
         if not tem_text or tem_text.startswith('<'):
             first_words = '...'
         else:
@@ -1491,6 +1495,8 @@ class SlidocRenderer(MathRenderer):
                 # failed to parse, just return it unmodified
                 return html
             hdr_class += ' slidoc-header %s-header' % slide_id
+            if 'center_title' in self.options['config'].features:
+                hdr_class += ' slidoc-center-text'
         else:
             # Header in Notes; render as plain text
             hdr = ElementTree.Element('p', {})
@@ -1541,7 +1547,7 @@ class SlidocRenderer(MathRenderer):
             # Ignore higher level headers (except for level 3 hide block, if no earlier header in slide)
             if self.alt_header is None:
                 self.alt_header = text
-            return ElementTree.tostring(hdr)
+            return ElementTree.tostring(hdr, method='html')
 
         pre_header = ''
         post_header = ''
@@ -1608,7 +1614,7 @@ class SlidocRenderer(MathRenderer):
         # instead of a text string.  See issue http://bugs.python.org/issue10942
         # Workaround is to make sure the bytes are casted to a string.
         hdr.set('class', hdr_class)
-        return prev_slide_end + pre_header + ElementTree.tostring(hdr) + '\n' + post_header
+        return prev_slide_end + pre_header + ElementTree.tostring(hdr, method='html') + '\n' + post_header
 
     def slidoc_header(self, name, text):
         if name == 'Slidoc:':
@@ -2515,7 +2521,7 @@ class SlidocRenderer(MathRenderer):
         classes = 'slidoc-clickable'
         if self.qtypes[-1]:
             classes += ' slidoc-question-notes'
-        return prefix + ('''<br><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
+        return prefix + ('''<br style="clear:both;"><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
 
 
     def slidoc_extra(self, name, text):
@@ -2541,7 +2547,7 @@ class SlidocRenderer(MathRenderer):
             else:
                 elem = ElementTree.Element("span", {"class" : "slidoc-clickable", "onclick" : "Slidoc.go('#%s');" % id_str})
             elem.text = header
-            toc.append('<li>'+ElementTree.tostring(elem)+'</li>')
+            toc.append('<li>'+ElementTree.tostring(elem, method='html')+'</li>')
 
         toc.append('</ol>\n' if 'sections' in self.options['config'].strip else '</ul>\n')
         return '\n'.join(toc)
@@ -4662,6 +4668,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents (also displays print exam menu)
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
+#   center_title: Center section titles
 #   discuss_all: Enable discussion for all slides
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
@@ -4686,7 +4693,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'center_title', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

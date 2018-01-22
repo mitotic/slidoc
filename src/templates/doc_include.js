@@ -1576,7 +1576,7 @@ function resizeImage(imageElem, slideId) {
                 return;
 
 	    var freeAspect = divElem.style.resize && divElem.style.resize == 'both';
-	    var newWidth = freeAspect ? 'width='+divElem.clientWidth : 'css-width='+Math.floor(100*divElem.clientWidth/document.body.clientWidth)+'%';
+	    var newWidth = freeAspect ? 'width='+divElem.clientWidth : 'width='+Math.floor(100*divElem.clientWidth/document.body.clientWidth)+'%';
 	    var newHeight = freeAspect ? 'height='+divElem.clientHeight : '';
 	    var paddedHeight = newHeight ? ' ' + newHeight : '';
 
@@ -1584,14 +1584,12 @@ function resizeImage(imageElem, slideId) {
             val = val.replace(fimage, function(matched, p1, p2, p3, offset, s) {
 		var line;
                 if (p3) {
-                    if        (p3.match(/('|\s+)css-width=[\w%]+/)) {
-                        p3 = p3.replace(/('|\s+)css-width=[\w%]+/, '$1'+newWidth);
-                    } else if (p3.match(/('|\s+)width=[\w%]+/)) {
+                    if (p3.match(/('|\s+)width=[\w%]+/)) {
                         p3 = p3.replace(/('|\s+)width=[\w%]+/, '$1'+newWidth);
                     } else {
                         p3 = p3.slice(0,-1).trim() + ' ' + newWidth + p3.slice(-1);
                     }
-                    if        (p3.match(/('|\s+)height=[\w%]+/)) {
+                    if (p3.match(/('|\s+)height=[\w%]+/)) {
                         p3 = p3.replace(/('|\s+)height=[\w%]+/, '$1'+newHeight);
                     } else {
                         p3 = p3.slice(0,-1).trim() + paddedHeight + p3.slice(-1);
