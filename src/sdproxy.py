@@ -316,14 +316,17 @@ def previewingSession():
     return Global.previewStatus.get('sessionName', '')
 
 def startPreview(sessionName, rollingOver=False):
-    # Initiate/end preview of session
+    # Initiate preview of session
     # (Delay upstream updates to session sheet and index sheet; also lock all index sheet rows except for this session)
     # Return error message or null string
     if not sessionName:
         raise Exception('Null session name for preview')
 
+    if Global.previewStatus:
+        return 'Cannot start preview for %s during active preview for %s' % (sessionName, Global.previewStatus['sessionName'])
+
     if sessionName in Global.transactSessions:
-        return 'Cannot preview during transact session'
+        return 'Cannot start preview during transact session '+sessionName
     
     if Global.suspended:
         return 'Cannot preview when cache is suspended'

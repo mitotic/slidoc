@@ -1322,26 +1322,13 @@ class ActionHandler(BaseHandler):
                 if modifiedStr and modifiedNum == self.previewState['modified']:
                     return self.displayPreview(subsubpath)
 
-                sessionType, _ = getSessionType(self.previewState['name'])
-                if sessionType != TOP_LEVEL:
-                    prefix = sliauth.safe_quote( (privatePrefix(sessionType) + '/' + sessionType)[1:] )
-                else:
-                    prefix = ''
-                    
-                redirURL = site_prefix + '/_preview/index.html?modified=%d&prefix=%s' % (self.previewState['modified'], prefix)
-                previewUpdate = self.get_argument('update', '')
-                if previewUpdate:
-                    redirURL += '&update=' + previewUpdate
-                slideId = self.get_argument('slideid', '')
-                if slideId:
-                    redirURL += '&slideid=' + slideId
-                self.redirect(redirURL)
+                self.redirectPreview(update=self.get_argument('update', ''), slideId=self.get_argument('slideid', ''))
                 return
 
             elif action == '_startpreview':
                 if not previewingSession:
                     self.createUnmodifiedPreview(sessionName)
-                    self.redirect(site_prefix + '/_preview/index.html')
+                    self.redirectPreview(slideId=self.get_argument('slideid', ''))
                     return
                 else:
                     self.displayMessage('Already previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
@@ -1909,6 +1896,21 @@ class ActionHandler(BaseHandler):
             self.render('submit.html', site_name=Options['site_name'], session_name=sessionName)
         else:
             self.displayMessage('Invalid get action: '+action)
+
+    def redirectPreview(self, update='', slideId=''):
+        sessionType, _ = getSessionType(self.previewState['name'])
+        if sessionType != TOP_LEVEL:
+            prefix = sliauth.safe_quote( (privatePrefix(sessionType) + '/' + sessionType)[1:] )
+        else:
+            prefix = ''
+
+        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+        redirURL = site_prefix + '/_preview/index.html?modified=%d&prefix=%s' % (self.previewState['modified'], prefix)
+        if update:
+            redirURL += '&update=' + update
+        if slideId:
+            redirURL += '&slideid=' + slideId
+        self.redirect(redirURL)
 
     def deleteSession(self, sessionName, reset=False):
         if Options['debug']:
@@ -3137,17 +3139,31 @@ class ActionHandler(BaseHandler):
             msgs = acceptMessages + msgs
 
         logErrors = 'error' in ''.join(msgs).lower()
+
+        previewOnly = False
+        if pacedSession(uploadType):
+            sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
+            if sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE:
+                if not sessionEntries['adminPaced'] or sessionEntries['adminPaced'] <= 1:
+                    previewOnly = True
+            elif sessionEntries['releaseDate'] == sliauth.FUTURE_DATE:
+                previewOnly = True
             
+        site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+
         if slideId and not logErrors:
             # Redisplay slide
-            redirPath = getSessionPath(sessionName, site_prefix=True) + '#' + slideId
+            if previewOnly:
+                redirPath = site_prefix + '/_startpreview/' + sliauth.safe_quote(sessionName) + '?slideid=' + slideId
+            else:
+                redirPath = getSessionPath(sessionName, site_prefix=True) + '#' + slideId
         else:
             # Display ToC
             redirPath = getSessionPath(sessionName, site_prefix=True, toc=True)
 
         if rolloverParams:
             self.truncateSession(rolloverParams, prevSessionName=sessionName, prevMsgs=msgs, rollingOver=True)
-        elif msgs and (logErrors or not slideId):
+        elif previewOnly or (msgs and (logErrors or not slideId)):
             self.displayMessage(msgs, back_url=redirPath)
         else:
             self.redirect(redirPath)

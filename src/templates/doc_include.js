@@ -1476,6 +1476,7 @@ Slidoc.slideEdit = function(action, slideId) {
 var resizeImageCounter = 0;
 
 function resizeImageSetup(slideId) {
+    Slidoc.log('resizeImageSetup:', slideId);
     var slideImageElems = document.getElementsByClassName(slideId+'-img');
     [].forEach.call(slideImageElems, function(imageElem) {
         if (imageElem.clientWidth) {
@@ -1487,6 +1488,7 @@ function resizeImageSetup(slideId) {
 }
 
 function resizeImageClear(slideId) {
+    Slidoc.log('resizeImageClear:', slideId);
     var slideImageElems = document.getElementsByClassName(slideId+'-img');
     [].forEach.call(slideImageElems, function(imageElem) {
         if (imageElem.style.display)
