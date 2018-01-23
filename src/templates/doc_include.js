@@ -3100,16 +3100,19 @@ function resetQCallback(retObj, errMsg) {
     alert(msg || 'Unknown error in question reset');
 }
 
-Slidoc.toggleInteract = function (viewOnly) {
+Slidoc.toggleInteract = function () {
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
+    toggleInteractMode();
+    enableInteract(Sliobj.interactiveMode);
+}
+
+function toggleInteractMode() {
     Sliobj.interactiveMode = !Sliobj.interactiveMode;
     toggleClass(Sliobj.interactiveMode, 'slidoc-interact-view');
     var interactDispElem = document.getElementById('slidoc-interact-display');
     if (interactDispElem)
 	interactDispElem.classList.add('slidoc-interact-suspend');
-    if (!viewOnly)
-	enableInteract(Sliobj.interactiveMode);
 }
 
 function enableInteract(active) {
@@ -3148,6 +3151,7 @@ function interactCallback(retObj, errMsg) {
     Slidoc.log('interactCallback:', retObj, errMsg);
     if (retObj && retObj.result == 'success')
 	return;
+    // Error in interact
     var msg = '';
     if (retObj && retObj.error) {
 	msg += retObj.error;
@@ -3155,7 +3159,7 @@ function interactCallback(retObj, errMsg) {
     if (errMsg) {
 	msg += errMsg;
     }
-    Slidoc.toggleInteract(true);
+    toggleInteractMode();
     alert(msg || 'Unknown error in interact');
 }
 
@@ -3292,6 +3296,10 @@ Slidoc.PluginManager.pastDueDate = function() {
 	return null;
     var dueDate = parseDate(Sliobj.dueDate) || parseDate(Sliobj.session ? Sliobj.session.lateToken : '') || parseDate(Sliobj.params.dueDate);
     return dueDate && ((new Date()) > dueDate);
+}
+
+Slidoc.PluginManager.autoInteractMode = function() {
+    return autoInteract() && Sliobj.interactiveMode;
 }
 
 Slidoc.PluginManager.getLiveResponses = function(qnumber) {
@@ -4348,6 +4356,10 @@ function controlledPace() {
 
 function isController() {
     return Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.gradableState && getUserId() == Sliobj.params.testUserId;
+}
+
+function autoInteract() {
+    return isController() && 'auto_interact' in Sliobj.params.features && !Sliobj.previewState && (Sliobj.session && !Sliobj.session.submitted);
 }
 
 function gradingAccess() {
@@ -7915,9 +7927,12 @@ Slidoc.startPaced = function () {
     // Allow forward link only if no try requirement
     toggleClassAll(Sliobj.params.paceLevel < QUESTION_PACE, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
 
+    if (autoInteract())
+	toggleInteractMode();
+
     var unreadCount = discussUnread();
     
-    if (Sliobj.session && Sliobj.session.submitted) {
+    if (Sliobj.session.submitted) {
     var startMsg = 'Reviewing submitted paced session '+Sliobj.sessionName+'<br>';
     if (unreadCount)
 	startMsg += '&nbsp;&nbsp;<em>There are '+unreadCount+' slides with UNREAD discussions.</em><br>';
@@ -8039,8 +8054,15 @@ Slidoc.slideViewStart = function (pacedStart) {
    var startSlide = getCurrentlyVisibleSlide(slides) || 1;
    var incrementAll = false;
 
-    if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE)) {
-	startSlide = Math.min(slides.length, parseSlideId(location.hash.slice(1))[2]);
+    var slideId = '';
+
+    if (getUserId() == Sliobj.params.testUserId && getParameter('slideid'))
+	slideId = getParameter('slideid');
+    else if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE))
+	slideId = location.hash.slice(1);
+
+    if (slideId) {
+	startSlide = Math.min(slides.length, parseSlideId(slideId)[2]);
 	incrementAll = true;
     } else if (Sliobj.updateView) {
 	startSlide = 1;

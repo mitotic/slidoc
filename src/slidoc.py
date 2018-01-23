@@ -1250,7 +1250,7 @@ class SlidocRenderer(MathRenderer):
         slide_id = self.get_slide_id()
         if 'discuss' in self.slide_options:
             self.sheet_attributes['discussSlides'].append(self.slide_number)
-            html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-discussonly" style="display: none;">\n''' % (slide_id, )
+            html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-discussonly slidoc-noprint" style="display: none;">\n''' % (slide_id, )
             html += '''  <span id="%s-discuss-show" class="slidoc-discuss-show slidoc-clickable" onclick="Slidoc.slideDiscuss('show','%s');">%s</span>\n''' % (slide_id, slide_id, SYMS['bubble'])
             html += '''  <span id="%s-discuss-count" class="slidoc-discuss-count"></span>\n''' % (slide_id,)
             html += '''  <div id="%s-discuss-container" class="slidoc-discuss-container" style="display: none;">\n''' % (slide_id, )
@@ -3744,12 +3744,15 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         if not j or config.separate:
             # First file or separate files
-            mathjax_config = ''
+            mathjax_config = 'skipStartupTypeset: %s,\n' % ('false' if 'immediate_math' in file_config.features else 'true')
             if 'equation_number' in file_config.features:
-                mathjax_config += r", TeX: { equationNumbers: { autoNumber: 'AMS' } }"
+                mathjax_config += r'TeX: { equationNumbers: { autoNumber: "AMS" } },\n'
+            if 'equation_left' in file_config.features:
+                mathjax_config += r'displayAlign: "left",\n'
             if 'tex_math' in file_config.features:
-                mathjax_config += r", tex2jax: { inlineMath: [ ['$','$'], ['\\(','\\)'] ], processEscapes: true }"
-            math_inc = Mathjax_js % ('false' if 'immediate_math' in file_config.features else 'true', mathjax_config)
+                mathjax_config += r'tex2jax: { inlineMath: [ ["$","$"], ["\\(","\\)"] ], processEscapes: true },\n'
+            mathjax_config  += 'jax: ["input/TeX","output/%s"]' % ('SVG' if file_config.printable else 'CommonHTML')
+            math_inc = Mathjax_js % mathjax_config
 
         if not file_config.features.issubset(set(Features_all)):
             abort('FEATURE-ERROR: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
@@ -4388,7 +4391,6 @@ Pagedown_js = r'''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
   MathJax.Hub.Config({
-    skipStartupTypeset: %s
     %s
   });
 </script>
@@ -4668,8 +4670,10 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
 #   assessment: Do not warn about concept coverage for assessment documents (also displays print exam menu)
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
+#   auto_interact: Automatically initiate interactivity (for admin-paced sessions)
 #   center_title: Center section titles
 #   discuss_all: Enable discussion for all slides
+#   equation_left: Left align equations
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
 #   immediate_math: Immediate rendering of math formulas (normally math rendering is delayed to load plugins)
@@ -4693,7 +4697,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'center_title', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

@@ -611,9 +611,9 @@ class UserIdMixin(object):
         # Check if userId appears in roster
         if sdproxy.getSheet(sdproxy.ROSTER_SHEET):
             if not sdproxy.lookupRoster('id', userId):
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid %s not found in roster' % userId)
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:Userid %s not found in roster for site %s' % (userId, Options['site_name']))
         elif not sdproxy.Settings['no_roster']:
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site')
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site %s' % Options['site_name'])
 
 
     def custom_error(self, errCode, html_msg, clear_cookies=False):
@@ -3070,7 +3070,7 @@ class ActionHandler(BaseHandler):
         web_dir = self.previewState['web_dir']
 
         if Options['debug']:
-            print >> sys.stderr, 'ActionHandler:acceptPreview', sessionName, uploadType, src_dir, web_dir, modified, self.previewState['modimages']
+            print >> sys.stderr, 'ActionHandler:acceptPreview', sessionName, slideId, uploadType, src_dir, web_dir, modified, self.previewState['modimages']
 
         if not self.previewState['modified']:
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Cannot accept unmodified preview for session '+sessionName)
@@ -3144,7 +3144,7 @@ class ActionHandler(BaseHandler):
         if pacedSession(uploadType):
             sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
             if sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE:
-                if not sessionEntries['adminPaced'] or sessionEntries['adminPaced'] <= 1:
+                if not getResponderCount(sessionName, uploadType):
                     previewOnly = True
             elif sessionEntries['releaseDate'] == sliauth.FUTURE_DATE:
                 previewOnly = True
@@ -3156,7 +3156,7 @@ class ActionHandler(BaseHandler):
             if previewOnly:
                 redirPath = site_prefix + '/_startpreview/' + sliauth.safe_quote(sessionName) + '?slideid=' + slideId
             else:
-                redirPath = getSessionPath(sessionName, site_prefix=True) + '#' + slideId
+                redirPath = getSessionPath(sessionName, site_prefix=True) + '?slideid=' + slideId
         else:
             # Display ToC
             redirPath = getSessionPath(sessionName, site_prefix=True, toc=True)
@@ -3878,7 +3878,7 @@ class UserActionHandler(ActionHandler):
                 message = 'User %s temporarily linked to @%s' % (userId, twitterName)
 
             else:
-                raise tornado.web.HTTPError(403, log_message='CUSTOM:User %s not found in roster' % (userId,))
+                raise tornado.web.HTTPError(403, log_message='CUSTOM:User %s not found in roster for site %s' % (userId, Options['site_name']))
 
             retval = None
 
@@ -5380,7 +5380,7 @@ def processTwitterMessage(msg):
         if userId:
             status = WSHandler.processMessage(userId, fromRole, sdproxy.lookupRoster('name', userId), message, source='twitter', adminBroadcast=True)
         else:
-            status = 'Error - twitter ID '+fromUser+' not found in roster'
+            status = 'Error - twitter ID %s not found in roster for site %s' % (fromUser, Options['site_name'])
 
     print >> sys.stderr, 'processTwitterMessage:', status
     return status
@@ -6331,9 +6331,9 @@ def setup_backup():
     print >> sys.stderr, Options['site_name'] or 'ROOT', 'Scheduled daily backup in dir %s, starting at %s' % (Options['backup_dir'], sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
     def start_backup():
         if Options['debug']:
-            print >> sys.stderr, "Starting periodic backup"
+            print >> sys.stderr, Options['site_name'] or 'ROOT', 'Starting periodic backup'
         backupSite()
-        Global.backup = PeriodicCallback(backupSite, backupInterval*1000.0)
+        Global.backup = PeriodicCallback(functools.partial(backupSite,'',True), backupInterval*1000.0)
         Global.backup.start()
 
     IOLoop.current().call_at(backupTimeSec, start_backup)
@@ -6378,8 +6378,6 @@ def site_server_setup():
     if bak_dir:
         restoreSite(bak_dir)
 
-    setup_backup()
-    
     if Options['twitter_config']:
         comps = [x.strip() for x in Options['twitter_config'].split(',')]
         Global.twitter_params = {
@@ -6661,6 +6659,11 @@ def main():
 
     BaseHandler.setup_dirs(Options['site_name'])
 
+    if CommandOpts.backup:
+        comps = CommandOpts.backup.split(',')
+        Options['backup_dir'] = comps[0]
+        Options['backup_hhmm'] = comps[1] if len(comps) > 1 else '03:00'
+
     if Options['site_number']:
         # Start secondary server
         site_server_setup()
@@ -6709,12 +6712,8 @@ def main():
         certfile, keyfile = CommandOpts.ssl.split(',')
         Options['ssl_options'] = {"certfile": certfile, "keyfile": keyfile}
 
-    if not Options['site_number'] and CommandOpts.backup:
-        comps = CommandOpts.backup.split(',')
-        Options['backup_dir'] = comps[0]
-        Options['backup_hhmm'] = comps[1] if len(comps) > 1 else '03:00'
-
     if Options['multisite']:
+        # Start secondary servers
         print >> sys.stderr, 'DEBUG: sdserver.main:', SiteOpts.keys()
         for j, site_name in enumerate(SiteOpts.keys()):
             gsheet_url = SiteOpts[site_name]['gsheet_url']
@@ -6724,10 +6723,9 @@ def main():
 
         print >> sys.stderr, 'DEBUG: sdserver.userRoles:', Global.userRoles.root_role, Global.userRoles.site_roles, Global.userRoles.external_users
         start_multiproxy()
-        setup_backup()
 
     else:
-        # Start single site server
+        # Setup single site server
         SiteProps.root_site_setup(0, '', Options['gsheet_url'])
         site_server_setup()
 
@@ -6743,6 +6741,9 @@ def main():
                     id2email[idVal] = siteName+':'+emailVal
                     Global.email2id[emailVal][idVal].append(siteName)
 
+    # Root/primary controls backup
+    setup_backup()
+    
     # Start primary server
     start_server()
 

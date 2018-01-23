@@ -54,9 +54,16 @@ Share = {
 	}
     },
 
-    showDetails: function () {
-	Slidoc.log('Slidoc.Plugins.Share.showDetails:');
-	if (this.detailsElem.style.display) {
+    enterSlide: function(paceStart, backward){
+	console.log('Slidoc.Plugins.Share.enterSlide:', paceStart, backward);
+	if (!backward && Slidoc.PluginManager.autoInteractMode())
+	    this.showDetails(true);
+	return 0;
+    },
+
+    showDetails: function (show) {
+	Slidoc.log('Slidoc.Plugins.Share.showDetails:', show);
+	if (this.detailsElem.style.display || show) {
 	    this.detailsElem.style.display = null;
 	    this.getResponses(false);
 	} else {
