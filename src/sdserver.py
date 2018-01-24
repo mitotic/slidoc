@@ -2708,15 +2708,17 @@ class ActionHandler(BaseHandler):
                 print >> sys.stderr, 'sdserver.uploadSession: Error', uploadType, src_path, len(fbody1), retval
                 raise Exception('\n'.join(retval.get('messages',[]))+'\n')
 
+            md_params = retval['md_params']
+
             # Save current preview state (allowing user to navigate and answer questions, without saving those changes)
             if pacedSession(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
             # NOTE: If adding any preview fields here, also modify createUnmodifiedPreview below
             self.previewState['md'] = fbody1
-            self.previewState['md_defaults'] = retval['md_params'].get('md_defaults', '')
-            self.previewState['md_slides'] = retval['md_params'].get('md_slides', [])
-            self.previewState['new_image_number'] = retval['md_params'].get('new_image_number', 0)
+            self.previewState['md_defaults'] = md_params.get('md_defaults', '')
+            self.previewState['md_slides'] = md_params.get('md_slides', [])
+            self.previewState['new_image_number'] = md_params.get('new_image_number', 0)
             self.previewState['HTML'] = retval['out_html']
             self.previewState['TOC'] = retval['toc_html']
             self.previewState['messages'] = retval['messages']
@@ -3281,7 +3283,7 @@ class ActionHandler(BaseHandler):
                     sessionResponders = self.previewState['session_responders']
 
                 else:
-                    md_defaults, sessionText, _, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
+                    md_defaults, sessionText, _, md_header, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=slideNumber, end_slide=slideNumber)
                     sessionResponders = getResponderCount(sessionName, uploadType)
 
                 sessionText = strip_slide(sessionText)
@@ -3333,9 +3335,9 @@ class ActionHandler(BaseHandler):
                     # Clear any unmodified preview
                     self.previewClear()
                     
-                md_defaults, md_slides, new_image_number = self.extract_slides(src_path, web_path)
+                md_defaults, md_slides, md_header, new_image_number = self.extract_slides(src_path, web_path)
                 if not sameSession:
-                    _, _, image_zipdata, _ = self.extract_slide_range(src_path, web_path) # Redundant, but need images
+                    _, _, image_zipdata, _, _ = self.extract_slide_range(src_path, web_path) # Redundant, but need images
 
             if sameSession and slideNumber > len(md_slides):
                 raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid slide number %d of %d' % (slideNumber, len(md_slides)) )
@@ -3343,7 +3345,7 @@ class ActionHandler(BaseHandler):
             if not sameSession:
                 # Insert slide from another session
                 _, _, from_src, from_web, _ = self.getUploadType(fromSession, siteName=fromSite)
-                _, slideText, slide_images_zip, new_image_number = self.extract_slide_range(from_src, from_web, start_slide=slideNumber, end_slide=slideNumber, renumber=new_image_number, session_name=sessionName)
+                _, slideText, slide_images_zip, _, new_image_number = self.extract_slide_range(from_src, from_web, start_slide=slideNumber, end_slide=slideNumber, renumber=new_image_number, session_name=sessionName)
 
                 if not newNumber or newNumber > len(md_slides)+1:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid insert slide number %d' % newNumber)
@@ -3533,7 +3535,7 @@ class ActionHandler(BaseHandler):
         if discussSlides and submitted:
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Truncation/rollover does not yet work with discussions for submitted session '+sessionName)
 
-        _, md_slides, __ = self.extract_slides(src_path, web_path)
+        _, md_slides, _, _ = self.extract_slides(src_path, web_path)
 
         slideNumber = slideNumber or lastSlide
         end_slide = slideNumber if truncateOnly else lastSlide
@@ -3550,7 +3552,7 @@ class ActionHandler(BaseHandler):
                 if end_slide != lastSlide:
                     raise tornado.web.HTTPError(404, log_message='CUSTOM:Truncation only allowed at end for admin-paced session '+sessionName)
 
-        truncate_defaults, truncateText, truncate_images_zip, _ = self.extract_slide_range(src_path, web_path, start_slide=1, end_slide=end_slide, renumber=1, session_name=sessionName)
+        truncate_defaults, truncateText, truncate_images_zip, truncateHeader, _ = self.extract_slide_range(src_path, web_path, start_slide=1, end_slide=end_slide, renumber=1, session_name=sessionName)
 
         truncateText = truncate_defaults + strip_slide(truncateText)
         rolloverParams = {'uploadType': uploadType,
@@ -3570,17 +3572,21 @@ class ActionHandler(BaseHandler):
             return
 
         # Rollover slides to next session
-        _, rolloverText, rollover_images_zip, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=start_slide, renumber=1, session_name=sessionName)
+        _, rolloverText, rollover_images_zip, rolloverHeader, new_image_number = self.extract_slide_range(src_path, web_path, start_slide=start_slide, renumber=1, session_name=sessionName)
 
         sessionNext = sliauth.SESSION_NAME_FMT % (uploadType, sessionNumber+1)
-        _, __, src_next, web_next, web_images_next = self.getUploadType(sessionNext)
+        _, _, src_next, web_next, web_images_next = self.getUploadType(sessionNext)
 
+        next_prefix = ''
         if os.path.exists(src_next):
             # Next session exists
-            next_defaults, nextText, next_images_zip, new_image_number = self.extract_slide_range(src_next, web_next, renumber=new_image_number, session_name=sessionNext)
+            next_defaults, nextText, next_images_zip, nextHeader, new_image_number = self.extract_slide_range(src_next, web_next, renumber=new_image_number, session_name=sessionNext)
         else:
             # Create next session
-            next_defaults, nextText, next_images_zip, new_image_number = truncate_defaults, '', None, new_image_number
+            next_defaults, nextText, next_images_zip, nextHeader, new_image_number = truncate_defaults, '', None, '', new_image_number
+
+            if rolloverHeader:
+                next_prefix = '\n# cont. %s\n\n----\n\n' % rolloverHeader
 
             # Do not release it by default
             if not next_defaults:
@@ -3601,7 +3607,7 @@ class ActionHandler(BaseHandler):
         combine_slides = [pad_slide(rolloverText), nextText]
         splice_slides(combine_slides, 0)
 
-        combineText = next_defaults + strip_slide( ''.join(combine_slides) )
+        combineText = next_defaults + next_prefix + strip_slide( ''.join(combine_slides) )
 
         fbody2 = ''
         fname2 = ''
@@ -4581,7 +4587,7 @@ class PluginManager(object):
                 sep = '-'   # For legacy compatibility only
 
             fprefix, _, uname = fhead.rpartition(sep)
-            sname, _, __ = fprefix.partition(sep)
+            sname, _, _ = fprefix.partition(sep)
             if salt.startswith('s-'):
                 hmac_key = sliauth.gen_file_key(Options['auth_key'], sname, '')
             else:

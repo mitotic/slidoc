@@ -2631,7 +2631,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         md_breaks.append(count)
 
     md_params = {'md_digest': md_digest, 'md_defaults': md_defaults, 'md_slides': md_slides, 'md_breaks': md_breaks,
-                 'md_images': renderer.slide_images, 'new_image_number': renderer.slide_maximage+1}
+                 'md_images': renderer.slide_images, 'md_header': renderer.file_header, 'new_image_number': renderer.slide_maximage+1}
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
     if renderer.questions:
@@ -3017,7 +3017,7 @@ def preprocess(source):
 
 def extract_slides(src_path, web_path):
     # Extract text for individual slides from Markdown file
-    # Return (md_defaults, md_slides, new_image_number)
+    # Return (md_defaults, md_slides, md_header, new_image_number)
     try:
         with open(src_path) as f:
             source = f.read()
@@ -3041,12 +3041,12 @@ def extract_slides(src_path, web_path):
     for count in sessionIndexParams['md_breaks']:
         md_slides.append(md_source[base+offset:base+count])
         offset = count
-    return (sessionIndexParams['md_defaults'], md_slides, sessionIndexParams['new_image_number'])
+    return (sessionIndexParams['md_defaults'], md_slides, sessionIndexParams.get('md_header',''), sessionIndexParams['new_image_number'])
 
 def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber=0, session_name=''):
     # Extract text and images for a range of slides from Markdown file
-    # Return (md_defaults, slides_text_md, slides_images_zip or None, new_image_number)
-    md_defaults, md_slides, new_image_number = extract_slides(src_path, web_path)
+    # Return (md_defaults, slides_text_md, slides_images_zip or None, md_header, new_image_number)
+    md_defaults, md_slides, md_header, new_image_number = extract_slides(src_path, web_path)
 
     if not start_slide:
         start_slide = 1
@@ -3067,7 +3067,7 @@ def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber
     extract_parser = md2md.Parser(extract_mods_args)
     extract_text, extract_zipped, tem_image_number = extract_parser.parse(md_extract, src_path)
     
-    return (md_defaults, extract_text, extract_zipped, tem_image_number if renumber else new_image_number)
+    return (md_defaults, extract_text, extract_zipped, md_header, tem_image_number if renumber else new_image_number)
     
 
 def read_index(fhandle, entry_count=6, path=''):
@@ -3746,11 +3746,14 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # First file or separate files
             mathjax_config = 'skipStartupTypeset: %s,\n' % ('false' if 'immediate_math' in file_config.features else 'true')
             if 'equation_number' in file_config.features:
-                mathjax_config += r'TeX: { equationNumbers: { autoNumber: "AMS" } },\n'
+                mathjax_config += 'TeX: { equationNumbers: { \n'
+                if 'chapters' not in file_config.strip:
+                    mathjax_config += 'formatNumber: function (n) {return "%s."+n},\n' % fnumber
+                mathjax_config += 'autoNumber: "AMS" } },\n'
             if 'equation_left' in file_config.features:
-                mathjax_config += r'displayAlign: "left",\n'
+                mathjax_config += 'displayAlign: "left",\n'
             if 'tex_math' in file_config.features:
-                mathjax_config += r'tex2jax: { inlineMath: [ ["$","$"], ["\\(","\\)"] ], processEscapes: true },\n'
+                mathjax_config += 'tex2jax: { inlineMath: [ ["$","$"], ["\\\\(","\\\\)"] ], processEscapes: true },\n'
             mathjax_config  += 'jax: ["input/TeX","output/%s"]' % ('SVG' if file_config.printable else 'CommonHTML')
             math_inc = Mathjax_js % mathjax_config
 
@@ -4016,7 +4019,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 index_entries = [fname, fheader, file_props[fname]['doc_str'], file_props[fname]['due_date'] or '-', file_props[fname]['release_date'] or '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
                 index_dict = {'md_digest': md_params['md_digest'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
-                              'md_images': md_params['md_images'], 'new_image_number': md_params['new_image_number']}
+                              'md_images': md_params['md_images'], 'md_header': md_params['md_header'], 'new_image_number': md_params['new_image_number']}
                 index_entries += [ json.dumps(index_dict).replace('<', '&lt;').replace('>', '&gt;')]
                 index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
                 out_index[outpath] = index_head
@@ -4497,6 +4500,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     preview_token = str(random.randrange(0,2**32))
     src_path = ''
     md_content = None
+    md_params = None
     pptx_opts = {}
     config_dict = None
 
@@ -4517,6 +4521,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         cls.src_modtime = os.path.getmtime(cls.src_path)
         input_file = open(cls.src_path)
         images_zipdict = {}
+        diff_char_num = 0
         if fext == 'pptx':
             import pptx2md
             md_path = cls.src_path[:-len('.pptx')]+'.md'
@@ -4526,9 +4531,28 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             images_zipdict[fname] = images_zipdata
         else:
             md_path = cls.src_path
-            cls.md_content = input_file.read()
+            new_md_content = input_file.read()
+            if cls.md_content is not None:
+                nmatch = min(len(cls.md_content), len(new_md_content))
+                diff_char_num = nmatch
+                for j in xrange(nmatch):
+                    if cls.md_content[j] != new_md_content[j]:
+                        diff_char_num = j
+                        break
+            cls.md_content = new_md_content
             images_zipdata = None
         input_file.close()
+
+        diff_slide_num = 0
+        if cls.md_params:
+            base = len(cls.md_params['md_defaults'])
+            if diff_char_num >= base:
+                diff_slide_num = len(cls.md_params['md_breaks'])
+                for j, count in enumerate(cls.md_params['md_breaks']):
+                    if diff_char_num < base+count:
+                        diff_slide_num = j+1
+                        break
+
         retval = process_input([io.BytesIO(cls.md_content)], [md_path], cls.config_dict,
                                default_args_dict=cls.default_args_dict, return_html=True, images_zipdict=images_zipdict,
                                restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE)
@@ -4536,6 +4560,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         cls.outname = os.path.basename(retval['outpath'])
         cls.out_html = retval['out_html']
         cls.toc_html = retval['toc_html']
+        cls.md_params = retval['md_params']
         cls.upload_content = retval['zipped_md'] if retval['zipped_md'] else cls.md_content
         cls.upload_name = fname + ('.zip' if retval['zipped_md'] else '.md')
         if retval['zipped_md']:
@@ -4549,6 +4574,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         for msg in retval['messages']:
             print(msg, file=sys.stderr)
 
+        return diff_slide_num
 
     def log_message(self, format, *args):
         if args and isinstance(args[0], (str, unicode)) and (args[0].startswith('GET /_') or args[0].startswith('GET /?')):
@@ -4580,8 +4606,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if url_comps.path == '/_reloadcheck':
                 if os.path.getmtime(self.src_path) > self.src_modtime:
                     try:
-                        self.create_preview()
-                        self.wfile.write('reload')
+                        diff_slide_num = self.create_preview()
+                        self.wfile.write(str(diff_slide_num))
                         print('Updated preview\n---', file=sys.stderr)
                     except Exception, excp:
                         self.wfile.write('Error: '+str(excp))
@@ -4697,7 +4723,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

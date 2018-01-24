@@ -380,7 +380,7 @@ function sessionAbort(err_msg, err_trace) {
 
 function loadPath(newPath, newHash) {  // newHash, if specified, should include '#' prefix
     // Force reload of path, even if it is the same as current path
-    if (location.pathname == newPath) {
+    if (location.pathname+location.search == newPath) {
 	if (newHash)
 	    location.hash = newHash;
 	location.reload(true);
@@ -1220,18 +1220,18 @@ Slidoc.confirmLoad = function(path, msg) {
 	window.location = path;
 }
 
-Slidoc.dateLoad = function(prompt, loadPath) {
+Slidoc.dateLoad = function(prompt, dateLoadPath) {
     var html = escapeHtml(prompt) + ' <input id="slidoc-dateload" type="datetime-local" value="">\n';
     html += '<span class="slidoc-clickable" onclick="document.getElementById('+"'slidoc-dateload'"+').value='+"''"+';">Blank</span>\n';
-    html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.dateLoadAux('+"'"+loadPath+"'"+');">Confirm</span>';
+    html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.dateLoadAux('+"'"+dateLoadPath+"'"+');">Confirm</span>';
     Slidoc.showPopup(html);
     var dateElem = document.getElementById('slidoc-dateload');
     if (dateElem)
 	dateElem.value = Slidoc.toLocalISOString(null, true) + 'T00:00';
 }
 
-Slidoc.dateLoadAux = function(loadPath) {
-    var url = loadPath;
+Slidoc.dateLoadAux = function(dateLoadPath) {
+    var url = dateLoadPath;
     var dateElem = document.getElementById('slidoc-dateload');
     if (dateElem && dateElem.value)
 	url += '?releasedate=' + encodeURIComponent(dateElem.value);
@@ -1922,6 +1922,9 @@ function restoreScroll() {
 	window.scrollTo(0,scrollVal);
     } else if (hashVal) {
 	location.hash = '#' + hashVal;
+	var elem = document.getElementById(hashVal);
+	if (elem)
+	    setTimeout( function(){elem.scrollIntoView();}, 350);
     }
 }
 
@@ -1936,14 +1939,18 @@ function statefulHash(slideId) {
 }
 
 function statefulReload(slideNum) {
+
     var hashVal = '';
     if (slideNum) {
-	var visibleSlides = getVisibleSlides();
-	if (visibleSlides && visibleSlides.length) {
-	    var firstSlideId = visibleSlides[0].id;
-	    var chapter_id = parseSlideId(firstSlideId)[0];
-	    var slide_id = chapter_id + '-' + zeroPad(slideNum, 2);
-	    hashVal = statefulHash(slide_id);
+	var slides = getVisibleSlides();
+	if (slides && slides.length && slideNum <= slides.length) {
+	    if (Sliobj.currentSlide ||  !getCurrentlyVisibleSlide([slides[slideNum-1]])) {
+		// Slide view or new slide not visible in document view
+		var firstSlideId = slides[0].id;
+		var chapter_id = parseSlideId(firstSlideId)[0];
+		var slide_id = chapter_id + '-' + zeroPad(slideNum, 2);
+		hashVal = statefulHash(slide_id);
+	    }
 	}
     }
     if (!hashVal && !Sliobj.currentSlide) {
@@ -1968,7 +1975,8 @@ function reloadCheckFunc() {
 	    document.getElementById('slidoc-localpreview-status').textContent = ' '+result;
 	} else if (result && result.trim()) {
 	    // Reload
-	    statefulReload(Sliobj.currentSlide);
+	    var resultVal = parseNumber(result.trim());
+	    statefulReload(resultVal || Sliobj.currentSlide);
 	    return;
 	}
 	setTimeout(reloadCheckFunc, 333);
