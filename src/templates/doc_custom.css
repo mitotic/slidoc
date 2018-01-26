@@ -55,6 +55,15 @@ a.button, a.button:visited {
       color: #000;
     }
 
+  footer {
+    position: fixed;
+    bottom: 0;
+  }
+  header {
+    position: fixed;
+    top: 0;
+  }
+  
   h1 {font-size: 1.70em }
   h2 {font-size: 1.55em}
   h3 {font-size: 1.30em}

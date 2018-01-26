@@ -16,6 +16,10 @@ Timer = {
 	    }
 	},
 
+	timeout: function() {
+	    Slidoc.log('Slidoc.Plugins.Timer.timeout:');
+	},
+
 	stop: function() {
 	    Slidoc.log('Slidoc.Plugins.Timer.stop:');
 	    if (this.timer) {
@@ -25,6 +29,7 @@ Timer = {
 	    Slidoc.sendEvent(-1, 'Timer.clockTick', this.timerValue.value);
 	    this.timerValue.disabled = null;
 	    this.timerButton.value = PLAY;
+	    this.timerValue.classList.remove('slidoc-red');
 	},
 
 	start: function() {
@@ -32,6 +37,7 @@ Timer = {
 	    this.stop();
 	    this.timerButton.value = STOP;
 	    this.timerValue.disabled = 'disabled';
+	    this.timerValue.classList.remove('slidoc-red');
 	    this.timer = setInterval(this.advance.bind(this), 1*1000);
 	},
 
@@ -47,6 +53,12 @@ Timer = {
 	clockTick: function(value) {
 	    Slidoc.log('Slidoc.Plugins.Timer.clockTick:', value);
 	    this.timerValue.value = ''+value;
+	    if (value < 10) {
+		if (value % 2)
+		    this.timerValue.classList.add('slidoc-red');
+		else
+		    this.timerValue.classList.remove('slidoc-red');
+	    }
 	},
 
 	advance: function() {
@@ -64,8 +76,10 @@ Timer = {
 	    }
 	    this.clockTick(value);
 	    Slidoc.sendEvent(-1, 'Timer.clockTick', value);
-	    if (!value)
+	    if (!value) {
 		this.stop();
+		Slidoc.sendEvent(-1, 'Timer.timeout');
+	    }
 	}
     },
 

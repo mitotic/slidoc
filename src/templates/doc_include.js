@@ -110,7 +110,7 @@ Sliobj.interactiveMessages = [];
 
 Sliobj.showHiddenSlides = false;
 Sliobj.interactiveMode = false;
-Sliobj.interactiveSlide = false;
+Sliobj.interactiveSlide = '';
 Sliobj.gradableState = null;
 Sliobj.firstTime = true;
 Sliobj.closePopup = null;
@@ -590,6 +590,17 @@ document.onreadystatechange = function(event) {
     return abortOnError(onreadystateaux);
 }
 
+Slidoc.renderMath = function(elem) {
+    if (window.MathJax) {
+	if (elem)
+	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, elem]);
+	else
+	    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+
+    } else if (window.renderMathInElement) {
+	renderMathInElement(elem || document.body, KaTeX_opts);
+    }
+}
     
 var PagedownConverter = null;
 function onreadystateaux() {
@@ -607,9 +618,9 @@ function onreadystateaux() {
 	PagedownConverter.hooks.chain("preBlockGamut", MDPreBlockGamut);
     }
 
-    // Typeset MathJax after plugin setup
-    if (!('immediate_math' in Sliobj.params.features) && window.MathJax)
-	MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+    // Typeset math after plugin setup
+    if (!('immediate_math' in Sliobj.params.features))
+	Slidoc.renderMath();
 
     if (Sliobj.params.gd_client_id) {
 	// Google client load will authenticate
@@ -1067,8 +1078,7 @@ Slidoc.slideDiscuss = function(action, slideId) {
 	if (action == 'preview') {
             var renderElem = document.getElementById(slideId+'-discuss-render');
 	    renderElem.innerHTML = MDConverter(textValue, true);
-	    if (window.MathJax)
-		MathJax.Hub.Queue(["Typeset", MathJax.Hub, renderElem.id]);
+	    Slidoc.renderMath(renderElem);
 	} else if (action == 'post') {
 	    var updates = {id: userId};
 	    updates[colName] = textValue;
@@ -1130,8 +1140,7 @@ function displayDiscussion(userId, slideId, posts) {
     containerElem.style.display = null;
     var postsElem = document.getElementById(slideId+'-discuss-posts');
     postsElem.innerHTML = html;
-    if (window.MathJax)
-	MathJax.Hub.Queue(["Typeset", MathJax.Hub, postsElem.id]);
+    Slidoc.renderMath(postsElem);
 
     var showElem = document.getElementById(slideId+'-discuss-show');
     if (showElem)
@@ -2939,13 +2948,26 @@ function showDialog(action, testEvent, prompt, value) {
 // Section 10b: Events
 ////////////////////////
 
-Slidoc.sendEvent = function (eventType, eventName) // Extra Args
+Slidoc.sendEvent = function (eventType, eventName) // Extra event Args
 {
     if (Sliobj.previewState || Sliobj.updateView)  // Do not transmit events when previewing
 	return;
-    var extraArgs = Array.prototype.slice.call(arguments).slice(2);
-    Slidoc.log('Slidoc.sendEvent:', eventType, eventName, extraArgs);
-    GService.sendEventWS('', eventType, eventName, extraArgs);
+    var eventArgs = Array.prototype.slice.call(arguments).slice(2);
+    Slidoc.log('Slidoc.sendEvent:', eventType, eventName, eventArgs);
+    GService.sendEventWS('', eventType, eventName, eventArgs);
+
+    if (eventName == 'AdminPacedForceAnswer' && eventArgs.length >= 2) {
+	if (Sliobj.interactiveSlide)
+	    setTimeout( function(){ enableInteract(false, eventArgs[1]); }, 500);
+    }
+    
+    if (autoInteract() && eventName == 'Timer.timeout' && Sliobj.session.lastSlide) {
+	var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
+	var eventMessage = ['', 'Share.finalizeShare.'+lastSlideId, []];
+	if (Sliobj.interactiveSlide)
+	    setTimeout( function(){ enableInteract(false, lastSlideId); }, 500);
+	setTimeout( function(){ Sliobj.eventReceiver(eventMessage); }, 1000);
+    }
 }
 
 Sliobj.eventReceiver = function(eventMessage) {
@@ -2964,13 +2986,22 @@ Sliobj.eventReceiver = function(eventMessage) {
 	var pluginName = comps[0];
 	var pluginMethodName = comps[1];
 	var slide_id = (comps.length > 2) ? comps[2] : ''; // '' slide_id => session plugin
-	if (!Sliobj.slidePluginList[slide_id]) {
-	    Slidoc.log('Sliobj.eventReceiver: No plugins loaded for slide '+slide_id);
-	    return;
-	}
-	for (var j=0; j<Sliobj.slidePluginList[slide_id].length; j++) {
-	    if (Sliobj.slidePluginList[slide_id][j].name == pluginName)
-		Slidoc.PluginManager.invoke.apply(null, [Sliobj.slidePluginList[slide_id][j], pluginMethodName].concat(eventArgs));
+	if (!slide_id) {
+	    var globalInstance = Sliobj.globalPluginDict[pluginName];
+	    if (globalInstance)
+		Slidoc.PluginManager.invoke.apply(null, [globalInstance, pluginMethodName].concat(eventArgs));
+	    else
+		Slidoc.log('Sliobj.eventReceiver: No global plugin '+pluginName);
+
+	} else {
+	    if (!Sliobj.slidePluginList[slide_id]) {
+		Slidoc.log('Sliobj.eventReceiver: No plugins loaded for slide '+slide_id);
+		return;
+	    }
+	    for (var j=0; j<Sliobj.slidePluginList[slide_id].length; j++) {
+		if (Sliobj.slidePluginList[slide_id][j].name == pluginName)
+		    Slidoc.PluginManager.invoke.apply(null, [Sliobj.slidePluginList[slide_id][j], pluginMethodName].concat(eventArgs));
+	    }
 	}
 
     } else if (eventName == 'ReloadPage') {
@@ -3123,12 +3154,16 @@ function toggleInteractMode() {
 	interactDispElem.classList.add('slidoc-interact-suspend');
 }
 
-function enableInteract(active) {
-    Slidoc.log('enableInteract:', active, Sliobj.interactiveSlide, Sliobj.session.lastSlide);
+function enableInteract(active, slideId) {
+    Slidoc.log('enableInteract:', active, slideId, Sliobj.interactiveSlide, Sliobj.session.lastSlide);
+    var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
+    if (slideId && slideId != lastSlideId) // Obsolete async call
+	return;
+
     var interactDispElem = document.getElementById('slidoc-interact-display');
     if (!active) {
 	if (Sliobj.interactiveSlide) {
-	    Sliobj.interactiveSlide = false;
+	    Sliobj.interactiveSlide = '';
 	    if (interactDispElem)
 		interactDispElem.classList.add('slidoc-interact-suspend');
 	    GService.requestWS('interact', ['end', '', null, ''], interactCallback);
@@ -3138,7 +3173,6 @@ function enableInteract(active) {
     if (!isController() || Sliobj.session.submitted || Sliobj.interactiveSlide)
 	return;
 
-    var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
     var qattrs = getQuestionAttrs(lastSlideId);
     if (qattrs && qattrs.qnumber in Sliobj.session.questionsAttempted)
 	qattrs = null;
@@ -3147,7 +3181,7 @@ function enableInteract(active) {
 	return;
     
     // Start 'interact' for unanswered question slides only
-    Sliobj.interactiveSlide = true;
+    Sliobj.interactiveSlide = lastSlideId;
     if (interactDispElem)
 	interactDispElem.classList.remove('slidoc-interact-suspend');
     GService.requestWS('interact', ['start', lastSlideId, qattrs, !!Sliobj.params.features.rollback_interact], interactCallback);
@@ -3308,6 +3342,10 @@ Slidoc.PluginManager.pastDueDate = function() {
 
 Slidoc.PluginManager.autoInteractMode = function() {
     return autoInteract() && Sliobj.interactiveMode;
+}
+
+Slidoc.PluginManager.isController = function() {
+    return isController();
 }
 
 Slidoc.PluginManager.getLiveResponses = function(qnumber) {
@@ -3696,7 +3734,8 @@ function dispUserInfo(userId, dispName) {
 	if (ncomps.length > 1)
 	    username += '-'+ncomps[1].trim();
 	username = username.replace(/ /g,'-').replace(/\./g,'').toLowerCase();
-	document.title = (username || userId)+'-'+Sliobj.sessionName;
+	var title = Sliobj.params.doc_title || [username || userId, Sliobj.sessionName].join('-');
+	document.title = title;
     } else {
 	if (infoElem)
 	    infoElem.textContent = '';
@@ -7099,8 +7138,7 @@ function renderDisplay(slide_id, inputSuffix, renderSuffix, renderMarkdown) {
     var textValue = inputElem.value;
     if (textValue && renderMarkdown) {
 	renderElem.innerHTML = MDConverter(textValue, true);
-	if (window.MathJax)
-	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, renderElem.id]);
+	Slidoc.renderMath(renderElem);
     } else {
 	renderElem.textContent = textValue;
     }
@@ -8295,17 +8333,18 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 	} else {
 	    pluginButton.innerHTML = '';
 	    pluginButton.style.display = 'none';
+
 	}
 	Sliobj.delaySec = null;
-	if (allowDelay()) {
-	    if (slide_id in Sliobj.slidePluginList) {
-		for (var j=0; j<Sliobj.slidePluginList[slide_id].length; j++) {
-		    var delaySec = Slidoc.PluginManager.optCall(Sliobj.slidePluginList[slide_id][j], 'enterSlide', true, backward);
-		    if (delaySec != null)
-			Sliobj.delaySec = delaySec;
-		}
+	if (slide_id in Sliobj.slidePluginList) {
+	    for (var j=0; j<Sliobj.slidePluginList[slide_id].length; j++) {
+		var delaySec = Slidoc.PluginManager.optCall(Sliobj.slidePluginList[slide_id][j], 'enterSlide', true, backward);
+		if (delaySec != null && allowDelay())
+		    Sliobj.delaySec = delaySec;
 	    }
+	}
 
+	if (allowDelay()) {
 	    if (Sliobj.delaySec == null && !Sliobj.questionSlide) // Default delay only for non-question slides
 		Sliobj.delaySec = Sliobj.params.slideDelay;
 	    if (Sliobj.delaySec)
@@ -8787,8 +8826,8 @@ Slidoc.showPopupWithList = function(prefixHTML, listElems, lastMarkdown) {
 		childNodes[k-1].textContent = curElems[k];
 	}
     }
-    if (lastMarkdown && window.MathJax)
-	MathJax.Hub.Queue(["Typeset", MathJax.Hub, popupContent.id]);
+    if (lastMarkdown)
+	Slidoc.renderMath(popupContent);
 }
 
 Slidoc.wordCloud = function(textList, options) {

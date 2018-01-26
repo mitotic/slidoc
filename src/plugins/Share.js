@@ -31,7 +31,10 @@ Share = {
     answerSave: function () {
 	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
 	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
-	    Slidoc.sendEvent(3, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber, null);
+	    if (!Slidoc.PluginManager.isController())
+		Slidoc.sendEvent(3, 'Share.answerSave.'+this.slideId, this.qattributes.qnumber, null);
+	    else if (this.qattributes.share == 'after_answering')
+		this.getResponses(true);
 	} else {
 	    if (this.qattributes.share != 'after_answering' || !window.GService)
 		return;

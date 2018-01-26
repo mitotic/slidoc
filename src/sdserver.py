@@ -3203,7 +3203,7 @@ class ActionHandler(BaseHandler):
             previewPath = '/'+Options['site_name']+previewPath
 
         if prevSessionName:
-            html_prefix = 'Rolled over %s slides from session %s to session %s. Proceed to preview of truncated session <a href="%s">%s</a>' % (truncateParams['slidesRolled'], sessionName, prevSessionName, previewPath, sessionName)
+            html_prefix = 'Rolled over %s slides from session %s to session %s. <b>Proceed to preview of truncated session <a href="%s">%s</a></b>' % (truncateParams['slidesRolled'], sessionName, prevSessionName, previewPath, sessionName)
             self.displayMessage(prevMsgs, html_prefix=html_prefix)
         else:
             self.set_header('Content-Type', 'application/json')
@@ -3701,6 +3701,14 @@ class UserActionHandler(ActionHandler):
             self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId,
                         total_grade=gradeVals.get('total'), letter_grade=gradeVals.get('grade'), last_update=gradeVals['lastUpdate'],
                         session_grades=sessionGrades, gradebook_release=sdproxy.Settings['gradebook_release'])
+            return
+
+        elif action in ('_user_blankimage',):
+            delay = self.get_argument('delay','')
+            if delay.isdigit():
+                yield tornado.gen.sleep(int(delay))
+            self.set_header('Content-Type', 'image/gif')
+            self.write(sliauth.blank_gif())
             return
 
         elif action == '_user_browse':
@@ -5265,6 +5273,7 @@ def createApplication():
                       (pathPrefix+r"/send", AuthMessageHandler),
                       (pathPrefix+r"/send/(.*)", AuthMessageHandler),
                       (pathPrefix+r"/(_dash)", AuthActionHandler),
+                      (pathPrefix+r"/(_user_blankimage)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),

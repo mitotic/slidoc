@@ -20,7 +20,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.21k'
+VERSION = '0.97.21l'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -105,6 +105,11 @@ def gen_late_token(key, user_id, site_name, session_name, date_str):
 def gen_random_number(low=2**123, high=2**128):
     # Returns secure random number using system call (default: 38 or 39 decimal digits)
     return random.SystemRandom().randrange(low, high)
+
+def blank_gif(data_url=False):
+    # Returns 1-pixel blank gif
+    b64content = 'R0lGODlhAQABAIAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=='
+    return 'data:image/gif;base64,'+b64content if data_url else base64.b64decode(b64content)
 
 def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
     try:

@@ -28,6 +28,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 import urllib
 import urllib2
 import urlparse
@@ -3388,7 +3389,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     js_params = {'siteName': '', 'fileName': '', 'chapterId': '',
                  'sessionType': '', 'sessionVersion': '1.0', 'sessionRevision': '', 'sessionPrereqs': '',
                  'overwrite': '', 'pacedSlides': 0, 'questionsMax': 0, 'scoreWeight': 0, 'otherWeight': 0, 'gradeWeight': 0,
-                 'topnavList': [], 'tocFile': '',
+                 'doc_title': '', 'topnavList': [], 'tocFile': '',
                  'slideDelay': 0, 'lateCredit': None, 'participationCredit': None, 'maxRetakes': 0, 'timedSec': 0,
                  'plugins': [], 'plugin_share_voteDate': '',
                  'releaseDate': '', 'dueDate': '', 'discussSlides': [], 'hiddenSlides': [], 'resubmitAnswers': None,
@@ -3731,6 +3732,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['plugin_share_voteDate'] = vote_date_str
             js_params['releaseDate'] = release_date_str
             js_params['dueDate'] = due_date_str
+            js_params['doc_title'] = file_config.doc_title or ''
             js_params['fileName'] = fname
 
             if js_params['paceLevel'] >= ADMIN_PACE and not gd_sheet_url:
@@ -3744,6 +3746,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
         if not j or config.separate:
             # First file or separate files
+            katex_config = ''
             mathjax_config = 'skipStartupTypeset: %s,\n' % ('false' if 'immediate_math' in file_config.features else 'true')
             if 'equation_number' in file_config.features:
                 mathjax_config += 'TeX: { equationNumbers: { \n'
@@ -3753,9 +3756,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             if 'equation_left' in file_config.features:
                 mathjax_config += 'displayAlign: "left",\n'
             if 'tex_math' in file_config.features:
+                katex_config = '{left: "$", right: "$", display: false},'
                 mathjax_config += 'tex2jax: { inlineMath: [ ["$","$"], ["\\\\(","\\\\)"] ], processEscapes: true },\n'
             mathjax_config  += 'jax: ["input/TeX","output/%s"]' % ('SVG' if file_config.printable else 'CommonHTML')
-            math_inc = Mathjax_js % mathjax_config
+            if 'equation_number' in file_config.features:
+                math_inc = Mathjax_js % mathjax_config
+            else:
+                math_inc = KaTeX_js % katex_config
 
         if not file_config.features.issubset(set(Features_all)):
             abort('FEATURE-ERROR: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
@@ -3917,7 +3924,12 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         md_html = md_html.replace('<p>SessionsDue:</p>', sessions_due_html)
         md_html = md_html.replace('<p>Announcements:</p>', announce_due_html)
 
+        printable_css = ''
+        if file_config.doc_title is not None and not file_config.doc_title:
+            # Blank doc_title; suppress browser header/footer by removing margins (but no way to create padding at top/bottom?)
+            printable_css = '''<style>@media print { @page { margin-top: 0; margin-bottom: 0; } }</style>''' 
         mid_params = {'session_name': fname,
+                      'printable_css': printable_css,
                       'math_js': math_inc if math_present else '',
                       'pagedown_js': (Pagedown_js % libraries_params) if renderer.render_markdown else '',
                       'skulpt_js': (Skulpt_js % libraries_params) if renderer.load_python else '',
@@ -4057,6 +4069,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     if toc_file:
         toc_path = dest_dir + toc_file
         toc_mid_params = {'session_name': '',
+                          'printable_css': '',
                           'math_js': '',
                           'pagedown_js': '',
                           'skulpt_js': '',
@@ -4224,14 +4237,15 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
     if not config.dry_run or return_html:
         if not combined_file:
-            if outfile_buffer:
+            if outfile_buffer and not RequestHandler.src_path:
                 message('Created output files:', ', '.join(x[0] for x in outfile_buffer))
             for outname, outpath, fnumber, md_params, pre_html, tail, zipped_md in outfile_buffer:
                 if tail:
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
+                    delay_elem = Delay_image_format % config.delay_sec if config.delay_sec else ''
                     if return_html:
-                        return {'outpath': outpath, 'out_html':md2md.str_join(Html_header, pre_html, tail, Html_footer), 'toc_html':md2md.stringify(toc_all_html), 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
+                        return {'outpath': outpath, 'out_html':md2md.str_join(Html_header, pre_html, tail, delay_elem, Html_footer), 'toc_html':md2md.stringify(toc_all_html), 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
                     else:
                         write_doc(outpath, pre_html, tail)
             if return_html:
@@ -4340,6 +4354,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         plugin_list.sort()
         js_params['plugins'] = plugin_list
         comb_params = {'session_name': combined_name,
+                       'printable_css': '',
                        'math_js': math_inc if math_load else '',
                        'pagedown_js': (Pagedown_js % libraries_params) if pagedown_load else '',
                        'skulpt_js': (Skulpt_js % libraries_params) if skulpt_load else '',
@@ -4366,9 +4381,11 @@ def sort_caseless(list):
     return new_list
 
 
-Html_header = '''<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+Html_header = '''<!DOCTYPE html>
 <html><head>
 '''
+
+Delay_image_format = '''<img src="_user_blankimage?delay=%d">'''
 
 Html_footer = '''
 <div id="slidoc-body-footer" class="slidoc-noslide"></div>
@@ -4390,6 +4407,20 @@ Pagedown_js = r'''
 <script src='%(libraries_link)s/Pagedown/Markdown.Converter.js'></script>
 <script src='%(libraries_link)s/Pagedown/Markdown.Sanitizer.js'></script>
 <script src='%(libraries_link)s/Pagedown/Markdown.Extra.js'></script>
+'''
+
+KaTeX_js = r'''<script type="text/javascript">
+var KaTeX_opts = { throwOnError: false,
+  delimiters: [ %s
+                {left: "\\(", right: "\\)", display: false},
+                {left: "$$", right: "$$", display: true},
+                {left: "\\[", right: "\\]", display: true}
+              ]
+};
+</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0-beta/katex.min.css" integrity="sha384-L/SNYu0HM7XECWBeshTGLluQO9uVI1tvkCtunuoUbCHHoTH76cDyXty69Bb9I0qZ" crossorigin="anonymous">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0-beta/katex.min.js" integrity="sha384-ad+n9lzhJjYgO67lARKETJH6WuQVDDlRfj81AJJSswMyMkXTD49wBj5EP004WOY6" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.9.0-beta/contrib/auto-render.min.js" integrity="sha384-EkJr57fExjeMKAZnlVBuoBoX0EJ4BiDPiAd/JyTzIA65ORu4hna7V6aaq4zsUvJ2" crossorigin="anonymous"></script>
 '''
 
 Mathjax_js = r'''<script type="text/x-mathjax-config">
@@ -4497,6 +4528,9 @@ def parse_merge_args(args_text, source, parser, cmd_args_dict, default_args_dict
     return argparse.Namespace(**merged_args_dict)
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    subproc = None
+    httpd = None
+
     preview_token = str(random.randrange(0,2**32))
     src_path = ''
     md_content = None
@@ -4581,6 +4615,17 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             return
         return BaseHTTPServer.BaseHTTPRequestHandler.log_message(self, format, *args)
 
+    @classmethod
+    def shutdown(cls):
+        if cls.subproc:
+            out, err = cls.subproc.communicate()
+            if out:
+                print(out, file=sys.stdout)
+            if err:
+                print(err, file=sys.stderr)
+        if cls.httpd:
+            cls.httpd.shutdown()
+
     def do_GET(self):
         url_comps = urlparse.urlparse(self.path)
         query = urlparse.parse_qs(url_comps.query)
@@ -4594,9 +4639,26 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.wfile.write(self.toc_html)
             return
 
+        if url_comps.path in ('/_shutdown'):
+            import threading
+            altproc = threading.Thread(target=RequestHandler.shutdown)
+            altproc.daemon = True
+            altproc.start()
+
+        if url_comps.path in ('/_user_blankimage'):
+            delay = query.get('delay', [])
+            if delay and delay[0].isdigit():
+                print('DELAY=%s' % delay[0], file=sys.stderr)
+                time.sleep(int(delay[0]))
+            self.send_response(200)
+            self.send_header('Content-type', 'image/gif')
+            self.end_headers()
+            self.wfile.write(sliauth.blank_gif())
+            return
+
         if url_comps.path in ('/_messages', '/_reloadcheck'):
             self.send_response(200)
-            self.send_header("Content-type", "text/plain")
+            self.send_header('Content-type', 'text/plain')
             self.end_headers()
             token = query.get('token', [])
             if not token and token[0] != self.preview_token:
@@ -4730,6 +4792,7 @@ Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combine
 Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
+Conf_parser.add_argument('--doc_title', metavar='TITLE', help='Document title (for display and printing header)')
 Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
 Conf_parser.add_argument('--fontsize', metavar='FONTSIZE[,PRINT_FONTSIZE]', help='Font size, e.g., 9pt')
@@ -4742,7 +4805,7 @@ Conf_parser.add_argument('--pace', type=int, metavar='PACE_LEVEL', help='Pace le
 Conf_parser.add_argument('--participation_credit', type=int, metavar='INTEGER', help='Participation credit: 0 (none), 1 (per question), 2 (for whole session)')
 Conf_parser.add_argument('--plugins', metavar='FILE1,FILE2,...', help='Additional plugin file paths')
 Conf_parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,...', help='Session prerequisites')
-Conf_parser.add_argument('--printable', help='Printer-friendly output', action="store_true", default=None)
+Conf_parser.add_argument('--printable', help='Printer-friendly output (SVG etc.)', action="store_true", default=None)
 Conf_parser.add_argument('--publish', help='Only process files with --publish in first line', action="store_true", default=None)
 Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release module on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
 Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
@@ -4765,6 +4828,7 @@ alt_parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File contai
 alt_parser.add_argument('--copy_source', help='Create a modified copy (only if dest_dir is specified)', action="store_true", default=None)
 alt_parser.add_argument('--create_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--default_args', metavar='ARGS', help="'--arg=val --arg2=val2' default arguments ('file' to read first line of first file)")
+alt_parser.add_argument('--delay_sec', type=int, default=0, metavar='PORT', help='Delay time (to finish equation rendering etc.)')
 alt_parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
 alt_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Extract content from slide onwards (renumbering images)')
@@ -4778,6 +4842,7 @@ alt_parser.add_argument('--notebook', help='Create notebook files', action="stor
 alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)
 alt_parser.add_argument('-p', '--preview_port', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
+alt_parser.add_argument('--print_to_pdf', metavar='FILE', help='PDF output file name')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
@@ -4904,16 +4969,20 @@ if __name__ == '__main__':
         except Exception, excp:
             sys.exit(str(excp))
 
-        httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args.preview_port), RequestHandler)
-        command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args.preview_port, RequestHandler.preview_token, '1' if cmd_args.upload_key else '')
+        RequestHandler.httpd = BaseHTTPServer.HTTPServer(('localhost', cmd_args.preview_port), RequestHandler)
+        if cmd_args.print_to_pdf:
+            command = "sleep 1 && /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --headless --disable-gpu --print-to-pdf=%s 'http://localhost:%d/?print=1' && curl -s 'http://localhost:%d/_shutdown'" % (cmd_args.print_to_pdf, cmd_args.preview_port, cmd_args.preview_port)
+        else:
+            command = "sleep 1 && open -a 'Google Chrome' 'http://localhost:%d/?reloadcheck=%s&remoteupload=%s'" % (cmd_args.preview_port, RequestHandler.preview_token, '1' if cmd_args.upload_key else '')
+
         print('Preview at http://localhost:'+str(cmd_args.preview_port), file=sys.stderr)
         print(command, file=sys.stderr)
-        subp = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, stderr=subprocess.STDOUT)
+        RequestHandler.subproc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, stderr=subprocess.STDOUT)
         try:
-            httpd.serve_forever()
+            RequestHandler.httpd.serve_forever()
         except KeyboardInterrupt:
             pass
-        httpd.server_close()
+        RequestHandler.httpd.server_close()
     else:
         process_input(input_files, input_paths, config_dict, default_args_dict=default_args_dict, images_zipdict=images_zipdict,
                       restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, error_exit=True)
