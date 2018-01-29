@@ -598,7 +598,11 @@ Slidoc.renderMath = function(elem) {
 	    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
 
     } else if (window.renderMathInElement) {
-	renderMathInElement(elem || document.body, KaTeX_opts);
+	try {
+	    renderMathInElement(elem || document.body, KaTeX_opts);
+	} catch(err) {
+	    console.log('KaTeX render ERROR: '+err)
+	}
     }
 }
     

@@ -3,25 +3,17 @@
 '''
 Slidoc printing:
 
-Use following command to create session.html:
-  slidoc.py --gsheet_url=... --auth_key=... --proxy_url=http://localhost:8687/_proxy --pace=1 --printable --debug session.md
-
-  Printing only works for --pace=0, or --pace=1 with --printable
-
-And then
-  sdprint.py --gsheet_url=... --auth_key=... --localhost_port=8687 --debug title=... --users=aaa,bbb session.html
-
-If using an active proxy, i.e., http://host/session.html, omit the --localhost_port option.
-DO NOT specify  --proxy_url=/_websocket
-
+  sdprint.py --auth_key=SITE_KEY --gsheet_url=http://localhost:8081/geos210-f17/site_name/_proxy ---debug --users=aaa,bbb http://localhost:8081/site_name/_private/session/session01.html
 
 NOTE:
 
-1. The OS X Carbon (32-bit) version seems to work better
+1. Use --printable --fontsize=12,9 --delay_sec=... options for best results in printing sessions
 
-2. Inserting very large figures messes up the fonts. Resize figures for better results.
+2. Use 'lp -o StapleLocation=UpperLeft filenames ...' for printing+stapling
 
-3. Use 'lp -o StapleLocation=UpperLeft filenames ...' for printing
+3. wkhtmltopdf: The OS X Carbon (32-bit) version seems to work better
+                Inserting very large figures messes up the fonts. Resize figures for better results.
+
 
 '''
 
@@ -51,10 +43,15 @@ from tornado.options import define, options
 from tornado.ioloop import IOLoop
 
 import sliauth
-import sdserver
 
 ROSTER_SHEET = 'roster_slidoc'
 PORT = 8687
+
+def http_get(url, params_dict):
+    try:
+        return urllib2.urlopen(url + ('?'+urllib.urlencode(params_dict) if params_dict else '')).read()
+    except Exception, excp:
+        sys.exit('ERROR in accessing GET URL %s: %s' % (url, excp))
 
 def http_post(url, params_dict):
     data = urllib.urlencode(params_dict)
@@ -62,7 +59,7 @@ def http_post(url, params_dict):
     try:
         response = urllib2.urlopen(req)
     except Exception, excp:
-        sys.exit('ERROR in accessing URL %s: %s' % (url, excp))
+        sys.exit('ERROR in accessing POST URL %s: %s' % (url, excp))
     result = response.read()
     try:
         result = json.loads(result)
@@ -73,7 +70,7 @@ def http_post(url, params_dict):
 def get_roster(sheet_url, hmac_key, session_name):
     # Returns roster as OrderedDict or None if no roster sheet
     user = 'admin'
-    user_token = sliauth.gen_admin_token(hmac_key, user)
+    user_token = sliauth.gen_auth_token(hmac_key, user, 'admin', prefixed=True)
 
     get_params = {'sheet': ROSTER_SHEET, 'id': session_name, 'admin': user, 'token': user_token,
                   'get': '1', 'getheaders': '1', 'all': '1'}
@@ -90,20 +87,6 @@ def get_roster(sheet_url, hmac_key, session_name):
         sys.exit('Incorrect roster headers: '+str(headers))
     return OrderedDict( (x[1], x[0]) for x in all_rows)
 
-class Application(tornado.web.Application):
-    def __init__(self):
-        settings = dict(
-            debug=options.debug
-        )
-
-        handlers = [ ]
-
-        handlers += [ (r"/_proxy", sdserver.ProxyHandler),
-                      (r"/", sdserver.HomeHandler)
-                    ]
-
-        super(Application, self).__init__(handlers, **settings)
-
 def start_ioloop():
     IOLoop.current().start()
 
@@ -116,14 +99,19 @@ def sigterm(signal, frame):
     IOLoop.current().add_callback(stop_ioloop)
 
 def main():
-    define("auth_key", default="", help="Digest authentication key for admin user")
+    def config_parse(path):
+        tornado.options.parse_config_file(path, final=False)
+
+    define("config", type=str, help="Path to config file", callback=config_parse)
+
+    define("auth_key", default="", help="Site authentication key")
     define("debug", default=False, help="Debug mode")
+    define("wkhtmltopdf", default=False, help="Use wkhtmltopdf instead of headless Chrome")
     define("gsheet_url", default="", help="Google sheet URL")
 
     define("users", default="", help="'Comma-separated list of userIDs, or 'all'")
-    define("localhost_port", default=0, help="Port number to be used for localhost proxy, if any", type=int)
     define("staple", default=False, help="Send to printer using lp command for stapling")
-    define("title", default="", help="Document title")
+    define("doc_title", default="", help="Document title")
     args = tornado.options.parse_command_line()
     if not args:
         sys.exit("Please specify one or more Slidoc session files (session_name.html or http://host/session_name.html)")
@@ -131,25 +119,22 @@ def main():
     session_list = []
     for arg in args:
         file_html = ''
+        server_url = ''
+        rel_path = ''
+        site_prefix = ''
         session_file = arg
-        match = re.match(r'^https?://[-.\w]+(:\d+)?/(.+)$', session_file)
-        if match:
-            session_name = os.path.splitext(os.path.basename(match.group(2)))[0]
-        else:
-            session_name = os.path.splitext(os.path.basename(session_file))[0]
-            if options.localhost_port:
-                f = open(session_file)
-                file_html = f.read()
-                f.close()
+        match = re.match(r'^(https?://[-.\w]+(\:\d+)?)(/[a-zA-Z][\w-]*)?(/((_private/)?[\w-]+/)([\w-]+).html)$', session_file)
+        if not match:
+            sys.exit('Invalid session URL: '+arg)
+        server_url = match.group(1)
+        site_prefix = match.group(3) or ''
+        rel_path = match.group(4)
+        session_name = os.path.splitext(match.group(7))[0]
 
-        if options.localhost_port:
-            session_file = 'http://localhost:%d' % options.localhost_port
-        session_list.append( (session_name, session_file, file_html) )
+        session_list.append( (server_url, site_prefix, rel_path, session_name, session_file, file_html) )
 
     def start_print():
-        for session_name, session_file, file_html in session_list:
-            sdserver.Options.update(auth_key=options.auth_key, debug=options.debug, gsheet_url=options.gsheet_url, _index_html=file_html)
-
+        for server_url, site_prefix, rel_path, session_name, session_file, file_html in session_list:
             if options.users:
                 ucomps = options.users.split(',')
                 roster = get_roster(options.gsheet_url, options.auth_key, session_name)
@@ -175,52 +160,56 @@ def main():
                     firstmiddle = firstmiddle.strip()
                     namesuffix = lastname.capitalize()+(firstmiddle[0].upper() if firstmiddle else '')
                     outname = session_name+'-'+namesuffix+'-'+userId + '.pdf'
-                    token = sliauth.gen_user_token(options.auth_key, userId)
+                    token = sliauth.gen_auth_token(options.auth_key, userId, prefixed=True)
                 else:
                     outname = session_name+'.pdf'
                     token = ''
                 print("****Generating %s: %s" % (outname, name), file=sys.stderr)
-                cmd_args = ['wkhtmltopdf', '-s', 'Letter', '--print-media-type',
-                            '--margin-top', '15',
-                            '--margin-bottom', '20',
-                            '--javascript-delay', '8000',
-                            '--header-spacing', '2', '--header-font-size', '10',
-                            '--header-right', '[page] of [toPage]',
-                            '--header-center', options.title or session_name,
-                            ]
-                if userId:
-                    cmd_args += ['--header-left', name+' ('+userId+')']
-                    cmd_args += ['--cookie', 'slidoc_server', '%s::%s:' % (userId, token)]
-                if options.debug:
-                    cmd_args += ['--debug-javascript']
-                cmd_args += [session_file, outname]
+                if options.wkhtmltopdf:
+                    cmd_args = ['wkhtmltopdf', '-s', 'Letter', '--print-media-type',
+                                '--margin-top', '15',
+                                '--margin-bottom', '20',
+                                '--javascript-delay', '8000',
+                                '--header-spacing', '2', '--header-font-size', '10',
+                                '--header-right', '[page] of [toPage]',
+                                '--header-center', options.doc_title or session_name,
+                                ]
+                    if userId:
+                        cmd_args += ['--header-left', name+' ('+userId+')']
+                        cmd_args += ['--cookie', 'slidoc_server', '%s::%s:' % (userId, token)]
+                    if options.debug:
+                        cmd_args += ['--debug-javascript']
+                    cmd_args += [session_file, outname]
 
-                ##print("****Command:", cmd_args, file=sys.stderr)
+                else:
+                    upload_key = sliauth.gen_hmac_token(options.auth_key, 'upload:')
+                    token = sliauth.gen_hmac_token(upload_key, 'nonce:'+userId)
+                    nonce = http_get(server_url+'/_nonce'+site_prefix, {'userid': userId, 'token': token})
+                    batchToken = sliauth.gen_hmac_token(upload_key, 'batch:'+userId+':'+nonce)
+                    query = '?'+urllib.urlencode({'auth': userId+':'+batchToken})
+                    session_url = server_url+'/_batch_login'+site_prefix+query+'&'+urllib.urlencode({'next': site_prefix+rel_path+'?print=1'})
+                    cmd_args = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                                '--headless', '--disable-gpu',
+                                '--print-to-pdf='+outname]
+                    if options.debug:
+                        cmd_args += ['--enable-logging', '--v=1']
+                    cmd_args += [session_url]
+
+                if options.debug:
+                    print("****Command:", cmd_args, file=sys.stderr)
 
                 subprocess.check_call(cmd_args)
                 if options.staple:
                     print("****Sending to printer for stapling:", outname, file=sys.stderr)
                     lp_cmd = ['lp', '-o', 'StapleLocation=UpperLeft', outname]
                     subprocess.check_call(cmd_args)
+                else:
+                    print("****Generated:", outname, file=sys.stderr)
+                    print("", file=sys.stderr)
 
         print('sdprint: Actions completed', file=sys.stderr)
-        if options.localhost_port:
-            IOLoop.current().add_callback(stop_ioloop)
 
-    if options.localhost_port:
-        import sdproxy
-        sdproxy.Options.update(AUTH_KEY=options.auth_key, DEBUG=options.debug, SHEET_URL=options.gsheet_url)
-        if not options.debug:
-            logging.getLogger('tornado.access').disabled = True
-        http_server = tornado.httpserver.HTTPServer(Application())
-        http_server.listen(options.localhost_port)
-        print("Listening on port", options.localhost_port, file=sys.stderr)
-        signal.signal(signal.SIGINT, sigterm)
-        print_thread = threading.Thread(target=start_print)
-        print_thread.start()
-        start_ioloop()
-    else:
-        start_print()
+    start_print()
 
 if __name__ == '__main__':
     main()

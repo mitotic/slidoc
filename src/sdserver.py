@@ -373,9 +373,12 @@ def pacedSession(uploadType):
     else:
         return 1
 
-def restricted_user_access(start_date, end_date, site_role=None, site_access=''):
+def restricted_user_access(start_date, end_date, site_role=None, site_access='', batch_mode=''):
     if site_role:
         # Admin.grader access
+        return ''
+
+    if batch_mode and site_access == sdproxy.SITE_ADMINONLY:
         return ''
 
     if site_access and site_access != sdproxy.SITE_LOCKED:
@@ -467,6 +470,8 @@ class SiteMixin(object):
         return sliauth.safe_quote( base64.b64encode(json.dumps(cookie_data,sort_keys=True)) )
 
 class UserIdMixin(object):
+    user_nonces = defaultdict(dict)
+
     @classmethod
     def get_path_base(cls, path, special=False):
         # Extract basename, without file extension, from URL path
@@ -500,7 +505,7 @@ class UserIdMixin(object):
         if altid:
             cookie_data['altid'] = altid
 
-        cookie_data.update(data)
+        cookie_data.update(data or {})
 
         token = gen_proxy_auth_token(username, role, sites, root=True)
         cookieStr = ':'.join( sliauth.safe_quote(x) for x in [username, role, sites, token, base64.b64encode(json.dumps(cookie_data,sort_keys=True))] )
@@ -615,6 +620,47 @@ class UserIdMixin(object):
         elif not sdproxy.Settings['no_roster']:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:No roster available for site %s' % Options['site_name'])
 
+    def create_nonce(self, token, site_name='', userId=''):
+        site_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
+        upload_key = sliauth.gen_hmac_token(site_key, 'upload:')
+        if token != sliauth.gen_hmac_token(upload_key, 'nonce:'+userId):
+            return None
+        nonce = str(random.randint(10000001,99999999))
+        self.user_nonces[site_name][userId] = nonce
+        return nonce
+
+    def use_nonce(self, site_name='', userId=''):
+        return self.user_nonces[site_name].pop(userId, None)
+
+    def batch_login(self, site_name=''):
+        # Batch auto login for localhost through query parameter: ...?auth=userId:token
+        # To print exams using headless browser: ...?auth=userId:token&print=1
+        site_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
+        upload_key = sliauth.gen_hmac_token(site_key, 'upload:')
+
+        userId, batchMode, siteRole, cookieData = None, None, None, None
+        query = self.request.query
+        if query.startswith('auth='):
+            query = query.split('&')[0]
+            qauth = urllib.unquote(query[len('auth='):])
+            temUserId, token = qauth.split(':')
+            nonce = self.use_nonce(site_name, temUserId)
+            if nonce:
+                batchToken = sliauth.gen_hmac_token(upload_key, 'batch:'+temUserId+':'+nonce)
+                if token == upload_key or token == batchToken:
+                    batchMode = site_name or '_root'
+                    cookieData = {'batch': batchMode}
+                elif token == gen_proxy_auth_token(temUserId, root=True):
+                    cookieData = {}
+                else:
+                    print >> sys.stderr, 'sdserver: Invalid auth= for temUserId '+temUserId
+                    temUserId = None
+
+                if temUserId is not None:
+                    userId = temUserId
+                    print >> sys.stderr, "UserIdMixin.batch_login: BATCH ACCESS", self.request.path, site_name, userId
+                    self.set_id(userId, displayName=userId, data=cookieData)
+        return userId, batchMode, siteRole, cookieData
 
     def custom_error(self, errCode, html_msg, clear_cookies=False):
         if clear_cookies:
@@ -742,10 +788,25 @@ class InvalidHandler(BaseHandler):
         self.write('Invalid path: %s (%d:%s)' % (self.request.path, Options['site_number'], Options['site_name']))
 
 class HomeHandler(BaseHandler):
-    def get(self):
+    def get(self, subpath='', subsubpath=''):
         if self.is_web_view():
             # For embedded browsers ("web views"), Google login does not work; use token authentication
             self.redirect('/_auth/login/')
+            return
+        if subpath == '_nonce':
+            userId = self.get_argument('userid', '')
+            token = self.get_argument('token', '')
+            nonce = self.create_nonce(token, subsubpath, userId)
+            if not nonce:
+                raise tornado.web.HTTPError(403)
+            self.write(nonce)
+            return
+        if subpath == '_batch_login':
+            next = self.get_argument('next', '/')
+            userId, _, _, _ = self.batch_login(subsubpath)
+            if not userId:
+                raise tornado.web.HTTPError(403)
+            self.redirect(next)
             return
             
         if Options['multisite'] and not Options['site_number']:
@@ -776,10 +837,12 @@ class HomeHandler(BaseHandler):
 
             site_labels = [SiteOpts[siteName]['site_label'] for siteName in Options['site_list']]
             site_titles = [SiteOpts[siteName]['site_title'] for siteName in Options['site_list']]
+            cookieData = self.get_id_from_cookie(data=True) or {}
             self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url, global_role=self.get_id_from_cookie(role=True),
                          sites=Options['site_list'], site_roles=siteRoles, site_labels=site_labels,
-                         site_titles=site_titles, site_hide=siteHide, site_restrictions=siteRestrictions)
+                         site_titles=site_titles, site_hide=siteHide, site_restrictions=siteRestrictions,
+                         batch_mode=cookieData.get('batch',''))
             return
         elif Options.get('_index_html'):
             # Not authenticated
@@ -1141,8 +1204,15 @@ class ActionHandler(BaseHandler):
         return self.previewState.get('name', '')
 
     def get_config_opts(self, uploadType, text='', topnav=False, paced=False, dest_dir='', session_name='', image_dir='', make=''):
-        # Return (cmd_args, default_args) 
-        defaultOpts = self.default_opts['base'].copy()
+        # Return (cmd_args, default_args)
+        defaultOpts = {}
+        configOpts = slidoc.cmd_args2dict(slidoc.alt_parser.parse_args([]))
+        for key, value in configOpts.items():
+            if value is not None:
+                defaultOpts[key] = value
+                configOpts[key] = None
+
+        defaultOpts.update(self.default_opts['base'])
         if uploadType in self.default_opts:
             defaultOpts.update(self.default_opts[uploadType])
         else:
@@ -3706,7 +3776,9 @@ class UserActionHandler(ActionHandler):
         elif action in ('_user_blankimage',):
             delay = self.get_argument('delay','')
             if delay.isdigit():
+                print >> sys.stderr, 'UserActionHandler:blank DELAY start', delay
                 yield tornado.gen.sleep(int(delay))
+                print >> sys.stderr, 'UserActionHandler:blank DELAY end'
             self.set_header('Content-Type', 'image/gif')
             self.write(sliauth.blank_gif())
             return
@@ -3920,6 +3992,12 @@ def modify_user_auth(args, socketId=None):
 
     if ':' in args['token']:
         effectiveId, adminId, role, sites, userToken = args['token'].split(':')
+        siteAdminToken = effectiveId+gen_proxy_auth_token(adminId, role, prefixed=True)
+
+        if args['token'] == siteAdminToken:
+            # Token already site specific
+            return
+
         if userToken != gen_proxy_auth_token(adminId, role=role, sites=sites, root=True):
             raise Exception('Invalid admin token: '+args['token'])
 
@@ -3938,7 +4016,7 @@ def modify_user_auth(args, socketId=None):
 
         if role in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE):
             # Site admin token
-            args['token'] = effectiveId+gen_proxy_auth_token(adminId, role, prefixed=True)
+            args['token'] = siteAdminToken
         else:
             raise Exception('Invalid role %s for admin user %s' % (role, adminId))
 
@@ -3947,9 +4025,14 @@ def modify_user_auth(args, socketId=None):
         if socketId and socketId != userId:
             raise Exception('Token user id mismatch: %s != %s' % (socketId, userId))
 
+        siteUserToken = gen_proxy_auth_token(userId)
+        if args['token'] == siteUserToken:
+            # Token already site specific
+            return
+
         if args['token'] == gen_proxy_auth_token(userId, root=True):
             # Site user token
-            args['token'] = gen_proxy_auth_token(userId)
+            args['token'] = siteUserToken
         else:
             raise Exception('Invalid token %s for user %s' % (args['token'], userId))
 
@@ -4730,32 +4813,15 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
             # Failsafe - no direct web access to *.md files
             raise tornado.web.HTTPError(404)
 
-        batchMode = False
-        cookieData = {}
-        if Options['server_url'] == 'http://localhost' or Options['server_url'].startswith('http://localhost:'):
-            # Batch auto login for localhost through query parameter: ...?auth=userId:token
-            # To print exams using headless browser: ...?auth=userId:token&print=1
-            query = self.request.query
-            if query.startswith('auth='):
-                query = query.split('&')[0]
-                qauth = query[len('auth='):]
-                userId, token = qauth.split(':')
-                if token == Options['auth_key']:
-                    cookieData = {'batch':1}
-                elif token == gen_proxy_auth_token(userId, root=True):
-                    cookieData = {}
-                else:
-                    raise tornado.web.HTTPError(404)
-                name = sdproxy.lookupRoster('name', userId) or ''
-                print >> sys.stderr, "AuthStaticFileHandler.get_current_user: BATCH ACCESS", self.request.path, userId, name
-                self.set_id(userId, displayName=name, data=cookieData)
-                siteRole = None
-                batchMode = True
-
-        if not batchMode:
-            userId = self.get_id_from_cookie() or None
+        userId = self.get_id_from_cookie() or None
+        cookieData = self.get_id_from_cookie(data=True) or {}
+        batchMode = cookieData.get('batch')
+        if batchMode:
+            if Options['site_name'] and batchMode != Options['site_name']:
+                raise tornado.web.HTTPError(404)
+            siteRole = None
+        else:
             siteRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])  # May be None
-            cookieData = self.get_id_from_cookie(data=True) or {}
 
         lockedAccess = False
         if cookieData.get('locked_access'):
@@ -4793,7 +4859,8 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
             if not Options['dry_run'] and not Options['lock_proxy_url']:
                 raise tornado.web.HTTPError(404)
 
-        denyStr = restricted_user_access(Options['start_date'], Options['end_date'], siteRole, sdproxy.Settings['site_access'])
+        denyStr = restricted_user_access(Options['start_date'], Options['end_date'], siteRole, sdproxy.Settings['site_access'],
+                                         batch_mode=batchMode)
         if ('/'+RESTRICTED_PATH) in self.request.path:
             # For paths containing '/_restricted', all filenames must end with *-userId[.extn] to be accessible by userId
             path = self.request.path
@@ -5183,7 +5250,7 @@ def createApplication():
         
     home_handlers = [
                      (pathPrefix+r"/", HomeHandler)
-                    ]
+                     ]
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|deactivate|logout|reload|setup|shutdown|terminate))", RootActionHandler) ]
@@ -5199,6 +5266,16 @@ def createApplication():
         if Options['libraries_dir']:
             home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {'path': Options['libraries_dir']}) ]
 
+        if Options['multisite']:
+            home_handlers += [
+                     (pathPrefix+r"/(_nonce)/([a-zA-Z][-\w.]*)", HomeHandler),
+                     (pathPrefix+r"/(_batch_login)/([a-zA-Z][-\w.]*)", HomeHandler)
+                     ]
+        else:
+            home_handlers += [
+                     (pathPrefix+r"/(_nonce)", HomeHandler),
+                     (pathPrefix+r"/(_batch_login)", HomeHandler)
+                    ]
     else:
         # Site server
         home_handlers += [ (pathPrefix+r"/(_shutdown)", RootActionHandler) ]

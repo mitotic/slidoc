@@ -142,11 +142,15 @@ def font_css(fontsize):
         return ''
     comps = fontsize.split(',')
     if comps[0]:
+        if comps[0].isdigit():
+            comps[0] += 'px'
         tem_css = '@media not print { body { font-size: %s; }  }\n' % comps[0]
     else:
         tem_css = ''
 
     if len(comps) > 1 and comps[1]:
+        if comps[1].isdigit():
+            comps[1] += 'px'
         tem_css += '@media print { body { font-size: %s; }  }\n' % comps[1]
 
     return '<style>\n'+tem_css+'</style>\n' if tem_css else ''
@@ -3413,7 +3417,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     js_params['conceptIndexFile'] = '' if config.create_toc else 'index.html' # Need command line option to modify this
     js_params['printable'] = config.printable
     js_params['debug'] = config.debug
-    js_params['remoteLogLevel'] = config.remote_logging
+    js_params['remoteLogLevel'] = config.remote_logging or 0
 
     js_params_fmt = '\n<script>\nvar JS_PARAMS_OBJ=%s;\n</script>\n'
     toc_js_params = js_params_fmt % sliauth.ordered_stringify(js_params)
@@ -3524,7 +3528,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
     js_params['topnavList'] = topnav_list
 
-    head_html = css_html + font_css(config.fontsize) + insert_resource('doc_include.js') + insert_resource('wcloud.js')
+    head_html = font_css(config.fontsize) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js')
     if combined_file:
         head_html += add_scripts
     body_prefix = templates['doc_include.html']
@@ -3756,7 +3760,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             if 'equation_left' in file_config.features:
                 mathjax_config += 'displayAlign: "left",\n'
             if 'tex_math' in file_config.features:
-                katex_config = '{left: "$", right: "$", display: false},'
+                katex_config = ',{left: "$", right: "$", display: false},' # MUST APPEAR AFTER $$ in delimiters array
                 mathjax_config += 'tex2jax: { inlineMath: [ ["$","$"], ["\\\\(","\\\\)"] ], processEscapes: true },\n'
             mathjax_config  += 'jax: ["input/TeX","output/%s"]' % ('SVG' if file_config.printable else 'CommonHTML')
             if 'equation_number' in file_config.features:
@@ -4024,7 +4028,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             else:
                 tem_plugin_defs = file_plugin_defs.copy()
                 tem_plugin_defs.update(renderer.plugin_defs)
-                file_head_html = (js_params_fmt % sliauth.ordered_stringify(js_params)) + css_html + font_css(file_config.fontsize) + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
+                file_head_html = (js_params_fmt % sliauth.ordered_stringify(js_params)) + font_css(file_config.fontsize) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js') + add_scripts
 
                 pre_html = file_head_html + plugin_heads(tem_plugin_defs, renderer.plugin_loads) + (mid_template % mid_params) + body_prefix
                 # Prefix index entry as comment
@@ -4038,6 +4042,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 pre_html = index_head + pre_html
 
                 tail = md_prefix + md_html + md_suffix
+                if file_config.delay_sec:
+                    tail += Delay_image_format % (site_prefix, file_config.delay_sec)
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
                     outfile_buffer.append([outname, outpath, fnumber, md_params, pre_html, tail, zipped_md])
@@ -4243,9 +4249,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 if tail:
                     # Update "missing" reference numbers and write output file
                     tail = Missing_ref_num_re.sub(Missing_ref_num, tail)
-                    delay_elem = Delay_image_format % config.delay_sec if config.delay_sec else ''
                     if return_html:
-                        return {'outpath': outpath, 'out_html':md2md.str_join(Html_header, pre_html, tail, delay_elem, Html_footer), 'toc_html':md2md.stringify(toc_all_html), 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
+                        return {'outpath': outpath, 'out_html':md2md.str_join(Html_header, pre_html, tail, Html_footer), 'toc_html':md2md.stringify(toc_all_html), 'md_params':md_params, 'zipped_md':zipped_md, 'messages': messages}
                     else:
                         write_doc(outpath, pre_html, tail)
             if return_html:
@@ -4382,10 +4387,12 @@ def sort_caseless(list):
 
 
 Html_header = '''<!DOCTYPE html>
-<html><head>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
 '''
 
-Delay_image_format = '''<img src="_user_blankimage?delay=%d">'''
+Delay_image_format = '''<img src="%s/_user_blankimage?delay=%d" style="display:none;">'''
 
 Html_footer = '''
 <div id="slidoc-body-footer" class="slidoc-noslide"></div>
@@ -4409,12 +4416,13 @@ Pagedown_js = r'''
 <script src='%(libraries_link)s/Pagedown/Markdown.Extra.js'></script>
 '''
 
+# NOTE: Any $ delimiter must appear after $$ delimiter in delimiters array
 KaTeX_js = r'''<script type="text/javascript">
 var KaTeX_opts = { throwOnError: false,
-  delimiters: [ %s
-                {left: "\\(", right: "\\)", display: false},
-                {left: "$$", right: "$$", display: true},
-                {left: "\\[", right: "\\]", display: true}
+  delimiters: [ {left: "\\(", right: "\\)", display: false}
+               ,{left: "\\[", right: "\\]", display: true}
+               ,{left: "$$", right: "$$", display: true}
+               %s
               ]
 };
 </script>
@@ -4792,6 +4800,7 @@ Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combine
 Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')
 Conf_parser.add_argument('--debug', help='Enable debugging', action="store_true", default=None)
+Conf_parser.add_argument('--delay_sec', type=int, default=None, metavar='DELAY', help='Delay time (to finish equation rendering etc.)')
 Conf_parser.add_argument('--doc_title', metavar='TITLE', help='Document title (for display and printing header)')
 Conf_parser.add_argument('--due_date', metavar='DATE_TIME', help="Due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")
 Conf_parser.add_argument('--features', metavar='OPT1,OPT2,...', help='Enable feature %s|all|all,but,...' % ','.join(Features_all))
@@ -4808,7 +4817,7 @@ Conf_parser.add_argument('--prereqs', metavar='PREREQ_SESSION1,PREREQ_SESSION2,.
 Conf_parser.add_argument('--printable', help='Printer-friendly output (SVG etc.)', action="store_true", default=None)
 Conf_parser.add_argument('--publish', help='Only process files with --publish in first line', action="store_true", default=None)
 Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release module on yyyy-mm-ddThh:mm (append 'Z' for UTC) or 'future' (test user always has access)")
-Conf_parser.add_argument('--remote_logging', type=int, default=0, help='Remote logging level (0/1/2)')
+Conf_parser.add_argument('--remote_logging', type=int, default=None, help='Remote logging level (0/1/2)')
 Conf_parser.add_argument('--retakes', type=int, help='Max. number of retakes allowed (default: 0)')
 Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
 Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
@@ -4823,12 +4832,11 @@ Conf_parser.add_argument('--unhide_slides', help='Unhide all slides', action="st
 alt_parser = argparse.ArgumentParser(parents=[Conf_parser], add_help=False)
 alt_parser.add_argument('--anonymous', help='Allow anonymous access (also unset REQUIRE_LOGIN_TOKEN)', action="store_true", default=None)
 alt_parser.add_argument('--auth_key', metavar='DIGEST_AUTH_KEY', help='digest_auth_key (authenticate users with HMAC)')
-alt_parser.add_argument('--backup_dir', default='', help='Directory to create backup files for last valid version in when dest_dir is specified')
+alt_parser.add_argument('--backup_dir', help='Directory to create backup files for last valid version in when dest_dir is specified')
 alt_parser.add_argument('--config', metavar='CONFIG_FILENAME', help='File containing default command line')
 alt_parser.add_argument('--copy_source', help='Create a modified copy (only if dest_dir is specified)', action="store_true", default=None)
 alt_parser.add_argument('--create_toc', help='Create Table of Contents in index.html using *.html output', action="store_true", default=None)
 alt_parser.add_argument('--default_args', metavar='ARGS', help="'--arg=val --arg2=val2' default arguments ('file' to read first line of first file)")
-alt_parser.add_argument('--delay_sec', type=int, default=0, metavar='PORT', help='Delay time (to finish equation rendering etc.)')
 alt_parser.add_argument('--dest_dir', metavar='DIR', help='Destination directory for creating files')
 alt_parser.add_argument('--dry_run', help='Do not create any HTML files (index only)', action="store_true", default=None)
 alt_parser.add_argument('--extract', metavar='SLIDE_NUMBER', type=int, help='Extract content from slide onwards (renumbering images)')
