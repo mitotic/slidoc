@@ -3489,6 +3489,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
     defCopy.gradableState = Sliobj.gradableState;
     defCopy.testUser = (getUserId() == Sliobj.params.testUserId);
     defCopy.sessionName = Sliobj.sessionName;
+    defCopy.siteName = Sliobj.params.siteName || '';
 
     defCopy.remoteCall = Slidoc.PluginManager.remoteCall.bind(null, pluginName);
 

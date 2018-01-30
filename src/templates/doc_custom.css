@@ -313,6 +313,7 @@ iframe {
 .slidoc-bar-blue   { background: linear-gradient(to bottom,rgb(85, 177, 219), rgb(38,75, 171) ); }
 .slidoc-bar-purple { background: linear-gradient(to bottom, rgb(217, 84, 208), rgb(128, 41, 171) ); }
 .slidoc-bar-orange { background: linear-gradient(to bottom, #faa51a, #f47a20); }
+.slidoc-text-orange { color: #faa51a; opacity: 0.4; }
 
 /* Top nav bar (responsive) http://www.w3schools.com/howto/howto_js_topnav.asp */
 ul.slidoc-topnav {

@@ -145,7 +145,7 @@ Share = {
 	if (this.qattributes.share == 'vote')
 	    this.nCols += 1;
 	var colPrefix = 'q'+this.qattributes.qnumber;
-	var gsheet = getSheet(Sliobj.sessionName);
+	var gsheet = getSheet(this.sessionName);
 	gsheet.getShare(colPrefix, this.gradableState, this.responseCallback.bind(this, display));
     },
 
@@ -165,11 +165,13 @@ Share = {
 	var responseHeader = prefix + 'response';
 	var explainHeader = prefix + 'explain';
 
+	var responderNames = [];
 	var responderList = [];
 	var temObj = {};
 	if (retStatus.info && retStatus.info.responders) {
 	    for (var j=0; j<retStatus.info.responders.length; j++) {
 		var responder = retStatus.info.responders[j];
+		responderNames.push(responder);
 		temObj[responder] = 1;
 		if (this.respErrors && responder in this.respErrors)
 		    responderList.push(responder+'*');
@@ -252,30 +254,34 @@ Share = {
 	    var prevResp = null;
 	    var respCount = 0;
 	    var explanations = [];
+	    var names = [];
+	    var nameSave = (nResp == responderNames.length);
 	    for (var j=0; j<nResp; j++) {
 		var respVal = result[responseHeader][j];
 		if (Slidoc.parseNumber(respVal) == null)
 		    respVal = respVal.toUpperCase();
 		if (respCount && respVal != prevResp) {
-		    this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations]);
+		    this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations, names]);
 		    respCount = 0;
 		    explanations = [];
+		    names = [];
 		}
 		respCount += 1;
+		if (nameSave)
+		    names.push(responderNames[j]);
 		if (result[explainHeader] && result[explainHeader][j])
 		    explanations.push(''+result[explainHeader][j]);  // Convert to string
 		prevResp = respVal;
 	    }
 	    if (respCount)
-		this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations]);
+		this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations, names]);
 
 	    Slidoc.log('Slidoc.Plugins.Share.responseCallback3:', this.responseTally.length, this.responseTally);
 	    if (this.qattributes.qtype == 'number' && !this.qattributes.vote) {
 		// No voting; display sorted numeric responses
 		// (If voting, this display will be suppressed)
 		var lines = ['Numeric responses:\n'];
-		if (result[explainHeader])
-		    lines.push('<br><em>Click on the bars to see explanations for each answer</em>\n');
+		lines.push('<br><em class="slidoc-text-orange">Click on the bars to see explanations/ask follow-up questions</em>\n');
 		lines.push('<p></p><ul>\n');
 		for (var j=0; j<this.responseTally.length; j++) {
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
@@ -290,8 +296,8 @@ Share = {
 	    } else if (this.qattributes.qtype == 'choice') {
 		// Display choice responses inline (both for voting and non-voting cases)
 		var chartHeader = document.getElementById(this.slideId+'-chart-header');
-		if (chartHeader && result[explainHeader]) {
-		    chartHeader.innerHTML = '<em>Click on the bars to see explanations for each choice</em>';
+		if (chartHeader) {
+		    chartHeader.innerHTML = '<em>Click on the bars to see explanations/ask follow-up questions</em>';
 		    chartHeader.style.display = null;
 		}
 
@@ -333,7 +339,7 @@ Share = {
 	    for (var j=0; j<nResp; j++) {
 		lines.push([(codeResp ? '<pre class="slidoc-plugin-Share-resp"></pre>' : '<span class="slidoc-plugin-Share-resp"></span>'), ''+result[responseHeader][j]]); // Convert to string
 	    }
-	    Slidoc.showPopupWithList('Responses (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, !codeResp);
+	    Slidoc.showPopupWithList('Responses &nbsp;<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">&#x2601;</a>:<p></p>\n', lines, !codeResp);
 	    return;
 	}
 
@@ -419,10 +425,20 @@ Share = {
 	Slidoc.log('Slidoc.Plugins.Share.shareExplain2:', index);
 	if (!index || index > this.responseTally.length)
 	    return;
+	var respTally = this.responseTally[index-1];
+
+	var wheelURL = '';
+	if (respTally[4] && respTally[4].length) {
+	    var titleStr = this.sessionName+', Q'+this.qattributes.qnumber+': response='+respTally[0];
+	    var qwheel_link = 'https://mitotic.github.io/wheel/?session=' + encodeURIComponent(this.siteName+'_'+this.sessionName) + '&title=' + encodeURIComponent(titleStr);
+            var qwheel_new = qwheel_link + '&names=' + encodeURIComponent(respTally[4].join(';'));
+	    wheelURL = '<a class="slidoc-clickable" target="_blank" href="'+qwheel_new+'">&#x1F3B2;</a>&nbsp;\n';
+	}
+
 	var lines = [];
-	for (var j=0; j<this.responseTally[index-1][3].length; j++)
-	    lines.push([ '<span class="slidoc-plugin-Share-resp"></span>', this.responseTally[index-1][3][j] ]);
-	Slidoc.showPopupWithList('Explanations for answer '+this.responseTally[index-1][0]+' (<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">cloud</a>):<p></p>\n', lines, true);
+	for (var j=0; j<respTally[3].length; j++)
+	    lines.push([ '<span class="slidoc-plugin-Share-resp"></span>', respTally[3][j] ]);
+	Slidoc.showPopupWithList(wheelURL+'Explanations for answer '+respTally[0]+' &nbsp;<a class="slidoc-clickable" onclick="Slidoc.shareCloud();">&#x2601;</a>:<p></p>\n', lines, true);
     },
 
     upVote: function (voteCode, elem) {
@@ -446,7 +462,7 @@ Share = {
 	elem.classList.add('slidoc-plugin-Share-votebutton-clicked');
 	var updates = {id: GService.gprofile.auth.id};
 	updates[prefix+'vote'] = this.voteCodes.join(',');
-	var gsheet = getSheet(Sliobj.sessionName);
+	var gsheet = getSheet(this.sessionName);
 	gsheet.updateRow(updates, {}, this.upVoteCallback.bind(this, voteCode));
     },
 

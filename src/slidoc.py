@@ -1756,7 +1756,7 @@ class SlidocRenderer(MathRenderer):
             
         prefix = ''
         if not self.choice_end:
-            prefix += '</p><div id="%(id)s-choice-block" data-shuffle=""><div id="%(id)s-chart-header" class="slidoc-chart-header" style="display: none;"></div>'
+            prefix += '</p><div id="%(id)s-choice-block" data-shuffle=""><div id="%(id)s-chart-header" class="slidoc-chart-header slidoc-text-orange" style="display: none;"></div>'
             self.choice_end = '</div></div><div id="%s-choice-shuffle"></div>\n' % self.get_slide_id()
             if self.choice_current:
                 prefix += '<div class="slidoc-choice-item"><p class="slidoc-choice-option">\n'
