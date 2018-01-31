@@ -30,6 +30,8 @@ Share = {
 
     answerSave: function () {
 	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
+	if (Slidoc.PluginManager.previewStatus())
+	    return;
 	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
 	    if (!Slidoc.PluginManager.isController())
 		Slidoc.sendEvent(3, 'Share.answerSave.'+this.slideId, this.qattributes.qnumber, null);
@@ -173,14 +175,14 @@ Share = {
 		var responder = retStatus.info.responders[j];
 		if (responder.indexOf('/') > 0) {
 		    var comps = responder.split('/');
-		    responder = comps[0];  // responder Id
-		    var respShort = comps[1];
+		    var respId = comps[0];
+		    responder = comps[1];  // Short responder name
 		    var ncomps = comps[2].split(',');  // Comma-separated name
 		    if (ncomps.length > 1 && ncomps[1].trim())
                         var respName = ncomps[1].trim().split(' ')[0] + ' ' + ncomps[0];  // First Last
                     else
 			respName = comps[2];
-		    responderMap[responder] = respShort+'/'+respName;
+		    responderMap[respId] = responder+'/'+respName;
 		}
 		temObj[responder] = 1;
 		if (this.respErrors && responder in this.respErrors)

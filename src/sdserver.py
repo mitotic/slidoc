@@ -2361,8 +2361,19 @@ class ActionHandler(BaseHandler):
             sessionModify = sessionName if self.get_argument('sessionmodify', '') else ''
             update = self.get_argument('update', '')
 
+            imageZip = None
+            if 'zipimages' in self.request.files:
+                fileinfo = self.request.files['zipimages'][0]
+                try:
+                    imageZip = zipfile.ZipFile(io.BytesIO(fileinfo['body']))
+                except Exception, excp:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Error in reading image zip file: '+str(excp))
+                zfile = zipfile.ZipFile(io.BytesIO(), 'w')
+                for ipath in zfile.namelist():
+                    zfile.writestr(sessionNext+'_images/'+os.path.basename(ipath), ifile.read(ipath))
+
             return self.editSession(sessionName, sessionType=sessionType, update=update, sessionText=sessionText, fromSession=fromSession, fromSite=fromSite,
-                                    slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide, modify=sessionModify)
+                                    slideNumber=slideNumber, newNumber=newNumber, deleteSlide=deleteSlide, modify=sessionModify, imageZip=imageZip)
 
         elif action == '_imageupload':
             if not previewingSession:
@@ -2716,7 +2727,7 @@ class ActionHandler(BaseHandler):
             if not zfile:
                 return 'Error: Must provide .md/.pptx file for upload'
             # Extract Markdown file from zip archive
-            topNames = [name for name in zfile.namelist() if '/' not in name and (name.endswith('.md') or name.endswith('.pptx'))]
+            topNames = [name for name in zfile.namelist() if name.endswith('.md') or name.endswith('.pptx')]
             if len(topNames) != 1:
                 return 'Error: Expecting single .md/.pptx file in zip archive'
             fname1 = topNames[0]
@@ -3320,7 +3331,7 @@ class ActionHandler(BaseHandler):
             raise tornado.web.HTTPError(404, log_message='CUSTOM:'+str(excp))
 
 
-    def editSession(self, sessionName, sessionType='', sessionText='', start=False, startPreview=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide=''):
+    def editSession(self, sessionName, sessionType='', sessionText='', start=False, startPreview=False, update=False, modify=None, fromSession='', fromSite='', slideNumber=None, newNumber=None, deleteSlide='', imageZip=None):
         # sessiontext may be modified text for all slides or just a single slide, depending upon slideNumber
         sessionName, sessionText, fromSession, fromSite = md2md.stringify(sessionName, sessionText, fromSession, fromSite)
 
@@ -3488,6 +3499,23 @@ class ActionHandler(BaseHandler):
             zfile.close()
             fbody2 = stream.getvalue()
             fname2 = sessionName+'_images.zip'
+
+        if imageZip:
+            # Append referred image(s) from edit page zip upload
+            ipaths = []
+            for ipath in imageZip.namelist():
+                if '_images/'+os.path.basename(ipath) in sessionText:
+                    # Image file reference found in text
+                    ipaths.append(ipath)
+            if ipaths:
+                modimages = 'append'
+                stream = io.BytesIO(fbody2)
+                zfile = zipfile.ZipFile(stream, 'a')
+                for ipath in ipaths:
+                    zfile.writestr(sessionName+'_images/'+os.path.basename(ipath), imageZip.read(ipath))
+                zfile.close()
+                fbody2 = stream.getvalue()
+                fname2 = sessionName+'_images.zip'
 
         try:
             errMsg = self.uploadSession(uploadType, sessionNumber, sessionName+'.md', sessionText, fname2, fbody2, modify=modify, modimages=modimages, deleteSlideNum=deleteSlideNum)
@@ -5893,17 +5921,17 @@ def backupLink(backup_path):
 
 def backupSite(dirname='', broadcast=False):
     if not dirname and Options['dry_run']:
-        return 'Dry run; no auto backup'
+        return sliauth.errlog('Warning: Dry run; no auto backup')
 
-    if not dirname or dirname == 'daily':
+    if (not dirname or dirname == 'daily') and (not Options['multisite'] or Options['site_name']):
         if Options['end_date'] and (sliauth.epoch_ms() - sliauth.epoch_ms(sliauth.parse_date(Options['end_date']))) > 8*84600*1000:
-            return 'Expired site; no auto backup'
+            return sliauth.errlog('Warning: Expired site %s; no auto backup' % Options['site_name'])
 
     if dirname.endswith('-'):
         dirname += sliauth.iso_date(nosec=True).replace(':','-')
 
     if Options['debug']:
-        print >> sys.stderr, 'sdserver.backupSite:', Options['site_name'], dirname
+        print >> sys.stderr, 'sdserver.backupSite:', Options['site_name'], dirname, broadcast
 
     backup_name = dirname or 'daily'
     backup_url = '/_browse/backup/' + backup_name
@@ -5915,7 +5943,7 @@ def backupSite(dirname='', broadcast=False):
         raise Exception('Backup directory name %s conflicts with site name' % backup_name)
 
     if not BaseHandler.site_backup_dir:
-        return 'Error: No backup directory for site '+Options['site_name']
+        return sliauth.errlog('Error: No backup directory for site '+Options['site_name'])
 
     backup_path = os.path.join(BaseHandler.site_backup_dir, backup_name)
 
@@ -5982,7 +6010,7 @@ def backupSite(dirname='', broadcast=False):
         # Root server
         if not broadcast:
             if not errorList:
-                return 'Backed up root'
+                return sliauth.errlog('Backed up root')
         else:
             # Broadcast backup command
             path = '/_backup'
@@ -5997,7 +6025,7 @@ def backupSite(dirname='', broadcast=False):
                 except Exception, excp:
                     errorList.append('Error in remote backup of site %s: %s' % (site_name, excp))
             if not errorList:
-                return 'Backed up module sessions for each site to directory %s\n' % backup_name
+                return sliauth.errlog('Backed up module sessions for each site to directory %s\n' % backup_name)
     else:
         # Sole or site server
         errorList += sdproxy.backupSheets(backup_path)
@@ -6021,7 +6049,7 @@ def backupSite(dirname='', broadcast=False):
     if Options['debug']:
         if errorStr:
             print >> sys.stderr, errorStr
-        print >> sys.stderr, "DEBUG:backupSite: [%s] %s completed %s" % (Options['site_name'], backup_path, datetime.datetime.now())
+        sliauth.errlog("DEBUG:backupSite: [%s] %s completed %s" % (Options['site_name'], backup_path, datetime.datetime.now()))
 
     if errorList:
         return preElement('\n'+'\n'.join(errorList)+'\n')+'\n'
@@ -6766,12 +6794,12 @@ def main():
 
     Global.child_procs = OrderedDict()
 
-    BaseHandler.setup_dirs(Options['site_name'])
-
     if CommandOpts.backup:
         comps = CommandOpts.backup.split(',')
         Options['backup_dir'] = comps[0]
         Options['backup_hhmm'] = comps[1] if len(comps) > 1 else '03:00'
+
+    BaseHandler.setup_dirs(Options['site_name'])
 
     if Options['site_number']:
         # Start secondary server

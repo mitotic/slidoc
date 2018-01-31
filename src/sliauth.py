@@ -51,6 +51,10 @@ TRUNCATE_HMAC = 12    #  72 bits (12 b64 digits)
 TRUNCATE_SITE = 20    # 120 bits (20 b64 digits)
 DIGEST_ALGORITHM = hashlib.sha256
 
+def errlog(*args):
+    print(*args, file=sys.stderr)
+    return ' '.join(str(arg) for arg in args)
+
 def digest_hex(message, truncate=TRUNCATE_DIGEST):
     return DIGEST_ALGORITHM(message).hexdigest()[:truncate]
 
