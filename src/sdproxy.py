@@ -2282,6 +2282,7 @@ def sheetAction(params, notrace=False):
                 returnMessages.append("Warning:SHARE_NO_ROWS:")
                 returnValues = []
             elif sessionAttributes and sessionAttributes['params']['features'].get('share_answers'):
+                # share_answers: share using session_answers sheet
                 answerSheet = getSheet(sheetName+'_answers')
                 if not answerSheet:
                     raise Exception('Error::Sharing not possible without answer sheet '+sheetName+'_answers')
@@ -2303,28 +2304,31 @@ def sheetAction(params, notrace=False):
                         returnValues.append(values[j][0])
                 returnValues.sort()
             else:
+                # Share using columns in session sheet (e.g., feature=share_all)
                 nRows = modSheet.getLastRow()-numStickyRows
                 respCol = getShare+'_response'
                 respIndex = columnIndex.get(getShare+'_response')
                 if not respIndex:
                     raise Exception('Error::Column '+respCol+' not present in headers for session '+sheetName)
 
+                respOffset = 1
+
                 nCols = 1
 
                 explainOffset = 0
                 if columnIndex.get(getShare+'_explain') == respIndex+nCols:
-                    explainOffset = nCols
                     nCols += 1
+                    explainOffset = nCols
 
                 shareOffset = 0
                 if columnIndex.get(getShare+'_share') == respIndex+nCols:
-                    shareOffset = nCols
                     nCols += 1
+                    shareOffset = nCols
 
                 voteOffset = 0
                 if shareParams.get('vote') and columnIndex.get(getShare+'_vote') == respIndex+nCols:
-                    voteOffset = nCols
                     nCols += 1
+                    voteOffset = nCols
                     if not shareOffset:
                         raise Exception('Error::Column '+respCol+' must have share and vote info for session '+sheetName)
 
@@ -2343,15 +2347,22 @@ def sheetAction(params, notrace=False):
                 testUserVals = None
                 curUserSubmitted = None
                 testUserSubmitted = None
+
+                returnHeaders = ['id'] + returnHeaders
+                nCols += 1
+
                 for j in range(nRows):
-                    if shareSubrow[j][0] == SKIP_ANSWER:
-                        shareSubrow[j][0] = ''
+                    shareSubrow[j] = [idValues[j][0]] +  shareSubrow[j] # Prepend id
+
+                    if shareSubrow[j][respOffset] == SKIP_ANSWER:
+                        shareSubrow[j][respOffset] = ''
                     if idValues[j][0] == paramId:
                         curUserVals = shareSubrow[j]
                         curUserSubmitted = submitValues[j][0]
                     elif idValues[j][0] == TESTUSER_ID:
                         testUserVals = shareSubrow[j]
                         testUserSubmitted = submitValues[j][0]
+
 
                 if not curUserVals and not adminUser:
                     raise Exception('Error::Sheet has no row for user '+paramId+' to share in session '+sheetName)
@@ -2360,10 +2371,10 @@ def sheetAction(params, notrace=False):
 
                 voteParam = shareParams.get('vote')
                 tallyVotes = voteParam and (adminUser or voteParam == 'show_live' or (voteParam == 'show_completed' and votingCompleted))
-                curUserResponded = curUserVals and curUserVals[0] and (not explainOffset or curUserVals[explainOffset])
+                curUserResponded = curUserVals and curUserVals[respOffset] and (not explainOffset or curUserVals[explainOffset])
 
                 if not adminUser and paramId != TESTUSER_ID:
-                    if paceLevel == ADMIN_PACE and (not testUserVals or (not testUserVals[0] and not testUserSubmitted)):
+                    if paceLevel == ADMIN_PACE and (not testUserVals or (not testUserVals[respOffset] and not testUserSubmitted)):
                         raise Exception('Error:NOSHARE:Instructor must respond to question '+getShare+' or Submit before sharing in session '+sheetName)
 
                     if shareParams.get('share') == 'after_answering' and not curUserResponded and not curUserSubmitted:
@@ -2438,7 +2449,7 @@ def sheetAction(params, notrace=False):
                         continue
 
                     # Always skip null responses and ungraded lates
-                    if not shareSubrow[j][0] or lateValues[j][0] == LATE_SUBMIT:
+                    if not shareSubrow[j][respOffset] or lateValues[j][0] == LATE_SUBMIT:
                         continue
 
                     # If voting, skip incomplete/late submissions
@@ -2463,7 +2474,7 @@ def sheetAction(params, notrace=False):
                     timeVal = submitValues[j][0] or timeValues[j][0]
                     timeVal = sliauth.epoch_ms(timeVal) if timeVal else 0
 
-                    respVal = shareSubrow[j][0]
+                    respVal = shareSubrow[j][respOffset]
                     if parseNumber(respVal) is not None:
                         respSort = parseNumber(respVal)
                     else:
@@ -2487,17 +2498,17 @@ def sheetAction(params, notrace=False):
                         nameMap = {}
                         for j in range(nRows):
                             nameMap[idValues[j][0]] = nameValues[j][0]
-                    nameMap = makeShortNames(nameMap)
+                    shortMap = makeShortNames(nameMap, first=True)
                     returnInfo['responders'] = []
                     if teamAttr == 'setup':
                         teamMembers = {}
                         for j in range(nRows):
                             idValue = idValues[j][0]
-                            if nameMap and nameMap.get(idValue):
-                                name = nameMap[idValue]
+                            if shortMap and shortMap.get(idValue):
+                                name = shortMap[idValue]
                             else:
                                 name = idValue
-                            teamName = shareSubrow[j][0]
+                            teamName = shareSubrow[j][respOffset]
                             if teamName:
                                 if teamName in teamMembers:
                                     teamMembers[teamName].append(name)
@@ -2514,10 +2525,8 @@ def sheetAction(params, notrace=False):
                                 continue
                             if responderTeam.get(idValue):
                                 returnInfo['responders'].append(responderTeam[idValue])
-                            elif nameMap and nameMap.get(idValue):
-                                returnInfo['responders'].append(nameMap[idValue])
                             else:
-                                returnInfo['responders'].append(idValue)
+                                returnInfo['responders'].append(idValue+'/'+shortMap.get(idValue,'')+'/'+nameMap[idValue])
                     returnInfo['responders'].sort()
 
                 ##returnMessages.append('Debug::getShare: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')

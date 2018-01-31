@@ -4678,6 +4678,7 @@ function slidocSetupAux(session, feedback) {
 
     // Setup completed; branch out
     Sliobj.firstTime = false;
+    var startedPace = false;
     var toc_elem = document.getElementById("slidoc00");
     if (!toc_elem && Sliobj.session) {
 	if (Sliobj.session.paced || Sliobj.session.submitted) {
@@ -4686,14 +4687,22 @@ function slidocSetupAux(session, feedback) {
 	}
 	if (Sliobj.session.paced) {
 	    Slidoc.startPaced(); // This will call preAnswer later
-	    return false;
+	    startedPace = true;
+	} else {
+	    preAnswer();
+	    if (Sliobj.gradableState && Slidoc.testingActive())
+		Slidoc.slideViewStart();
 	}
-	preAnswer();
-	if (Sliobj.gradableState && Slidoc.testingActive())
-	    Slidoc.slideViewStart();
     } else {
 	clearAnswerElements();
     }
+
+    var delayElems = document.getElementsByClassName('slidoc-blankimage');
+    if (delayElems && delayElems.length)
+	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_canceldelay');
+
+    if (startedPace)
+	return false;
 
     // Not paced
     Slidoc.chainUpdate(location.search);

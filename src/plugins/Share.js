@@ -165,13 +165,23 @@ Share = {
 	var responseHeader = prefix + 'response';
 	var explainHeader = prefix + 'explain';
 
-	var responderNames = [];
 	var responderList = [];
+	var responderMap = {};
 	var temObj = {};
 	if (retStatus.info && retStatus.info.responders) {
 	    for (var j=0; j<retStatus.info.responders.length; j++) {
 		var responder = retStatus.info.responders[j];
-		responderNames.push(responder);
+		if (responder.indexOf('/') > 0) {
+		    var comps = responder.split('/');
+		    responder = comps[0];  // responder Id
+		    var respShort = comps[1];
+		    var ncomps = comps[2].split(',');  // Comma-separated name
+		    if (ncomps.length > 1 && ncomps[1].trim())
+                        var respName = ncomps[1].trim().split(' ')[0] + ' ' + ncomps[0];  // First Last
+                    else
+			respName = comps[2];
+		    responderMap[responder] = respShort+'/'+respName;
+		}
 		temObj[responder] = 1;
 		if (this.respErrors && responder in this.respErrors)
 		    responderList.push(responder+'*');
@@ -255,8 +265,8 @@ Share = {
 	    var respCount = 0;
 	    var explanations = [];
 	    var names = [];
-	    var nameSave = (nResp == responderNames.length);
 	    for (var j=0; j<nResp; j++) {
+		var respId = result['id'][j];
 		var respVal = result[responseHeader][j];
 		if (Slidoc.parseNumber(respVal) == null)
 		    respVal = respVal.toUpperCase();
@@ -267,8 +277,7 @@ Share = {
 		    names = [];
 		}
 		respCount += 1;
-		if (nameSave)
-		    names.push(responderNames[j]);
+		names.push(responderMap[respId] || respId);
 		if (result[explainHeader] && result[explainHeader][j])
 		    explanations.push(''+result[explainHeader][j]);  // Convert to string
 		prevResp = respVal;
@@ -431,7 +440,10 @@ Share = {
 	if (respTally[4] && respTally[4].length) {
 	    var titleStr = this.sessionName+', Q'+this.qattributes.qnumber+': response='+respTally[0];
 	    var qwheel_link = 'https://mitotic.github.io/wheel/?session=' + encodeURIComponent(this.siteName+'_'+this.sessionName) + '&title=' + encodeURIComponent(titleStr);
-            var qwheel_new = qwheel_link + '&names=' + encodeURIComponent(respTally[4].join(';'));
+	    var nameList = respTally[4].join(';');
+	    if (respTally[4].length == 1)
+		nameList += ';';
+            var qwheel_new = qwheel_link + '&names=' + encodeURIComponent(nameList);
 	    wheelURL = '<a class="slidoc-clickable" target="_blank" href="'+qwheel_new+'">&#x1F3B2;</a>&nbsp;\n';
 	}
 

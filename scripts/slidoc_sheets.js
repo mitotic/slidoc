@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21i';
+var VERSION = '0.97.21p';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -1173,6 +1173,7 @@ function sheetAction(params) {
 		returnMessages.push("Warning:SHARE_NO_ROWS:");
 		returnValues = [];
             } else if (sessionAttributes && sessionAttributes['params']['features'].share_answers) {
+		// share_answers: share using session_answers sheet
                 var answerSheet = getSheet(sheetName+'_answers');
                 if (!answerSheet) {
                     throw('Error::Sharing not possible without answer sheet '+sheetName+'_answers');
@@ -1200,30 +1201,33 @@ function sheetAction(params) {
                 }
                 returnValues.sort();
 	    } else {
+		// Share using columns in session sheet (e.g., feature=share_all)
 		var nRows = modSheet.getLastRow()-numStickyRows;
 		var respCol = getShare+'_response';
 		var respIndex = columnIndex[getShare+'_response'];
 		if (!respIndex)
 		    throw('Error::Column '+respCol+' not present in headers for session '+sheetName);
 
+		var respOffset = 1
+
 		var nCols = 1;
 
 		var explainOffset = 0;
 		if (columnIndex[getShare+'_explain'] == respIndex+nCols) {
-		    explainOffset = nCols;
 		    nCols += 1;
+		    explainOffset = nCols;
 		}
 
 		var shareOffset = 0;
 		if (columnIndex[getShare+'_share'] == respIndex+nCols) {
-		    shareOffset = nCols;
 		    nCols += 1;
+		    shareOffset = nCols;
 		}
 
 		var voteOffset = 0;
 		if (shareParams.vote && columnIndex[getShare+'_vote'] == respIndex+nCols) {
-		    voteOffset = nCols;
 		    nCols += 1;
+		    voteOffset = nCols;
                     if (!shareOffset)
                         throw('Error::Column '+respCol+' must have share and vote info for session '+sheetName);
 		}
@@ -1245,9 +1249,15 @@ function sheetAction(params) {
                 var testUserVals = null;
 		var curUserSubmitted = null;
                 var testUserSubmitted = null;
+
+		returnHeaders = ['id'].concat(returnHeaders);
+		nCols += 1;
+		
                 for (var j=0; j<nRows; j++) {
-		    if (shareSubrow[j][0] == SKIP_ANSWER)
-                        shareSubrow[j][0] = '';
+		    shareSubrow[j] = [idValues[j][0]].concat(shareSubrow[j]);   // Prepend id
+
+		    if (shareSubrow[j][respOffset] == SKIP_ANSWER)
+                        shareSubrow[j][respOffset] = '';
                     if (idValues[j][0] == paramId) {
                         curUserVals = shareSubrow[j];
 			curUserSubmitted = submitValues[j][0];
@@ -1263,10 +1273,10 @@ function sheetAction(params) {
 		var voteParam = shareParams.vote;
 		var tallyVotes = voteParam && (adminUser || voteParam == 'show_live' || (voteParam == 'show_completed' && votingCompleted));
 
-		var curUserResponded = curUserVals && curUserVals[0] && (!explainOffset || curUserVals[explainOffset]);
+		var curUserResponded = curUserVals && curUserVals[respOffset] && (!explainOffset || curUserVals[explainOffset]);
 
                 if (!adminUser && paramId != TESTUSER_ID) {
-                    if (paceLevel == ADMIN_PACE && (!testUserVals || (!testUserVals[0] && !testUserSubmitted))) {
+                    if (paceLevel == ADMIN_PACE && (!testUserVals || (!testUserVals[respOffset] && !testUserSubmitted))) {
                         throw('Error::Instructor must respond to question '+getShare+' before sharing in session '+sheetName);
                     }
 
@@ -1356,7 +1366,7 @@ function sheetAction(params) {
                     }
 
                     // Always skip null responses and ungraded lates
-                    if (!shareSubrow[j][0] || lateValues[j][0] == LATE_SUBMIT) {
+                    if (!shareSubrow[j][respOffset] || lateValues[j][0] == LATE_SUBMIT) {
                         continue;
                     }
 
@@ -1386,7 +1396,7 @@ function sheetAction(params) {
 		    var timeVal = submitValues[j][0] || timeValues[j][0];
 		    timeVal = timeVal ? timeVal.getTime() : 0;
 
-                    var respVal = shareSubrow[j][0];
+                    var respVal = shareSubrow[j][respOffset];
                     if (parseNumber(respVal) != null) {
                         var respSort = parseNumber(respVal);
                     } else {
@@ -1417,18 +1427,18 @@ function sheetAction(params) {
                             nameMap[idValues[j][0]] = nameValues[j][0];
                         }
                     }
-                    nameMap = makeShortNames(nameMap);
+                    var shortMap = makeShortNames(nameMap, true);
                     returnInfo.responders = [];
                     if (teamAttr == 'setup') {
                         var teamMembers = {}
                         for (var j=0; j < nRows; j++) {
                             var idValue = idValues[j][0];
-                            if (nameMap && nameMap[idValue]) {
-                                var name = nameMap[idValue];
+                            if (shortMap && shortMap[idValue]) {
+                                var name = shortMap[idValue];
                             } else {
                                 var name = idValue;
                             }
-                            var teamName = shareSubrow[j][0];
+                            var teamName = shareSubrow[j][respOffset];
                             if (teamName) {
                                 if (teamName in teamMembers) {
                                     teamMembers[teamName].push(name);
@@ -1450,10 +1460,8 @@ function sheetAction(params) {
                             }
                             if (responderTeam[idValue]) {
                                 returnInfo['responders'].push(responderTeam[idValue]);
-                            } else if (nameMap && nameMap[idValue]) {
-                                returnInfo['responders'].push(nameMap[idValue]);
                             } else {
-                                returnInfo['responders'].push(idValue);
+                                returnInfo['responders'].push(idValue+'/'+(shortMap[idValue]||'')+'/'+nameMap[idValue]);
                             }
                         }
                     }

@@ -3745,12 +3745,15 @@ class AuthActionHandler(ActionHandler):
         raise tornado.web.HTTPError(403)
 
 class UserActionHandler(ActionHandler):
+    user_delays = set()
+
     @tornado.web.authenticated
     @tornado.gen.coroutine
     def get(self, subpath=''):
         action, sep, subsubpath = subpath.partition('/')
         if not action.startswith('_user_'):
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid user action %s' % action)
+        userId = self.get_id_from_cookie()
         if action == '_user_grades':
             admin_access = self.check_admin_access()
             if admin_access:
@@ -3758,8 +3761,6 @@ class UserActionHandler(ActionHandler):
                     self.redirect(('/'+Options['site_name'] if Options['site_name'] else '') + '/_roster')
                     return
                 userId = subsubpath
-            else:
-                userId = self.get_id_from_cookie()
             rawHTML = self.get_argument('raw','')
             gradeVals = sdproxy.lookupGrades(userId, admin=admin_access)
             if not gradeVals:
@@ -3773,12 +3774,25 @@ class UserActionHandler(ActionHandler):
                         session_grades=sessionGrades, gradebook_release=sdproxy.Settings['gradebook_release'])
             return
 
+        elif action in ('_user_canceldelay',):
+            if userId in self.user_delays:
+                self.user_delays.discard(userId)
+                print >> sys.stderr, 'UserActionHandler:blank DELAY cancel', userId
+            return
+
         elif action in ('_user_blankimage',):
             delay = self.get_argument('delay','')
+            cancel = self.get_argument('cancel','')
             if delay.isdigit():
+                if cancel:
+                    self.user_delays.add(userId)
                 print >> sys.stderr, 'UserActionHandler:blank DELAY start', delay
-                yield tornado.gen.sleep(int(delay))
+                for delay_indx in range(int(delay)):
+                    yield tornado.gen.sleep(1)
+                    if cancel and userId not in self.user_delays:
+                        break
                 print >> sys.stderr, 'UserActionHandler:blank DELAY end'
+                self.user_delays.discard(userId)
             self.set_header('Content-Type', 'image/gif')
             self.write(sliauth.blank_gif())
             return
@@ -5353,6 +5367,7 @@ def createApplication():
                       (pathPrefix+r"/(_user_blankimage)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_canceldelay)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades/[-\w.%]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_plain)", UserActionHandler),
@@ -5877,9 +5892,10 @@ def backupLink(backup_path):
             print >> sys.stderr, 'backupLink: Error in creating symlink for', backup_name, subname, Options['site_name'], excp
 
 def backupSite(dirname='', broadcast=False):
-    if not dirname:
-        if Options['dry_run']:
-            return 'Dry run; no auto backup'
+    if not dirname and Options['dry_run']:
+        return 'Dry run; no auto backup'
+
+    if not dirname or dirname == 'daily':
         if Options['end_date'] and (sliauth.epoch_ms() - sliauth.epoch_ms(sliauth.parse_date(Options['end_date']))) > 8*84600*1000:
             return 'Expired site; no auto backup'
 
@@ -5951,9 +5967,10 @@ def backupSite(dirname='', broadcast=False):
                 config_files.append(os.path.basename(Global.site_settings_file))
 
             config_dir = os.path.join(backup_path, 'config')
-            os.makedirs(config_dir)
+            if not os.path.exists(config_dir):
+                os.makedirs(config_dir)
             for fname in config_files:
-                backupCopy(os.path(Global.config_path,fname), os.path(config_dir,fname), if_exists=True)
+                backupCopy(os.path.join(Global.config_path,fname), os.path.join(config_dir,fname), if_exists=True)
         else:
             backupCopy(Global.config_path, backup_path, if_exists=True)
 

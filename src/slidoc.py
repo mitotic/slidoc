@@ -1059,7 +1059,7 @@ class SlidocRenderer(MathRenderer):
 
     def minirule(self):
         """Treat minirule as a linebreak"""
-        return '<br style="clear:both;">\n'
+        return '<br class="slidoc-full-block">\n'
 
     def pause(self, text):
         """Pause in display"""
@@ -1074,7 +1074,7 @@ class SlidocRenderer(MathRenderer):
         chapter_id, sep, slideNumStr = slide_id.partition('-')
         slide_number = int(slideNumStr)
         prefix = str(slide_number)+'. ' if 'untitled_number' not in self.options['config'].features else ''
-        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d" style="clear:both;">\n''' % (slide_id, slide_number)
+        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-full-block slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
         html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
         html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, SYMS['rightarrow'])
         right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
@@ -1098,7 +1098,7 @@ class SlidocRenderer(MathRenderer):
         html += '''    <span id="%s-toptoggle-header" class="slidoc-toptoggle-header slidoc-toggle-hidden slidoc-toggle-draggable" draggable="true" data-slide="%d">%s</span>''' % (slide_id, slide_number, prefix)
         html += '''  </span>\n'''
         html += '''</div>\n'''
-        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="clear:both;display: none;">\n''' % (slide_id, slide_id)
+        html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-full-block slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="display:none;">\n''' % (slide_id, slide_id)
         html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
         html += '''  <div>\n'''
         html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button>''' % (slide_id, slide_id)
@@ -1117,10 +1117,10 @@ class SlidocRenderer(MathRenderer):
         html += '''</div>\n'''
 
         # Slides need to be unhidden in Javascript for paced/slides_only sessions
-        style = 'clear:both;'
+        style = ''
         if self.options['config'].pace or 'slides_only' in self.options['config'].features:
             style += 'display: none;'
-        html += '\n<section id="%s" class="slidoc-slide %s-slide %s" style="%s"> <!--slide start-->\n' % (slide_id, chapter_id, classes, style)
+        html += '\n<section id="%s" class="slidoc-slide %s-slide slidoc-full-block %s" style="%s"> <!--slide start-->\n' % (slide_id, chapter_id, classes, style)
         return html
 
     def slide_footer(self):
@@ -1148,7 +1148,7 @@ class SlidocRenderer(MathRenderer):
             attrs += ' data-param-count="%d"' % len(self.all_params)
         if self.all_functions:
             attrs += ' data-function-count="%d"' % len(self.all_functions)
-        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle %s" %s style="clear:both;display:none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle slidoc-full-block %s" %s style="display:none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
         return html
 
     def image(self, src, title, text):
@@ -1233,9 +1233,9 @@ class SlidocRenderer(MathRenderer):
         if implicit or 'rule' in self.options['config'].strip or (self.hide_end and 'hidden' in self.options['config'].strip):
             rule_html = ''
         elif self.options.get('use_xhtml'):
-            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly" style="clear:both;"/>\n'
+            rule_html = '<hr class="slidoc-hrule slidoc-full-block slidoc-noslide slidoc-noprint slidoc-single-columnonly"/>\n'
         else:
-            rule_html = '<hr class="slidoc-hrule slidoc-noslide slidoc-noprint slidoc-single-columnonly" style="clear:both;">\n'
+            rule_html = '<hr class="slidoc-hrule slidoc-full-block slidoc-noslide slidoc-noprint slidoc-single-columnonly">\n'
 
         end_html = self.end_slide(rule_html)
         self._new_slide()
@@ -1255,7 +1255,7 @@ class SlidocRenderer(MathRenderer):
         slide_id = self.get_slide_id()
         if 'discuss' in self.slide_options:
             self.sheet_attributes['discussSlides'].append(self.slide_number)
-            html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-discussonly slidoc-noprint" style="display: none;">\n''' % (slide_id, )
+            html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-full-block slidoc-discussonly slidoc-noprint" style="display:none;">\n''' % (slide_id, )
             html += '''  <span id="%s-discuss-show" class="slidoc-discuss-show slidoc-clickable" onclick="Slidoc.slideDiscuss('show','%s');">%s</span>\n''' % (slide_id, slide_id, SYMS['bubble'])
             html += '''  <span id="%s-discuss-count" class="slidoc-discuss-count"></span>\n''' % (slide_id,)
             html += '''  <div id="%s-discuss-container" class="slidoc-discuss-container" style="display: none;">\n''' % (slide_id, )
@@ -2526,7 +2526,7 @@ class SlidocRenderer(MathRenderer):
         classes = 'slidoc-clickable'
         if self.qtypes[-1]:
             classes += ' slidoc-question-notes'
-        return prefix + ('''<br style="clear:both;"><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
+        return prefix + ('''<br class="slidoc-full-block"><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
 
 
     def slidoc_extra(self, name, text):
@@ -4042,8 +4042,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 pre_html = index_head + pre_html
 
                 tail = md_prefix + md_html + md_suffix
-                if file_config.delay_sec:
-                    tail += Delay_image_format % (site_prefix, file_config.delay_sec)
+                if file_config.delay_sec or (file_config.gsheet_url and file_config.pace and file_config.printable):
+                    tail += Delay_image_format % (site_prefix, file_config.delay_sec or 10, '' if file_config.delay_sec else '&cancel=yes')
                 if Missing_ref_num_re.search(md_html) or return_html:
                     # Still some missing reference numbers; output file later
                     outfile_buffer.append([outname, outpath, fnumber, md_params, pre_html, tail, zipped_md])
@@ -4392,7 +4392,7 @@ Html_header = '''<!DOCTYPE html>
 <meta charset="utf-8"/>
 '''
 
-Delay_image_format = '''<img src="%s/_user_blankimage?delay=%d" style="display:none;">'''
+Delay_image_format = '''<img class="slidoc-blankimage" src="%s/_user_blankimage?delay=%d%s" style="display:none;">'''
 
 Html_footer = '''
 <div id="slidoc-body-footer" class="slidoc-noslide"></div>
