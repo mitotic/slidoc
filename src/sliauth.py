@@ -38,6 +38,8 @@ RESTRICTED_SESSIONS = ('exam', 'final', 'midterm', 'quiz', 'test')
 # Set to None to disable restricted checks
 RESTRICTED_SESSIONS_RE = re.compile('(' + '|'.join(RESTRICTED_SESSIONS) + ')', re.IGNORECASE)
 
+IMAGE_MIME_TYPES = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
+
 def get_version(sub=False):
     return sub_version(VERSION) if sub else VERSION
 

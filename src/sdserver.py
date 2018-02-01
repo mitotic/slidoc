@@ -1190,7 +1190,6 @@ class SiteActionHandler(BaseHandler):
 
 class ActionHandler(BaseHandler):
     previewState = {}
-    mime_types = {'.gif': 'image/gif', '.jpg': 'image/jpg', '.jpeg': 'image/jpg', '.png': 'image/png'}
     cmd_opts =   { 'base': dict(debug=True),
                    'other': dict(),
                   }
@@ -2773,7 +2772,7 @@ class ActionHandler(BaseHandler):
                 if zfile:
                     images_zipdata = fbody2
 
-            src_path = src_dir + '/' + sessionName + '.md'
+            src_path = os.path.join(src_dir, sessionName+'.md')
             overwrite = os.path.exists(src_path)
             image_dir = sessionName+'_images'
 
@@ -2787,7 +2786,24 @@ class ActionHandler(BaseHandler):
 
             if 'md_params' not in retval:
                 print >> sys.stderr, 'sdserver.uploadSession: Error', uploadType, src_path, len(fbody1), retval
-                raise Exception('\n'.join(retval.get('messages',[]))+'\n')
+                messages = retval.get('messages',[])
+                if any('NOIMAGE:' in message for message in messages):
+                    ipaths = []
+                    for idir in [os.path.join(src_dir, image_dir), os.path.join(src_dir, '_images')]:
+                        if os.path.isdir(idir):
+                            ipaths += os.listdir(idir)
+                    if zfile:
+                        ipaths += zfile.namelist()
+                    iset = set()
+                    for ipath in ipaths:
+                        fname = os.path.basename(ipath)
+                        fext = os.path.splitext(fname)[1]
+                        if sliauth.IMAGE_MIME_TYPES.get(fext.lower()):
+                            iset.add(fname)
+                    messages.append('Images loaded:')
+                    for iname in sorted(list(iset)):
+                        messages.append('    _images/'+iname)
+                raise Exception('\n'.join(messages)+'\n')
 
             md_params = retval['md_params']
 
@@ -3047,7 +3063,7 @@ class ActionHandler(BaseHandler):
         else:
             # Image file?
             fname, fext = os.path.splitext(os.path.basename(filepath))
-            mime_type = self.mime_types.get(fext.lower())
+            mime_type = sliauth.IMAGE_MIME_TYPES.get(fext.lower())
             if mime_type:
                 if self.previewState['image_zipfile'] and fname+fext in self.previewState['image_paths']:
                     content = self.previewState['image_zipfile'].read(self.previewState['image_paths'][fname+fext])
@@ -3500,18 +3516,25 @@ class ActionHandler(BaseHandler):
             fbody2 = stream.getvalue()
             fname2 = sessionName+'_images.zip'
 
+        imageZipPaths = []
         if imageZip:
             # Append referred image(s) from edit page zip upload
-            ipaths = []
+            refpaths = []
             for ipath in imageZip.namelist():
-                if '_images/'+os.path.basename(ipath) in sessionText:
+                fname = os.path.basename(ipath)
+                fext = os.path.splitext(fname)[1]
+                if not sliauth.IMAGE_MIME_TYPES.get(fext.lower()):
+                    continue
+                imageZipPaths.append('_images/'+fname)
+                if '_images/'+fname in sessionText:
                     # Image file reference found in text
-                    ipaths.append(ipath)
-            if ipaths:
+                    refpaths.append(ipath)
+            imageZipPaths.sort()
+            if refpaths:
                 modimages = 'append'
                 stream = io.BytesIO(fbody2)
                 zfile = zipfile.ZipFile(stream, 'a')
-                for ipath in ipaths:
+                for ipath in refpaths:
                     zfile.writestr(sessionName+'_images/'+os.path.basename(ipath), imageZip.read(ipath))
                 zfile.close()
                 fbody2 = stream.getvalue()
@@ -3532,6 +3555,8 @@ class ActionHandler(BaseHandler):
             if not errMsg.lower().startswith('error'):
                 errMsg = 'Error in editing session '+sessionName+': '+errMsg
             else:
+                if 'NOIMAGE:' in errMsg and imageZipPaths:
+                    errMsg += 'Images available:\n' + '\n'.join(imageZipPaths) + '\n'
                 errMsg += ' (session: '+sessionName+')'
             raise tornado.web.HTTPError(404, log_message='CUSTOM:'+errMsg)
 

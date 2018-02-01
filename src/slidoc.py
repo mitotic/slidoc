@@ -724,8 +724,8 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             q_list = [sort_caseless(list(self.renderer.qconcepts[j])) for j in (0, 1)]
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
-        classes =  'slidoc-single-column' if 'two_column' in self.renderer.options['config'].features else ''
-        return SlidocRenderer.image_drop_template+self.renderer.slide_prefix(self.renderer.first_id, classes)+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)+html+self.renderer.end_slide(last_slide=True)
+        classes =  ['slidoc-first-slide', 'slidoc-single-column' if 'two_column' in self.renderer.options['config'].features else '']
+        return SlidocRenderer.image_drop_template+self.renderer.slide_prefix(self.renderer.first_id, ' '.join(classes))+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)+html+self.renderer.end_slide(last_slide=True)
 
     
 class MathRenderer(mistune.Renderer):
@@ -1031,10 +1031,10 @@ class SlidocRenderer(MathRenderer):
     def get_slide_id(self, slide_number=0):
         return make_slide_id(self.options['filenumber'], slide_number or self.slide_number)
 
-    def start_block(self, block_type, id_str, display='none'):
+    def start_block(self, block_type, id_str, classes='', display='none'):
         prefix =        '\n<!--slidoc-%s-block-begin[%s]-->\n' % (block_type, id_str)
         end_str = '</div>\n<!--slidoc-%s-block-end[%s]-->\n' % (block_type, id_str)
-        suffix =  '<div class="slidoc-%s %s" style="display: %s;">\n' % (block_type, id_str, display)
+        suffix =  '<div class="slidoc-%s %s %s" style="display: %s;">\n' % (block_type, id_str, classes, display)
         return prefix, suffix, end_str
 
     def end_hide(self):
@@ -1099,7 +1099,7 @@ class SlidocRenderer(MathRenderer):
         html += '''  </span>\n'''
         html += '''</div>\n'''
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-full-block slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="display:none;">\n''' % (slide_id, slide_id)
-        html += '''  <div id="%s-togglebar-edit-status"></div>\n''' % (slide_id,)
+        html += '''  <pre id="%s-togglebar-edit-status"></pre>\n''' % (slide_id,)
         html += '''  <div>\n'''
         html += '''    <button id="%s-togglebar-edit-save" onclick="Slidoc.slideEdit('save', '%s');">Save edits</button>''' % (slide_id, slide_id)
         html += '''    <button id="%s-togglebar-edit-discard" onclick="Slidoc.slideEdit('discard', '%s');">Discard edits</button>''' % (slide_id, slide_id)
@@ -1182,7 +1182,7 @@ class SlidocRenderer(MathRenderer):
                 # Check for local image file
                 new_src = md2md.find_image_path(src, filename=self.options['filename'], filedir=self.options['filedir'], image_dir=self.options['config'].image_dir)
                 if not new_src:
-                    raise Exception('Image file %s not found in %s%s' % (src, self.options['filedir'], tem_msg))
+                    raise Exception('NOIMAGE:Image file %s not found in %s%s' % (src, self.options['filedir'], tem_msg))
 
                 if copy_image:
                     filepath = self.options['filedir']+'/'+new_src if self.options['filedir'] else new_src
@@ -2520,7 +2520,8 @@ class SlidocRenderer(MathRenderer):
 
         id_str = self.get_slide_id() + '-notes'
         disp_block = 'none' if self.qtypes[-1] else 'block'
-        start_str, suffix, end_str = self.start_block('notes', id_str, display=disp_block)
+        classes = '' if self.qtypes[-1] else 'slidoc-plain-notes'
+        start_str, suffix, end_str = self.start_block('notes', id_str, display=disp_block, classes=classes)
         prefix += start_str
         self.notes_end = end_str
         classes = 'slidoc-clickable'
@@ -2641,7 +2642,9 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
 
     if renderer.questions:
         # Compute question hash digest to track questions
-        sbuf = io.BytesIO(source.encode('utf-8') if isinstance(source, unicode) else source)
+        source_text = source.encode('utf-8') if isinstance(source, unicode) else source
+        _, skip_bytes = sliauth.read_header_opts(io.BytesIO(source_text))
+        sbuf = io.BytesIO(source_text[skip_bytes:])
         slide_hash = []
         slide_lines = []
         first_slide = True
@@ -2738,7 +2741,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
             post_header_html = '&nbsp;&nbsp;'
 
         post_header_html += click_span('&#8722;All Notes',
-                                        "Slidoc.hide(this,'slidoc-notes');",id=renderer.first_id+'-hidenotes',
+                                        "Slidoc.hide(this,'slidoc-plain-notes');",id=renderer.first_id+'-hidenotes',
                                          classes=notes_classes)
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:

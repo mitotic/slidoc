@@ -4705,6 +4705,7 @@ function slidocSetupAux(session, feedback) {
 	return false;
 
     // Not paced
+    Slidoc.classDisplay('slidoc-question-notes', 'none');
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
 	// Table of contents included in file
@@ -6961,6 +6962,7 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 
     var notes_id = slide_id+'-notes';
     var notes_elem = document.getElementById(notes_id);
+    var notes_divs = document.getElementsByClassName(notes_id);
     if (notes_elem && dispCorrect) {
 	// Display of any notes associated with this question
 	if (question_attrs.qtype == 'choice') {
@@ -6988,15 +6990,16 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 		    // Redisplay choiceNotes JS
 		    // defining function 'choiceNotes: function(n) {..}' in a plugin allows choice-dependent notes display
 		    // (Negative n for alt choice; only works single alternative currently)
-		    var elems = document.getElementsByClassName(notes_id);
-		    for (var j=0; j<elems.length; j++)
-			expandInlineJS(elems[j], 'choiceNotes', (selAlternative ? -choiceIndex : choiceIndex));
+		    for (var j=0; j<notes_divs.length; j++)
+			expandInlineJS(notes_divs[j], 'choiceNotes', (selAlternative ? -choiceIndex : choiceIndex));
 		}
 	    }
 	}
 	Slidoc.idDisplay(notes_id);
 	notes_elem.style.display = 'inline';
 	Slidoc.classDisplay(notes_id, 'block');
+	for (var j=0; j<notes_divs.length; j++)
+	    notes_divs[j].classList.add('slidoc-plain-notes');  // Question notes now become plain notes
 	var ansContainer = document.getElementById(slide_id+"-answer-container");
 	if (ansContainer)
 	    ansContainer.scrollIntoView(true)
@@ -7970,7 +7973,7 @@ Slidoc.startPaced = function () {
 
     var firstSlideId = getVisibleSlides()[0].id;
 
-    Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-'); // Hide notes for slide view
+    Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-plain-notes', '-'); // Hide notes for slide view
     Slidoc.classDisplay('slidoc-question-notes', 'none'); // Hide notes toggle for pacing
     preAnswer();
 
@@ -8132,7 +8135,7 @@ Slidoc.slideViewStart = function (pacedStart) {
 
     if (!pacedStart || !(Sliobj.session && Sliobj.session.paced)) {
        // Hide notes (for paced view, this is handled earlier)
-       Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-notes', '-');
+       Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-plain-notes', '-');
     }
     var chapterId = parseSlideId(firstSlideId)[0];
     var contentElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
@@ -8173,7 +8176,7 @@ Slidoc.slideViewEnd = function() {
     } else {
 	// Unhide all slides
 	slidesVisible(true);
-	Slidoc.classDisplay('slidoc-notes', 'block');
+	Slidoc.classDisplay('slidoc-plain-notes', 'block');
 	var contElems = document.getElementsByClassName('slidoc-chapter-toc-hide');
 	for (var j=0; j<contElems.length; j++)
 	    Slidoc.hide(contElems[j], null, '+');

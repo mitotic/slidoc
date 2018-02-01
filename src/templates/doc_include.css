@@ -179,16 +179,16 @@ article.slidoc-two-column .slidoc-single-columnonly {
     
 
 /* Slide page breaks (use ---- to force slide break) */
-body:not(.slidoc-slide-view) article.slidoc-page-break-always section {
-  page-break-after: always;    
+body:not(.slidoc-slide-view) article.slidoc-page-break-always section:not(.slidoc-first-slide) {
+  page-break-before: always;
 }
 
 body:not(.slidoc-slide-view) article.slidoc-page-break-avoid section:not(.slidoc-single-column) {
-  page-break-inside: avoid;    
+  page-break-inside: avoid;
 }
 
 body:not(.slidoc-slide-view) section.slidoc-page-break-before {
-  page-break-before: always;    
+  page-break-before: always;
 }
 
 /* slide header display */

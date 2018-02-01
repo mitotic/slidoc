@@ -223,7 +223,7 @@ document.onreadystatechange = function(event) {
 
 </head>
 <body>
-<tt><div id="slidoc-err-msg">{{err_msg}}</div></tt>
+<tt><pre id="slidoc-err-msg">{{err_msg}}</pre></tt>
 <p></p>
 <form action="{{site_prefix}}/_edit" method="post" id="slidoc-edit-form" enctype="multipart/form-data" >
   {% module xsrf_form_html() %}
