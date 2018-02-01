@@ -590,11 +590,26 @@ document.onreadystatechange = function(event) {
     return abortOnError(onreadystateaux);
 }
 
+Slidoc.cancelDelay = function() {
+    if (window.MathJax) {
+	MathJax.Hub.Queue(cancelDelayAux);
+    } else {
+	cancelDelayAux();
+    }
+}
+
+function cancelDelayAux() {
+    var delayElems = document.getElementsByClassName('slidoc-blankimage');
+    if (delayElems && delayElems.length)
+	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_canceldelay');
+}
+
 Slidoc.renderMath = function(elem) {
     if (window.MathJax) {
 	if (elem)
 	    MathJax.Hub.Queue(["Typeset", MathJax.Hub, elem]);
-	else
+
+	else if (!('immediate_math' in Sliobj.params.features)) // If immediate_math, document body typesetting would have begun already
 	    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
 
     } else if (window.renderMathInElement) {
@@ -623,8 +638,7 @@ function onreadystateaux() {
     }
 
     // Typeset math after plugin setup
-    if (!('immediate_math' in Sliobj.params.features))
-	Slidoc.renderMath();
+    Slidoc.renderMath();
 
     if (Sliobj.params.gd_client_id) {
 	// Google client load will authenticate
@@ -2967,7 +2981,7 @@ Slidoc.sendEvent = function (eventType, eventName) // Extra event Args
     
     if (autoInteract() && eventName == 'Timer.timeout' && Sliobj.session.lastSlide) {
 	var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
-	var eventMessage = ['', 'Share.finalizeShare.'+lastSlideId, []];
+	var eventMessage = [getUserId(), Sliobj.params.adminRole, 'Share.finalizeShare.'+lastSlideId, []];
 	if (Sliobj.interactiveSlide)
 	    setTimeout( function(){ enableInteract(false, lastSlideId); }, 500);
 	setTimeout( function(){ Sliobj.eventReceiver(eventMessage); }, 1000);
@@ -2977,21 +2991,23 @@ Slidoc.sendEvent = function (eventType, eventName) // Extra event Args
 Sliobj.eventReceiver = function(eventMessage) {
     Slidoc.log('Sliobj.eventReceiver:', eventMessage);
     var eventSource = eventMessage[0];
-    var eventName = eventMessage[1];
-    var eventArgs = eventMessage[2];
+    var eventRole = eventMessage[1];
+    var eventName = eventMessage[2];
+    var eventArgs = eventMessage[3];
 
     if (eventName.indexOf('.') > 0) {
-	// Plugin method; ignore if not on last paced slide
-	if (!Sliobj.currentSlide || !Sliobj.session || Sliobj.currentSlide != Sliobj.session.lastSlide) {
-	    Slidoc.log('Sliobj.eventReceiver: IGNORED PLUGIN EVENT');
-	    return;
-	}
+	// Plugin method
 	var comps = eventName.split('.');
 	var pluginName = comps[0];
 	var pluginMethodName = comps[1];
+	var globalInstance = Sliobj.globalPluginDict[pluginName];
+	if (!Slidoc.PluginManager.optCall(globalInstance, 'allowRemoteAccess', pluginMethodName, eventRole == Sliobj.params.adminRole)) {
+	    Slidoc.log('Sliobj.eventReceiver: Denied access to plugin method: '+eventSource+', '+eventRole+', '+eventName);
+	    return;
+	}
+
 	var slide_id = (comps.length > 2) ? comps[2] : ''; // '' slide_id => session plugin
 	if (!slide_id) {
-	    var globalInstance = Sliobj.globalPluginDict[pluginName];
 	    if (globalInstance)
 		Slidoc.PluginManager.invoke.apply(null, [globalInstance, pluginMethodName].concat(eventArgs));
 	    else
@@ -3325,6 +3341,10 @@ Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) 
     GService.requestWS('plugin', data, callback);
 }
 
+Slidoc.PluginManager.onLastSlide = function() {
+    return Sliobj.currentSlide && Sliobj.session && Sliobj.currentSlide == Sliobj.session.lastSlide;
+}
+
 Slidoc.PluginManager.shareReady = function(share, qnumber) {
     if (share == 'after_answering' && Slidoc.PluginManager.answered(qnumber))
 	return true;
@@ -3521,14 +3541,14 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
 	    // Global seed for all instances of the plugin
 	    defCopy.global = null;
 	    defCopy.slideId = '';
-	    defCopy.slideParams = null;
+	    defCopy.defined = null;
 	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset);
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
 	} else {
 	    // Seed for each slide instance of the plugin
 	    defCopy.global = Sliobj.globalPluginDict[pluginName];
 	    defCopy.slideId = slide_id;
-	    defCopy.slideParams = slideParams || {};
+	    defCopy.defined = slideParams || {};
 	    var comps = parseSlideId(slide_id);
 	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset + 256*((1+comps[1])*256 + comps[2]));
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
@@ -4697,9 +4717,7 @@ function slidocSetupAux(session, feedback) {
 	clearAnswerElements();
     }
 
-    var delayElems = document.getElementsByClassName('slidoc-blankimage');
-    if (delayElems && delayElems.length)
-	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_canceldelay');
+    Slidoc.cancelDelay();
 
     if (startedPace)
 	return false;
@@ -6748,6 +6766,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	return;
     }
     var setup = !elem;
+    force = force || '';
     expect = expect || '';
     var question_attrs = getQuestionAttrs(slide_id);
 
@@ -6787,11 +6806,11 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 	var responded = true;
 	if (setup) {
 	    Slidoc.PluginMethod(pluginName, slide_id, 'display', response, pluginResp);
-	    Slidoc.answerUpdate(setup, slide_id, expect, response, pluginResp);
+	    Slidoc.answerUpdate(setup, slide_id, force, expect, response, pluginResp);
 	} else {
 	    responded = Slidoc.PluginMethod(pluginName, slide_id, 'response',
 			                    (Sliobj.session.remainingTries > 0),
-			 	            Slidoc.answerUpdate.bind(null, setup, slide_id, expect));
+			 	            Slidoc.answerUpdate.bind(null, setup, slide_id, force, expect));
 	    if (responded && Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries -= 1;
 	}
@@ -6898,14 +6917,14 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 
     }
 
-    Slidoc.answerUpdate(setup, slide_id, expect, response);
+    Slidoc.answerUpdate(setup, slide_id, force, expect, response);
     return false;
 }
 
-Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
+Slidoc.answerUpdate = function (setup, slide_id, force, expect, response, pluginResp) {
     // PluginResp: name:'...', score:1/0/null, correctAnswer: 'correct_ans',
     //  invalid: 'invalid_msg', output:'output', tests:0/1/2} The last three are for code execution
-    ///Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, expect, response, pluginResp);
+    ///Slidoc.log('Slidoc.answerUpdate: ', setup, slide_id, force, expect, response, pluginResp);
     expect = expect || '';
 
     if (!setup && Sliobj.session && Sliobj.session.paced)
@@ -7074,10 +7093,10 @@ Slidoc.answerUpdate = function (setup, slide_id, expect, response, pluginResp) {
 	Slidoc.showScore();
 	Slidoc.reportTestAction('answerTally');
     }
-    saveSessionAnswered(slide_id, question_attrs);
+    saveSessionAnswered(slide_id, force, question_attrs);
 }
 
-function saveSessionAnswered(slide_id, qattrs) {
+function saveSessionAnswered(slide_id, force, qattrs) {
     Slidoc.log('saveSessionAnswered:', slide_id);
     if (!Sliobj.session.paced || Sliobj.session.submitted)
 	return;
@@ -7096,13 +7115,13 @@ function saveSessionAnswered(slide_id, qattrs) {
 	}
     }
     // Save session
-    sessionPut(null, null, {}, slide_id ? saveCallback.bind(null, slide_id, qattrs||null) : null);
+    sessionPut(null, null, {}, slide_id ? saveCallback.bind(null, slide_id, force, qattrs||null) : null);
 }
 
-function saveCallback(slide_id, qattrs, session, feedback) {
-    Slidoc.log('saveCallback:', slide_id, qattrs, session, feedback);
+function saveCallback(slide_id, force, qattrs, session, feedback) {
+    Slidoc.log('saveCallback:', slide_id, force, qattrs, session, feedback);
     if (slide_id in Sliobj.answerPlugins)
-	Slidoc.PluginManager.invoke(Sliobj.answerPlugins[slide_id], 'answerSave');
+	Slidoc.PluginManager.invoke(Sliobj.answerPlugins[slide_id], 'answerSave', force);
 }
 
 Slidoc.showScore = function () {

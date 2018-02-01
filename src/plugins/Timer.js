@@ -16,6 +16,13 @@ Timer = {
 	    }
 	},
 
+	allowRemoteAccess: function(methodName, fromAdmin) {
+	    if (fromAdmin)
+		return true;
+	    else
+		return false;
+	},
+
 	timeout: function() {
 	    Slidoc.log('Slidoc.Plugins.Timer.timeout:');
 	},

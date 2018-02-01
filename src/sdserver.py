@@ -4470,14 +4470,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             else:
                 continue
 
-            # Event [source, name, arg1, arg2, ...]
-            sendList = [fromUser, evName] + evArgs
+            # Event [source, role, name, arg1, arg2, ...]
+            sendList = [fromUser, fromRole, evName] + evArgs
             for conn in connections:
                 if evType > 0:
                     # If evType > 0, only the latest occurrence of an event type with same evType name+arguments is buffered
                     buffered = False
                     for j in range(len(conn.eventBuffer)):
-                        if conn.eventBuffer[j][1:evType+1] == sendList[1:evType+1]:
+                        if conn.eventBuffer[j][2:evType+2] == sendList[2:evType+2]:
                             conn.eventBuffer[j] = sendList
                             buffered = True
                             break
@@ -4545,10 +4545,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     def flushEventBuffer(self):
         while self.eventBuffer:
-            # sendEvent: source, evName, evArg1, ...
+            # sendEvent: source, role, evName, evArg1, ...
             sendList = self.eventBuffer.pop(0)
-            # Message: source, evName, [args]
-            msg = [0, 'event', [sendList[0], sendList[1], sendList[2:]] ]
+            # Message: source, role, evName, [args]
+            msg = [0, 'event', [sendList[0], sendList[1], sendList[2], sendList[3:]] ]
             self.write_message_safe(json.dumps(msg, default=sliauth.json_default))
 
     def _close_on_timeout(self):

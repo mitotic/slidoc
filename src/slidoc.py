@@ -2262,7 +2262,7 @@ class SlidocRenderer(MathRenderer):
             ans_params['ansdisp'] = 'slidoc-ansdisp-multichoice'
 
         if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
-            # Strip any correct answers
+            # For unpaced sessions, if stripping correct answers or no correct answer, do not display answer box
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
         hide_answer = self.options['config'].pace or not self.options['config'].show_score 
@@ -2651,6 +2651,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         prev_hrule = True
         prev_slideopt = False
         prev_blank = True
+        fenced_code = False
         slide_header = ''
         while True:
             line = sbuf.readline()
@@ -2666,6 +2667,12 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
                 prev_blank = True
             else:
                 prev_blank = False
+
+            if line.startswith('```'):
+                fenced_code = not fenced_code
+
+            if fenced_code:
+                continue
 
             append_line = line
             new_slide = False

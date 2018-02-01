@@ -1,5 +1,16 @@
 Share = {
     // Simple share plugin
+    global: {
+	allowRemoteAccess: function(methodName, fromAdmin) {
+	    if (!Slidoc.PluginManager.onLastSlide())
+		return false;
+	    if (methodName == 'answerNotify')
+		return true;
+	    if (methodName == 'finalizeShare' && fromAdmin)
+		return true;
+	    return false;
+	}
+    },
 
     init: function() {
 	///Slidoc.log('Slidoc.Plugins.Share.init:', this);
@@ -28,15 +39,17 @@ Share = {
 	this.responseTally = null;
     },
 
-    answerSave: function () {
-	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced);
+    answerSave: function (force) {
+	Slidoc.log('Slidoc.Plugins.Share.answerSave:', this.paced, force);
 	if (Slidoc.PluginManager.previewStatus())
 	    return;
 	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
-	    if (!Slidoc.PluginManager.isController())
-		Slidoc.sendEvent(3, 'Share.answerSave.'+this.slideId, this.qattributes.qnumber, null);
-	    else if (this.qattributes.share == 'after_answering')
-		this.getResponses(true);
+	    if (!Slidoc.PluginManager.isController()) {
+		Slidoc.sendEvent(3, 'Share.answerNotify.'+this.slideId, this.qattributes.qnumber, null);
+	    } else if (this.qattributes.share == 'after_answering') {
+		if (!force || force == 'choiceclick')
+		    this.getResponses(true);
+	    }
 	} else {
 	    if (this.qattributes.share != 'after_answering' || !window.GService)
 		return;

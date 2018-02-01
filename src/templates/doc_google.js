@@ -136,7 +136,7 @@ GService.openWebsocket = function (wsPath) {
 		    if (wsock.eventReceiver)
 			wsock.eventReceiver(callback_args);
 		    else
-			Slidoc.log('GService.ws.onmessage: ERROR Ignored event; no receiver '+callback_args[0]);
+			Slidoc.log('GService.ws.onmessage: ERROR Ignored event; no receiver '+callback_args.slice(0,2));
 		}
 	    } catch (err) {
 		Slidoc.log('GService.ws.onmessage: Error in invoking method '+callback_method+': '+err);
