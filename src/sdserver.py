@@ -750,8 +750,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
             if customMsg.startswith('<'):
                 self.write('<html><body><h3>%s</h3></body></html>' % customMsg)
             else:
-                self.set_header('Content-Type', 'text/plain')
-                self.write(customMsg)
+                self.write('<pre>%s</pre>' % tornado.escape.xhtml_escape(customMsg))
         else:
             super(BaseHandler, self).write_error(status_code, **kwargs)
     

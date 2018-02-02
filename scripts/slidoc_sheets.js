@@ -3545,7 +3545,7 @@ function makeShortNames(nameMap, first) {
 	    if (!(firstName in prefixDict))
 		prefixDict[firstName] = [];
             prefixDict[firstName].push(idValue);
-            suffixesDict[idValue] = suffix;
+            suffixesDict[idValue] = [suffix];
         } else {
             // For Lastname, try suffixes in following order: initials, first/middle names
             if (!lastName)

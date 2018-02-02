@@ -24,7 +24,7 @@
 
 <div id="slidoc-upload-form">
   <p></p>
-  <div class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</div>
+  <pre class="slidoc-err-msg" style="color: red; font-weight: bold;">{{err_msg}}</pre>
   <form id="upload-form" action="/{{site_name}}{% if site_name %}/{% end %}_upload" method="post" enctype="multipart/form-data" >
     <fieldset>
       {% if upload_type %}

@@ -4638,7 +4638,7 @@ def makeShortNames(nameMap, first=False):
             if len(comps) > 1:
                 suffix = ''.join(x[0] for x in comps[1:]).upper() + suffix
             prefixDict[firstName].append(idValue)
-            suffixesDict[idValue] = suffix
+            suffixesDict[idValue] = [suffix]
         else:
             # For Lastname, try suffixes in following order: initials, first/middle names
             if not lastName:

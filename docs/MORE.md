@@ -110,6 +110,8 @@ attributes:
 
 > `this.sessionName`: session name
 
+> `this.siteName`: site name
+
 > `this.remoteCall`: Invoke Python plugin of same name on server
 > as `this.remoteCall(callback, arg1, ...)`
 
@@ -145,7 +147,9 @@ The following are defined only for slide instances:
 
 > `this.slideData`: object shared amongst all plugins in this slide
 
-For question slides, the text following `Answer:` will be accessible as
+> `this.defined`: Parameters specified using Define: for the current slide
+
+ For question slides, the text following `Answer:` will be accessible as
 `this.qattributes.correct`.
 
 Use `this.randomNumber()` to generate uniform random number between 0
@@ -165,6 +169,12 @@ The following methods are automatically called for plugin instances;
 
 > `init(args)`: when the slide instance is instantiated
 
+The following optional method, returning `true` or false, is invoked
+on the global plugin instance each time remote access is requested to
+for a plugin method:
+
+> `allowRemoteAccess(methodName, fromAdmin)`: 
+
 `initSetup` and `initGlobal` will be called with the *argument string*
 from the first slide where the plugin occurs. Slide instance `init`
 calls will use a parsed argument list. All the `init` calls will be in
@@ -181,7 +191,7 @@ The following methods may be defined for plugins, as needed:
 
 > `response(intArg)`: records and returns user response
 
-> `enterSlide(paceStart)`: entering slide; returns slideDelay (in seconds) or null to use default (if paceStart only).
+> `enterSlide(paceStart, backward)`: entering slide; returns slideDelay (in seconds) or null to use default (if paceStart only).
 
 > `leaveSlide()`: leaving slide 
 

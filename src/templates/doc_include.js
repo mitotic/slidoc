@@ -1445,7 +1445,7 @@ Slidoc.slideEdit = function(action, slideId) {
 		    statusElem.textContent = msg;
 		    if (Sliobj.previewWin) {
 			Sliobj.previewWin.Slidoc = null;
-			Sliobj.previewWin.document.body.textContent = msg;
+			Sliobj.previewWin.document.body.innerHTML = '<pre>'+escapeHtml(msg)+'</pre>';
 		    }
 		    alert(msg);
 		}
