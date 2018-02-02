@@ -62,7 +62,7 @@ function choose(choice) {
           {% end %}
           </ul>
         {% elif qtype == 'number' %}
-          Enter a numeric value: <input id="number" name="number" type="number" value="">
+          Enter a numeric value: <input id="number" name="number" type="number" step="any" value="">
         {% end %}
         {% if explain or qtype not in ('choice', 'number') %}
           {% if explain %}

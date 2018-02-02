@@ -6800,7 +6800,7 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
     var qtypeMatch = QTYPE_RE.exec(question_attrs.qtype);
     var formulaMatch = FORMULA_RE.exec(question_attrs.correct || '');
     var format = '';
-    if (qtypeMatch && qtypeMatch[2]) {
+    if (qtypeMatch && qtypeMatch[1] != 'text' && qtypeMatch[2]) {
 	// Response plugin
 	var pluginName = qtypeMatch[1];
 	var responded = true;
@@ -6847,6 +6847,10 @@ Slidoc.answerClick = function (elem, slide_id, force, response, explain, expect,
 		    response += choices[i].dataset.choice;
 	    }
 
+	    if (!force && !response && !isController()) {
+		showDialog('alert', 'choiceSelect', 'Please select a choice for your answer');
+		return false;
+	    }
 	    if (Sliobj.session.remainingTries > 0)
 		Sliobj.session.remainingTries = 0;   // Only one try for choice response
 	}
@@ -7637,7 +7641,7 @@ Slidoc.submitClick = function(elem, noFinalize, force) {
 	    // Unattempted question
 	    var response = '';
 	    var qtypeMatch = QTYPE_RE.exec(question_attrs.qtype);
-	    if (qtypeMatch && qtypeMatch[2]) {
+	    if (qtypeMatch && qtypeMatch[1] != 'text' && qtypeMatch[2]) {
 		// Response plugin
 		response = responseAvailable(Sliobj.session, qnumber);
 	    } else if (question_attrs.qtype.slice(-6) == 'choice') {
@@ -7647,7 +7651,7 @@ Slidoc.submitClick = function(elem, noFinalize, force) {
 			response += choices[i].dataset.choice;
 		}
 	    } else {
-		var multiline = question_attrs.qtype.match(/^(text|Code)\//);
+		var multiline = question_attrs.qtype.match(/^text\//);
 		var inpElem = document.getElementById(multiline ? slide_id+'-answer-textarea' : slide_id+'-answer-input');
 		if (inpElem)
 		    response = inpElem.value.trim();

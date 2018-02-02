@@ -6493,7 +6493,7 @@ def setup_backup():
     def start_backup():
         if Options['debug']:
             print >> sys.stderr, Options['site_name'] or 'ROOT', 'Starting periodic backup'
-        backupSite()
+        backupSite('', True)
         Global.backup = PeriodicCallback(functools.partial(backupSite,'',True), backupInterval*1000.0)
         Global.backup.start()
 

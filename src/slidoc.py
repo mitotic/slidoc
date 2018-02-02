@@ -315,6 +315,7 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_header =   re.compile(r'^ {0,3}<!--\s*(meldr-\w[-\w]*\s|slidoc-\w[-\w]*\s|Slidoc:)(.*?)(-->|\n)\s*?(\n|$)', re.DOTALL)
     slidoc_options=   re.compile(r'^ {0,3}(Slidoc):(.*?)(\n|$)')
     slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
+    slidoc_banner =   re.compile(r'^ {0,3}(Banner):(.*?)(\n|$)')
     slidoc_define =   re.compile(r'^ {0,3}(Define):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
@@ -329,7 +330,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_define', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_banner', 'slidoc_define', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -451,6 +452,13 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_slideopts(self, m):
          self.tokens.append({
             'type': 'slidoc_slideopts',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_banner(self, m):
+         self.tokens.append({
+            'type': 'slidoc_banner',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -664,6 +672,9 @@ class MarkdownWithMath(mistune.Markdown):
 
     def output_slidoc_slideopts(self):
         return self.renderer.slidoc_slideopts(self.token['name'], self.token['text'])
+
+    def output_slidoc_banner(self):
+        return self.renderer.slidoc_banner(self.token['name'], self.token['text'])
 
     def output_slidoc_define(self):
         return self.renderer.slidoc_define(self.token['name'], self.token['text'])
@@ -909,6 +920,7 @@ class SlidocRenderer(MathRenderer):
         self.all_functions = []
         self.all_params = []
         self.current_params = []
+        self.banner = ''
 
     def _new_slide(self):
         self.slide_number += 1
@@ -1653,6 +1665,10 @@ class SlidocRenderer(MathRenderer):
 
         return prev_slide_end
 
+    def slidoc_banner(self, name, text):
+        self.banner = text.strip()
+        return ''
+
     def slidoc_define(self, name, text):
         fmatch = DEFINE_FUNCTION_RE.match(text)
         if fmatch:
@@ -2354,7 +2370,7 @@ class SlidocRenderer(MathRenderer):
 
         if 'grade_response' not in self.options['config'].features:
             if gweight is not None:
-                message("    ****WEIGHT-WARNING: %s: Not grading question with weight %d line in slide %s" % (self.options["filename"], gweight, self.slide_number))
+                message("    ****WEIGHT-WARNING: %s: Not grading question with weight %d line in slide %s (no sheet URL?)" % (self.options["filename"], gweight, self.slide_number))
 
             gweight = None
 
@@ -3943,6 +3959,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Blank doc_title; suppress browser header/footer by removing margins (but no way to create padding at top/bottom?)
             printable_css = '''<style>@media print { @page { margin-top: 0; margin-bottom: 0; } }</style>''' 
         mid_params = {'session_name': fname,
+                      'doc_banner': renderer.banner,
                       'printable_css': printable_css,
                       'math_js': math_inc if math_present else '',
                       'pagedown_js': (Pagedown_js % libraries_params) if renderer.render_markdown else '',
@@ -4085,6 +4102,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     if toc_file:
         toc_path = dest_dir + toc_file
         toc_mid_params = {'session_name': '',
+                          'doc_banner': '',
                           'printable_css': '',
                           'math_js': '',
                           'pagedown_js': '',

@@ -3,8 +3,8 @@ Params = {
 
     init: function(paramFunctions) {
 	Slidoc.log('Slidoc.Plugins.Params.init:');
-	//Slidoc.log('Slidoc.Plugins.Params.init2:', this.slideParams, paramFunctions);
-	var paramsObj = this.slideParams;
+	//Slidoc.log('Slidoc.Plugins.Params.init2:', this.defined, paramFunctions);
+	var paramsObj = this.defined;
 	var names = Object.keys(paramsObj);
 	names.sort();
 	this.paramVals = [];
