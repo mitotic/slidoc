@@ -21,7 +21,7 @@ var MAX_SYS_ERROR_RETRIES = 5;    // Maximum number of system error retries
 var CACHE_GRADING = true; // If true, cache all rows for grading
 
 var QTYPE_RE    = /^([a-zA-Z][\w-]*)(\/(.*))?$/;
-var FORMULA_RE  = /^(.*)=\s*([^;]+)(;;\s*([()eE0-9.*+/-]*))?\s*$/
+var FORMULA_RE  = /^(.*)=\s*([^;]+)(;;\s*([()eE0-9.*+/-]+%?))?\s*$/
 var QFIELD_RE   = /^q(\d+)_([a-z]+)$/;
 var SLIDE_ID_RE = /(slidoc(\d+))(-(\d+))?$/;
 
@@ -6291,12 +6291,12 @@ function progressBar(delaySec) {
     var pb_elem = document.getElementById('slidoc-progressbar');
     function clocktick() {
 	j += 1;
-	pb_elem.style.left = 1.05*Math.ceil(pb_container_elem.offsetWidth*j/jmax);
+	pb_elem.style.left = 1.05*Math.ceil(pb_container_elem.offsetWidth*j/jmax)+'px';
     }
     var intervalId = setInterval(clocktick, 1000*interval);
     function endInterval() {
 	clearInterval(intervalId);
-	pb_elem.style.left = pb_container_elem.offsetWidth;
+	pb_elem.style.left = pb_container_elem.offsetWidth+'px';
     }
     setTimeout(endInterval, delaySec*1000);
 }
@@ -6645,8 +6645,11 @@ Slidoc.PluginRetry = function (msg) {
     }
     var after_str = '';
     if (Sliobj.session.tryDelay) {
-	Slidoc.delayIndicator(Sliobj.session.tryDelay, slide_id+'-answer-click');
-	after_str = ' after '+Sliobj.session.tryDelay+' second(s)';
+	var slide_id = Slidoc.getCurrentSlideId();
+	if (slide_id) {
+	    Slidoc.delayIndicator(Sliobj.session.tryDelay, slide_id+'-answer-click');
+	    after_str = ' after '+Sliobj.session.tryDelay+' second(s)';
+	}
     }
     Slidoc.showPopup((msg || 'Incorrect.')+'<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
     return false;
@@ -8487,7 +8490,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 
     var inputElem = document.getElementById(slides[Sliobj.currentSlide-1].id+'-answer-input');
     window.scrollTo(0,1);
-    if (inputElem) setTimeout(function(){inputElem.focus();}, 50);
+    if (inputElem && !Sliobj.testOverride && !Sliobj.previewState) setTimeout(function(){inputElem.focus();}, 50);
     return false;
 }
 

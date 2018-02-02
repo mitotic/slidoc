@@ -82,8 +82,8 @@ ANSWER_TYPE_RE = re.compile(r'^([a-zA-Z\w]+)\s*=(.*)$')
 ANSWER_CONTENT_RE = re.compile(r'^([a-zA-Z]\w*)/(.*)$')
 
 # Backticks are optional for backwards compatibility in plugin syntax
-ANSWER_EXPECT_RE  = re.compile(r'^`?=?(\w+)\.(expect)\(\s*(\d*)\s*\)\s*(;;\s*([()eE0-9.*+/-]*))?\s*`?$')
-ANSWER_FORMULA_RE = re.compile(r'^`=([^`;\n]+)(;;\s*([()eE0-9.*+/-]*))?\s*`$')
+ANSWER_EXPECT_RE  = re.compile(r'^`?=?(\w+)\.(expect)\(\s*(\d*)\s*\)\s*(;;\s*([()eE0-9.*+/-]+%?))?\s*`?$')
+ANSWER_FORMULA_RE = re.compile(r'^`=([^`;\n]+)(;;\s*([()eE0-9.*+/-]+%?))?\s*`$')
 INLINE_METHOD_RE  = re.compile(r'^(\w+)\.(\w+)\(\s*(\d*)\s*\)')
 INLINE_PLUGIN_RE  = re.compile(r'(^|\b)(\$+)\.([a-zA-Z]\w*)(\[\d+\])?\.')    # Syntax: $.Plugin.method(1) OR $.Plugin[1].method(100) OR $$.Plugin.method()
 
@@ -791,7 +791,7 @@ class SlidocRenderer(MathRenderer):
   <div id="slidoc-remarks-edit" class="slidoc-grade-element slidoc-gradableonly" style="display: none;">
     <button id="slidoc-remarks-save-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button" onclick="Slidoc.remarksClick(this);">Save remarks</button>
     <span id="slidoc-remarksprefix" class="slidoc-grade slidoc-gradeprefix"><em>Extra points:</em></span>
-    <input id="slidoc-remarks-input" type="number" class="slidoc-grade-input"></input>
+    <input id="slidoc-remarks-input" type="number" step="any" class="slidoc-grade-input"></input>
     <textarea id="slidoc-remarks-comments-textarea" name="textarea" class="slidoc-comments-textarea" cols="60" rows="7" ></textarea>
     <button id="slidoc-remarks-render-button" class="slidoc-clickable slidoc-button" onclick="Slidoc.renderText(this);">Render</button>
   </div>
@@ -804,7 +804,7 @@ class SlidocRenderer(MathRenderer):
     answer_template = '''
   <span id="%(sid)s-answer-prefix" class="slidoc-answer-prefix" data-qnumber="%(qno)d">Answer:</span>
   <button id="%(sid)s-answer-click" class="slidoc-clickable slidoc-button slidoc-answer-button slidoc-nogradable slidoc-nosubmitted slidoc-noprint %(ansdisp)s" onclick="Slidoc.answerClick(this, '%(sid)s');">Answer</button>
-  <input id="%(sid)s-answer-input" type="%(inp_type)s" class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noansweredresubmit slidoc-nosubmitted slidoc-noprint slidoc-noplugin %(ansdisp)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
+  <input id="%(sid)s-answer-input" type="%(inp_type)s" %(inp_step)s class="slidoc-answer-input slidoc-answer-box slidoc-nogradable slidoc-noansweredresubmit slidoc-nosubmitted slidoc-noprint slidoc-noplugin %(ansdisp)s" onkeydown="Slidoc.inputKeyDown(event);"></input>
 
   <span class="slidoc-answer-span slidoc-answeredonly">
     <span id="%(sid)s-response-span"></span>
@@ -823,7 +823,7 @@ class SlidocRenderer(MathRenderer):
     <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
     <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-gradableonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-gradable-graded"><em>Grade:</em></span>
-    <input id="%(sid)s-grade-input" type="number" class="slidoc-grade-input slidoc-gradableonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
+    <input id="%(sid)s-grade-input" type="number" step="any" class="slidoc-grade-input slidoc-gradableonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
     <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-gradable-graded">%(gweight)s</span>
     <button id="%(sid)s-grademax" class="slidoc-clickable slidoc-button slidoc-grademax slidoc-gradingonly" onclick="Slidoc.gradeMax(this,'%(sid)s','%(gweight)s');">&#x2714;</button>
@@ -921,6 +921,7 @@ class SlidocRenderer(MathRenderer):
         self.all_params = []
         self.current_params = []
         self.banner = ''
+        self.retry_questions = False
 
     def _new_slide(self):
         self.slide_number += 1
@@ -2231,6 +2232,7 @@ class SlidocRenderer(MathRenderer):
         if noshuffle:
             self.questions[-1].update(noshuffle=noshuffle)
         if retry_counts[0]:
+            self.retry_questions = True
             self.questions[-1].update(retry=retry_counts)
         if correct_html and correct_html != correct_text:
             self.questions[-1].update(correct_html=correct_html)
@@ -2310,8 +2312,14 @@ class SlidocRenderer(MathRenderer):
             gweight_str = ''
             zero_gwt = ' slidoc-zero-gradeweight'
 
+        inp_type = 'text'
+        inp_step = ''
+        if self.cur_qtype == 'number':
+            inp_type = 'number'
+            inp_step = ' step="any" '
         ans_params.update(ans_classes=ans_classes,
-                        inp_type='number' if self.cur_qtype == 'number' else 'text',
+                        inp_type=inp_type,
+                        inp_step=inp_step,
                         gweight=gweight_str,
                         zero_gwt=zero_gwt,
                         explain=('<br><span id="%s-explainprefix" class="slidoc-explainprefix"><em>Explain:</em></span>' % id_str) if answer_opts['explain'] else '')
@@ -2621,6 +2629,9 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
                               images_zipdata=images_zipdata, zip_content=zip_content)
     md_parser_obj = MarkdownWithSlidoc(renderer=renderer)
     content_html = md_parser_obj.render(source, index_id=index_id, qindex_id=qindex_id)
+
+    if renderer.retry_questions and config.pace < QUESTION_PACE :
+        message('RETRY-WARNING: retry=... answer option only works with pace >= %d' % (QUESTION_PACE,))
 
     md_slides = md_parser_obj.block.get_slide_text()  # Slide markdown list (split only by hrule)
     header_opts, nskip = sliauth.read_header_opts(io.BytesIO(md_slides[0]))
@@ -3675,7 +3686,9 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 if file_config.pace >= QUESTION_PACE:
                     file_config.show_score = 'after_answering'
                 elif file_config.pace:
-                    if 'assessment' in file_config.features:
+                    if gd_hmac_key is None:
+                        file_config.show_score = 'after_answering'
+                    elif 'assessment' in file_config.features:
                         file_config.show_score = 'after_grading'
                     else:
                         file_config.show_score = 'after_submitting'
