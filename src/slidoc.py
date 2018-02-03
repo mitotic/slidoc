@@ -2264,6 +2264,18 @@ class SlidocRenderer(MathRenderer):
 
         ans_grade_fields = self.process_weights(weight_answer, plugin_action)
 
+        sweight = self.questions[-1].get('weight', 0)
+        gweight = self.questions[-1].get('gweight', 0)
+        pcredit = self.questions[-1].get('participation', 0)
+        if 'answer_credits' in self.options['config'].features:
+            credit_str = 'Max credit: %s' % (sweight+gweight) if gweight else 'Credit: %s' % sweight
+            participation_str = ''
+            retry_str = 'Max attempts: %s' % (1+retry_counts[0]) if retry_counts[0] else ''
+            if sweight and (pcredit or multiline_answer):
+                participation_str = 'Credit for attempting: %s' % (sweight*(pcredit if pcredit else 1))
+                if retry_str:
+                    participation_str += ','
+            html_prefix += '<div class="slidoc-ans-credit"> <span class="slidoc-ans-max-credit">%s</span> <span class="slidoc-ans-attempt-count">%s</span> <span class="slidoc-ans-attempt-credit">%s</span></div>' % (credit_str, retry_str, participation_str)
         id_str = self.get_slide_id()
         ans_params = { 'sid': id_str, 'qno': len(self.questions), 'ansdisp': ''}
 
@@ -4805,6 +4817,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 
 # Features
 #   adaptive_rubric: Track comment lines and display suggestions. Start comment lines with '(+/-n)...' to add/subtract points
+#   answer_credits: Insert answer weight, retry count, participation credit etc.
 #   assessment: Do not warn about concept coverage for assessment documents (also displays print exam menu)
 #   auto_noshuffle: Automatically prevent shuffling of 'all of the above' and 'none of the above' options
 #   auto_interact: Automatically initiate interactivity (for admin-paced sessions)
@@ -4834,7 +4847,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

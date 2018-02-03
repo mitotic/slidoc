@@ -3239,7 +3239,7 @@ class ActionHandler(BaseHandler):
         logErrors = 'error' in ''.join(msgs).lower()
 
         previewOnly = False
-        if pacedSession(uploadType):
+        if sessionName != 'index' and pacedSession(uploadType):
             sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
             if sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE:
                 if not getResponderCount(sessionName, uploadType):

@@ -2120,8 +2120,9 @@ function formatNum(format, value) {
     // * is replaced by the 'times' symbol and ** by superscripting
     // Leading zero forces scaled exponential display (with fixed exponent)
     // Range portion is ignored
-    if ((typeof value) != 'number')
+    if (!isNumber(value))
 	return value;
+    value = parseNumber(value);
     if (format.indexOf('+/-') >= 0)
 	format = format.split('+/-')[0];
     var fmatch = format.match(/^[+-]?([\d.]+)([eE]([+-]?\d+)|\*10\*\*(\d+|\(([+-]?\d+)\)))?$/);
@@ -3437,7 +3438,7 @@ Slidoc.PluginManager.splitNumericAnswer = function(corrAnswer) {
     // Return [answer|null, error|null]
     if (!corrAnswer)
 	return [null, 0.0];
-    var comps = corrAnswer.split('+/-');
+    var comps = corrAnswer.replace('*10**','e').replace('&times;10<sup>','e').replace('</sup>','').split('+/-');
     var corrValue = parseNumber(comps[0]);
     var corrError = 0.0;
     if (corrValue != null && comps.length > 1) {
@@ -6651,7 +6652,11 @@ Slidoc.PluginRetry = function (msg) {
 	    after_str = ' after '+Sliobj.session.tryDelay+' second(s)';
 	}
     }
-    Slidoc.showPopup((msg || 'Incorrect.')+'<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' try(s) remaining');
+    var retryElem = document.getElementById('slidoc-retry-count');
+    if (retryElem)
+	retryElem.textContent = Sliobj.session.remainingTries ? Sliobj.session.remainingTries+' attempts left' : '';
+
+    Slidoc.showPopup((msg || 'Incorrect.')+'<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' attempt(s) remaining');
     return false;
 }
 
@@ -6958,6 +6963,10 @@ Slidoc.answerUpdate = function (setup, slide_id, force, expect, response, plugin
 	return false;
     }
 
+    var retryElem = document.getElementById('slidoc-retry-count');
+    if (retryElem)
+	retryElem.textContent = '';
+
     // Handle randomized choices
     var disp_response = response;
     var disp_corr_answer = corr_answer;
@@ -6973,6 +6982,9 @@ Slidoc.answerUpdate = function (setup, slide_id, force, expect, response, plugin
 	}
     } else if (disp_corr_answer.match(/=\w+\.response\(\s*(\d*)\s*\)/)) {
 	disp_corr_answer = '';
+    } else if (question_attrs.qtype == 'number') {
+	if (disp_corr_answer_html.indexOf('+/-') > 0)
+	    disp_corr_answer_html = disp_corr_answer_html.replace('+/-', ' &plusmn; ');
     }
 
     // Display correctness of response
@@ -8306,7 +8318,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 		    var tryCount = (Sliobj.questionSlide.qtype=='choice') ? 1 : Sliobj.session.remainingTries;
 		    var prompt = 'Please answer before proceeding.'
 		    if (tryCount > 1)
-			prompt += 'You have '+tryCount+' try(s)';
+			prompt += 'You have '+tryCount+' attempt(s)';
 
 		    showDialog('alert', 'requireAnswerDialog', prompt);
 		    return false;
@@ -8363,6 +8375,9 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 		    // Multiple tries only allowed for QUESTION_PACE
 		    Sliobj.session.remainingTries = 1+question_attrs.retry[0];
 		    Sliobj.session.tryDelay = question_attrs.retry[1];
+		    var retryElem = document.getElementById('slidoc-retry-count');
+		    if (retryElem)
+			retryElem.textContent = Sliobj.session.remainingTries+' attempts left';
 		} else {
 		    Sliobj.session.remainingTries = 1;
 		}

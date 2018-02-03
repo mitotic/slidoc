@@ -459,7 +459,7 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    var userTokens  = ['_test_user'+adminToken,       adminToken,              regularUserToken,      adminToken];
 	    var graderKeys  = ['',                            adminToken,              '',                            ''];
 	    var authRoles   = [siteRole,                        siteRole,              '',                            ''];
-	    var userOptions = ['Admin view (for live testing/pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
+	    var userOptions = ['Admin view (for live pacing)', 'Grader view (for printing/grading)', 'Normal user ('+userName+')', 'Another user (read-only)'];
 
 	    var gprofile = this;
   	    function pickRole(indx) {
@@ -499,14 +499,18 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 		pickRole( (siteRole == 'admin') ? adminUser : graderUser)
 	    } else if (siteRole == 'admin') {
 		userOffset = 0;
-		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset),
-					'<p></p><a href="'+sitePrefix+'/_manage/'+sessionName+'">Manage session '+sessionName+'</a>'+
-					'<br><a href="'+sitePrefix+'/_dash">Dashboard</a>',
+		Slidoc.showPopupOptions('Select role:',
+					userOptions.slice(userOffset),
+					'<a href="'+sitePrefix+'/_startpreview/'+sessionName+'">Preview session (for dry run)</a>'+
+					'<br><a href="'+sitePrefix+'/_manage/'+sessionName+'">Manage session</a>'+
+					'<p></p><a href="'+sitePrefix+'/_dash">Manage site</a>',
 					optCallback);
 	    } else if (siteRole == 'grader') {
 		userOffset = graderUser-1;
-		Slidoc.showPopupOptions('Select role:', userOptions.slice(userOffset,-1),
-					'', optCallback);
+		Slidoc.showPopupOptions('Select role:',
+					userOptions.slice(userOffset,-1),
+					'',
+					optCallback);
 	    } else {
 		// Normal user
 		pickRole(normalUser)

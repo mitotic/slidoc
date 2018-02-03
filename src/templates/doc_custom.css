@@ -145,6 +145,18 @@ a, a:visited,
 
 .slidoc-clickable.slidoc-toc-sections { padding: 0.3em 0 0 1em; }
 
+/* Retry count */
+.slidoc-retry-count { font-family: monospace; color: #c00; }
+
+/* Answer credits */
+div.slidoc-ans-credit { font-family: monospace; font-size: 0.75em; }
+
+.slidoc-ans-max-credit {}
+
+.slidoc-ans-attempt-count { float: right; margin-right: 0.75em; }
+
+.slidoc-ans-attempt-credit { float: right; ; margin-right: 0.75em; }
+
 /* Grade/comments */
 .slidoc-response-div       { background-color: #eee; margin: 7px; padding: 5px; }
 .slidoc-response-div:empty { background-color: #eee; margin: 7px; padding: 0px; }
