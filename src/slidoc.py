@@ -2264,18 +2264,18 @@ class SlidocRenderer(MathRenderer):
 
         ans_grade_fields = self.process_weights(weight_answer, plugin_action)
 
-        sweight = self.questions[-1].get('weight', 0)
-        gweight = self.questions[-1].get('gweight', 0)
-        pcredit = self.questions[-1].get('participation', 0)
+        points_span = ''
         if 'answer_credits' in self.options['config'].features:
-            credit_str = 'Max credit: %s' % (sweight+gweight) if gweight else 'Credit: %s' % sweight
-            participation_str = ''
-            retry_str = 'Max attempts: %s' % (1+retry_counts[0]) if retry_counts[0] else ''
+            sweight = self.questions[-1].get('weight', 0)
+            gweight = self.questions[-1].get('gweight', 0)
+            pcredit = self.questions[-1].get('participation', 0)
+            points_str = 'Max points: %g' % (sweight+gweight) if gweight else 'Points: %g' % sweight
             if sweight and (pcredit or multiline_answer):
-                participation_str = 'Credit for attempting: %s' % (sweight*(pcredit if pcredit else 1))
-                if retry_str:
-                    participation_str += ','
-            html_prefix += '<div class="slidoc-ans-credit"> <span class="slidoc-ans-max-credit">%s</span> <span class="slidoc-ans-attempt-count">%s</span> <span class="slidoc-ans-attempt-credit">%s</span></div>' % (credit_str, retry_str, participation_str)
+                points_str += ', Points for attempting: %g' % (sweight*(pcredit if pcredit else 1))
+            points_span = '<span class="slidoc-ans-points">(%s)</span>' % points_str
+
+        html_prefix += '<div class="slidoc-ans-credit"><span id="%s-ans-attempt-count" class="slidoc-ans-attempt-count slidoc-slideonly"></span>%s</div>' % (slide_id, points_span)
+
         id_str = self.get_slide_id()
         ans_params = { 'sid': id_str, 'qno': len(self.questions), 'ansdisp': ''}
 

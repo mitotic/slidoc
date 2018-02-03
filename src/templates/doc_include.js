@@ -6645,19 +6645,23 @@ Slidoc.PluginRetry = function (msg) {
 	document.body.classList.add('slidoc-incorrect-answer-state');
     }
     var after_str = '';
+    var slideId = Slidoc.getCurrentSlideId();
     if (Sliobj.session.tryDelay) {
-	var slide_id = Slidoc.getCurrentSlideId();
-	if (slide_id) {
-	    Slidoc.delayIndicator(Sliobj.session.tryDelay, slide_id+'-answer-click');
+	if (slideId) {
+	    Slidoc.delayIndicator(Sliobj.session.tryDelay, slideId+'-answer-click');
 	    after_str = ' after '+Sliobj.session.tryDelay+' second(s)';
 	}
     }
-    var retryElem = document.getElementById('slidoc-retry-count');
-    if (retryElem)
-	retryElem.textContent = Sliobj.session.remainingTries ? Sliobj.session.remainingTries+' attempts left' : '';
+    updateAttemptCount(slideId, Sliobj.session.remainingTries);
 
     Slidoc.showPopup((msg || 'Incorrect.')+'<br> Please re-attempt question'+after_str+'.<br> You have '+Sliobj.session.remainingTries+' attempt(s) remaining');
     return false;
+}
+
+function updateAttemptCount(slideId, remainingTries) {
+    var attemptElem = document.getElementById(slideId+'-ans-attempt-count');
+    if (attemptElem)
+	attemptElem.textContent = remainingTries ? 'Attempts remaining: '+remainingTries : '';
 }
 
 function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
@@ -6963,9 +6967,7 @@ Slidoc.answerUpdate = function (setup, slide_id, force, expect, response, plugin
 	return false;
     }
 
-    var retryElem = document.getElementById('slidoc-retry-count');
-    if (retryElem)
-	retryElem.textContent = '';
+    updateAttemptCount(slide_id, 0);
 
     // Handle randomized choices
     var disp_response = response;
@@ -8375,9 +8377,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 		    // Multiple tries only allowed for QUESTION_PACE
 		    Sliobj.session.remainingTries = 1+question_attrs.retry[0];
 		    Sliobj.session.tryDelay = question_attrs.retry[1];
-		    var retryElem = document.getElementById('slidoc-retry-count');
-		    if (retryElem)
-			retryElem.textContent = Sliobj.session.remainingTries+' attempts left';
+		    updateAttemptCount(slide_id, Sliobj.session.remainingTries);
 		} else {
 		    Sliobj.session.remainingTries = 1;
 		}
