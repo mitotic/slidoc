@@ -3942,7 +3942,7 @@ Slidoc.showGrades = function () {
     Sliobj.gradeSheet.getRow(userId, {getstats: 1}, showGradesCallback.bind(null, userId));
 }
 
-var AGGREGATE_COL_RE = /\b(_\w+)_(avg|normavg|sum)(_(\d+))?$/i
+var AGGREGATE_COL_RE = /\b(_[a-z][-\w]*)_(avg|normavg|sum)(_(\d+))?$/i;
 
 function showGradesCallback(userId, result, retStatus) {
     Slidoc.log('showGradesCallback:', userId, result, retStatus);
@@ -3964,6 +3964,9 @@ function showGradesCallback(userId, result, retStatus) {
     sessionKeys.sort( function(a,b){return cmp(a.replace(AGGREGATE_COL_RE,'$1'),b.replace(AGGREGATE_COL_RE,'$1'));});
     var html = '<b>Gradebook</b><br><em>User</em>: '+userId+' ('+(retStatus.info.lastUpdate||'').slice(0,10)+')<p></p>';
     var dClass = ' class="slidoc-disabled" ';
+    var statusIndex = retStatus.info.headers.indexOf('status');
+    if (retStatus.info.rescale && retStatus.info.rescale[statusIndex])
+	html += 'Status = <b>'+escapeHtml(retStatus.info.rescale[statusIndex])+'</b><p></p>';
     if (result.total) {
 	var disabled = (!retStatus.info.lastUpdate || !retStatus.info.gradebookRelease || retStatus.info.gradebookRelease.indexOf('cumulative_total') < 0);
 	html += '<div '+(disabled?dClass:'')+'><em>Weighted total</em>: <b>'+result.total.toFixed(2)+'</b>';
@@ -3985,12 +3988,12 @@ function showGradesCallback(userId, result, retStatus) {
     var prefix = '';
     for (var j=0; j<sessionKeys.length; j++) {
 	var sessionName = sessionKeys[j];
+	var amatch = AGGREGATE_COL_RE.exec(sessionName);
 	var grade = result[sessionName];
 	if (isNumber(grade))
-	    grade = grade ? grade.toFixed(2) : 'missed';
+	    grade = grade ? grade.toFixed(2) : (amatch?'':'missed');
 
 	var dispSession = sessionName;
-	var amatch = AGGREGATE_COL_RE.exec(sessionName);
 	if (amatch) {
 	    // Aggregate column
 	    prefix = amatch[1];

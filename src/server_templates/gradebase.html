@@ -1,5 +1,5 @@
 <!-- gradebase template for slidoc server (SNIPPET) --->
-<!-- gradebase parameters: site_name, session_name, user_id, total_grade, letter_grade, last_update, session_grades, gradebook_release -->
+<!-- gradebase parameters: site_name, session_name, user_id, total_grade, letter_grade, last_update, session_grades, gradebook_release, gradebook_status -->
 
 <style>
 .clickable { cursor: pointer; color: #2980B9; text-decoration: none}
@@ -10,6 +10,8 @@
 {% set site_prefix = '/'+site_name if site_name else '' %}
 
 <div {% if not last_update or 'cumulative_total' not in gradebook_release %} class="disabled"{% end %}>
+
+{% if gradebook_status %}Status: <b>{{ gradebook_status }}</b><p></p>{% end %}
 
 {% if total_grade and total_grade['score'] is not None %}
 <em>Weighted total</em>: <b>{{ '%.2f' % total_grade['score'] }}</b>
@@ -51,7 +53,7 @@ be different, depending upon any additional credits/corrrections/curving)
     {% end %}
     {% if sessionGrades['score'] is not None %}
 <b>{{ '%.4g' % sessionGrades['score'] }}</b>
-    {% else %}
+    {% elif session.startswith('_') %}
 missed
     {% end %}
      {% if sessionGrades['maxscore'] is not None %}

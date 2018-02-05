@@ -82,6 +82,8 @@ import plugins
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 script_parentdir = os.path.abspath(os.path.join(scriptdir, os.pardir))
 
+CUMULATIVE_TOTAL_RE = re.compile(r'^(\d*(\.\d*)?|(\d*(\.\d*)?\*)?[a-z][-\w]*[a-z](\d\d|_(avg|normavg|sum)(_(\d+))?))$', re.IGNORECASE)
+
 Options = {
     '_index_html': '',  # Non-command line option
     'root_auth_key': '',
@@ -163,7 +165,7 @@ SETTINGS_LABELS = [ ('gsheet_url', 'Google Sheet URL'),
                     ('twitter_config', 'Twitter config (username,consumer_key,consumer_secret,access_key,access_secret)'),
                     ('', ''),
                     ('gradebook_release', 'List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)'),
-                    ('cumulative_total', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'),
+                    ('cumulative_total', 'Formula for gradebook total column, e.g., 0.4*assignment_avg_1+0.5*quiz_sum+10*test_normavg+0.1*extra01'),
                     ('cumulative_grade', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'),
                     ('', ''),
                     ('no_login_token', 'Non-null string for true'),
@@ -1101,6 +1103,7 @@ class SiteActionHandler(BaseHandler):
             errMsg = ''
             site_settings = dict( (argname, self.get_argument(argname, '')) for argname, arglabel in SETTINGS_LABELS if argname)
             sec_config = site_settings
+            cumulative_total = site_settings.get('cumulative_total','').replace(' ','')
 
             gsheet_url = site_settings['gsheet_url']
             if not Options['dry_run'] and not gsheet_url:
@@ -1109,13 +1112,16 @@ class SiteActionHandler(BaseHandler):
             elif site_settings['site_access'] and site_settings['site_access'] not in sdproxy.SITE_ACCESS:
                 errMsg = 'site_access must be one of: '+', '.join(sdproxy.SITE_ACCESS)
 
-            elif new_site:
+            elif cumulative_total and not all(CUMULATIVE_TOTAL_RE.match(s) for s in cumulative_total.split('+')):
+                errMsg = 'Invalid cumulative_total formula: '+cumulative_total
+
+            elif not new_site and not Options['reload']:
+                errMsg = 'Enable --reload sdserver option to modify site settings'
+
+            if not errMsg and new_site:
                 with open(Global.config_file) as f:
                     if Global.config_digest != sliauth.digest_hex(f.read()):
                         errMsg = 'Config file %s has changed; unable to create site' % Global.config_file
-
-            elif not Options['reload']:
-                errMsg = 'Enable --reload sdserver option to modify site settings'
 
             if errMsg:
                 site_key = sliauth.gen_site_key(Options['root_auth_key'], site_name) if site_name else Options['root_auth_key']
@@ -3817,13 +3823,17 @@ class UserActionHandler(ActionHandler):
             gradeVals = sdproxy.lookupGrades(userId, admin=admin_access)
             if not gradeVals:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Failed to access grades for user %s' % userId)
+            gradebookStatus = ''
+            if admin_access:
+                gradebookStatus = gradeVals['status']
             sessionGrades = []
             for sessionName, vals in gradeVals['sessions']:
                 sessionPath = getSessionPath(sessionName[1:]) if sessionName.startswith('_') else ''
                 sessionGrades.append([sessionName, sessionPath, vals])
             self.render('gradebase.html' if rawHTML else 'grades.html', site_name=Options['site_name'], user_id=userId,
                         total_grade=gradeVals.get('total'), letter_grade=gradeVals.get('grade'), last_update=gradeVals['lastUpdate'],
-                        session_grades=sessionGrades, gradebook_release=sdproxy.Settings['gradebook_release'])
+                        session_grades=sessionGrades, gradebook_release=sdproxy.Settings['gradebook_release'],
+                        gradebook_status=gradebookStatus)
             return
 
         elif action in ('_user_canceldelay',):
@@ -6648,10 +6658,12 @@ def main():
     define("single_site", default="", help="Single site name for testing")
     define("settings_file", default="", help="Site settings file (for single server; name only if config_path is directory)")
     define("sites", default="", help="Site names for multi-site server (comma-separated)")
+    define("site_access", default='', help="Site access")
     define("site_label", default='', help="Site label")
     define("site_name", default='', help="Site name")
     define("site_number", default=0, help="Site number")
     define("site_title", default='', help="Site title")
+    define("sort_key", default='', help="Site name sort key")
     define("server_nonce", default='', help="Server nonce (random value)")
     define("server_version", default='', help="Server version (for checking)")
     define("server_url", default=Options["server_url"], help="Server URL, e.g., http://example.com")

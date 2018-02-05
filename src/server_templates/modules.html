@@ -133,7 +133,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
   	    <span class="clickable" onclick="action('delete','{{ session }}');" >&#x1F5D1;</span>  
           </td>
           <td>
-          {% if pars[0].strip() %}Weight:{{ pars[0] }}{% end %}
+          {% if str(pars[0]).strip() %}Weight:{{ pars[0] }}{% end %}
           </td>
           <td>
           {% if pars[1] %}Release: {{ str(pars[1])[:16] }}{% end %}

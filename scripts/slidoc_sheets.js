@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21p';
+var VERSION = '0.97.21r';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -20,8 +20,8 @@ var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure
 			 ['no_roster',      '', 'Non-null string for true'],
 			 ['log_call', '', '> 0 to log calls to sheet call_log; may generate large output over time'],
                          [],
-			 ['gradebook_release',  '', 'List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)'],
-		         ['cumulative_total',   '', 'Formula for gradebook total column, e.g., 0.4*_Assignment_avg_1+0.5*_Quiz_sum+10*_Test_normavg+0.1*_Extra01'],
+			 ['gradebook_release',  '', 'List of released items: average,cumulative_total,cumulative_grade (comma-separated)'],
+		         ['cumulative_total',   '', 'Formula for gradebook total column, e.g., 0.4*assignment_avg_1+0.5*quiz_sum+10*test_normavg+0.1*extra01'],
 			 ['cumulative_grade',   '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'], // Or A:180:4,B:160:3,...
 			 [],
 			 ['proxy_mod_time',  '', 'Stores time of last modification (not user configured)'],  
@@ -230,7 +230,7 @@ function onOpen(evt) {
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Post scores for all graded sessions to gradebook", functionName: "updateScorePostAll"});
    menuEntries.push({name: "Refresh all posted sessions in gradebook", functionName: "updateScoreAll"});
-   menuEntries.push({name: "Refresh only total score in gradebook (NOT RELEASED)", functionName: "updateScoreAllPartial"});
+   menuEntries.push({name: "Refresh only total score in gradebook (NEW TOTAL NOT RELEASED TO USERS)", functionName: "updateScoreAllPartial"});
    menuEntries.push(null); // line separator
    menuEntries.push({name: "Init/reset site settings", functionName: "resetSettings"});
    menuEntries.push(null); // line separator
@@ -1080,10 +1080,13 @@ function sheetAction(params) {
 			returnInfo.lastUpdate = modSheet.getSheetValues(temIndexRow[TIMESTAMP_ID], columnIndex['total'], 1, 1)[0][0];
 		    if (temIndexRow[MAXSCORE_ID])
 			returnInfo.maxScores = modSheet.getSheetValues(temIndexRow[MAXSCORE_ID], 1, 1, columnHeaders.length)[0];
-		    if (temIndexRow[RESCALE_ID])
-			returnInfo.rescale = modSheet.getSheetValues(temIndexRow[RESCALE_ID], 1, 1, columnHeaders.length)[0];
 		    if (temIndexRow[AVERAGE_ID] && 'average' in gradebookRelease)
 			returnInfo.averages = modSheet.getSheetValues(temIndexRow[AVERAGE_ID], 1, 1, columnHeaders.length)[0];
+		    if (temIndexRow[RESCALE_ID]) {
+			returnInfo.rescale = modSheet.getSheetValues(temIndexRow[RESCALE_ID], 1, 1, columnHeaders.length)[0];
+			if (!adminUser && columnIndex[STATUS_HEADER])
+			    returnInfo.rescale[columnIndex[STATUS_HEADER]-1] = '';
+		    }
 		} catch (err) {}
 	    }
 	}
@@ -4633,8 +4636,8 @@ function actionHandler(actions, sheetName, create) {
 	} else if (action == 'gradebook') {
 	    var retval = updateGrades(sessions, create);
 	    if (retval) {
-		if (!retval.length && sessions.length)
-		    throw('Error:ACTION:Failed to update gradebook for session(s) '+sessions);
+		if (retval.match(/error/i))
+		    throw('Error:ACTION:Error in updating gradebook for session(s) '+sessions+': '+retval);
 		refreshSheets.push(GRADES_SHEET);
 	    }
 	} else {
@@ -4692,37 +4695,26 @@ function sessionStatSheet() {
 function updateScoreSession() {
     // Update scores sheet for current session
     ///startCallTracking(2, {}, 'SCORES');
-    retval = updateSession(updateScoreAux);
+    var retval = updateSession(updateScoreAux);
     ///trackCall(0, 'success');
     return retval;
 }
 
 function updateScorePostAll() {
-    // Post scores for all graded sessions
+    // Post scores for all graded sessions and past due ungraded sessions
     ///startCallTracking(2, {}, 'SCORESPOST');
-    var sessionNames = getSessionNames();
-    for (var m=0; m<sessionNames.length; m++) {
-	var sessionName = sessionNames[m];
-	var sessionSheet = getSheet(sessionName);
-	if (!sessionSheet)
-	    continue;
-	var sessionEntries = lookupValues(sessionName, ['gradeDate'], INDEX_SHEET);
-	var gradeDate = sessionEntries.gradeDate || null;
-	if (!gradeDate)
-	    continue
-	retval = updateScoreAux(sessionName, true);
-    }
+    var retval = updateScoreAux(getSessionNames(), true);
     ///trackCall(0, 'success');
     return retval;
 }
 
 function updateScoreAux(sessionName, create) {
-    var updatedNames = updateGrades([sessionName], create||false, true);
-    if (updatedNames && updatedNames.length)
-	notify('Updated scores for session '+sessionName, 'Slidoc Scores');
+    var retval = updateGrades(isArray(sessionName) ? sessionName : [sessionName], create||false, true);
+    if (retval)
+	notify(retval, 'Slidoc Scores');
     else
 	notify('Failed to update scores for session '+sessionName+'. Ensure that grades are released and session weight is not zero', 'Slidoc Scores');
-    return updatedNames;
+    return retval;
 }
 
 function updateScoreAll() {
@@ -4741,9 +4733,9 @@ function updateScoreAllAux(totalOnly) {
 
     try {
 	loadSettings();
-	var updatedNames = updateGrades(getSessionNames(), false, true, totalOnly);
-	if (updatedNames && updatedNames.length)
-	    notify("Updated scores for sessions: "+updatedNames.join(', '), 'Slidoc Scores');
+	var retval = updateGrades(getSessionNames(), false, true, totalOnly);
+	if (retval)
+	    notify(retval, 'Slidoc Scores');
 	else
 	    notify("No scores updated", 'Slidoc Scores');
     } catch(err) {
@@ -4754,12 +4746,16 @@ function updateScoreAllAux(totalOnly) {
 
 }
 
-var AGGREGATE_COL_RE = /\b(_([a-zA-Z]\w*))_(avg|normavg|sum)(_(\d+))?$/i;
+var AGGREGATE_COL_RE =    /\b(_[a-z][-\w]*)_(avg|normavg|sum)(_(\d+))?$/i;
+var FORMULA_COL_RE = /^(.*)\b(([a-z][-\w]*)_(avg|normavg|sum)(_(\d+))?)$/i;
+var SESSION_COL_RE =       /\b([a-z][-\w]*[a-z])(\d\d)$/i;
 
 function updateGrades(sessionNames, create, interactive, totalOnly) {
     // Update scores sheet for sessions in list
     // Returns list of updated sessions
-
+    var errorMessages = [];
+    var updatedSessions = [];
+    var curDate = new Date();
     try {
 	var scoreSheet = getSheet(GRADES_SHEET);
 
@@ -4776,77 +4772,6 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    if (!curSessions.length)
 		return [];
 	    sessionNames = curSessions;
-	}
-
-	var totalFormula = (Settings['cumulative_total'] || '').trim();
-	var gradingScale = (Settings['cumulative_grade'] || '').trim();
-	var modTotalFormula = '';
-	var modFormulaStr = '';
-	var aggregateColumns = [];
-	var aggregateParams = {};
-	var skippedSessions = [];
-	if (totalFormula) {
-	    var snames = getSessionNames();
-	    var allSessions = {};
-	    for (var j=0; j<snames.length; j++) {
-		var smatch = snames[j].match(/^(.*[a-zA-Z_])(\d+)$/);
-		if (smatch)
-		    allSessions[smatch[1]] = 1;
-	    }
-	    var comps = totalFormula.split('+');
-	    var modTotalComps = [];
-	    var modTotalCompStr = [];
-	    for (var j=0; j<comps.length; j++) {
-		/// Example: 0.4*_Assignment_avg_1+0.5*_Quiz_sum+0.1*_Extra01
-		var amatch = AGGREGATE_COL_RE.exec(comps[j].trim());
-		if (amatch) {
-		    var agName = amatch[0];
-		    var agPrefix = amatch[1];
-		    var agSession = amatch[2];
-		    var agType = amatch[3] || '';
-		    var agDrop = amatch[5] || '';
-
-		    if (!(agSession in allSessions))  {
-			skippedSessions.push(agSession);
-			continue;
-		    }
-
-		    aggregateParams[agName] = {prefix:agPrefix, type:agType.toLowerCase(), drop:parseNumber(agDrop) || 0};
-		    aggregateColumns.push(agName);
-		    modTotalCompStr.push(comps[j].replace(agName, agSession));
-		} else {
-		    modTotalCompStr.push(comps[j].replace(/(\b_)/g,''));
-		}
-		modTotalComps.push(comps[j]);
-	    }
-	    modTotalFormula += modTotalComps.join('+');
-	    modFormulaStr += modTotalCompStr.join('+');
-	    if (interactive && skippedSessions.length)
-		notify("Skipped sessions for total score: "+skippedSessions.join(', '), 'Missing sessions');
-	}
-
-	var gradeCutoffs = [];
-	var gradePercent = false;
-	if (gradingScale) {
-	    var comps = gradingScale.split(',');
-	    for (var j=0; j<comps.length; j++) {
-		var gComps = comps[j].trim().split(':');
-		if (gComps.length < 3)
-		    throw('Invalid grading scale (expect A:90:4, ...): '+gradingScale);
-		var letter = gComps[0].trim().toUpperCase();
-		var cutoffStr = gComps[1].trim();
-		var numValueStr = gComps[2].trim();
-		if (cutoffStr.slice(-1) == '%') {
-		    cutoffStr = cutoffStr.slice(0,-1).trim();
-		    gradePercent = true;
-		}
-		if (!letter || !isNumber(cutoffStr) || !isNumber(numValueStr))
-		    throw('Invalid grading scale (expect A:90:4, ...): '+gradingScale);
-
-		gradeCutoffs.push([parseNumber(cutoffStr), letter, parseNumber(numValueStr)]);
-	    }
-	    gradeCutoffs.sort(function (a,b) {return a[0]-b[0]});
-	    gradeCutoffs.reverse();
 	}
 	var indexSheet = getSheet(INDEX_SHEET);
 	if (!indexSheet) {
@@ -4965,8 +4890,6 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	scoreSheet.getRange(colChar+'2'+':'+colChar).setNumberFormat('0.###');
 	colChar = colIndexToChar(scoreNumGradeCol);
 	scoreSheet.getRange(colChar+'2'+':'+colChar).setNumberFormat('0.###');
-	if (rescaleRow)
-	    scoreSheet.getRange(rescaleRow, scoreTotalCol, 1, 1).setValues([[modFormulaStr]]);
 
 	// Temporarily clear date while updating
 	scoreSheet.getRange(timestampRow, scoreTotalCol, 1, 1).setValues([['']]);
@@ -4989,8 +4912,6 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    }
 	}
 
-	var updatedNames = [];
-	var curDate = new Date();
 	for (var iSession=0; iSession<validNames.length; iSession++) {
 	    if (totalOnly)
 		continue;
@@ -5000,9 +4921,10 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    var sessionColIndex = indexColumns(sessionSheet);
 	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
-	    var sessionEntries = lookupValues(sessionName, ['gradeDate', 'paceLevel', 'sessionWeight', 'sessionRescale', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
+	    var sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'paceLevel', 'sessionWeight', 'sessionRescale', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
             var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	    var questions = JSON.parse(sessionEntries.questions);
+	    var dueDate = sessionEntries.dueDate || null;
 	    var gradeDate = sessionEntries.gradeDate || null;
 	    var paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
 	    var sessionWeight = isNumber(sessionEntries.sessionWeight) ? parseNumber(sessionEntries.sessionWeight) : null;
@@ -5039,7 +4961,10 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 		continue;
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
 		continue;
-	    updatedNames.push(sessionName);
+	    if (!gradeWeight && (!dueDate || dueDate.getTime() > curDate.getTime())) // Wait for ungraded session become due
+		continue;
+
+	    updatedSessions.push(sessionName);
 
 	    var rescaleOps = [];
 	    if (sessionRescale) {
@@ -5177,6 +5102,110 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 
 	var scoreColIndex = indexColumns(scoreSheet);
 	var nids = scoreSheet.getLastRow()-scoreStartRow+1;
+
+
+	var totalFormula = (Settings['cumulative_total'] || '').replace(/\s/g,'');
+	var modTotalComps = [];
+	var modTotalCompStr = [];
+	var aggregateColumns = [];
+	var aggregateParams = {};
+	var skippedSessionTypes = [];
+	if (totalFormula) {
+	    try {
+		var allSessionTypes = {};
+		for (var j=0; j<updatedSessions.length; j++) {
+		    var smatch = SESSION_COL_RE.exec(updatedSessions[j]);
+		    if (smatch)
+			allSessionTypes[smatch[1]] = 1;
+		}
+		var comps = totalFormula.split('+');
+		for (var j=0; j<comps.length; j++) {
+		    /// Example: 0.4*assignment_avg_1+0.5*quiz_sum+0.1*extra01
+		    var compTerm = comps[j];
+		    var amatch = FORMULA_COL_RE.exec(compTerm);
+		    var smatch = SESSION_COL_RE.exec(compTerm);
+		    if (amatch) {
+			var agName = '_'+amatch[2];
+			var agPrefix = '_'+amatch[3];
+			var agSessionType = amatch[3];
+			var agAggregateType = amatch[4] || '';
+			var agDrop = amatch[6] || '';
+
+			if (amatch[1] && (!amatch[1].match(/\*$/) || !isNumber(amatch[1].slice(0,-1)))
+			    throw('Error: expecting number followed by asterisk, but found: '+amatch[1]);
+
+			if (!(agSessionType in allSessionTypes))  {
+			    skippedSessionTypes.push(agSessionType);
+			    continue;
+			}
+
+			aggregateParams[agName] = {prefix:agPrefix, type:agAggregateType.toLowerCase(), drop:parseNumber(agDrop) || 0};
+			aggregateColumns.push(agName);
+			modTotalCompStr.push(compTerm.replace(amatch[2], agSessionType));
+			compTerm = compTerm.replace(amatch[2], agName);
+		    } else if (smatch) {
+			if (updatedSessions.indexOf(smatch[0]) < 0) {
+			    errorMessages.push('Skipped unavilable session: '+smatch[0]);
+			    continue;
+			}
+			modTotalCompStr.push(compTerm);
+			compTerm = compTerm.replace(smatch[0], '_'+smatch[0]);
+		    } else if (isNumber(compTerm)) {
+			modTotalCompStr.push(compTerm);
+		    } else if (compTerm.match(/[a-df-z]/i)) {
+			errorMessages.push('Skipped unknown column reference: '+compTerm);
+			continue;
+		    } else {
+			throw('Error: expected valid number or column reference but found: '+compTerm);
+		    }
+		    modTotalComps.push(compTerm);
+		}
+		if (skippedSessionTypes.length) {
+		    errorMessages.push('Missing sessions: '+skippedSessionTypes.join(', '));
+		}
+	    } catch(err) {
+		errorMessages.push('Error in cumulative_total formula: '+err);
+		modTotalComps = [];
+		modTotalCompStr = [];
+		aggregateColumns = [];
+		aggregateParams = {};
+		skippedSessionTypes = [];
+	    }
+	}
+
+	var modTotalFormula = modTotalComps.join('+');
+	var modTotalFormulaStr = modTotalCompStr.join('+');
+
+	var gradingScale = (Settings['cumulative_grade'] || '').trim();
+	var gradeCutoffs = [];
+	var gradePercent = false;
+	if (gradingScale) {
+	    try {
+		var comps = gradingScale.split(',');
+		for (var j=0; j<comps.length; j++) {
+		    var gComps = comps[j].trim().split(':');
+		    if (gComps.length < 3)
+			throw('Invalid grading scale (expect A:90:4, ...): '+gradingScale);
+		    var letter = gComps[0].trim().toUpperCase();
+		    var cutoffStr = gComps[1].trim();
+		    var numValueStr = gComps[2].trim();
+		    if (cutoffStr.slice(-1) == '%') {
+			cutoffStr = cutoffStr.slice(0,-1).trim();
+			gradePercent = true;
+		    }
+		    if (!letter || !isNumber(cutoffStr) || !isNumber(numValueStr))
+			throw('Invalid grading scale (expect A:90:4, ...): '+gradingScale);
+
+		    gradeCutoffs.push([parseNumber(cutoffStr), letter, parseNumber(numValueStr)]);
+		}
+		gradeCutoffs.sort(function (a,b) {return a[0]-b[0]});
+		gradeCutoffs.reverse();
+	    } catch(err) {
+		errorMessages.push('Error in cumulative_grade cutoffs: '+err);
+		gradeCutoffs = [];
+		gradePercent = false;
+	    }
+	}
 
 	// Delete unused aggregate columns
 	var scoreColHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
@@ -5331,10 +5360,31 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 
 	// Finally set update date
 	scoreSheet.getRange(timestampRow, scoreTotalCol, 1, 1).setValues([[totalOnly ? '' : curDate]]);
-    } finally {
+
+	if (rescaleRow)
+	    scoreSheet.getRange(rescaleRow, scoreTotalCol, 1, 1).setValues([[modTotalFormulaStr]]);
+
+    } catch(err) {
+	errorMessages.push('Error in gradebook: '+err);
     }
 
-    return updatedNames;
+    var retval = '';
+    if (updatedSessions.length)
+	retval = 'Updated gradebook for: ' + updatedSessions.join(', ')
+    
+    if (errorMessages.length) {
+	// Store error messages in status column of rescale row
+	var temScoreSheet = getSheet(GRADES_SHEET);
+	if (temScoreSheet) {
+	    var temColIndex = indexColumns(temScoreSheet);
+	    var temIndexRow = indexRows(temScoreSheet, temColIndex['id'], 2);
+	    if (temIndexRow[RESCALE_ID] && temColIndex[STATUS_HEADER]) {
+		temScoreSheet.getRange(temIndexRow[RESCALE_ID], temColIndex[STATUS_HEADER], 1, 1).setValues([[errorMessages.join('\n')]]);
+	    }
+	}
+	retval += '\n' + errorMessages.join('\n')
+    }
+    return retval;
 }
 
 function insertColumnFormulas(sheet, formula, insertCol, startRow, extraRow) {

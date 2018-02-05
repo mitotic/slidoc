@@ -73,7 +73,7 @@ Settings = {
     'no_roster': False,
     'log_call': '',        # > 0 to log calls to sheet call_log; may generate large output over time
 
-    'gradebook_release': '', # List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)
+    'gradebook_release': '', # List of released items: average,cumulative_total,cumulative_grade (comma-separated)
 
                           # General settings from server
     'debug': '',
@@ -2198,11 +2198,12 @@ def sheetAction(params, notrace=False):
                         returnInfo['lastUpdate'] = modSheet.getSheetValues(temIndexRow.get(TIMESTAMP_ID), columnIndex['total'], 1, 1)[0][0]
                     if temIndexRow.get(MAXSCORE_ID):
                         returnInfo['maxScores'] = modSheet.getSheetValues(temIndexRow.get(MAXSCORE_ID), 1, 1, len(columnHeaders))[0]
-                    if temIndexRow.get(RESCALE_ID):
-                        returnInfo['rescale'] = modSheet.getSheetValues(temIndexRow.get(RESCALE_ID), 1, 1, len(columnHeaders))[0]
                     if temIndexRow.get(AVERAGE_ID) and 'average' in gradebookRelease:
                         returnInfo['averages'] = modSheet.getSheetValues(temIndexRow.get(AVERAGE_ID), 1, 1, len(columnHeaders))[0]
-                    # TODO: Need to implement retrieving settings from settings_slidoc
+                    if temIndexRow.get(RESCALE_ID):
+                        returnInfo['rescale'] = modSheet.getSheetValues(temIndexRow.get(RESCALE_ID), 1, 1, len(columnHeaders))[0]
+                        if not adminUser and columnIndex.get(STATUS_HEADER):
+                            returnInfo['rescale'][columnIndex[STATUS_HEADER]-1] = ''
                 except Exception, err:
                     if Settings['debug']:
                         import traceback
@@ -4288,6 +4289,7 @@ def lookupGrades(userId, admin=False):
 
     grades = {}
     sessionGrades = []
+    gradebookStatus = ''
     for j, header in enumerate(headers):
         if header in ('total', 'grade'):
             if admin:
@@ -4298,6 +4300,8 @@ def lookupGrades(userId, admin=False):
                 continue
             elif header != 'total' and not('cumulative_grade' in gradebookRelease):
                 continue
+        elif header == 'status' and admin:
+            gradebookStatus = rescale[j]
         elif not header.startswith('_'):
             continue
 
@@ -4316,6 +4320,7 @@ def lookupGrades(userId, admin=False):
 
     grades['sessions'] = sessionGrades
     grades['lastUpdate'] = lastUpdate
+    grades['status'] = gradebookStatus
     return grades
 
 def lookupSessions(colNames):
