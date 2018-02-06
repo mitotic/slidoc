@@ -2280,6 +2280,62 @@ function hideClass(className, hide) {
 	elems[j].style.display = hide ? 'none' : null;
 }
 
+Slidoc.printerMenu = function () {
+    var html = '<h3>Assessment menu</h3>\n';
+    html += '<ul>\n';
+    html += '<li><span class="slidoc-clickable" onclick="Slidoc.printSession();">Print as document</span></li>\n';
+    html += '<li><span class="slidoc-clickable" onclick="Slidoc.printSession(true);">Print as slides</span></li>\n';
+    html += '</ul>';
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showPopup(html);
+}
+
+Slidoc.printSession = function (slideView) {
+    if ('slides_only' in Sliobj.params.features)
+	return false;
+
+    if (Sliobj.currentSlide) {
+	alert('Please switch to document view to print');
+	return false;
+    }
+
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+
+    var css = '';
+    if (slideView) {
+	css += '@page { size: landscape; margin-top: 0; margin-bottom: 0; }\n';
+	toggleClassAll(true, 'slidoc-page-break-always', 'slidoc-container');
+    } else {
+	toggleClassAll(true, 'slidoc-page-break-avoid', 'slidoc-container');
+    }
+
+    var style = null;
+    if (css) {
+	style = document.createElement('style');
+
+	style.type = 'text/css';
+	style.media = 'print';
+
+	if (style.styleSheet){
+	    style.styleSheet.cssText = css;
+	} else {
+	    style.appendChild(document.createTextNode(css));
+	}
+
+	var head = document.head || document.getElementsByTagName('head')[0];
+	head.appendChild(style);
+    }
+
+    window.print();
+
+    toggleClassAll(false, 'slidoc-page-break-always', 'slidoc-container');
+    if (style)
+	style.remove();
+}
+
+
 function getFullsScreenElement() {
     return document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement;
 }

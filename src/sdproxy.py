@@ -915,7 +915,8 @@ class Sheet(object):
         self.modifiedHeaders = True
         self.modifiedSheet()
 
-    def trimColumns(self, ncols):
+    def trimColumns(self, ncols, delayMods=False):
+        # Set delayMods to true if appending right after trimming
         self.check_lock_status()
         if self.modifiedHeaders:
             raise Exception('Cannot trim columns now while updating sheet '+self.name)
@@ -931,6 +932,8 @@ class Sheet(object):
                 if self.keyMap[key][2]:
                     self.keyMap[key][2].difference_update(trimmedCols)
 
+        if delayMods:
+            return
         self.update_total_formula()
         self.modifiedHeaders = True
         self.modifiedSheet(modTime)
@@ -2106,6 +2109,7 @@ def sheetAction(params, notrace=False):
                             for k in range(nRows):
                                 if submitValues[k][0]:
                                     raise Exception( "Error::Cannot modify sheet "+sheetName+" with submissions")
+
                     if modifyStartCol <= len(columnHeaders):
                         # Truncate columns; ensure truncated columns are empty
                         startCol = modifyStartCol
@@ -2122,7 +2126,7 @@ def sheetAction(params, notrace=False):
                                         if values[k][j] != '':
                                             raise Exception( "Error:TRUNCATE_ERROR:Cannot truncate non-empty column "+str(startCol+j)+" ("+columnHeaders[startCol+j-1]+") in sheet "+sheetName+" (modcol="+str(modifyStartCol)+")")
 
-                        modSheet.trimColumns( nCols )
+                        modSheet.trimColumns( nCols, delayMods=(len(headers) > (modSheet.getLastColumn()-nCols)) )
                         ##modSheet.deleteColumns(startCol, nCols)
 
                     nTemCols = modSheet.getLastColumn()

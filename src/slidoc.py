@@ -98,7 +98,7 @@ ADMIN_PACE    = 3
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
         'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'openfolder': '&#x1f4c2;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#x1f4f1;', 'phonearrow': '&#x1f4f2;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
-        'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'rightarrow': '&#x27A4;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;'}
+        'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'rightarrow': '&#x27A4;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;', 'printer': '&#9113;'}
 
 def parse_number(s):
     if s.isdigit() or (s and s[0] in '+-' and s[1:].isdigit()):
@@ -1222,14 +1222,15 @@ class SlidocRenderer(MathRenderer):
                 out_path = self.options['config'].dest_dir + '/' + new_src
                 out_dir  = self.options['config'].dest_dir + '/' + img_dir
 
-                if not os.path.exists(out_dir):
-                    os.mkdir(out_dir)
+                if not self.options['config'].preview_mode:
+                    if not os.path.exists(out_dir):
+                        os.mkdir(out_dir)
 
-                if os.path.exists(out_path) and img_content == md2md.read_file(out_path):
-                    # File already present (with same content)
-                    pass
-                else:
-                    md2md.write_file(out_path, img_content)
+                    if os.path.exists(out_path) and img_content == md2md.read_file(out_path):
+                        # File already present (with same content)
+                        pass
+                    else:
+                        md2md.write_file(out_path, img_content)
 
         slide_id = self.get_slide_id()
         img_tag = md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop', slide_id+'-img'], image_url=self.options['config'].image_url)
@@ -3616,6 +3617,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                            image_url=config.image_url,
                            images=set(['_slidoc']),
                            strip='tags,extensions')
+    if config.preview_mode:
+        slide_mods_dict['images'].add('preview')
     if 'answers' in config.strip:
         slide_mods_dict['strip'] += ',answers'
     if 'notes' in config.strip:
@@ -4904,6 +4907,7 @@ alt_parser.add_argument('--notebook', help='Create notebook files', action="stor
 alt_parser.add_argument('--overwrite', help='Overwrite source and nb files', action="store_true", default=None)
 alt_parser.add_argument('-p', '--preview_port', type=int, default=0, metavar='PORT', help='Preview document in browser using specified localhost port')
 alt_parser.add_argument('--pptx_options', metavar='PPTX_OPTS', default='', help='Powerpoint conversion options (comma-separated)')
+alt_parser.add_argument('--preview_mode', help='Do not copy image files to dest directory', action="store_true", default=None)
 alt_parser.add_argument('--print_to_pdf', metavar='FILE', help='PDF output file name')
 alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_url')
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')

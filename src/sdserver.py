@@ -752,7 +752,7 @@ class BaseHandler(tornado.web.RequestHandler, UserIdMixin):
             if customMsg.startswith('<'):
                 self.write('<html><body><h3>%s</h3></body></html>' % customMsg)
             else:
-                self.write('<pre>%s</pre>' % tornado.escape.xhtml_escape(customMsg))
+                self.write('<pre>%s</pre>' % customMsg.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;'))
         else:
             super(BaseHandler, self).write_error(status_code, **kwargs)
     
@@ -2784,6 +2784,7 @@ class ActionHandler(BaseHandler):
             image_dir = sessionName+'_images'
 
             extraOpts = {}
+            extraOpts['preview_mode'] = True
             extraOpts['overwrite'] = 1 if overwrite else 0
             if modify:
                 extraOpts['modify_sessions'] = modify
@@ -3215,7 +3216,8 @@ class ActionHandler(BaseHandler):
                     f.write(self.previewState['TOC'])
 
             if self.previewState['image_zipfile']:
-                self.extractFolder(self.previewState['image_zipfile'], web_dir, self.previewState['image_dir'])
+                self.extractFolder(self.previewState['image_zipfile'], web_dir, self.previewState['image_dir'],
+                                   clear=(self.previewState['modimages'] == 'clear'))
 
         except Exception, excp:
             if Options['debug']:

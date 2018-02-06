@@ -293,7 +293,7 @@ class Parser(object):
             write_file(filepath, content)
 
     def get_link_data(self, link, check_only=False, data_url=False):
-        ''' Returns (filename, content_type, content)
+        ''' Returns (filename, content_type, content, from_zip)
             content is data URL if data_url, else raw data.
             Returns None for filename on error
         '''
@@ -301,6 +301,7 @@ class Parser(object):
             filename = ''
             content_type = ''
             content = ''
+            from_zip = False
             url_type = get_url_scheme(link)
             if url_type == 'data':
                 # Data URL
@@ -335,6 +336,7 @@ class Parser(object):
                     content_type = 'image/jpeg' if extn == '.jpg' else 'image/'+extn[1:]
                 if self.images_zipfile:
                     if filename in self.images_map:
+                        from_zip = True
                         if not check_only:
                             content = self.images_zipfile.read(self.images_map[filename])
                     else:
@@ -355,7 +357,7 @@ class Parser(object):
                 # Other URL type
                 pass
 
-            return filename, content_type, content
+            return filename, content_type, content, from_zip
         except Exception, excp:
             print('ERROR in retrieving link %s: %s' % (link, excp), file=sys.stderr)
             return None, '', ''
@@ -429,7 +431,7 @@ class Parser(object):
 
     def copy_image(self, text, link, title, check_only=False):
         """Copies image file to destination. Returns (new_link, title) or (None, None) (for copied URLs)"""
-        filename, content_type, content = self.get_link_data(link, check_only=check_only, data_url=False)
+        filename, content_type, content, from_zip = self.get_link_data(link, check_only=check_only, data_url=False)
 
         if filename is None:
             print('ERROR: Unable to retrieve image %s' % link, file=sys.stderr)
@@ -466,16 +468,19 @@ class Parser(object):
                         new_link = newpath
                 elif self.image_renumber_re.match(linkbase) and self.renumber_count and ('zip' in self.cmd_args.images or self.cmd_args.dest_dir):
                     # Renumber image*.* only if zip or dest_dir is specified
-                    newpath = (IMAGE_FMT % self.renumber_count) + os.path.splitext(linkbase)[1]
-                    self.renumber_count += 1
-                    if self.cmd_args.image_dir:
-                        newpath = self.cmd_args.image_dir + '/' + newpath
-
-                    if newpath.startswith(self.fname + '_images/'):
-                        # Special folder: _images
-                        new_link = newpath[len(self.fname):]
+                    if 'preview' in self.cmd_args.images:
+                        print('ERROR: md2md.Parser(images=preview) not consistent with renumbering for image %s' % link, file=sys.stderr)
                     else:
-                        new_link = newpath
+                        newpath = (IMAGE_FMT % self.renumber_count) + os.path.splitext(linkbase)[1]
+                        self.renumber_count += 1
+                        if self.cmd_args.image_dir:
+                            newpath = self.cmd_args.image_dir + '/' + newpath
+
+                        if newpath.startswith(self.fname + '_images/'):
+                            # Special folder: _images
+                            new_link = newpath[len(self.fname):]
+                        else:
+                            new_link = newpath
                 else:
                     # Preserve relative path when copying
                     newpath = link
@@ -484,7 +489,8 @@ class Parser(object):
                 newpath = self.cmd_args.dest_dir + '/' + newpath
 
             try:
-                self.write_content(newpath, content)
+                if 'preview' not in self.cmd_args.images:
+                    self.write_content(newpath, content)
 
                 ##print('Copied link %s to %s' % (link, newpath), file=sys.stderr)
                 if new_link:
@@ -552,7 +558,7 @@ class Parser(object):
 
         if 'check' in self.cmd_args.images:
             if url_type == 'rel_path' or (url_type.startswith('http') and 'web' in self.cmd_args.images):
-                filename, content_type, content = self.get_link_data(src, check_only=True)
+                filename, content_type, content, from_zip = self.get_link_data(src, check_only=True)
                 if filename is None:
                     print('ERROR: Unable to retrieve image %s' % src, file=sys.stderr)
 
@@ -757,9 +763,9 @@ class Parser(object):
     def import_link(self, link, title=''):
         """Import link as data URL, return (filename, new_title, new_link). On error, return None, None, None"""
         if link in self.imported_links:
-            filename, content_type, content = self.imported_links[link]
+            filename, content_type, content, from_zip = self.imported_links[link]
         else:
-            filename, content_type, content = self.get_link_data(link, data_url=True)
+            filename, content_type, content, from_zip = self.get_link_data(link, data_url=True)
             if filename is None:
                 return None, None, None
 
@@ -778,7 +784,7 @@ class Parser(object):
         else:
             new_title = title
 
-        self.imported_links[link] = (filename, content_type, content)
+        self.imported_links[link] = (filename, content_type, content, from_zip)
         return filename, new_title, content
 
     def import_ref(self, link, title, key=''):
@@ -813,7 +819,7 @@ class Parser(object):
     def export_ref_definition(self, key, link, title, dry_run=False):
         """Return (key, new_link, new_title). On error, return None, None, None"""
         try:
-            filename, content_type, content = self.get_link_data(link)
+            filename, content_type, content, from_zip = self.get_link_data(link)
             if filename is None or not content_type or not content_type.startswith('image/'):
                 raise Exception('Unable to retrieve image %s' % link)
 
@@ -935,7 +941,7 @@ if __name__ == '__main__':
     parser.add_argument('--fence', help='Convert indented code blocks to fenced blocks', action="store_true")
     parser.add_argument('--image_dir', help='image subdirectory (default: "_images")', default='_images')
     parser.add_argument('--image_url', help='URL prefix for images, including image_dir')
-    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,md,web,pandoc] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file)', default='')
+    parser.add_argument('--images', help='images=(check|copy||export|import)[,embed,zip,md,web,pandoc,preview] to process images (check verifies images are accessible; copy copies images to dest_dir; export converts internal images to external; import creates data URLs;embed converts image refs to HTML img tags;zip zips images;md includes content in zipped image file;preview disables copying of images to dest_dir)', default='')
     parser.add_argument('--keep_annotation', help='Keep annotation', action="store_true")
     parser.add_argument('--latex_math', help='Use \\(..\\) and \\[...\\] notation for math', action="store_true")
     parser.add_argument('--overwrite', help='Overwrite files', action="store_true")
