@@ -666,6 +666,13 @@ Sliobj.imageDropSetup = false;
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash, getParameter('update'));
 
+    // Styles for simple pages, e.g., help
+    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
+	toggleClass(true, 'slidoc-instructor-view');
+	if (!Slidoc.serverCookie.sites && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)
+	    toggleClass(true, 'slidoc-rootadmin-view');
+    }
+    
     if (Sliobj.reloadCheck) {
 	if (getParameter('remoteupload')) {
 	    var uploadButton = document.getElementById('slidoc-upload-button');
@@ -2555,7 +2562,7 @@ Slidoc.showConcepts = function (submitMsg) {
 	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight) {
 	    // There are manually graded questions
 	    if (Sliobj.feedback && isNumber(Sliobj.feedback.q_total)) {
-		// DIsplay total grade
+		// Display total grade
 		var feedbackGrade = parseNumber(Sliobj.feedback.q_total);
 		html += 'Total grade: '+feedbackGrade+'/'+Sliobj.params.totalWeight+'<br>';
 		
@@ -4685,8 +4692,12 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.session.submitted || Sliobj.gradableState) // Suppress incremental display
 	toggleClass(true, 'slidoc-completed-view');
     
-    if (Sliobj.feedback) // If any non-null feedback, activate graded view
+    if (Sliobj.feedback) {
+	// If any non-null feedback, activate graded view
 	toggleClass(true, 'slidoc-graded-view');
+	if (Sliobj.params.features.grade_response)
+	    toggleClass(true, 'slidoc-graderesponse-view');
+    }
 
     if (document.getElementById("slidoc-topnav")) {
 	//if (document.getElementById("slidoc-slideview-button"))

@@ -4894,6 +4894,9 @@ def tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAnswers)
             for j in range(hintsUsed[qnumber]):
                 effectiveScore -= abs(questionAttrs.get('hints')[j])
 
+        if questionAttrs.get('participation'):  # Minimum (normalized) score for attempting question
+            effectiveScore = max(effectiveScore, questionAttrs['participation']);
+	
         if effectiveScore > 0:
             questionsCorrect += 1 + qSkipCount
             weightedCorrect += effectiveScore*qWeight + qSkipWeight

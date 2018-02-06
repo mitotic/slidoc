@@ -840,7 +840,7 @@ class SlidocRenderer(MathRenderer):
   <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-button slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
 '''
     comments_template_b = '''              
-<div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-gradable-graded"><em>Comments:</em>
+<div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-gradable-graded slidoc-graderesponseonly"><em>Comments:</em>
   <div id="%(sid)s-comments-content" class="slidoc-comments-content"></div>
 </div>
 '''

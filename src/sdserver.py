@@ -164,7 +164,7 @@ SETTINGS_LABELS = [ ('gsheet_url', 'Google Sheet URL'),
                     ('site_menu', 'List of top menu items: files,gradebook (comma-separated)'),
                     ('twitter_config', 'Twitter config (username,consumer_key,consumer_secret,access_key,access_secret)'),
                     ('', ''),
-                    ('gradebook_release', 'List of released items: session_total,average,cumulative_total,cumulative_grade (comma-separated)'),
+                    ('gradebook_release', 'List of released items: average,cumulative_total,cumulative_grade (comma-separated)'),
                     ('cumulative_total', 'Formula for gradebook total column, e.g., 0.4*assignment_avg_1+0.5*quiz_sum+10*test_normavg+0.1*extra01'),
                     ('cumulative_grade', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'),
                     ('', ''),
@@ -1104,6 +1104,7 @@ class SiteActionHandler(BaseHandler):
             site_settings = dict( (argname, self.get_argument(argname, '')) for argname, arglabel in SETTINGS_LABELS if argname)
             sec_config = site_settings
             cumulative_total = site_settings.get('cumulative_total','').replace(' ','')
+            errTerms =  [term for term in cumulative_total.split('+') if not CUMULATIVE_TOTAL_RE.match(term)] if cumulative_total else []
 
             gsheet_url = site_settings['gsheet_url']
             if not Options['dry_run'] and not gsheet_url:
@@ -1112,8 +1113,8 @@ class SiteActionHandler(BaseHandler):
             elif site_settings['site_access'] and site_settings['site_access'] not in sdproxy.SITE_ACCESS:
                 errMsg = 'site_access must be one of: '+', '.join(sdproxy.SITE_ACCESS)
 
-            elif cumulative_total and not all(CUMULATIVE_TOTAL_RE.match(s) for s in cumulative_total.split('+')):
-                errMsg = 'Invalid cumulative_total formula: '+cumulative_total
+            elif errTerms:
+                errMsg = 'Invalid term(s) in cumulative_total formula: %s.\n Expecting terms like 0.2*assignment_avg_1' % (', '.join(errTerms))
 
             elif not new_site and not Options['reload']:
                 errMsg = 'Enable --reload sdserver option to modify site settings'
@@ -1489,6 +1490,7 @@ class ActionHandler(BaseHandler):
 
         elif action == '_dash':
             upload_key = sliauth.gen_hmac_token(Options['auth_key'], 'upload:')
+            active_users = sorted( list(set(x[1] for x in WSHandler.get_connections())) )
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'],
                         site_title=Options['site_title'], site_access=sdproxy.Settings['site_access'],
                         version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession()[0],
@@ -1497,7 +1499,7 @@ class ActionHandler(BaseHandler):
                         lock_date=sliauth.print_date(sdproxy.Settings['lock_date'],not_now=True),
                         end_date=sliauth.print_date(Options['end_date'],not_now=True),
                         site_menu=SiteProps.get_site_menu(), upload_key=upload_key,
-                        gradebook_release=sdproxy.Settings['gradebook_release'])
+                        gradebook_release=sdproxy.Settings['gradebook_release'], active_users=active_users)
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),

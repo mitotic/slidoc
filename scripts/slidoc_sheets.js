@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21r';
+var VERSION = '0.97.21s';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -2655,7 +2655,7 @@ function handleProxyUpdates(data, create, returnMessages) {
 		    try {
 			refreshSheets = actionHandler(proxyActions, updateSheetName);
 		    } catch(err) {
-			updateErrors.push([updateSheetName, "Error:ACTION:Failed proxy action(s) "+proxyActions+' for sheet '+updateSheetName+': '+err, ''+(err.stack||'')]);
+			updateErrors.push([updateSheetName, "Error:ACTION:Failed proxy action(s) "+proxyActions+' for sheet '+updateSheetName+': '+err, ''+(err.stack||''), debugMsg]);
 		    }
 		}
 
@@ -4762,7 +4762,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	if (!create) {
 	    // Refresh only already posted sessions
 	    if (!scoreSheet)
-		return null;
+		return '';
 	    var temColIndex = indexColumns(scoreSheet);
 	    var curSessions = [];
 	    for (var j=0; j<sessionNames.length; j++) {
@@ -4770,7 +4770,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 		    curSessions.push(sessionNames[j]);
 	    }
 	    if (!curSessions.length)
-		return [];
+		return '';
 	    sessionNames = curSessions;
 	}
 	var indexSheet = getSheet(INDEX_SHEET);
@@ -5131,7 +5131,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 			var agAggregateType = amatch[4] || '';
 			var agDrop = amatch[6] || '';
 
-			if (amatch[1] && (!amatch[1].match(/\*$/) || !isNumber(amatch[1].slice(0,-1)))
+			if (amatch[1] && (!amatch[1].match(/\*$/) || !isNumber(amatch[1].slice(0,-1))))
 			    throw('Error: expecting number followed by asterisk, but found: '+amatch[1]);
 
 			if (!(agSessionType in allSessionTypes))  {

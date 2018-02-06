@@ -555,7 +555,7 @@ pre.slidoc-plugin-Share-responders {
    class="slidoc-clickable slidoc-button slidoc-plugin-Share-button %(pluginId)s-sharebutton slidoc-shareable-hide slidoc-nolocked slidoc-noprint"
    value="View all responses"
    onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].displayShare();"></input>
-   <span id="%(pluginId)s-sharecount" class="slidoc-clickable slidoc-plugin-Share-count %(pluginId)s-sharecount slidoc-shareable-hide" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].showDetails();"></span>
+   <span id="%(pluginId)s-sharecount" class="slidoc-clickable slidoc-plugin-Share-count %(pluginId)s-sharecount slidoc-shareable-hide slidoc-noprint" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].showDetails();"></span>
    <div id="%(pluginId)s-sharedetails" class="slidoc-plugin-Share-details %(pluginId)s-sharedetails slidoc-shareable-hide">
      <input type="button" id="%(pluginId)s-sharefinalize" class="slidoc-clickable slidoc-button" value="Finalize"
      onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].finalizeShare();"></input>

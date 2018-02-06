@@ -43,6 +43,9 @@ body:not(.slidoc-localpreview-view):not(.slidoc-preview-view) .slidoc-anypreview
 body.slidoc-completed-view:not(.slidoc-gradable-view) .slidoc-incrementalonly {
     display: none; }
 
+body:not(.slidoc-instructor-view) .slidoc-instructoronly,
+body:not(.slidoc-rootadmin-view) .slidoc-rootadminonly { display: none; }
+
 li.slidoc-restrictedonly { opacity: 0.6; }
 li.slidoc-restricted-top { background-color: #4f4f4f; }
 
@@ -71,6 +74,7 @@ body.slidoc-gradable-view .slidoc-nogradable { display: none; }
 body.slidoc-graded-view .slidoc-nograded { display: none; }
 body:not(.slidoc-gradable-view) .slidoc-gradableonly { display: none; }
 body:not(.slidoc-graded-view) .slidoc-gradedonly { display: none; }
+body:not(.slidoc-graderesponse-view) .slidoc-graderesponseonly { display: none; }
 
 body:not(.slidoc-gradable-view):not(.slidoc-graded-view) .slidoc-gradable-graded { display: none; }
 
