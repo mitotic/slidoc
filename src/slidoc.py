@@ -920,7 +920,7 @@ class SlidocRenderer(MathRenderer):
         self.all_functions = []
         self.all_params = []
         self.current_params = []
-        self.banner = ''
+        self.banners = []
         self.retry_questions = False
 
     def _new_slide(self):
@@ -1668,7 +1668,7 @@ class SlidocRenderer(MathRenderer):
         return prev_slide_end
 
     def slidoc_banner(self, name, text):
-        self.banner = text.strip()
+        self.banners.append( (self.slide_number, text.strip()) )
         return ''
 
     def slidoc_define(self, name, text):
@@ -3985,9 +3985,12 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         printable_css = ''
         if file_config.doc_title is not None and not file_config.doc_title:
             # Blank doc_title; suppress browser header/footer by removing margins (but no way to create padding at top/bottom?)
-            printable_css = '''<style>@media print { @page { margin-top: 0; margin-bottom: 0; } }</style>''' 
+            printable_css = '''<style>@media print { @page { margin-top: 0; margin-bottom: 0; } }</style>'''
+
+        doc_banner = ' '.join('''<span class="slidoc-banner slidoc-clickable" onclick="Slidoc.go('#%s');" data-slide="%d">%s</span>''' % (make_slide_id(fnumber, x[0]), x[0], x[1]) if not x[1].startswith('<') else x[1] for x in renderer.banners)
+
         mid_params = {'session_name': fname,
-                      'doc_banner': renderer.banner,
+                      'doc_banner': doc_banner,
                       'printable_css': printable_css,
                       'math_js': math_inc if math_present else '',
                       'pagedown_js': (Pagedown_js % libraries_params) if renderer.render_markdown else '',

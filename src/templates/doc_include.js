@@ -8573,6 +8573,14 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     Sliobj.currentSlide = slide_num;
     location.href = '#'+slides[Sliobj.currentSlide-1].id;
 
+    var bannerElems = document.getElementsByClassName('slidoc-banner');
+    for (var j=0; j<bannerElems.length; j++) {
+	if (bannerElems[j].dataset.slide && bannerElems[j].dataset.slide > Sliobj.currentSlide)
+	    bannerElems[j].classList.add('slidoc-banner-dim');
+	else
+	    bannerElems[j].classList.remove('slidoc-banner-dim');
+    }
+
     var inputElem = document.getElementById(slides[Sliobj.currentSlide-1].id+'-answer-input');
     window.scrollTo(0,1);
     if (inputElem && !Sliobj.testOverride && !Sliobj.previewState) setTimeout(function(){inputElem.focus();}, 50);
