@@ -106,7 +106,7 @@ def get_html_tag_attr(attr_name, tag_text):
     return re.sub(r'''['"<>&]''', '', match.group(1)) if match else ''
 
 def new_img_tag(src, alt, title, classes=[], image_url='', image_dir=''):
-    '''Return img tag string, supporting extension of including align/height/width attributes in title string'''
+    '''Return img tag string, supporting extension of including height/width attributes in title string'''
     attrs = ''
     style = ''
     classList = classes[:]
@@ -546,7 +546,7 @@ class Parser(object):
         return orig_content
 
     def make_img_tag(self, src, alt, title):
-        '''Return img tag string, supporting extension of including align/height/width attributes in title string'''
+        '''Return img tag string, supporting extension of including height/width attributes in title string'''
         return new_img_tag(src, alt, title, image_url=self.cmd_args.image_url, image_dir=self.cmd_args.image_dir)
     
     def img_tag(self, match):

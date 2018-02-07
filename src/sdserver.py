@@ -1402,8 +1402,9 @@ class ActionHandler(BaseHandler):
 
             elif action == '_startpreview':
                 if not previewingSession:
-                    self.createUnmodifiedPreview(sessionName)
-                    self.redirectPreview(slideId=self.get_argument('slideid', ''))
+                    slideId = self.get_argument('slideid', '')
+                    self.createUnmodifiedPreview(sessionName, slideId=slideId)
+                    self.redirectPreview(slideId=slideId)
                     return
                 else:
                     self.displayMessage('Already previewing session: <a href="%s/_preview/index.html">%s</a><p></p>' % (site_prefix, previewingSession))
@@ -2859,7 +2860,7 @@ class ActionHandler(BaseHandler):
                 temMsg = 'Error:\n' + temMsg
             return temMsg
 
-    def createUnmodifiedPreview(self, sessionName):
+    def createUnmodifiedPreview(self, sessionName, slideId=''):
         uploadType, sessionNumber, src_path, web_path, web_images = self.getUploadType(sessionName)
 
         if self.previewState:
@@ -2868,6 +2869,12 @@ class ActionHandler(BaseHandler):
         if pacedSession(uploadType) and sessionName != 'index':
             temMsg = sdproxy.startPreview(sessionName)
             if temMsg:
+                if temMsg.startswith('PENDING:'):
+                    site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
+                    temURL = site_prefix + '/_startpreview/' + sliauth.safe_quote(sessionName) + '?slideid=' + slideId
+                    temMsg = '<a href="%s">Retry preview</a>. %s' % (temURL, temMsg[len('PENDING:'):])
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:'+temMsg)
+
                 raise Exception('Unable to preview session: '+temMsg)
 
         try:

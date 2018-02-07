@@ -148,6 +148,8 @@ a, a:visited,
 
 /* Banner */
 
+img.slidoc-banner { vertical-align: middle; }
+
 .slidoc-banner-label { font-size: 1.3em; }
 
 .slidoc-banner-dim { opacity: 0.4; }

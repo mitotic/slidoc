@@ -341,14 +341,14 @@ def startPreview(sessionName, rollingOver=False):
         if sessionSheet.get_updates() is not None:
             if Global.cacheUpdateError:
                 return 'Cache update error (%s); need to restart server' % Global.cacheUpdateError
-            return 'Pending updates for session %s; retry preview after 10-20 seconds (reqid=%s)' % (sessionName, Global.httpRequestId)
+            return 'PENDING:Pending updates for session %s; retry preview after about 5 seconds (reqid=%s)' % (sessionName, Global.httpRequestId)
     else:
         sessionSheet = getSheet(sessionName)
 
     indexSheet = Sheet_cache.get(INDEX_SHEET)
     if indexSheet:
         if indexSheet.get_updates() is not None and not rollingOver:
-            return 'Pending updates for sheet '+INDEX_SHEET+'; retry preview after 10-20 seconds'
+            return 'PENDING:Pending updates for sheet '+INDEX_SHEET+'; retry preview after about 5 seconds'
     else:
         indexSheet = getSheet(INDEX_SHEET)
 

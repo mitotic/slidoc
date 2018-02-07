@@ -96,7 +96,7 @@ ADMIN_PACE    = 3
 
 
 SYMS = {'prev': '&#9668;', 'next': '&#9658;', 'return': '&#8617;', 'up': '&#9650;', 'down': '&#9660;', 'play': '&#9658;', 'stop': '&#9724;',
-        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'printer': '&#x1f5b6;', 'folder': '&#x1f4c1;', 'openfolder': '&#x1f4c2;', 'lightning': '&#9889;', 'pencil': '&#9998;',
+        'gear': '&#9881;', 'bubble': '&#x1F4AC;', 'letters': '&#x1f520;', 'folder': '&#x1f4c1;', 'openfolder': '&#x1f4c2;', 'lightning': '&#9889;', 'pencil': '&#9998;',
         'phone': '&#x1f4f1;', 'phonearrow': '&#x1f4f2;', 'ballot': '&#x2611;', 'house': '&#8962;', 'circle': '&#9673;', 'square': '&#9635;',
         'threebars': '&#9776;', 'bigram': '&#9782;', 'trigram': '&#9783;', 'rightarrow': '&#x27A4;', 'leftrightarrow':'&#x2194;', 'leftpair': '&#8647;', 'rightpair': '&#8649;', 'bust': '&#x1f464;', 'eye': '&#x1f441;', 'lock': '&#x1f512;', 'printer': '&#9113;'}
 
@@ -863,7 +863,7 @@ class SlidocRenderer(MathRenderer):
         self.hint_end = None
         self.notes_end = None
         self.extra_end = None
-        self.section_number = 0
+        self.section_headers = []
         self.untitled_number = 0
         self.qtypes = []
         self.questions = []
@@ -1174,15 +1174,19 @@ class SlidocRenderer(MathRenderer):
             if suffix.isdigit():
                 self.slide_maximage = max(self.slide_maximage, int(suffix))
 
-        tem_msg = ''
-        img_found = False
         new_src = src
-        img_content = None
-        from_zip = False
-        copy_image = self.content_zip or self.options['config'].dest_dir
-        url_type = md2md.get_url_scheme(src)
-        if url_type == 'rel_path':
+        if src.startswith('_files/'):
+            new_src = '/' + src
+            if self.options['config'].site_name:
+                new_src = '/' + self.options['config'].site_name + new_src
+
+        elif md2md.get_url_scheme(src) == 'rel_path':
             # Image link is a relative filepath
+            tem_msg = ''
+            img_found = False
+            copy_image = self.content_zip or self.options['config'].dest_dir
+            from_zip = False
+            img_content = None
             if self.images_zipfile:
                 # Check for image in zip archive
                 if basename in self.images_map:
@@ -1237,9 +1241,13 @@ class SlidocRenderer(MathRenderer):
 
         slide_id = self.get_slide_id()
         img_tag = md2md.new_img_tag(new_src, text, title, classes=['slidoc-img', 'slidoc-img-drop', slide_id+'-img'], image_url=self.options['config'].image_url)
-        if not self.slide_img_tag:
-            self.slide_img_tag = img_tag
-        return img_tag
+        if 'slidoc-banner' in img_tag:
+            self.slidoc_banner('', img_tag)
+            return ''
+        else:
+            if not self.slide_img_tag:
+                self.slide_img_tag = img_tag
+            return img_tag
 
 
     def hrule(self, text='---', implicit=False):
@@ -1488,13 +1496,15 @@ class SlidocRenderer(MathRenderer):
         if 'untitled_number' in self.options['config'].features:
             return self.untitled_header
 
-        if 'sections' in self.options['config'].strip:
+        if 'sections' in self.options['config'].strip or not self.section_headers:
             return ''
 
-        if 'chapters' in self.options['config'].strip:
-            return '%d ' % self.section_number
-        else:
-            return  '%d.%d ' % (self.options['filenumber'], self.section_number)
+        prefix = '%d ' % len(self.section_headers)
+
+        if 'chapters' not in self.options['config'].strip:
+            prefix = ('%d.' % self.options['filenumber']) + prefix
+
+        return prefix
                     
     def header(self, text, level, raw=None):
         """Handle markdown headings
@@ -1589,14 +1599,18 @@ class SlidocRenderer(MathRenderer):
         else:
             # Level 1/2/3 header
             if level <= 2:
+                tem_text = text.strip('#').strip()
                 if self.untitled_header:
                     hdr_prefix = self.untitled_header
-                else:
+                elif level == 2:
                     # New section
-                    self.section_number += 1
+                    self.section_headers.append(tem_text)
+                    if tem_text and 'section_banners' in self.options['config'].features:
+                        self.slidoc_banner('', tem_text)
                     hdr_prefix = self.get_header_prefix()
-
-                self.cur_header = (hdr_prefix + text.strip('#')).strip()
+                else:
+                    hdr_prefix = ''
+                self.cur_header = hdr_prefix + tem_text
                 if self.cur_header:
                     self.header_list.append( (slide_id, self.cur_header) )
                 if 'sections' not in self.options['config'].strip:
@@ -4845,6 +4859,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   quote_response: Display user response as quote (for grading)
 #   remote_answers: Correct answers and score are stored remotely until session is graded
 #   rollback_interact: option to rollback interactive sessions
+#   section_banners: Display headers for sections on top of each slide (but not for subsections, i.e., ###...)
 #   share_all: share responses for all questions after end of lecture etc.
 #   share_answers: share answers for all questions after grading (e.g., after an exam)
 #   shuffle_choice: Choices are shuffled randomly. If there are alternative choices, they are picked together (randomly)
@@ -4856,7 +4871,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
