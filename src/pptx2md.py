@@ -120,15 +120,19 @@ class PPTXParser(object):
                         c_top    = int(round(img_height*shape.crop_top))
                         c_bottom = int(round(img_height*(1.0-shape.crop_bottom)))
                         in_stream = io.BytesIO(image_blob)
-                        pil_image = PIL.Image.open(in_stream)
-                        format = pil_image.format
-                        pil_image = pil_image.crop( (c_left, c_top, c_right, c_bottom) )
-                        in_stream.close()
-                        out_stream = io.BytesIO()
-                        pil_image.save(out_stream, format=format)
-                        image_blob = out_stream.getvalue()
-                        img_width, img_height = pil_image.size
-                        out_stream.close()
+                        try:
+                            pil_image = PIL.Image.open(in_stream)
+                            format = pil_image.format
+                            pil_image = pil_image.crop( (c_left, c_top, c_right, c_bottom) )
+                            in_stream.close()
+                            out_stream = io.BytesIO()
+                            pil_image.save(out_stream, format=format)
+                            image_blob = out_stream.getvalue()
+                            img_width, img_height = pil_image.size
+                            out_stream.close()
+                        except Exception, excp:
+                            print('pptx2md: Error: in processing shape image %s: %s' % (image_obj.filename, excp))
+                            continue
 
                     slide_images.append( {'ext': image_obj.ext, 'width': img_width, 'height': img_height, 'blob': image_blob} )
                     

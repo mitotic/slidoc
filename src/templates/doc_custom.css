@@ -148,7 +148,7 @@ a, a:visited,
 
 /* Banner */
 
-.slidoc-banner { padding-right: 15px; }
+.slidoc-banner-label { font-size: 1.3em; }
 
 .slidoc-banner-dim { opacity: 0.4; }
 

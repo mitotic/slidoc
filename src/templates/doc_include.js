@@ -8573,7 +8573,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     Sliobj.currentSlide = slide_num;
     location.href = '#'+slides[Sliobj.currentSlide-1].id;
 
-    var bannerElems = document.getElementsByClassName('slidoc-banner');
+    var bannerElems = document.getElementsByClassName('slidoc-banner-label');
     for (var j=0; j<bannerElems.length; j++) {
 	if (bannerElems[j].dataset.slide && bannerElems[j].dataset.slide > Sliobj.currentSlide)
 	    bannerElems[j].classList.add('slidoc-banner-dim');
@@ -8635,6 +8635,9 @@ function goSlide(slideHash, chained, singleChapter) {
 	alert('Slidoc: InternalError: strict paced mode without slideView');
 	return false;
     }
+
+    var limitedGo = !Sliobj.previewState && !Sliobj.gradableState && (Sliobj.session && !Sliobj.session.submitted && Sliobj.session.paced >= QUESTION_PACE);
+
     if (!slideHash) {
 	if (Sliobj.currentSlide) {
 	    Slidoc.slideViewGo(false, 1);
@@ -8692,8 +8695,11 @@ function goSlide(slideHash, chained, singleChapter) {
    if (Sliobj.currentSlide) {
       var slides = getVisibleSlides();
       for (var i=0; i<slides.length; i++) {
-         if (slides[i].id == slideId) {
-           Slidoc.slideViewGo(false, i+1);
+          if (slides[i].id == slideId) {
+	      if (limitedGo && i+1 > (Sliobj.session.lastSlide||1))
+		  Slidoc.log('goSlide: Warning - failed for slide '+(i+1)+' > '+Sliobj.session.lastSlide);
+	      else
+		  Slidoc.slideViewGo(false, i+1);
            return false;
          }
       }

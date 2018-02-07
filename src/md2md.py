@@ -489,7 +489,8 @@ class Parser(object):
                 newpath = self.cmd_args.dest_dir + '/' + newpath
 
             try:
-                if 'preview' not in self.cmd_args.images:
+                if not (from_zip and 'preview' in self.cmd_args.images):
+                    # Do not copy image from zip file if in preview mode
                     self.write_content(newpath, content)
 
                 ##print('Copied link %s to %s' % (link, newpath), file=sys.stderr)

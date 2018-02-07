@@ -1178,6 +1178,7 @@ class SlidocRenderer(MathRenderer):
         img_found = False
         new_src = src
         img_content = None
+        from_zip = False
         copy_image = self.content_zip or self.options['config'].dest_dir
         url_type = md2md.get_url_scheme(src)
         if url_type == 'rel_path':
@@ -1186,6 +1187,7 @@ class SlidocRenderer(MathRenderer):
                 # Check for image in zip archive
                 if basename in self.images_map:
                     img_found = True
+                    from_zip = True
                     if copy_image:
                         img_content = self.images_zipfile.read(self.images_map[basename])
                 else:
@@ -1222,7 +1224,8 @@ class SlidocRenderer(MathRenderer):
                 out_path = self.options['config'].dest_dir + '/' + new_src
                 out_dir  = self.options['config'].dest_dir + '/' + img_dir
 
-                if not self.options['config'].preview_mode:
+                if not (from_zip and self.options['config'].preview_mode):
+                    # Do not copy image from zip file if in preview mode
                     if not os.path.exists(out_dir):
                         os.mkdir(out_dir)
 
@@ -3987,7 +3990,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             # Blank doc_title; suppress browser header/footer by removing margins (but no way to create padding at top/bottom?)
             printable_css = '''<style>@media print { @page { margin-top: 0; margin-bottom: 0; } }</style>'''
 
-        doc_banner = ' '.join('''<span class="slidoc-banner slidoc-clickable" onclick="Slidoc.go('#%s');" data-slide="%d">%s</span>''' % (make_slide_id(fnumber, x[0]), x[0], x[1]) if not x[1].startswith('<') else x[1] for x in renderer.banners)
+        doc_banner = ' '.join('''<span class="slidoc-banner-label slidoc-slideonly" data-slide="%d">%s<span class="slidoc-clickable" onclick="Slidoc.go('#%s');">%s</span></span>''' % (x[0], ' &#xbb; ' if x[0] > 1 else '', make_slide_id(fnumber, x[0]), x[1]) if not x[1].startswith('<') else x[1] for x in renderer.banners)
 
         mid_params = {'session_name': fname,
                       'doc_banner': doc_banner,
