@@ -1029,7 +1029,7 @@ Slidoc.accordionView = function(active, show) {
     if (Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
 	setupOverride('Enable test user override to display all slides?', Sliobj.previewState);
 
-    var allSlides = document.getElementsByClassName('slidoc-slide');
+    var allSlides = getVisibleSlides();
     for (var j=0; j<allSlides.length; j++) {
 	var togglebar = document.getElementById(allSlides[j].id+'-togglebar');
 	if (setupOverride()) {
@@ -6402,6 +6402,7 @@ function delayElement(delaySec) // ElemendIds to be hidden as extra args
 }
 
 function slidesVisible(visible, slideNumber, slides) {
+    ///Slidoc.log('slidesVisible:', visible, slideNumber);
     var dispStyle = visible ? null : 'none';
     if (!slideNumber) {
 	// All slides (and toggle elements)
@@ -6421,7 +6422,7 @@ function slidesVisible(visible, slideNumber, slides) {
 }
 
 function visibleSlideCount() {
-    if (controlledPace() || (isController() && Sliobj.session.submitted) )
+    if (controlledPace() || (isController() && Sliobj.session.submitted) ) // Term after || is redundant?
 	return Math.min(Math.max(1,Sliobj.adminPaced), Sliobj.params.pacedSlides);
     else
 	return Sliobj.params.pacedSlides;
@@ -8279,7 +8280,7 @@ Slidoc.slideViewEnd = function() {
 	    Slidoc.PluginManager.optCall(Sliobj.slidePluginList[prev_slide_id][j], 'leaveSlide');
     }
 
-    if (!setupOverride() && Sliobj.hideUnviewedSlides) {
+    if ((!setupOverride() || controlledPace()) && Sliobj.hideUnviewedSlides) {
 	// Unhide only viewed slides
 	for (var j=0; j<Sliobj.session.lastSlide; j++)
 	    slidesVisible(true, j+1, slides);
