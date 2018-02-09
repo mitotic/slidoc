@@ -1093,11 +1093,15 @@ function checkActiveEdit(noAlert) {
 Slidoc.slideDiscuss = function(action, slideId) {
     Slidoc.log('slideDiscuss:', action, slideId);
     var slideNum = parseSlideId(slideId)[2];
+    var discussNum = 1+Sliobj.params.discussSlides.indexOf(slideNum);
+    if (discussNum <= 0)
+	return false;
+
     var userId = getUserId();
     if (action == 'show') {
-	Sliobj.discussSheet.actions('discuss_posts', {id: userId, sheet:Sliobj.sessionName, slide: slideNum}, slideDiscussShowCallback.bind(null, userId, slideId));
+	Sliobj.discussSheet.actions('discuss_posts', {id: userId, sheet:Sliobj.sessionName, discuss: discussNum}, slideDiscussShowCallback.bind(null, userId, slideId));
     } else {
-	var colName = 'discuss' + zeroPad(slideNum, 3);
+	var colName = 'discuss' + zeroPad(discussNum, 3);
 	var textareaElem = document.getElementById(slideId+'-discuss-textarea');
 	var textValue = textareaElem.value;
 	if (action == 'preview') {
@@ -1114,10 +1118,13 @@ Slidoc.slideDiscuss = function(action, slideId) {
 
 Slidoc.deletePost = function(slideId, postNum) {
     Slidoc.log('deletePost:', slideId, postNum);
+    var slideNum = parseSlideId(slideId)[2];
+    var discussNum = 1+Sliobj.params.discussSlides.indexOf(slideNum);
+    if (discussNum <= 0)
+	return false;
     if (!window.confirm('Delete discussion post?'))
 	return false;
-    var slideNum = parseSlideId(slideId)[2];
-    var colName = 'discuss' + zeroPad(slideNum, 3);
+    var colName = 'discuss' + zeroPad(discussNum, 3);
     var userId = getUserId();
     var updates = {id: userId};
     updates[colName] = 'delete:' + postNum;
@@ -1137,6 +1144,10 @@ function slideDiscussUpdateCallback(userId, slideId, result, retStatus) {
 
 function slideDiscussShowCallback(userId, slideId, result, retStatus) {
     Slidoc.log('slideDiscussShowCallback:', userId, slideId, result, retStatus);
+    if (!result) {
+	alert('Error in discussion show: '+(retStatus?retStatus.error:''));
+	return;
+    }
     displayDiscussion(userId, slideId, result);
 }
 
@@ -1200,10 +1211,11 @@ function displayDiscussStats() {
     for (var j=0; j<slides.length; j++) {
 	var slideId = slides[j].id;
 	var slideNum = parseSlideId(slideId)[2];
-	if (Sliobj.params.discussSlides.indexOf(slideNum) < 0)
+	var discussNum = 1+Sliobj.params.discussSlides.indexOf(slideNum);
+	if (discussNum <= 0)
 	    continue;
-	if (slideNum in Sliobj.discussStats) {
-	    var stat = Sliobj.discussStats[slideNum];
+	if (discussNum in Sliobj.discussStats) {
+	    var stat = Sliobj.discussStats[discussNum];
 	} else {
 	    var stat = [0, 0];  // [nPosts, nUnread]
 	}
@@ -6073,7 +6085,7 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		Sliobj.teamFileKey = retStatus.info.teamFileKey;
 
 	    if (retStatus.info.discussStats)
-		Sliobj.discussStats = retStatus.info.discussStats;
+		Sliobj.discussStats = retStatus.info.discussStats[Sliobj.sessionName] || {};
 
 	    if (retStatus.info.sheetsAvailable)
 		Sliobj.sheetsAvailable = retStatus.info.sheetsAvailable;

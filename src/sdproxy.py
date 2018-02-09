@@ -151,8 +151,9 @@ SETTINGS_SHEET = 'settings_slidoc'
 INDEX_SHEET = 'sessions_slidoc'
 ROSTER_SHEET = 'roster_slidoc'
 GRADES_SHEET = 'grades_slidoc'
+DISCUSS_SHEET = 'discuss_slidoc'
 
-BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, GRADES_SHEET]
+BACKUP_SHEETS = [SETTINGS_SHEET, INDEX_SHEET, ROSTER_SHEET, GRADES_SHEET, DISCUSS_SHEET]
 
 RELATED_SHEETS = ['answers', 'correct', 'discuss', 'stats']
 AUXILIARY_SHEETS = ['discuss']    # Related sheets with original content
@@ -510,7 +511,7 @@ def backupSheet(name, dirpath, errorList, optional=False):
 
 
 def isReadOnly(sheetName):
-    return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
+    return (sheetName.endswith('_slidoc') and sheetName not in (INDEX_SHEET, ROSTER_SHEET, DISCUSS_SHEET))
 
 def isFormulaSheet(sheetName):
     return sheetName == GRADES_SHEET or (not TOTAL_COLUMN and sheetName not in (INDEX_SHEET, ROSTER_SHEET))
@@ -1849,9 +1850,10 @@ def sheetAction(params, notrace=False):
         proxy = params.get('proxy','');
 
         # Read-only sheets
-        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('_answers') or sheetName.endswith('_stats')
+        protectedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != DISCUSS_SHEET and sheetName != INDEX_SHEET) or sheetName.endswith('_answers') or sheetName.endswith('_stats')
+
         # Admin-only access sheets (ROSTER_SHEET modifications will be restricted later)
-        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != GRADES_SHEET)
+        restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != DISCUSS_SHEET and sheetName != GRADES_SHEET)
 
         loggingSheet = sheetName.endswith('_log')
         discussionSheet = sheetName.endswith('_discuss')
@@ -1908,9 +1910,28 @@ def sheetAction(params, notrace=False):
             if limitedAccess:
                 raise Exception(limitedAccess)
 
+        rosterName = ''
+        rosterValues = None
+        rosterSheet = getSheet(ROSTER_SHEET)
+
+        if adminUser:
+            rosterName = '#' + TESTUSER_ID
+        elif rosterSheet:
+            # Check user access
+            if not paramId:
+                raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
+            # Copy user info from roster
+            rosterValues = getRosterEntry(paramId)
+            if rosterValues and rosterValues.get('name'):
+                rosterName = rosterValues['name']
+            else:
+                rosterName = '#' + paramId
+        elif not Settings['no_roster']:
+            raise Exception('Error:NEED_ROSTER:Need roster for non-admin access')
+		
         if performActions:
             if performActions == 'discuss_posts':
-                returnValues = getDiscussPosts(sheetName, params.get('slide', ''), paramId)
+                returnValues = getDiscussPosts(sheetName, params.get('discuss', ''), paramId, rosterName)
                 return {"result": "success", "value": returnValues, "headers": returnHeaders,
                         "info": returnInfo, "messages": '\n'.join(returnMessages)}
             elif not all(x in ('answer_stats', 'correct') for x in performActions.split(',')):
@@ -1945,18 +1966,6 @@ def sheetAction(params, notrace=False):
         if restrictedSheet and not adminUser:
             raise Exception("Error::Must be admin/grader user to access sheet '"+sheetName+"'")
 
-        rosterValues = None
-        rosterSheet = getSheet(ROSTER_SHEET)
-        if not adminUser:
-            if rosterSheet:
-                # Check user access
-                if not paramId:
-                    raise Exception('Error:NEED_ID:Must specify userID to lookup roster')
-                # Copy user info from roster
-                rosterValues = getRosterEntry(paramId)
-            elif not Settings['no_roster']:
-                raise Exception('Error:NEED_ROSTER:Need roster for non-admin access')
-		
         returnInfo['prevTimestamp'] = None
         returnInfo['timestamp'] = None
         processed = False
@@ -1997,6 +2006,17 @@ def sheetAction(params, notrace=False):
                 if getSheet(sheetName+'_'+RELATED_SHEETS[j]):
                     delSheet(sheetName+'_'+RELATED_SHEETS[j], deleteRemote=True)
 
+            # Blank out any discussion access column for session
+            axsSheet = getSheet(DISCUSS_SHEET)
+            if axsSheet:
+                axsCol = indexColumns(axsSheet).get('_'+sheetName, 0)
+            if axsCol:
+                axsRange = axsSheet.getRange(2, axsCol, axsSheet.getLastRow(), 1)
+                axsVals = axsRange.getValues()
+                for j in range(len(axsVals)):
+                    axsVals[j][0] = ''
+                axsRange.setValues(axsVals)
+                    
         elif params.get('copysheet'):
             # Copy sheet (but not session entry)
             processed = True
@@ -2929,10 +2949,7 @@ def sheetAction(params, notrace=False):
                                 discussHeaders = ['name', 'id']
                                 discussRow = ['', DISCUSS_ID]
                                 for j in range(len(sessionAttributes['discussSlides'])):
-                                    slideNum = sessionAttributes['discussSlides'][j]
-                                    discussHeaders.append('access%03d' % slideNum)
-                                    discussHeaders.append('discuss%03d' % slideNum)
-                                    discussRow.append(0)
+                                    discussHeaders.append('discuss%03d' % (j+1))
                                     discussRow.append('')
                                 discussSheet = createSheet(sheetName+'_discuss', discussHeaders)
                                 discussSheet.insertRowBefore(2, keyValue=DISCUSS_ID)
@@ -2956,14 +2973,13 @@ def sheetAction(params, notrace=False):
 
                     elif sessionEntries and adminPaced and dueDate and discussableSession and params.get('submit'):
                         discussSheet = getSheet(sheetName+'_discuss')
-                        if discussSheet:
+                        if discussSheet and not lookupRowIndex(userId, discussSheet):
                             discussRows = discussSheet.getLastRow()
                             discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1)
                             discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1)
-                            temName = rosterValues.get('name','#'+userId)
-                            temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds)
+                            temRow = discussRowOffset + locateNewRow(rosterName or '#'+userId, userId, discussNames, discussIds)
                             discussSheet.insertRowBefore(temRow, keyValue=userId)
-                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]])
+                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[rosterName]])
                             
                 elif selectedUpdates:
                     # Update selected row values
@@ -3049,35 +3065,19 @@ def sheetAction(params, notrace=False):
                                 raise Exception('Invalid discussion post entry in column '+colHeader+' for session '+sheetName)
                             if colValue.lower().startswith('delete:'):
                                 # Delete post
-                                userPosts = ('\n'+prevValue).split('\nPost:')[1:]
+                                userPosts = splitPosts(prevValue)
                                 deleteLabel = '%03d:' % int(colValue[len('delete:'):])
                                 for j in range(len(userPosts)):
                                     if userPosts[j].startswith(deleteLabel):
                                         # "Delete" post by prefixing it with (deleted)
                                         comps = userPosts[j].split(' ')
                                         userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
-                                        modValue = 'Post:' + '\nPost:'.join(userPosts)
+                                        modValue = 'Post:' + userPosts.join('\n\n\nPost:')
                                         break
                             else:
-                                # New post
-                                discussRow = lookupRowIndex(DISCUSS_ID, modSheet)
-                                if not discussRow:
-                                    raise Exception('Row with id %s not found in sheet %s' % (DISCUSS_ID, sheetName))
-
-                                # Update post count and last post time
-                                axsHeader = 'access%03d' % discussionPost[1]
-                                axsColumn = columnIndex[axsHeader]
-
-                                axsRange = modSheet.getRange(discussRow, axsColumn, 1, 1)
-
-                                postCount = (axsRange.getValues()[0][0] or 0) + 1
-                                axsRange.setValues([[ postCount ]])
-
-                                modValue = prevValue + '\n' if prevValue else ''
-                                modValue += 'Post:%03d:%s ' % (postCount, sliauth.iso_date(curDate, nosubsec=True))
-                                modValue += colValue
-                                if not modValue.endswith('\n'):
-                                    modValue += '\n'
+                                # New post; append
+                                postCount = accessDiscussion('post', discussionPost[0], discussionPost[1])
+                                modValue = appendPosts(prevValue, colValue, postCount)
 
                         elif colValue is None:
                             # Do not modify field
@@ -3111,7 +3111,7 @@ def sheetAction(params, notrace=False):
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
                     if discussionPost:
-                        returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], userId)
+                        returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], userId, rosterName)
 
                 if len(teamCopyCols):
                     nCopyRows = numRows-numStickyRows
@@ -3174,7 +3174,7 @@ def sheetAction(params, notrace=False):
 
                 if getRow and createRow and discussableSession and dueDate:
                     # Accessing submitted discussable session
-                    returnInfo['discussStats'] = getDiscussStats(sheetName, userId)
+                    returnInfo['discussStats'] = getDiscussStats(userId, sheetName)
 
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
@@ -4538,67 +4538,155 @@ def safeName(s, capitalize=False):
     s = re.sub(r'[^\w-]', '_', s)
     return s.capitalize() if capitalize else s
 
-def getDiscussStats(sessionName, userId):
-    # Returns per slide discussion stats { slideNum: [nPosts, unreadPosts, ...}
-    sheetName = sessionName+'_discuss'
-    discussSheet = getSheet(sheetName)
+def numericKeysJSON(jsonStr):
+    # parse JSON object, replacing numeric string keys with numbers
+    return dict( (parseNumber(k), v) if isNumber(k) else (k,v) for k, v in json.loads(jsonStr).items() )
+
+def getDiscussStats(userId, sessionName):
+    # Returns discussion stats { sessionName1: {discussNum1: [nPosts, unreadPosts, ...}, discussNum2:...}, sessionName2: ...}
     discussStats = {}
-    if not discussSheet:
+    axsSheet = getSheet(DISCUSS_SHEET)
+    if not axsSheet:
         return discussStats
+    topRow = lookupRowIndex(DISCUSS_ID, axsSheet)
+    if not topRow:
+        raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
+    userRow = lookupRowIndex(userId, axsSheet)
 
-    userRow = lookupRowIndex(userId, discussSheet)
-    if not userRow:
-        return discussStats
-
-    discussRow = lookupRowIndex(DISCUSS_ID, discussSheet)
-    if not discussRow:
-        raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+sheetName)
-
-    ncols = discussSheet.getLastColumn()
-    headers = discussSheet.getSheetValues(1, 1, 1, ncols)[0]
-    topVals = discussSheet.getSheetValues(discussRow, 1, 1, ncols)[0]
-    userVals = discussSheet.getSheetValues(userRow, 1, 1, ncols)[0]
-    for j in range(ncols):
-        amatch = AXS_RE.match(headers[j])
-        if not amatch or not topVals[j]:
-            continue
-        if j == ncols-1 or headers[j+1] != 'discuss'+amatch.group(1):
-            continue
-        slideNum = int(amatch.group(1))
-        discussStats[slideNum] = [topVals[j], topVals[j]-(userVals[j] or 0)]
-        
+    ncols = axsSheet.getLastColumn()
+    headers = axsSheet.getSheetValues(1, 1, 1, ncols)[0]
+    topVals = axsSheet.getSheetValues(topRow, 1, 1, ncols)[0]
+    userVals = axsSheet.getSheetValues(userRow, 1, 1, ncols)[0]  if userRow  else None
+    for j in range(0,ncols):
+        if headers[j].startswith('_'):
+            temSessionName = headers[j][1:]
+            if sessionName and sessionName != temSessionName:
+                continue
+            sessionReadPosts = {}
+            try:
+                lastPosts = numericKeysJSON(topVals[j] or '{}')
+                lastReadPosts = numericKeysJSON(userVals[j] or '{}')  if userVals  else {}
+                discussNums = lastPosts.keys()
+                for k in range(0,len(discussNums)):
+                    discussNum = discussNums[k]
+                    sessionReadPosts[discussNum] = [lastPosts.get(discussNum,0), lastReadPosts.get(discussNum, 0)]
+            except Exception:
+                pass
+            discussStats[temSessionName] = sessionReadPosts
     return discussStats
 
-def getDiscussPosts(sessionName, slideNum, userId=None):
+
+def accessDiscussion(action, sessionName, discussNum, userId='', name=''):
+    # Returns new post number if action == 'post', or lastReadPost number if action == 'read' or omitted.
+    # name should be specified for action != 'post'
+    axsRowOffset = 2
+    axsHeaders = ['name', 'id']
+    axsRow = ['', DISCUSS_ID]
+    axsNameCol = 1
+    axsIdCol = 2
+
+    try:
+        axsSheet = getSheet(DISCUSS_SHEET)
+        if not axsSheet:
+            if action != 'post':
+                return 0
+            # Create discussion access sheet (if posting)
+            axsSheet = createSheet(DISCUSS_SHEET, axsHeaders)
+            axsSheet.insertRowBefore(axsRowOffset, keyValue=axsRow[1])
+            axsSheet.getRange(axsRowOffset, 1, 1, len(axsRow)).setValues([axsRow])
+
+        axsHeaders = axsSheet.getSheetValues(1, 1, 1, axsSheet.getLastColumn())[0]
+
+        axsSession = '_'+sessionName
+        if axsSession not in axsHeaders:
+            axsSheet.appendColumns([axsSession])
+            axsHeaders = axsSheet.getSheetValues(1, 1, 1, axsSheet.getLastColumn())[0]
+        axsColumn = 1 + axsHeaders.index(axsSession)
+
+        discussRow = lookupRowIndex(DISCUSS_ID, axsSheet)
+        if not discussRow:
+            raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
+        discussRange = axsSheet.getRange(discussRow, axsColumn, 1, 1)
+
+        postCounts = numericKeysJSON(discussRange.getValues()[0][0] or '{}')
+        if action == 'post':
+            # New post for session/slide
+            if not postCounts.get(discussNum):
+                postCounts[discussNum] = 1
+            else:
+                postCounts[discussNum] += 1
+            discussRange.setValue(json.dumps(postCounts))
+            return postCounts[discussNum]
+
+        # Record last read post for user for this session/slide
+        lastPost = postCounts.get(discussNum, 0)
+        axsRow = lookupRowIndex(userId, axsSheet)
+        if not axsRow:
+            axsRows = axsSheet.getLastRow()
+            if axsRows > axsRowOffset:
+                axsNames = axsSheet.getSheetValues(1+axsRowOffset, axsNameCol, axsRows-axsRowOffset, 1)
+                axsIds = axsSheet.getSheetValues(1+axsRowOffset, axsIdCol, axsRows-axsRowOffset, 1)
+                temRow = axsRowOffset + locateNewRow(name or '#'+userId, userId, axsNames, axsIds)
+            else:
+                temRow = axsRowOffset + 1
+            axsSheet.insertRowBefore(temRow, keyValue=userId)
+            axsSheet.getRange(temRow, axsNameCol, 1, 1).setValues([[name or '#'+userId]])
+            axsRow = lookupRowIndex(userId, axsSheet)
+
+        axsRange = axsSheet.getRange(axsRow, axsColumn, 1, 1)
+        lastReadPosts = numericKeysJSON(axsRange.getValue() or '{}')
+        lastReadPost = lastReadPosts.get(discussNum, 0)
+        if action == 'read' and lastReadPost < lastPost:
+            lastReadPosts[discussNum] = lastPost
+            axsRange.setValue(json.dumps(lastReadPosts))
+        return lastReadPost
+    except Exception, excp:
+        if Settings['debug']:
+            import traceback
+            traceback.print_exc()
+        raise Exception('Error in discussion access for session '+sessionName+', discussion '+str(discussNum)+': '+str(excp))
+
+def splitPosts(posts):
+    return ('\n\n\n'+posts.strip()).split('\n\n\nPost:')[1:]
+
+def appendPosts(prevPosts, newPost, postCount):
+    curDate = createDate()
+    newPost = newPost.strip()
+    while '\n\n\n' in newPost:
+        newPost = newPost.replace('\n\n\n', '\n\n')
+    prevPosts = prevPosts.strip()
+    retValue = prevPosts + '\n\n\n'  if prevPosts  else ''
+    retValue += 'Post:%03d:%s ' % (postCount, sliauth.iso_date(curDate, nosubsec=True))
+    retValue += newPost
+    if not retValue.endswith('\n'):
+        retValue += '\n'
+    return retValue
+
+def getDiscussPosts(sessionName, discussNum, userId, name):
     # Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
     sheetName = sessionName+'_discuss'
     discussSheet = getSheet(sheetName)
     if not discussSheet:
         raise Exception('Discuss sheet '+sessionName+'_discuss not found')
     colIndex = indexColumns(discussSheet)
-    axsColName = 'access%03d' % slideNum
-    axsCol = colIndex.get(axsColName)
-    if not axsCol:
+    axsColName = 'discuss%03d' % discussNum
+    if not colIndex.get(axsColName):
         return []
 
     if userId:
         # Update last read post
-        lastPost = lookupValues(DISCUSS_ID, [axsColName], sheetName, True)[0]
-        lastReadPost = lookupValues(userId, [axsColName], sheetName, True)[0] or 0
-
-        if lastReadPost < lastPost:
-            setValue(userId, axsColName, lastPost, sheetName)
+        lastReadPost = accessDiscussion('read', sessionName, discussNum, userId, name or '#'+userId)
     else:
         lastReadPost = 0
 
     idVals = getColumns('id', discussSheet)
     nameVals = getColumns('name', discussSheet)
-    colVals = getColumns('discuss%03d' % slideNum, discussSheet)
+    colVals = getColumns(axsColName, discussSheet)
     allPosts = []
-    for j in range(len(colVals)):
+    for j in range(0,len(colVals)):
         if not idVals[j] or (idVals[j].startswith('_') and idVals[j] != TESTUSER_ID):
             continue
-        userPosts = ('\n'+colVals[j]).split('\nPost:')[1:]
+        userPosts = splitPosts(colVals[j])
         for k in range(len(userPosts)):
             pmatch = POST_NUM_RE.match(userPosts[k])
             if pmatch:
@@ -4611,8 +4699,9 @@ def getDiscussPosts(sessionName, slideNum, userId=None):
                     text = DELETED_POST
                 allPosts.append([postNumber, idVals[j], nameVals[j], postTimeStr, unreadFlag, text])
 
-    allPosts.sort()
+    allPosts.sort()  #  (sorting numerically)
     return allPosts
+
 
 def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):
     # Copy column value from user row to entire team
@@ -5023,7 +5112,7 @@ def updateAnswers(sessionName, create):
         for j in range(0,len(qtypes)):
             qprefix = 'q'+str(j+1)
             pluginMatch = PLUGIN_RE.match(answers[j] or '')
-            pluginAction = pluginMatch[3]  if pluginMatch  else ''
+            pluginAction = pluginMatch.group(3)  if pluginMatch  else ''
             respColName = qprefix
             if answers[j] and pluginAction != 'expect':
                 if qtypes[j] == 'choice':
