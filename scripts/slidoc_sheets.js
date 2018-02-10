@@ -1896,9 +1896,11 @@ function sheetAction(params) {
 		    // Save updated row
 		    userRange.setValues([rowValues]);
 
-                    var discussRowOffset = 2;
-                    var discussNameCol = 1;
-                    var discussIdCol = 2;
+                    if (userId != MAXSCORE_ID && discussableSession && (newRow && !resetRow)) {
+                        // Create discussion sheet, if needed, and add user row
+                        updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], userId, rosterName);
+		    }
+
                     if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
 			// AdminPaced test user row update
                         var lastSlideCol = columnIndex['lastSlide'];
@@ -1912,24 +1914,6 @@ function sheetAction(params) {
 			    var submitTimetamp = rowValues[submitTimestampCol-1];
                             setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
 
-			    var discussSheet = null;
-                            var discussRowCount = 0;
-                            if (discussableSession) {
-                                // Create discussion sheet
-                                var discussHeaders = ['name', 'id'];
-                                var discussRow = ['', DISCUSS_ID];
-                                for (var j=0; j<sessionAttributes['discussSlides'].length; j++) {
-                                    discussHeaders.push('discuss'+zeroPad(j+1,3));
-                                    discussRow.push('');
-                                }
-				if (getSheet(sheetName+'_discuss'))
-				    throw('Discussions already posted for session '+sheetName+'; delete session to overwrite');
-                                discussSheet = createSheet(sheetName+'_discuss', discussHeaders);
-				discussSheet.insertRowBefore(2)
-                                discussSheet.getRange(2, 1, 1, discussRow.length).setValues([discussRow]);
-                                discussRowCount = discussRowOffset;
-                            }
-
                             var idRowIndex = indexRows(modSheet, columnIndex['id']);
                             var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
                             var nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows);
@@ -1938,28 +1922,8 @@ function sheetAction(params) {
                                 // Submit all other users who have started a session
                                 if (initColValues[j] && idColValues[j] && idColValues[j] != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
                                     modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]]);
-
-                                    if (discussSheet) {
-                                        // Add submitted user to discussion sheet
-                                        discussRowCount += 1;
-					discussSheet.insertRowBefore(discussRowCount);
-                                        discussSheet.getRange(discussRowCount, discussIdCol, 1, 1).setValues([[idColValues[j]]]);
-                                        discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]]);
-                                    }
                                 }
                             }
-                        }
-
-                    } else if (sessionEntries && adminPaced && dueDate && discussableSession && params.submit) {
-                        var discussSheet = getSheet(sheetName+'_discuss');
-                        if (discussSheet && !lookupRowIndex(userId, discussSheet)) {
-                            var discussRows = discussSheet.getLastRow();
-                            var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1);
-                            var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1);
-			    var temRow = discussRowOffset + locateNewRow(rosterName||'#'+userId, userId, discussNames, discussIds);
-			    discussSheet.insertRowBefore(temRow);
-			    discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
-			    discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[rosterName]]);
                         }
                     }
 
@@ -2167,8 +2131,8 @@ function sheetAction(params) {
 		    }
 		}
 
-                if (getRow && createRow && discussableSession && dueDate) {
-		    // Accessing submitted discussable session
+                if (getRow && createRow && discussableSession) {
+		    // Accessing discussable session
                     returnInfo['discussStats'] = getDiscussStats(userId, sheetName);
                 }
 
@@ -3597,6 +3561,68 @@ function getDiscussPosts(sessionName, discussNum, userId, name) {
 
     allPosts.sort(numSort);  //  (sorting numerically)
     return allPosts;
+}
+
+function updateDiscussSheet(sessionName, discussSlides, userId, userName) {
+    // Create session_discuss sheet, as needed, adding all current session users
+    // if userId is specified, add user to discuss sheet
+    if (!discussSlides || !discussSlides.length) {
+        return;
+    }
+
+    var discussRowOffset = 2;
+    var discussNameCol = 1;
+    var discussIdCol = 2;
+
+    var discussSheet = getSheet(sessionName+'_discuss');
+
+    if (!discussSheet) {
+        // Create discussion sheet for session
+        var sessionSheet = getSheet(sessionName);
+        if (!sessionSheet) {
+            return;
+        }
+
+        var discussHeaders = ['name', 'id'];
+        var discussRow = ['', DISCUSS_ID];
+        for (var j=0; j<discussSlides.length; j++) {
+            discussHeaders.push('discuss'+zeroPad(j+1,3));
+            discussRow.push('');
+        }
+
+        discussSheet = createSheet(sessionName+'_discuss', discussHeaders);
+        discussSheet.getRange(2, 1, 1, discussRow.length).setValues([discussRow]);
+        var discussRowCount = discussRowOffset;
+
+        // Add all session users to discussion sheet
+        var numStickyRows = 1;   // Headers etc.
+        var columnIndex = indexColumns(sessionSheet);
+        var idRowIndex = indexRows(sessionSheet, columnIndex['id']);
+        var idColValues = getColumns('id', sessionSheet, 1, 1+numStickyRows);
+        var nameColValues = getColumns('name', sessionSheet, 1, 1+numStickyRows);
+        var initColValues = getColumns('initTimestamp', sessionSheet, 1, 1+numStickyRows);
+        for (var j=0; j<idColValues.length; j++) {
+            if (!idColValues[j] || (idColValues[j].exec(/^_/) && idColValues[j] != TESTUSER_ID)) {
+                continue;
+            }
+            discussRowCount += 1;
+            discussSheet.insertRowBefore(discussRowCount);
+	    discussSheet.getRange(discussRowCount, discussIdCol, 1, 1).setValues([[idColValues[j]]]);
+            discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]]);
+        }
+    }
+
+    if (userId && (!userId.exec(/^_/) || userId == TESTUSER_ID) && !lookupRowIndex(userId, discussSheet)) {
+        // Add user row to discussion sheet
+        var discussRows = discussSheet.getLastRow();
+        var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1);
+        var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1);
+        var temName = userName || '#'+userId;
+        var temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds);
+        discussSheet.insertRowBefore(temRow);
+	discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
+        discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]]);
+    }
 }
 
 

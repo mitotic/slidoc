@@ -990,6 +990,10 @@ class Sheet(object):
             if keyValue in Global.transactSessions:
                 raise Exception('Cannot modify index values for transactional session '+keyValue)
 
+        elif Global.previewStatus:
+            if self.name == Global.previewStatus['sessionName']+'_discuss':
+                raise Exception('Cannot modify discuss sheet %s when previewing session %s' % (self.name, Global.previewStatus['sessionName']))
+
         check_if_locked(self.name)
 
     def _setSheetValues(self, rowMin, colMin, rowCount, colCount, values):
@@ -2921,14 +2925,15 @@ def sheetAction(params, notrace=False):
                     # Save updated row
                     userRange.setValues([rowValues])
 
+                    if userId != MAXSCORE_ID and discussableSession and (newRow and not resetRow):
+                        # Create discussion sheet, if needed, and add user row
+                        updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], userId, rosterName)
+
                     if userId == MAXSCORE_ID and not TOTAL_COLUMN:
                         # Refresh sheet cache if max score row is updated (for re-computed totals)
                         modSheet.expire()
                         expireSheet(GRADES_SHEET)
 
-                    discussRowOffset = 2
-                    discussNameCol = 1
-                    discussIdCol = 2
                     if sessionEntries and adminPaced and paramId == TESTUSER_ID:
                         # AdminPaced test user row update
                         lastSlideCol = columnIndex.get('lastSlide')
@@ -2942,20 +2947,6 @@ def sheetAction(params, notrace=False):
                             submitTimestamp = rowValues[submitTimestampCol-1]
                             setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
 
-                            discussSheet = None
-                            discussRowCount = 0
-                            if discussableSession:
-                                # Create discussion sheet
-                                discussHeaders = ['name', 'id']
-                                discussRow = ['', DISCUSS_ID]
-                                for j in range(len(sessionAttributes['discussSlides'])):
-                                    discussHeaders.append('discuss%03d' % (j+1))
-                                    discussRow.append('')
-                                discussSheet = createSheet(sheetName+'_discuss', discussHeaders)
-                                discussSheet.insertRowBefore(2, keyValue=DISCUSS_ID)
-                                discussSheet.getRange(2, 1, 1, len(discussRow)).setValues([discussRow])
-                                discussRowCount = discussRowOffset
-
                             idRowIndex = indexRows(modSheet, columnIndex['id'])
                             idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
                             nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows)
@@ -2964,22 +2955,6 @@ def sheetAction(params, notrace=False):
                                 # Submit all other users who have started a session
                                 if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
                                     modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]])
-
-                                    if discussSheet:
-                                        # Add submitted user to discussion sheet
-                                        discussRowCount += 1
-                                        discussSheet.insertRowBefore(discussRowCount, keyValue=idColValues[j])
-                                        discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]])
-
-                    elif sessionEntries and adminPaced and dueDate and discussableSession and params.get('submit'):
-                        discussSheet = getSheet(sheetName+'_discuss')
-                        if discussSheet and not lookupRowIndex(userId, discussSheet):
-                            discussRows = discussSheet.getLastRow()
-                            discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1)
-                            discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1)
-                            temRow = discussRowOffset + locateNewRow(rosterName or '#'+userId, userId, discussNames, discussIds)
-                            discussSheet.insertRowBefore(temRow, keyValue=userId)
-                            discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[rosterName]])
                             
                 elif selectedUpdates:
                     # Update selected row values
@@ -3171,8 +3146,8 @@ def sheetAction(params, notrace=False):
                             if returnInfo.get('averages'):
                                 returnInfo['averages'][cindex-1] = ''
 
-                if getRow and createRow and discussableSession and dueDate:
-                    # Accessing submitted discussable session
+                if getRow and createRow and discussableSession:
+                    # Accessing discussable session
                     returnInfo['discussStats'] = getDiscussStats(userId, sheetName)
 
                 if computeTotalScore and getRow:
@@ -3229,7 +3204,6 @@ def submit_timed_session(userId, sessionName):
 
     if Settings['debug']:
         print("DEBUG: submit_timed_session: SUBMITTED", userId, sessionName, file=sys.stderr)
-    
 
 def gen_proxy_token(username, role=''):
     prefixed = role in (ADMIN_ROLE, GRADER_ROLE)
@@ -4582,6 +4556,10 @@ def getDiscussStats(userId, sessionName):
 def accessDiscussion(action, sessionName, discussNum, userId='', name=''):
     # Returns new post number if action == 'post', or lastReadPost number if action == 'read' or omitted.
     # name should be specified for action != 'post'
+
+    if sessionName == previewingSession():
+        raise Exception('Cannot access discussions when previewing session %s' % sessionName)
+
     axsRowOffset = 2
     axsHeaders = ['name', 'id']
     axsRow = ['', DISCUSS_ID]
@@ -4704,6 +4682,62 @@ def getDiscussPosts(sessionName, discussNum, userId, name):
 
     allPosts.sort()  #  (sorting numerically)
     return allPosts
+
+def updateDiscussSheet(sessionName, discussSlides, userId='', userName=''):
+    # Create session_discuss sheet, as needed, adding all current session users
+    # if userId is specified, add user to discuss sheet
+    if sessionName == previewingSession():
+        return
+
+    if not discussSlides or not len(discussSlides):
+        return
+
+    discussRowOffset = 2
+    discussNameCol = 1
+    discussIdCol = 2
+
+    discussSheet = getSheet(sessionName+'_discuss')
+
+    if not discussSheet:
+        # Create discussion sheet for session
+        sessionSheet = getSheet(sessionName)
+        if not sessionSheet:
+            return
+
+        discussHeaders = ['name', 'id']
+        discussRow = ['', DISCUSS_ID]
+        for j in range(len(discussSlides)):
+            discussHeaders.append('discuss%03d' % (j+1))
+            discussRow.append('')
+
+        discussSheet = createSheet(sessionName+'_discuss', discussHeaders)
+        discussSheet.insertRowBefore(2, keyValue=DISCUSS_ID)
+        discussSheet.getRange(2, 1, 1, len(discussRow)).setValues([discussRow])
+        discussRowCount = discussRowOffset
+
+        # Add all session users to discussion sheet
+        numStickyRows = 1  # Headers etc.
+        columnIndex = indexColumns(sessionSheet)
+        idRowIndex = indexRows(sessionSheet, columnIndex['id'])
+        idColValues = getColumns('id', sessionSheet, 1, 1+numStickyRows)
+        nameColValues = getColumns('name', sessionSheet, 1, 1+numStickyRows)
+        initColValues = getColumns('initTimestamp', sessionSheet, 1, 1+numStickyRows)
+        for j in range(len(idColValues)):
+            if not idColValues[j] or (idColValues[j].startswith('_') and idColValues[j] != TESTUSER_ID):
+                continue
+            discussRowCount += 1
+            discussSheet.insertRowBefore(discussRowCount, keyValue=idColValues[j])
+            discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]])
+
+    if userId and (not userId.startswith('_') or userId == TESTUSER_ID) and not lookupRowIndex(userId, discussSheet):
+        # Add user row to discussion sheet
+        discussRows = discussSheet.getLastRow()
+        discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1)
+        discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1)
+        temName = userName or '#'+userId
+        temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds)
+        discussSheet.insertRowBefore(temRow, keyValue=userId)
+        discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]])
 
 
 def teamCopy(sessionSheet, numStickyRows, userRow, teamCol, copyCol):

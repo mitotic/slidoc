@@ -4593,9 +4593,8 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.resubmitAnswers)
 	toggleClass(true, 'slidoc-resubmit-view');
 
-    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session && Sliobj.session.submitted) {
+    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length)
 	toggleClass(true, 'slidoc-discuss-view');
-    }
 
     if (collapsibleAccess())
 	toggleClass(true, 'slidoc-collapsible-view');

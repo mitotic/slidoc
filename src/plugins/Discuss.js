@@ -90,7 +90,10 @@ Discuss = {
 	var colName = 'discuss' + Slidoc.zeroPad(discussNum, 3);
 	var updates = {id: userId};
 	updates[colName] = 'delete:' + Slidoc.zeroPad(postNum, 3);
-	this.global.discussSheet.updateRow(updates, {admin:1}, this.updateCallback.bind(this));
+	var opts = {};
+	if (userId != this.userId)
+	    opts.admin = 1;
+	this.global.discussSheet.updateRow(updates, opts, this.updateCallback.bind(this));
     },
 
     updateCallback: function(result, retStatus) {
