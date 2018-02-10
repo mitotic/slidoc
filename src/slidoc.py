@@ -73,7 +73,7 @@ SPACER6 = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
 SPACER2 = '&nbsp;&nbsp;'
 SPACER3 = '&nbsp;&nbsp;&nbsp;'
 
-SINGLETON_PLUGINS = ['Code', 'Params', 'Share', 'Timer', 'Upload']
+SINGLETON_PLUGINS = ['Code', 'Discuss', 'Params', 'Share', 'Timer', 'Upload']
 FORMULA_NAMESPACE = ['Math']
 
 ANGLE_TEXT_RE = re.compile(r'^\s*<(center|code|strong)>(.*)</\1>\s*$')
@@ -1275,26 +1275,10 @@ class SlidocRenderer(MathRenderer):
 
         return end_html + self.slide_prefix(new_slide_id, ' '.join(classes)) + concept_chain(new_slide_id, self.options['config'].server_url)
 
-    def discuss_footer(self):
-        html = ''
-        slide_id = self.get_slide_id()
-        if 'discuss' in self.slide_options:
-            self.sheet_attributes['discussSlides'].append(self.slide_number)
-            html += '''<div id="%s-discuss-footer" class="slidoc-discuss-footer slidoc-full-block slidoc-discussonly slidoc-noprint" style="display:none;">\n''' % (slide_id, )
-            html += '''  <span id="%s-discuss-show" class="slidoc-discuss-show slidoc-clickable" onclick="Slidoc.slideDiscuss('show','%s');">%s</span>\n''' % (slide_id, slide_id, SYMS['bubble'])
-            html += '''  <span id="%s-discuss-count" class="slidoc-discuss-count"></span>\n''' % (slide_id,)
-            html += '''  <div id="%s-discuss-container" class="slidoc-discuss-container" style="display: none;">\n''' % (slide_id, )
-            html += '''    <div id="%s-discuss-posts" class="slidoc-discuss-posts"></div>\n''' % (slide_id, )
-            html += '''    <div><button id="%s-discuss-post" class="slidoc-discuss-post" onclick="Slidoc.slideDiscuss('post','%s');">Post</button></div>\n''' % (slide_id, slide_id, )
-            html += '''    <textarea id="%s-discuss-textarea" class="slidoc-discuss-textarea"></textarea>\n''' % (slide_id,)
-            html += '''    <div><button id="%s-discuss-preview" class="slidoc-discuss-preview" onclick="Slidoc.slideDiscuss('preview','%s');">Preview</button></div>\n''' % (slide_id, slide_id, )
-            html += '''    <br><div id="%s-discuss-render" class="slidoc-discuss-render"></div>\n''' % (slide_id, )
-            html += '''  </div>\n'''
-            html += '''</div>\n'''
-        return html
-
     def end_slide(self, suffix_html='', last_slide=False):
         prefix_html = self.end_extra()+self.end_hint()  # Hints/Notes will be ignored after Extra:
+
+        plugins_html = ''
 
         if self.slide_params:
             keys = self.slide_params.keys()
@@ -1304,7 +1288,7 @@ class SlidocRenderer(MathRenderer):
             self.all_params.append(';'.join(param_defs))          # Used to define parameter values
 
         if self.slide_formulas and 'Params' not in self.slide_plugin_embeds:
-            prefix_html += self.embed_plugin_body('Params', self.get_slide_id())
+            plugins_html += self.embed_plugin_body('Params', self.get_slide_id())
 
         missing = []
         for name in self.slide_plugin_refs:
@@ -1337,12 +1321,16 @@ class SlidocRenderer(MathRenderer):
 
             elif self.options['config'].pace == BASIC_PACE and 'Submit' not in self.plugin_loads:
                 # Non-question slide and submit button not previously included in this slide or earlier slides
-                prefix_html += self.embed_plugin_body('Submit', self.get_slide_id())
+                plugins_html += self.embed_plugin_body('Submit', self.get_slide_id())
 
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
 
-        return prefix_html+self.end_notes()+self.end_hide()+self.discuss_footer()+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_footer()
+        if 'discuss' in self.slide_options and 'Discuss' not in self.slide_plugin_embeds:
+            self.sheet_attributes['discussSlides'].append(self.slide_number)
+            plugins_html += self.embed_plugin_body('Discuss', self.get_slide_id())
+
+        return prefix_html+self.end_notes()+self.end_hide()+plugins_html+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_footer()
 
     def list_item(self, text):
         """Rendering list item snippet. Like ``<li>``."""

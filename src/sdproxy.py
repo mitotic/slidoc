@@ -3072,7 +3072,7 @@ def sheetAction(params, notrace=False):
                                         # "Delete" post by prefixing it with (deleted)
                                         comps = userPosts[j].split(' ')
                                         userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
-                                        modValue = 'Post:' + userPosts.join('\n\n\nPost:')
+                                        modValue = 'Post:' + '\n\n\nPost:'.join(userPosts)
                                         break
                             else:
                                 # New post; append
@@ -3170,7 +3170,6 @@ def sheetAction(params, notrace=False):
                                 returnInfo['rescale'][cindex-1] = ''
                             if returnInfo.get('averages'):
                                 returnInfo['averages'][cindex-1] = ''
-
 
                 if getRow and createRow and discussableSession and dueDate:
                     # Accessing submitted discussable session
@@ -4569,9 +4568,13 @@ def getDiscussStats(userId, sessionName):
                 discussNums = lastPosts.keys()
                 for k in range(0,len(discussNums)):
                     discussNum = discussNums[k]
-                    sessionReadPosts[discussNum] = [lastPosts.get(discussNum,0), lastReadPosts.get(discussNum, 0)]
+                    lastPost = lastPosts.get(discussNum, 0)
+                    lastReadPost = lastReadPosts.get(discussNum, 0)
+                    sessionReadPosts[discussNum] = [lastPost, lastPost-lastReadPost]
             except Exception:
-                pass
+                if Settings['debug']:
+                    import traceback
+                    traceback.print_exc()
             discussStats[temSessionName] = sessionReadPosts
     return discussStats
 

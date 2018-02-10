@@ -1090,153 +1090,6 @@ function checkActiveEdit(noAlert) {
     return false;
 }
 
-Slidoc.slideDiscuss = function(action, slideId) {
-    Slidoc.log('slideDiscuss:', action, slideId);
-    var slideNum = parseSlideId(slideId)[2];
-    var discussNum = 1+Sliobj.params.discussSlides.indexOf(slideNum);
-    if (discussNum <= 0)
-	return false;
-
-    var userId = getUserId();
-    if (action == 'show') {
-	Sliobj.discussSheet.actions('discuss_posts', {id: userId, sheet:Sliobj.sessionName, discuss: discussNum}, slideDiscussShowCallback.bind(null, userId, slideId));
-    } else {
-	var colName = 'discuss' + zeroPad(discussNum, 3);
-	var textareaElem = document.getElementById(slideId+'-discuss-textarea');
-	var textValue = textareaElem.value;
-	if (action == 'preview') {
-            var renderElem = document.getElementById(slideId+'-discuss-render');
-	    renderElem.innerHTML = MDConverter(textValue, true);
-	    Slidoc.renderMath(renderElem);
-	} else if (action == 'post') {
-	    var updates = {id: userId};
-	    updates[colName] = textValue;
-	    Sliobj.discussSheet.updateRow(updates, {}, slideDiscussUpdateCallback.bind(null, userId, slideId));
-	}
-    }
-}
-
-Slidoc.deletePost = function(slideId, postNum) {
-    Slidoc.log('deletePost:', slideId, postNum);
-    var slideNum = parseSlideId(slideId)[2];
-    var discussNum = 1+Sliobj.params.discussSlides.indexOf(slideNum);
-    if (discussNum <= 0)
-	return false;
-    if (!window.confirm('Delete discussion post?'))
-	return false;
-    var colName = 'discuss' + zeroPad(discussNum, 3);
-    var userId = getUserId();
-    var updates = {id: userId};
-    updates[colName] = 'delete:' + postNum;
-    Sliobj.discussSheet.updateRow(updates, {}, slideDiscussUpdateCallback.bind(null, userId, slideId));
-}
-
-function slideDiscussUpdateCallback(userId, slideId, result, retStatus) {
-    Slidoc.log('slideDiscussUpdateCallback:', userId, slideId, result, retStatus);
-    if (!result) {
-	alert('Error in discussion post: '+(retStatus?retStatus.error:''));
-	return;
-    }
-    displayDiscussion(userId, slideId, retStatus.info.discussPosts);
-    var textareaElem = document.getElementById(slideId+'-discuss-textarea');
-    textareaElem.value = '';
-}
-
-function slideDiscussShowCallback(userId, slideId, result, retStatus) {
-    Slidoc.log('slideDiscussShowCallback:', userId, slideId, result, retStatus);
-    if (!result) {
-	alert('Error in discussion show: '+(retStatus?retStatus.error:''));
-	return;
-    }
-    displayDiscussion(userId, slideId, result);
-}
-
-function displayDiscussion(userId, slideId, posts) {
-    var html = '';
-    var unreadId = '';
-    for (var j=0; j<posts.length; j++) {
-	var row = posts[j];  // [postNum, userId, userName, postTime, unreadFlag, postText]
-	var postId = slideId+'-post'+zeroPad(row[0],3);
-	var postName = (row[1] == Sliobj.params.testUserId) ? 'Instructor' : row[2];
-        var highlight = '*';
-	if (row[4]) {
-	    // Unread
-            highlight = '**';
-	    if (!unreadId)
-		unreadId = postId;
-	}
-	html += '<p id="'+postId+'">'
-	html += MDConverter(highlight+postName+highlight+': '+row[5], true); // Last,First: Text
-	html += '<br><em class="slidoc-discuss-post-timestamp">'+row[3]+'</em>';  // Time
-	if ((userId == row[1] || userId == Sliobj.params.testUserId) && !row[5].match(/\s*\(deleted/))
-	    html += ' <span class="slidoc-clickable slidoc-discuss-post-delete" onclick="Slidoc.deletePost('+"'"+slideId+"',"+row[0]+');">&#x1F5D1;</span>'
-	html += '</p>'
-    }
-    var containerElem = document.getElementById(slideId+'-discuss-container');
-    containerElem.style.display = null;
-    var postsElem = document.getElementById(slideId+'-discuss-posts');
-    postsElem.innerHTML = html;
-    Slidoc.renderMath(postsElem);
-
-    var showElem = document.getElementById(slideId+'-discuss-show');
-    if (showElem)
-	showElem.classList.add('slidoc-discuss-displayed');
-    var countElem = document.getElementById(slideId+'-discuss-count');
-    var toggleElem = document.getElementById(slideId+'-toptoggle-discuss');
-    if (countElem && countElem.textContent)
-	countElem.textContent = countElem.textContent.split('(')[0];
-    if (toggleElem)
-	toggleElem.classList.remove('slidoc-discuss-unread');
-    if (unreadId)
-	setTimeout(function(){document.getElementById(unreadId).scrollIntoView(true); }, 200);
-}
-
-function discussUnread() {
-    if (!Sliobj.discussStats)
-	return 0;
-    var keys = Object.keys(Sliobj.discussStats);
-    var count = 0;
-    for (var j=0; j<keys.length; j++) {
-	if (Sliobj.discussStats[keys[j]][1])
-	    count += 1;
-    }
-    return count;
-}
-
-function displayDiscussStats() {
-    if (!Sliobj.discussStats)
-	return;
-    Slidoc.log('displayDiscussStats:', Sliobj.discussStats);
-    var slides = getVisibleSlides();
-    for (var j=0; j<slides.length; j++) {
-	var slideId = slides[j].id;
-	var slideNum = parseSlideId(slideId)[2];
-	var discussNum = 1+Sliobj.params.discussSlides.indexOf(slideNum);
-	if (discussNum <= 0)
-	    continue;
-	if (discussNum in Sliobj.discussStats) {
-	    var stat = Sliobj.discussStats[discussNum];
-	} else {
-	    var stat = [0, 0];  // [nPosts, nUnread]
-	}
-	var footerElem = document.getElementById(slideId+'-discuss-footer');
-	var countElem = document.getElementById(slideId+'-discuss-count');
-	var toggleElem = document.getElementById(slideId+'-toptoggle-discuss');
-	if (footerElem)
-	    footerElem.style.display = null;
-	if (countElem && stat[0])
-	    countElem.textContent = stat[1] ? stat[0]+'('+stat[1]+')' : stat[0];
-	if (toggleElem) {
-	    toggleElem.style.display = null;
-	    if (stat[0]) {
-		toggleElem.classList.add('slidoc-discuss-available');
-		if (stat[1])
-		    toggleElem.classList.add('slidoc-discuss-unread');
-	    }
-	}
-    }
-}
-
 Slidoc.slideEditMenu = function() {
     Slidoc.log('slideEditMenu:');
     var html = '<h3>Edit menu</h3>\n';
@@ -2198,6 +2051,8 @@ function zeroPad(num, pad) {
     else
 	return ((''+maxInt).slice(1)+num).slice(-pad);
 }
+
+Slidoc.zeroPad = zeroPad;
 
 function letterFromIndex(n) {
     return String.fromCharCode('A'.charCodeAt(0) + n);
@@ -3356,6 +3211,24 @@ Slidoc.PluginManager.optCall = function (pluginInstance, action) //... extra arg
 	return null;	 
 }
 
+Slidoc.PluginManager.optMethod = function (pluginName, slide_id, action) //... extra arguments
+{
+    var extraArgs = Array.prototype.slice.call(arguments).slice(3);
+    Slidoc.log('Slidoc.PluginManager.optMethod:', pluginName, slide_id, action, extraArgs);
+    var pluginInstance = null;
+    if (!slide_id) {
+	var pluginDefName = pluginName.split('-')[0];
+	pluginInstance = Sliobj.globalPluginDict[pluginDefName];
+    } else if (Sliobj.slidePluginDict[slide_id]) {
+	pluginInstance = Sliobj.slidePluginDict[slide_id][pluginName];
+    }
+
+    if (pluginInstance && action in pluginInstance)
+	return Slidoc.PluginManager.optCall.apply(null, [pluginInstance, action].concat(extraArgs));
+    else
+	return null;
+}
+
 Slidoc.PluginMethod = function (pluginName, slide_id, action) //... extra arguments
 {
     var extraArgs = Array.prototype.slice.call(arguments).slice(3);
@@ -4326,7 +4199,6 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.rosterSheet = null;
     Sliobj.gradeSheet = null;
     Sliobj.statSheet = null;
-    Sliobj.discussSheet = null;
     Sliobj.dueDate = null;
     Sliobj.gradeDateStr = '';
     Sliobj.remoteAnswers = '';
@@ -4344,10 +4216,6 @@ Slidoc.slidocReady = function (auth) {
 						     [], [], useJSONP);
 	Sliobj.statSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'_stats',
 						     [], [], useJSONP);
-	if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length) {
-	    Sliobj.discussSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'_discuss',
-							   [], [], useJSONP);
-	}
     }
     if (Sliobj.gradableState) {
 	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
@@ -4699,7 +4567,10 @@ function slidocSetupAux(session, feedback) {
     Slidoc.reportTestAction('initSession');
 
     scoreSession(Sliobj.session);
-    initSessionPlugins(Sliobj.session);
+
+    var globalArgs = {Discuss: {gd_sheet_url: Sliobj.params.gd_sheet_url, testUserId: Sliobj.params.testUserId, discussSlides: Sliobj.params.discussSlides, stats: Sliobj.discussStats} };
+
+    initSessionPlugins(Sliobj.session, globalArgs);
 
     if ('assessment' in Sliobj.params.features) {
 	var assessElem = document.getElementById('slidoc-assessment-display');
@@ -4724,7 +4595,6 @@ function slidocSetupAux(session, feedback) {
 
     if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && Sliobj.params.paceLevel >= ADMIN_PACE && Sliobj.session && Sliobj.session.submitted) {
 	toggleClass(true, 'slidoc-discuss-view');
-	displayDiscussStats();
     }
 
     if (collapsibleAccess())
@@ -4893,7 +4763,7 @@ function evalExpr(params, expr) {
     }
 }
 
-function initSessionPlugins(session) {
+function initSessionPlugins(session, initGlobalArgs) {
     // Restore random seed for session
     Slidoc.log('initSessionPlugins:');
     Sliobj.globalPluginDict = {};
@@ -4926,7 +4796,8 @@ function initSessionPlugins(session) {
 	if (!(pluginName in Slidoc.Plugins))
 	    Slidoc.Plugins[pluginName] = {};
 	Slidoc.Plugins[pluginName][''] = pluginInstance;   // '' denotes global instance
-	Slidoc.PluginManager.optCall.apply(null, [pluginInstance, 'initGlobal']);
+	var globalArgs = initGlobalArgs ? (initGlobalArgs[pluginName] || []) : [];
+	Slidoc.PluginManager.optCall.apply(null, [pluginInstance, 'initGlobal'].concat(globalArgs));
     }
 
     var allContent = document.getElementsByClassName('slidoc-plugin-content');
@@ -8116,8 +7987,8 @@ Slidoc.startPaced = function () {
     if (autoInteract())
 	toggleInteractMode();
 
-    var unreadCount = discussUnread();
-    
+    var unreadCount = Slidoc.PluginManager.optMethod('Discuss', '', 'unread');
+
     if (Sliobj.session.submitted) {
     var startMsg = 'Reviewing submitted paced session '+Sliobj.sessionName+'<br>';
     if (unreadCount)
@@ -9064,6 +8935,9 @@ function MDConverter(mdText, stripOuter) {
     }
     return html.replace(/<a href=([^> ]+)>/g, '<a href=$1 target="_blank">');
 }
+
+
+Slidoc.MDConverter = MDConverter;
 
 ////////////////////////////////////////////////////////////
 // Section 23: Linear Congruential Random Number Generator
