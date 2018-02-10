@@ -445,7 +445,6 @@ GoogleProfile.prototype.promptUserInfo = function (siteName, sessionName, testMo
 	    var userEmail = userData.email || '';
 	    var userAltid = userData.altid || '';
 
-
 	    var adminToken = ':'+userName+':'+userRole+':'+userSites+':'+userToken;
 	    var regularUserToken = userToken;
 	    if (userRole || userSites)
@@ -580,10 +579,10 @@ GoogleSheet.prototype.send = function(params, callType, callback) {
     if (!params.id && GService.gprofile.auth.id)
 	params.id = GService.gprofile.auth.id;
 
-    if (GService.gprofile.auth.token)
+    if (!params.token && GService.gprofile.auth.token)
 	params.token = GService.gprofile.auth.token;
 
-    if (GService.gprofile.auth.graderKey)
+    if (!params.admin && GService.gprofile.auth.graderKey)
 	params.admin = GService.gprofile.auth.origid;
 
     if (callType != 'actions')
@@ -821,7 +820,7 @@ GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet
 GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     // Only works with existing rows
     // Specify get to return updated row
-    // opts = {get:}
+    // opts = {get:, admin:, team:}
     Slidoc.log('GoogleSheet.updateRow:', updateObj, opts);
     if (!updateObj.id)
         throw('GoogleSheet.updateRow: Must provide id to update row');
@@ -875,6 +874,15 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     var params = {id: updateObj.id, update: JSON.stringify(updates)};
     if (opts.get)
         params.get = '1';
+
+    if (opts.admin) {
+	var token = GService.gprofile.auth.token;
+	if (!token || token.indexOf(':') < 0)
+	    throw('GoogleSheet.updateRow: Invalid admin token to switch user');
+	var comps = token.split(':');
+	params.token = params.id + ':' + comps.slice(1).join(':');
+	params.admin = comps[0];
+    }
 
     if (updates.length == 2 && updates[0][0] == 'id' && updates[1][0].slice(-5) == 'vote')
 	params.vote = '1';
