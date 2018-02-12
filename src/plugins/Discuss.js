@@ -11,10 +11,11 @@ Discuss = {
 	unread: function() {
 	    if (!this.discussParams.stats)
 		return 0;
-	    var keys = Object.keys(this.discussParams.stats);
+	    var sessionStats = this.discussParams.stats[''] || {};
+	    var keys = Object.keys(sessionStats);
 	    var count = 0;
 	    for (var j=0; j<keys.length; j++) {
-		if (this.discussParams.stats[keys[j]][1])
+		if (sessionStats[keys[j]][1])
 		    count += 1;
 	    }
 	    return count;
@@ -25,12 +26,13 @@ Discuss = {
 	Slidoc.log('Slidoc.Plugins.Discuss.init:', this.global);
 	if (!this.global.discussParams.stats)
 	    return;
+	var sessionStats = this.global.discussParams.stats[''] || {};
 	var slideNum = parseSlideId(this.slideId)[2];
 	var discussNum = 1+this.global.discussParams.discussSlides.indexOf(slideNum);
 	if (discussNum <= 0)
 	    return;
-	if (discussNum in this.global.discussParams.stats) {
-	    var stat = this.global.discussParams.stats[discussNum];
+	if (discussNum in sessionStats) {
+	    var stat = sessionStats[discussNum];
 	} else {
 	    var stat = [0, 0];  // [nPosts, nUnread]
 	}
@@ -55,6 +57,7 @@ Discuss = {
     },
 
     slideDiscuss: function(action) {
+	// action: 'show' or 'preview' or 'post'
 	Slidoc.log('Slidoc.Plugins.Discuss.slideDiscuss:', action);
 	var slideNum = parseSlideId(this.slideId)[2];
 	var discussNum = 1+this.global.discussParams.discussSlides.indexOf(slideNum);
@@ -89,7 +92,8 @@ Discuss = {
 	    return false;
 	var colName = 'discuss' + Slidoc.zeroPad(discussNum, 3);
 	var updates = {id: userId};
-	updates[colName] = 'delete:' + Slidoc.zeroPad(postNum, 3);
+	var postTeam = '';
+	updates[colName] = 'delete:' + postTeam + ':' + Slidoc.zeroPad(postNum, 3);
 	var opts = {};
 	if (userId != this.userId)
 	    opts.admin = 1;

@@ -8019,8 +8019,10 @@ Slidoc.startPaced = function () {
 	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
-    if (!singleChapterView(chapterId))
+    if (!singleChapterView(chapterId)) {
 	alert('INTERNAL ERROR: Unable to display chapter for paced mode');
+	return;
+    }
 
     if ((Sliobj.updateView || Sliobj.previewState) && location.hash && location.hash.slice(0,2) == '#-') {
 	// Unhide all slides
@@ -8102,7 +8104,7 @@ Slidoc.slideViewStart = function (pacedStart) {
 	Slidoc.sidebarDisplay();
     }
    var slides = getVisibleSlides();
-   if (!slides)
+   if (!slides || !slides.length)
        return false;
    var firstSlideId = slides[0].id;
    Slidoc.breakChain();
@@ -8749,6 +8751,11 @@ Slidoc.showPopup = function (innerHTML, divElemId, wide, autoCloseMillisec, popu
 
     if (!divElemId) divElemId = 'slidoc-generic-popup';
     var divElem = document.getElementById(divElemId);
+    if (!divElem) {
+	Slidoc.log('Slidoc.showPopup: ERROR no div element: '+innerHTML);
+	return;
+    }
+	
     toggleClass(!!wide, 'slidoc-wide-popup', divElem);
 
     var closeElem = document.getElementById(divElem.id+'-close');

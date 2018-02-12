@@ -182,9 +182,9 @@ QFIELD_MOD_RE = re.compile(r"^(q_other|q_comments|q(\d+)_(comments|grade))$")
 QFIELD_TOTAL_RE = re.compile(r"^(q_scores|q_other|q(\d+)_grade)$")
 
 DELETED_POST = '(deleted)'
-POST_PREFIX_RE = re.compile(r'^Post:(\d+):([-\d:T]+)(\s|$)')
-POST_NUM_RE = re.compile(r'(\d+):([-\d:T]+)([\s\S]*)$')
-AXS_RE = re.compile(r'access(\d+)')
+POST_PREFIX_RE = re.compile(r'^Post:([\w-]*):(\d+):([-\d:T]+)(\s|$)')
+POST_NUM_RE = re.compile(r'([\w-]*):(\d+):([-\d:T]+)([\s\S]*)$')
+TEAMNAME_RE = re.compile(r'[\w-]+')
 
 class Dummy():
     pass
@@ -223,6 +223,8 @@ def split_list(list_str, sep=',', lower=False, keep_null=False):
         return [x.strip() for x in list_str.split(sep) if x.strip()]
     
 def delSheet(sheetName, deleteRemote=False):
+    Sheet.relateSheet(sheetName, remove=True)
+
     for cache in (Sheet_cache, Miss_cache, Lock_cache, Lock_passthru):
         if sheetName in cache:
             del cache[sheetName]
@@ -659,6 +661,8 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
     if Settings['dry_run'] and sheetName in Global.dryDeletedSheets:
         Global.dryDeletedSheets.discard(sheetName)
 
+    Sheet.relateSheet(sheetName)
+
     Sheet_cache[sheetName] = Sheet(sheetName, [headers]+rows, keyHeader=getKeyHeader(sheetName), modTime=sliauth.epoch_ms())
     Sheet_cache[sheetName].modifiedSheet()
     return Sheet_cache[sheetName]
@@ -666,6 +670,20 @@ def createSheet(sheetName, headers, overwrite=False, rows=[]):
 
 class Sheet(object):
     # Implements a simple spreadsheet with fixed number of columns
+    @classmethod
+    def relateSheet(cls, sheetName, remove=False):
+        sessionName, _, suffix = sheetName.partition('_')
+        if suffix not in RELATED_SHEETS:
+            return
+        sessionSheet = Sheet_cache.get(sessionName)
+        if not sessionSheet:
+            return
+        if not remove and sheetName not in sessionSheet.relatedSheets:
+            sessionSheet.relatedSheets.append(sheetName)
+        elif remove and sheetName in sessionSheet.relatedSheets:
+            sessionSheet.relatedSheets.remove(sheetName)
+
+
     def __init__(self, name, rows, keyHeader='', modTime=0, accessTime=None, keyMap=None, actions='', updated=False,
                  deletedRowCount=0, modifiedHeaders=False, relatedSheets=[]):
         # updated => current, i.e., just created from downloaded sheet
@@ -784,7 +802,8 @@ class Sheet(object):
     def copy(self):
         # Returns "shallow" copy
         return Sheet(self.name, self.xrows, keyHeader=self.keyHeader, modTime=self.modTime, accessTime=self.accessTime, keyMap=self.keyMap,
-                     deletedRowCount=self.deletedRowCount, actions=','.join(self.actionsRequested), modifiedHeaders=self.modifiedHeaders)
+                     deletedRowCount=self.deletedRowCount, actions=','.join(self.actionsRequested), modifiedHeaders=self.modifiedHeaders,
+                     relatedSheets=self.relatedSheets)
 
     def expire(self):
         # Delete after any updates are processed
@@ -1860,7 +1879,7 @@ def sheetAction(params, notrace=False):
         restrictedSheet = (sheetName.endswith('_slidoc') and sheetName != ROSTER_SHEET and sheetName != DISCUSS_SHEET and sheetName != GRADES_SHEET)
 
         loggingSheet = sheetName.endswith('_log')
-        discussionSheet = sheetName.endswith('_discuss')
+        discussingSession = sheetName[0:-len('_discuss')] if sheetName.endswith('_discuss') else ''
 
         previewingSheet = (sheetName == previewingSession())
 
@@ -2055,9 +2074,16 @@ def sheetAction(params, notrace=False):
             # Update/access single sheet
             headers = json.loads(params.get('headers','')) if params.get('headers','') else None
 
-            indexedSession = not restrictedSheet and not protectedSheet and not loggingSheet and not discussionSheet and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET)
+            indexedSession = not restrictedSheet and not protectedSheet and not loggingSheet and not discussingSession and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET)
 
             modSheet = getSheet(sheetName)
+            if not modSheet and discussingSession:
+                # Create session_discuss sheet, if need be
+                temEntries = lookupValues(discussingSession, ['attributes'], INDEX_SHEET)
+                temAttributes = json.loads(temEntries['attributes'])
+                updateDiscussSheet(discussingSession, temAttributes['discussSlides'], True)
+                modSheet = getSheet(sheetName)
+
             if not modSheet:
                 # Create new sheet
                 if not adminUser:
@@ -2186,8 +2212,8 @@ def sheetAction(params, notrace=False):
                     qprefix = selectedUpdates[1][0].split('_')[0]
                     voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
 
-                if sheetName.endswith('_discuss') and selectedUpdates[1][0].startswith('discuss'):
-                    discussionPost = [sheetName[:-len('_discuss')], int(selectedUpdates[1][0][len('discuss'):])]
+                if discussingSession and selectedUpdates[1][0].startswith('discuss'):
+                    discussionPost = [discussingSession, int(selectedUpdates[1][0][len('discuss'):])]
 
                 if selectedUpdates[1][0] == 'submitTimestamp':
                     alterSubmission = True
@@ -2667,7 +2693,7 @@ def sheetAction(params, notrace=False):
                     rowUpdates = []
                     for j in range(len(columnHeaders)):
                         rowUpdates.append(None)
-                    if sheetName.endswith('_discuss'):
+                    if discussingSession:
                         displayName = params.get('name', '')
                         rowUpdates[columnIndex['id']-1] = userId
                         rowUpdates[columnIndex['name']-1] = displayName
@@ -2926,8 +2952,8 @@ def sheetAction(params, notrace=False):
                     userRange.setValues([rowValues])
 
                     if userId != MAXSCORE_ID and discussableSession and (newRow and not resetRow):
-                        # Create discussion sheet, if needed, and add user row
-                        updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], userId, rosterName)
+                        # Add user row, if session_discuss sheet already exists
+                        updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], False, userId, rosterName)
 
                     if userId == MAXSCORE_ID and not TOTAL_COLUMN:
                         # Refresh sheet cache if max score row is updated (for re-computed totals)
@@ -3041,18 +3067,21 @@ def sheetAction(params, notrace=False):
                             if colValue.lower().startswith('delete:'):
                                 # Delete post
                                 userPosts = splitPosts(prevValue)
-                                deleteLabel = '%03d:' % int(colValue[len('delete:'):])
+                                dcomps = colValue.split(':')
+                                if len(dcomps) != 3 or not dcomps[2].isdigit():
+                                    raise Exception('Invalid delete post entry %s' % dcomps)
+                                deleteLabel = dcomps[1] + ':%03d:' % int(dcomps[2])
                                 for j in range(len(userPosts)):
                                     if userPosts[j].startswith(deleteLabel):
                                         # "Delete" post by prefixing it with (deleted)
                                         comps = userPosts[j].split(' ')
                                         userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
-                                        modValue = 'Post:' + '\n\n\nPost:'.join(userPosts)
+                                        modValue = joinPosts(userPosts)
                                         break
                             else:
                                 # New post; append
-                                postCount = accessDiscussion('post', discussionPost[0], discussionPost[1])
-                                modValue = appendPosts(prevValue, colValue, postCount)
+                                postCount = accessDiscussion('post', discussionPost[0], discussionPost[1], '')
+                                modValue = appendPosts(prevValue, colValue, postCount, '')
 
                         elif colValue is None:
                             # Do not modify field
@@ -3148,7 +3177,7 @@ def sheetAction(params, notrace=False):
 
                 if getRow and createRow and discussableSession:
                     # Accessing discussable session
-                    returnInfo['discussStats'] = getDiscussStats(userId, sheetName)
+                    returnInfo['discussStats'] = getDiscussStats(userId, sheetName, [''])
 
                 if computeTotalScore and getRow:
                     returnInfo['remoteAnswers'] = sessionAttributes.get('remoteAnswers')
@@ -3156,7 +3185,7 @@ def sheetAction(params, notrace=False):
         if sessionEntries and getRow and allRows and adminUser:
             returnInfo['sessionFileKey'] = sliauth.gen_file_key(Settings['auth_key'], sheetName, '')
 
-        if sessionEntries and getRow and (allRows or (createRow and paramId == TESTUSER_ID)):
+        if sessionEntries and getRow and (allRows or (createRow and paramId == TESTUSER_ID) or params.get('getheaders','')):
             # Getting all session rows or test user row (with creation option); return related sheet names
             returnInfo['sheetsAvailable'] = modSheet.relatedSheets[:]
 
@@ -4511,11 +4540,15 @@ def safeName(s, capitalize=False):
     s = re.sub(r'[^\w-]', '_', s)
     return s.capitalize() if capitalize else s
 
+def numericKeys(dct):
+    # copy dict, replacing numeric string keys with numbers
+    return dict( (parseNumber(k), v) if isNumber(k) else (k,v) for k, v in dct.items() )
+
 def numericKeysJSON(jsonStr):
     # parse JSON object, replacing numeric string keys with numbers
-    return dict( (parseNumber(k), v) if isNumber(k) else (k,v) for k, v in json.loads(jsonStr).items() )
+    return numericKeys(json.loads(jsonStr))
 
-def getDiscussStats(userId, sessionName):
+def getDiscussStats(userId, sessionName, postTeams=[]):
     # Returns discussion stats { sessionName1: {discussNum1: [nPosts, unreadPosts, ...}, discussNum2:...}, sessionName2: ...}
     discussStats = {}
     axsSheet = getSheet(DISCUSS_SHEET)
@@ -4537,14 +4570,20 @@ def getDiscussStats(userId, sessionName):
                 continue
             sessionReadPosts = {}
             try:
-                lastPosts = numericKeysJSON(topVals[j] or '{}')
-                lastReadPosts = numericKeysJSON(userVals[j] or '{}')  if userVals  else {}
-                discussNums = lastPosts.keys()
-                for k in range(0,len(discussNums)):
-                    discussNum = discussNums[k]
-                    lastPost = lastPosts.get(discussNum, 0)
-                    lastReadPost = lastReadPosts.get(discussNum, 0)
-                    sessionReadPosts[discussNum] = [lastPost, lastPost-lastReadPost]
+                lastPostsAll = json.loads(topVals[j] or '{}')
+                lastReadPostsAll = json.loads(userVals[j] or '{}')  if userVals  else {}
+                teamKeys = postTeams if postTeams else lastPostsAll.keys()
+                for iteam in range(0,len(teamKeys)):
+                    postTeam = teamKeys[iteam];
+                    lastPosts = numericKeys(lastPostsAll.get(postTeam, {}))
+                    lastReadPosts = numericKeys(lastReadPostsAll.get(postTeam, {}))
+                    discussNums = lastPosts.keys()
+                    sessionReadPosts[postTeam] = {}
+                    for k in range(0,len(discussNums)):
+                        discussNum = discussNums[k]
+                        lastPost = lastPosts.get(discussNum, 0)
+                        lastReadPost = lastReadPosts.get(discussNum, 0)
+                        sessionReadPosts[postTeam][discussNum] = [lastPost, lastPost-lastReadPost]
             except Exception:
                 if Settings['debug']:
                     import traceback
@@ -4553,7 +4592,7 @@ def getDiscussStats(userId, sessionName):
     return discussStats
 
 
-def accessDiscussion(action, sessionName, discussNum, userId='', name=''):
+def accessDiscussion(action, sessionName, discussNum, postTeam='', userId='', name=''):
     # Returns new post number if action == 'post', or lastReadPost number if action == 'read' or omitted.
     # name should be specified for action != 'post'
 
@@ -4589,20 +4628,23 @@ def accessDiscussion(action, sessionName, discussNum, userId='', name=''):
             raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
         discussRange = axsSheet.getRange(discussRow, axsColumn, 1, 1)
 
-        postCounts = numericKeysJSON(discussRange.getValues()[0][0] or '{}')
+        postCountsAll = json.loads(discussRange.getValues()[0][0] or '{}')
+        postCounts = numericKeys(postCountsAll.get(postTeam,{}))
         if action == 'post':
             # New post for session/slide
             if not postCounts.get(discussNum):
                 postCounts[discussNum] = 1
             else:
                 postCounts[discussNum] += 1
-            discussRange.setValue(json.dumps(postCounts))
+            postCountsAll[postTeam] = postCounts
+            discussRange.setValue(json.dumps(postCountsAll))
             return postCounts[discussNum]
 
         # Record last read post for user for this session/slide
         lastPost = postCounts.get(discussNum, 0)
         axsRow = lookupRowIndex(userId, axsSheet)
         if not axsRow:
+            # Add discuss access row for user
             axsRows = axsSheet.getLastRow()
             if axsRows > axsRowOffset:
                 axsNames = axsSheet.getSheetValues(1+axsRowOffset, axsNameCol, axsRows-axsRowOffset, 1)
@@ -4615,11 +4657,13 @@ def accessDiscussion(action, sessionName, discussNum, userId='', name=''):
             axsRow = lookupRowIndex(userId, axsSheet)
 
         axsRange = axsSheet.getRange(axsRow, axsColumn, 1, 1)
-        lastReadPosts = numericKeysJSON(axsRange.getValue() or '{}')
+        lastReadPostsAll = json.loads(axsRange.getValue() or '{}')
+        lastReadPosts = numericKeys(lastReadPostsAll.get(postTeam, {}))
         lastReadPost = lastReadPosts.get(discussNum, 0)
         if action == 'read' and lastReadPost < lastPost:
             lastReadPosts[discussNum] = lastPost
-            axsRange.setValue(json.dumps(lastReadPosts))
+            lastReadPostsAll[postTeam] = lastReadPosts;
+            axsRange.setValue(json.dumps(lastReadPostsAll))
         return lastReadPost
     except Exception, excp:
         if Settings['debug']:
@@ -4630,25 +4674,31 @@ def accessDiscussion(action, sessionName, discussNum, userId='', name=''):
 def splitPosts(posts):
     return ('\n\n\n'+posts.strip()).split('\n\n\nPost:')[1:]
 
-def appendPosts(prevPosts, newPost, postCount):
+def joinPosts(posts):
+    return 'Post:' + '\n\n\nPost:'.join(posts)
+
+def makePost(postTeam, postCount, postText):
     curDate = createDate()
+    return 'Post:%s:%03d:%s %s' % (postTeam, postCount, sliauth.iso_date(curDate, nosubsec=True), postText)
+
+def appendPosts(prevPosts, newPost, postCount, postTeam=''):
     newPost = newPost.strip()
     while '\n\n\n' in newPost:
         newPost = newPost.replace('\n\n\n', '\n\n')
     prevPosts = prevPosts.strip()
     retValue = prevPosts + '\n\n\n'  if prevPosts  else ''
-    retValue += 'Post:%03d:%s ' % (postCount, sliauth.iso_date(curDate, nosubsec=True))
-    retValue += newPost
+    retValue += makePost(postTeam, postCount, newPost)
     if not retValue.endswith('\n'):
         retValue += '\n'
     return retValue
 
-def getDiscussPosts(sessionName, discussNum, userId, name):
+def getDiscussPosts(sessionName, discussNum, userId, name, postTeam=''):
     # Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
     sheetName = sessionName+'_discuss'
     discussSheet = getSheet(sheetName)
     if not discussSheet:
-        raise Exception('Discuss sheet '+sessionName+'_discuss not found')
+        return []
+
     colIndex = indexColumns(discussSheet)
     axsColName = 'discuss%03d' % discussNum
     if not colIndex.get(axsColName):
@@ -4656,7 +4706,7 @@ def getDiscussPosts(sessionName, discussNum, userId, name):
 
     if userId:
         # Update last read post
-        lastReadPost = accessDiscussion('read', sessionName, discussNum, userId, name or '#'+userId)
+        lastReadPost = accessDiscussion('read', sessionName, discussNum, postTeam, userId, name or '#'+userId)
     else:
         lastReadPost = 0
 
@@ -4670,11 +4720,11 @@ def getDiscussPosts(sessionName, discussNum, userId, name):
         userPosts = splitPosts(colVals[j])
         for k in range(len(userPosts)):
             pmatch = POST_NUM_RE.match(userPosts[k])
-            if pmatch:
-                postNumber = int(pmatch.group(1))
-                postTimeStr = pmatch.group(2)
+            if pmatch and pmatch.group(1) == postTeam:
+                postNumber = int(pmatch.group(2))
+                postTimeStr = pmatch.group(3)
                 unreadFlag = postNumber > lastReadPost if userId else False
-                text = pmatch.group(3).strip()+'\n'
+                text = pmatch.group(4).strip()+'\n'
                 if text.startswith(DELETED_POST):
                     # Hide text from deleted messages
                     text = DELETED_POST
@@ -4683,20 +4733,29 @@ def getDiscussPosts(sessionName, discussNum, userId, name):
     allPosts.sort()  #  (sorting numerically)
     return allPosts
 
-def updateDiscussSheet(sessionName, discussSlides, userId='', userName=''):
-    # Create session_discuss sheet, as needed, adding all current session users
+def updateDiscussSheet(sessionName, discussSlides, create=False, userId='', userName=''):
+    # Create/update session_discuss sheet, adding all current session users
     # if userId is specified, add user to discuss sheet
     if sessionName == previewingSession():
+        # No sheet creation during preview
         return
 
     if not discussSlides or not len(discussSlides):
         return
 
+    discussSheet = getSheet(sessionName+'_discuss')
+
+    if discussSheet and create:
+        # Discuss sheet already created
+        return
+
+    if not discussSheet and not create:
+        # Create sheet later, at time of first post
+        return
+
     discussRowOffset = 2
     discussNameCol = 1
     discussIdCol = 2
-
-    discussSheet = getSheet(sessionName+'_discuss')
 
     if not discussSheet:
         # Create discussion sheet for session

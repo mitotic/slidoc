@@ -2833,7 +2833,7 @@ Log_fields =     ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file'
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
                          questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
-                         row_count=None, modify_session=None):
+                         row_count=None, modify_session=None, related_sheets=None):
     modify_questions = False
     user = ADMINUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True)
@@ -2862,6 +2862,10 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         prev_attributes = json.loads(prev_row[prev_headers.index('attributes')])
         prev_qparams = prev_attributes.get('questionParams', [])
         cur_qparams = sheet_attributes.get('questionParams', [])
+        prev_discuss = prev_attributes.get('discussSlides', [])
+        cur_discuss = sheet_attributes.get('discussSlides', [])
+        if len(cur_discuss) != len(prev_discuss) and session_name+'_discuss' in related_sheets:
+            abort('ERROR:DISCUSS-ERROR: Please delete sheet %s_discuss before modifying/disabling discussion for session' % session_name)
         if row_count and prev_qparams != cur_qparams:
             min_count =  min(len(prev_qparams), len(cur_qparams))
             errq = ''
@@ -2932,6 +2936,7 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
 
 
 def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modify_session=None):
+    # Returns (maxLastSlide, modify_col, row_count, related_sheets)
     modify_col = 0
     user = TESTUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user) if hmac_key else ''
@@ -2940,12 +2945,13 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
     retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if retval['error'].startswith('Error:NOSHEET:'):
-            return (None, modify_col, 0)
+            return (None, modify_col, 0, [])
         else:
             abort("Error in accessing sheet '%s': %s\n%s" % (sheet_name, retval['error'], retval.get('messages')))
     prev_headers = retval['headers']
     prev_row = retval['value']
     maxLastSlide = retval['info']['maxLastSlide']
+    related_sheets = retval['info'].get('sheetsAvailable',[])
     maxRows = retval['info']['maxRows']
     if maxRows == 2:
         # No data rows; all modifications OK
@@ -2987,7 +2993,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
             elif not modify_session:
                 abort('ERROR:MODIFY_SESSION: Mismatched header %d for module session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
 
-    return (maxLastSlide, modify_col, row_count)
+    return (maxLastSlide, modify_col, row_count, related_sheets)
                 
 def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify=None):
     user = ADMINUSER_ID
@@ -4011,14 +4017,14 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
-            max_last_slide, modify_col, row_count = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
+            max_last_slide, modify_col, row_count, related_sheets = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
                                                                      modify_session=modify_session)
             mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                  file_config.session_weight, file_config.session_rescale, release_date_str, due_date_str, file_config.media_url, js_params['paceLevel'],
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                  renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
                                  max_last_slide=max_last_slide, debug=config.debug,
-                                 row_count=row_count, modify_session=modify_session)
+                                 row_count=row_count, modify_session=modify_session, related_sheets=related_sheets)
 
             admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
 
