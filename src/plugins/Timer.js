@@ -16,11 +16,13 @@ Timer = {
 	    }
 	},
 
-	allowRemoteAccess: function(methodName, fromAdmin) {
-	    if (fromAdmin)
-		return true;
-	    else
-		return false;
+	relayCall: function(isAdmin, fromUser, methodName) // Extra args
+	{
+	    var extraArgs = Array.prototype.slice.call(arguments).slice(3);
+	    if (isAdmin)
+		return this[methodName].apply(this, extraArgs);
+
+	    return false;
 	},
 
 	timeout: function() {

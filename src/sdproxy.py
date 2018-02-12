@@ -203,6 +203,11 @@ Global.dryDeletedSheets = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
 
+Global.discussPostCallback = None
+
+def initProxy(discussPostCallback=None):
+    Global.discussPostCallback = discussPostCallback
+
 def copySiteConfig(siteConfig):
     for key in COPY_FROM_CONFIG:
         if key in siteConfig:
@@ -2074,10 +2079,25 @@ def sheetAction(params, notrace=False):
             # Update/access single sheet
             headers = json.loads(params.get('headers','')) if params.get('headers','') else None
 
+            updatingSingleColumn = ''
+            alterSubmission = False
+            twitterSetting = False
+            discussionPost = None
+            if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id':
+                updatingSingleColumn = selectedUpdates[1][0]
+                if discussingSession and updatingSingleColumn.startswith('discuss'):
+                    discussionPost = [discussingSession, int(updatingSingleColumn[len('discuss'):])]
+
+                if updatingSingleColumn == 'submitTimestamp':
+                    alterSubmission = True
+
+                if updatingSingleColumn == TWITTER_HEADER and sheetName == ROSTER_SHEET:
+                    twitterSetting = True
+
             indexedSession = not restrictedSheet and not protectedSheet and not loggingSheet and not discussingSession and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET)
 
             modSheet = getSheet(sheetName)
-            if not modSheet and discussingSession:
+            if not modSheet and discussionPost and discussingSession != previewingSession():
                 # Create session_discuss sheet, if need be
                 temEntries = lookupValues(discussingSession, ['attributes'], INDEX_SHEET)
                 temAttributes = json.loads(temEntries['attributes'])
@@ -2204,22 +2224,9 @@ def sheetAction(params, notrace=False):
             displayName = None
 
             voteSubmission = ''
-            alterSubmission = False
-            twitterSetting = False
-            discussionPost = None
-            if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id':
-                if selectedUpdates[1][0].endswith('_vote') and sessionAttributes.get('shareAnswers'):
-                    qprefix = selectedUpdates[1][0].split('_')[0]
-                    voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
-
-                if discussingSession and selectedUpdates[1][0].startswith('discuss'):
-                    discussionPost = [discussingSession, int(selectedUpdates[1][0][len('discuss'):])]
-
-                if selectedUpdates[1][0] == 'submitTimestamp':
-                    alterSubmission = True
-
-                if selectedUpdates[1][0] == TWITTER_HEADER and sheetName == ROSTER_SHEET:
-                    twitterSetting = True
+            if updatingSingleColumn and updatingSingleColumn.endswith('_vote') and sessionAttributes.get('shareAnswers'):
+                qprefix = updatingSingleColumn.split('_')[0]
+                voteSubmission = sessionAttributes['shareAnswers'][qprefix].get('share', '') if sessionAttributes['shareAnswers'].get(qprefix) else ''
 
             if not adminUser and selectedUpdates and not voteSubmission and not discussionPost and not twitterSetting:
                 raise Exception("Error::Only admin user allowed to make selected updates to sheet '"+sheetName+"'")
@@ -3081,7 +3088,14 @@ def sheetAction(params, notrace=False):
                             else:
                                 # New post; append
                                 postCount = accessDiscussion('post', discussionPost[0], discussionPost[1], '')
-                                modValue = appendPosts(prevValue, colValue, postCount, '')
+                                postTeam = ''
+                                newPost = makePost(postTeam, postCount, colValue)
+                                modValue = appendPosts(prevValue, newPost, postCount, '')
+                                if Global.discussPostCallback:
+                                    try:
+                                        Global.discussPostCallback(discussionPost[0], discussionPost[1], {}, userId, newPost)
+                                    except Exception, excp:
+                                        print('sdproxy: discussPostCallback ERROR %s-%s, %s: %s' % (discussionPost[0], discussionPost[1], userId, excp), file=sys.stderr)
 
                         elif colValue is None:
                             # Do not modify field
@@ -4678,16 +4692,16 @@ def joinPosts(posts):
     return 'Post:' + '\n\n\nPost:'.join(posts)
 
 def makePost(postTeam, postCount, postText):
+    postText = postText.strip()
+    while '\n\n\n' in postText:
+        postText = postText.replace('\n\n\n', '\n\n')
     curDate = createDate()
     return 'Post:%s:%03d:%s %s' % (postTeam, postCount, sliauth.iso_date(curDate, nosubsec=True), postText)
 
 def appendPosts(prevPosts, newPost, postCount, postTeam=''):
-    newPost = newPost.strip()
-    while '\n\n\n' in newPost:
-        newPost = newPost.replace('\n\n\n', '\n\n')
     prevPosts = prevPosts.strip()
     retValue = prevPosts + '\n\n\n'  if prevPosts  else ''
-    retValue += makePost(postTeam, postCount, newPost)
+    retValue += newPost
     if not retValue.endswith('\n'):
         retValue += '\n'
     return retValue

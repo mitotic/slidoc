@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import io
 import json
+import os
 import random
 import re
 import sys
@@ -28,6 +29,8 @@ SITE_COOKIE_PREFIX = 'slidoc_site'
 FUTURE_DATE = 'future'
 
 SITE_NAME_RE = re.compile(r'^[a-zA-Z][-a-zA-Z0-9]*$')
+
+SLIDE_ID_RE = re.compile(r'^(slidoc(\d+))(-(\d+))?$')
 
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE     = re.compile(r'^([a-zA-Z][-\w]*[a-zA-Z])(\d\d)$')
@@ -116,6 +119,14 @@ def blank_gif(data_url=False):
     # Returns 1-pixel blank gif
     b64content = 'R0lGODlhAQABAIAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=='
     return 'data:image/gif;base64,'+b64content if data_url else base64.b64decode(b64content)
+
+def get_slide_number(slide_id):
+    match = SLIDE_ID_RE.match(slide_id)
+    return int(match.group(4)) if match else 0
+
+def map_images(path_list):
+    # Return dict containing file_name -> file_path mapping for paths containing *_images/
+    return dict( (os.path.basename(fpath), fpath) for fpath in path_list if '_images/' in fpath and os.path.basename(fpath))
 
 def gen_qr_code(text, border=4, pixel=15, raw_image=False, img_html=''):
     try:

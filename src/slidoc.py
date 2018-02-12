@@ -907,7 +907,7 @@ class SlidocRenderer(MathRenderer):
         self.images_map = {}
         if self.options['images_zipdata']:
             self.images_zipfile = zipfile.ZipFile(io.BytesIO(self.options['images_zipdata']), 'r')
-            self.images_map = dict( (os.path.basename(fpath), fpath) for fpath in self.images_zipfile.namelist() if os.path.basename(fpath))
+            self.images_map = sliauth.map_images(self.images_zipfile.namelist())
 
         self.content_zip_bytes = None
         self.content_zip = None
@@ -4681,7 +4681,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             cls.images_zipfile = zipfile.ZipFile(io.BytesIO(images_zipdata))
 
         if cls.images_zipfile:
-            cls.images_map = dict( (os.path.basename(fpath), fpath) for fpath in cls.images_zipfile.namelist() if os.path.basename(fpath))
+            cls.images_map = sliauth.map_images(cls.images_zipfile.namelist())
 
         for msg in retval['messages']:
             print(msg, file=sys.stderr)

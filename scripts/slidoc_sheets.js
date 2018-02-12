@@ -904,13 +904,31 @@ function sheetAction(params) {
 	    // Update/access single sheet
 	    var headers = params.headers ? JSON.parse(params.headers) : null;
 
+	    var updatingSingleColumn = '';
+            var alterSubmission = false;
+            var twitterSetting = false;
+	    var discussionPost = null;
+	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id') {
+		updatingSingleColumn = selectedUpdates[1][0];
+                if (discussingSession && updatingSingleColumn.match(/^discuss/)) {
+                    discussionPost = [discussingSession, parseInt(updatingSingleColumn.slice('discuss'.length) )];
+                }
+
+		if (updatingSingleColumn == 'submitTimestamp')
+		    alterSubmission = true;
+
+		if (updatingSingleColumn == TWITTER_HEADER && sheetName == ROSTER_SHEET)
+		    twitterSetting = true;
+	    }
+
 	    var modSheet = getSheet(sheetName);
-            if (!modSheet && discussingSession) {
+            if (!modSheet && discussionPost) {
                 // Create session_discuss sheet, if need be
                 var temEntries = lookupValues(discussingSession, ['attributes'], INDEX_SHEET);
                 var temAttributes = JSON.parse(temEntries['attributes']);
                 updateDiscussSheet(discussingSession, temAttributes['discussSlides'], true);
                 modSheet = getSheet(sheetName);
+	    }
 
 	    if (!modSheet) {
 		// Create new sheet
@@ -1055,24 +1073,9 @@ function sheetAction(params) {
 	    var displayName = null;
 
 	    var voteSubmission = '';
-            var alterSubmission = false;
-            var twitterSetting = false;
-	    var discussionPost = null;
-	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id') {
-		if (selectedUpdates[1][0].match(/_vote$/) && sessionAttributes.shareAnswers) {
-		    var qprefix = selectedUpdates[1][0].split('_')[0];
-		    voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
-		}
-
-                if (discussingSession && selectedUpdates[1][0].match(/^discuss/)) {
-                    discussionPost = [discussingSession, parseInt(selectedUpdates[1][0].slice('discuss'.length) )];
-                }
-
-		if (selectedUpdates[1][0] == 'submitTimestamp')
-		    alterSubmission = true;
-
-		if (selectedUpdates[1][0] == TWITTER_HEADER && sheetName == ROSTER_SHEET)
-		    twitterSetting = true;
+	    if (updatingSingleColumn && updatingSingleColumn.match(/_vote$/) && sessionAttributes.shareAnswers) {
+		var qprefix = updatingSingleColumn.split('_')[0];
+		voteSubmission = sessionAttributes.shareAnswers[qprefix] ? (sessionAttributes.shareAnswers[qprefix].share||'') : '';
 	    }
 
 	    if (!adminUser && selectedUpdates && !voteSubmission && !discussionPost && !twitterSetting)
@@ -2046,7 +2049,9 @@ function sheetAction(params) {
                                 // New post; append (after creating session_discuss sheet if needed)
 				updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], true);
 				var postCount = accessDiscussion('post', discussionPost[0], discussionPost[1], '');
-                                modValue = appendPosts(prevValue, colValue, postCount, '');
+				var postTeam = '';
+				var newPost = makePost(postTeam, postCount, colValue);
+                                modValue = appendPosts(prevValue, newPost, postCount, '');
                             }
 			} else if (colValue == null) {
 			    // Do not modify field
@@ -3530,18 +3535,19 @@ function joinPosts(posts) {
 }
 
 function makePost(postTeam, postCount, postText) {
+    postText = postText.trim();
+    while (postText.match(/\n\n\n/)) {
+	postText = postText.replace(/\n\n\n/g, '\n\n');
+    }
     var curDate = new Date();
     return 'Post:'+postTeam+':'+zeroPad(postCount,3)+':'+curDate.toISOString().slice(0,19)+' '+postText;
+}
 
 function appendPosts(prevPosts, newPost, postCount, postTeam) {
     postTeam = postTeam || '';
-    newPost = newPost.trim();
-    while newPost.match(/\n\n\n/) {
-	newPost = newPost.replace(/\n\n\n/g, '\n\n');
-    }
     prevPosts = prevPosts.trim();
     var retValue = prevPosts ? prevPosts + '\n\n\n' : '';
-    retValue += makePost(postTeam, postCount, newPost);
+    retValue += newPost;
     if (!retValue.match(/\n$/)) {
         retValue += '\n';
     }

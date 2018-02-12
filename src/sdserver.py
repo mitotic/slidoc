@@ -2837,7 +2837,7 @@ class ActionHandler(BaseHandler):
             self.previewState['image_dir'] = image_dir
             self.previewState['image_zipbytes'] = io.BytesIO(images_zipdata) if images_zipdata else None
             self.previewState['image_zipfile'] = zipfile.ZipFile(self.previewState['image_zipbytes'], 'a') if images_zipdata else None
-            self.previewState['image_paths'] = dict( (os.path.basename(fpath), fpath) for fpath in self.previewState['image_zipfile'].namelist() if os.path.basename(fpath)) if images_zipdata else {}
+            self.previewState['image_paths'] = sliauth.map_images(self.previewState['image_zipfile'].namelist()) if images_zipdata else {}
 
             Global.previewModifiedCount += 1
             self.previewState['modified'] = Global.previewModifiedCount
@@ -4407,7 +4407,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if fromUser in cls._interactiveErrors:
                 del cls._interactiveErrors[fromUser]
             
-        cls.sendEvent(path, fromUser, fromRole, ['', 2, 'Share.answerNotify.'+slideId, [qnumber, cls._interactiveErrors]])
+        cls.sendEvent(path, fromUser, fromRole, ['', 2, 'Share.answerNotify.%d' % sliauth.get_slide_number(slideId), [qnumber, cls._interactiveErrors]])
         return errMsg
 
     @classmethod
@@ -4508,6 +4508,19 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     conn.eventBuffer.append(sendList)
                     if evType == -1:
                         conn.flushEventBuffer()
+
+    @classmethod
+    def postNotify(cls, sessionName, discussNum, teamIds, userId, discussPost):
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: sdserver.postNotify: ', sessionName, discussNum, teamIds, userId, discussPost[:40]
+        sessionPath = getSessionPath(sessionName, site_prefix=True)
+        for connUserId, connections in cls.get_connections(sessionName).items():
+            for connection in connections:
+                if teamIds and connUserId not in teamIds:
+                    continue
+                if connUserId == userId:
+                    continue
+                connection.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, ['', -1, 'Discuss.postNotify', [discussNum, discussPost]])
 
     def open(self, path=''):
         self.clientVersion = self.get_argument('version','')
@@ -6555,6 +6568,8 @@ def site_server_setup():
         sdproxy.copySiteConfig(Global.site_settings)
 
         update_session_settings(Global.site_settings)
+
+    sdproxy.initProxy(discussPostCallback=WSHandler.postNotify)
 
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:

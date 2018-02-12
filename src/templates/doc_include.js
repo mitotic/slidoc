@@ -1229,7 +1229,7 @@ Slidoc.slideEdit = function(action, slideId) {
 	loadPath(url);
 	return;
     }
-    var slideNum = parseSlideId(slideId)[2];
+    var slideNum = Slidoc.getSlideNumber(slideId);
     var editContainer = document.getElementById(slideId+'-togglebar-edit');
     var editArea = document.getElementById(slideId+'-togglebar-edit-area');
     var statusElem = document.getElementById(slideId+'-togglebar-edit-status');
@@ -2912,7 +2912,7 @@ Slidoc.sendEvent = function (eventType, eventName) // Extra event Args
     
     if (autoInteract() && eventName == 'Timer.timeout' && Sliobj.session.lastSlide) {
 	var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
-	var eventMessage = [getUserId(), Sliobj.params.adminRole, 'Share.finalizeShare.'+lastSlideId, []];
+	var eventMessage = [getUserId(), Sliobj.params.adminRole, 'Share.finalizeShare.'+Sliobj.session.lastSlide, []];
 	if (Sliobj.interactiveSlide)
 	    setTimeout( function(){ enableInteract(false, lastSlideId); }, 500);
 	setTimeout( function(){ Sliobj.eventReceiver(eventMessage); }, 1000);
@@ -2931,28 +2931,13 @@ Sliobj.eventReceiver = function(eventMessage) {
 	var comps = eventName.split('.');
 	var pluginName = comps[0];
 	var pluginMethodName = comps[1];
-	var globalInstance = Sliobj.globalPluginDict[pluginName];
-	if (!Slidoc.PluginManager.optCall(globalInstance, 'allowRemoteAccess', pluginMethodName, eventRole == Sliobj.params.adminRole)) {
-	    Slidoc.log('Sliobj.eventReceiver: Denied access to plugin method: '+eventSource+', '+eventRole+', '+eventName);
-	    return;
-	}
 
-	var slide_id = (comps.length > 2) ? comps[2] : ''; // '' slide_id => session plugin
-	if (!slide_id) {
-	    if (globalInstance)
-		Slidoc.PluginManager.invoke.apply(null, [globalInstance, pluginMethodName].concat(eventArgs));
-	    else
-		Slidoc.log('Sliobj.eventReceiver: No global plugin '+pluginName);
-
-	} else {
-	    if (!Sliobj.slidePluginList[slide_id]) {
-		Slidoc.log('Sliobj.eventReceiver: No plugins loaded for slide '+slide_id);
-		return;
-	    }
-	    for (var j=0; j<Sliobj.slidePluginList[slide_id].length; j++) {
-		if (Sliobj.slidePluginList[slide_id][j].name == pluginName)
-		    Slidoc.PluginManager.invoke.apply(null, [Sliobj.slidePluginList[slide_id][j], pluginMethodName].concat(eventArgs));
-	    }
+	var slideNum = (comps.length > 2) ? parseInt(comps[2]) : 0; // '' slideNum => session plugin
+	var slide_id = slideNum ? Slidoc.makeSlideId(slideNum) : '';
+	try {
+	    Slidoc.PluginMethod.apply(null, [pluginName, slide_id, 'relayCall', eventRole == Sliobj.params.adminRole, eventSource, pluginMethodName].concat(eventArgs));
+	} catch (err) {
+	    Slidoc.log('Sliobj.eventReceiver: Error in relayCall to plugin method: '+eventSource+', '+eventRole+', '+eventName+'.'+slideNum+': '+err);
 	}
 
     } else if (eventName == 'ReloadPage') {
@@ -6346,6 +6331,17 @@ function getSlideFooter(slide_id) {
     return document.getElementById(slide_id+'-footer-toggle');
 }
 
+
+Slidoc.getSlideNumber = function(slideId) {
+    return parseSlideId(slideId)[2];
+}
+
+Slidoc.makeSlideId = function(slideNum) {
+    var firstSlideId = getVisibleSlides()[0].id;
+    var chapter_id = parseSlideId(firstSlideId)[0];
+    return chapter_id + '-' + zeroPad(slideNum, 2);
+}
+
 Slidoc.getCurrentSlideId = function () {
     return Sliobj.currentSlide ? getVisibleSlides()[Sliobj.currentSlide-1].id : ''
 }
@@ -8120,7 +8116,7 @@ Slidoc.slideViewStart = function (pacedStart) {
 	slideId = location.hash.slice(1);
 
     if (slideId) {
-	startSlide = Math.min(slides.length, parseSlideId(slideId)[2]);
+	startSlide = Math.min(slides.length, Slidoc.getSlideNumber(slideId));
 	incrementAll = true;
     } else if (Sliobj.updateView) {
 	startSlide = 1;
@@ -8592,7 +8588,7 @@ function goSlide(slideHash, chained, singleChapter) {
       return false;
 
    } else if (Sliobj.session && Sliobj.session.paced) {
-       var slide_num = parseSlideId(slideId)[2];
+       var slide_num = Slidoc.getSlideNumber(slideId);
        if (!slide_num || slide_num > Sliobj.session.lastSlide) {
 	   Slidoc.log('goSlide: Warning - Paced slide not reached:', slide_num, Sliobj.session.lastSlide);
 	   return false;

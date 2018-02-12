@@ -360,7 +360,7 @@ class Parser(object):
             return filename, content_type, content, from_zip
         except Exception, excp:
             print('ERROR in retrieving link %s: %s' % (link, excp), file=sys.stderr)
-            return None, '', ''
+            return None, '', '', None
 
     def external_link(self, match):
         orig_content = match.group(0)

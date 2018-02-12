@@ -19,7 +19,25 @@ Discuss = {
 		    count += 1;
 	    }
 	    return count;
+	},
+
+	relayCall: function(isAdmin, fromUser, methodName) // Extra args
+	{
+	    var extraArgs = Array.prototype.slice.call(arguments).slice(3);
+	    Slidoc.log('Slidoc.Plugins.Discuss.relayCall:', isAdmin, fromUser, methodName, extraArgs);
+
+	    if (methodName == 'postNotify' && isAdmin)
+		return this[methodName].apply(this, extraArgs);
+
+	    throw('Discuss.js: Denied access to relay method '+methodName);
+	},
+
+	postNotify: function(discussNum, newPost) {
+	    Slidoc.log('Slidoc.Plugins.Discuss.postNotify:', discussNum, newPost);
+	    var slideNum = this.discussParams.discussSlides[discussNum-1];
+	    var slidePlugin = Slidoc.Plugins[this.name][Slidoc.makeSlideId(slideNum)];
 	}
+
     },
 
     init: function() {
