@@ -1987,7 +1987,7 @@ Slidoc.orderedStringify = function (value, space) {
     return JSON.stringify(value, orderedReplacer, space);
 }
 
-function formatNum(format, value) {
+function formatNum(format, value, texExponent) {
     // format = formatted_number OR 01*10**(-1)+/-range
     // * is replaced by the 'times' symbol and ** by superscripting
     // Leading zero forces scaled exponential display (with fixed exponent)
@@ -2014,6 +2014,8 @@ function formatNum(format, value) {
 	    var scaled = (value / Math.pow(10, expValue)).toFixed(nprec)
 	    if (exp.charAt(0).toLowerCase() == 'e')
 		return scaled + exp.charAt(0) + expValue;
+	    else if (texExponent)
+		return scaled + '\\times 10^{' + expValue + '}';
 	    else
 		return scaled + '&times;10<sup>' + expValue + '</sup>';
 	} catch(err) {
@@ -2028,7 +2030,7 @@ function formatNum(format, value) {
 
     if (comps[1].charAt(0) == '+')
 	comps[1] = comps[1].slice(1);
-    return comps[0] + '&times;10<sup>' + comps[1] + '</sup>';
+    return comps[0] + (texExponent ? '\\times 10^{'+comps[1]+'}' : '&times;10<sup>'+comps[1]+'</sup>');
 }
 
 Slidoc.formatNum = formatNum;
@@ -4578,7 +4580,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.resubmitAnswers)
 	toggleClass(true, 'slidoc-resubmit-view');
 
-    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length)
+    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && ('live_discussion' in Sliobj.params.features || (Sliobj.session && Sliobj.session.submitted && (Sliobj.gradeDateStr || Sliobj.params.paceLevel == ADMIN_PACE))))
 	toggleClass(true, 'slidoc-discuss-view');
 
     if (collapsibleAccess())
@@ -4831,6 +4833,8 @@ function initSessionPlugins(session, initGlobalArgs) {
     expandInlineJS(document);
 }
 
+var INLINE_FORMULA_RE = /(\$(\w+)\b|\$+\.[a-zA-Z]\w*(\[\d+\])?\.\w+\([^()]*\))(;;\s*([()eE0-9.*+-]+)\b)?/g;
+
 function expandInlineJS(elem, methodName, argVal) {
     Slidoc.log('expandInlineJS:', methodName);
     if (arguments.length < 3)
@@ -4858,9 +4862,24 @@ function expandInlineJS(elem, methodName, argVal) {
 		    try {jsArg = parseInt(jsArg); } catch (err) { jsArg = null; }
 	    }
 	}
-	var val = Slidoc.PluginMethod(pluginName, slide_id, pluginMethod, jsArg);
-	if (val != null)
-	    jsSpans[j].innerHTML = formatNum(jsFormat, val);
+
+	if (pluginName == 'Params' && pluginMethod == 'formula' && jsArg.match(/^\\\(/)) {
+	    var val = jsArg.replace(INLINE_FORMULA_RE, function(matched, p1, p2, p3, p4, p5, offset, s) {
+		var jsExpr = p2 ? p2 : p1;
+		var jsFormat = p5 || '';
+		var subval = Slidoc.PluginMethod(pluginName, slide_id, pluginMethod, jsExpr);
+		if (jsFormat) {
+		    subval = formatNum(jsFormat, subval, true);
+		}
+		return subval;
+	    });
+	    jsSpans[j].textContent = val;
+	    Slidoc.renderMath(jsSpans[j]);
+	} else {
+	    var val = Slidoc.PluginMethod(pluginName, slide_id, pluginMethod, jsArg);
+	    if (val != null)
+		jsSpans[j].innerHTML = formatNum(jsFormat, val);
+	}
     }
 }
 

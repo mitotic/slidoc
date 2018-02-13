@@ -4735,6 +4735,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 try:
                     retObj = pluginMethod(*([params] + args[2:]))
                 except Exception, err:
+                    if Options['debug']:
+                        import traceback
+                        traceback.print_exc()
                     raise Exception('Error in calling method '+pluginMethodName+' of plugin '+pluginName+': '+err.message)
 
             elif method == 'event':

@@ -2099,10 +2099,12 @@ def sheetAction(params, notrace=False):
             modSheet = getSheet(sheetName)
             if not modSheet and discussionPost and discussingSession != previewingSession():
                 # Create session_discuss sheet, if need be
-                temEntries = lookupValues(discussingSession, ['attributes'], INDEX_SHEET)
+                temEntries = lookupValues(discussingSession, ['dueDate', 'gradeDate', 'adminPaced', 'attributes'], INDEX_SHEET)
+                temAdminPaced = temEntries.get('adminPaced')
                 temAttributes = json.loads(temEntries['attributes'])
-                updateDiscussSheet(discussingSession, temAttributes['discussSlides'], True)
-                modSheet = getSheet(sheetName)
+                if temAttributes['params']['features'].get('live_discussion') or (temAdminPaced and temEntries.get('dueDate')) or (not temAdminPaced and temEntries.get('gradeDate')):
+                    updateDiscussSheet(discussingSession, temAttributes['discussSlides'], True)
+                    modSheet = getSheet(sheetName)
 
             if not modSheet:
                 # Create new sheet

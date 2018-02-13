@@ -68,7 +68,7 @@ class Upload(object):
         filePrefix = self.safeName(prefixName)
 
         if prefixDir:
-            if prefixDir != self.lateDir and not self.QDIR_RE.match(dir):
+            if prefixDir != self.lateDir and not self.QDIR_RE.match(prefixDir):
                 raise Exception('Upload._uploadData: ERROR Disallowed directory prefix '+prefixDir)
 
             filePrefix = os.path.join(prefixDir, filePrefix)

@@ -924,10 +924,13 @@ function sheetAction(params) {
 	    var modSheet = getSheet(sheetName);
             if (!modSheet && discussionPost) {
                 // Create session_discuss sheet, if need be
-                var temEntries = lookupValues(discussingSession, ['attributes'], INDEX_SHEET);
+                var temEntries = lookupValues(discussingSession, ['dueDate', 'gradeDate', 'adminPaced', 'attributes'], INDEX_SHEET);
+                var temAdminPaced = temEntries['adminPaced'];
                 var temAttributes = JSON.parse(temEntries['attributes']);
-                updateDiscussSheet(discussingSession, temAttributes['discussSlides'], true);
-                modSheet = getSheet(sheetName);
+                if (temAttributes['params']['features']['live_discussion'] || (temAdminPaced && temEntries['dueDate']) || (!temAdminPaced && temEntries['gradeDate'])) {
+                    updateDiscussSheet(discussingSession, temAttributes['discussSlides'], true);
+                    modSheet = getSheet(sheetName);
+		}
 	    }
 
 	    if (!modSheet) {

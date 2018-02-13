@@ -45,10 +45,11 @@ Upload = {
     display: function (response, pluginResp) {
 	Slidoc.log('Slidoc.Plugins.Upload.display:', this, response, pluginResp);
 	var fileInfo = this.qattributes && this.persist[this.qattributes.qnumber];
-	if (fileInfo || pluginResp) {
+	var dispURL = this.loadPath(fileInfo, pluginResp);
+	if (dispURL) {
 	    // origName is untrusted content; always display as plain text, not HTML
 	    this.confirmMsgElem.textContent = 'Successfully uploaded '+(fileInfo ? (fileInfo.upload.origName||fileInfo.origName) : (pluginResp.origName||''))+' on '+(new Date(fileInfo ? fileInfo.uploadTime : pluginResp.time)); // fileInfo.origName for backward compatibility
-	    this.confirmLoadElem.href = this.loadPath(fileInfo, pluginResp);
+	    this.confirmLoadElem.href = dispURL;
 	} else {
 	    this.confirmMsgElem.textContent = 'Nothing uploaded';
 	    this.confirmLoadElem.href = "javascript:alert('Nothing uploaded')";
@@ -56,8 +57,8 @@ Upload = {
 	this.lateElem.innerHTML = '';
 	this.remoteCall('lateUploads', this.lateUploadsCallback.bind(this), this.userId);
 	if (this.viewer.displayURL) {
-	    if (fileInfo || pluginResp)
-		this.viewer.displayURL(this.loadPath(fileInfo, pluginResp), pluginResp ? pluginResp.fileType : (fileInfo.upload.fileType|| fileInfo.fileType)); // fileInfo.fileType for backward compatibility
+	    if (dispURL)
+		this.viewer.displayURL(dispURL, pluginResp ? pluginResp.fileType : (fileInfo.upload.fileType|| fileInfo.fileType)); // fileInfo.fileType for backward compatibility
 	    else
 		this.viewer.displayURL('', '');
 	}
@@ -99,9 +100,9 @@ Upload = {
 	    return '';
 
 	if (pluginResp) {
-	    var url = pluginResp.url;
-	    var filename = pluginResp.filename;
-	    var fileType = pluginResp.fileType;
+	    var url = pluginResp.url || '';
+	    var filename = pluginResp.filename || '';
+	    var fileType = pluginResp.fileType || '';
 	} else {
 	    if (fileInfo.loadURL)         // Backwards compatibility
 		return fileInfo.loadURL;
@@ -110,6 +111,9 @@ Upload = {
 	    filename = fileInfo.upload.name;
 	    fileType = fileInfo.upload.fileType;
 	}
+
+	if (!url)
+	    return '';
 
 	// Sanitize URL as it is untrusted content
 	url = url.replace(/\.\./g, '');

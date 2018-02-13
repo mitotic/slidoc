@@ -155,8 +155,10 @@ def font_css(fontsize):
 
     return '<style>\n'+tem_css+'</style>\n' if tem_css else ''
 
-def exponentiate(format, times=False):
-    if times and '*10**' in format:
+def exponentiate(format, times=False, tex_format=False):
+    if tex_format:
+        return format.replace('*10**',r'\times 10^').replace('(','{').replace(')','}')
+    elif times and '*10**' in format:
         return format.replace('*10**','&times;10<sup>').replace('(','').replace(')','')+'</sup>'
     else:
         return format.replace('*10**','e').replace('(','').replace(')','')
@@ -527,13 +529,14 @@ class MathBlockLexer(mistune.BlockLexer):
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
-    slidoc_choice = re.compile(r"^ {0,3}([a-qA-Q])(\*)?\.\. +")
-    block_math =    re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
-    inline_math =   re.compile(r"^\\\((.+?)\\\)")
-    tex_inline_math=re.compile(r"^\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
-    inline_formula =re.compile(r"^`=([^`;\n]+)(;;\s*([()eE0-9.*+-]*))?\s*`")
-    text =          re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
-    internal_ref =  re.compile(
+    slidoc_choice =      re.compile(r"^ {0,3}([a-qA-Q])(\*)?\.\. +")
+    block_math =         re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
+    inline_math =        re.compile(r"^\\\((.+?)\\\)")
+    tex_inline_math=     re.compile(r"^\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
+    inline_formula =     re.compile(r"^`=([^\\`;\n][^`;\n]*)(;;\s*([()eE0-9.*+-]*))?\s*`")
+    inline_tex_formula = re.compile(r"^`=(\\\([^`\n]+\\\))\s*`")
+    text =               re.compile(r'^[\s\S]+?(?=[\\<!\[_*`~$]|https?://| {2,}\n|$)')
+    internal_ref =       re.compile(
         r'^\[('
         r'(?:\[[^^\]]*\]|[^\[\]]|\](?=[^\[]*\]))*'
         r')\]\s*\{\s*#([^^\}]*)\}'
@@ -546,7 +549,7 @@ class MathInlineLexer(mistune.InlineLexer):
         if rules is None:
             rules = MathInlineGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['slidoc_choice', 'block_math', 'inline_math', 'inline_formula', 'internal_ref']
+        slidoc_rules = ['slidoc_choice', 'block_math', 'inline_math', 'inline_formula', 'inline_tex_formula', 'internal_ref']
         if 'config' in renderer.options and 'tex_math' in renderer.options['config'].features:
             slidoc_rules += ['tex_inline_math']
         self.default_rules = slidoc_rules + mistune.InlineLexer.default_rules
@@ -563,6 +566,9 @@ class MathInlineLexer(mistune.InlineLexer):
 
     def output_inline_formula(self, m):
         return self.renderer.inline_formula(m.group(1), m.group(3))
+
+    def output_inline_tex_formula(self, m):
+        return self.renderer.inline_formula(m.group(1),'')
 
     def output_block_math(self, m):
         return self.renderer.block_math(m.group(1))
@@ -993,10 +999,23 @@ class SlidocRenderer(MathRenderer):
                     message("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number))
 
     def inline_formula(self, text, alt_text):
+        elem_tag = 'code'
+        if text.startswith('='):
+            text = text[1:]
+            elem_tag = 'span'
         text = text.strip()
-        alt_text = alt_text.strip() if alt_text is not None else alt_text
-        js_format = alt_text or ''
+        tex_format = text.startswith(r'\(')
+        if tex_format:
+            elem_tag = 'span'
+            if alt_text:
+                text += ';;' + alt_text
+            alt_text = text
+            js_format = ''
+        else:
+            alt_text = alt_text.strip() if alt_text is not None else alt_text
+            js_format = alt_text or ''
         slide_id = self.get_slide_id()
+
         plugin_refs = []
         imatch = INLINE_METHOD_RE.match(text)
         if imatch and imatch.group(1) not in FORMULA_NAMESPACE:
@@ -1019,7 +1038,7 @@ class SlidocRenderer(MathRenderer):
         js_func = plugin_def_name + '.' + action
         alt_html = mistune.escape('='+js_func+'()' if alt_text is None else alt_text)
         if 'inline_formula' in self.options['config'].strip:
-            return '<code>%s</code>' % exponentiate(alt_html, times=True)
+            return '<%s>%s</%s>' % (elem_tag, exponentiate(alt_html, times=True, tex_format=tex_format), elem_tag)
 
         if plugin_def_name == 'Params' and action == 'formula':
             self.slide_formulas.append(js_arg)
@@ -1030,7 +1049,7 @@ class SlidocRenderer(MathRenderer):
         for name, instance_num in plugin_refs:
              self.add_slide_plugin_ref(name, instance_num)
 
-        return '<code class="slidoc-inline-js" data-slidoc-js-function="%s" data-slidoc-js-argument="%s" data-slidoc-js-format="%s" data-slide-id="%s">%s</code>' % (js_func, mistune.escape(js_arg or ''), mistune.escape(js_format or ''), slide_id or '', alt_html)
+        return '<%s class="slidoc-inline-js" data-slidoc-js-function="%s" data-slidoc-js-argument="%s" data-slidoc-js-format="%s" data-slide-id="%s">%s</%s>' % (elem_tag, js_func, mistune.escape(js_arg or ''), mistune.escape(js_format or ''), slide_id or '', alt_html, elem_tag)
 
     def add_slide_plugin_ref(self, name, instance_num):
         if name not in self.slide_plugin_refs:
@@ -4846,6 +4865,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   immediate_math: Immediate rendering of math formulas (normally math rendering is delayed to load plugins)
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
 #   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
+#   live_discussion: Allow discussion before submission for admin-paced sessions and before grading for other paced sessions
 #   math_input: Render math in user input (not needed if session text already contains math)
 #   no_markdown: Do not render markdown for remarks, comments, explanations etc.
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
@@ -4865,7 +4885,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
