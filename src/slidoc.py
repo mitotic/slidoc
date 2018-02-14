@@ -1006,9 +1006,7 @@ class SlidocRenderer(MathRenderer):
         text = text.strip()
         tex_format = text.startswith(r'\(')
         if tex_format:
-            elem_tag = 'span'
-            if alt_text:
-                text += ';;' + alt_text
+            elem_tag = 'code'  # To prevent KaTeX auto-render
             alt_text = text
             js_format = ''
         else:
@@ -2812,7 +2810,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
             post_header_html = '&nbsp;&nbsp;'
 
         post_header_html += click_span('&#8722;All Notes',
-                                        "Slidoc.hide(this,'slidoc-plain-notes');",id=renderer.first_id+'-hidenotes',
+                                        "Slidoc.hideNotes(this);",id=renderer.first_id+'-hidenotes',
                                          classes=notes_classes)
 
     if 'slidoc-answer-type' in content_html and 'slidoc-concepts-container' in content_html:

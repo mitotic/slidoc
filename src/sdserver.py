@@ -1492,6 +1492,7 @@ class ActionHandler(BaseHandler):
         elif action == '_dash':
             upload_key = sliauth.gen_hmac_token(Options['auth_key'], 'upload:')
             active_users = sorted( list(set(x[1] for x in WSHandler.get_connections())) )
+            idle_time = math.floor(time.time() - max([max(ws.msgTime for ws in x[2]) for x in WSHandler.get_connections() if x[2]] or [0])) if active_users else ''
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'],
                         site_title=Options['site_title'], site_access=sdproxy.Settings['site_access'],
                         version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession()[0],
@@ -1500,7 +1501,7 @@ class ActionHandler(BaseHandler):
                         lock_date=sliauth.print_date(sdproxy.Settings['lock_date'],not_now=True),
                         end_date=sliauth.print_date(Options['end_date'],not_now=True),
                         site_menu=SiteProps.get_site_menu(), upload_key=upload_key,
-                        gradebook_release=sdproxy.Settings['gradebook_release'], active_users=active_users)
+                        gradebook_release=sdproxy.Settings['gradebook_release'], active_users=active_users, idle_time=idle_time)
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
@@ -6014,13 +6015,13 @@ def backupSite(dirname='', broadcast=False):
             with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'r') as f:
                 prev_bak_date = sliauth.parse_date(f.read().split()[0])
                 if prev_bak_date:
-                    # Save last daily backup
+                    # Save last daily backup (excluding *_images dir)
                     day_path = os.path.join(BaseHandler.site_backup_dir, 'day'+prev_bak_date.strftime('%w'))
-                    exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', day_path])
+                    exec_cmd('rsync', ['-rpt', '--delete', '--exclude=*_images/'], [backup_path+'/', day_path])
                     backupLink(day_path)
 
                     if datetime.datetime.now().strftime('%U') != prev_bak_date.strftime('%U'):
-                        # New week; save last daily backup for previous week
+                        # New week; save last daily backup for previous week (including images)
                         week_path = os.path.join(BaseHandler.site_backup_dir, 'week'+prev_bak_date.strftime('%U'))
                         exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', week_path])
                         backupLink(week_path)

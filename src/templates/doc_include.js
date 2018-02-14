@@ -4833,7 +4833,7 @@ function initSessionPlugins(session, initGlobalArgs) {
     expandInlineJS(document);
 }
 
-var INLINE_FORMULA_RE = /(\$(\w+)\b|\$+\.[a-zA-Z]\w*(\[\d+\])?\.\w+\([^()]*\))(;;\s*([()eE0-9.*+-]+)\b)?/g;
+var INLINE_FORMULA_RE = /(\$(\w+)\b|\$+\.[a-zA-Z]\w*(\[\d+\])?\.\w+\([^()]*\))(\s*\{\s*([()eE0-9.*+-]+)\s*\})?/g;
 
 function expandInlineJS(elem, methodName, argVal) {
     Slidoc.log('expandInlineJS:', methodName);
@@ -6365,6 +6365,13 @@ Slidoc.getCurrentSlideId = function () {
     return Sliobj.currentSlide ? getVisibleSlides()[Sliobj.currentSlide-1].id : ''
 }
 
+Slidoc.hideNotes = function(elem) {
+    if (Sliobj.reloadCheck && location.hostname == 'localhost')
+	Slidoc.hide(elem, 'slidoc-notes');
+    else
+	Slidoc.hide(elem, 'slidoc-plain-notes');
+}
+
 Slidoc.hide = function (elem, className, action) {
     // Action = '+' show or '-'|'\u2212' (&#8722;) hide or omitted for toggling
     if (!elem) return false;
@@ -7346,7 +7353,7 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAns
 	
         if (effectiveScore > 0) {
             questionsCorrect += 1 + qSkipCount;
-            weightedCorrect += effectiveScore*qWeight + qSkipWeight;
+            weightedCorrect += Math.max(0,Math.min(1,effectiveScore))*qWeight + qSkipWeight;
         }
     }
 
