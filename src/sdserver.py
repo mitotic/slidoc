@@ -2072,6 +2072,7 @@ class ActionHandler(BaseHandler):
         if not filepath and not user_browse and site_admin:
             file_list = [ ['source', 'source', False, '', ''],
                           ['web', 'web', False, '', ''],
+                          ['files', 'files', False, '', ''],
                           ['data', 'data', False, '', ''],
                           ['backup', 'backup', False, '', ''] ]
             up_path = ''

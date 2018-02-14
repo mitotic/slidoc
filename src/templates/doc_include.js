@@ -2161,7 +2161,7 @@ Slidoc.printerMenu = function () {
 }
 
 Slidoc.printSession = function (slideView) {
-    if ('slides_only' in Sliobj.params.features)
+    if ('slides_only' in Sliobj.params.features && !(location.hostname == 'localhost' && getUserId() == Sliobj.params.testUserId))
 	return false;
 
     if (Sliobj.currentSlide) {
@@ -2184,6 +2184,7 @@ Slidoc.printSession = function (slideView) {
     if (css) {
 	style = document.createElement('style');
 
+	style.id = 'slidoc-print-style';
 	style.type = 'text/css';
 	style.media = 'print';
 
@@ -4662,7 +4663,7 @@ function slidocSetupAux(session, feedback) {
 	return false;
 
     // Not paced
-    Slidoc.classDisplay('slidoc-question-notes', 'none');
+    Slidoc.classDisplay('slidoc-questions-notes-toggle', 'none');
     Slidoc.chainUpdate(location.search);
     if (toc_elem) {
 	// Table of contents included in file
@@ -7989,7 +7990,7 @@ Slidoc.startPaced = function () {
     var firstSlideId = getVisibleSlides()[0].id;
 
     Slidoc.hide(document.getElementById(firstSlideId+'-hidenotes'), 'slidoc-plain-notes', '-'); // Hide notes for slide view
-    Slidoc.classDisplay('slidoc-question-notes', 'none'); // Hide notes toggle for pacing
+    Slidoc.classDisplay('slidoc-questions-notes-toggle', 'none'); // Hide notes toggle for pacing
     preAnswer();
 
     var curDate = new Date();

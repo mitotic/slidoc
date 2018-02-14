@@ -187,7 +187,7 @@ body:not(.slidoc-slide-view) article.slidoc-page-break-always section:not(.slido
   page-break-before: always;
 }
 
-body:not(.slidoc-slide-view) article.slidoc-page-break-avoid section:not(.slidoc-single-column) {
+body:not(.slidoc-slide-view) article.slidoc-page-break-avoid section:not(.slidoc-first-slide):not(.slidoc-single-column) {
   page-break-inside: avoid;
 }
 

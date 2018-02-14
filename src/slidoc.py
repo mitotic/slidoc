@@ -2577,19 +2577,23 @@ class SlidocRenderer(MathRenderer):
             return ''
         prefix = self.end_hint()
 
+        show_notes = self.options['config'].preview_port and 'notes' in self.options['config'].show
+
         id_str = self.get_slide_id() + '-notes'
-        disp_block = 'none' if self.qtypes[-1] else 'block'
+        disp_block = 'block' if show_notes or not self.qtypes[-1] else 'none'
         classes = '' if self.qtypes[-1] else 'slidoc-plain-notes'
         start_str, suffix, end_str = self.start_block('notes', id_str, display=disp_block, classes=classes)
         prefix += start_str
         self.notes_end = end_str
         classes = 'slidoc-clickable'
-        if self.qtypes[-1]:
-            classes += ' slidoc-question-notes'
+        if self.qtypes[-1] and not show_notes:
+            classes += ' slidoc-questions-notes-toggle'
         return prefix + ('''<br class="slidoc-full-block"><span id="%s" class="%s" onclick="Slidoc.classDisplay('%s')" style="display: inline;">Notes:</span>\n''' % (id_str, classes, id_str)) + suffix
 
 
     def slidoc_extra(self, name, text):
+        if self.options['config'].preview_port and 'extra' in self.options['config'].show:
+            return '\n<b>Extra</b>:<br>\n'
         prefix = self.end_hint() + self.end_notes()
         id_str = self.get_slide_id() + '-extra'
         disp_block = 'block' if 'keep_extras' in self.options['config'].features else 'none'
@@ -4946,6 +4950,7 @@ alt_parser.add_argument('--proxy_url', metavar='URL', help='Proxy spreadsheet_ur
 alt_parser.add_argument('--site_name', metavar='SITE', help='Site name (default: "")')
 alt_parser.add_argument('--server_url', metavar='URL', help='URL prefix to link local HTML files (default: "")')
 alt_parser.add_argument('--session_type', metavar='TYPE', help='Module session type, e.g., assignment, exam, ... (default: "")')
+alt_parser.add_argument('--show', metavar='OPT1,OPT2,...', default='', help='Show extra,notes (for local preview ony)')
 alt_parser.add_argument('--slides', metavar='THEME,CODE_THEME,FSIZE,NOTES_PLUGIN', help='Create slides with reveal.js theme(s) (e.g., ",zenburn,190%%")')
 alt_parser.add_argument('--split_name', default='', metavar='CHAR', help='Character to split filenames with and retain last non-extension component, e.g., --split_name=-')
 alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCRIPT1[/USER],SCRIPT2/USER2,...)')

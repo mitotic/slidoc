@@ -11,7 +11,7 @@ import sys
 ADMINUSER_ID = 'admin'
 
 class Upload(object):
-    allowedExtn = set(['.dat', '.doc', '.docx', '.gif', '.json', '.jpeg', 'jpg', '.pdf', '.ppt', '.pptx', '.png', '.txt', '.xls', '.xlsx', '.zip'])
+    allowedExtn = set(['.dat', '.doc', '.docx', '.gif', '.json', '.jpeg', '.jpg', '.pdf', '.ppt', '.pptx', '.png', '.txt', '.xls', '.xlsx', '.zip'])
     lateDir = 'Late'
     QDIR_RE = re.compile(r'^q\d+$')
     @classmethod
