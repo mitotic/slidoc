@@ -77,7 +77,7 @@ Upload = {
 	    loadURL = this.loadPrefix(loadURL, fkey, furl.match(/.ipynb$/));
 	    html.push('<li><a href="'+loadURL+'" target="_blank">'+flabel+'</a></li>\n');
 	}
-	this.lateElem.innerHTML = 'Late uploads:<ul>\n'+html.join('\n')+'</ul>\n';
+	this.lateElem.innerHTML = '<b>Late uploads:</b><ul>\n'+html.join('\n')+'</ul>\n';
     },
 
     loadPrefix: function (loadURL, fileKey, notebook) {

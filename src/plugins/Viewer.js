@@ -30,7 +30,7 @@ Viewer = {
 
 /* HEAD:
    BODY:
-   <img id="%(pluginId)s-viewerimg" src="" style="display: none;">
+   <img id="%(pluginId)s-viewerimg" src="" class="slidoc-img-center" style="width: 80%; display: none;">
    <iframe id="%(pluginId)s-vieweriframe" src=""
    class="slidoc-plugin-Viewer-iframe %(pluginSlideId)s-vieweriframe"
    allowfullscreen frameborder="0" style="display: none;">

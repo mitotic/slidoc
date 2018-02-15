@@ -203,9 +203,11 @@ Global.dryDeletedSheets = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
 
+Global.gradebookActive = False
 Global.discussPostCallback = None
 
-def initProxy(discussPostCallback=None):
+def initProxy(gradebookActive=False, discussPostCallback=None):
+    Global.gradebookActive = gradebookActive
     Global.discussPostCallback = discussPostCallback
 
 def copySiteConfig(siteConfig):
@@ -1974,6 +1976,7 @@ def sheetAction(params, notrace=False):
 
         sessionEntries = None
         sessionAttributes = None
+        sessionWeight = None
         questions = None
         paceLevel = None
         adminPaced = None
@@ -2038,12 +2041,12 @@ def sheetAction(params, notrace=False):
             axsSheet = getSheet(DISCUSS_SHEET)
             if axsSheet:
                 axsCol = indexColumns(axsSheet).get('_'+sheetName, 0)
-            if axsCol:
-                axsRange = axsSheet.getRange(2, axsCol, axsSheet.getLastRow(), 1)
-                axsVals = axsRange.getValues()
-                for j in range(len(axsVals)):
-                    axsVals[j][0] = ''
-                axsRange.setValues(axsVals)
+                if axsCol:
+                    axsRange = axsSheet.getRange(2, axsCol, axsSheet.getLastRow(), 1)
+                    axsVals = axsRange.getValues()
+                    for j in range(len(axsVals)):
+                        axsVals[j][0] = ''
+                    axsRange.setValues(axsVals)
                     
         elif params.get('copysheet'):
             # Copy sheet (but not session entry)
@@ -2126,8 +2129,9 @@ def sheetAction(params, notrace=False):
                 raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
             if indexedSession:
-                sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
+                sessionEntries = lookupValues(sheetName, ['sessionWeight', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
                 sessionAttributes = json.loads(sessionEntries['attributes'])
+                sessionWeight = parseNumber(sessionEntries.get('sessionWeight'))
                 questions = json.loads(sessionEntries['questions'])
                 paceLevel = sessionEntries.get('paceLevel')
                 adminPaced = sessionEntries.get('adminPaced')
@@ -2981,6 +2985,9 @@ def sheetAction(params, notrace=False):
                             # Use test user submission time as due date for admin-paced sessions
                             submitTimestamp = rowValues[submitTimestampCol-1]
                             setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
+
+                            if (sessionWeight or sessionWeight is None) and Global.gradebookActive:
+                                modSheet.requestActions('gradebook')
 
                             idRowIndex = indexRows(modSheet, columnIndex['id'])
                             idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)

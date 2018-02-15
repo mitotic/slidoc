@@ -132,6 +132,8 @@ Sliobj.scores = null;
 Sliobj.liveResponses = {};
 Sliobj.choiceBlockHTML = {};
 
+Sliobj.swiping = false;
+
 Sliobj.origSlideText = null;
 
 Sliobj.testOverride = null;
@@ -1170,7 +1172,7 @@ Slidoc.assessmentMenu = function () {
 	    else
 		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	}
-	html += '<li><a class="slidoc-clickable" href="'+ Sliobj.sitePrefix + '/_submissions/' + Sliobj.sessionName + '">View submissions</a></li>\n';
+	html += '<li><a class="slidoc-clickable" href="'+ Sliobj.sitePrefix + '/_responders/' + Sliobj.sessionName + '">View responders</a></li>\n';
 	var disabled = adminAccess && !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
 	html += '<li>' + clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '</li>\n';
     }
@@ -2608,9 +2610,10 @@ Slidoc.viewHelp = function () {
 	docsPrefix = Sliobj.sessionName + '/' + docsPrefix;
 
     html += '<table class="slidoc-slide-help-table">';
+    html += formatHelp('Help home', docsPrefix+'/index.html');
+    html += '<tr><td>&nbsp;</td></tr>';
     html += formatHelp('Navigating documents', docsPrefix+'/NavigationHelp.html');
     if (gradingAccess()) {
-	html += '<tr><td>&nbsp;</td></tr>';
 	html += formatHelp('Adaptive rubrics', docsPrefix+'/AdaptiveRubrics.html');
 	html += formatHelp('Randomized exams', docsPrefix+'/RandomizedExams.html');
     }
@@ -2780,6 +2783,9 @@ document.onkeydown = function(evt) {
 
 Slidoc.handleKey = function (keyName, swipe) {
     Slidoc.log('Slidoc.handleKey:', keyName, swipe);
+    if (swipe)
+	Sliobj.swiping = true;
+
     if (keyName == 'right' && Slidoc.advanceStep())
 	return false;
 
@@ -8491,7 +8497,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 
     var inputElem = document.getElementById(slides[Sliobj.currentSlide-1].id+'-answer-input');
     window.scrollTo(0,1);
-    if (inputElem && !Sliobj.testOverride && !Sliobj.previewState) setTimeout(function(){inputElem.focus();}, 50);
+    if (inputElem && !Sliobj.swiping && !Sliobj.testOverride && !Sliobj.previewState) setTimeout(function(){inputElem.focus();}, 50);
     return false;
 }
 

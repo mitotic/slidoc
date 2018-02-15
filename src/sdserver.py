@@ -6574,7 +6574,8 @@ def site_server_setup():
 
         update_session_settings(Global.site_settings)
 
-    sdproxy.initProxy(discussPostCallback=WSHandler.postNotify)
+    sdproxy.initProxy(gradebookActive=('gradebook' in SiteProps.get_site_menu()),
+                      discussPostCallback=WSHandler.postNotify)
 
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:

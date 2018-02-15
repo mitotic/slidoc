@@ -746,6 +746,7 @@ function sheetAction(params) {
 
 	var sessionEntries = null;
 	var sessionAttributes = null;
+	var sessionWeight = null;
 	var questions = null;
 	var paceLevel = null;
 	var adminPaced = null;
@@ -956,8 +957,9 @@ function sheetAction(params) {
 		throw("Error::No columns in sheet '"+sheetName+"'");
 
 	    if (indexedSession) {
-		sessionEntries = lookupValues(sheetName, ['dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
+		sessionEntries = lookupValues(sheetName, ['sessionWeight', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET);
 		sessionAttributes = JSON.parse(sessionEntries.attributes);
+		sessionWeight = isNumber(sessionEntries.sessionWeight) ? parseNumber(sessionEntries.sessionWeight) : null;
 		questions = JSON.parse(sessionEntries.questions);
 		paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
 		adminPaced = sessionEntries.adminPaced;
@@ -1926,6 +1928,9 @@ function sheetAction(params) {
                             // Use test user submission time as due date for admin-paced sessions
 			    var submitTimetamp = rowValues[submitTimestampCol-1];
                             setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
+
+			    if (sessionWeight || sessionWeight === null)
+                                completeActions.push('gradebook');
 
                             var idRowIndex = indexRows(modSheet, columnIndex['id']);
                             var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
