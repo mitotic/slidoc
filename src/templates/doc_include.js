@@ -4131,9 +4131,11 @@ Slidoc.manageSession = function() {
 	    html += clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '<br>\n';
 
 	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_correct'"+');">correct</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_stats'"+');">stats</span><br>';
-	    html += hr;
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');">Post scores from this session to gradebook</span><br>';
-	    html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook', 'all'"+');">Post scores from all sessions to gradebook</span>';
+	    if (Slidoc.siteCookie.gradebook) {
+		html += hr;
+		html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');">Post scores from this session to gradebook</span><br>';
+		html += '<span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook', 'all'"+');">Post scores from all sessions to gradebook</span>';
+	    }
 	}
 	html += '</blockquote>\n';
     }
@@ -4163,6 +4165,8 @@ function sheetActionsCallback(actions, sheetName, result, retStatus) {
 	return;
     } else if (actions == 'gradebook') {
 	var html = 'Gradebook updated for session '+sheetName+'.<p></p><a href="'+Sliobj.sitePrefix+'/_sheet/grades_slidoc">Download</a> and and print a copy for the records';
+	if (Sliobj.closePopup)
+	    Sliobj.closePopup();
 	Slidoc.showPopup(html);
     } else {
 	alert('Completed '+msg);
@@ -8105,6 +8109,8 @@ function showCompletionStatus() {
 		// Re-display popup
 		Sliobj.closePopup();
 		msg += 'Completed session <b>submitted successfully</b> to Google Docs at '+parseDate(Sliobj.session.submitted)+'<br>';
+		if (Slidoc.siteCookie.gradebook && isController())
+		    msg += '<p></p><span class="slidoc-clickable" onclick="Slidoc.sessionActions('+"'gradebook'"+');"><b>Post scores from this session to gradebook</b></span><br>';
 		if (!Sliobj.session.paced)
 		    msg += 'You may now exit slide view and access this document normally.<br>';
 	    } else {

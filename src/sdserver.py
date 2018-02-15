@@ -2738,7 +2738,7 @@ class ActionHandler(BaseHandler):
             # Extract Markdown file from zip archive
             topNames = [name for name in zfile.namelist() if name.endswith('.md') or name.endswith('.pptx')]
             if len(topNames) != 1:
-                return 'Error: Expecting single .md/.pptx file in zip archive'
+                return 'Error: Expecting single .md/.pptx file in zip archive. ' + ', '.join(topNames)
             fname1 = topNames[0]
             fbody1 = zfile.read(fname1)
 
@@ -4946,7 +4946,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
         elif self.is_web_view():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to locked sessions only')
 
-        if Options['debug']:
+        if Options['debug'] and '_images/' not in self.request.path:
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId, repr(siteRole), Options['site_number'], sessionName, self.request.path, self.request.query, Options['dry_run'], Options['dry_run_file_modify'], Options['lock_proxy_url']
 
         if ActionHandler.previewState.get('name'):
@@ -6334,7 +6334,8 @@ def start_multiproxy():
             else:
                 # Root server
                 retval = SiteProps.relay_map(0)
-            print >> sys.stderr, 'ABC: get_relay_addr_uri:', sliauth.iso_date(nosubsec=True), self.ip_addr, self.request_uri, retval
+            if Options['debug'] and '_images/' not in self.request_uri:
+                print >> sys.stderr, 'ABC: get_relay_addr_uri:', sliauth.iso_date(nosubsec=True), self.ip_addr, self.request_uri, retval
             return retval
 
     Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,

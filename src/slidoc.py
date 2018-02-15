@@ -3149,7 +3149,7 @@ def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber
     md_extract = ''.join(md_slides[start_slide-1:end_slide])
     extract_mods_args = md2md.Args_obj.create_args(None,
                                                   image_dir=session_name+'_images',
-                                                  images=set(['_slidoc', 'zip', 'md']),
+                                                  images=set(['_slidoc', 'zip']),
                                                   renumber=renumber)
     extract_parser = md2md.Parser(extract_mods_args)
     extract_text, extract_zipped, tem_image_number = extract_parser.parse(md_extract, src_path)
@@ -4914,7 +4914,7 @@ Conf_parser.add_argument('--release_date', metavar='DATE_TIME', help="Release mo
 Conf_parser.add_argument('--remote_logging', type=int, default=None, help='Remote logging level (0/1/2)')
 Conf_parser.add_argument('--retakes', type=int, help='Max. number of retakes allowed (default: 0)')
 Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
-Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) parameters, e.g., *2,^0.5')
+Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) operations, comma-separated, with (normalized) power-op first e.g.: ^0.5,+10,*2,/4,<100')
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 Conf_parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
 Conf_parser.add_argument('--show_score', help='Show correct answers after: never, after_answering, after_submitting, after_grading')

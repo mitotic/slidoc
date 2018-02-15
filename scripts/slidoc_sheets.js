@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21u';
+var VERSION = '0.97.21v';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -867,6 +867,15 @@ function sheetAction(params) {
                 if (getSheet(sheetName+'_'+RELATED_SHEETS[j])) {
                     deleteSheet(sheetName+'_'+RELATED_SHEETS[j]);
                 }
+	    }
+
+	    // Delete session entry in gradebook, if present
+	    var gradeSheet = getSheet(GRADES_SHEET);
+	    if (gradeSheet) {
+		var gradeCol = indexColumns(gradeSheet)['_'+sheetName];
+		if (gradeCol) {
+		    gradeSheet.deleteColumns(gradeCol, 1);
+		}
 	    }
 
 	    // Blank out any discussion access column for session
@@ -1928,9 +1937,6 @@ function sheetAction(params) {
                             // Use test user submission time as due date for admin-paced sessions
 			    var submitTimetamp = rowValues[submitTimestampCol-1];
                             setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
-
-			    if (sessionWeight || sessionWeight === null)
-                                completeActions.push('gradebook');
 
                             var idRowIndex = indexRows(modSheet, columnIndex['id']);
                             var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
@@ -4928,6 +4934,10 @@ var SESSION_COL_RE =       /\b([a-z][-\w]*[a-z])(\d\d)$/i;
 function updateGrades(sessionNames, create, interactive, totalOnly) {
     // Update scores sheet for sessions in list
     // Returns list of updated sessions
+
+    ///startCallTracking(2, {}, 'GRADES_SHEET');
+    ///trackCall(1, 'updateGrades-start: '+sessionNames);
+
     var errorMessages = [];
     var updatedSessions = [];
     var curDate = new Date();
@@ -5096,7 +5106,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    var sessionColIndex = indexColumns(sessionSheet);
 	    var sessionColHeaders = sessionSheet.getSheetValues(1, 1, 1, sessionSheet.getLastColumn())[0];
 
-	    var sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'paceLevel', 'sessionWeight', 'sessionRescale', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
+	    var sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'paceLevel', 'sessionWeight', 'sessionRescale', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'attributes', 'questions'], INDEX_SHEET);
             var sessionAttributes = JSON.parse(sessionEntries.attributes);
 	    var questions = JSON.parse(sessionEntries.questions);
 	    var dueDate = sessionEntries.dueDate || null;
@@ -5104,6 +5114,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    var paceLevel = parseNumber(sessionEntries.paceLevel) || 0;
 	    var sessionWeight = isNumber(sessionEntries.sessionWeight) ? parseNumber(sessionEntries.sessionWeight) : null;
 	    var sessionRescale = sessionEntries.sessionRescale || '';
+	    var adminPaced = sessionEntries.adminPaced;
 	    var scoreWeight = parseNumber(sessionEntries.scoreWeight) || 0;
 	    var gradeWeight = parseNumber(sessionEntries.gradeWeight) || 0;
 	    var otherWeight = parseNumber(sessionEntries.otherWeight) || 0;
@@ -5111,6 +5122,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    if (sessionAttributes.params.participationCredit && sessionAttributes.params.participationCredit > 1)
 		maxWeight = 1;
 
+	    ///trackCall(1, 'updateGrades-session: '+sessionName+', p='+paceLevel+', s='+sessionWeight+', g='+gradeWeight+', d='+dueDate+', a='+adminPaced );
 	    if (!paceLevel)
 		continue;
 
@@ -5136,7 +5148,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 		continue;
 	    if (gradeWeight && !gradeDate)   // Wait for session to be graded
 		continue;
-	    if (!gradeWeight && (!dueDate || dueDate.getTime() > curDate.getTime())) // Wait for ungraded session become due
+	    if (!gradeWeight && (!dueDate || (!adminPaced && dueDate.getTime() > curDate.getTime()) )) // Wait for ungraded non-admin-paced session to become due
 		continue;
 
 	    updatedSessions.push(sessionName);

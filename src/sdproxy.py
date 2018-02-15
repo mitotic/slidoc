@@ -1219,9 +1219,13 @@ class Sheet(object):
         # Update sheet status after remote update has completed
         actions = updateParams.get('actions', '')
         if actions:
+            if Settings['debug']:
+                print("Sheet.complete_update:", self.name, actions, file=sys.stderr)
             for action in actions.split(','):
                 if action in self.actionsRequested:
                     self.actionsRequested.remove(action)
+                if action == 'gradebook':
+                    refreshGradebook(self.name)
 
         if not updateParams.get('incompleteUpdate') and updateParams.get('modifiedHeaders'):
             self.modifiedHeaders = False
@@ -2985,9 +2989,6 @@ def sheetAction(params, notrace=False):
                             # Use test user submission time as due date for admin-paced sessions
                             submitTimestamp = rowValues[submitTimestampCol-1]
                             setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
-
-                            if (sessionWeight or sessionWeight is None) and Global.gradebookActive:
-                                modSheet.requestActions('gradebook')
 
                             idRowIndex = indexRows(modSheet, columnIndex['id'])
                             idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
