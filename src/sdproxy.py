@@ -3099,11 +3099,12 @@ def sheetAction(params, notrace=False):
                                 # New post; append
                                 postCount = accessDiscussion('post', discussionPost[0], discussionPost[1], '')
                                 postTeam = ''
+                                teamIds = ''
                                 newPost = makePost(postTeam, postCount, colValue)
                                 modValue = appendPosts(prevValue, newPost, postCount, '')
                                 if Global.discussPostCallback:
                                     try:
-                                        Global.discussPostCallback(discussionPost[0], discussionPost[1], {}, userId, newPost)
+                                        Global.discussPostCallback(discussionPost[0], discussionPost[1], teamIds, userId, rosterName, newPost)
                                     except Exception, excp:
                                         print('sdproxy: discussPostCallback ERROR %s-%s, %s: %s' % (discussionPost[0], discussionPost[1], userId, excp), file=sys.stderr)
 
@@ -4572,7 +4573,7 @@ def numericKeysJSON(jsonStr):
     # parse JSON object, replacing numeric string keys with numbers
     return numericKeys(json.loads(jsonStr))
 
-def getDiscussStats(userId, sessionName, postTeams=[]):
+def getDiscussStats(userId, sessionName='', postTeams=[]):
     # Returns discussion stats { sessionName1: {discussNum1: [nPosts, unreadPosts, ...}, discussNum2:...}, sessionName2: ...}
     discussStats = {}
     axsSheet = getSheet(DISCUSS_SHEET)
@@ -4847,6 +4848,8 @@ def makeShortNames(nameMap, first=False):
     for idValue, name in nameMap.items():
         lastName, _, firstmiddle = name.partition(',')
         lastName = lastName.strip()
+        lastName = lastName[:1].upper() + lastName[1:]
+
         firstmiddle = firstmiddle.strip()
         if first:
             # For Firstname, try suffixes in following order: middle_initials+Lastname

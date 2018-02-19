@@ -35,7 +35,7 @@ Timer = {
 		clearInterval(this.timer);
 		this.timer = null;
 	    }
-	    Slidoc.sendEvent(-1, 'Timer.clockTick', this.timerValue.value);
+	    Slidoc.sendEvent('', -1, 'Timer.clockTick', this.timerValue.value);
 	    this.timerValue.disabled = null;
 	    this.timerButton.value = PLAY;
 	    this.timerValue.classList.remove('slidoc-red');
@@ -84,10 +84,10 @@ Timer = {
 		value = 0;
 	    }
 	    this.clockTick(value);
-	    Slidoc.sendEvent(-1, 'Timer.clockTick', value);
+	    Slidoc.sendEvent('', -1, 'Timer.clockTick', value);
 	    if (!value) {
 		this.stop();
-		Slidoc.sendEvent(-1, 'Timer.timeout');
+		Slidoc.sendEvent('', -1, 'Timer.timeout');
 	    }
 	}
     },

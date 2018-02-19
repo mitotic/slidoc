@@ -202,17 +202,6 @@ body.slidoc-slide-view .slidoc-nav-overlay .slidoc-clickable-sym { font-size: 14
   body:not(.slidoc-slide-view) #slidoc-slideview-button { font-size: 160%; }
 }
 
-/* Discussions */
-
-.slidoc-toptoggle-edit.slidoc-discuss-available.slidoc-discuss-unread { background: red; text-decoration: underline; }
-.slidoc-toptoggle-edit.slidoc-discuss-available { background: green; }
-
-.slidoc-discuss-displayed { background: green; }
-
-.slidoc-discuss-posts { margin-left: 2em; }
-.slidoc-discuss-post-timestamp { font-size: 60%; }
-.slidoc-discuss-post-delete { font-size: 60%; }
-
 /* Score tally */
 #slidoc-session-display,
  #slidoc-submit-display,

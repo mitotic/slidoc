@@ -139,6 +139,8 @@ The following are defined only for slide instances:
 
 > `this.slideId`: `slidoc01-01`
 
+> `this.slideNumber`: `1`
+
 > `this.pluginId`: `slidoc-01-01-plugin-name`
 
 > `this.qattributes`: question attributes objects (for question slides)

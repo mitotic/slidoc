@@ -2930,6 +2930,7 @@ class ActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'sdserver.reloadPreview: slide=%s, conn=%s' % (slideNumber, len(userConnections))
         for connection in userConnections:
+            # Broadcast reload event to all admin users accessing preview
             connection.sendEvent(previewPath, '', userRole, ['', 1, 'ReloadPage', [slideNumber]])
 
     def compile(self, uploadType, src_path='', contentText='', images_zipdata='', dest_dir='', image_dir='', indexOnly=False,
@@ -3825,8 +3826,8 @@ class UserActionHandler(ActionHandler):
         if not action.startswith('_user_'):
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid user action %s' % action)
         userId = self.get_id_from_cookie()
+        admin_access = self.check_admin_access()
         if action == '_user_grades':
-            admin_access = self.check_admin_access()
             if admin_access:
                 if not subsubpath:
                     self.redirect(('/'+Options['site_name'] if Options['site_name'] else '') + '/_roster')
@@ -3880,6 +3881,10 @@ class UserActionHandler(ActionHandler):
             self.browse(url_path, subsubpath, site_admin=site_admin, download=self.get_argument('download', ''))
             return
 
+        elif action in ('_user_discuss',):
+            self.discuss_stats(sdproxy.TESTUSER_ID if admin_access else userId)
+            return
+
         elif action in ('_user_plain',):
             self.revert_to_plain_user()
             self.displayMessage('Now logged in as a plain user')
@@ -3890,7 +3895,7 @@ class UserActionHandler(ActionHandler):
             return
 
         elif action in ('_user_status',):
-            self.user_status()
+            self.user_status(userId)
             return
 
         elif action in ('_user_twitterlink',):
@@ -3903,10 +3908,17 @@ class UserActionHandler(ActionHandler):
 
         raise tornado.web.HTTPError(404)
 
-    def user_status(self):
+    def user_status(self, userId):
         retval = {'result': 'success'}
         retval['previewingSession'] = ActionHandler.previewState.get('name', '')
         retval['interactiveSession'] = WSHandler.getInteractiveSession()[0]
+
+        self.set_header('Content-Type', 'application/json')
+        self.write( json.dumps(retval) )
+
+    def discuss_stats(self, userId):
+        retval = {'result': 'success'}
+        retval['discussStats'] = sdproxy.getDiscussStats(userId, '', [''])
 
         self.set_header('Content-Type', 'application/json')
         self.write( json.dumps(retval) )
@@ -4379,6 +4391,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             for connId, connections in session_connections.items():
                 if connections.sd_role == sdproxy.ADMIN_ROLE:
                     for connection in connections:
+                        # Broadcast interactive message to all users
                         connection.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, ['', -1, 'InteractiveMessage', [interactiveMsg]])
 
         # Close any active connections associated with user for interactive session
@@ -4408,7 +4421,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         else:
             if fromUser in cls._interactiveErrors:
                 del cls._interactiveErrors[fromUser]
-            
+        # Send answerNotify event to admin users
         cls.sendEvent(path, fromUser, fromRole, ['', 2, 'Share.answerNotify.%d' % sliauth.get_slide_number(slideId), [qnumber, cls._interactiveErrors]])
         return errMsg
 
@@ -4473,24 +4486,33 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             
     @classmethod
     def sendEvent(cls, path, fromUser, fromRole, args):
-        # event_target: '*' OR '' (for server) (IGNORED FOR NOW)
+        # event_target: '' (default) OR 'userid1,userid2,...'
         # event_type = -1 immediate, 0 buffer, n >=1 (overwrite matching n name+args else buffer)
         # event_name = [plugin.]event_name[.slide_id]
         evTarget, evType, evName, evArgs = args
+
+        toUsers = set(evTarget.split(',') if evTarget else [])
+
         ##if Options['debug'] and not evName.startswith('Timer.clockTick'):
-        ##    print >> sys.stderr, 'sdserver.sendEvent: event', path, fromUser, fromRole, evType, evName
+        ##    print >> sys.stderr, 'sdserver.sendEvent: event', path, fromUser, fromRole, toUsers, evType, evName
         pathConnections = cls._connections[path]
-        for toUser, connections in pathConnections.items():
-            if toUser == fromUser:
+        for connId, connections in pathConnections.items():
+            if toUsers and connId not in toUsers:
+                continue
+            if fromUser and connId == fromUser:
+                # Do not send to self
                 continue
             if fromRole == sdproxy.ADMIN_ROLE:
-                # From special user: broadcast to all but the sender
-                pass
-            elif connections.sd_role == sdproxy.ADMIN_ROLE:
-                # From non-special user: send only to special users
+                # Admin-privileged message; transmit message
                 pass
             else:
-                continue
+                # Non-privileged message
+                if evName.startswith('Discuss.activeNotify.'):
+                    # Allow select events to be transmitted by non-privileged users
+                    pass
+                elif connections.sd_role != sdproxy.ADMIN_ROLE:
+                    # Send non-privileged message only admin users
+                    continue
 
             # Event [source, role, name, arg1, arg2, ...]
             sendList = [fromUser, fromRole, evName] + evArgs
@@ -4512,17 +4534,14 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                         conn.flushEventBuffer()
 
     @classmethod
-    def postNotify(cls, sessionName, discussNum, teamIds, userId, discussPost):
+    def postNotify(cls, sessionName, discussNum, teamIds, userId, userName, discussPost):
         if Options['debug']:
-            print >> sys.stderr, 'DEBUG: sdserver.postNotify: ', sessionName, discussNum, teamIds, userId, discussPost[:40]
+            print >> sys.stderr, 'DEBUG: sdserver.postNotify: ', sessionName, discussNum, teamIds, userId, userName, discussPost[:40]
         sessionPath = getSessionPath(sessionName, site_prefix=True)
-        for connUserId, connections in cls.get_connections(sessionName).items():
-            for connection in connections:
-                if teamIds and connUserId not in teamIds:
-                    continue
-                if connUserId == userId:
-                    continue
-                connection.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, ['', -1, 'Discuss.postNotify', [discussNum, discussPost]])
+        evTarget = ','.join(teamIds)
+
+        # Broadcast postNotify event to all users
+        cls.sendEvent(sessionPath[1:], userId, sdproxy.ADMIN_ROLE, [evTarget, -1, 'Discuss.postNotify', [userName, discussNum, discussPost]])
 
     def open(self, path=''):
         self.clientVersion = self.get_argument('version','')
@@ -4676,6 +4695,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                         if teamModifiedId != self.userId:
                             self.lockConnections(self.pathUser[0], teamModifiedId, 'Redundant team connection')
 
+            elif method == 'discuss_stats':
+                retObj['discussStats'] = sdproxy.getDiscussStats(sdproxy.TESTUSER_ID if self.userRole == sdproxy.ADMIN_ROLE else self.pathUser[1],
+                                                                 '', [''])
+
             elif method == 'interact':
                 # args: action, slideId, questionAttrs, rollbackOption
                 if self.userRole == sdproxy.ADMIN_ROLE:
@@ -4744,6 +4767,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
             elif method == 'event':
                 # args: evTarget, evType, evName, evArgs
+                # Broadcast event if from admin, else send to admins only
                 self.sendEvent(self.pathUser[0], self.pathUser[1], self.userRole, args)
 
             if callback_index:
@@ -5459,6 +5483,7 @@ def createApplication():
                       (pathPrefix+r"/(_user_browse)", UserActionHandler),
                       (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
                       (pathPrefix+r"/(_user_canceldelay)", UserActionHandler),
+                      (pathPrefix+r"/(_user_discuss)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades/[-\w.%]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_plain)", UserActionHandler),

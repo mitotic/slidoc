@@ -3718,14 +3718,17 @@ function makeShortNames(nameMap, first) {
 	var name = nameMap[idValue];
 	var ncomps = name.split(',');
 	var lastName = ncomps[0].trim();
-	var firstmiddle = (ncomps.length > 0) ? ncomps[1].trim() : '';
+	lastName = lastName.slice(0,1).toUpperCase() + lastName.slice(1);
+
+	var firstmiddle = (ncomps.length > 1) ? ncomps[1].trim() : '';
         var fcomps = firstmiddle.split(/\s+/);
         if (first) {
             // For Firstname, try suffixes in following order: middle_initials+Lastname
             var firstName = fcomps[0] || idValue;
-            var suffix = lastName;
+            var suffix = '';
 	    for (var k=1; k<fcomps.length; k++)
-                suffix = fcomps[k].slice(0,1).toUpperCase() + suffix;
+                suffix += fcomps[k].slice(0,1).toUpperCase();
+            suffix += lastName;
 	    if (!(firstName in prefixDict))
 		prefixDict[firstName] = [];
             prefixDict[firstName].push(idValue);

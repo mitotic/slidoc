@@ -45,7 +45,7 @@ Share = {
 	    return;
 	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
 	    if (!Slidoc.PluginManager.isController()) {
-		Slidoc.sendEvent(3, 'Share.answerNotify.'+Slidoc.getSlideNumber(this.slideId), this.qattributes.qnumber, null);
+		Slidoc.sendEvent('', 3, 'Share.answerNotify.'+this.slideNumber, this.qattributes.qnumber, null);
 	    } else if (this.qattributes.share == 'after_answering') {
 		if (!force || force == 'choiceclick')
 		    this.getResponses(true);
@@ -93,7 +93,7 @@ Share = {
 	Slidoc.log('Slidoc.Plugins.Share.finalizeShare:');
 	if (this.paced == Slidoc.PluginManager.ADMIN_PACE) {
 	    if (this.testUser && !Slidoc.PluginManager.answered(this.qattributes.qnumber))
-		Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
+		Slidoc.sendEvent('', -1, 'AdminPacedForceAnswer', this.qattributes.qnumber, this.slideId);
 	    toggleClass(true, 'slidoc-shareable-hide', this.finalizeElem);
 	}
 	this.getResponses(true);

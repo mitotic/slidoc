@@ -239,6 +239,7 @@ var sendDataCounter = 0;
 var receiveDataCounter = 0;
 
 GService.sendData = function (data, url, callback, useJSONP) {
+  /// console.log('GService.sendData:', data, url);
   /// callback(result_obj, optional_err_msg)
 
   if (data.modify || (data.actions && data.actions == 'gradebook')) {
@@ -572,6 +573,16 @@ function GoogleSheet(url, sheetName, preHeaders, fields, useJSONP) {
         this.columnIndex[this.headers[j]] = j;
 }
 
+GoogleSheet.prototype.setUserToken = function(params) {
+    // If admin user, switch user to params.id and set params.token and params.admin
+    var token = GService.gprofile.auth.token;
+    if (!token || token.indexOf(':') < 0)
+	throw('GoogleSheet.setUserToken: Invalid admin token for switching to user '+params.id);
+    var comps = token.split(':');
+    params.token = params.id + ':' + comps.slice(1).join(':');
+    params.admin = GService.gprofile.auth.origid || GService.gprofile.auth.id;
+}
+
 GoogleSheet.prototype.send = function(params, callType, callback) {
     params = JSON.parse(JSON.stringify(params));
     params.version = Slidoc.version;
@@ -727,6 +738,7 @@ GoogleSheet.prototype.obj2row = function(obj) {
 
 GoogleSheet.prototype.actions = function (actions, opts, callback) {
     // Workaround for passthru actions; this could be done without a GSheet
+    // specify opts.admin for admin access
     var params = {actions: actions};
     var keys = Object.keys(opts);
     for (var j=0; j<keys.length; j++) {
@@ -734,6 +746,8 @@ GoogleSheet.prototype.actions = function (actions, opts, callback) {
 	params[key] = opts[key];
     }
     this.callbackCounter += 1;
+    if (opts.admin)
+	this.setUserToken(params);
     this.send(params, 'actions', callback);
 }
 
@@ -819,7 +833,8 @@ GoogleSheet.prototype.authPutRow = function (rowObj, opts, callback, createSheet
 
 GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     // Only works with existing rows
-    // Specify get to return updated row
+    // Specify opts.get to return updated row
+    // specify opts.admin to switch userId to updateObj.id
     // opts = {get:, admin:, team:}
     Slidoc.log('GoogleSheet.updateRow:', updateObj, opts);
     if (!updateObj.id)
@@ -875,14 +890,8 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     if (opts.get)
         params.get = '1';
 
-    if (opts.admin) {
-	var token = GService.gprofile.auth.token;
-	if (!token || token.indexOf(':') < 0)
-	    throw('GoogleSheet.updateRow: Invalid admin token to switch user');
-	var comps = token.split(':');
-	params.token = params.id + ':' + comps.slice(1).join(':');
-	params.admin = comps[0];
-    }
+    if (opts.admin)
+	this.setUserToken(params);
 
     if (updates.length == 2 && updates[0][0] == 'id' && updates[1][0].slice(-5) == 'vote')
 	params.vote = '1';

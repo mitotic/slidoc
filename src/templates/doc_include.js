@@ -722,7 +722,9 @@ Slidoc.pageSetup = function() {
 
     function userStatusAux(retval, errmsg) {
 	Slidoc.log('userStatusAux:', retval, errmsg);
-	if (retval && Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
+	if (!retval)
+	    return;
+	if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
 	    var statusElem = document.getElementById('slidoc-test-status');
 	    if (statusElem) {
 		if (!Sliobj.previewState && retval.previewingSession && retval.previewingSession != Sliobj.sessionName) {
@@ -2259,6 +2261,28 @@ Slidoc.toLocalISOString = function (dateObj, dateOnly) {
     return dateOnly ? date.toISOString().slice(0,10) : date.toISOString().slice(0,16);
 }
 
+Slidoc.makeShortFirst = function(name, idValue) {
+    // Returns firstname+Initials
+    var ncomps = name.split(',');
+    var lastName = ncomps[0].trim();
+    lastName = lastName.slice(0,1).toUpperCase() + lastName.slice(1);
+
+    var firstmiddle = (ncomps.length > 1) ? ncomps[1].trim() : '';
+    var fcomps = firstmiddle.split(/\s+/);
+    if (!firstmiddle)
+	return idValue || 'unknown';
+
+    var shortName = fcomps[0].toLowerCase();
+    for (var k=1; k<fcomps.length; k++)
+        shortName += fcomps[k].slice(0,1).toUpperCase();
+    // Join last name components as initial, dash-separated
+    var lcomps = lastName.split(/\s+/);
+    var linit = []
+    for (var k=0; k<lcomps.length; k++)
+        linit.push(lcomps[k].slice(0,1).toUpperCase());
+    return shortName+linit.join('-');
+}
+
 Slidoc.makeShortNames = function (nameMap, first) {
     // Make short versions of names from dict of the form {id: 'Last, First ...', ...}
     // If first, use first name as prefix, rather than last name
@@ -2271,14 +2295,17 @@ Slidoc.makeShortNames = function (nameMap, first) {
 	var name = nameMap[idValue];
 	var ncomps = name.split(',');
 	var lastName = ncomps[0].trim();
-	var firstmiddle = (ncomps.length > 0) ? ncomps[1].trim() : '';
+	lastName = lastName.slice(0,1).toUpperCase() + lastName.slice(1);
+
+	var firstmiddle = (ncomps.length > 1) ? ncomps[1].trim() : '';
         var fcomps = firstmiddle.split(/\s+/);
         if (first) {
             // For Firstname, try suffixes in following order: middle_initials+Lastname
             var firstName = fcomps[0] || idValue;
-            var suffix = lastName;
+            var suffix = '';
 	    for (var k=1; k<fcomps.length; k++)
-                suffix = fcomps[k].slice(0,1).toUpperCase() + suffix;
+                suffix += fcomps[k].slice(0,1).toUpperCase();
+            suffix += lastName;
 	    if (!(firstName in prefixDict))
 		prefixDict[firstName] = [];
             prefixDict[firstName].push(idValue);
@@ -2906,13 +2933,13 @@ function showDialog(action, testEvent, prompt, value) {
 // Section 10b: Events
 ////////////////////////
 
-Slidoc.sendEvent = function (eventType, eventName) // Extra event Args
+Slidoc.sendEvent = function (eventTarget, eventType, eventName) // Extra event Args
 {
     if (Sliobj.previewState || Sliobj.updateView)  // Do not transmit events when previewing
 	return;
-    var eventArgs = Array.prototype.slice.call(arguments).slice(2);
-    Slidoc.log('Slidoc.sendEvent:', eventType, eventName, eventArgs);
-    GService.sendEventWS('', eventType, eventName, eventArgs);
+    var eventArgs = Array.prototype.slice.call(arguments).slice(3);
+    Slidoc.log('Slidoc.sendEvent:', eventTarget, eventType, eventName, eventArgs);
+    GService.sendEventWS(eventTarget, eventType, eventName, eventArgs);
 
     if (eventName == 'AdminPacedForceAnswer' && eventArgs.length >= 2) {
 	if (Sliobj.interactiveSlide)
@@ -3284,6 +3311,10 @@ Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) 
     GService.requestWS('plugin', data, callback);
 }
 
+Slidoc.PluginManager.getCurrentSlide = function() {
+    return Sliobj.currentSlide;
+}
+
 Slidoc.PluginManager.onLastSlide = function() {
     return Sliobj.currentSlide && Sliobj.session && Sliobj.currentSlide == Sliobj.session.lastSlide;
 }
@@ -3484,6 +3515,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
 	    // Global seed for all instances of the plugin
 	    defCopy.global = null;
 	    defCopy.slideId = '';
+	    defCopy.slideNumber = 0;
 	    defCopy.defined = null;
 	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset);
 	    defCopy.randomNumber = makeRandomFunction(defCopy.randomSeed);
@@ -3491,6 +3523,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
 	    // Seed for each slide instance of the plugin
 	    defCopy.global = Sliobj.globalPluginDict[pluginName];
 	    defCopy.slideId = slide_id;
+	    defCopy.slideNumber = Slidoc.getSlideNumber(slide_id) || 0;
 	    defCopy.defined = slideParams || {};
 	    var comps = parseSlideId(slide_id);
 	    defCopy.randomSeed = Slidoc.Random.makeSeed(randomOffset + 256*((1+comps[1])*256 + comps[2]));
@@ -3990,6 +4023,69 @@ function interactiveMessageDisplay(eventArgs) {
     Slidoc.showPopup(html, null, true, 0, 'InteractiveMessage', interactiveMessageDisplay);
 }
 
+Slidoc.showDiscuss = function() {
+    if (!Slidoc.serverCookie)
+	return;
+    if (window.GService) {
+	GService.requestWS('discuss_stats', [], showDiscussCallback);
+    } else {
+	Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_discuss', {}, showDiscussCallback, true);
+    }
+}
+
+function showDiscussCallback(retObj, errmsg) {
+    Slidoc.log('showDiscussCallback:', retObj, errmsg);
+    if (!retObj || retObj.result != 'success') {
+	alert('Error in discussion status: '+(retObj?retObj.error : errmsg));
+	return;
+    }
+    var allDiscussStats = retObj['discussStats'];
+    var html = '<h3>Discussions menu</h3>\n';
+    html += '<ul>\n';
+    var sessionNames = Object.keys(allDiscussStats);
+    sessionNames.sort();
+    var teamName = '';
+    if (Sliobj.sessionName && Sliobj.sessionName in allDiscussStats) {
+	// Show discuss post breakdown (unread/total) for this session
+	var sessionDiscuss = allDiscussStats[Sliobj.sessionName][teamName];
+	var discussNums = Object.keys(sessionDiscuss);
+	discussNums.sort( function (a, b) {  return a - b;  } );
+	for (var k=0;k<discussNums.length; k++) {
+	    var totalPosts = sessionDiscuss[discussNums[k]][0] || 0;
+	    var unreadPosts = sessionDiscuss[discussNums[k]][1] || 0;
+	    var slideNum = Sliobj.params.discussSlides[discussNums[k]-1];
+	    var slideId = Slidoc.makeSlideId(slideNum);
+	    var headerElems = document.getElementsByClassName(slideId+'-header');
+	    var headerText = headerElems.length ? headerElems[0].textContent : 'Discussion '+discussNums[k];
+	    var temtext = '('+(unreadPosts ? '<b>'+unreadPosts+'</b>/':'')+totalPosts+')'
+	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.go('+ "'#" + slideId +"'"+');">'+headerText+'</span> '+temtext+'</li>\n';
+	}
+	if (sessionNames.length > 1)
+	    html += '<hr>\n';
+    } else if (!sessionNames.length) {
+	html += '<li>No discussions</li>\n';
+    }
+    for (var j=0; j<sessionNames.length; j++) {
+	// Show unread/total for all other session
+	var sessionName = sessionNames[j];
+	if (sessionName == Sliobj.sessionName)
+	    continue;
+	var sessionDiscuss = allDiscussStats[sessionName][teamName];
+	var discussNums = Object.keys(sessionDiscuss);
+	var totalPosts = 0;
+	var unreadPosts = 0;
+	for (var k=0;k<discussNums.length; k++) {
+	    totalPosts += sessionDiscuss[discussNums[k]][0] || 0;
+	    unreadPosts += sessionDiscuss[discussNums[k]][1] || 0;
+	}
+	html += '<li><span ">'+sessionName+'</span> ('+unreadPosts+'/'+totalPosts+')</li>\n';
+    }
+    html += '</ul>';
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showPopup(html);
+}
+
 Slidoc.userProfile = function() {
     if (!Sliobj.params.gd_sheet_url && !getServerCookie())
 	return;
@@ -4153,7 +4249,9 @@ Slidoc.sessionActions = function(actions, sessionName, noconfirm) {
 	var sheetName = sessionName || Sliobj.sessionName;
     if (!noconfirm && !window.confirm("Confirm actions '"+actions+"' for session "+(sheetName||'ALL')+'? (may take some time)'))
 	return;
-    var opts = {sheet: sheetName}
+    var opts = {sheet: sheetName};
+    if (isController())
+	opts.admin = 1;
     Sliobj.indexSheet.actions(actions, opts, sheetActionsCallback.bind(null, actions, sheetName));
 }
 
@@ -4203,7 +4301,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.userFileKey = '';
     Sliobj.teamFileKey = '';
     Sliobj.sessionFileKey = '';
-    Sliobj.discussStats = null;
+    Sliobj.sessionDiscuss = null;
     Sliobj.sheetsAvailable = null;
     Sliobj.voteDate = null;
 
@@ -4215,14 +4313,16 @@ Slidoc.slidocReady = function (auth) {
 	Sliobj.statSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.fileName+'_stats',
 						     [], [], useJSONP);
     }
-    if (Sliobj.gradableState) {
+    if (Sliobj.gradableState || isController()) {
 	Sliobj.indexSheet = new GService.GoogleSheet(Sliobj.params.gd_sheet_url, Sliobj.params.index_sheet,
 						     Sliobj.params.indexFields.slice(0,2),
 						     Sliobj.params.indexFields.slice(2), useJSONP);
-	Sliobj.indexSheet.getRow(Sliobj.sessionName, {}, function (result, retStatus) {
-	    if (result && result.gradeDate)
-		Sliobj.gradeDateStr = result.gradeDate;
-	});
+	if (Sliobj.gradableState) {
+	    Sliobj.indexSheet.getRow(Sliobj.sessionName, {}, function (result, retStatus) {
+		if (result && result.gradeDate)
+		    Sliobj.gradeDateStr = result.gradeDate;
+	    });
+	}
     }
 
     if (Sliobj.params.remoteLogLevel && Sliobj.params.gd_sheet_url && !Sliobj.gradableState) {
@@ -4566,7 +4666,7 @@ function slidocSetupAux(session, feedback) {
 
     scoreSession(Sliobj.session);
 
-    var globalArgs = {Discuss: {gd_sheet_url: Sliobj.params.gd_sheet_url, testUserId: Sliobj.params.testUserId, discussSlides: Sliobj.params.discussSlides, stats: Sliobj.discussStats} };
+    var globalArgs = {Discuss: {gd_sheet_url: Sliobj.params.gd_sheet_url, testUserId: Sliobj.params.testUserId, discussSlides: Sliobj.params.discussSlides, stats: Sliobj.sessionDiscuss} };
 
     initSessionPlugins(Sliobj.session, globalArgs);
 
@@ -5970,7 +6070,7 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		Sliobj.teamFileKey = retStatus.info.teamFileKey;
 
 	    if (retStatus.info.discussStats)
-		Sliobj.discussStats = retStatus.info.discussStats[Sliobj.sessionName] || {};
+		Sliobj.sessionDiscuss = retStatus.info.discussStats[Sliobj.sessionName] || {};
 
 	    if (retStatus.info.sheetsAvailable)
 		Sliobj.sheetsAvailable = retStatus.info.sheetsAvailable;
@@ -6720,7 +6820,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 		Slidoc.answerClick(ansElem, slide_id, 'choiceclick');
 	}
 	if (Sliobj.session && question_attrs.team == 'setup')
-	    Slidoc.sendEvent(-1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
+	    Slidoc.sendEvent('', -1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
 
     } else if (choice_val) {
 	// Setup
@@ -7111,7 +7211,7 @@ function saveSessionAnswered(slide_id, force, qattrs) {
     if (isController()) {
 	if (Sliobj.interactiveSlide)
 	    enableInteract(false);
-	Slidoc.sendEvent(-1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
+	Slidoc.sendEvent('', -1, 'AdminPacedForceAnswer', qattrs.qnumber, slide_id);
 
     } else if (!Sliobj.delaySec && Sliobj.params.slideDelay && MIN_ANSWER_NOTES_DELAY && allowDelay()) {
 	// Minimum delay to view notes after answering
@@ -8417,7 +8517,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 
 	if (isController()) {
 	    if (Sliobj.session.lastSlide > 1)
-		Slidoc.sendEvent(-1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
+		Slidoc.sendEvent('', -1, 'AdminPacedAdvance', Sliobj.session.lastSlide);
 	}
     } else {
 	if (Sliobj.session && Sliobj.session.paced && slide_num < Sliobj.session.lastSlide && !Sliobj.questionSlide && Sliobj.delaySec) {
