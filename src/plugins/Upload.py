@@ -77,7 +77,7 @@ class Upload(object):
             raise Exception('Upload._uploadData: ERROR Please use "Late file upload" option in "Submitted" menu past the due date - '+serverParams['pastDue'])
         temname = dataParams.get('filename','')
 
-        extn = os.path.splitext(temname)[1] or '.dat'  # Enforce non-null file extension for safety
+        extn = os.path.splitext(temname.lower())[1] or '.dat'  # Enforce non-null file extension for safety
         if extn == '.ipynb':
             # Make notebooks not easily openable by user (for security, as they contain executable code)
             extn = '.json'

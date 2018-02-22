@@ -931,7 +931,8 @@ GoogleSheet.prototype.getRow = function (id, opts, callback) {
     // Specify opts.getheaders to get headers
     // Specify opts.getstats to getstats
     // Specify opts.late for late token in new row
-    // Specify opts.resetrow for to reset row (for retakes etc.)
+    // Specify opts.resetrow to reset row (for retakes etc.)
+    // Specify opts.seed to reset random seed
     // callback(result, retStatus)
     // result == null on error
     // result == {} for non-existent row
@@ -967,6 +968,8 @@ GoogleSheet.prototype.getRow = function (id, opts, callback) {
 	params.late = opts.late;
     if (opts.resetrow)
 	params.resetrow = opts.resetrow;
+    if (opts.seed)
+	params.seed = opts.seed;
     this.callbackCounter += 1;
     this.send(params, 'getRow', callback);
 }

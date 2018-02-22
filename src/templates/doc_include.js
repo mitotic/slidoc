@@ -1962,19 +1962,23 @@ function isObject(a) { // Works for object literals only (not custom objects, Da
 };
 
 
-function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1; }
-
-function keyCmp(a,b) {
-    // Compare keys, with numeric keys always being less than non-numeric keys
+function cmp(a,b) {
+    // Compare keys, including numeric keys, with numeric keys always being less than non-numeric keys
     if (isNumber(a) && !isNumber(b))
 	return -1;
     if (!isNumber(a) && isNumber(b))
 	return 1;
+    if (isNumber(a) && isNumber(b)) {
+	a = parseNumber(a);
+	b = parseNumber(b);
+    }
     if (a == b) return 0; else return (a > b) ? 1 : -1;
 }
 
+Slidoc.cmp = cmp;
+
 function sortObject(obj) {
-    return Object.keys(obj).sort(keyCmp).reduce(function (result, key) {
+    return Object.keys(obj).sort(cmp).reduce(function (result, key) {
         result[key] = obj[key];
         return result;
     }, {});
@@ -2418,8 +2422,16 @@ function retakesRemaining() {
     return Sliobj.params.maxRetakes - retakesCount;
 }
 
-Slidoc.resetPaced = function (delRow) {
-    Slidoc.log('Slidoc.resetPaced:', delRow);
+Slidoc.resetPaced = function (delRow, resetSeed) {
+    Slidoc.log('Slidoc.resetPaced:', delRow, resetSeed);
+    var seedValue = 0;
+    if (resetSeed && Sliobj.fullAccess) {
+	seedValue = parseNumber(window.prompt('Session seed:'));
+	if (!seedValue || seedValue < 0) {
+	    alert('Session seed must be a positive number');
+	    return;
+	}
+    }
     var label = delRow ? 'delete' : 'reset';
     var userId = getUserId();
 
@@ -2429,8 +2441,10 @@ Slidoc.resetPaced = function (delRow) {
 	    return false;
 	}
     }
-
-    if (!Slidoc.testingActive() && !window.confirm('Confirm that you want to completely '+label+' all answers/scores for user '+userId+' in session '+Sliobj.sessionName+'?'))
+    var confirmMsg = 'Confirm that you want to completely '+label+' all answers/scores for user '+userId+' in session '+Sliobj.sessionName;
+    if (seedValue)
+	confirmMsg += ' with session seed '+seedValue;
+    if (!Slidoc.testingActive() && !window.confirm(confirmMsg+'?'))
 	return false;
     
     if (Sliobj.params.gd_sheet_url) {
@@ -2446,7 +2460,10 @@ Slidoc.resetPaced = function (delRow) {
 	if (delRow) {
 	    gsheet.delRow(userId, resetSessionCallback.bind(null, delRow));
 	} else {
-	    gsheet.getRow(userId, {resetrow: 1}, resetSessionCallback.bind(null, delRow));
+	    var params = {resetrow: 1};
+	    if (seedValue)
+		params.seed = seedValue;
+	    gsheet.getRow(userId, params, resetSessionCallback.bind(null, delRow));
 	}
 
     } else {
@@ -3728,14 +3745,14 @@ function dispUserInfo(userId, dispName) {
 	if (infoElem)
 	    infoElem.textContent = (dispName || userId);
 	if (footerElem)
-	    footerElem.innerHTML = '<p></p><p></p><em>Seed: '+Sliobj.session.randomSeed+'</em>';
+	    footerElem.innerHTML = '<p></p><p></p><div style="float: right;"><em>(Seed: '+Sliobj.session.randomSeed+')</em></div>';
 
 	var ncomps = dispName.split(',');
 	var username = ncomps[0].trim();
 	if (ncomps.length > 1)
 	    username += '-'+ncomps[1].trim();
 	username = username.replace(/ /g,'-').replace(/\./g,'').toLowerCase();
-	var title = Sliobj.params.doc_title || [username || userId, Sliobj.sessionName].join('-');
+	var title = Sliobj.params.doc_title || [(username || userId).replace(/[^\w.@-]/g,'-'), Sliobj.sessionName].join('-');
 	document.title = title;
     } else {
 	if (infoElem)
@@ -4049,7 +4066,7 @@ function showDiscussCallback(retObj, errmsg) {
 	// Show discuss post breakdown (unread/total) for this session
 	var sessionDiscuss = allDiscussStats[Sliobj.sessionName][teamName];
 	var discussNums = Object.keys(sessionDiscuss);
-	discussNums.sort( function (a, b) {  return a - b;  } );
+	discussNums.sort(cmp);
 	for (var k=0;k<discussNums.length; k++) {
 	    var totalPosts = sessionDiscuss[discussNums[k]][0] || 0;
 	    var unreadPosts = sessionDiscuss[discussNums[k]][1] || 0;
@@ -4178,6 +4195,9 @@ Slidoc.manageSession = function() {
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && !Sliobj.params.timedSec && (!Sliobj.params.gd_sheet_url || retakesRemaining() || Sliobj.fullAccess))
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced();">'+'Reset paced session entry'+(retakesRemaining()?' for re-takes':'')+'</span><br>';
 
+    if (Sliobj.fullAccess)
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(false,true);">'+'Reset paced session entry and random seed</span><br>';
+    
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced session entry</span><br>';
 
@@ -4235,7 +4255,7 @@ Slidoc.manageSession = function() {
 	}
 	html += '</blockquote>\n';
     }
-    html += '<p></p>Version: ' + versionStr;
+    html += '<p></p>Version: ' + versionStr + ' (rendered '+Sliobj.params.renderDate+')';
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Slidoc.showPopup(html);
@@ -4603,10 +4623,15 @@ function slidocSetupAux(session, feedback) {
 
     Sliobj.showHiddenSlides = false;
     
-    // Mark explicitly hidden slides
+    // Mark explicitly hidden slides and save choices
     var allSlides = getVisibleSlides(true);
     for (var j=0; j<allSlides.length; j++) {
-	var footerElem = getSlideFooter(allSlides[j].id);
+	var slideId = allSlides[j].id;
+	var choiceBlock = document.getElementById(slideId+'-choice-block');
+	 // Save original choices (NOTE: this needs to be done before expandInlineJS)
+	if (choiceBlock)
+	    Sliobj.choiceBlockHTML[slideId] = choiceBlock.innerHTML;
+	var footerElem = getSlideFooter(slideId);
 	if (footerElem.classList.contains('slidoc-slide-hidden'))
 	    allSlides[j].classList.add('slidoc-slide-hidden');
     }
@@ -5333,12 +5358,14 @@ function preAnswer() {
 
 function shuffleBlock(slide_id, shuffleStr, qnumber) {
     var choiceBlock = document.getElementById(slide_id+'-choice-block');
-    if (qnumber in Sliobj.choiceBlockHTML)
-	choiceBlock.innerHTML = Sliobj.choiceBlockHTML[qnumber]; // Restore original choices
-    else
-	Sliobj.choiceBlockHTML[qnumber] = choiceBlock.innerHTML; // Save original choices
-	
-    choiceBlock.dataset.shuffle = '';
+
+    if (choiceBlock.dataset.shuffle) {
+	// Restore original choices
+	if (!(slide_id in Sliobj.choiceBlockHTML))
+	    throw('shuffleBlock: Original choices not saved for slide '+slide_id);
+	choiceBlock.innerHTML = Sliobj.choiceBlockHTML[slide_id];
+	choiceBlock.dataset.shuffle = '';
+    }
     if (!shuffleStr)
 	return;
     ///Slidoc.log('shuffleBlock: shuffleStr', slide_id, qnumber, ' ', shuffleStr);
@@ -5383,6 +5410,8 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 	return;
     }
 
+    expandInlineJS(choiceBlock);
+
     choiceBlock.dataset.shuffle = shuffleStr;
     choiceBlock.innerHTML = '<div id="'+slide_id+'-chart-header" class="slidoc-chart-header" style="display: none;">';
     var key = blankKey;
@@ -5410,7 +5439,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 	choiceText = choiceText.trim().replace(/\s+/g,' ');
 	choiceText = choiceText.replace(/^ *[A-Z]\./i, '.');
 	if (choiceText in choiceDup) {
-	    var errMsg = 'Please reset session. Question '+qnumber+' has duplicate choices: '+choiceDup[choiceText]+','+choiceLetter+choiceText;
+	    var errMsg = 'Please reset user '+getUserId()+' in session '+Sliobj.sessionName+'. Question '+qnumber+' has duplicate choices: '+choiceDup[choiceText]+','+choiceLetter+choiceText;
 	    var firstSlide = document.getElementById(slide_id.slice(0,-3)+'-01');
 	    if (firstSlide) {
 		var div = document.createElement('div');
@@ -5418,7 +5447,9 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 		div.textContent = errMsg;
 		firstSlide.insertBefore(div, firstSlide.firstChild);
 	    }
-	    if (!Sliobj.batchMode)
+	    if (Sliobj.batchMode)
+		Slidoc.ajaxRequest('GET', Sliobj.sitePrefix + '/_user_message?message=' + encodeURIComponent(errMsg));
+	    else
 		alert(errMsg);
 	}
 	choiceDup[choiceText] = choiceLetter;

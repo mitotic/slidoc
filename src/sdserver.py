@@ -2991,9 +2991,11 @@ class ActionHandler(BaseHandler):
         return_html = bool(src_path)
 
         try:
+            extra_attributes = {'privateSession': 1 if privatePrefix(uploadType) else 0}
             retval = slidoc.process_input(fileHandles, filePaths, configOpts, default_args_dict=defaultOpts, return_html=return_html,
                                           images_zipdict=images_zipdict, nb_links=nb_links, http_post_func=http_sync_post,
-                                          restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, return_messages=True)
+                                          restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, return_messages=True,
+                                          extra_attributes=extra_attributes)
         except Exception, excp:
             if Options['debug']:
                 import traceback
@@ -3826,6 +3828,7 @@ class UserActionHandler(ActionHandler):
         if not action.startswith('_user_'):
             raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid user action %s' % action)
         userId = self.get_id_from_cookie()
+        cookieData = self.get_id_from_cookie(data=True) or {}
         admin_access = self.check_admin_access()
         if action == '_user_grades':
             if admin_access:
@@ -3883,6 +3886,13 @@ class UserActionHandler(ActionHandler):
 
         elif action in ('_user_discuss',):
             self.discuss_stats(sdproxy.TESTUSER_ID if admin_access else userId)
+            return
+
+        elif action in ('_user_message',):
+            if not cookieData.get('batch'):
+                raise tornado.web.HTTPError(403)
+            sdproxy.notify_admin(sliauth.str_encode(self.get_argument('message','')), msgType='(from batch user %s)' % userId)
+            self.displayMessage('Message received')
             return
 
         elif action in ('_user_plain',):
@@ -5486,6 +5496,7 @@ def createApplication():
                       (pathPrefix+r"/(_user_discuss)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades/[-\w.%]+)", UserActionHandler),
+                      (pathPrefix+r"/(_user_message)", UserActionHandler),
                       (pathPrefix+r"/(_user_plain)", UserActionHandler),
                       (pathPrefix+r"/(_user_qstats/[-\w.]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_status)", UserActionHandler),

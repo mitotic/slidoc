@@ -107,7 +107,7 @@ def main():
     define("auth_key", default="", help="Site authentication key")
     define("debug", default=False, help="Debug mode")
     define("wkhtmltopdf", default=False, help="Use wkhtmltopdf instead of headless Chrome")
-    define("gsheet_url", default="", help="Google sheet URL")
+    define("gsheet_url", default="", help="Google sheet URL OR /_proxy")
 
     define("users", default="", help="'Comma-separated list of userIDs, or 'all'")
     define("staple", default=False, help="Send to printer using lp command for stapling")
@@ -137,7 +137,10 @@ def main():
         for server_url, site_prefix, rel_path, session_name, session_file, file_html in session_list:
             if options.users:
                 ucomps = options.users.split(',')
-                roster = get_roster(options.gsheet_url, options.auth_key, session_name)
+                gsheet_url = options.gsheet_url
+                if gsheet_url.startswith('/'):
+                    gsheet_url = server_url + site_prefix + gsheet_url
+                roster = get_roster(gsheet_url, options.auth_key, session_name)
                 if len(ucomps) == 1 and ucomps[0] == 'all':
                     if roster is None:
                         sys.exit('Roster sheet not found for session '+session_name)
@@ -157,9 +160,15 @@ def main():
                 if userId:
                     lastname, _, firstmiddle = name.partition(',')
                     lastname = lastname.strip().replace(' ','_').replace('#','_')
+
                     firstmiddle = firstmiddle.strip()
-                    namesuffix = lastname.capitalize()+(firstmiddle[0].upper() if firstmiddle else '')
-                    outname = session_name+'-'+namesuffix+'-'+userId + '.pdf'
+                    firstname, _, middlenames = firstmiddle.partition(' ')
+                    middlenames.strip()
+
+                    namesuffix = lastname.capitalize() + ('_'+firstname.capitalize() if firstname else '') + (middlenames[0].upper() if middlenames else '')
+                    namesuffix = re.sub(r'[^\w.@-]', '_', namesuffix)
+
+                    outname = session_name + '-' + namesuffix + '-' + userId + '.pdf'
                     token = sliauth.gen_auth_token(options.auth_key, userId, prefixed=True)
                 else:
                     outname = session_name+'.pdf'

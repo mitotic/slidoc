@@ -883,11 +883,7 @@ function sheetAction(params) {
 	    if (axsSheet) {
 		var axsCol = indexColumns(axsSheet)['_'+sheetName];
 		if (axsCol) {
-		    var axsRange = axsSheet.getRange(2, axsCol, axsSheet.getLastRow(), 1);
-		    var axsVals = axsRange.getValues();
-		    for (var j=0; j<axsVals.length; j++)
-			axsVals[j][0] = '';
-		    axsRange.setValues(axsVals);
+		    blankColumn(axsSheet, '_'+sheetName);
 		}
 	    }
 
@@ -931,16 +927,13 @@ function sheetAction(params) {
 		    twitterSetting = true;
 	    }
 
-	    var modSheet = getSheet(sheetName);
-            if (!modSheet && discussionPost) {
-                // Create session_discuss sheet, if need be
-                var temEntries = lookupValues(discussingSession, ['dueDate', 'gradeDate', 'adminPaced', 'attributes'], INDEX_SHEET);
-                var temAdminPaced = temEntries['adminPaced'];
-                var temAttributes = JSON.parse(temEntries['attributes']);
-                if (temAttributes['params']['features']['live_discussion'] || (temAdminPaced && temEntries['dueDate']) || (!temAdminPaced && temEntries['gradeDate'])) {
-                    updateDiscussSheet(discussingSession, temAttributes['discussSlides'], true);
-                    modSheet = getSheet(sheetName);
-		}
+            if (discussionPost) {
+		// Create session_discuss sheet, if need be, to post
+                var modSheet = updateDiscussSheet(discussingSession, paramId, rosterName);
+		if (!modSheet)
+		    throw('Cannot post discussion for session '+discussingSession);
+	    } else {
+		modSheet = getSheet(sheetName);
 	    }
 
 	    if (!modSheet) {
@@ -1920,11 +1913,6 @@ function sheetAction(params) {
 		    // Save updated row
 		    userRange.setValues([rowValues]);
 
-                    if (userId != MAXSCORE_ID && discussableSession && (newRow && !resetRow)) {
-                        // Add user row, if session_discuss sheet already exists
-                        updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], false, userId, rosterName);
-		    }
-
                     if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
 			// AdminPaced test user row update
                         var lastSlideCol = columnIndex['lastSlide'];
@@ -2060,8 +2048,7 @@ function sheetAction(params) {
                                     }
                                 }
                             } else {
-                                // New post; append (after creating session_discuss sheet if needed)
-				updateDiscussSheet(sheetName, sessionAttributes['discussSlides'], true);
+                                // New post; append
 				var postCount = accessDiscussion('post', discussionPost[0], discussionPost[1], '');
 				var postTeam = '';
 				var newPost = makePost(postTeam, postCount, colValue);
@@ -3028,19 +3015,21 @@ function isObject(a) { // Works for object literals only (not custom objects, Da
 };
 
 
-function cmp(a,b) { if (a == b) return 0; else return (a > b) ? 1 : -1; }
-
-function keyCmp(a,b) {
-    // Compare keys, with numeric keys always being less than non-numeric keys
+function cmp(a,b) {
+    // Compare keys, including numeric keys, with numeric keys always being less than non-numeric keys
     if (isNumber(a) && !isNumber(b))
 	return -1;
     if (!isNumber(a) && isNumber(b))
 	return 1;
+    if (isNumber(a) && isNumber(b)) {
+	a = parseNumber(a);
+	b = parseNumber(b);
+    }
     if (a == b) return 0; else return (a > b) ? 1 : -1;
 }
 
 function sortObject(obj) {
-    return Object.keys(obj).sort(keyCmp).reduce(function (result, key) {
+    return Object.keys(obj).sort(cmp).reduce(function (result, key) {
         result[key] = obj[key];
         return result;
     }, {});
@@ -3406,6 +3395,21 @@ function safeName(s, capitalize) {
 	return s;
 }
 
+function blankColumn(sheet, colName, startRow) {
+    startRow = startRow || 2;
+    var lastRow = sheet.getLastRow();
+    var blankCol = indexColumns(sheet)[colName] || 0;
+    if (!blankCol || lastRow < startRow) {
+        return;
+    }
+    var blankRange = sheet.getRange(startRow, blankCol, lastRow, 1);
+    var blankVals = blankRange.getValues();
+    for (var j=0; j<blankVals.length; j++) {
+        blankVals[j][0] = '';
+    }
+    blankRange.setValues(blankVals);
+}
+
 function getDiscussStats(userId, sessionName, postTeams) {
     // Returns discussion stats { sessionName1: {discussNum1: [nPosts, unreadPosts, ...}, discussNum2:...}, sessionName2: ...}
     var discussStats = {};
@@ -3459,40 +3463,28 @@ function accessDiscussion(action, sessionName, discussNum, postTeam, userId, nam
     // name should be specified for action != 'post'
     postTeam = postTeam || '';
 
+    var axsSession = '_'+sessionName;
     var axsRowOffset = 2;
-    var axsHeaders = ['name', 'id'];
-    var axsRow = ['', DISCUSS_ID];
     var axsNameCol = 1;
     var axsIdCol = 2;
 
     try {
 	var axsSheet = getSheet(DISCUSS_SHEET);
 	if (!axsSheet) {
-	    if (action != 'post')
-		return 0;
-            // Create discussion access sheet (if posting)
-	    axsSheet = createSheet(DISCUSS_SHEET, axsHeaders);
-	    axsSheet.insertRowBefore(axsRowOffset);
-	    axsSheet.getRange(axsRowOffset, 1, 1, axsRow.length).setValues([axsRow]);
+	    return 0;
 	}
 
-	var axsHeaders = axsSheet.getSheetValues(1, 1, 1, axsSheet.getLastColumn())[0];
+        var axsColumn = indexColumns(axsSheet)[axsSession];
+        if (!axsColumn) {
+            throw('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET);
+        }
 
-	var axsSession = '_'+sessionName;
-	var axsColumn = 1 + axsHeaders.indexOf(axsSession);
-	if (axsColumn <= 0) {
-	    axsSheet.insertColumnsAfter(axsHeaders.length, 1);
-	    axsSheet.getRange(1, axsHeaders.length+1, 1, 1).setValue(axsSession);
-	    axsHeaders = axsSheet.getSheetValues(1, 1, 1, axsSheet.getLastColumn())[0];
-	    axsColumn = 1 + axsHeaders.indexOf(axsSession);
-	}
-
-	var discussRow = lookupRowIndex(DISCUSS_ID, axsSheet);
-	if (!discussRow) {
+        var axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet);
+        if (!axsTopRow) {
             throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
 	}
-	var discussRange = axsSheet.getRange(discussRow, axsColumn, 1, 1);
 
+	var discussRange = axsSheet.getRange(axsTopRow, axsColumn, 1, 1);
 	var postCountsAll = JSON.parse(discussRange.getValues()[0][0] || '{}');
         var postCounts = postCountsAll[postTeam] || {};
 	if (action == 'post') {
@@ -3618,20 +3610,26 @@ function getDiscussPosts(sessionName, discussNum, userId, name, postTeam) {
     return allPosts;
 }
 
-function updateDiscussSheet(sessionName, discussSlides, create, userId, userName) {
-    // Create session_discuss sheet, as needed, adding all current session users
-    // if userId is specified, add user to discuss sheet
+function updateDiscussSheet(sessionName, userId, userName) {
+    // Create/update session_discuss sheet (which will contain rows for all users who have posted)
+    // if userId is specified, add user row to session_discuss sheet
+
+    var sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'adminPaced', 'attributes'], INDEX_SHEET);
+    var adminPaced = sessionEntries.adminPaced;
+    var sessionAttributes = JSON.parse(sessionEntries['attributes']);
+    var discussSlides = sessionAttributes['discussSlides'];
+
+    if (sessionAttributes['params']['features'].live_discussion || (adminPaced && sessionEntries.dueDate) || (!adminPaced && sessionEntries.gradeDate)) {
+        // Create session_discuss sheet
+    } else {
+        return null;
+    }
+
     if (!discussSlides || !discussSlides.length) {
-        return;
+        return null;
     }
 
     var discussSheet = getSheet(sessionName+'_discuss');
-
-    if (discussSheet && create)   // Discuss sheet already created
-        return;
-
-    if (!discussSheet && !create) // Create sheet later, at time of first post
-        return;
 
     var discussRowOffset = 2;
     var discussNameCol = 1;
@@ -3641,36 +3639,47 @@ function updateDiscussSheet(sessionName, discussSlides, create, userId, userName
         // Create discussion sheet for session
         var sessionSheet = getSheet(sessionName);
         if (!sessionSheet) {
-            return;
+            return null;
         }
 
         var discussHeaders = ['name', 'id'];
-        var discussRow = ['', DISCUSS_ID];
-        for (var j=0; j<discussSlides.length; j++) {
-            discussHeaders.push('discuss'+zeroPad(j+1,3));
-            discussRow.push('');
-        }
+	var discussTopRow = ['', DISCUSS_ID];
 
         discussSheet = createSheet(sessionName+'_discuss', discussHeaders);
-        discussSheet.getRange(2, 1, 1, discussRow.length).setValues([discussRow]);
-        var discussRowCount = discussRowOffset;
+        discussSheet.getRange(2, 1, 1, discussTopRow.length).setValues([discussTopRow]);
 
-        // Add all session users to discussion sheet
-        var numStickyRows = 1;   // Headers etc.
-        var columnIndex = indexColumns(sessionSheet);
-        var idRowIndex = indexRows(sessionSheet, columnIndex['id']);
-        var idColValues = getColumns('id', sessionSheet, 1, 1+numStickyRows);
-        var nameColValues = getColumns('name', sessionSheet, 1, 1+numStickyRows);
-        var initColValues = getColumns('initTimestamp', sessionSheet, 1, 1+numStickyRows);
-        for (var j=0; j<idColValues.length; j++) {
-            if (!idColValues[j] || (idColValues[j].exec(/^_/) && idColValues[j] != TESTUSER_ID)) {
-                continue;
-            }
-            discussRowCount += 1;
-            discussSheet.insertRowBefore(discussRowCount);
-	    discussSheet.getRange(discussRowCount, discussIdCol, 1, 1).setValues([[idColValues[j]]]);
-            discussSheet.getRange(discussRowCount, discussNameCol, 1, 1).setValues([[nameColValues[j]]]);
+	// discuss_slidoc
+        var axsSheet = getSheet(DISCUSS_SHEET);
+        if (!axsSheet) {
+            // Create discussion access sheet (for posting)
+            var axsRowOffset = 2;
+            var axsHeaders = ['name', 'id'];
+            var axsTopRow = ['', DISCUSS_ID];
+            axsSheet = createSheet(DISCUSS_SHEET, axsHeaders);
+            axsSheet.insertRowBefore(axsRowOffset, keyValue=axsTopRow[1]);
+            axsSheet.getRange(axsRowOffset, 1, 1, axsTopRow.length).setValues([axsTopRow]);
         }
+
+        var axsSession = '_'+sessionName;
+        var axsColumn = indexColumns(axsSheet)[axsSession];
+
+        if (axsColumn) {
+            blankColumn(axsSheet, axsSession);
+        } else {
+            // Append column for session
+	    var nCols = axsSheet.getLastColumn();
+            axsSheet.insertColumnsAfter(nCols, 1);
+            axsSheet.getRange(1, nCols+1, 1, 1).setValue(axsSession);
+            axsColumn = indexColumns(axsSheet)[axsSession];
+        }
+
+        // Update top entry for column
+        var axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet);
+        if (!axsTopRow) {
+            throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
+        }
+        var axsTopEntry = {};
+        axsSheet.getRange(axsTopRow, axsColumn, 1, 1).setValue(JSON.stringify(axsTopEntry));
     }
 
     if (userId && (!userId.exec(/^_/) || userId == TESTUSER_ID) && !lookupRowIndex(userId, discussSheet)) {
@@ -3684,6 +3693,19 @@ function updateDiscussSheet(sessionName, discussSlides, create, userId, userName
 	discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
         discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]]);
     }
+
+    var discussColIndex = indexColumns(discussSheet);
+    for (var j=0; j<discussSlides.length; j++) {
+        var colHeader = 'discuss'+zeroPad(j+1,3);
+        if (discussColIndex[colHeader])
+            continue
+	// Append discussnnn column
+	var nCols = discussSheet.getLastColumn();
+        discussSheet.insertColumnsAfter(nCols, 1);
+        discussSheet.getRange(1, nCols+1, 1, 1).setValue(colHeader);
+    }
+
+    return discussSheet;
 }
 
 

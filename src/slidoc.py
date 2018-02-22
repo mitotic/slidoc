@@ -981,6 +981,18 @@ class SlidocRenderer(MathRenderer):
     def list_incremental(self, activate):
         self.incremental_list = activate
     
+    def autolink(self, link, is_email=False):
+        """Rendering a given link or email address.
+
+        :param link: link content or email address.
+        :param is_email: whether this is an email or not.
+        """
+        text = link = mistune.escape(link)
+        if is_email:
+            link = 'mailto:%s' % link
+        target_str = ' target="_blank"' if self.options['config'].pace and link.split(':')[0] in ('http', 'https') else ''
+        return '<a href="%s"%s>%s</a>' % (link, target_str, text)
+
     def forward_link(self, ref_id):
         self.slide_forward_links.append(ref_id)
 
@@ -1089,7 +1101,7 @@ class SlidocRenderer(MathRenderer):
 
     def minirule(self):
         """Treat minirule as a linebreak"""
-        return '<br class="slidoc-full-block">\n'
+        return self.slidoc_end_choice_block() + '<br class="slidoc-full-block">\n'
 
     def pause(self, text):
         """Pause in display"""
@@ -1269,9 +1281,6 @@ class SlidocRenderer(MathRenderer):
 
     def hrule(self, text='---', implicit=False):
         """Rendering method for ``<hr>`` tag."""
-        if self.choice_end:
-            prefix = self.choice_end
-
         if implicit or 'rule' in self.options['config'].strip or (self.hide_end and 'hidden' in self.options['config'].strip):
             rule_html = ''
         elif self.options.get('use_xhtml'):
@@ -1293,7 +1302,13 @@ class SlidocRenderer(MathRenderer):
         return end_html + self.slide_prefix(new_slide_id, ' '.join(classes)) + concept_chain(new_slide_id, self.options['config'].server_url)
 
     def end_slide(self, suffix_html='', last_slide=False):
-        prefix_html = self.end_extra()+self.end_hint()  # Hints/Notes will be ignored after Extra:
+        if self.choice_opts and not self.qtypes[-1].endswith('choice'):
+            if self.options['config'].pace:
+                abort("    ****CHOICE-ERROR: %s: 'Answer: ...' expected after choice options A.., B.., for paced slide %s" % (self.options["filename"], self.slide_number))
+            else:
+                message("    ****CHOICE-WARNING: %s: 'Answer: ...' expected after choice options A.., B.., for slide %s" % (self.options["filename"], self.slide_number))
+
+        prefix_html = self.slidoc_end_choice_block()+self.end_hint()+self.end_extra()
 
         plugins_html = ''
 
@@ -1904,35 +1919,39 @@ class SlidocRenderer(MathRenderer):
         if name in SINGLETON_PLUGINS:
             abort("    ****PLUGIN-ERROR: %s: Cannot embed special plugin %s in slide %s" % (self.options["filename"], self.untitled_number, name, self.slide_number))
         args, sep, content = text.partition('\n')
-        return self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
+        return self.slidoc_end_choice_block() + self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
+
+    def slidoc_end_choice_block(self):
+        if not self.choice_end:
+            return ''
+        html_prefix = self.choice_end
+        self.choice_end = ''
+
+        if not self.choice_full_alt:
+            self.choice_alternatives = max(self.choice_opts)
+            for j, x in enumerate(self.choice_opts):
+                if x and x != self.choice_alternatives:
+                    abort("    ****CHOICE-ERROR: %s: Mismatch in number of alternatives for %s in slide %s: expected %d but got %d" % (self.options["filename"], chr(j-1+ord('A')) if j else 'Q', self.slide_number, self.choice_alternatives, x))
+                    return ''
+
+        else:
+            self.choice_alternatives = self.choice_full_alt
+            if self.choice_expect:
+                abort("    ****CHOICE-ERROR: %s: Expected choice %s for alternative question %d in slide %s" % (self.options["filename"], self.choice_expect, self.choice_full_alt, self.slide_number))
+                return ''
+
+        if self.choice_alternatives > 9:
+            abort("    ****CHOICE-ERROR: %s: More than %d alternatives in slide %s" % (self.options["filename"], self.choice_alternatives, self.slide_number))
+            return ''
+
+        return html_prefix
 
     def slidoc_answer(self, name, text):
         if self.qtypes[-1]:
             # Ignore multiple answers
             return ''
 
-        html_prefix = ''
-        if self.choice_end:
-            html_prefix = self.choice_end
-            self.choice_end = ''
-
-            if not self.choice_full_alt:
-                self.choice_alternatives = max(self.choice_opts)
-                for j, x in enumerate(self.choice_opts):
-                    if x and x != self.choice_alternatives:
-                        abort("    ****CHOICE-ERROR: %s: Mismatch in number of alternatives for %s in slide %s: expected %d but got %d" % (self.options["filename"], chr(j-1+ord('A')) if j else 'Q', self.slide_number, self.choice_alternatives, x))
-                        return ''
-
-            else:
-                self.choice_alternatives = self.choice_full_alt
-                if self.choice_expect:
-                    abort("    ****CHOICE-ERROR: %s: Expected choice %s for alternative question %d in slide %s" % (self.options["filename"], self.choice_expect, self.choice_full_alt, self.slide_number))
-                    return ''
-
-            if self.choice_alternatives > 9:
-                abort("    ****CHOICE-ERROR: %s: More than %d alternatives in slide %s" % (self.options["filename"], self.choice_alternatives, self.slide_number))
-                return ''
-
+        html_prefix = self.slidoc_end_choice_block()
         all_options = ('explain', 'followup', 'maxchars', 'noshuffle', 'participation', 'retry', 'share', 'team', 'vote', 'weight')
 
         # Syntax
@@ -2559,7 +2578,7 @@ class SlidocRenderer(MathRenderer):
         if qhints:
             self.questions[-1]['hints'] = qhints[:]
 
-        prefix = self.end_hint()
+        prefix = self.slidoc_end_choice_block() + self.end_hint()
 
         id_str = self.get_slide_id() + '-hint-' + str(hint_number)
         start_str, suffix, end_str = self.start_block('hint', id_str, display='none')
@@ -2575,7 +2594,7 @@ class SlidocRenderer(MathRenderer):
         if self.notes_end is not None:
             # Additional notes prefix in slide; strip it
             return ''
-        prefix = self.end_hint()
+        prefix = self.slidoc_end_choice_block() + self.end_hint()
 
         show_notes = self.options['config'].preview_port and 'notes' in self.options['config'].show
 
@@ -2592,9 +2611,10 @@ class SlidocRenderer(MathRenderer):
 
 
     def slidoc_extra(self, name, text):
+        prefix = self.slidoc_end_choice_block() + self.end_hint()  # Hints/Notes will be ignored after Extra:
         if self.options['config'].preview_port and 'extra' in self.options['config'].show:
-            return '\n<b>Extra</b>:<br>\n'
-        prefix = self.end_hint() + self.end_notes()
+            return prefix + '\n<b>Extra</b>:<br>\n'
+        prefix += self.end_notes()
         id_str = self.get_slide_id() + '-extra'
         disp_block = 'block' if 'keep_extras' in self.options['config'].features else 'none'
         start_str, suffix, end_str = self.start_block('extra', id_str, display=disp_block)
@@ -2885,8 +2905,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         cur_qparams = sheet_attributes.get('questionParams', [])
         prev_discuss = prev_attributes.get('discussSlides', [])
         cur_discuss = sheet_attributes.get('discussSlides', [])
-        if len(cur_discuss) != len(prev_discuss) and session_name+'_discuss' in related_sheets:
-            abort('ERROR:DISCUSS-ERROR: Please delete sheet %s_discuss before modifying/disabling discussion for session' % session_name)
+        if len(cur_discuss) < len(prev_discuss) and session_name+'_discuss' in related_sheets:
+            abort('ERROR:DISCUSS-ERROR: Please delete sheet %s_discuss before reducing/eliminating discussions for session' % session_name)
         if row_count and prev_qparams != cur_qparams:
             min_count =  min(len(prev_qparams), len(cur_qparams))
             errq = ''
@@ -3327,7 +3347,8 @@ def process_input(*args, **argv):
         raise Exception('System exit error in process input: %s' % excp)
 
 def process_input_aux(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={}, nb_links={},
-                      restricted_sessions_re=None, return_html=False, return_messages=False, error_exit=False, http_post_func=None):
+                      restricted_sessions_re=None, return_html=False, return_messages=False, extra_attributes={},
+                      error_exit=False, http_post_func=None):
     global Global, message
     input_paths = [md2md.stringify(x) for x in input_paths] # unicode -> str
 
@@ -3489,6 +3510,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'authType': '', 'features': {} }
 
     js_params['version'] = sliauth.get_version()
+    js_params['renderDate'] = sliauth.iso_date(nosubsec=True)
     js_params['userCookiePrefix'] = sliauth.USER_COOKIE_PREFIX
     js_params['siteCookiePrefix'] = sliauth.SITE_COOKIE_PREFIX
     js_params['siteName'] = config.site_name
@@ -3785,9 +3807,9 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     if not release_date_obj:
                         abort('DATE-ERROR: Invalid release date %s for module %s' % (release_date_str, fname))
 
-            if not file_config.publish and restricted_sessions_re and restricted_sessions_re.search(fname):
+            if restricted_sessions_re and restricted_sessions_re.search(fname):
                 if not release_date_str:
-                    abort('RESTRICTED-ERROR: Must specify an actual release date to create restricted session %s' % fname)
+                    abort('RESTRICTED-ERROR: Must specify an actual/future release date to create restricted session %s' % fname)
                 if return_html and release_date_obj:
                     if not start_date_obj:
                         abort('RESTRICTED-ERROR: Must specify site start date to create restricted session %s' % fname)
@@ -4034,7 +4056,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
         if gd_sheet_url and (not config.dry_run or return_html):
-            tem_attributes = renderer.sheet_attributes.copy()
+            tem_attributes = extra_attributes.copy()
+            tem_attributes.update(renderer.sheet_attributes)
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
