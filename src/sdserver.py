@@ -82,6 +82,8 @@ import plugins
 scriptdir = os.path.dirname(os.path.realpath(__file__))
 script_parentdir = os.path.abspath(os.path.join(scriptdir, os.pardir))
 
+DEBUG_PATH_RE = re.compile(r'(/_auth/)')
+
 CUMULATIVE_TOTAL_RE = re.compile(r'^(\d*(\.\d*)?|(\d*(\.\d*)?\*)?[a-z][-\w]*[a-z](\d\d|_(avg|normavg|sum)(_(\d+))?))$', re.IGNORECASE)
 
 Options = {
@@ -473,19 +475,25 @@ class SiteMixin(object):
 
 class UserIdMixin(object):
     user_nonces = defaultdict(dict)
-
+    image_path = re.compile(r'^(.*)/([^/]+)_images/([^/]+)$')
     @classmethod
-    def get_path_base(cls, path, special=False):
+    def get_path_base(cls, path, special=False, handle_image=False):
         # Extract basename, without file extension, from URL path
         # If not special, return None if non-html file or index.html
+        if ('/'+FILES_PATH) in path:
+            return None
+
+        if handle_image:
+            imatch = cls.image_path.match(path)
+            if imatch:
+                return imatch.group(2)
+
         if not special and not path.endswith('.html'):
             return None
         basename = path.split('/')[-1]
         if '.' in basename:
             basename, sep, suffix = basename.rpartition('.')
         if not special and basename == 'index':
-            return None
-        if ('/'+FILES_PATH) in basename:
             return None
         return basename
 
@@ -1956,8 +1964,8 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
             token = sliauth.gen_locked_token(Options['auth_key'], userId, Options['site_name'], sessionName)
-            accessCode = urllib.quote_plus('%s:%s' % (userId, token))
-            accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], accessCode)
+            accessCode = '%s:%s' % (userId, token)
+            accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], urllib.quote_plus(accessCode))
             if Options['debug']:
                 print >> sys.stderr, 'DEBUG: locked access URL', accessURL
             img_data_uri = sliauth.gen_qr_code(accessCode, img_html='<img class="slidoc-lockcode" src="%s">')
@@ -4945,7 +4953,7 @@ class SiteStaticFileHandler(UncachedStaticFileHandler, SiteMixin):
 class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
     def get_current_user(self):
         # Return None only to request login; else raise HTTPError do deny access (to avoid looping)
-        sessionName = self.get_path_base(self.request.path)
+        sessionName = self.get_path_base(self.request.path, handle_image=True)
         filename = self.get_path_base(self.request.path, special=True)
 
         if self.request.path.endswith('.md'):
@@ -4980,7 +4988,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
         elif self.is_web_view():
             raise tornado.web.HTTPError(404, log_message='CUSTOM:Restricted access to locked sessions only')
 
-        if Options['debug'] and '_images/' not in self.request.path:
+        if DEBUG_PATH_RE and DEBUG_PATH_RE.search(self.request.path):
             print >> sys.stderr, "AuthStaticFileHandler.get_current_user", userId, repr(siteRole), Options['site_number'], sessionName, self.request.path, self.request.query, Options['dry_run'], Options['dry_run_file_modify'], Options['lock_proxy_url']
 
         if ActionHandler.previewState.get('name'):
@@ -6370,8 +6378,8 @@ def start_multiproxy():
             else:
                 # Root server
                 retval = SiteProps.relay_map(0)
-            if Options['debug'] and '_images/' not in self.request_uri:
-                print >> sys.stderr, 'ABC: get_relay_addr_uri:', sliauth.iso_date(nosubsec=True), self.ip_addr, self.request_uri, retval
+            if DEBUG_PATH_RE and DEBUG_PATH_RE.search(self.request_uri):
+                print >> sys.stderr, 'sdserver: get_relay_addr_uri:', sliauth.iso_date(nosubsec=True), self.ip_addr, self.request_uri, retval
             return retval
 
     Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,
