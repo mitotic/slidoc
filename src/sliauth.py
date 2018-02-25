@@ -21,7 +21,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.21v'
+VERSION = '0.97.21w'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'

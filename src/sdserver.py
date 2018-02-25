@@ -1367,6 +1367,7 @@ class ActionHandler(BaseHandler):
             return
         raise tornado.web.HTTPError(403, log_message='CUSTOM:Invalid PUT action '+action)
 
+    @tornado.gen.coroutine
     def getAction(self, subpath):
         action, sep, subsubpath = subpath.partition('/')
         sessionName = subsubpath
@@ -1403,7 +1404,8 @@ class ActionHandler(BaseHandler):
 
                 # Ensure that current preview modification version is an URL parameter for content preview
                 if modifiedStr and modifiedNum == self.previewState['modified']:
-                    return self.displayPreview(subsubpath)
+                    self.displayPreview(subsubpath)
+                    return
 
                 self.redirectPreview(update=self.get_argument('update', ''), slideId=self.get_argument('slideid', ''))
                 return
@@ -1422,7 +1424,8 @@ class ActionHandler(BaseHandler):
                 if not previewingSession:
                     self.displayMessage('Not previewing any session')
                     return
-                return self.downloadPreview()
+                self.downloadPreview()
+                return
 
             elif action == '_accept':
                 if not Options['source_dir']:
@@ -1430,7 +1433,8 @@ class ActionHandler(BaseHandler):
                 if not previewingSession:
                     self.displayMessage('Not previewing any session')
                     return
-                return self.acceptPreview(modified=modifiedNum, slideId=self.get_argument('slideid', ''))
+                self.acceptPreview(modified=modifiedNum, slideId=self.get_argument('slideid', ''))
+                return
 
             elif action == '_edit':
                 if not Options['source_dir']:
@@ -1450,13 +1454,16 @@ class ActionHandler(BaseHandler):
                     if not self.previewState['modified']:
                         # Clear any unmodified preview
                         self.previewClear()
-                return self.editSession(sessionName, sessionType=sessionType, start=True, slideNumber=slideNumber, startPreview=startPreview)
+                self.editSession(sessionName, sessionType=sessionType, start=True, slideNumber=slideNumber, startPreview=startPreview)
+                return
 
             elif action == '_closepreview':
-                return self.discardPreview(sessionName, modified=modifiedNum)
+                self.discardPreview(sessionName, modified=modifiedNum)
+                return
 
             elif action == '_discard':
-                return self.discardPreview(sessionName, modified=modifiedNum)
+                self.discardPreview(sessionName, modified=modifiedNum)
+                return
 
             elif action == '_reloadpreview':
                 if not previewingSession:
@@ -1466,8 +1473,14 @@ class ActionHandler(BaseHandler):
                 return
 
             elif action == '_release':
+                if previewingSession:
+                    raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot release when previewing session')
                 releaseDate = self.get_argument('releasedate', '')
-                return self.releaseModule(sessionName, releaseDate=releaseDate)
+                postGrades = self.get_argument('gradebook', '')
+                if self.get_argument('submit', ''):
+                    yield self.submitSession(sessionName, postGrades=postGrades)
+                self.releaseModule(sessionName, releaseDate=releaseDate)
+                return
 
         if Options['multisite'] and not Options['site_number']:
             # Primary server
@@ -3600,6 +3613,30 @@ class ActionHandler(BaseHandler):
             self.write( json.dumps( {'result': 'success'} ) )
 
 
+    @tornado.gen.coroutine
+    def submitSession(self, sessionName, postGrades=''):
+        user = sdproxy.TESTUSER_ID
+        userEntries = sdproxy.lookupValues(user, ['submitTimestamp'], sessionName, listReturn=True)
+        if Options['debug']:
+            print >> sys.stderr, 'ActionHandler:submitSession', userEntries, sessionName, postGrades
+        if userEntries[0]:
+            # test user has already submitted
+            return
+        userToken = gen_proxy_auth_token(sdproxy.ADMINUSER_ID, sdproxy.ADMIN_ROLE, prefixed=True)
+        args = {'sheet': sessionName, 'id': user, 'admin': sdproxy.ADMINUSER_ID, 'token': userToken}
+        args['update'] = json.dumps([['id', user], ['submitTimestamp', sdproxy.createDate()]], default=sliauth.json_default)
+        if postGrades:
+            args['completeactions'] = '*gradebook'     # * => create if needed
+
+        retObj = sdproxy.sheetAction(args)
+        if retObj['result'] != 'success':
+            raise Exception('Error in submitting session '+sessionName+': '+retObj.get('error',''))
+        for j in range(15):
+            sessionSheet = sdproxy.getSheet(sessionName)
+            if sessionSheet and sessionSheet.get_updates() is not None:
+                print >> sys.stderr, 'ActionHandler:submitSession.SLEEP', j
+                yield tornado.gen.sleep(1)
+
     def releaseModule(self, sessionName, releaseDate=''):
         releaseDate = str(releaseDate)  # Unicode releaseDate contaminates the UTF-8 strings
         if releaseDate and releaseDate != sliauth.FUTURE_DATE and not sliauth.parse_date(releaseDate):
@@ -3887,9 +3924,8 @@ class UserActionHandler(ActionHandler):
         elif action == '_user_browse':
             if subsubpath != 'files' and not subsubpath.startswith('files/'):
                 raise tornado.web.HTTPError(403)
-            site_admin = self.check_admin_access()
-            url_path = '_browse' if site_admin else '_user_browse'
-            self.browse(url_path, subsubpath, site_admin=site_admin, download=self.get_argument('download', ''))
+            url_path = '_browse' if admin_access else '_user_browse'
+            self.browse(url_path, subsubpath, site_admin=admin_access, download=self.get_argument('download', ''))
             return
 
         elif action in ('_user_discuss',):
@@ -3913,7 +3949,7 @@ class UserActionHandler(ActionHandler):
             return
 
         elif action in ('_user_status',):
-            self.user_status(userId)
+            self.user_status(userId, admin=admin_access)
             return
 
         elif action in ('_user_twitterlink',):
@@ -3926,13 +3962,24 @@ class UserActionHandler(ActionHandler):
 
         raise tornado.web.HTTPError(404)
 
-    def user_status(self, userId):
+    def user_status(self, userId, admin=False):
         retval = {'result': 'success'}
         retval['previewingSession'] = ActionHandler.previewState.get('name', '')
         retval['interactiveSession'] = WSHandler.getInteractiveSession()[0]
 
+        if admin:
+            colNames = ['sessionWeight', 'releaseDate', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'gradeWeight']
+            sessionProperties = {}
+            for sessionName, propList in sdproxy.lookupSessions(colNames):
+                sessionProperties[sessionName] = {}
+                for j, colName in enumerate(colNames):
+                    sessionProperties[sessionName][colName] = propList[j]
+            retval['sessionProperties'] = sessionProperties
+        else:
+            retval['sessionProperties'] = None
+
         self.set_header('Content-Type', 'application/json')
-        self.write( json.dumps(retval) )
+        self.write( json.dumps(retval, default=sliauth.json_default) )
 
     def discuss_stats(self, userId):
         retval = {'result': 'success'}
@@ -4197,7 +4244,8 @@ class ProxyHandler(BaseHandler):
                     traceback.print_exc()
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Error in modify_user_auth')
 
-        if (args.get('actions') and args['actions'] not in  ('discuss_posts', 'answer_stats', 'correct')) and Options['gsheet_url']:
+        if (args.get('actions') and ',' not in args['actions'] and args['actions'] not in ('discuss_posts', 'answer_stats', 'correct')) and Options['gsheet_url']:
+            # Handle action remotely
             # NOTE: No longer using proxy passthru for args.get('modify') (to allow revert preview)
 
             if Options['log_call']:

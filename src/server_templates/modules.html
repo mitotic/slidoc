@@ -40,7 +40,7 @@ function action(actionName, sessionName, sessionPrefix, checkboxId) {
    }
   if (actionName == 'republish') {
     if (statusElem)
-      statusElem.textContent = 'Processing...';
+      statusElem.textContent = 'Republishing... (can take a while)';
   }
    var url = '{{ site_prefix }}'+'/_'+actionName;
    if (sessionName)

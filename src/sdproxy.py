@@ -1224,7 +1224,7 @@ class Sheet(object):
             for action in actions.split(','):
                 if action in self.actionsRequested:
                     self.actionsRequested.remove(action)
-                if action == 'gradebook':
+                if action.endswith('gradebook'):
                     refreshGradebook(self.name)
 
         if not updateParams.get('incompleteUpdate') and updateParams.get('modifiedHeaders'):
@@ -1917,6 +1917,8 @@ def sheetAction(params, notrace=False):
 
         removeSheet = params.get('delsheet')
         performActions = params.get('actions', '')
+        if params.get('completeactions', '').strip():
+            completeActions =  params['completeactions'].split(',')
 
         curDate = createDate()
         curTime = sliauth.epoch_ms(curDate)
@@ -2223,7 +2225,7 @@ def sheetAction(params, notrace=False):
                 completeActions.append('answer_stats')
                 completeActions.append('correct')
                 if updateTotalScores(modSheet, sessionAttributes, questions, True) and not Settings['dry_run']:
-                    modSheet.requestActions('gradebook')
+                    completeActions.append('gradebook')
                     if not TOTAL_COLUMN:
                         # Refresh cached gradebook (because scores/grade may be updated)
                         refreshGradebook(sheetName)
@@ -2981,18 +2983,8 @@ def sheetAction(params, notrace=False):
 
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
-                            submitTimestamp = rowValues[submitTimestampCol-1]
-                            setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
+                            adminPacedUpdate(sheetName, modSheet, numStickyRows, rowValues[submitTimestampCol-1])
 
-                            idRowIndex = indexRows(modSheet, columnIndex['id'])
-                            idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
-                            nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows)
-                            initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows)
-                            for j in range(len(idColValues)):
-                                # Submit all other users who have started a session
-                                if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
-                                    modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]])
-                            
                 elif selectedUpdates:
                     # Update selected row values
                     # Timestamp is updated only if specified in list
@@ -3045,11 +3037,14 @@ def sheetAction(params, notrace=False):
                                 elif colValue:
                                     modValue = createDate(colValue)
                                 else:
-                                    # Unsubmit if blank value (also clear lateToken and due date, if admin paced)
+                                    # Unsubmit if blank value (also clear lateToken)
                                     modValue = ''
                                     modSheet.getRange(userRow, columnIndex['lateToken'], 1, 1).setValues([[ '' ]])
-                                    if sessionEntries and adminPaced and paramId == TESTUSER_ID:
-                                        setValue(sheetName, 'dueDate', '', INDEX_SHEET)
+
+                                if sessionEntries and adminPaced and paramId == TESTUSER_ID:
+                                    # Update/clear due date and submit others if necessary
+                                    adminPacedUpdate(sheetName, modSheet, numStickyRows, modValue)
+
                                 if modValue:
                                     returnInfo['submitTimestamp'] = modValue
                             elif adminUser and colValue:
@@ -3252,6 +3247,25 @@ def submit_timed_session(userId, sessionName):
 
     if Settings['debug']:
         print("DEBUG: submit_timed_session: SUBMITTED", userId, sessionName, file=sys.stderr)
+
+def adminPacedUpdate(sheetName, modSheet, numStickyRows, submitTimestamp):
+    # Use test user submission time as due date for admin-paced sessions
+    setValue(sheetName, 'dueDate', submitTimestamp, INDEX_SHEET)
+
+    if not submitTimestamp:
+        return
+
+    # Submit all other users who have started a session
+    columnIndex = indexColumns(modSheet)
+    submitTimestampCol = columnIndex.get('submitTimestamp')
+
+    idRowIndex = indexRows(modSheet, columnIndex['id'])
+    idColValues = getColumns('id', modSheet, 1, 1+numStickyRows)
+    nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows)
+    initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows)
+    for j in range(len(idColValues)):
+        if initColValues[j] and idColValues[j] and idColValues != TESTUSER_ID and idColValues[j] != MAXSCORE_ID:
+            modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]])
 
 def gen_proxy_token(username, role=''):
     prefixed = role in (ADMIN_ROLE, GRADER_ROLE)
@@ -5155,17 +5169,22 @@ def actionHandler(actions, sheetName='', create=False):
     refreshSheets = []
     for k in range(0,len(actionList)):
         action = actionList[k]
+        createPrefix = '*' if create else ''
+        if action[0] == '*':
+            createPrefix = '*'
+            action = action[1:];
+
         if action in ('answer_stats', 'correct'):
             try:
                 if action == 'answer_stats':
                     for j in range(0,len(sessions)):
-                        updateAnswers(sessions[j], create)
-                        updateStats(sessions[j], create)
+                        updateAnswers(sessions[j], createPrefix)
+                        updateStats(sessions[j], createPrefix)
                         refreshSheets.append(sessions[j]+'_answers')
                         refreshSheets.append(sessions[j]+'_stats')
                 elif action == 'correct':
                     for j in range(0,len(sessions)):
-                        updateCorrect(sessions[j], create)
+                        updateCorrect(sessions[j], createPrefix)
                         refreshSheets.append(sessions[j]+'_correct')
             except Exception, excp:
                 if Settings['debug']:
@@ -5173,7 +5192,12 @@ def actionHandler(actions, sheetName='', create=False):
                     traceback.print_exc()
                 raise Exception('Error:ACTION:Error in action %s for session(s) %s; may need to delete related sheet(s): %s' % (action, sessions, excp))
         elif action == 'gradebook':
-            raise Exception('Error:ACTION:gradebook action not implemented in proxy')
+            # Gradebook action will be handled remotely
+            for j in range(0,len(sessions)):
+                actSheet = getSheet(sessions[j])
+                if actSheet:
+                    actSheet.requestActions(createPrefix+action)
+                    print('sdproxy.actionHandler2: %s %s' % (sessions[j], createPrefix+action), file=sys.stderr)
         else:
             raise Exception('Error:ACTION:Invalid action '+action+' for session(s) '+sessions)
     return refreshSheets

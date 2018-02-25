@@ -101,6 +101,8 @@ Sliobj.sitePrefix = Sliobj.params.siteName ? '/'+Sliobj.params.siteName : '';
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.fileName : '';
 Sliobj.sessionLabel = (!Sliobj.params.fileName && Sliobj.params.sessionType) ? Sliobj.params.sessionType+'/index' : Sliobj.params.fileName;
 
+Sliobj.sessionProperties = null;   // For all sessions
+
 Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
@@ -724,6 +726,7 @@ Slidoc.pageSetup = function() {
 	Slidoc.log('userStatusAux:', retval, errmsg);
 	if (!retval)
 	    return;
+	Sliobj.sessionProperties = retval.sessionProperties || null;
 	if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole) {
 	    var statusElem = document.getElementById('slidoc-test-status');
 	    if (statusElem) {
@@ -7562,8 +7565,10 @@ Slidoc.responseTable = function () {
     var firstSlideId = getVisibleSlides()[0].id;
     var attr_vals = getChapterAttrs(firstSlideId);
     var chapter_id = parseSlideId(firstSlideId)[0];
-    var html = '<b>Responses for session '+Sliobj.sessionName+'</b>';
-    html += '<br><em>user:</em> '+getUserId();
+    var html = 'Responses for session <b>'+Sliobj.sessionName+Sliobj.sitePrefix+'</b>';
+    html += '<br><em>Id:</em> '+getUserId();
+    if (Sliobj.session.displayName)
+	html += '<br><em>Name:</em> '+Sliobj.session.displayName;
     if (Sliobj.session.submitted)
 	html += '<br><em>Submitted:</em> '+parseDate(Sliobj.session.submitted);
     html += '<p></p><pre><table class="slidoc-slide-help-table"><tr>';
@@ -7573,14 +7578,14 @@ Slidoc.responseTable = function () {
 	var qnumber = j+1;
 	var question_attrs = attr_vals[qnumber-1];
 	var qAttempted = Sliobj.session.questionsAttempted[qnumber];
-	html += '<td>' + zeroPad(qnumber,2) + '. ';
+	html += '<td>' + zeroPad(qnumber,2) + ': ';
 	if (!qAttempted) {
 	    // No response
 	} else if (question_attrs.qtype == 'choice') {
 	    var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
 	    var shuffleStr = Sliobj.session.questionShuffle[qnumber] || '';
 	    var choice = (qAttempted.response && shuffleStr) ? choiceShuffle(qAttempted.response, shuffleStr): qAttempted.response;
-	    html += '<b>' + choice + '</b>';
+	    html += '<b>' + choice + '</b>&nbsp;&nbsp;';
 	} else if (question_attrs.qtype == 'number') {
 	    html += qAttempted.response;
 	} else if (qAttempted.response) {
@@ -7857,6 +7862,44 @@ function releaseGradesCallback(gradeDateStr, result, retStatus) {
     } else {
 	alert('Error: Failed to update Grade Date in index sheet '+Sliobj.params.index_sheet+'; grades not released to students ('+retStatus.error+')');
     }
+}
+
+Slidoc.releaseSubmit = function(sessionName) {
+    var userOptions = [ 'Release', 'Submit and release', 'Submit, release, and post to gradebook'];
+    var html = 'Release date:<br><input id="slidoc-dateload" type="datetime-local" value="">\n';
+    html += '<span class="slidoc-clickable" onclick="document.getElementById('+"'slidoc-dateload'"+').value='+"''"+';">Blank</span><br>(set date to blank for indefinite release)\n';
+
+    var nOpts = 1;
+    if (Sliobj.sessionProperties && Sliobj.sessionProperties[sessionName]) {
+	var props = Sliobj.sessionProperties[sessionName];
+	if (!props.dueDate && props.paceLevel && props.paceLevel == ADMIN_PACE)
+	    nOpts = 3;
+    }
+
+    function optCallback(selOption) {
+	Slidoc.log('Slidoc.releaseSubmit.optCallback:', selOption);
+	if (Sliobj.closePopup)
+	    Sliobj.closePopup();
+	if (!selOption) {
+	    return;
+	}
+	var url = Sliobj.sitePrefix + '/_release/' + sessionName;
+	var dateElem = document.getElementById('slidoc-dateload');
+	url += '?releasedate=' + ((dateElem && dateElem.value) ? encodeURIComponent(dateElem.value) : '');
+	if (selOption > 1) {
+	    url += '&submit=1'
+	    if (selOption > 2)
+		url += '&gradebook=1';
+	}
+	Slidoc.log('Slidoc.releaseSubmit.optCallback:2', url);
+	Slidoc.showPopup('Releasing '+sessionName+'...');
+	window.location = url;
+    }
+
+    Slidoc.showPopupOptions('Module '+sessionName+':', userOptions.slice(0,nOpts), html, optCallback);
+    var dateElem = document.getElementById('slidoc-dateload');
+    if (dateElem)
+	dateElem.value = Slidoc.toLocalISOString(null, true) + 'T00:00';
 }
 
 function conceptStats(tags, tallies) {

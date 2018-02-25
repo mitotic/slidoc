@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21v';
+var VERSION = '0.97.21w';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -675,6 +675,8 @@ function sheetAction(params) {
 
 	var removeSheet = params.delsheet;
 	var performActions = params.actions || '';
+        if (params.completeactions && params.completeactions.trim())
+            completeActions =  params.completeactions.split(',');
 
 	var curDate = new Date();
 	var curTime = curDate.getTime();
@@ -1923,19 +1925,7 @@ function sheetAction(params) {
                         }
                         if (params.submit) {
                             // Use test user submission time as due date for admin-paced sessions
-			    var submitTimetamp = rowValues[submitTimestampCol-1];
-                            setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
-
-                            var idRowIndex = indexRows(modSheet, columnIndex['id']);
-                            var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
-                            var nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows);
-                            var initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows);
-                            for (var j=0; j < idColValues.length; j++) {
-                                // Submit all other users who have started a session
-                                if (initColValues[j] && idColValues[j] && idColValues[j] != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
-                                    modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]]);
-                                }
-                            }
+			    adminPacedUpdate(sheetName, modSheet, numStickyRows, rowValues[submitTimestampCol-1]);
                         }
                     }
 
@@ -1994,13 +1984,14 @@ function sheetAction(params) {
                                 } else if (colValue) {
                                     modValue = createDate(colValue);
                                 } else {
-                                    // Unsubmit if blank value (also clear lateToken and due date, if admin paced)
+                                    // Unsubmit if blank value (also clear lateToken)
                                     modValue = '';
                                     modSheet.getRange(userRow, columnIndex['lateToken'], 1, 1).setValues([[ '' ]]);
-				    if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
-					setValue(sheetName, 'dueDate', '', INDEX_SHEET);
-				    }
                                 }
+				if (sessionEntries && adminPaced && paramId == TESTUSER_ID) {
+				    // Update/clear due date and submit others if necessary
+				    adminPacedUpdate(sheetName, modSheet, numStickyRows, modValue);
+				}
                                 if (modValue) {
                                     returnInfo['submitTimestamp'] = modValue;
                                 }
@@ -2189,6 +2180,26 @@ function sheetAction(params) {
     }
 }
 
+function adminPacedUpdate(sheetName, modSheet, numStickyRows, submitTimestamp) {
+    setValue(sheetName, 'dueDate', submitTimetamp, INDEX_SHEET);
+
+    if (!submitTimestamp)
+	return;
+
+    var columnIndex = indexColumns(modSheet);
+    var submitTimestampCol = columnIndex['submitTimestamp'];
+    
+    var idRowIndex = indexRows(modSheet, columnIndex['id']);
+    var idColValues = getColumns('id', modSheet, 1, 1+numStickyRows);
+    var nameColValues = getColumns('name', modSheet, 1, 1+numStickyRows);
+    var initColValues = getColumns('initTimestamp', modSheet, 1, 1+numStickyRows);
+    for (var j=0; j < idColValues.length; j++) {
+        // Submit all other users who have started a session
+        if (initColValues[j] && idColValues[j] && idColValues[j] != TESTUSER_ID && idColValues[j] != MAXSCORE_ID) {
+            modSheet.getRange(idRowIndex[idColValues[j]], submitTimestampCol, 1, 1).setValues([[submitTimestamp]]);
+        }
+    }
+}
 
 function handleProxyUpdates(data, create, returnMessages) {
     var refreshSheets = []
@@ -4826,21 +4837,26 @@ function actionHandler(actions, sheetName, create) {
     var refreshSheets = []
     for (var k=0; k<actionList.length; k++) {
 	var action = actionList[k];
+	var createPrefix = create ? '*' : '';
+	if (action.charAt(0) == '*') {
+	    createPrefix = '*';
+	    action = action.slice(1);
+	}
 	trackCall(1, 'actionHandler: '+action);
 	if (action == 'answer_stats') {
 	    for (var j=0; j<sessions.length; j++) {
-		updateAnswers(sessions[j], create);
-		updateStats(sessions[j], create);
+		updateAnswers(sessions[j], createPrefix);
+		updateStats(sessions[j], createPrefix);
 		refreshSheets.push(sessions[j]+'_answers');
 		refreshSheets.push(sessions[j]+'_stats');
 	    }
 	} else if (action == 'correct') {
 	    for (var j=0; j<sessions.length; j++) {
-		updateCorrect(sessions[j], create);
+		updateCorrect(sessions[j], createPrefix);
 		refreshSheets.push(sessions[j]+'_correct');
 	    }
 	} else if (action == 'gradebook') {
-	    var retval = updateGrades(sessions, create);
+	    var retval = updateGrades(sessions, createPrefix);
 	    if (retval) {
 		if (retval.match(/error/i))
 		    throw('Error:ACTION:Error in updating gradebook for session(s) '+sessions+': '+retval);

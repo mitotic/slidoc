@@ -629,8 +629,9 @@ class MathInlineLexer(mistune.InlineLexer):
         ref_id = 'slidoc-ref-'+md2md.make_id_from_text(header_ref)
         ref_class = ''
         if ref_id in Global.ref_tracker:
-            message('    ****REF-WARNING: Duplicate reference #%s (#%s)' % (ref_id, key))
             ref_id += '-duplicate-'+md2md.generate_random_label()
+            if  'track_references' in self.renderer.options['config'].features:
+                message('    ****REF-WARNING: Duplicate reference #%s (#%s)' % (ref_id, key))
         else:
             num_label = '??'
             if key.startswith(':'):
@@ -1587,7 +1588,8 @@ class SlidocRenderer(MathRenderer):
         if ref_id in Global.ref_tracker:
             if ref_id not in Global.dup_ref_tracker:
                 Global.dup_ref_tracker.add(ref_id)
-                message('    ****REF-WARNING: %s: Duplicate reference #%s in slide %s (also in %s)' % (self.options["filename"], header_ref, self.slide_number, Global.ref_tracker[ref_id][-1]))
+                if  'track_references' in self.options['config'].features:
+                    message('    ****REF-WARNING: %s: Duplicate reference #%s in slide %s (also in %s)' % (self.options["filename"], header_ref, self.slide_number, Global.ref_tracker[ref_id][-1]))
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
@@ -3027,12 +3029,8 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
             if len(headers) != len(prev_headers):
                 modify_col = min_count + 1
         
-        if modify_col:
-            if row_count == 1:
-                abort('ERROR:: Mismatched header %d for module session %s. Delete responder row to modify' % (modify_col, sheet_name))
-            ###elif not modify_session and row_count:
-            elif not modify_session:
-                abort('ERROR:MODIFY_SESSION: Mismatched header %d for module session %s. Specify --modify_sessions=%s to truncate/extend.\n Previously \n%s\n but now\n %s' % (modify_col, sheet_name, sheet_name, prev_headers, headers))
+        if modify_col and row_count and not modify_session:
+            abort('ERROR:MODIFY_SESSION: Mismatched header %d for module session %s. Specify --modify_sessions=%s%s to truncate/extend.\n Previously \nHEADERS=%s\n but now\nHEADERS=%s' % (modify_col, sheet_name, sheet_name, (' or DELETE responder row' if row_count == 1 else ''), prev_headers, headers))
 
     return (maxLastSlide, modify_col, row_count, related_sheets)
                 
@@ -4259,7 +4257,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     elif iso_release_str == sliauth.FUTURE_DATE or 'unreleased' in doc_str.lower():
                         # Preview and alt views
                         entry_class = ' class="slidoc-restrictedonly" style="display: none"'
-                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>)%s <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.dateLoad('Release date (set to blank for indefinite release)','%s/_release/%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', nb_str, orig_fnames[ifile], 'alt views', doc_str, site_prefix, orig_fnames[ifile], 'release')
+                        doc_link = '''(<a class="slidoc-clickable" href="%s/_startpreview/%s">%s</a>)%s <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s] (<span class="slidoc-clickable" onclick="Slidoc.releaseSubmit('%s');">%s</span>)''' % (site_prefix, orig_fnames[ifile], 'preview', nb_str, orig_fnames[ifile], 'alt views', doc_str, orig_fnames[ifile], 'release')
                     else:
                         # View and alt views
                         doc_link = '''(<a class="slidoc-clickable" href="%s.html">%s</a>)%s <span class="slidoc-restrictedonly" style="display: none;">&nbsp;&nbsp;[<a class="slidoc-clickable" href="%s.html?grading=1">%s</a>]</span>&nbsp;&nbsp;[%s]''' % (orig_fnames[ifile], 'view',  nb_str, orig_fnames[ifile], 'alt views', doc_str)
@@ -4907,10 +4905,11 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   slide_break_page: Force page breaks after each slide
 #   slides_only: Only slide view is permitted; no scrolling document display
 #   tex_math: Allow use of TeX-style dollar-sign delimiters for math
+#   track_references: Track references and warn about duplicates
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'track_references', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
