@@ -1232,17 +1232,20 @@ function sheetAction(params) {
                 if (!ansCol) {
                     throw('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'_answers');
                 }
-                returnHeaders = [ getShare+'_response' ];
                 var nRows = answerSheet.getLastRow()-1;
-                var names = answerSheet.getSheetValues(2, 1, nRows, 1);
+                var ansColIndex = indexColumns(answerSheet);
+                var ids    = answerSheet.getSheetValues(2, ansColIndex['id'], nRows, 1);
+                var names  = answerSheet.getSheetValues(2, ansColIndex['name'], nRows, 1);
                 var values = answerSheet.getSheetValues(2, ansCol, nRows, 1);
+		returnHeaders = [ 'id', getShare+'_response' ];
                 returnValues = [];
                 for (var j=0; j < values.length; j++) {
                     if (names[j][0] && names[j][0].charAt(0) != '#' && values[j][0]) {
-                        returnValues.push(values[j][0]);
+                        returnValues.push([ids[j][0], values[j][0]]);
                     }
                 }
-                returnValues.sort();
+		// Sort by response value
+                returnValues.sort(function (a,b) {return cmp(a[1], b[1]);});
 	    } else {
 		// Share using columns in session sheet (e.g., feature=share_all)
 		var nRows = modSheet.getLastRow()-numStickyRows;

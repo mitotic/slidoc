@@ -2366,15 +2366,18 @@ def sheetAction(params, notrace=False):
                         break
                 if not ansCol:
                     raise Exception('Error::Column '+getShare+'_* not present in headers for answer sheet '+sheetName+'_answers')
-                returnHeaders = [ getShare+'_response' ]
                 nRows = answerSheet.getLastRow()-1
-                names = answerSheet.getSheetValues(2, 1, nRows, 1)
+                ansColIndex = indexColumns(answerSheet)
+                ids    = answerSheet.getSheetValues(2, ansColIndex['id'], nRows, 1)
+                names  = answerSheet.getSheetValues(2, ansColIndex['name'], nRows, 1)
                 values = answerSheet.getSheetValues(2, ansCol, nRows, 1)
+                returnHeaders = [ 'id', getShare+'_response' ]
                 returnValues = []
                 for j in range(len(values)):
                     if names[j][0] and names[j][0][0] != '#' and values[j][0]:
-                        returnValues.append(values[j][0])
-                returnValues.sort()
+                        returnValues.append([ids[j][0], values[j][0]])
+                # Sort by response value
+                returnValues.sort(key=lambda x: x[1])
             else:
                 # Share using columns in session sheet (e.g., feature=share_all)
                 nRows = modSheet.getLastRow()-numStickyRows
@@ -2759,6 +2762,9 @@ def sheetAction(params, notrace=False):
                             lateToken = (rowUpdates[lateTokenCol-1] or None) if (rowUpdates and len(rowUpdates) >= lateTokenCol) else None
                             if not lateToken and not newRow:
                                 lateToken = modSheet.getRange(userRow, lateTokenCol, 1, 1).getValues()[0][0] or ''
+
+                            if not lateToken and (previewingSheet and userId == TESTUSER_ID):
+                                lateToken = LATE_SUBMIT
 
                             if lateToken and ':' in lateToken:
                                 # Check against new due date

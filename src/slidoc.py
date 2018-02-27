@@ -1365,13 +1365,6 @@ class SlidocRenderer(MathRenderer):
 
         return prefix_html+self.end_notes()+self.end_hide()+plugins_html+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_footer()
 
-    def list_item(self, text):
-        """Rendering list item snippet. Like ``<li>``."""
-        if not self.incremental_list:
-            return super(SlidocRenderer, self).list_item(text)
-        self.incremental_level += 1
-        return '<li class="slidoc-incremental%d">%s</li>\n' % (self.incremental_level, text)
-
     def untitled_slide(self, text):
         if not self.cur_header:
             self.untitled_number += 1
@@ -1396,6 +1389,26 @@ class SlidocRenderer(MathRenderer):
 
         self.alt_header = self.untitled_header + first_words
         return self.untitled_header
+
+    def list(self, body, ordered=True):
+        """Rendering list tags like ``<ul>`` and ``<ol>``.
+
+        :param body: body contents of the list.
+        :param ordered: whether this list is ordered or not.
+        """
+        if not self.incremental_pause:
+            return super(SlidocRenderer, self).list(body, ordered)
+        tag = 'ul'
+        if ordered:
+            tag = 'ol'
+        return '<%s class="slidoc-incremental%d">\n%s</%s>\n' % (tag, self.incremental_level, body, tag)
+
+    def list_item(self, text):
+        """Rendering list item snippet. Like ``<li>``."""
+        if not self.incremental_list:
+            return super(SlidocRenderer, self).list_item(text)
+        self.incremental_level += 1
+        return '<li class="slidoc-incremental%d">%s</li>\n' % (self.incremental_level, text)
 
     def paragraph(self, text):
         """Rendering paragraph tags. Like ``<p>``."""
@@ -2876,7 +2889,7 @@ Log_fields =     ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file'
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
                          questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
-                         row_count=None, modify_session=None, related_sheets=None):
+                         row_count=None, row_headers=[], modify_col=0, modify_session=None, related_sheets=None):
     modify_questions = False
     user = ADMINUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True)
@@ -2920,6 +2933,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
 
         min_count =  min(len(prev_questions), len(questions))
         mod_question = 0
+        if len(prev_questions) != len(questions):
+            mod_question = min_count + 1
         for j in range(min_count):
             if prev_questions[j]['qtype'] != questions[j]['qtype']:
                 message('    ****WARNING: Module %s: modifying question %d from type %s to %s' % (session_name, j+1, prev_questions[j]['qtype'], questions[j]['qtype']))
@@ -2930,18 +2945,30 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                     if prev_questions[j].get(optname) != questions[j].get(optname):
                         abort('ERROR:QUESTION_ERROR: Cannot change %s value for question %d in session %s with %s responders: %s=%s vs. %s. Reset session?' % (optname, j+1, session_name, row_count, optname, prev_questions[j].get(optname), questions[j].get(optname)))
 
-        if mod_question or len(prev_questions) != len(questions):
+        if mod_question:
             if modify_session or not row_count:
                 modify_questions = True
-                if len(prev_questions) > len(questions):
-                    # Truncating
-                    if max_last_slide is not None:
-                        for j in range(len(questions), len(prev_questions)):
-                            if prev_questions[j]['slide'] <= max_last_slide:
-                                abort('ERROR:TRUNCATE_SESSION: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d); change lastSlide in session sheet' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
-                elif len(prev_questions) < len(questions):
-                    # Extending
-                    pass
+                if not modify_col:
+                    # Dummy modify col value to force checks in sdproxy
+                    modify_col = len(row_headers) + 1
+                if mod_question <= len(prev_questions):
+                    # Truncating question(s)
+                    for j in range(mod_question-1, len(prev_questions)):
+                        qheader = 'q%d_response' % (j+1)
+                        qcol = 0
+                        if qheader in row_headers:
+                            # Question column present in worksheet
+                            qcol = 1+row_headers.index(qheader)
+                            modify_col = min(modify_col, qcol)
+
+                        if not max_last_slide or prev_questions[j]['slide'] > max_last_slide:
+                            # Question not yet viewed
+                            continue
+                        # Question viewed
+                        if admin_paced and prev_questions[j]['slide'] == max_last_slide and qcol >= modify_col:
+                            # Question just viewed and column present in adminPaced worksheet (sdproxy will check that column is empty before truncating)
+                            continue
+                        abort('ERROR:TRUNCATE_SESSION: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d); need to reset or delete session' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
             elif row_count == 1:
                 abort('ERROR:MODIFY_SESSION: Delete responder entry, or check modify box, to modify questions in module session '+session_name)
             elif mod_question:
@@ -2974,12 +3001,12 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         abort("Error::Failed to update index entry for module session '%s': %s" % (session_name, retval['error']))
     message('slidoc: Updated remote index sheet %s for module session %s' % (INDEX_SHEET, session_name))
 
-    # Return possibly modified due date
-    return (due_date_str, modify_questions)
+    # Return possibly modified due date and modify_col
+    return (due_date_str, modify_questions, modify_col)
 
 
 def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modify_session=None):
-    # Returns (maxLastSlide, modify_col, row_count, related_sheets)
+    # Returns (maxLastSlide, prev_headers, modify_col, row_count, related_sheets)
     modify_col = 0
     user = TESTUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user) if hmac_key else ''
@@ -2988,7 +3015,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
     retval = Global.http_post(sheet_url, post_params)
     if retval['result'] != 'success':
         if retval['error'].startswith('Error:NOSHEET:'):
-            return (None, modify_col, 0, [])
+            return (None, [], modify_col, 0, [])
         else:
             abort("Error in accessing sheet '%s': %s\n%s" % (sheet_name, retval['error'], retval.get('messages')))
     prev_headers = retval['headers']
@@ -3032,7 +3059,7 @@ def check_gdoc_sheet(sheet_url, hmac_key, sheet_name, pace_level, headers, modif
         if modify_col and row_count and not modify_session:
             abort('ERROR:MODIFY_SESSION: Mismatched header %d for module session %s. Specify --modify_sessions=%s%s to truncate/extend.\n Previously \nHEADERS=%s\n but now\nHEADERS=%s' % (modify_col, sheet_name, sheet_name, (' or DELETE responder row' if row_count == 1 else ''), prev_headers, headers))
 
-    return (maxLastSlide, modify_col, row_count, related_sheets)
+    return (maxLastSlide, prev_headers, modify_col, row_count, related_sheets)
                 
 def update_gdoc_sheet(sheet_url, hmac_key, sheet_name, headers, row=None, modify=None):
     user = ADMINUSER_ID
@@ -3826,6 +3853,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 if not vote_date_obj:
                     abort('DATE-ERROR: Invalid vote date %s for module %s' % (vote_date_str, fname))
 
+            js_params['sessionRescale'] = file_config.session_rescale or ''
             js_params['showScore'] = file_config.show_score or ''
             js_params['sessionPrereqs'] =  file_config.prereqs or ''
             js_params['sessionRevision'] = file_config.revision or ''
@@ -4059,20 +4087,17 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
-            max_last_slide, modify_col, row_count, related_sheets = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
+            max_last_slide, prev_headers, modify_col, row_count, related_sheets = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
                                                                      modify_session=modify_session)
-            mod_due_date, modify_questions = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+            mod_due_date, modify_questions, modify_col = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                  file_config.session_weight, file_config.session_rescale, release_date_str, due_date_str, file_config.media_url, js_params['paceLevel'],
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                  renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
                                  max_last_slide=max_last_slide, debug=config.debug,
-                                 row_count=row_count, modify_session=modify_session, related_sheets=related_sheets)
+                                 row_count=row_count, row_headers=prev_headers or tem_fields, modify_col=modify_col, modify_session=modify_session, related_sheets=related_sheets)
 
             admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
 
-            if not modify_col and modify_questions:
-                # Dummy modify col to force passthru
-                modify_col = len(tem_fields) + 1
             update_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields, row=max_score_fields, modify=modify_col)
             update_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
 

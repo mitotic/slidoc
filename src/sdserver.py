@@ -3616,7 +3616,11 @@ class ActionHandler(BaseHandler):
     @tornado.gen.coroutine
     def submitSession(self, sessionName, postGrades=''):
         user = sdproxy.TESTUSER_ID
-        userEntries = sdproxy.lookupValues(user, ['submitTimestamp'], sessionName, listReturn=True)
+        try:
+            userEntries = sdproxy.lookupValues(user, ['submitTimestamp'], sessionName, listReturn=True)
+        except Exception, excp:
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Failed to submit session '+sessionName+':'+str(excp))
+            
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:submitSession', userEntries, sessionName, postGrades
         if userEntries[0]:
@@ -3631,7 +3635,7 @@ class ActionHandler(BaseHandler):
         retObj = sdproxy.sheetAction(args)
         if retObj['result'] != 'success':
             raise Exception('Error in submitting session '+sessionName+': '+retObj.get('error',''))
-        for j in range(15):
+        for j in range(20):
             sessionSheet = sdproxy.getSheet(sessionName)
             if sessionSheet and sessionSheet.get_updates() is not None:
                 print >> sys.stderr, 'ActionHandler:submitSession.SLEEP', j

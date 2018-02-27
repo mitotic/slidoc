@@ -292,15 +292,15 @@ input[type="button"]:disabled.slidoc-button {
 .slidoc-center-text { text-align: center; }
 
 /* Incremental display */
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental1) .slidoc-incremental1 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental2) .slidoc-incremental2 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental3) .slidoc-incremental3 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental4) .slidoc-incremental4 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental5) .slidoc-incremental5 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental6) .slidoc-incremental6 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental7) .slidoc-incremental7 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental8) .slidoc-incremental8 { visibility: hidden; }
-body.slidoc-slide-view:not(.slidoc-completed-view):not(.slidoc-display-incremental9) .slidoc-incremental9 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental1) .slidoc-incremental1 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental2) .slidoc-incremental2 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental3) .slidoc-incremental3 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental4) .slidoc-incremental4 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental5) .slidoc-incremental5 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental6) .slidoc-incremental6 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental7) .slidoc-incremental7 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental8) .slidoc-incremental8 { visibility: hidden; }
+body.slidoc-slide-view.slidoc-incremental-view:not(.slidoc-completed-view):not(.slidoc-display-incremental9) .slidoc-incremental9 { visibility: hidden; }
 
 /* Images */
 img.slidoc-img
@@ -312,6 +312,8 @@ img.slidoc-img-drop.slidoc-dragover
 {
     border: 1px dashed gray;
 }
+
+img.slidoc-blank { visibility: hidden; }
 
 img.center,
 img.slidoc-img-center,

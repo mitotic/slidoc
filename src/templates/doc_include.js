@@ -133,6 +133,8 @@ Sliobj.delaySec = null;
 Sliobj.scores = null;
 Sliobj.liveResponses = {};
 Sliobj.choiceBlockHTML = {};
+Sliobj.gradeStats = null;
+Sliobj.gradeRescale = '';
 
 Sliobj.swiping = false;
 
@@ -305,6 +307,7 @@ function setupCache(auth, callback) {
 		    Sliobj.userGrades[id] = {index: j+1, name: roster[j][0], team: roster[j][2], submitted:null, grading: null,
 					     gradeDisp: computeGrade(id, true)};
 		}
+		updateGradeStats();
 
 		var userId = auth.id;
 		if (userId && !(userId in Sliobj.userGrades)) {
@@ -1161,13 +1164,13 @@ Slidoc.assessmentMenu = function () {
 	    html += '<hr>';
 	    html += '<li>' + clickableLink('Import responses', Sliobj.sitePrefix+'/_import/'+Sliobj.params.fileName, !adminAccess) + '</li>\n';
 
-	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_answers') >= 0 && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_stats') >= 0);
 	    html += '<li>' + clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '</li>\n';
 
 	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('correct') >= 0);
 	    html += '<li>' + clickableSpan((create?'Create':'Update')+' correct answer key', "Slidoc.sessionActions('correct');") + '</li>\n';
 
-	    var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	    var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_stats') >= 0);
 	    html += '<li>' + clickableSpan('View response statistics', "Slidoc.showStats();", disabled) + '</li>\n';
 	    html += '<li>' + clickableSpan('View correct answer key', "Slidoc.viewSheet('"+Sliobj.sessionName+"_correct');", !adminAccess) + '</li>';
             html += '<hr>';
@@ -1178,7 +1181,7 @@ Slidoc.assessmentMenu = function () {
 		html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	}
 	html += '<li><a class="slidoc-clickable" href="'+ Sliobj.sitePrefix + '/_responders/' + Sliobj.sessionName + '">View responders</a></li>\n';
-	var disabled = adminAccess && !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
+	var disabled = adminAccess && !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_answers') >= 0);
 	html += '<li>' + clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '</li>\n';
     }
     html += '</ul>';
@@ -2532,6 +2535,18 @@ Slidoc.showConcepts = function (submitMsg) {
 	html += '<br>\n';
     }
 
+    if (Sliobj.gradeStats && Sliobj.gradeStats.count) {
+	html += '<p></p><b>Class statistics</b>';
+	if (Sliobj.gradeRescale)
+	    html += ' (<em>rescaled</em>:'+Sliobj.gradeRescale+')';
+	html += '<br>Average='+(Sliobj.gradeStats.total/Sliobj.gradeStats.count).toFixed(3)+', ';
+	html += 'median='+Sliobj.gradeStats.median.toFixed(3)+', ';
+	html += 'count='+Sliobj.gradeStats.count+', ';
+	html += 'max='+Sliobj.gradeStats.maxGrade.toFixed(2)+', ';
+	html += 'min='+Sliobj.gradeStats.minGrade.toFixed(2);
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.rescaleGrades();">Rescale grades</span><p></p>\n';
+    }
+    
     if (!displayAfterGrading()) {
 	// No need to wait until grading to display automatic scores
 	if (Sliobj.params.totalWeight > Sliobj.params.scoreWeight) {
@@ -2585,8 +2600,16 @@ Slidoc.showConcepts = function (submitMsg) {
 	    html += Sliobj.session.lastSlide ? '(Not tracking question concepts!)' : '(Question concepts tracked only in paced mode!)';
 	html = '<b>Answer scores</b><p></p>' + html;
     }
-    
+
     Slidoc.showPopup(html);
+}
+
+Slidoc.rescaleGrades = function() {
+    Sliobj.gradeRescale = window.prompt('Session rescale (curve) operations, comma-separated, with (normalized) power-op first e.g.: ^0.5,+10,*2,/4,<100: ', Sliobj.gradeRescale || Sliobj.params.sessionRescale) || '';
+    updateGradeStats();
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    Slidoc.showConcepts();
 }
 
 Slidoc.prevUser = function () {
@@ -4238,15 +4261,15 @@ Slidoc.manageSession = function() {
 	    html += 'Grades released to students on '+Sliobj.gradeDateStr+'<br>';
 	html += hr;
 
-	var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_stats') >= 0);
 	html += clickableSpan('View response statistics', "Slidoc.showStats();", disabled) + '<br>\n';
 
-	var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0);
+	var disabled = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_answers') >= 0);
 	html += clickableSpan('View question difficulty', "Slidoc.showQDiff();", disabled) + '<br>\n';
 
 	if (Sliobj.fullAccess) {
 	    html += hr;
-	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf('answers') >= 0 && Sliobj.sheetsAvailable.indexOf('stats') >= 0);
+	    var create = !(Sliobj.sheetsAvailable && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_answers') >= 0 && Sliobj.sheetsAvailable.indexOf(Sliobj.sessionName+'_stats') >= 0);
 	    html += clickableSpan((create?'Create':'Update')+' session answers/stats', "Slidoc.sessionActions('answer_stats');") + '<br>\n';
 
 	    html += 'View session: <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_correct'"+');">correct</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_answers'"+');">answers</span> <span class="slidoc-clickable" onclick="Slidoc.viewSheet('+"'"+Sliobj.sessionName+"_stats'"+');">stats</span><br>';
@@ -5239,6 +5262,8 @@ function updateGradingStatus(userId) {
     if (!option)
 	return;
     Sliobj.userGrades[userId].gradeDisp = computeGrade(userId, true);
+    updateGradeStats();
+
     var text = Sliobj.userGrades[userId].index+'. '+Sliobj.userGrades[userId].name+' ';
     if (Sliobj.userGrades[userId].team)
 	text += '('+Sliobj.userGrades[userId].team+') ';
@@ -5255,6 +5280,64 @@ function updateGradingStatus(userId) {
     option.innerHTML = '';
     option.appendChild(document.createTextNode(text));
     option.innerHTML += html;
+}
+
+function updateGradeStats() {
+    var rescaleOps = [];
+    if (Sliobj.gradeRescale) {
+	var comps = Sliobj.gradeRescale.split(',');
+	for (var j=0; j<comps.length; j++) {
+	    var rmatch = comps[j].trim().match(/([<+*\/^])([-0-9.eE]+)/);
+	    if (!rmatch)
+		throw('Invalid rescaling operation: '+comps[j]);
+	    if (rmatch[1] == '^' && j > 0)
+		throw('Power rescaling ^ must be first operation: '+sessionRescale);
+	    rescaleOps.push([rmatch[1], rmatch[2]]);
+	}
+    }
+    var gradeStats = {total:0, count:0, median: 0, maxGrade: 0, minGrade: 0};
+    var ids = Object.keys(Sliobj.userGrades);
+    var grades = [];
+    for (var j=0; j<ids.length; j++) {
+	var grade = parseNumber(computeGrade(ids[j]));
+	if (!grade)
+	    continue;
+	if (rescaleOps.length) {
+	    for (var iscale=0; iscale < rescaleOps.length; iscale++) {
+		var op = rescaleOps[iscale][0];
+		var val = rescaleOps[iscale][1];
+		if (op == '^') {
+		    // Power rescale does not alter orig max score, but must be first op
+		    grade = Sliobj.params.totalWeight*Math.pow(Math.min(1,grade/Sliobj.params.totalWeight),val);
+		    if (iscale)
+			throw('Power rescaling ^ must be first operation');
+		} else if (op == '*') {
+		    grade = val*grade;
+		} else if (op == '+') {
+		    grade = val+grade;
+		} else if (op == '/') {
+		    grade = grade/val;
+		} else if (op == '<') {
+		    grade = Math.min(val,grade);
+		}
+	    }
+	}
+	grades.push(grade);
+
+	gradeStats.total += grade;
+	gradeStats.count += 1;
+	gradeStats.maxGrade = gradeStats.maxGrade ? Math.max(gradeStats.maxGrade, grade) : grade;
+	gradeStats.minGrade = gradeStats.minGrade ? Math.min(gradeStats.minGrade, grade) : grade;
+    }
+
+    grades.sort(cmp);
+    if (gradeStats.count % 2) {
+	gradeStats.median = grades[(gradeStats.count-1)/2];
+    } else if (gradeStats.count) {
+	gradeStats.median = 0.5*(grades[-1+gradeStats.count/2] + grades[gradeStats.count/2]);
+    }
+
+    Sliobj.gradeStats = gradeStats;
 }
 
 function scoreSession(session) {
@@ -7828,8 +7911,14 @@ Slidoc.submitClick = function(elem, noFinalize, force) {
 
 Slidoc.releaseGrades = function (undo) {
     Slidoc.log('Slidoc.releaseGrades: ', undo);
+    if (Sliobj.params.totalWeight == Sliobj.params.scoreWeight && !Sliobj.dueDate) {
+	alert('Cannot release scores without specifying a due date for session '+Sliobj.sessionName);
+	return;
+    }
+
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
+
     if (!window.confirm('Confirm '+(undo?'UNRELEASING':'releasing')+' grades to students?'))
 	return;
     
@@ -8178,7 +8267,7 @@ Slidoc.startPaced = function () {
     preAnswer();
 
     var curDate = new Date();
-    if (!Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
+    if (!Sliobj.previewState && !Sliobj.session.submitted && Sliobj.dueDate && curDate > Sliobj.dueDate && Sliobj.session.lateToken != LATE_SUBMIT) {
 	sessionAbort('ERROR: Unsubmitted session past submit deadline '+Sliobj.sessionName+' (due: '+Sliobj.dueDate+')');
 	return;
     }
@@ -8641,7 +8730,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     if (actual_slide_total < slides.length && getUserId() == Sliobj.params.testUserId)
 	counterElem.textContent += '*';
 
-    Slidoc.log('Slidoc.slideViewGo:D', slide_num, slides[slide_num-1]);
+    Slidoc.log('Slidoc.slideViewGo:D', Sliobj.currentSlide, slide_num, backward, incrementAll, slides[slide_num-1]);
     Sliobj.maxIncrement = 0;
     Sliobj.curIncrement = 0;
     if ('incremental_slides' in Sliobj.params.features && (!Sliobj.session || !Sliobj.session.paced || (!Sliobj.session.submitted && Sliobj.session.lastSlide == slide_num)) ) {
