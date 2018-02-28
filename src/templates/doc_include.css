@@ -313,7 +313,10 @@ img.slidoc-img-drop.slidoc-dragover
     border: 1px dashed gray;
 }
 
-img.slidoc-blank { visibility: hidden; }
+imb.blank,
+img.slidoc-blank {
+    visibility: hidden;
+}
 
 img.center,
 img.slidoc-img-center,
@@ -324,6 +327,7 @@ div.slidoc-center
     display: block;
 }
 
+body img.left,
 body img.float-left,
 body img.slidoc-left,
 body div.slidoc-left
@@ -333,6 +337,7 @@ body div.slidoc-left
     margin-right: 15px;
 }
 
+body img.right,
 body img.float-right,
 body img.slidoc-right,
 body div.slidoc-right

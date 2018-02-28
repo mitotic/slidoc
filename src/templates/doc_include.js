@@ -7955,14 +7955,18 @@ function releaseGradesCallback(gradeDateStr, result, retStatus) {
 
 Slidoc.releaseSubmit = function(sessionName) {
     var userOptions = [ 'Release', 'Submit and release', 'Submit, release, and post to gradebook'];
-    var html = 'Release date:<br><input id="slidoc-dateload" type="datetime-local" value="">\n';
-    html += '<span class="slidoc-clickable" onclick="document.getElementById('+"'slidoc-dateload'"+').value='+"''"+';">Blank</span><br>(set date to blank for indefinite release)\n';
 
     var nOpts = 1;
     if (Sliobj.sessionProperties && Sliobj.sessionProperties[sessionName]) {
 	var props = Sliobj.sessionProperties[sessionName];
 	if (!props.dueDate && props.paceLevel && props.paceLevel == ADMIN_PACE)
-	    nOpts = 3;
+	    nOpts = userOptions.length;
+    }
+
+    var html = '';
+    if (nOpts == 1) {
+	html += 'Release date:<br><input id="slidoc-dateload" type="datetime-local" value="">\n';
+	html += '<span class="slidoc-clickable" onclick="document.getElementById('+"'slidoc-dateload'"+').value='+"''"+';">Blank</span><br>(set date to blank for indefinite release)\n';
     }
 
     function optCallback(selOption) {

@@ -2935,15 +2935,20 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
         mod_question = 0
         if len(prev_questions) != len(questions):
             mod_question = min_count + 1
+
+        qchanged = ''
         for j in range(min_count):
-            if prev_questions[j]['qtype'] != questions[j]['qtype']:
-                message('    ****WARNING: Module %s: modifying question %d from type %s to %s' % (session_name, j+1, prev_questions[j]['qtype'], questions[j]['qtype']))
-                mod_question = j+1
-                break
-            if row_count:
+            if prev_questions[j]['qtype'] == questions[j]['qtype']:
                 for optname in ('alternatives', 'choices', 'explain', 'followup', 'noshuffle'):
                     if prev_questions[j].get(optname) != questions[j].get(optname):
-                        abort('ERROR:QUESTION_ERROR: Cannot change %s value for question %d in session %s with %s responders: %s=%s vs. %s. Reset session?' % (optname, j+1, session_name, row_count, optname, prev_questions[j].get(optname), questions[j].get(optname)))
+                        qchanged = ': changing %s value for question %d in session with responders: %s=%s vs. %s' % (optname, j+1, optname, prev_questions[j].get(optname), questions[j].get(optname))
+                        break
+            else:
+                qchanged = ': modifying question %d from type %s to %s' % (j+1, prev_questions[j]['qtype'], questions[j]['qtype'])
+
+            if qchanged:
+                mod_question = j+1
+                break
 
         if mod_question:
             if modify_session or not row_count:
@@ -2968,13 +2973,11 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
                         if admin_paced and prev_questions[j]['slide'] == max_last_slide and qcol >= modify_col:
                             # Question just viewed and column present in adminPaced worksheet (sdproxy will check that column is empty before truncating)
                             continue
-                        abort('ERROR:TRUNCATE_SESSION: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d); need to reset or delete session' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']))
+                        abort('ERROR:TRUNCATE_SESSION: Cannot truncate previously viewed question %d for module session %s (max_last_slide=%d,question_%d_slide=%d)%s; need to Reset or Delete session.)' % (j+1, session_name, max_last_slide, j+1, prev_questions[j]['slide']), qchanged)
             elif row_count == 1:
-                abort('ERROR:MODIFY_SESSION: Delete responder entry, or check modify box, to modify questions in module session '+session_name)
-            elif mod_question:
-                abort('ERROR:MODIFY_SESSION: Mismatch in question %d type for module %s: previously \n%s \nbut now \n%s. Specify --modify_sessions=%s' % (mod_question, session_name, prev_questions[mod_question-1]['qtype'], questions[mod_question-1]['qtype'], session_name))
+                abort('ERROR:MODIFY_SESSION: Changes in module %s question(s)%s. Delete responder entry, or check modify box' % (session_name, qchanged))
             else:
-                abort('ERROR:MODIFY_SESSION: Mismatch in question numbers for module %s: previously %d but now %d. Specify --modify_sessions=%s' % (session_name, len(prev_questions), len(questions), session_name))
+                abort('ERROR:MODIFY_SESSION: Changes in module %s question(s)%s. Specify --modify_sessions=%s' % (session_name, qchanged, session_name))
 
         if prev_row[admin_paced_col]:
             # Do not overwrite previous value of adminPaced
@@ -4710,7 +4713,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             images_zipdict[fname] = images_zipdata
         else:
             md_path = cls.src_path
-            new_md_content = input_file.read()
+            new_md_content = preprocess(input_file.read())
             if cls.md_content is not None:
                 nmatch = min(len(cls.md_content), len(new_md_content))
                 diff_char_num = nmatch
