@@ -35,6 +35,12 @@ def stringify(*args):
     else:
         return [arg.encode('utf-8') if isinstance(arg, unicode) else arg for arg in args]
 
+def unicodify(*args):
+    if len(args) == 1:
+        return args[0].decode('utf-8') if not isinstance(args[0], unicode) else args[0]
+    else:
+        return [arg.decode('utf-8') if not isinstance(arg, unicode) else arg for arg in args]
+
 def asciify(s):
     # Replace curly quotes with straight quotes (for powerpoint -> ascii)
     if isinstance(s, unicode):
@@ -60,7 +66,7 @@ def read_file(path):
 def write_file(path, *args):
     with open(path, 'w') as f:
         for arg in args:
-            f.write(arg)
+            f.write(stringify(arg))
     
 def normalize_text(text, lower=False):
     # Strip leading/trailing spaces, compress multiple space and optionally lowercase

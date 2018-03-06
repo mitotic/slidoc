@@ -373,15 +373,18 @@ function sessionAbort(err_msg, err_trace) {
     try { slidesVisible(false); } catch(err) {}
     alert((Sliobj.params.debug ? 'DEBUG: ':'')+err_msg);
 
-    if (!Sliobj.reloadCheck && Slidoc.serverCookie) {
+    if (!Sliobj.params.gd_sheet_url) {
+	if (window.confirm('Reset local session '+Sliobj.params.fileName+'?'))
+	    resetLocalSession();
+	else
+	    html += '<p></p><a href="/?reset=1">Reset</a>';
+    } else if (!Sliobj.reloadCheck && Slidoc.serverCookie) {
 	if (!Sliobj.params.debug || window.confirm('Log out user?'))
 	    location.href = Slidoc.logoutURL;
     }
     var html = '<a href="/">Main</a><p></p><b>Error: <pre>'+escapeHtml(err_msg)+'</pre>';
     if (Sliobj.previewState)
 	html += '<p></p><a href="'+(Sliobj.params.siteName?'/'+Sliobj.params.siteName:'')+'/_discard?modified='+Sliobj.previewModified+'">Discard preview</a>';
-    if (!Sliobj.params.gd_sheet_url)
-	html += '<p></p><a href="/?reset=1">Reset</a>';
     document.body.innerHTML = html;
 }
 
@@ -785,7 +788,7 @@ Slidoc.pageSetup = function() {
 	    if (dashEditElem) {
 		var fname = Sliobj.params.fileName;
 		if (!fname) {
-		    var match = location.pathname.match(/\/(\w+)\/index.html$/);
+		    var match = location.pathname.match(/.*\/([-\w]+)\/index.html$/);
 		    if (match)
 			fname = match[1]+'00';
 		}
@@ -4222,7 +4225,7 @@ Slidoc.manageSession = function() {
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced();">'+'Reset paced session entry'+(retakesRemaining()?' for re-takes':'')+'</span><br>';
 
     if (Sliobj.fullAccess)
-	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(false,true);">'+'Reset paced session entry and random seed</span><br>';
+	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(false,true);">'+'Reset paced session entry and pick random seed</span><br>';
     
     if (!Sliobj.chainActive && Sliobj.params.paceLevel && (!Sliobj.params.gd_sheet_url || Sliobj.fullAccess))
 	html += '<br><span class="slidoc-clickable" onclick="Slidoc.resetPaced(true);">Delete paced session entry</span><br>';
@@ -4536,7 +4539,8 @@ function collapsibleAccess() {
 	return true;
     if ('slides_only' in Sliobj.params.features)
 	return false;
-    return !Sliobj.params.paceLevel || (Sliobj.session && Sliobj.session.submitted);
+    return true;
+    ///return !Sliobj.params.paceLevel || (Sliobj.session && Sliobj.session.submitted);
 }
 
 function allowDelay() {
@@ -4553,7 +4557,7 @@ function slidocSetupAux(session, feedback) {
     Sliobj.feedback = feedback || null;
     var unhideChapters = false;
 
-    if (Sliobj.params.showScore && Sliobj.params.showScore != 'after_answering')
+    if (Sliobj.params.showCorrect && Sliobj.params.showCorrect != 'after_answering')
 	Sliobj.delayScoring = true;
 
     // Hide unviewed slides for all question-paced sessions, and for non-printable sessions with immediate scoring (in non-preview mode)
@@ -5544,7 +5548,7 @@ function shuffleBlock(slide_id, shuffleStr, qnumber) {
 
 function displayAfterGrading() {
     // Always display automatic correct answers for submitted and graded sessions (except for locked views)
-    return (Sliobj.params.showScore == 'after_grading' || 'remote_answers' in Sliobj.params.features) && (Sliobj.lockedView || !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr) );
+    return (Sliobj.params.showCorrect == 'after_grading' || 'remote_answers' in Sliobj.params.features) && (Sliobj.lockedView || !(Sliobj.session && Sliobj.session.submitted && Sliobj.gradeDateStr) );
 }
 
 function allowReanswer() {
@@ -6594,7 +6598,7 @@ Slidoc.getCurrentSlideId = function () {
 }
 
 Slidoc.hideNotes = function(elem) {
-    if (Sliobj.reloadCheck && location.hostname == 'localhost')
+    if (!Sliobj.params.paceLevel || (Sliobj.reloadCheck && location.hostname == 'localhost'))
 	Slidoc.hide(elem, 'slidoc-notes');
     else
 	Slidoc.hide(elem, 'slidoc-plain-notes');
@@ -7244,8 +7248,8 @@ Slidoc.answerUpdate = function (setup, slide_id, force, expect, response, plugin
 	for (var j=0; j<notes_divs.length; j++)
 	    notes_divs[j].classList.add('slidoc-plain-notes');  // Question notes now become plain notes
 	var ansContainer = document.getElementById(slide_id+"-answer-container");
-	if (ansContainer)
-	    ansContainer.scrollIntoView(true)
+	if (ansContainer && Sliobj.currentSlide)
+	   ansContainer.scrollIntoView(true)
     }
 
     // Switch to answered slide view if not printing exam
@@ -8427,7 +8431,7 @@ Slidoc.slideViewStart = function (pacedStart) {
     } else if (Sliobj.updateView) {
 	startSlide = 1;
     } else if (Sliobj.session && Sliobj.session.paced) {
-        startSlide = Sliobj.session.submitted ? 1 : (Sliobj.session.lastSlide || 1); 
+        startSlide = (!Sliobj.params.gd_sheet_url || Sliobj.session.submitted) ? 1 : (Sliobj.session.lastSlide || 1); 
     }
 
     if (!pacedStart || !(Sliobj.session && Sliobj.session.paced)) {

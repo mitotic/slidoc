@@ -180,7 +180,19 @@ body:not(.slidoc-slide-view) article.slidoc-two-column section.slidoc-single-col
 article.slidoc-two-column .slidoc-single-columnonly {
     display: none;
 }
-    
+
+/* Hide output cells in slide view */
+body.slidoc-slide-view article.slidoc-hide-output div:not(.slidoc-show-output).slidoc-block-output {
+    display: none;
+}
+
+body:not(.slidoc-slide-view) .slidoc-block-output-hide-toggle {
+    display: none;
+}
+
+article:not(.slidoc-hide-output) .slidoc-block-output-hide-toggle {
+    display: none;
+}
 
 /* Slide page breaks (use ---- to force slide break) */
 body:not(.slidoc-slide-view) article.slidoc-page-break-always section:not(.slidoc-first-slide) {

@@ -387,6 +387,9 @@ class MathBlockLexer(mistune.BlockLexer):
                         # Explicit slide break
                         self.slidoc_slide_end()
                         self.slidoc_slide_header = None
+                    elif key not in ('newline', 'def_links', 'slidoc_header', 'slidoc_slideopts', 'heading'):
+                        # Other non-slide break content
+                        self.slidoc_slide_header = key
                 return m
             return False  # pragma: no cover
 
@@ -529,7 +532,7 @@ class MathBlockLexer(mistune.BlockLexer):
 
     
 class MathInlineGrammar(mistune.InlineGrammar):
-    slidoc_choice =      re.compile(r"^ {0,3}([a-qA-Q])(\*)?\.\. +")
+    slidoc_choice =      re.compile(r"^ {0,3}([a-qA-Q])(\*)?\.\.( +|$)")
     block_math =         re.compile(r"^\\\[(.+?)\\\]", re.DOTALL)
     inline_math =        re.compile(r"^\\\((.+?)\\\)")
     tex_inline_math=     re.compile(r"^\$(?!\$)(.*?)([^\\\n\$])\$(?!\$)")
@@ -658,6 +661,21 @@ class MarkdownWithMath(mistune.Markdown):
         if 'block' not in kwargs:
             kwargs['block'] = MathBlockLexer
         super(MarkdownWithMath, self).__init__(renderer, **kwargs)
+
+    ## Temporary fix for Unicode errors
+    def output(self, text, rules=None):
+        self.tokens = self.block(text, rules)
+        self.tokens.reverse()
+
+        self.inline.setup(self.block.def_links, self.block.def_footnotes)
+
+        out = self.renderer.placeholder()
+        while self.pop():
+            tok = self.tok()
+            if not isinstance(tok, unicode):
+                tok = tok.decode('utf-8')
+            out += tok
+        return out
 
     def output_block_math(self):
         return self.renderer.block_math(self.token['text'])
@@ -884,7 +902,7 @@ class SlidocRenderer(MathRenderer):
         self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'hiddenSlides': [], 'hints': defaultdict(list),
                                  'questionParams':[],  'remoteAnswers': [], 'shareAnswers': {}}
 
-        self.sheet_attributes['resubmitAnswers'] = self.options['config'].pace <= BASIC_PACE and self.options['config'].show_score in ('after_submitting', 'after_grading')
+        self.sheet_attributes['resubmitAnswers'] = self.options['config'].pace <= BASIC_PACE and self.options['config'].show_correct in ('after_submitting', 'after_grading')
         self.slide_number = 0
         self.slide_images = []
 
@@ -1449,6 +1467,7 @@ class SlidocRenderer(MathRenderer):
         classes = 'slidoc-block-code slidoc-block-code-in-%s' % slide_id
 
         id_str = ''
+        prefix_html = ''
 
         comps = (lang or '').split('_')
         lang = comps[0]
@@ -1465,7 +1484,7 @@ class SlidocRenderer(MathRenderer):
                     abort("    ****SOLUTION-ERROR: %s: Multiple '*s' blocks in slide %s" % (self.options["filename"], lang, self.slide_number))
                 self.slide_block_solution = self.block_input_counter
                 classes += ' slidoc-block-solution'
-                if self.options['config'].show_score == 'after_grading':
+                if self.options['config'].show_correct == 'after_grading':
                     classes += ' slidoc-gradedonly'
                 else:
                     classes += ' slidoc-answeredonly'
@@ -1496,13 +1515,25 @@ class SlidocRenderer(MathRenderer):
             lang = 'error'
             classes += ' slidoc-block-error'
 
+        elif lang in ('error', 'output'):
+            classes += ' slidoc-block-' + lang
+
+        if lang == 'output' and 'hide_output' in self.options['config'].features:
+            if self.notes_end is None:
+                # Hide output
+                prefix_html += '''\n<code class="slidoc-clickable slidoc-block-output-hide-toggle" onclick="this.nextElementSibling.classList.add('slidoc-show-output');this.style.display='none';">output</code>\n'''
+            else:
+                # Always show output in notes
+                classes += ' slidoc-show-output'
+
         lexer = None
-        if HtmlFormatter and lang and lang not in ('output','error'):
-            classes += ' slidoc-block-lang-'+lang
-            try:
-                lexer = get_lexer_by_name(lang, stripall=True)
-            except ClassNotFound:
-                code = lang + '\n' + code
+        if lang and lang not in ('output','error'):
+            classes += ' slidoc-block-lang-' + re.sub(r'[^-\w]+', '-', lang.lower().strip())
+            if HtmlFormatter:
+                try:
+                    lexer = get_lexer_by_name(lang, stripall=True)
+                except ClassNotFound:
+                    code = lang + '\n' + code
 
         if blockType == 'fillable':
             comps = code.strip().split('\n')
@@ -1524,7 +1555,7 @@ class SlidocRenderer(MathRenderer):
         else:
             html = '<pre><code>%s</code></pre>\n' % mistune.escape(code)
         
-        return '\n<div %s class="%s">\n%s</div>\n' % (id_str, classes, html)
+        return prefix_html + '\n<div %s class="%s">\n%s</div>\n' % (id_str, classes, html)
 
     def get_header_prefix(self):
         if 'untitled_number' in self.options['config'].features:
@@ -1838,9 +1869,7 @@ class SlidocRenderer(MathRenderer):
             else:
                 prefix += '</p></div><div class="slidoc-choice-item"><p class="slidoc-choice-question">\n'
 
-        hide_answer = self.options['config'].pace or not self.options['config'].show_score
-
-        if name != 'Q' and hide_answer:
+        if name != 'Q' and self.options['config'].pace:
             prefix += '''<span class="slidoc-chart-box %(id)s-chart-box" style="display: none;"><span id="%(id)s-chartbar-%(opt)s" class="%(id)s-chartbar slidoc-chart-bar" onclick="Slidoc.PluginMethod('Share', '%(id)s', 'shareExplain', '%(opt)s');" style="width: 0%%;"></span></span>\n'''
 
         classes = '%(id)s-choice-inner slidoc-choice-inner'
@@ -1852,7 +1881,7 @@ class SlidocRenderer(MathRenderer):
         else:
             suffix = '. '
             classes += ' %(id)s-choice slidoc-choice'
-            if hide_answer:
+            if self.options['config'].show_correct != 'always':
                 classes += '  slidoc-clickable'
                 attrs += ''' onclick="Slidoc.choiceClick(this, '%(id)s');"'''
 
@@ -2042,7 +2071,7 @@ class SlidocRenderer(MathRenderer):
             elif 'share_answers' in self.options['config'].features:
                 answer_opts['share'] = opt_values['share'][-1]
 
-        if answer_opts['share'] and self.options['config'].show_score == 'after_grading':
+        if answer_opts['share'] and self.options['config'].show_correct == 'after_grading':
             answer_opts['share'] = opt_values['share'][2]
 
         slide_id = self.get_slide_id()
@@ -2178,7 +2207,7 @@ class SlidocRenderer(MathRenderer):
                 if not noshuffle and self.count_of_the_above:
                     if 'auto_noshuffle' in self.options['config'].features:
                         noshuffle = self.count_of_the_above
-                    else:
+                    elif 'shuffle_choice' in self.options['config'].features:
                         message("    ****CHOICE-WARNING: Choice question %d may need noshuffle=%d value for '... of the above' option(s)" % (len(self.questions)+1, self.count_of_the_above))
             else:
                 # Ignore choice options
@@ -2348,16 +2377,14 @@ class SlidocRenderer(MathRenderer):
         elif self.cur_qtype == 'multichoice':
             ans_params['ansdisp'] = 'slidoc-ansdisp-multichoice'
 
-        if not self.options['config'].pace and ('answers' in self.options['config'].strip or not correct_val):
-            # For unpaced sessions, if stripping correct answers or no correct answer, do not display answer box
+        if not self.options['config'].pace and 'answers' in self.options['config'].strip:
+            # For unpaced sessions, if stripping correct answers do not display answer box
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
-        hide_answer = self.options['config'].pace or not self.options['config'].show_score 
         if not self.slide_block_solution and len(self.slide_block_test) != len(self.slide_block_output):
-            hide_answer = False
             abort("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
 
-        if not hide_answer:
+        if self.options['config'].show_correct == 'always':
             # No hiding of correct answers
             return html_prefix+(self.ansprefix_template % ans_params)+' '+correct_html+'<p></p>\n'
 
@@ -2719,6 +2746,8 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     md_digest = sliauth.digest_hex(md_source)
     if len(md_slides) != renderer.slide_number:
         message('SLIDES-WARNING: pre-parsing slide count (%d) does not match post-parsing slide count (%d)' % (len(md_slides), renderer.slide_number))
+        ##for j, slide_text in enumerate(md_slides):
+        ##    print("md2html.slide", j+1, slide_text.strip().split('\n')[0], file=sys.stderr)
         md_slides = []
         md_defaults = ''
 
@@ -3776,21 +3805,19 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             if file_config.retakes and file_config.timed:
                 abort('PACE-ERROR: --retakes=... incompatible with --timed=...')
 
-            if file_config.show_score and file_config.show_score not in ('never', 'after_answering', 'after_submitting', 'after_grading'):
-                abort('SHOW-ERROR: Must have --show_score=never OR after_answering OR after_submitting OR after_grading (found %s)' % file_config.show_score)
+            if file_config.show_correct and file_config.show_correct not in ('after_answering', 'after_submitting', 'after_grading', 'always'):
+                abort('SHOW-ERROR: Must have --show_correct=after_answering OR after_submitting OR after_grading (found %s)' % file_config.show_correct)
 
-            if not file_config.show_score:
+            if not file_config.show_correct:
                 if file_config.pace >= QUESTION_PACE:
-                    file_config.show_score = 'after_answering'
+                    file_config.show_correct = 'after_answering'
                 elif file_config.pace:
                     if gd_hmac_key is None:
-                        file_config.show_score = 'after_answering'
+                        file_config.show_correct = 'after_answering'
                     elif 'assessment' in file_config.features:
-                        file_config.show_score = 'after_grading'
+                        file_config.show_correct = 'after_grading'
                     else:
-                        file_config.show_score = 'after_submitting'
-            elif file_config.show_score == 'never':
-                file_config.show_score = ''
+                        file_config.show_correct = 'after_submitting'
 
             file_config_vars = vars(file_config)
             settings_list = []
@@ -3857,7 +3884,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     abort('DATE-ERROR: Invalid vote date %s for module %s' % (vote_date_str, fname))
 
             js_params['sessionRescale'] = file_config.session_rescale or ''
-            js_params['showScore'] = file_config.show_score or ''
+            js_params['showCorrect'] = file_config.show_correct or ''
             js_params['sessionPrereqs'] =  file_config.prereqs or ''
             js_params['sessionRevision'] = file_config.revision or ''
             js_params['slideDelay'] = file_config.slide_delay or 0
@@ -3882,8 +3909,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
                 abort('PACE-ERROR: shuffle_choice feature not compatible with --pace='+str(js_params['paceLevel']))
 
-            if js_params['paceLevel'] >= QUESTION_PACE and file_config.show_score != 'after_answering':
-                abort('PACE-ERROR: --show_score=%s feature not compatible with --pace=%s' % (file_config.show_score, js_params['paceLevel']) )
+            if js_params['paceLevel'] >= QUESTION_PACE and file_config.show_correct != 'after_answering':
+                abort('PACE-ERROR: --show_correct=%s feature not compatible with --pace=%s' % (file_config.show_correct, js_params['paceLevel']) )
 
         if not j or config.separate:
             # First file or separate files
@@ -4092,6 +4119,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
             max_last_slide, prev_headers, modify_col, row_count, related_sheets = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
                                                                      modify_session=modify_session)
+
             mod_due_date, modify_questions, modify_col = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                  file_config.session_weight, file_config.session_rescale, release_date_str, due_date_str, file_config.media_url, js_params['paceLevel'],
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
@@ -4152,6 +4180,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             chapter_classes = 'slidoc-reg-chapter'
             if 'two_column' in file_config.features:
                 chapter_classes += ' slidoc-two-column'
+            if 'hide_output' in file_config.features:
+                chapter_classes += ' slidoc-hide-output'
 
             if 'slide_break_avoid' in file_config.features:
                 chapter_classes += ' slidoc-page-break-avoid'
@@ -4913,6 +4943,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   equation_left: Left align equations
 #   equation_number: Number equations sequentially
 #   grade_response: Grade text responses and explanations; provide comments
+#   hide_output: Hide output cells in slide view
 #   immediate_math: Immediate rendering of math formulas (normally math rendering is delayed to load plugins)
 #   incremental_slides: Display portions of slides incrementally (only for the current last slide)
 #   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
@@ -4937,7 +4968,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'track_references', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'hide_output', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'track_references', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
@@ -4967,7 +4998,7 @@ Conf_parser.add_argument('--revision', metavar='REVISION', help='File revision')
 Conf_parser.add_argument('--session_rescale', help='Session rescale (curve) operations, comma-separated, with (normalized) power-op first e.g.: ^0.5,+10,*2,/4,<100')
 Conf_parser.add_argument('--session_weight', type=float, default=None, metavar='WEIGHT', help='Session weight')
 Conf_parser.add_argument('--slide_delay', metavar='SEC', type=int, help='Delay between slides for paced sessions')
-Conf_parser.add_argument('--show_score', help='Show correct answers after: never, after_answering, after_submitting, after_grading')
+Conf_parser.add_argument('--show_correct', help='Show correct answers after: after_answering, after_submitting, after_grading, always')
 Conf_parser.add_argument('--strip', metavar='OPT1,OPT2,...', help='Strip %s|all|all,but,...' % ','.join(Strip_all))
 Conf_parser.add_argument('--timed', type=int, help='No. of seconds for timed sessions (default: 0 for untimed)')
 Conf_parser.add_argument('--vote_date', metavar='VOTE_DATE_TIME]', help="Votes due local date yyyy-mm-ddThh:mm (append 'Z' for UTC)")

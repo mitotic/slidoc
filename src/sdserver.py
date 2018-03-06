@@ -164,6 +164,7 @@ SETTINGS_LABELS = [ ('gsheet_url', 'Google Sheet URL'),
                     ('end_date', 'Date after which all user access is disabled (yyyy-mm-dd)'),
                     ('', ''),
                     ('site_menu', 'List of top menu items: files,gradebook (comma-separated)'),
+                    ('session_properties', 'List of session_name:pace:[public/restricted]:[description] (semicolon-separated)'),
                     ('twitter_config', 'Twitter config (username,consumer_key,consumer_secret,access_key,access_secret)'),
                     ('', ''),
                     ('gradebook_release', 'List of released items: average,cumulative_total,cumulative_grade (comma-separated)'),
@@ -277,38 +278,6 @@ SERVER_NAME = 'Webster0.9'
 RAW_UPLOAD = 'raw'
 TOP_LEVEL = 'top'
 
-SESSION_TYPES = [
-    [TOP_LEVEL, 'Top level web page'],
-    ['announce', 'Announcements'],
-    ['assignment', 'Assigments'],
-    ['exam', 'Exams'],
-    ['exercise', 'Exercises'],
-    ['final', 'Final exam'],
-    ['help', 'Help info'],
-    ['lecture', 'Lectures'],
-    ['midterm', 'Midterms'],
-    ['notes', 'Notes'],
-    ['project', 'Projects'],
-    ['quiz', 'Quizzes'],
-    ['test', 'Tests']
-    ]
-
-PUBLIC_SESSIONS = (TOP_LEVEL, 'help')
-UNPACED_SESSIONS = (TOP_LEVEL, 'announce', 'exercise', 'help', 'notes')
-
-SESSION_TYPE_SET = set()
-for j, entry in enumerate(SESSION_TYPES):
-    SESSION_TYPE_SET.add(entry[0])
-
-    if entry[0] in PUBLIC_SESSIONS:
-        entry[1] += ' (public)'
-
-    if entry[0] not in UNPACED_SESSIONS:
-        entry[1] += ' (paced)'
-
-    if entry[0] in sliauth.RESTRICTED_SESSIONS:
-        entry[1] += ' (restricted)'
-
 def preElement(content):
     return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
 
@@ -357,25 +326,13 @@ def getSessionPath(sessionName, sessionType='', site_prefix=False, toc=False):
     if sessionType:
         path = '/' + ('index' if toc else sessionName) + '.html'
         if sessionType != TOP_LEVEL:
-            path = privatePrefix(sessionType) + '/' + sessionType + path
+            path = SiteProps.private_prefix(sessionType) + '/' + sessionType + path
     else:
         path = '/'
 
     if site_prefix and Options['site_name']:
         path = '/' + Options['site_name'] + path
     return path
-
-def privatePrefix(uploadType):
-    if uploadType in PUBLIC_SESSIONS:
-        return ''
-    else:
-        return '/' + PRIVATE_PATH
-
-def pacedSession(uploadType):
-    if uploadType in UNPACED_SESSIONS:
-        return 0
-    else:
-        return 1
 
 def restricted_user_access(start_date, end_date, site_role=None, site_access='', batch_mode=''):
     if site_role:
@@ -1249,7 +1206,7 @@ class ActionHandler(BaseHandler):
             # session-specific options (TBD)
             pass
 
-        if pacedSession(uploadType):
+        if SiteProps.paced_session(uploadType):
             defaultOpts['pace'] = 1
         else:
             configOpts['pace'] = 0
@@ -1281,7 +1238,7 @@ class ActionHandler(BaseHandler):
         if Options['start_date']:
             configOpts.update(start_date=Options['start_date'])
 
-        if pacedSession(uploadType):
+        if SiteProps.paced_session(uploadType):
             site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
             configOpts.update(auth_key=Options['auth_key'], gsheet_url=site_prefix+'/_proxy',
                               proxy_url=site_prefix+'/_websocket')
@@ -1529,7 +1486,7 @@ class ActionHandler(BaseHandler):
                          suspended=sdproxy.Global.suspended)
 
         elif action == '_addtype':
-            self.render('addtype.html', site_name=Options['site_name'], session_types=SESSION_TYPES,
+            self.render('addtype.html', site_name=Options['site_name'], session_types=SiteProps.session_types(),
                          session_props=self.get_session_props())
 
         elif action == '_modules':
@@ -1843,7 +1800,7 @@ class ActionHandler(BaseHandler):
                     self.displayMessage(str(excp))
                     return
             self.render('upload.html', site_name=Options['site_name'],
-                        upload_type=upload_type, session_name=sessionName, session_number=session_number, session_types=SESSION_TYPES, err_msg='')
+                        upload_type=upload_type, session_name=sessionName, session_number=session_number, session_types=SiteProps.session_types(), err_msg='')
 
         elif action == '_prefill':
             if sdproxy.getRowMap(sessionName, 'Timestamp', regular=True):
@@ -1999,7 +1956,7 @@ class ActionHandler(BaseHandler):
     def redirectPreview(self, update='', slideId=''):
         sessionType, _ = getSessionType(self.previewState['name'])
         if sessionType != TOP_LEVEL:
-            prefix = sliauth.safe_quote( (privatePrefix(sessionType) + '/' + sessionType)[1:] )
+            prefix = sliauth.safe_quote( (SiteProps.private_prefix(sessionType) + '/' + sessionType)[1:] )
         else:
             prefix = ''
 
@@ -2066,7 +2023,7 @@ class ActionHandler(BaseHandler):
         for sessionType in self.get_session_names():
             fnames = [os.path.splitext(os.path.basename(x))[0] for x in self.get_md_list(sessionType)]
             session_props.append( [sessionType,
-                                    1 if privatePrefix(sessionType) else 0,
+                                    1 if SiteProps.private_prefix(sessionType) else 0,
                                     fnames,
                                     sessionParamDict,
                                     '\n'.join(buildMsgs.get(sessionType, []))] )
@@ -2074,7 +2031,7 @@ class ActionHandler(BaseHandler):
 
     def displaySessions(self, buildMsgs={}, indMsgs=[], msg=''):
         session_props = self.get_session_props(buildMsgs=buildMsgs, indMsgs=indMsgs)
-        self.render('modules.html', site_name=Options['site_name'], session_types=SESSION_TYPES, session_props=session_props, message=msg)
+        self.render('modules.html', site_name=Options['site_name'], session_types=SiteProps.session_types(), session_props=session_props, message=msg)
 
 
     def browse(self, url_path, filepath, site_admin=False, delete='', download='', newFolder='', uploadName='', uploadContent=''):
@@ -2318,7 +2275,7 @@ class ActionHandler(BaseHandler):
         if not sessionNumber:
             fname = 'index'
 
-        web_prefix = web_dir+privatePrefix(uploadType)+'/'+uploadType+'/'+fname
+        web_prefix = web_dir+SiteProps.private_prefix(uploadType)+'/'+uploadType+'/'+fname
         return uploadType, sessionNumber, src_dir+'/'+uploadType+'/'+fname+'.md', web_prefix+'.html', web_prefix+'_images'
 
     def displaySheet(self, sessionName, download=False, allUsers=False, keepHidden=False):
@@ -2593,14 +2550,14 @@ class ActionHandler(BaseHandler):
                     if sessionCreate:
                         if not topName:
                             self.render('upload.html', site_name=Options['site_name'], upload_type=TOP_LEVEL, session_name='', session_number='',
-                                         session_types=SESSION_TYPES, err_msg='')
+                                         session_types=SiteProps.session_types(), err_msg='')
                             return
                         fname1 = topName + '.md'
                         fbody1 = '*Markdown* content'
                     sessionNumber = 0
                     sessionName = os.path.splitext(os.path.basename(fname1 or fname2))[0]
                 else:
-                    if uploadType not in SESSION_TYPE_SET:
+                    if uploadType not in SiteProps.get_session_props():
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Unrecognized session type: '+uploadType)
 
                     if not sessionNumber.isdigit():
@@ -2630,7 +2587,7 @@ class ActionHandler(BaseHandler):
 
                 if errMsg:
                     self.render('upload.html', site_name=Options['site_name'],
-                                upload_type=uploadType, session_name=sessionName, session_number=(sessionNumber or ''), session_types=SESSION_TYPES, err_msg=errMsg)
+                                upload_type=uploadType, session_name=sessionName, session_number=(sessionNumber or ''), session_types=SiteProps.session_types(), err_msg=errMsg)
                 elif uploadType != RAW_UPLOAD:
                     site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
                     self.redirect(site_prefix+'/_preview/index.html')
@@ -2687,7 +2644,7 @@ class ActionHandler(BaseHandler):
             if uploadType == TOP_LEVEL:
                 if session_name and session_name not in topFiles:
                     topFiles += [session_name]
-            elif privatePrefix(uploadType):
+            elif SiteProps.private_prefix(uploadType):
                 if uploadType not in topFolders2:
                     topFolders2 += [uploadType]
             elif uploadType not in topFolders:
@@ -2755,7 +2712,7 @@ class ActionHandler(BaseHandler):
 
         if not fname1 or not fbody1:
             if not zfile:
-                return 'Error: Must provide .md/.pptx file for upload'
+                return 'Error: Must enter text or provide .md/.pptx file for upload'
             # Extract Markdown file from zip archive
             topNames = [name for name in zfile.namelist() if name.endswith('.md') or name.endswith('.pptx')]
             if len(topNames) != 1:
@@ -2771,12 +2728,12 @@ class ActionHandler(BaseHandler):
         else:
             sessionName = sliauth.SESSION_NAME_FMT % (uploadType, sessionNumber) if sessionNumber else 'index'
             src_dir = self.site_src_dir + '/' + uploadType
-            web_dir = self.site_web_dir + privatePrefix(uploadType) + '/' + uploadType
+            web_dir = self.site_web_dir + SiteProps.private_prefix(uploadType) + '/' + uploadType
 
         if sessionName != 'index':
             WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
 
-        if pacedSession(uploadType) and sessionName != 'index':
+        if SiteProps.paced_session(uploadType) and sessionName != 'index':
             # Lock proxy for preview
             temMsg = sdproxy.startPreview(sessionName, rollingOver=rollingOver)
             if temMsg:
@@ -2840,7 +2797,7 @@ class ActionHandler(BaseHandler):
             md_params = retval['md_params']
 
             # Save current preview state (allowing user to navigate and answer questions, without saving those changes)
-            if pacedSession(uploadType) and sessionName != 'index':
+            if SiteProps.paced_session(uploadType) and sessionName != 'index':
                 sdproxy.savePreview()
 
             # NOTE: If adding any preview fields here, also modify createUnmodifiedPreview below
@@ -2889,7 +2846,7 @@ class ActionHandler(BaseHandler):
         if self.previewState:
             self.previewClear()
 
-        if pacedSession(uploadType) and sessionName != 'index':
+        if SiteProps.paced_session(uploadType) and sessionName != 'index':
             temMsg = sdproxy.startPreview(sessionName)
             if temMsg:
                 if temMsg.startswith('PENDING:'):
@@ -3012,7 +2969,7 @@ class ActionHandler(BaseHandler):
         return_html = bool(src_path)
 
         try:
-            extra_attributes = {'privateSession': 1 if privatePrefix(uploadType) else 0}
+            extra_attributes = {'privateSession': 1 if SiteProps.private_prefix(uploadType) else 0}
             retval = slidoc.process_input(fileHandles, filePaths, configOpts, default_args_dict=defaultOpts, return_html=return_html,
                                           images_zipdict=images_zipdict, nb_links=nb_links, http_post_func=http_sync_post,
                                           restricted_sessions_re=sliauth.RESTRICTED_SESSIONS_RE, return_messages=True,
@@ -3046,7 +3003,7 @@ class ActionHandler(BaseHandler):
         if Options['debug'] :
             print >> sys.stderr, 'sdserver.rebuild:', make, utypes
         for utype in utypes:
-            retval = self.compile(utype, dest_dir=self.site_web_dir+privatePrefix(utype)+'/'+utype, indexOnly=indexOnly, make=make)
+            retval = self.compile(utype, dest_dir=self.site_web_dir+SiteProps.private_prefix(utype)+'/'+utype, indexOnly=indexOnly, make=make)
             msgs = retval.get('messages',[])
             msg_dict[utype] = msgs
             if msgs:
@@ -3109,7 +3066,7 @@ class ActionHandler(BaseHandler):
                 if self.previewState['image_zipfile'] and fname+fext in self.previewState['image_paths']:
                     content = self.previewState['image_zipfile'].read(self.previewState['image_paths'][fname+fext])
                 else:
-                    web_dir = self.site_web_dir if uploadType == TOP_LEVEL else self.site_web_dir + privatePrefix(uploadType)+'/' + uploadType
+                    web_dir = self.site_web_dir if uploadType == TOP_LEVEL else self.site_web_dir + SiteProps.private_prefix(uploadType)+'/' + uploadType
                     img_path = web_dir+'/'+sessionName+'_images/'+fname+fext
                     if os.path.exists(img_path):
                         with open(img_path) as f:
@@ -3282,7 +3239,7 @@ class ActionHandler(BaseHandler):
         logErrors = 'error' in ''.join(msgs).lower()
 
         previewOnly = False
-        if sessionName != 'index' and pacedSession(uploadType):
+        if sessionName != 'index' and SiteProps.paced_session(uploadType):
             sessionEntries = sdproxy.lookupValues(sessionName, ['releaseDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
             if sessionEntries['paceLevel'] == sdproxy.ADMIN_PACE:
                 if not getResponderCount(sessionName, uploadType):
@@ -5100,7 +5057,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                 gradeDate = None
                 releaseDate = None
                 sessionType, _ = getSessionType(sessionName)
-                if pacedSession(sessionType):
+                if SiteProps.paced_session(sessionType):
                     indexSheet = sdproxy.getSheet(sdproxy.INDEX_SHEET)
                     if not indexSheet:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:No index sheet for paced session '+sessionName)
@@ -5136,7 +5093,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                         # Future release date
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
-                    if sliauth.RESTRICTED_SESSIONS_RE and sliauth.RESTRICTED_SESSIONS_RE.search(sessionName):
+                    if SiteProps.paced_session(sessionType):
                         # Failsafe check to prevent premature release of restricted exams etc.
                         if Options['start_date'] and releaseDate:
                             # Valid start_date and release_date must be specified to access restricted session
@@ -6512,6 +6469,22 @@ class SiteProps(object):
     siteScriptVersions = {}
     sitesDeactivated = set()
 
+    defaultSessionTypes = [
+        TOP_LEVEL+':0:public:Top level web page',
+        'announce:0::Announcements',
+        'assignment:1::Assigments',
+        'exam:1:restricted:Exams',
+        'exercise:0::Exercises',
+        'final:1:restricted:Final exam',
+        'help:0:public:Help info',
+        'lecture:1::Lectures',
+        'midterm:1:restricted:Midterms',
+        'notes:0::Notes',
+        'project:1::Projects',
+        'quiz:1:restricted:Quizzes',
+        'test:1:restricted:Tests'
+    ]
+    
     @classmethod
     def reset_site(cls):
         cls.siteRosterMaps = {}
@@ -6520,6 +6493,69 @@ class SiteProps(object):
     def get_site_menu(cls):
         return sdproxy.split_list(Global.site_settings.get('site_menu',''))
     
+    @classmethod
+    def get_session_props(cls):
+        propStr = Global.site_settings.get('session_properties','')
+        if propStr.strip():
+            propsList = propStr.strip().split(';')
+        else:
+            propsList = cls.defaultSessionTypes
+        propsDict = OrderedDict()
+        for sessionProp in propsList:
+            comps = sessionProp.strip().split(':')
+            sessionName = comps[0].strip()
+            if sessionName:
+                props = {}
+                if len(comps) > 1 and comps[1].strip().isdigit():
+                    props['pace'] = int(comps[1].strip())
+                else:
+                    props['pace'] = 0
+
+                props['access'] = comps[2].strip().lower() if len(comps) > 2 else ''
+                props['description'] = comps[3].strip() if len(comps) > 3 else ''
+                    
+                propsDict[sessionName] = props
+        return propsDict
+            
+    @classmethod
+    def session_types(cls):
+        type_labels = []
+        for sessionType, sessionProp in cls.get_session_props().items():
+            sessionDesc = sessionProp['description']
+            if sessionProp['access']:
+                sessionDesc += ' (' + sessionProp['access'] + ')'
+            if sessionProp['pace']:
+                sessionDesc += ' (paced)'
+            type_labels.append( [sessionType, sessionDesc] )
+        return type_labels
+
+    @classmethod
+    def private_prefix(cls, sessionType):
+        sessionProps = cls.get_session_props()
+        if sessionType in sessionProps:
+            if sessionProps[sessionType]['access'] == 'public':
+                return ''
+        elif sessionType == TOP_LEVEL:
+            return ''
+        return '/' + PRIVATE_PATH
+
+    @classmethod
+    def paced_session(cls, sessionType):
+        sessionProps = cls.get_session_props()
+        if sessionType in sessionProps:
+            return sessionProps[sessionType]['pace']
+        elif sessionType == TOP_LEVEL:
+            return 0
+        return 1
+
+    @classmethod
+    def restricted_session(cls, sessionType):
+        if sessionType in sessionProps and sessionProps[sessionType]['access'] == 'restricted':
+            return True
+        elif sliauth.RESTRICTED_SESSIONS_RE and sliauth.RESTRICTED_SESSIONS_RE.search(sessionType):
+            return True
+        return False
+
     @classmethod
     def relay_map(cls, site_number):
         port = Options['private_port'] + site_number
