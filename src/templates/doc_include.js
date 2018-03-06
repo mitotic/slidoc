@@ -1347,8 +1347,8 @@ Slidoc.slideEdit = function(action, slideId) {
 		if (!Sliobj.previewModified && checkPreviewWin()) {
                     if (checkPreviewWin() == 'about:blank') {
 			Sliobj.previewWin.location = previewURL;
-		    } else if (!Sliobj.params.fileName || !Sliobj.previewWin.Slidoc) {
-			// Only reload for "simple pages" like ToC. Session pages will be automatically reloaded via websocket
+		    } else if (!Sliobj.params.fileName || !Slidoc.websocketPath || !Sliobj.previewWin.Slidoc) {
+			// Only reload for "simple pages" like ToC or unpaced sessions. Paced sessions will be automatically reloaded via websocket
 			Sliobj.previewWin.location.reload(true);
 		    }
 		    statusElem.textContent = 'Updated preview window';

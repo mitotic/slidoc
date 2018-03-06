@@ -2199,7 +2199,7 @@ class ActionHandler(BaseHandler):
                     elif predir == 'files':
                         linkpath = FILES_PATH + '/' + linkpath
 
-                    if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.ipynb', '.jpeg','.jpg','.pdf','.png'):
+                    if predir in ('web', 'data', 'files') and fext.lower() in ('.gif', '.ipynb', '.jpeg','.jpg','.pdf','.png','.txt'):
                         # Viewable files
                         linkpath, viewpath = self.viewer_link(linkpath, site_admin=site_admin)
                     else:
@@ -3694,8 +3694,8 @@ class ActionHandler(BaseHandler):
         if Options['debug']:
             print >> sys.stderr, 'ActionHandler:rollover', sessionName, slideNumber, lastSlide, len(md_slides)
 
-        if end_slide >= len(md_slides):
-            raise tornado.web.HTTPError(404, log_message='CUSTOM:No slides left to rollover/truncate session '+sessionName)
+        if end_slide > len(md_slides):
+            raise tornado.web.HTTPError(404, log_message='CUSTOM:Invalid end slide %d for truncating session %s with %d slides' % (end_slide, sessionName, len(md_slides)))
 
         if adminPaced:
             if truncateOnly:
@@ -3704,18 +3704,23 @@ class ActionHandler(BaseHandler):
 
         truncate_defaults, truncateText, truncate_images_zip, truncateHeader, _ = self.extract_slide_range(src_path, web_path, start_slide=1, end_slide=end_slide, renumber=1, session_name=sessionName)
 
-        truncateText = truncate_defaults + strip_slide(truncateText)
-        rolloverParams = {'uploadType': uploadType,
-                          'sessionNumber': sessionNumber,
-                          'sessionName': sessionName,
-                          'sessionText': truncateText,
-                          'slidesCut': len(md_slides)-end_slide,
-                          'slidesRolled': len(md_slides)-start_slide+1,
-                          'fname2': '',
-                          'fbody2': ''}
-        if truncate_images_zip:
-            rolloverParams['fbody2'] = truncate_images_zip
-            rolloverParams['fname2'] = sessionName+'_images.zip'
+        if end_slide < len(md_slides):
+            truncateText = truncate_defaults + strip_slide(truncateText)
+            rolloverParams = {'uploadType': uploadType,
+                              'sessionNumber': sessionNumber,
+                              'sessionName': sessionName,
+                              'sessionText': truncateText,
+                              'slidesCut': len(md_slides)-end_slide,
+                              'slidesRolled': len(md_slides)-start_slide+1,
+                              'fname2': '',
+                              'fbody2': ''}
+            if truncate_images_zip:
+                rolloverParams['fbody2'] = truncate_images_zip
+                rolloverParams['fname2'] = sessionName+'_images.zip'
+        else:
+            if truncateOnly:
+                raise tornado.web.HTTPError(404, log_message='CUSTOM:Cannot truncate because end slide is %d for session %s with %d slides' % (end_slide, sessionName, len(md_slides)))
+            rolloverParams = None
 
         if truncateOnly:
             self.truncateSession(rolloverParams)

@@ -387,7 +387,7 @@ class MathBlockLexer(mistune.BlockLexer):
                         # Explicit slide break
                         self.slidoc_slide_end()
                         self.slidoc_slide_header = None
-                    elif key not in ('newline', 'def_links', 'slidoc_header', 'slidoc_slideopts', 'heading'):
+                    elif key not in ('newline', 'def_links', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'heading'):
                         # Other non-slide break content
                         self.slidoc_slide_header = key
                 return m
@@ -3215,7 +3215,7 @@ def extract_slide_range(src_path, web_path, start_slide=0, end_slide=0, renumber
     if not start_slide:
         start_slide = 1
     elif start_slide > len(md_slides):
-        raise Exception('Invalid slide number %d' % start_slide)
+        raise Exception('Unable to access slide number %d; try editing all slides' % start_slide)
 
     if not end_slide:
         end_slide = len(md_slides)
@@ -4303,7 +4303,9 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     continue
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
-                entry_prefix = '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
+                entry_prefix = ''
+                if orig_fnames[ifile] in paced_files:
+                    entry_prefix += '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
 
                 nb_str = ''
                 if orig_fnames[ifile] in nb_links:

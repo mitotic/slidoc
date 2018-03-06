@@ -17,7 +17,7 @@ import yaml
 BLOCK_PREFIX = '> '
 
 class SWCEpisode(object):
-    choice_answer_re = re.compile(r'([Aa]nswer(\s+is)?\s+)(\d)\b')
+    choice_answer_re = re.compile(r'(([Aa]nswer(\s+is)?|[Ss]olution(\s+is)?|[Oo]ption)\s+)(\d)\b')
     def __init__(self, filename='', options='', site_name='', lesson_name='', orig_lesson_name=''):
         self.filename = filename
         self.options = options
@@ -66,8 +66,8 @@ class SWCEpisode(object):
             self.in_blocks[-1][-1].append('\n---\n')
             self.nonblank_appended = False
 
-        line = re.sub(r'\(\.\./fig/', '(_files/', line)
-        line = re.sub(r'"\.\./fig/', '"%s/_files/' % ('/'+self.site_name if self.site_name else ''), line)
+        line = re.sub(r'\(\.\./fig/', '(_files/images/', line)
+        line = re.sub(r'"\.\./fig/', '"%s/_files/images/' % ('/'+self.site_name if self.site_name else ''), line)
         self.in_blocks[-1][-1].append(line)
         if line.strip():
             self.nonblank_appended = True
@@ -171,11 +171,10 @@ class SWCEpisode(object):
 > Use ESCAPE key or square icon (&#9635;) to switch between *slide* and *document* view.
 
 > In document view, use *left/right* arrow to collapse/expand outline view.
-
-<em><a href="http://swcarpentry.github.io/%s/%s">Original rendering of lesson by SWC</a></em>
-''' % (self.orig_lesson_name or self.lesson_name, self.filename) )
+''')
                 out_lines += ['\n---\n']
 
+        ans_type = ''
         for bindex, block in enumerate(self.out_blocks):
             _, level, btype, bstyle, lines = block
             if not lines:
@@ -206,11 +205,12 @@ class SWCEpisode(object):
                     out_lines += ['\nAnswer: '+ans_type+'\n']
 
             elif bstyle == '.solution':
-                lines[0] = '\nNotes:'
-                for k in range(1,len(lines)):
-                    lmatch = self.choice_answer_re.search(lines[k])
-                    if lmatch:
-                        lines[k] =lines[k].replace(lmatch.group(0), lmatch.group(1)+chr(int(lmatch.group(3))-1+ord('A')))
+                lines[0] = '\nNotes: *Solution*\n'
+                if ans_type == 'choice':
+                    for k in range(1,len(lines)):
+                        lmatch = self.choice_answer_re.search(lines[k])
+                        if lmatch:
+                            lines[k] =lines[k].replace(lmatch.group(0), lmatch.group(1)+chr(int(lmatch.group(5))-1+ord('A')))
                 out_lines += lines
 
             elif bstyle == '.callout':
