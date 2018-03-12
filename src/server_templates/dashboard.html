@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, lock_date, end_date, admin_users, grader_users, guest_users, site_menu, upload_key, gradebook_release, active_users, idle_time-->
+<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, lock_date, end_date, admin_users, grader_users, guest_users, site_menu, upload_key, gradebook_release, server_start, active_users, idle_time-->
 
 {% include "base.html" %}
 
@@ -30,7 +30,7 @@
 
   <h3>{{site_label}}: {{site_title}}</h3>
 
-  Current interactive module session: <b>{% if interactive %}<a href="/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}</b>
+  Current interactive module session: <b>{% if interactive %}<a class="clickable" href="{{ site_prefix }}/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}</b>
   <hr>
   <b><span class="clickable" onclick="confirmToggleDisplay('upload-key')">Show upload key:</span></b> <span id="upload-key" style="display: none;">{{upload_key}}</span>
   <p></p>
@@ -91,10 +91,11 @@ End: {{end_date}}<br>
 </td>
 </tr>
 </table>
-Site access: {{site_access}}<br> 
+Site access: {{site_access}}<br>
 Gradebook release: {{gradebook_release}}<br> 
 Slidoc version: {{version}}<br>
 <p></p>
+Server started at: {{server_start}}<br>
 Active ({{len(active_users)}} users{% if idle_time %}, idle {{idle_time}}s{% end %}): {{', '.join(active_users)}}
 </body>
 </html>

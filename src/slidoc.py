@@ -731,13 +731,13 @@ class MarkdownWithMath(mistune.Markdown):
 class MarkdownWithSlidoc(MarkdownWithMath):
     def __init__(self, renderer, **kwargs):
         super(MarkdownWithSlidoc, self).__init__(renderer, **kwargs)
-        self.incremental = 'incremental_slides' in self.renderer.options['config'].features
+        self.incremental_block_quote = 'incremental_slides' in self.renderer.options['config'].features and 'no_incremental_list' not in self.renderer.options['config'].features
 
     def output_block_quote(self):
-        if self.incremental:
+        if self.incremental_block_quote:
             self.renderer.list_incremental(True)
         retval = super(MarkdownWithSlidoc, self).output_block_quote()
-        if self.incremental:
+        if self.incremental_block_quote:
             self.renderer.list_incremental(False)
         return retval
 
@@ -761,7 +761,9 @@ class MarkdownWithSlidoc(MarkdownWithMath):
             first_slide_pre += '<span id="%s-qconcepts" class="slidoc-qconcepts" style="display: none;">%s</span>\n' % (self.renderer.first_id, base64.b64encode(json.dumps(q_list)))
 
         classes =  ['slidoc-first-slide', 'slidoc-single-column' if 'two_column' in self.renderer.options['config'].features else '']
-        return SlidocRenderer.image_drop_template+self.renderer.slide_prefix(self.renderer.first_id, ' '.join(classes))+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)+html+self.renderer.end_slide(last_slide=True)
+        prefix = SlidocRenderer.image_drop_template+self.renderer.slide_prefix(self.renderer.first_id, ' '.join(classes))+first_slide_pre+concept_chain(self.renderer.first_id, self.renderer.options['config'].server_url)
+        suffix = self.renderer.end_slide(last_slide=True)
+        return md2md.unicodify(prefix) + html + md2md.unicodify(suffix)
 
     
 class MathRenderer(mistune.Renderer):
@@ -1209,6 +1211,8 @@ class SlidocRenderer(MathRenderer):
             attrs += ' data-param-count="%d"' % len(self.all_params)
         if self.all_functions:
             attrs += ' data-function-count="%d"' % len(self.all_functions)
+        if self.qtypes[-1]:
+            attrs += ' data-question-type="%s"' % self.qtypes[-1]
         html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle slidoc-full-block %s" %s style="display:none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
         return html
 
@@ -1521,7 +1525,7 @@ class SlidocRenderer(MathRenderer):
         if lang == 'output' and 'hide_output' in self.options['config'].features:
             if self.notes_end is None:
                 # Hide output
-                prefix_html += '''\n<code class="slidoc-clickable slidoc-block-output-hide-toggle" onclick="this.nextElementSibling.classList.add('slidoc-show-output');this.style.display='none';">output</code>\n'''
+                prefix_html += '''\n<pre><code class="slidoc-clickable slidoc-block-output-hide-toggle" onclick="this.parentNode.nextElementSibling.classList.add('slidoc-show-output');this.parentNode.style.display='none';">(...)</code></pre>\n'''
             else:
                 # Always show output in notes
                 classes += ' slidoc-show-output'
@@ -2766,7 +2770,7 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
         count += len(md_slide)
         md_breaks.append(count)
 
-    md_params = {'md_digest': md_digest, 'md_defaults': md_defaults, 'md_slides': md_slides, 'md_breaks': md_breaks,
+    md_params = {'md_digest': md_digest, 'md_pace': config.pace, 'md_defaults': md_defaults, 'md_slides': md_slides, 'md_breaks': md_breaks,
                  'md_images': renderer.slide_images, 'md_header': renderer.file_header, 'new_image_number': renderer.slide_maximage+1}
     content_html = Missing_ref_num_re.sub(Missing_ref_num, content_html)
 
@@ -3567,7 +3571,6 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'authType': '', 'features': {} }
 
     js_params['version'] = sliauth.get_version()
-    js_params['renderDate'] = sliauth.iso_date(nosubsec=True)
     js_params['userCookiePrefix'] = sliauth.USER_COOKIE_PREFIX
     js_params['siteCookiePrefix'] = sliauth.SITE_COOKIE_PREFIX
     js_params['siteName'] = config.site_name
@@ -3580,7 +3583,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
     js_params['debug'] = config.debug
     js_params['remoteLogLevel'] = config.remote_logging or 0
 
-    js_params_fmt = '\n<script>\nvar JS_PARAMS_OBJ=%s;\n</script>\n'
+    js_params_fmt = '\n<script>\nvar JS_RENDER_DATE="' + sliauth.iso_date(nosubsec=True) + '";\nvar JS_PARAMS_OBJ=%s;\n</script>\n'
     toc_js_params = js_params_fmt % sliauth.ordered_stringify(js_params)
 
     combined_name = config.all or (orig_fnames[0] if orig_fnames else 'combined')
@@ -4203,7 +4206,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 # Prefix index entry as comment
                 index_entries = [fname, fheader, file_props[fname]['doc_str'], file_props[fname]['due_date'] or '-', file_props[fname]['release_date'] or '-']
                 # Store MD5 digest of preprocessed source and list of character counts at each slide break
-                index_dict = {'md_digest': md_params['md_digest'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
+                index_dict = {'md_digest': md_params['md_digest'], 'md_pace': md_params['md_pace'], 'md_defaults': md_params['md_defaults'], 'md_breaks': md_params['md_breaks'],
                               'md_images': md_params['md_images'], 'md_header': md_params['md_header'], 'new_image_number': md_params['new_image_number']}
                 index_entries += [ json.dumps(index_dict).replace('<', '&lt;').replace('>', '&gt;')]
                 index_head = '\n'.join([Index_prefix] + index_entries + [Index_suffix])+'\n'
@@ -4304,7 +4307,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 _, fheader, doc_str, iso_due_str, iso_release_str, index_params = index_entries[0]
                 entry_class = ''
                 entry_prefix = ''
-                if orig_fnames[ifile] in paced_files:
+                if index_params and index_params.get('md_pace'):
                     entry_prefix += '<a class="slidoc-clickable slidoc-restrictedonly" href="%s/_manage/%s">%s</a> ' % (site_prefix, orig_fnames[ifile], SYMS['gear'])
 
                 nb_str = ''
@@ -4951,6 +4954,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   keep_extras: Keep Extra: portion of slides (incompatible with remote sheet)
 #   live_discussion: Allow discussion before submission for admin-paced sessions and before grading for other paced sessions
 #   math_input: Render math in user input (not needed if session text already contains math)
+#   no_incremental_list: Disable incremental list handling (useful for block-quoted content)
 #   no_markdown: Do not render markdown for remarks, comments, explanations etc.
 #   override: Force command line feature set to override file-specific settings (by default, the features are merged)
 #   progress_bar: Display progress bar during pace delays
@@ -4970,7 +4974,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 #   two_column: Two column output
 #   untitled_number: Untitled slides are automatically numbered (as in a sheet of questions)
 
-Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'hide_output', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'track_references', 'two_column', 'untitled_number']
+Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'hide_output', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_incremental_list', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'track_references', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')

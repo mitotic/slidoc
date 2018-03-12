@@ -43,6 +43,10 @@ Timer = {
 
 	start: function() {
 	    Slidoc.log('Slidoc.Plugins.Timer.start:');
+	    if (!this.timerValue.value || !parseInt(this.timerValue.value)) {
+		alert('Please specify a non-zero timer interval');
+		return;
+	    }
 	    this.stop();
 	    this.timerButton.value = STOP;
 	    this.timerValue.disabled = 'disabled';

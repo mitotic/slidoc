@@ -1479,7 +1479,9 @@ class ActionHandler(BaseHandler):
                         lock_date=sliauth.print_date(sdproxy.Settings['lock_date'],not_now=True),
                         end_date=sliauth.print_date(Options['end_date'],not_now=True),
                         site_menu=SiteProps.get_site_menu(), upload_key=upload_key,
-                        gradebook_release=sdproxy.Settings['gradebook_release'], active_users=active_users, idle_time=idle_time)
+                        gradebook_release=sdproxy.Settings['gradebook_release'],
+                        server_start=sliauth.print_date(Options['server_start'], weekday=True, long_date=True, prefix_time=True),
+                        active_users=active_users, idle_time=idle_time)
 
         elif action == '_actions':
             self.render('actions.html', site_name=Options['site_name'], session_name='', root_admin=self.check_root_admin(),
@@ -1628,7 +1630,7 @@ class ActionHandler(BaseHandler):
                     if lockType == 'proxy':
                         raise Exception('Failed to lock sheet '+sessionName+'. Try again after a few seconds?')
                     prefix = 'Locking'
-            self.displayMessage(prefix +' sessions: %s<p></p><a href="%s/_cache">Cache status</a><p></p>' % (', '.join(sdproxy.get_locked()), site_prefix) )
+            self.write(prefix +' sessions: %s<p></p><a href="%s/_cache">Cache status</a><p></p>' % (', '.join(sdproxy.get_locked()), site_prefix) )
 
         elif action == '_unlock':
             if not sdproxy.unlockSheet(sessionName):
@@ -1644,7 +1646,9 @@ class ActionHandler(BaseHandler):
             if not sheet:
                 self.displayMessage('No such session: '+sessionName)
                 return
-            self.render('manage.html', site_name=Options['site_name'], session_name=sessionName)
+            sessionType, _ = getSessionType(sessionName)
+            self.render('manage.html', site_name=Options['site_name'], session_name=sessionName,
+                        session_type=sessionType, private=SiteProps.private_prefix(sessionType))
 
         elif action == '_download':
             if not Options['source_dir']:
@@ -2979,7 +2983,7 @@ class ActionHandler(BaseHandler):
                 import traceback
                 traceback.print_exc()
             # Error return
-            return {'messages': ['Error in compile: '+excp.message]}
+            return {'messages': ['Error in compile: '+(excp.message or str(excp))]}
             
         if return_html:
             if Options['debug'] and retval.get('messages'):
@@ -5098,7 +5102,7 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                         # Future release date
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
 
-                    if SiteProps.paced_session(sessionType):
+                    if SiteProps.restricted_session(sessionType):
                         # Failsafe check to prevent premature release of restricted exams etc.
                         if Options['start_date'] and releaseDate:
                             # Valid start_date and release_date must be specified to access restricted session
@@ -6555,6 +6559,7 @@ class SiteProps(object):
 
     @classmethod
     def restricted_session(cls, sessionType):
+        sessionProps = cls.get_session_props()
         if sessionType in sessionProps and sessionProps[sessionType]['access'] == 'restricted':
             return True
         elif sliauth.RESTRICTED_SESSIONS_RE and sliauth.RESTRICTED_SESSIONS_RE.search(sessionType):

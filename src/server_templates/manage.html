@@ -3,7 +3,7 @@
 <head>
 
 <!-- manage template for slidoc server --->
-<!-- manage parameters: site_name, session_name -->
+<!-- manage parameters: site_name, session_name, session_type, private -->
 
 {% include "base.html" %}
 {% include "actbase.html" %}
@@ -29,7 +29,7 @@ function slidocDownload() {
   <h2>Manage module session</h2>
   <hr>
 
-  Session: <b>{{session_name}}</b>
+  Session: <b><a class="clickable" href="{{site_prefix}}{{private}}/{{session_type}}/index.html">{{session_type}}</a>/{{session_name}}</b>
   <p></p>
 
 

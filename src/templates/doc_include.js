@@ -94,6 +94,7 @@ var Sliobj = {}; // Internal object
 Sliobj.remoteVersion = '';
 Sliobj.logSheet = null;
 
+Sliobj.renderDate = JS_RENDER_DATE;
 Sliobj.params = JS_PARAMS_OBJ;
 Slidoc.version = JS_PARAMS_OBJ.version || '';
 
@@ -1059,8 +1060,12 @@ Slidoc.accordionView = function(active, show) {
 
 	var topToggleHeader = document.getElementById(allSlides[j].id+'-toptoggle-header');
 	var slideToggleFooter = getSlideFooter(allSlides[j].id);
-	if (active && topToggleHeader && slideToggleFooter && slideToggleFooter.textContent)
-	    topToggleHeader.innerHTML = slideToggleFooter.innerHTML;
+	if (active && topToggleHeader && slideToggleFooter) {
+	    if (slideToggleFooter.textContent)
+		topToggleHeader.innerHTML = slideToggleFooter.innerHTML;
+	    if (slideToggleFooter.dataset.questionType) 
+		topToggleHeader.classList.add('slidoc-toptoggle-header-question');
+	}
     }
     toggleClass(active, 'slidoc-accordion-view');
 }
@@ -2687,8 +2692,9 @@ Slidoc.viewHelp = function () {
     html += '<tr><td>&nbsp;</td></tr>';
     html += formatHelp('Navigating documents', docsPrefix+'/NavigationHelp.html');
     if (gradingAccess()) {
+	html += formatHelp('Editing Markdown', docsPrefix+'/EditingFlow.html');
 	html += formatHelp('Adaptive rubrics', docsPrefix+'/AdaptiveRubrics.html');
-	html += formatHelp('Randomized exams', docsPrefix+'/RandomizedExams.html');
+	html += formatHelp('Randomized exams', docsPrefix+'/RandomizedAssessment.html');
     }
     html += '</table>';
     Slidoc.showPopup(html);
@@ -4284,7 +4290,7 @@ Slidoc.manageSession = function() {
 	}
 	html += '</blockquote>\n';
     }
-    html += '<p></p>Version: ' + versionStr + ' (rendered '+Sliobj.params.renderDate+')';
+    html += '<p></p>Version: ' + versionStr + ' (rendered '+Sliobj.renderDate+')';
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Slidoc.showPopup(html);
@@ -4664,6 +4670,8 @@ function slidocSetupAux(session, feedback) {
 	var footerElem = getSlideFooter(slideId);
 	if (footerElem.classList.contains('slidoc-slide-hidden'))
 	    allSlides[j].classList.add('slidoc-slide-hidden');
+	if (footerElem.dataset.questionType)
+	    allSlides[j].classList.add('slidoc-slide-question');
     }
 
     if (Sliobj.session && !Sliobj.session.submitted && Sliobj.params.timedSec && Sliobj.timedSecLeft) {

@@ -69,8 +69,12 @@ class SWCEpisode(object):
         line = re.sub(r'\(\.\./fig/', '(_files/images/', line)
         line = re.sub(r'"\.\./fig/', '"%s/_files/images/' % ('/'+self.site_name if self.site_name else ''), line)
         self.in_blocks[-1][-1].append(line)
-        if line.strip():
+
+        if line.startswith('---'):
+            self.nonblank_appended = False
+        elif line.strip():
             self.nonblank_appended = True
+
         self.ending_block = ''
 
     def check_choices(self, lines):
@@ -239,10 +243,14 @@ class SWCEpisode(object):
 ''' % (datetime.date.today().year, self.orig_lesson_name or self.lesson_name, self.filename)]
 
         out_lines += ['''<style>
-blockquote {opacity: 0.65;}
+body.slidoc-slide-view blockquote {display: none;}
+blockquote {opacity: 0.70;}
+.slidoc-block-code:not(.slidoc-block-output):not(.slidoc-block-error) { background: #f8f8f8;}
 .slidoc-block-output { opacity: 1.0; }
 .slidoc-block-error { background: white;}
 .slidoc-block-error code { color: #bd2c00;}
+.slidoc-toptoggle-header-question { color: #bd2c00;}
+.slidoc-slide-question .slidoc-header { color: #bd2c00;}
 </style>''']
 
         return '\n'.join(out_lines) + '\n'
@@ -251,31 +259,63 @@ cmd_parser = argparse.ArgumentParser(description='Convert from SWC/Jekyll Markdo
 cmd_parser.add_argument('-d', '--dest_dir', metavar='DESTDIR', help='Destination directory')
 cmd_parser.add_argument('-l', '--lesson', metavar='LESSON', help='Lesson name')
 cmd_parser.add_argument('-o', '--options', metavar='OPTIONS', help='Slidoc options')
+cmd_parser.add_argument('--overwrite', help='Overwrite output files', action="store_true", default=None)
 cmd_parser.add_argument('-p', '--prefix', metavar='PREFIX', help='Output file prefix')
+cmd_parser.add_argument('--insert', metavar='FILE', help='Another markdown file to be inserted at start of file')
 cmd_parser.add_argument('-s', '--site', metavar='SITE', help='Site name')
 cmd_parser.add_argument('file', help='SWC/Jekyll Markdown filename', type=argparse.FileType('r'), nargs=argparse.ONE_OR_MORE)
 
 if __name__ == '__main__':
     cmd_args = cmd_parser.parse_args()
 
-    if not cmd_args.prefix:
+    if len(cmd_args.file) > 1 and not cmd_args.prefix:
         sys.exit('Please specify --prefix for output file(s)')
 
+    yaml_re = re.compile(r'^---[\s\S]*---\s*\n')
     out_names = []
-    for f in cmd_args.file:
+    for ifile, f in enumerate(cmd_args.file):
+        text = f.read().lstrip()
+
         fname, fext = os.path.splitext(os.path.basename(f.name))
         fmatch = re.match(r'^(\d+)-.*$', fname)
-        if fmatch:
-            out_name = cmd_args.prefix + fmatch.group(1) + fext
+        if cmd_args.prefix:
+            if fmatch:
+                out_name = '%s%02d%s' % (cmd_args.prefix, ifile+1, fext)
+            else:
+                out_name = cmd_args.prefix + '-' + fname + fext
         else:
-            out_name = cmd_args.prefix + '-' + fname + fext
+            out_name = fname + fext
 
-        out_names.append(out_name)
+        ymatch = yaml_re.match(text)
+        if ymatch:
+            yaml_text = ymatch.group(0)
+        else:
+            yaml_text = ''
+
+        if not ifile and cmd_args.insert:
+            with open(cmd_args.insert) as g:
+                insert = g.read().lstrip()
+                smatch = yaml_re.match(insert)
+                if smatch:
+                    insert = insert[len(smatch.group(0)):].strip()
+                if insert:
+                    ## Prefix insert content
+                    if yaml_text:
+                        text = yaml_text + '## Insert\n\n' + insert + '\n\n---\n\n' + text[len(yaml_text):].lstrip()
+                    else:
+                        text = insert + '\n\n---\n\n' + text
+
         if cmd_args.dest_dir:
             out_name = os.path.join(cmd_args.dest_dir, out_name)
             
-        with open(out_name, 'w') as g:
-            episode = SWCEpisode(fname, options=cmd_args.options, site_name=cmd_args.site or '', lesson_name=cmd_args.prefix, orig_lesson_name=cmd_args.lesson or '')
-            g.write( episode.process_input(f.read()) )
+        if os.path.exists(out_name) and not cmd_args.overwrite:
+            sys.exit('sdswc: Please specify --overwrite to overwrite %s' % out_name)
+
+        episode = SWCEpisode(fname, options=cmd_args.options, site_name=cmd_args.site or '', lesson_name=cmd_args.prefix or '', orig_lesson_name=cmd_args.lesson or '')
+        out_md = episode.process_input(text)
+
+        with open(out_name, 'w') as h:
+            h.write(out_md)
+        out_names.append(out_name)
 
     print('Created files: '+(cmd_args.dest_dir+'/' if cmd_args.dest_dir else '')+','.join(out_names), file=sys.stderr)
