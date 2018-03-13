@@ -853,11 +853,15 @@ class RootActionHandler(BaseHandler):
                         sites=Options['site_list'], server_version=sliauth.VERSION, versions=SiteProps.siteScriptVersions)
 
         elif action == '_alias':
-            origId, userId = subsubpath.split('=')
-            origId = origId.strip()
-            userId = userId.strip()
-            Global.userRoles.add_alias(origId, userId)
-            self.displayMessage('Aliased %s=%s' % (origId, userId), back_url='/_setup')
+            amaps = []
+            for alias in subsubpath.split(','):
+                origId, sep, userId = alias.strip().partition('=')
+                origId = origId.strip()
+                userId = userId.strip() if sep else origId
+                    
+                Global.userRoles.add_alias(origId, userId)
+                amaps.append('%s=%s' % (origId, userId))
+            self.displayMessage('Aliases '+','.join(amaps), back_url='/_setup')
 
         elif action == '_backup':
             self.displayMessage(backupSite(subsubpath, broadcast=True), back_url='/_setup')
@@ -4140,19 +4144,28 @@ def modify_user_auth(args, socketId=None):
         if socketId and socketId != adminId:
             raise Exception('Token admin id mismatch: %s != %s' % (socketId, adminId))
 
+        siteRole = ''
         if not role and sites and Options['site_name']:
-            role = sdproxy.getSiteRole(Options['site_name'], sites) or ''
+            siteRole = sdproxy.getSiteRole(Options['site_name'], sites) or ''
+        else:
+            siteRole = role
 
-        if not role:
+        if not siteRole:
             if effectiveId == adminId and not args.get('admin'):
                 # Allow non-admin access to site
                 args['token'] = gen_proxy_auth_token(adminId)
                 return
             raise Exception('Token disallowed by site for admin %s: %s' % (adminId, Options['site_name']))
 
-        if role in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE):
+        if siteRole in (sdproxy.ADMIN_ROLE, sdproxy.GRADER_ROLE):
             # Site admin token
-            args['token'] = siteAdminToken
+            if role:
+                args['token'] = siteAdminToken
+            else:
+                temSites = Options['site_name']
+                if siteRole and temSites:
+                    temSites += '+' + siteRole
+                args['token'] = effectiveId+gen_proxy_auth_token(adminId, sites=temSites, prefixed=True)
         else:
             raise Exception('Invalid role %s for admin user %s' % (role, adminId))
 
@@ -5419,7 +5432,7 @@ def createApplication():
     if not Options['site_number']:
         # Single/root server
         home_handlers += [ (r"/(_(backup|deactivate|logout|reload|setup|shutdown|terminate))", RootActionHandler) ]
-        home_handlers += [ (r"/(_(alias))/([-\w.@=]+)", RootActionHandler) ]
+        home_handlers += [ (r"/(_(alias))/([-\w.,@=]+)", RootActionHandler) ]
         home_handlers += [ (r"/(_(backup|restart|terminate|update))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
         if Options['multisite']:
             home_handlers += [ (r"/(_(site_settings|site_delete))/([a-zA-Z][-\w.]*)", SiteActionHandler) ]
@@ -6262,7 +6275,7 @@ class UserRoles(object):
         return False
 
     def list_aliases(self):
-        return ', '.join('%s=%s' % (k, v) for k, v in self.alias_map.items())
+        return ','.join('%s=%s' % (k, v) for k, v in self.alias_map.items())
 
     def add_alias(self, origId, userId):
         if not userId:

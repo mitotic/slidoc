@@ -79,16 +79,21 @@ function openWin(url, name) {
    return win;
 }
 
-function scrollTextArea(areaElem, top) {
+function scrollTextArea(areaElem, top, nofocus) {
     setTimeout(function() {
+        var maxHeight = Math.round(0.8*window.innerHeight);
+        if (areaElem.scrollHeight < maxHeight)
+          areaElem.style.height = (areaElem.scrollHeight + 12) + 'px';
+        else
+          areaElem.style.height = (maxHeight + 12) + 'px';
+
 	if (top) {
-	    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
 	    areaElem.scrollIntoView(true);
 	} else {
 	    areaElem.scrollTop = areaElem.scrollHeight;
-	    areaElem.style.height = areaElem.scrollHeight + 12 + 'px';
 	}
-	areaElem.focus();
+        if (!nofocus)
+	  areaElem.focus();
     }, 200);
 }
 
@@ -210,7 +215,7 @@ document.onreadystatechange = function(event) {
     if (document.readyState != "interactive" || !document.body)
         return;
     document.querySelectorAll('textarea').forEach(function(tx){
-        tx.style.height = tx.scrollHeight + 12 + 'px';
+        scrollTextArea(tx, true, true);
     });
 }
 </script>

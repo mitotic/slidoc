@@ -3596,7 +3596,6 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         default_args_dict['features'] = md2md.make_arg_set(default_args_dict['features'], Features_all)
 
     topnav_opts = ''
-    gd_sheet_url = ''
     if not config.separate:
         # Combined file  (these will be set later for separate files)
         if config.gsheet_url:
@@ -3898,15 +3897,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['timedSec'] = file_config.timed or 0
                 
             topnav_opts = file_config.topnav or ''
-            gd_sheet_url = file_config.gsheet_url or ''
-            js_params['gd_sheet_url'] = config.proxy_url if config.proxy_url and gd_sheet_url else gd_sheet_url
             js_params['plugin_share_voteDate'] = vote_date_str
             js_params['releaseDate'] = release_date_str
             js_params['dueDate'] = due_date_str
             js_params['doc_title'] = file_config.doc_title or ''
             js_params['fileName'] = fname
 
-            if js_params['paceLevel'] >= ADMIN_PACE and not gd_sheet_url:
+            if js_params['paceLevel'] >= ADMIN_PACE and not file_config.gsheet_url:
                 abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(js_params['paceLevel']))
 
             if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
@@ -3914,6 +3911,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
             if js_params['paceLevel'] >= QUESTION_PACE and file_config.show_correct != 'after_answering':
                 abort('PACE-ERROR: --show_correct=%s feature not compatible with --pace=%s' % (file_config.show_correct, js_params['paceLevel']) )
+
+        js_params['gd_sheet_url'] = ''
+        if js_params['paceLevel'] and file_config.gsheet_url:
+            js_params['gd_sheet_url'] = config.proxy_url or file_config.gsheet_url
 
         if not j or config.separate:
             # First file or separate files
@@ -4114,16 +4115,16 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         mid_params.update(SYMS)
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
 
-        if gd_sheet_url and (not config.dry_run or return_html):
+        if file_config.gsheet_url and (not config.dry_run or return_html):
             tem_attributes = extra_attributes.copy()
             tem_attributes.update(renderer.sheet_attributes)
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
-            max_last_slide, prev_headers, modify_col, row_count, related_sheets = check_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
+            max_last_slide, prev_headers, modify_col, row_count, related_sheets = check_gdoc_sheet(file_config.gsheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
                                                                      modify_session=modify_session)
 
-            mod_due_date, modify_questions, modify_col = update_session_index(gd_sheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
+            mod_due_date, modify_questions, modify_col = update_session_index(file_config.gsheet_url, gd_hmac_key, fname, js_params['sessionRevision'],
                                  file_config.session_weight, file_config.session_rescale, release_date_str, due_date_str, file_config.media_url, js_params['paceLevel'],
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                  renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
@@ -4132,13 +4133,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
             admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
 
-            update_gdoc_sheet(gd_sheet_url, gd_hmac_key, js_params['fileName'], tem_fields, row=max_score_fields, modify=modify_col)
-            update_gdoc_sheet(gd_sheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
+            update_gdoc_sheet(file_config.gsheet_url, gd_hmac_key, js_params['fileName'], tem_fields, row=max_score_fields, modify=modify_col)
+            update_gdoc_sheet(file_config.gsheet_url, gd_hmac_key, LOG_SHEET, Log_fields)
 
         doc_desc = []
         if js_params['paceLevel']:
             paced_files.add(fname)
-            if gd_sheet_url:
+            if js_params['gd_sheet_url']:
                 if js_params['gradeWeight']:
                     file_type = 'graded'
                 else:
