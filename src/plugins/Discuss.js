@@ -12,12 +12,15 @@ Discuss = {
 	unread: function() {
 	    if (!this.discussParams.stats)
 		return 0;
-	    var sessionStats = this.discussParams.stats[''] || {};
-	    var keys = Object.keys(sessionStats);
+	    var sessionStats = this.discussParams.stats || {};
+	    var discussNums = Object.keys(sessionStats);
 	    var count = 0;
-	    for (var j=0; j<keys.length; j++) {
-		if (sessionStats[keys[j]][1])
-		    count += 1;
+	    for (var j=0; j<discussNums.length; j++) {
+		var teamNames = Object.keys(sessionStats[discussNums[j]]);
+		for (var k=0; k<teamNames.length; k++) {
+		    if (sessionStats[discussNums[j]][teamNames[k]][1])
+			count += 1;
+		}
 	    }
 	    return count;
 	},
@@ -33,9 +36,11 @@ Discuss = {
 	    throw('Discuss.js: Denied access to relay method '+methodName);
 	},
 
-	postNotify: function(userId, userName, discussNum, newPost) {
-	    Slidoc.log('Slidoc.Plugins.Discuss.postNotify:', userId, userName, discussNum, newPost);
-	    var slideNum = this.discussParams.discussSlides[discussNum-1];
+	postNotify: function(userId, userName, teamName, discussNum, newPost) {
+	    Slidoc.log('Slidoc.Plugins.Discuss.postNotify:', userId, userName, teamName, discussNum, newPost);
+	    if (!discussNum)
+		return;
+	    var slideNum = this.discussParams.discussSlides[discussNum-1].slide;
 	    var slidePlugin = Slidoc.Plugins[this.name][Slidoc.makeSlideId(slideNum)];
 	    if (!slidePlugin)
 		return;
@@ -48,8 +53,8 @@ Discuss = {
 	    if (this.topElem && slideNum != Slidoc.PluginManager.getCurrentSlide())
 		this.topElem.classList.add('slidoc-plugin-Discuss-unread');
 
-	    var teamName = match[1];
-	    var row = [parseInt(match[2]), userId, userName, match[3], true, match[4]];
+	    var teamName = match[1]; // Redundant, since teamName is also an argument
+	    var row = [match[1], parseInt(match[2]), userId, userName, match[3], true, match[4]];
 	    var postElem = slidePlugin.displayPost(row);
 	    if (postElem) {
 		Slidoc.renderMath(postElem);
@@ -72,42 +77,68 @@ Discuss = {
 	Slidoc.log('Slidoc.Plugins.Discuss.init:', this.global);
 	if (!this.global.discussParams.stats)
 	    return;
-	var sessionStats = this.global.discussParams.stats[''] || {};
-	this.discussNum = 1+this.global.discussParams.discussSlides.indexOf(this.slideNumber);
-	if (this.discussNum <= 0)
+	var sessionStats = this.global.discussParams.stats || {};
+	this.discussNum = 0;
+	this.discussSlideParams = {};
+	for (var j=0; j<this.global.discussParams.discussSlides.length; j++) {
+	    if (this.global.discussParams.discussSlides[j].slide == this.slideNumber) {
+		this.discussNum = j+1;
+		this.discussSlideParams = this.global.discussParams.discussSlides[j];
+		break;
+	    }
+	}
+	if (!this.discussNum)
 	    return;
 
 	this.unreadPost = false;
 	this.activeUsers = {};
 	
 	if (this.discussNum in sessionStats) {
-	    var stat = sessionStats[this.discussNum];
+	    var discussStats = sessionStats[this.discussNum];
 	} else {
+	    discussStats = {};
 	    var stat = [0, 0];  // [nPosts, nUnread]
 	}
 
 	this.containerElem = document.getElementById(this.pluginId+'-container');
+	this.selectElem = document.getElementById(this.pluginId+'-select-post-team');
+	this.labelElem  = document.getElementById(this.pluginId+'-label');
 	this.postsElem  = document.getElementById(this.pluginId+'-posts');
 	this.showElem   = document.getElementById(this.pluginId+'-show');
 	this.footerElem = document.getElementById(this.pluginId+'-footer');
 	this.countElem  = document.getElementById(this.pluginId+'-count');
 	this.textareaElem = document.getElementById(this.pluginId+'-textarea');
 
+	if (this.discussSlideParams.maxchars)
+	    this.textareaElem.setAttribute('maxlength', this.discussSlideParams.maxchars);
+
 	this.toggleElem = document.getElementById(this.slideId+'-toptoggle-discuss');
+
+	var teamNames = Object.keys(discussStats);
+	teamNames.sort();
+	var nPosts = 0;
+	var nUnread = 0;
+	this.postsElem.innerHTML = '';
+	for (var iteam=0; iteam<teamNames.length; iteam++) {
+	    var teamName = teamNames[iteam];
+	    var teamStats = discussStats[teamName];
+	    nPosts += teamStats[0];
+	    nUnread += teamStats[1];
+	}
 
 	if (this.footerElem)
 	    this.footerElem.style.display = null;
-	if (this.showElem && stat[1])
+	if (this.showElem && nUnread)
 	    this.showElem.classList.add('slidoc-plugin-Discuss-unread');
-	if (this.countElem && stat[0])
-	    this.countElem.textContent = stat[1] ? stat[0]+' posts ('+stat[1]+' unread)' : stat[0]+' posts';
+	if (this.countElem && nPosts)
+	    this.countElem.textContent = nUnread ? nPosts+' posts ('+nUnread+' unread)' : nPosts+' posts';
 	if (this.toggleElem)
 	    this.toggleElem.style.display = null;
 
-	if (stat[0]) {
+	if (nPosts) {
 	    if (this.toggleElem)
 		this.toggleElem.classList.add('slidoc-plugin-Discuss-available');
-	    if (stat[1]) {
+	    if (nUnread) {
 		this.unreadPost = true;
 		this.toggleElem.classList.add('slidoc-plugin-Discuss-unread');
 		if (this.global.topElem)
@@ -157,7 +188,16 @@ Discuss = {
 		}
 		var updates = {id: this.userId};
 		updates[colName] = textValue;
-		this.global.discussSheet.updateRow(updates, {}, this.updateCallback.bind(this));
+		var params = {};
+		if (this.selectElem.options && this.selectElem.options.length) {
+		    var teamName = this.selectElem.options[this.selectElem.selectedIndex].value;
+		    if (!teamName) {
+			alert('Please select team to post to');
+			return
+		    }
+		    params['team'] = teamName;
+		}
+		this.global.discussSheet.updateRow(updates, params, this.updateCallback.bind(this));
 	    }
 	}
     },
@@ -194,20 +234,28 @@ Discuss = {
 	    alert('Error in discussion show: '+(retStatus?retStatus.error:''));
 	    return;
 	}
-	var posts = result;
-	this.displayDiscussion(posts);
+	var postInfo = result;
+	this.displayDiscussion(postInfo);
 	if (this.countElem)
-	    this.countElem.textContent = posts.length ? posts.length+' posts' : '';
+	    this.countElem.textContent = postInfo[1].length ? postInfo[1].length+' posts' : '';
     },
 
     displayPost: function(row) {
-	// row = [postNum, userId, userName, postTime, unreadFlag, postText]
+	// row = [userTeam, postNum, userId, userName, postTime, unreadFlag, postText]
 	// Return html and also set this.unreadId
-	var postId = this.slideId+'-post'+Slidoc.zeroPad(row[0],3);
-	var postName = (row[1] == this.global.discussParams.testUserId) ? 'Instructor' : Slidoc.makeShortFirst(row[2]);
-	var postDate = new Date(row[3]);
+	var userTeam = row[0];
+	var postNum = row[1];
+	var userId = row[2];
+	var userName = row[3];
+	var postTime = row[4];
+	var unreadPost = row[5];
+	var postText = row[6];
+
+	var postId = this.slideId+'-'+userTeam+'post'+Slidoc.zeroPad(postNum,3);
+	var postName = (userId == this.global.discussParams.testUserId) ? 'Instructor' : Slidoc.makeShortFirst(userName);
+	var postDate = new Date(postTime);
 	if (!postDate) {
-	    var timestamp = row[3];
+	    var timestamp = postDate;
 	} else {
 	    var opts = {month: 'short', day: 'numeric', hour:'numeric', minute:'numeric' };
 	    if (postDate.getFullYear() != (new Date()).getFullYear() )
@@ -215,24 +263,26 @@ Discuss = {
 	    timestamp = postDate.toLocaleString(navigator.language, opts);
 	}
         var highlight = '*';
-	if (row[4]) {
+	if (unreadPost) {
 	    // Unread
 	    highlight = '**';
 	    if (!this.unreadId)
 		this.unreadId = postId;
 	}
 	var html = '';
-	html += Slidoc.MDConverter(highlight+postName+highlight+': '+row[5], true); // user name
+	html += Slidoc.MDConverter(highlight+postName+highlight+': '+postText, true); // user name
 	html += '<br><em class="slidoc-plugin-Discuss-post-timestamp">'+timestamp+'</em>';  // Time
-	if ((this.userId == row[1] || this.userId == this.global.discussParams.testUserId) && !row[5].match(/\s*\(deleted/))
-	    html += ' <span class="slidoc-clickable slidoc-plugin-Discuss-post-delete" onclick="Slidoc.Plugins['+"'"+this.name+"']['"+this.slideId+"'"+'].deletePost('+row[0]+",'"+row[1]+"'"+');">&#x1F5D1;</span>'
+	if ((this.userId == userId || this.userId == this.global.discussParams.testUserId) && !postText.match(/\s*\(deleted/))
+	    html += ' <span class="slidoc-clickable slidoc-plugin-Discuss-post-delete" onclick="Slidoc.Plugins['+"'"+this.name+"']['"+this.slideId+"'"+'].deletePost('+postNum+",'"+userTeam+",'"+userId+"'"+');">&#x1F5D1;</span>';
 
 	var elem = document.createElement('p');
 	elem.id = postId;
 	elem.innerHTML = html;
 
-	if (this.postsElem)
-	    this.postsElem.appendChild(elem);
+	this.postTeamElem = document.getElementById(this.pluginId+'-posts-team' + userTeam)
+	if (this.postTeamElem)
+	    this.postTeamElem.appendChild(elem);
+	this.labelElem.innerHTML = '';
 	return elem;
     },
 
@@ -245,23 +295,48 @@ Discuss = {
 	}
     },
 
-    displayDiscussion: function(posts, update) {
+    displayDiscussion: function(postInfo, update) {
 	if (!update && !this.containerElem.style.display) {
 	    // Collapse display
 	    this.containerElem.style.display = 'none';
 	    return;
 	}
-	if (!update) // If update, postNotify have been sent
+	var teamNames = postInfo[0];
+	var posts = postInfo[1];
+	if (!update) // If update, postNotify has been sent
 	    Slidoc.sendEvent('', -1, 'Discuss.activeNotify.'+this.slideNumber, 'displayDiscussion', this.discussNum);
+
 	this.unreadId = '';
 	if (this.postsElem) {
+	    this.postsElem.innerHTML = '';
+	    if (teamNames.length < 2) {
+		this.selectElem.style.display = 'none';
+		this.selectElem.innerHTML = '';
+	    } else {
+		this.selectElem.style.display = null;
+		this.selectElem.innerHTML = '<option value="">Select team:</option>';
+	    }
+	    for (var iteam=0; iteam<teamNames.length; iteam++) {
+		var teamName = teamNames[iteam];
+		var divElem = document.createElement('div');
+		divElem.id = this.pluginId+'-posts-team' + teamName;
+		if (teamName)
+		    divElem.innerHTML = '<hr><em>'+Slidoc.escapeHtml(teamName)+'</em><br>';
+		this.postsElem.appendChild(divElem);
+		if (teamNames.length >= 2) {
+		    var option = document.createElement('option');
+		    option.id = this.pluginId+'-select-team' + teamName;
+		    option.value = teamName;
+		    option.text = teamName;
+		    this.selectElem.appendChild(option);
+		}
+	    }
+
+	    this.labelElem.innerHTML = '<code>No posts yet</code>';
 	    if (posts.length) {
-		this.postsElem.innerHTML = '';
 		for (var j=0; j<posts.length; j++)
 		    this.displayPost(posts[j]);
 		Slidoc.renderMath(this.postsElem);
-	    } else {
-		this.postsElem.innerHTML = '<code>No posts yet</code>';
 	    }
 	}
 
@@ -303,9 +378,13 @@ Discuss = {
   <span id="%(pluginId)s-show" class="slidoc-plugin-Discuss-show slidoc-clickable" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].slideDiscuss('show');">&#x1F4AC;</span>
   <span id="%(pluginId)s-count" class="slidoc-plugin-Discuss-count"></span>
   <div id="%(pluginId)s-container" class="slidoc-plugin-Discuss-container" style="display: none;">
+    <div id="%(pluginId)s-label" class="slidoc-plugin-Discuss-label"></div>
     <div id="%(pluginId)s-posts" class="slidoc-plugin-Discuss-posts"></div>
-    <div><button id="%(pluginId)s-post" class="slidoc-plugin-Discuss-post" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].slideDiscuss('post');">Post</button></div>
-    <textarea id="%(pluginId)s-textarea" class="slidoc-plugin-Discuss-textarea" maxlength="80"></textarea>
+    <hr>
+    <select id="%(pluginId)s-select-post-team" class="slidoc-plugin-Discuss-post-team"></select>
+    <button id="%(pluginId)s-post" class="slidoc-plugin-Discuss-post" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].slideDiscuss('post');">Post</button>
+    <br>
+    <textarea id="%(pluginId)s-textarea" class="slidoc-plugin-Discuss-textarea" maxlength="140"></textarea>
     <div><button id="%(pluginId)s-preview" class="slidoc-plugin-Discuss-preview" onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].slideDiscuss('preview');">Preview</button></div>
     <br><div id="%(pluginId)s-render" class="slidoc-plugin-Discuss-render"></div>
   </div>

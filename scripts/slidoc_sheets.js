@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21x';
+var VERSION = '0.97.21y';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -588,6 +588,7 @@ function sheetAction(params) {
 	}
 
 	var paramId = params.id || '';
+	var paramTeam = params.team || '';
         var authToken = params.token || '';
 
         if (authToken.indexOf(':') >= 0) {
@@ -756,6 +757,7 @@ function sheetAction(params) {
 	var gradeDate = null;
 	var voteDate = null;
 	var discussableSession = null;
+	var sessionTeam = null;
 	var timedSec = null;
 	var computeTotalScore = false;
 
@@ -919,7 +921,11 @@ function sheetAction(params) {
 	    if (!rowUpdates && selectedUpdates && selectedUpdates.length == 2 && selectedUpdates[0][0] == 'id') {
 		updatingSingleColumn = selectedUpdates[1][0];
                 if (discussingSession && updatingSingleColumn.match(/^discuss/)) {
-                    discussionPost = [discussingSession, parseInt(updatingSingleColumn.slice('discuss'.length) )];
+                    if (paramId == TESTUSER_ID)
+                        var postTeam = paramTeam;
+                    else
+                        var postTeam = getUserTeam(discussingSession, paramId);
+                    discussionPost = [discussingSession, parseInt(updatingSingleColumn.slice('discuss'.length)), postTeam];
                 }
 
 		if (updatingSingleColumn == 'submitTimestamp')
@@ -931,9 +937,10 @@ function sheetAction(params) {
 
             if (discussionPost) {
 		// Create session_discuss sheet, if need be, to post
-                var modSheet = updateDiscussSheet(discussingSession, paramId, rosterName);
+                var modSheet = updateDiscussSheet(discussingSession);
 		if (!modSheet)
 		    throw('Cannot post discussion for session '+discussingSession);
+                addDiscussUser(discussingSession, paramId, rosterName);
 	    } else {
 		modSheet = getSheet(sheetName);
 	    }
@@ -971,6 +978,7 @@ function sheetAction(params) {
 		gradeDate = sessionEntries.gradeDate;
 		voteDate = sessionAttributes.params.plugin_share_voteDate ? createDate(sessionAttributes.params.plugin_share_voteDate) : null;
 		discussableSession = sessionAttributes.discussSlides && sessionAttributes.discussSlides.length;
+		sessionTeam = sessionAttributes.sessionTeam || null;
 		timedSec = sessionAttributes['params'].timedSec || null;
 		if (timedSec && rosterValues) {
                     var extraTime = parseNumber(rosterValues.extratime || '');
@@ -1639,11 +1647,22 @@ function sheetAction(params) {
 	    }
 
 	    var teamCol = columnIndex.team;
-            if (newRow && rowUpdates && teamCol && sessionAttributes && sessionAttributes.sessionTeam == 'roster') {
-		// Copy team name from roster
-		var teamName = lookupRoster('team', userId);
-		if (teamName) {
-                    rowUpdates[teamCol-1] = teamName;
+            if (newRow && rowUpdates && userId != MAXSCORE_ID && teamCol && sessionTeam && sessionTeam['session'] != '_setup') {
+		// New row; set up teams, if not live setup
+                var setupErrMsg = setupSessionTeam(sheetName);
+                if (setupErrMsg)
+                    throw(setupErrMsg);
+
+                var teamSettings = getTeamSettings(sheetName);
+		var teamNames = Object.keys(teamSettings.members || {});
+                for (var j=0; j<teamNames.length; j++) {
+		    var teamName = teamNames[j];
+                    var memberIds = teamSettings.members[teamName];
+                    if (memberIds.indexOf(userId) >= 0) {
+                        // Update team column
+                        rowUpdates[teamCol-1] = teamName;
+                        break;
+		    }
 		}
             }
 
@@ -1925,6 +1944,15 @@ function sheetAction(params) {
                             // Copy test user last slide number as new adminPaced value
 			    adminPaced = rowValues[lastSlideCol-1];
                             setValue(sheetName, 'adminPaced', adminPaced, INDEX_SHEET);
+
+                            if (sessionTeam && (!sessionTeam['session'] || sessionTeam['session'] == '_setup')) {
+				// Setup teams for this session
+                                var setupErrMsg = setupSessionTeam(sheetName);
+                                if (setupErrMsg) {
+                                    blankColumn(sheetName, 'team');
+                                    returnInfo['teamSetupError'] = setupErrMsg;
+				}
+			    }
                         }
                         if (params.submit) {
                             // Use test user submission time as due date for admin-paced sessions
@@ -2043,10 +2071,17 @@ function sheetAction(params) {
                                 }
                             } else {
                                 // New post; append
-				var postCount = accessDiscussion('post', discussionPost[0], discussionPost[1], '');
-				var postTeam = '';
-				var newPost = makePost(postTeam, postCount, colValue);
-                                modValue = appendPosts(prevValue, newPost, postCount, '');
+                                if (adminPaced && !(sessionEntries.dueDate || sessionAttributes['params']['features'].live_discussion))
+                                    throw('live_discussion feature not enabled for session '+discussionPost[0]);
+
+                                if (userId == TESTUSER_ID)
+                                    var postTeam = paramTeam;
+                                else
+                                    var postTeam = discussionPost[2];
+                                
+                                var retval = postDiscussEntry(discussionPost[0], discussionPost[1], postTeam, prevValue, colValue);
+				modValue = retval[0];
+                                ///notifyDiscussUsers(discussionPost[0], discussionPost[1], postTeam, userId, rosterName, newPost)
                             }
 			} else if (colValue == null) {
 			    // Do not modify field
@@ -2142,9 +2177,9 @@ function sheetAction(params) {
 		    }
 		}
 
-                if (getRow && createRow && discussableSession) {
+                if (getRow && createRow && discussableSession && userId != MAXSCORE_ID) {
 		    // Accessing discussable session
-                    returnInfo['discussStats'] = getDiscussStats(userId, sheetName, ['']);
+                    returnInfo['discussStats'] = getDiscussStats(userId, sheetName);
                 }
 
                 if (computeTotalScore && getRow) {
@@ -3401,6 +3436,42 @@ function lookupRoster(field, userId) {
     return fieldDict;
 }
 
+function getRowMap(sheetName, colName, regular, optional, startRow) {
+    // Return dict of id->value in sheet (if regular, only for names defined and not starting with #)
+    // if optional, return null if column not found
+    startRow = startRow || 2;
+    var sheet = getSheet(sheetName);
+    if (!sheet) {
+        throw('Sheet '+sheetName+' not found');
+    }
+    var colIndex = indexColumns(sheet);
+    if (!(colName in colIndex)) {
+        if (optional) {
+            return null;
+        }
+        throw('Column '+colName+' not found in sheet '+sheetName);
+    }
+    var nRows = sheet.getLastRow()-startRow+1;
+    var rowMap = {};
+    if (nRows > 0) {
+        var names = sheet.getSheetValues(startRow, colIndex['name'], nRows, 1);
+        var rowIds = sheet.getSheetValues(startRow, colIndex['id'], nRows, 1);
+        var vals = sheet.getSheetValues(startRow, colIndex[colName], nRows, 1);
+        for (var j=0; j<rowIds.length; j++) {
+	    var rowId = rowIds[j];
+            if (!rowId[0]) {
+                continue;
+            }
+            if (regular && (!names[j][0] || names[j][0].exec(/^#/))) {
+                continue;
+            }
+            rowMap[rowId[0]] = vals[j][0];
+        }
+    }
+    return rowMap;
+}
+
+
 function safeName(s, capitalize) {
     s = s.replace(/[^A-Za-z0-9-]/g, '_');
     if (s && capitalize)
@@ -3424,126 +3495,214 @@ function blankColumn(sheet, colName, startRow) {
     blankRange.setValues(blankVals);
 }
 
-function getDiscussStats(userId, sessionName, postTeams) {
-    // Returns discussion stats { sessionName1: {discussNum1: [nPosts, unreadPosts, ...}, discussNum2:...}, sessionName2: ...}
+function getUserTeam(sessionName, userId) {
+    var sessionSheet = getSheet(sessionName);
+    if (!sessionSheet) {
+        throw('Session '+sessionName+' not found');
+    }
+    return lookupValues(userId, ['team'], sessionName, true)[0];
+}
+
+function getDiscussStats(userId, sessionName) {
+    // Returns discussion stats { sessionName1: {discussNum1: {team1: [nPosts, unreadPosts], ...}, discussNum2:...}, sessionName2: ...}
+    sessionName = sessionName || '';
     var discussStats = {};
     var axsSheet = getSheet(DISCUSS_SHEET);
-    if (!axsSheet)
-	return discussStats;
+    if (!axsSheet) {
+        return discussStats;
+    }
     var topRow = lookupRowIndex(DISCUSS_ID, axsSheet);
     if (!topRow) {
         throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
     }
     var userRow = lookupRowIndex(userId, axsSheet);
 
+    if (userId == TESTUSER_ID) {
+        var postTeams = [];
+    } else {
+        postTeams = [''];
+        var userTeam = getUserTeam(sessionName, userId);
+        if (userTeam) {
+            postTeams.push(userTeam);
+        }
+    }
+
     var ncols = axsSheet.getLastColumn();
     var headers = axsSheet.getSheetValues(1, 1, 1, ncols)[0];
     var topVals = axsSheet.getSheetValues(topRow, 1, 1, ncols)[0];
-    var userVals = userRow ? axsSheet.getSheetValues(userRow, 1, 1, ncols)[0] : null;
+    var userVals = userRow  ? axsSheet.getSheetValues(userRow, 1, 1, ncols)[0]  : null;
     for (var j=0; j<ncols; j++) {
         if (headers[j].match(/^_/)) {
-	    var temSessionName = headers[j].slice(1);
-	    if (sessionName && sessionName != temSessionName)
-		continue;
-	    var sessionReadPosts = {};
-	    try {
-		var lastPostsAll = JSON.parse(topVals[j]||'{}');
-		var lastReadPostsAll = userVals ? JSON.parse(userVals[j]||'{}') : {};
-		var teamKeys = postTeams ? postTeams : Object.keys(lastPostsAll);
-		for (var iteam=0; iteam<teamKeys.length; iteam++) {
-		    var postTeam = teamKeys[iteam];
-		    var lastPosts = lastPostsAll[postTeam] || {};
-		    var lastReadPosts = lastReadPostsAll[postTeam] || {};
-		    var discussNums = Object.keys(lastPosts);
-		    sessionReadPosts[postTeam] = {};
-		    for (var k=0; k<discussNums.length; k++) {
-			var discussNum = discussNums[k];
-			var lastPost = lastReadPosts[discussNum]||0;
-                        var lastReadPost = lastPosts[discussNum]||0;
-			sessionReadPosts[postTeam][discussNum] = [lastPost, lastPost-lastReadPost];
-		    }
-		}
-	    } catch(err) {
+            var temSessionName = headers[j].slice(1);
+            if (sessionName && sessionName != temSessionName) {
+                continue;
+            }
+            var sessionReadPosts = {};
+            try {
+                var discussState = JSON.parse(topVals[j]);
+                var lastPostsAll = discussState['lastPost'];
+                var lastReadPostsAll = userVals  ? JSON.parse(userVals[j] || '{}')  : {};
+                var discussNums = Object.keys(lastPostsAll);
+                for (var idisc=0; idisc<discussNums.length; idisc++) {
+                    var discussNum = discussNums[idisc];
+                    var lastPosts = lastPostsAll[discussNum] || {};
+                    var lastReadPosts = lastReadPostsAll.get(discussNum, {});
+                    var teamNames = postTeams ? postTeams : Object.keys(lastPosts);
+                    if (teamNames.length) {
+                        sessionReadPosts[discussNum] = {};
+                        for (var iteam=0; iteam<teamNames.length; iteam++) {
+                            var postTeam = teamNames[iteam];
+                            var lastPost = lastPosts[postTeam] || 0;
+                            var lastReadPost = lastReadPosts[postTeam] || 0;
+                            sessionReadPosts[discussNum][postTeam] = [lastPost, lastPost-lastReadPost];
+                        }
+                    }
+                }
+            } catch(err) {
 	    }
-	    discussStats[temSessionName] = sessionReadPosts;
-	}
+            discussStats[temSessionName] = sessionReadPosts;
+        }
     }
     return discussStats;
 }
 
 
-function accessDiscussion(action, sessionName, discussNum, postTeam, userId, name) {
-    // Returns new post number if action == 'post', or lastReadPost number if action == 'read' or omitted.
-    // name should be specified for action != 'post'
-    postTeam = postTeam || '';
+function getDiscussState(sessionName) {
+    if (sessionName == previewingSession()) {
+        throw('Cannot access discussions when previewing session ' + sessionName);
+    }
 
+    var axsSession = '_'+sessionName;
+
+    var axsSheet = getSheet(DISCUSS_SHEET);
+    if (!axsSheet) {
+        return null;
+    }
+
+    var axsColumn = indexColumns(axsSheet)[axsSession];
+    if (!axsColumn) {
+        throw('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET);
+    }
+
+    var axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet);
+    if (!axsTopRow) {
+        throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
+    }
+    var discussRange = axsSheet.getRange(axsTopRow, axsColumn, 1, 1);
+
+    var discussStateEntry = discussRange.getValues()[0][0];
+    if (!discussStateEntry.trim()) {
+        throw('Row with id '+DISCUSS_ID+' empty for session '+axsSession+' in sheet '+DISCUSS_SHEET);
+    }
+
+    return JSON.parse(discussStateEntry);
+}
+
+function setDiscussState(sessionName, discussState) {
+    if (sessionName == previewingSession()) {
+        throw('Cannot access discussions when previewing session ' + sessionName);
+    }
+
+    var axsSession = '_'+sessionName;
+
+    var axsSheet = getSheet(DISCUSS_SHEET);
+    if (!axsSheet) {
+        return null;
+    }
+
+    var axsColumn = indexColumns(axsSheet)[axsSession];
+    if (!axsColumn) {
+        throw('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET);
+    }
+
+    var axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet);
+    if (!axsTopRow) {
+        throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
+    }
+    axsSheet.getRange(axsTopRow, axsColumn, 1, 1).setValue(JSON.stringify(discussState));
+}
+
+function postDiscussEntry(sessionName, discussNum, postTeam, prevText, newText) {
+    var postCount = createDiscussEntry(sessionName, postDiscussNum=discussNum, postTeam=postTeam);
+    var newPost = makePost(postTeam, postCount, newText);
+    return appendPosts(prevText, newPost, postCount), newPost;
+}
+
+function createDiscussEntry(sessionName, postDiscussNum, postTeam) {
+    postTeam = postTeam || '';
+    var discussState = getDiscussState(sessionName);
+    var closed = discussState['closed'][postDiscussNum] || {};
+    if (closed) {
+        throw('Discussion '+str(postDiscussNum)+' in session '+sessionName+' === closed for new postings');
+    }
+
+    // New post for session/discussion
+    var lastPost = discussState['lastPost'][postDiscussNum] || {};
+    if (!lastPost[postTeam]) {
+        lastPost[postTeam] = 1;
+    } else {
+        lastPost[postTeam] += 1;
+    }
+    discussState['lastPost'][postDiscussNum] = lastPost;
+    setDiscussState(sessionName, discussState);
+    return lastPost[postTeam];
+}
+
+function accessDiscussion(sessionName, discussNum, userId, name, postTeam, noread) {
+    // Returns lastReadPost number 
+    // If noread, do not update read state
+    postTeam = postTeam || '';
     var axsSession = '_'+sessionName;
     var axsRowOffset = 2;
     var axsNameCol = 1;
     var axsIdCol = 2;
 
     try {
-	var axsSheet = getSheet(DISCUSS_SHEET);
-	if (!axsSheet) {
-	    return 0;
-	}
+        // Record last read post for user for this session/slide
+        var axsSheet = getSheet(DISCUSS_SHEET);
+        if (!axsSheet) {
+            throw('Sheet '+DISCUSS_SHEET+' not found');
+        }
 
         var axsColumn = indexColumns(axsSheet)[axsSession];
         if (!axsColumn) {
             throw('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET);
         }
 
-        var axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet);
-        if (!axsTopRow) {
-            throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
-	}
+        var discussState = getDiscussState(sessionName);
+        var lastPost = discussState['lastPost'][discussNum] || {};
+        var teamLastPost = lastPost[postTeam] || 0;
 
-	var discussRange = axsSheet.getRange(axsTopRow, axsColumn, 1, 1);
-	var postCountsAll = JSON.parse(discussRange.getValues()[0][0] || '{}');
-        var postCounts = postCountsAll[postTeam] || {};
-	if (action == 'post') {
-	    // New post for session/slide
-	    if (!postCounts[discussNum])
-		postCounts[discussNum] = 1;
-	    else
-		postCounts[discussNum] += 1;
-	    postCountsAll[postTeam] = postCounts
-	    discussRange.setValue(JSON.stringify(postCountsAll));
-	    return postCounts[discussNum];
-	}
-
-	// Record last read post for user for this session/slide
-	var lastPost = postCounts[discussNum] || 0;
-	var axsRow = lookupRowIndex(userId, axsSheet);
-	if (!axsRow) {
-	    // Add discuss access row for user
-	    var axsRows = axsSheet.getLastRow();
-	    if (axsRows > axsRowOffset) {
-		var axsNames = axsSheet.getSheetValues(1+axsRowOffset, axsNameCol, axsRows-axsRowOffset, 1);
-		var axsIds = axsSheet.getSheetValues(1+axsRowOffset, axsIdCol, axsRows-axsRowOffset, 1);
-		var temRow = axsRowOffset + locateNewRow(name||'#'+userId, userId, axsNames, axsIds);
-	    } else {
-		temRow = axsRowOffset + 1;
-	    }
+        var axsRow = lookupRowIndex(userId, axsSheet);
+        if (!axsRow) {
+            // Add discuss access row for user
+            var axsRows = axsSheet.getLastRow();
+            if (axsRows > axsRowOffset) {
+                var axsNames = axsSheet.getSheetValues(1+axsRowOffset, axsNameCol, axsRows-axsRowOffset, 1);
+                var axsIds = axsSheet.getSheetValues(1+axsRowOffset, axsIdCol, axsRows-axsRowOffset, 1);
+                var temRow = axsRowOffset + locateNewRow(name || '#'+userId, userId, axsNames, axsIds);
+            } else {
+                temRow = axsRowOffset + 1;
+            }
 	    axsSheet.insertRowBefore(temRow);
 	    axsSheet.getRange(temRow, axsIdCol, 1, 1).setValues([[userId]]);
-	    axsSheet.getRange(temRow, axsNameCol, 1, 1).setValues([[name || '#'+userId]]);
-	    axsRow = lookupRowIndex(userId, axsSheet);
-	}
+            axsSheet.getRange(temRow, axsNameCol, 1, 1).setValues([[name || '#'+userId]]);
+            axsRow = lookupRowIndex(userId, axsSheet);
+        }
 
-	var axsRange = axsSheet.getRange(axsRow, axsColumn, 1, 1);
-	var lastReadPostsAll = JSON.parse(axsRange.getValue() || '{}');
-	var lastReadPosts = lastReadPostsAll[postTeam] || {};
-	var lastReadPost = lastReadPosts[discussNum] || 0;
-	if (action == 'read' && lastReadPost < lastPost) {
-	    lastReadPosts[discussNum] = lastPost;
-	    lastReadPostsAll[postTeam] = lastReadPosts;
-	    axsRange.setValue(JSON.stringify(lastReadPostsAll));
-	}
-	return lastReadPost;
-    } catch(err) {
+        var axsRange = axsSheet.getRange(axsRow, axsColumn, 1, 1);
+        var lastReadPostsAll = JSON.parse(axsRange.getValue() || '{}');
+        var lastReadPosts = lastReadPostsAll[discussNum] || {};
+        var teamLastReadPost = lastReadPosts[postTeam] || 0;
+        if (!noread && teamLastReadPost < teamLastPost) {
+            lastReadPosts[postTeam] = teamLastPost;
+            lastReadPostsAll[discussNum] = lastReadPosts;
+            axsRange.setValue(JSON.stringify(lastReadPostsAll));
+        }
+        return teamLastReadPost;
+    } catch (err) {
 	throw('Error in discussion access for session '+sessionName+', discussion '+discussNum+': '+err);
-    }	
+    }
 }
 
 function splitPosts(posts) {
@@ -3574,25 +3733,55 @@ function appendPosts(prevPosts, newPost, postCount, postTeam) {
     return retValue;
 }
 
-function getDiscussPosts(sessionName, discussNum, userId, name, postTeam) {
-    // Return sorted list of discussion posts [ [postNum, userId, userName, postTime, unreadFlag, postText] ]
-    postTeam = postTeam || '';
+function getDiscussPosts(sessionName, discussNum, userId, name, postTeams, noread) {
+    // Return sorted list of discussion posts [ teamNames, [ [userTeam, postNum, userId, userName, postTime, unreadFlag, postText] ] ]
+    // If noread, do not update read stats
+    postTeam = postTeam || [];
+    var sessionEntries = lookupValues(sessionName, ['attributes'], INDEX_SHEET);
+    var sessionAttributes = JSON.parse(sessionEntries['attributes']);
+    var discussSlides = sessionAttributes['discussSlides'];
+    var discussProps = discussSlides[discussNum-1];
+
+    var teamSettings = getTeamSettings(sessionName);
+
+    if (discussProps.team) {
+        var teamNames = teamSettings.get('members',{}).keys();
+        teamNames.sort();
+    } else {
+        teamNames = [''];
+    }
+
+    var teamAliases = teamSettings.aliases;
+
+    if (userId == TESTUSER_ID) {
+        // Retrieve posts for all teams, if no team specified
+        var postTeams = postTeams || teamNames;
+    } else {
+        var userTeam = discussProps.team ? getUserTeam(sessionName, userId) : '';
+        if (!postTeams) {
+            postTeams = [ userTeam ];
+        } else if (postTeams != [ userTeam ]) {
+            throw('User '+userId+' not allowed to access discussion '+str(discussNum)+' for team '+userTeam);
+        }
+    }
+
     var sheetName = sessionName+'_discuss';
     var discussSheet = getSheet(sheetName);
     if (!discussSheet) {
-        return [];
+        return [postTeams, []];
     }
+
     var colIndex = indexColumns(discussSheet);
     var axsColName = 'discuss' + zeroPad(discussNum,3);
     if (!colIndex[axsColName]) {
-        return [];
+        return [postTeams, []];
     }
 
-    if (userId) {
-        // Update last read post
-	var lastReadPost = accessDiscussion('read', sessionName, discussNum, postTeam, userId, name || '#'+userId);
-    } else {
-        lastReadPost = 0;
+    var lastReadPosts = {};
+    // Last read post
+    for (var j=0; j<postTeams.length; j++) {
+	var postTeam = postTeams[j];
+        lastReadPosts[postTeam] = accessDiscussion(sessionName, discussNum, userId, name || '#'+userId, postTeam, noread=noread);
     }
 
     var idVals = getColumns('id', discussSheet);
@@ -3600,54 +3789,106 @@ function getDiscussPosts(sessionName, discussNum, userId, name, postTeam) {
     var colVals = getColumns(axsColName, discussSheet);
     var allPosts = [];
     for (var j=0; j<colVals.length; j++) {
-        if (!idVals[j] || (idVals[j].match(/^_/) && idVals[j] != TESTUSER_ID)) {
+        var idValue = idVals[j];
+        var nameValue = nameVals[j];
+        if (!idValue || (idValue.match(/^_/) && idValue != TESTUSER_ID)) {
             continue;
+        }
+        if (teamAliases && teamAliases[idValue]) {
+            // Replace name with aliased ID
+            nameValue = teamAliases[idValue];
+            if (userId == idValue) {
+                nameValue = 'self-' + nameValue;
+            } else if (userId != TESTUSER_ID) {
+                // Replace id with aliased ID (for normal users)
+                idValue = nameValue;
+            }
         }
         var userPosts = splitPosts(colVals[j]);
         for (var k=0; k<userPosts.length; k++) {
             var pmatch = POST_NUM_RE.exec(userPosts[k]);
-            if (pmatch && pmatch[1] == postTeam) {
+            if (pmatch && postTeams.indexOf(pmatch[1]) >= 0) {
+                var teamName = pmatch[1];
                 var postNumber = parseInt(pmatch[2]);
                 var postTimeStr = pmatch[3];
-                var unreadFlag = userId ? postNumber > lastReadPost : false;
+                var unreadFlag = !noread ? postNumber > lastReadPosts[teamName] : false;
                 var text = pmatch[4].trim()+'\n';
                 if (text.slice(0,DELETED_POST.length) == DELETED_POST) {
                     // Hide text from deleted messages
                     text = DELETED_POST;
                 }
-                allPosts.push([postNumber, idVals[j], nameVals[j], postTimeStr, unreadFlag, text]);
+                allPosts.push([teamName, postNumber, idValue, nameValue, postTimeStr, unreadFlag, text]);
             }
         }
     }
 
-    allPosts.sort(numSort);  //  (sorting numerically)
-    return allPosts;
+    allPosts.sort();   //  (sorting by team name and then by post number)
+    return [postTeams, allPosts];
 }
 
-function updateDiscussSheet(sessionName, userId, userName) {
-    // Create/update session_discuss sheet (which will contain rows for all users who have posted)
-    // if userId is specified, add user row to session_discuss sheet
+function addDiscussUser(sessionName, userId, userName) {
+    userName = userName || '';
+    var discussSheet = getSheet(sessionName+'_discuss');
 
-    var sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'adminPaced', 'attributes'], INDEX_SHEET);
-    var adminPaced = sessionEntries.adminPaced;
-    var sessionAttributes = JSON.parse(sessionEntries['attributes']);
-    var discussSlides = sessionAttributes['discussSlides'];
+    if (userId.match(/^_/) && userId != TESTUSER_ID) {
+        return;
+    }
+    if (lookupRowIndex(userId, discussSheet)) {
+        return;
+    }
 
-    if (sessionAttributes['params']['features'].live_discussion || (adminPaced && sessionEntries.dueDate) || (!adminPaced && sessionEntries.gradeDate)) {
-        // Create session_discuss sheet
+    var discussRowOffset = 2;
+    var discussNameCol = 1;
+    var discussIdCol = 2;
+
+    // Add user row to discussion sheet
+    var temName = userName || '#'+userId;
+    var discussRows = discussSheet.getLastRow();
+    if (discussRows == discussRowOffset) {
+        var temRow = discussRowOffset + 1;
     } else {
+        var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1);
+        var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1);
+        temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds);
+    }
+    discussSheet.insertRowBefore(temRow);
+    discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
+    discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]]);
+}
+
+function getTeamSettings(sessionName) {
+    return JSON.parse(lookupValues(MAXSCORE_ID, ['team'], sessionName, true)[0] || '{}');
+}
+
+function setTeamSettings(sessionName, members, aliases) {
+    var teamSettings = {'members': members, 'aliases': aliases};
+    setValue(MAXSCORE_ID, 'team', JSON.stringify(teamSettings), sessionName);
+}
+
+function notifyDiscussUsers(sessionName, discussNum, teamName, userId, userName, newPost) {
+}
+
+function setupSessionTeam(sessionName) {
+    throw('team_props not implemented');
+}
+
+
+function updateDiscussSheet(sessionName) {
+    // Create/update session_discuss sheet (which will contain rows for all users who have posted)
+    if (sessionName == previewingSession()) {
+        // No sheet creation during preview
         return null;
     }
+
+    var sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'attributes'], INDEX_SHEET);
+    var sessionAttributes = JSON.parse(sessionEntries['attributes']);
+    var discussSlides = sessionAttributes['discussSlides'];
 
     if (!discussSlides || !discussSlides.length) {
         return null;
     }
 
     var discussSheet = getSheet(sessionName+'_discuss');
-
-    var discussRowOffset = 2;
-    var discussNameCol = 1;
-    var discussIdCol = 2;
 
     if (!discussSheet) {
         // Create discussion sheet for session
@@ -3657,21 +3898,22 @@ function updateDiscussSheet(sessionName, userId, userName) {
         }
 
         var discussHeaders = ['name', 'id'];
-	var discussTopRow = ['', DISCUSS_ID];
+        var discussTopRow = ['', DISCUSS_ID];
 
         discussSheet = createSheet(sessionName+'_discuss', discussHeaders);
+        discussSheet.insertRowBefore(2);
         discussSheet.getRange(2, 1, 1, discussTopRow.length).setValues([discussTopRow]);
 
-	// discuss_slidoc
+        // discuss_slidoc
         var axsSheet = getSheet(DISCUSS_SHEET);
         if (!axsSheet) {
             // Create discussion access sheet (for posting)
             var axsRowOffset = 2;
             var axsHeaders = ['name', 'id'];
-            var axsTopRow = ['', DISCUSS_ID];
+            var axsTopRowVals = ['', DISCUSS_ID];
             axsSheet = createSheet(DISCUSS_SHEET, axsHeaders);
-            axsSheet.insertRowBefore(axsRowOffset, keyValue=axsTopRow[1]);
-            axsSheet.getRange(axsRowOffset, 1, 1, axsTopRow.length).setValues([axsTopRow]);
+            axsSheet.insertRowBefore(axsRowOffset);
+            axsSheet.getRange(axsRowOffset, 1, 1, axsTopRowVals.length).setValues([axsTopRowVals]);
         }
 
         var axsSession = '_'+sessionName;
@@ -3681,9 +3923,7 @@ function updateDiscussSheet(sessionName, userId, userName) {
             blankColumn(axsSheet, axsSession);
         } else {
             // Append column for session
-	    var nCols = axsSheet.getLastColumn();
-            axsSheet.insertColumnsAfter(nCols, 1);
-            axsSheet.getRange(1, nCols+1, 1, 1).setValue(axsSession);
+            axsSheet.appendColumns([axsSession]);
             axsColumn = indexColumns(axsSheet)[axsSession];
         }
 
@@ -3692,31 +3932,25 @@ function updateDiscussSheet(sessionName, userId, userName) {
         if (!axsTopRow) {
             throw('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET);
         }
-        var axsTopEntry = {};
+        var axsTopEntry = {'closed': {}, 'flagged': {}, 'lastPost': {}};
+
         axsSheet.getRange(axsTopRow, axsColumn, 1, 1).setValue(JSON.stringify(axsTopEntry));
     }
 
-    if (userId && (!userId.exec(/^_/) || userId == TESTUSER_ID) && !lookupRowIndex(userId, discussSheet)) {
-        // Add user row to discussion sheet
-        var discussRows = discussSheet.getLastRow();
-        var discussNames = discussSheet.getSheetValues(1+discussRowOffset, discussNameCol, discussRows-discussRowOffset, 1);
-        var discussIds = discussSheet.getSheetValues(1+discussRowOffset, discussIdCol, discussRows-discussRowOffset, 1);
-        var temName = userName || '#'+userId;
-        var temRow = discussRowOffset + locateNewRow(temName, userId, discussNames, discussIds);
-        discussSheet.insertRowBefore(temRow);
-	discussSheet.getRange(temRow, discussIdCol, 1, 1).setValues([[userId]]);
-        discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]]);
+    var discussColIndex = indexColumns(discussSheet);
+    var appendHeaders = [];
+    for (var idisc=0; idisc<discussSlides.length; idisc++) {
+        var colHeader = 'discuss' + zeroPad(idisc+1, 3);
+        if (discussColIndex[colHeader]) {
+            continue;
+        }
+
+        // Append discussNNN column
+        appendHeaders.push(colHeader);
     }
 
-    var discussColIndex = indexColumns(discussSheet);
-    for (var j=0; j<discussSlides.length; j++) {
-        var colHeader = 'discuss'+zeroPad(j+1,3);
-        if (discussColIndex[colHeader])
-            continue
-	// Append discussnnn column
-	var nCols = discussSheet.getLastColumn();
-        discussSheet.insertColumnsAfter(nCols, 1);
-        discussSheet.getRange(1, nCols+1, 1, 1).setValue(colHeader);
+    if (appendHeaders.length) {
+        discussSheet.appendColumns(appendHeaders);
     }
 
     return discussSheet;

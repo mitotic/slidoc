@@ -890,6 +890,9 @@ GoogleSheet.prototype.updateRow = function (updateObj, opts, callback) {
     if (opts.get)
         params.get = '1';
 
+    if (opts.team)
+        params.team = opts.team;
+
     if (opts.admin)
 	this.setUserToken(params);
 

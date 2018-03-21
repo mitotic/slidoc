@@ -2286,9 +2286,9 @@ Slidoc.makeShortFirst = function(name, idValue) {
     lastName = lastName.slice(0,1).toUpperCase() + lastName.slice(1);
 
     var firstmiddle = (ncomps.length > 1) ? ncomps[1].trim() : '';
-    var fcomps = firstmiddle.split(/\s+/);
     if (!firstmiddle)
-	return idValue || 'unknown';
+	return idValue || name || 'unknown';
+    var fcomps = firstmiddle.split(/\s+/);
 
     var shortName = fcomps[0].toLowerCase();
     for (var k=1; k<fcomps.length; k++)
@@ -3013,6 +3013,7 @@ Sliobj.eventReceiver = function(eventMessage) {
     var eventRole = eventMessage[1];
     var eventName = eventMessage[2];
     var eventArgs = eventMessage[3];
+    var adminSender = eventRole == Sliobj.params.adminRole;
 
     if (eventName.indexOf('.') > 0) {
 	// Plugin method
@@ -3023,16 +3024,21 @@ Sliobj.eventReceiver = function(eventMessage) {
 	var slideNum = (comps.length > 2) ? parseInt(comps[2]) : 0; // '' slideNum => session plugin
 	var slide_id = slideNum ? Slidoc.makeSlideId(slideNum) : '';
 	try {
-	    Slidoc.PluginMethod.apply(null, [pluginName, slide_id, 'relayCall', eventRole == Sliobj.params.adminRole, eventSource, pluginMethodName].concat(eventArgs));
+	    Slidoc.PluginMethod.apply(null, [pluginName, slide_id, 'relayCall', adminSender, eventSource, pluginMethodName].concat(eventArgs));
 	} catch (err) {
 	    Slidoc.log('Sliobj.eventReceiver: Error in relayCall to plugin method: '+eventSource+', '+eventRole+', '+eventName+'.'+slideNum+': '+err);
 	}
 
-    } else if (eventName == 'ReloadPage') {
+     } else if (adminSender && eventName == 'TeamSetup') {
+	 // Team setup
+	 if (Sliobj.session)
+	     Sliobj.session.team = eventArgs[0];
+
+    } else if (adminSender && eventName == 'ReloadPage') {
 	if (!Sliobj.previewState || Sliobj.previewModified)  // Do not reload unmodified preview
 	    statefulReload(eventArgs.length ? eventArgs[0] : '');
 
-    } else if (eventName == 'InteractiveMessage') {
+    } else if (adminSender && eventName == 'InteractiveMessage') {
 	console.log('InteractiveMessage:', eventArgs[0]);
 	Sliobj.interactiveMessages.unshift(eventArgs[0]);
 	if (Sliobj.interactiveMessages.length > 100)
@@ -3047,7 +3053,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 	if (Sliobj.closePopup)
 	    Sliobj.closePopup(null, eventName);
 	    
-    } else if (eventName == 'AdminPacedForceAnswer') {
+    } else if (adminSender && eventName == 'AdminPacedForceAnswer') {
 	if (controlledPace() && !Sliobj.session.questionsAttempted[eventArgs[0]]) {
 	    // Force answer to unanswered question
 	    var slide_id = eventArgs[1];
@@ -3055,7 +3061,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 	    if (ansElem)
 		Slidoc.answerClick(ansElem, slide_id, 'controlled');
 	}
-    } else if (eventName == 'AdminPacedAdvance') {
+    } else if (adminSender && eventName == 'AdminPacedAdvance') {
 	if (controlledPace()) {
 	    Sliobj.adminPaced = Math.max(eventArgs[0]||0, Sliobj.adminPaced);
 
@@ -4085,31 +4091,47 @@ Slidoc.showDiscuss = function() {
     }
 }
 
+function countUnread(sessionDiscuss) {
+    var totalPosts = 0;
+    var unreadPosts = 0;
+    var teamNames = Object.keys(sessionDiscuss);
+    teamNames.sort(cmp);
+    for (var j=0; j<teamNames.length; j++) {
+	var teamName = teamNames[j];
+	var teamDiscuss = sessionDiscuss[teamName];
+	totalPosts += (teamDiscuss[0] || 0);
+	unreadPosts += (teamDiscuss[1] || 0);
+    }
+    return [totalPosts, unreadPosts];
+}
+
 function showDiscussCallback(retObj, errmsg) {
     Slidoc.log('showDiscussCallback:', retObj, errmsg);
     if (!retObj || retObj.result != 'success') {
 	alert('Error in discussion status: '+(retObj?retObj.error : errmsg));
 	return;
     }
-    var allDiscussStats = retObj['discussStats'];
+    var allDiscussStats = retObj['discuss']['stats'];
+    var sessionPaths = retObj['discuss']['paths'];
     var html = '<h3>Discussions menu</h3>\n';
     html += '<ul>\n';
     var sessionNames = Object.keys(allDiscussStats);
     sessionNames.sort();
-    var teamName = '';
     if (Sliobj.sessionName && Sliobj.sessionName in allDiscussStats) {
 	// Show discuss post breakdown (unread/total) for this session
-	var sessionDiscuss = allDiscussStats[Sliobj.sessionName][teamName];
-	var discussNums = Object.keys(sessionDiscuss);
+	var discussNums = Object.keys(allDiscussStats[Sliobj.sessionName]);
 	discussNums.sort(cmp);
 	for (var k=0;k<discussNums.length; k++) {
-	    var totalPosts = sessionDiscuss[discussNums[k]][0] || 0;
-	    var unreadPosts = sessionDiscuss[discussNums[k]][1] || 0;
-	    var slideNum = Sliobj.params.discussSlides[discussNums[k]-1];
+	    var discussNum = discussNums[k];
+	    var sessionDiscuss = allDiscussStats[Sliobj.sessionName][discussNum];
+	    if (!sessionDiscuss)
+		continue;
+	    var postCounts = countUnread(sessionDiscuss);
+	    var slideNum = Sliobj.params.discussSlides[discussNum-1].slide;
 	    var slideId = Slidoc.makeSlideId(slideNum);
 	    var headerElems = document.getElementsByClassName(slideId+'-header');
-	    var headerText = headerElems.length ? headerElems[0].textContent : 'Discussion '+discussNums[k];
-	    var temtext = '('+(unreadPosts ? '<b>'+unreadPosts+'</b>/':'')+totalPosts+')'
+	    var headerText = headerElems.length ? headerElems[0].textContent : 'Discussion '+discussNum;
+	    var temtext = '('+(postCounts[1] ? '<b>'+postCounts[1]+'</b>/':'')+postCounts[0]+')';
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.go('+ "'#" + slideId +"'"+');">'+headerText+'</span> '+temtext+'</li>\n';
 	}
 	if (sessionNames.length > 1)
@@ -4122,15 +4144,22 @@ function showDiscussCallback(retObj, errmsg) {
 	var sessionName = sessionNames[j];
 	if (sessionName == Sliobj.sessionName)
 	    continue;
-	var sessionDiscuss = allDiscussStats[sessionName][teamName];
-	var discussNums = Object.keys(sessionDiscuss);
+	var discussNums = Object.keys(allDiscussStats[sessionName]);
+	discussNums.sort(cmp);
 	var totalPosts = 0;
 	var unreadPosts = 0;
 	for (var k=0;k<discussNums.length; k++) {
-	    totalPosts += sessionDiscuss[discussNums[k]][0] || 0;
-	    unreadPosts += sessionDiscuss[discussNums[k]][1] || 0;
+	    var sessionDiscuss = allDiscussStats[Sliobj.sessionName][discussNums[k]];
+	    if (!sessionDiscuss)
+		continue;
+	    var postCounts = countUnread(sessionDiscuss);
+	    totalPosts += postCounts[0] || 0;
+	    unreadPosts += postCounts[1] || 0;
 	}
-	html += '<li><span ">'+sessionName+'</span> ('+unreadPosts+'/'+totalPosts+')</li>\n';
+	if (sessionPaths[sessionName])
+	    html += '<li><a class="slidoc-clickable" href=="'+sessionPaths[sessionName]+'">'+sessionName+'</a> ('+unreadPosts+'/'+totalPosts+')</li>\n';
+	else
+	    html += '<li><span ">'+sessionName+'</span> ('+unreadPosts+'/'+totalPosts+')</li>\n';
     }
     html += '</ul>';
     if (Sliobj.closePopup)
@@ -4754,7 +4783,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.resubmitAnswers)
 	toggleClass(true, 'slidoc-resubmit-view');
 
-    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && ('live_discussion' in Sliobj.params.features || (Sliobj.session && Sliobj.session.submitted && (Sliobj.gradeDateStr || Sliobj.params.paceLevel == ADMIN_PACE))))
+    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && (Sliobj.params.paceLevel < ADMIN_PACE || ('live_discussion' in Sliobj.params.features || Sliobj.session && Sliobj.session.submitted )) )
 	toggleClass(true, 'slidoc-discuss-view');
 
     if (collapsibleAccess())

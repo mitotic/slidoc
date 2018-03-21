@@ -319,6 +319,8 @@ class MathBlockGrammar(mistune.BlockGrammar):
     slidoc_slideopts= re.compile(r'^ {0,3}(Slide):(.*?)(\n|$)')
     slidoc_banner =   re.compile(r'^ {0,3}(Banner):(.*?)(\n|$)')
     slidoc_define =   re.compile(r'^ {0,3}(Define):(.*?)(\n|$)')
+    slidoc_discuss=   re.compile(r'^ {0,3}(Discuss):(.*?)(\n|$)')
+    slidoc_team   =   re.compile(r'^ {0,3}(Team):(.*?)(\n|$)')
     slidoc_answer =   re.compile(r'^ {0,3}(Answer):(.*?)(\n|$)')
     slidoc_tags   =   re.compile(r'^ {0,3}(Tags):(.*?)(\n\s*(\n|$)|$)', re.DOTALL)
     slidoc_hint   =   re.compile(r'^ {0,3}(Hint):\s*(-?\d+(\.\d*)?)\s*%\s+')
@@ -332,7 +334,7 @@ class MathBlockLexer(mistune.BlockLexer):
         if rules is None:
             rules = MathBlockGrammar()
         config = kwargs.get('config')
-        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_banner', 'slidoc_define', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
+        slidoc_rules = ['block_math', 'latex_environment', 'plugin_definition', 'plugin_embed', 'plugin_insert', 'slidoc_header', 'slidoc_options', 'slidoc_slideopts', 'slidoc_banner', 'slidoc_define', 'slidoc_discuss', 'slidoc_team', 'slidoc_answer', 'slidoc_tags', 'slidoc_hint', 'slidoc_notes', 'slidoc_extra', 'minirule']
         if config and 'incremental_slides' in config.features:
             slidoc_rules += ['pause']
         self.default_rules = slidoc_rules + mistune.BlockLexer.default_rules
@@ -471,6 +473,20 @@ class MathBlockLexer(mistune.BlockLexer):
     def parse_slidoc_define(self, m):
          self.tokens.append({
             'type': 'slidoc_define',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_discuss(self, m):
+         self.tokens.append({
+            'type': 'slidoc_discuss',
+            'name': m.group(1).lower(),
+            'text': m.group(2).strip()
+        })
+
+    def parse_slidoc_team(self, m):
+         self.tokens.append({
+            'type': 'slidoc_team',
             'name': m.group(1).lower(),
             'text': m.group(2).strip()
         })
@@ -704,6 +720,12 @@ class MarkdownWithMath(mistune.Markdown):
     def output_slidoc_define(self):
         return self.renderer.slidoc_define(self.token['name'], self.token['text'])
 
+    def output_slidoc_discuss(self):
+        return self.renderer.slidoc_discuss(self.token['name'], self.token['text'])
+
+    def output_slidoc_team(self):
+        return self.renderer.slidoc_team(self.token['name'], self.token['text'])
+
     def output_slidoc_answer(self):
         return self.renderer.slidoc_answer(self.token['name'], self.token['text'])
 
@@ -901,8 +923,8 @@ class SlidocRenderer(MathRenderer):
         self.max_fields = []
         self.qforward = defaultdict(list)
         self.qconcepts = [set(),set()]
-        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'hiddenSlides': [], 'hints': defaultdict(list),
-                                 'questionParams':[],  'remoteAnswers': [], 'shareAnswers': {}}
+        self.sheet_attributes = {'disabledCount': 0, 'discussSlides': [], 'sessionTeam': {}, 'hiddenSlides': [],
+                                 'hints': defaultdict(list), 'questionParams':[],  'remoteAnswers': [], 'shareAnswers': {}}
 
         self.sheet_attributes['resubmitAnswers'] = self.options['config'].pace <= BASIC_PACE and self.options['config'].show_correct in ('after_submitting', 'after_grading')
         self.slide_number = 0
@@ -986,8 +1008,6 @@ class SlidocRenderer(MathRenderer):
         self.slide_images.append([])
         self.slide_img_tag = ''
         self.slide_options = set()
-        if 'discuss_all' in self.options['config'].features:
-            self.slide_options.add('discuss')
         self.slide_formulas = []
         self.slide_params = {}
 
@@ -1381,8 +1401,10 @@ class SlidocRenderer(MathRenderer):
         ###if self.cur_qtype and not self.qtypes[-1]:
         ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
 
+        if 'discuss_all' in self.options['config'].features and 'discuss' not in self.slide_options:
+            self.slide_options.add('discuss')
+            self.sheet_attributes['discussSlides'].append({'slide': self.slide_number})
         if 'discuss' in self.slide_options and 'Discuss' not in self.slide_plugin_embeds:
-            self.sheet_attributes['discussSlides'].append(self.slide_number)
             plugins_html += self.embed_plugin_body('Discuss', self.get_slide_id())
 
         return prefix_html+self.end_notes()+self.end_hide()+plugins_html+suffix_html+('</section><!--%s-->\n' % ('last slide end' if last_slide else 'slide end')) + self.slide_footer()
@@ -1743,7 +1765,7 @@ class SlidocRenderer(MathRenderer):
             prev_slide_end = self.hrule(implicit=True)
 
         opts = text.lower().split()
-        ALLOWED_OPTS = ('discuss', 'hide')
+        ALLOWED_OPTS = ('hide',)
         for opt in opts:
             if opt in ALLOWED_OPTS:
                 self.slide_options.add(opt)
@@ -1776,6 +1798,102 @@ class SlidocRenderer(MathRenderer):
             self.slide_params[param_name] = param_value
 
         return ''
+
+    def slidoc_discuss(self, name, text):
+        self.slide_options.add('discuss')
+        discuss_opts = {}
+        for option_value in text.split():
+            option, sep, value = option_value.partition('=')
+
+            if option == 'maxchars':
+                if not value.isdigit():
+                    abort("    ****DISCUSS-ERROR: %s: Invalid Discuss: %s=%s option in slide %s; expecting numeric value" % (self.options['filename'], option, value, self.slide_number))
+
+            elif option == 'team':
+                if not self.sheet_attributes['sessionTeam']:
+                    abort("    ****DISCUSS-ERROR: %s: Discuss: team should appear after Team: in slide %s" % (self.options['filename'], self.slide_number))
+
+            elif option in ('seed',):
+                pass
+            else:
+                abort("    ****DISCUSS-ERROR: %s: Unknown Discuss: %s=%s option in slide %s" % (self.options['filename'], option, value, self.slide_number))
+                
+            discuss_opts[option] = value or 'yes'
+
+        discuss_opts['slide'] = self.slide_number
+        self.sheet_attributes['discussSlides'].append(discuss_opts)
+        return ''
+
+    def slidoc_team(self, name, text):
+        if self.sheet_attributes['sessionTeam']:
+            abort("    ****TEAM-ERROR: %s: Second Team: option in slide %s" % (self.options['filename'], self.slide_number))
+            return ''
+        team_opts = {}
+        composition_opts = ('disparate', 'random', 'uniform')
+        for option_value in text.split():
+            option, sep, value = option_value.partition('=')
+
+            if option == 'session':
+                if value != '_roster' and not sliauth.SESSION_NAME_RE.match(value):
+                    abort("    ****TEAM-ERROR: %s: Invalid Team: session=%s option in slide %s; expecting '_roster' or valid session name" % (self.options['filename'], value, self.slide_number))
+
+            elif option in ('question', 'count', 'minsize'):
+                if not value.isdigit():
+                    abort("    ****TEAM-ERROR: %s: Invalid Team: %s=%s option in slide %s; expecting numeric value" % (self.options['filename'], option, value, self.slide_number))
+                value = int(value)
+
+            elif option == 'composition':
+                if value not in composition_opts:
+                    abort("    ****TEAM-ERROR: %s: Invalid Team: composition=%s option in slide %s; expecting one of " % (self.options['filename'], value, self.slide_number, '/'.join(composition_opts)))
+
+            elif option == 'names' and value:
+                value = value.split(',')
+
+            elif option == 'alias':
+                value = 1
+
+            else:
+                abort("    ****TEAM-ERROR: %s: Unknown Team: %s=%s option in slide %s" % (self.options['filename'], option, value, self.slide_number))
+                    
+            team_opts[option] = value or 'yes'
+
+        if team_opts.get('composition') != 'assigned' and 'count' not in team_opts and 'minsize' not in team_opts and 'names' not in team_opts:
+            abort("    ****TEAM-ERROR: %s: Must specify one of count=... or minsize=... for Team: option in slide %s" % (self.options['filename'], self.slide_number))
+
+        if 'session' not in team_opts:
+            team_opts['session'] = ''
+
+        if not team_opts['session']:
+            if not self.qtypes[-1]:
+                abort("    ****TEAM-ERROR: %s: Team: option for current session must appear after Answer in slide %s" % (self.options['filename'], self.slide_number))
+
+        if team_opts['session'] and not team_opts['session'].startswith('_'):
+            if not team_opts.get('question'):
+                abort("    ****TEAM-ERROR: %s: Team: question= option must be specified in slide %s" % (self.options['filename'], self.slide_number))
+        else:
+            if team_opts.get('question'):
+                abort("    ****TEAM-ERROR: %s: Team: question option incompatible with session option in slide %s" % (self.options['filename'], self.slide_number))
+
+        team_opts['slide'] = self.slide_number
+        self.sheet_attributes['sessionTeam'] = team_opts
+        if not team_opts['session']:
+            self.check_team_gen(qtype=self.qtypes[-1])
+        return ''
+
+    def check_team_gen(self, qtype='', questions=[]):
+        team_opts = self.sheet_attributes['sessionTeam']
+        if team_opts['session'].startswith('_'):
+            return
+        if team_opts['session']:
+            qno = team_opts['question']
+            if qno > len(questions):
+                abort("    ****TEAM-ERROR: %s: Question %s not found in session %s for team generation" % (self.options['filename'], qno, team_opts['session']))
+            qtype = questions[qno-1].get('qtype')
+
+        composition = team_opts.get('composition','')
+        if composition in ('disparate', 'uniform') and qtype not in ('choice', 'number'):
+            abort("    ****TEAM-ERROR: %s: Question type %s in session %s not suitable for team composition=%s" % (self.options['filename'], qtype, team_opts['session'], composition))
+            
 
     def slidoc_choice(self, name, star):
         name = name.upper()
@@ -2310,7 +2428,10 @@ class SlidocRenderer(MathRenderer):
             self.questions[-1].update(participation=answer_opts['participation'])
         if answer_opts['share']:
             self.questions[-1].update(share=answer_opts['share'])
+
         if answer_opts['team']:
+            if not self.sheet_attributes['sessionTeam']:
+                abort("    ****TEAM-ERROR: %s: Discuss: team should appear after Team: in slide %s" % (self.options['filename'], self.slide_number))
             self.questions[-1].update(team=answer_opts['team'])
         if answer_opts['vote']:
             self.questions[-1].update(vote=answer_opts['vote'])
@@ -2342,15 +2463,12 @@ class SlidocRenderer(MathRenderer):
         if answer_opts['share']:
             self.sheet_attributes['shareAnswers']['q'+str(qnumber)] = {'share': answer_opts['share'], 'vote': answer_opts['vote'], 'voteWeight': 0}
 
-        if answer_opts['team']:
-            if answer_opts['team'] == 'setup':
-                if self.sheet_attributes.get('sessionTeam'):
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must occur as first team option in slide %s" % (self.options["filename"], self.slide_number))
-                if self.cur_qtype != 'choice' and self.cur_qtype != 'text':
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must have answer type as 'choice' or 'text' in slide %s" % (self.options["filename"], self.slide_number))
-                self.sheet_attributes['sessionTeam'] = 'setup'
-            elif not self.sheet_attributes.get('sessionTeam'):
-                self.sheet_attributes['sessionTeam'] = 'roster'
+        if answer_opts['team'] == 'setup':
+            if self.sheet_attributes.get('sessionTeam'):
+                abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must occur as first team option in slide %s" % (self.options["filename"], self.slide_number))
+            if self.cur_qtype != 'choice' and self.cur_qtype != 'text':
+                abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=setup' must have answer type as 'choice' or 'text' in slide %s" % (self.options["filename"], self.slide_number))
+            self.sheet_attributes['sessionTeam'] = {'session': '_setup', 'slide': self.slide_number}
 
         ans_grade_fields = self.process_weights(weight_answer, plugin_action)
 
@@ -2919,14 +3037,9 @@ Index_fields   = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessi
 Log_fields =     ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
 
-def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
-                         score_weights, grade_weights, other_weights, sheet_attributes,
-                         questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
-                         row_count=None, row_headers=[], modify_col=0, modify_session=None, related_sheets=None):
-    modify_questions = False
+def get_session_index_entry(sheet_url, hmac_key, session_name):
     user = ADMINUSER_ID
     user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True)
-    admin_paced = 1 if pace_level >= ADMIN_PACE else None
 
     post_params = {'sheet': INDEX_SHEET, 'id': session_name, ADMINUSER_ID: user, 'token': user_token,
                   'get': '1', 'headers': json.dumps(Index_fields), 'getheaders': '1'}
@@ -2934,7 +3047,16 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     if retval['result'] != 'success':
         if not retval['error'].startswith('Error:NOSHEET:'):
             abort("Error in accessing index entry for session '%s': %s" % (session_name, retval['error']))
+    return retval
 
+def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
+                         score_weights, grade_weights, other_weights, sheet_attributes,
+                         questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
+                         row_count=None, row_headers=[], modify_col=0, modify_session=None, related_sheets=None):
+    modify_questions = False
+    admin_paced = 1 if pace_level >= ADMIN_PACE else None
+
+    retval = get_session_index_entry(sheet_url, hmac_key, session_name)
     ##if debug:
     ##    print('slidoc.update_session_index: slidoc_sheets VERSION =', retval.get('info',{}).get('version'), file=sys.stderr)
     prev_headers = retval.get('headers')
@@ -2942,19 +3064,28 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     prev_questions = None
     if prev_row:
         revision_col = Index_fields.index('revision')
+        pace_col = Index_fields.index('paceLevel')
         admin_paced_col = Index_fields.index('adminPaced')
         due_date_col = Index_fields.index('dueDate')
         if prev_row[revision_col] != revision:
             message('    ****WARNING: Module %s has changed from revision %s to %s' % (session_name, prev_row[revision_col], revision))
 
+        if row_count and prev_row[pace_col] and prev_row[pace_col] != pace_level:
+            abort('ERROR:PACE-ERROR: Cannot change pace level from %d to %d in session %s with %s responders. Reset session?' % (prev_row[pace_col], pace_level, session_name, row_count))
+
         prev_questions = json.loads(prev_row[prev_headers.index('questions')])
         prev_attributes = json.loads(prev_row[prev_headers.index('attributes')])
         prev_qparams = prev_attributes.get('questionParams', [])
         cur_qparams = sheet_attributes.get('questionParams', [])
-        prev_discuss = prev_attributes.get('discussSlides', [])
-        cur_discuss = sheet_attributes.get('discussSlides', [])
-        if len(cur_discuss) < len(prev_discuss) and session_name+'_discuss' in related_sheets:
+        prev_discuss_slides = prev_attributes.get('discussSlides', [])
+        cur_discuss_slides = sheet_attributes.get('discussSlides', [])
+        if len(cur_discuss_slides) < len(prev_discuss_slides) and session_name+'_discuss' in related_sheets:
             abort('ERROR:DISCUSS-ERROR: Please delete sheet %s_discuss before reducing/eliminating discussions for session' % session_name)
+        prev_session_team = prev_attributes.get('sessionTeam', {})
+        cur_session_team = sheet_attributes.get('sessionTeam', {})
+        if row_count and prev_session_team != cur_session_team:
+            abort('ERROR:DISCUSS-ERROR: Cannot change Team setup for session %s with %s responders' % (session_name, row_count))
+
         if row_count and prev_qparams != cur_qparams:
             min_count =  min(len(prev_qparams), len(cur_qparams))
             errq = ''
@@ -3029,6 +3160,8 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     if len(Index_fields) != len(row_values):
         abort('Error:HEADERS:Error in updating index entry for module session %s: number of headers != row length' % (session_name,))
 
+    user = ADMINUSER_ID
+    user_token = sliauth.gen_auth_token(hmac_key, user, ADMIN_ROLE, prefixed=True)
     post_params = {'sheet': INDEX_SHEET, ADMINUSER_ID: user, 'token': user_token,
                    'headers': json.dumps(Index_fields), 'row': json.dumps(row_values, default=sliauth.json_default)
                   }
@@ -3904,13 +4037,13 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             js_params['fileName'] = fname
 
             if js_params['paceLevel'] >= ADMIN_PACE and not file_config.gsheet_url:
-                abort('PACE-ERROR: Must specify -gsheet_url for --pace='+str(js_params['paceLevel']))
+                abort('PACE-ERROR: Must specify -gsheet_url for --pace=%s in module %s' % (js_params['paceLevel'], fname))
 
             if js_params['paceLevel'] >= ADMIN_PACE and 'shuffle_choice' in file_config.features:
-                abort('PACE-ERROR: shuffle_choice feature not compatible with --pace='+str(js_params['paceLevel']))
+                abort('PACE-ERROR: shuffle_choice feature not compatible with --pace=%s in module %s' % (js_params['paceLevel'], fname))
 
             if js_params['paceLevel'] >= QUESTION_PACE and file_config.show_correct != 'after_answering':
-                abort('PACE-ERROR: --show_correct=%s feature not compatible with --pace=%s' % (file_config.show_correct, js_params['paceLevel']) )
+                abort('PACE-ERROR: --show_correct=%s feature not compatible with --pace=%s in module %s' % (file_config.show_correct, js_params['paceLevel'], fname))
 
         js_params['gd_sheet_url'] = ''
         if js_params['paceLevel'] and file_config.gsheet_url:
@@ -3937,7 +4070,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                 math_inc = KaTeX_js % katex_config
 
         if not file_config.features.issubset(set(Features_all)):
-            abort('FEATURE-ERROR: Unknown feature(s): '+','.join(list(file_config.features.difference(set(Features_all)))) )
+            abort('FEATURE-ERROR: Unknown feature(s) in module %s: %s' % (fname,  ','.join(list(file_config.features.difference(set(Features_all)))) ) )
             
         filepath = input_paths[fnumber-1]
         filedir = os.path.dirname(os.path.realpath(filepath))
@@ -4120,6 +4253,16 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             tem_attributes.update(renderer.sheet_attributes)
             tem_attributes.update(params=js_params)
             tem_fields = Manage_fields+Session_fields+js_params['gradeFields']
+            session_team = tem_attributes.get('sessionTeam',{})
+            from_session = session_team.get('session')
+            if from_session and not from_session.startswith('_'):
+                retval = get_session_index_entry(file_config.gsheet_url, gd_hmac_key, from_session)
+                from_row = retval.get('value')
+                if not from_row:
+                    abort('TEAM-ERROR: Unable to find session %s needed to form teams in module %s' % (team_session, fname))
+                from_questions = json.loads( from_row[retval['headers'].index('questions')] )
+                renderer.check_team_gen(questions=from_questions)
+
             modify_session = (fname in config.modify_sessions) if isinstance(config.modify_sessions, set) else config.modify_sessions
             max_last_slide, prev_headers, modify_col, row_count, related_sheets = check_gdoc_sheet(file_config.gsheet_url, gd_hmac_key, js_params['fileName'], js_params['paceLevel'], tem_fields,
                                                                      modify_session=modify_session)
