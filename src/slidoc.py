@@ -3032,7 +3032,7 @@ Session_fields = ['team', 'lateToken', 'lastSlide', 'retakes', 'session_hidden']
 Score_fields   = ['q_total', 'q_scores', 'q_other', 'q_comments']
 Index_fields   = ['name', 'id', 'revision', 'Timestamp', 'sessionWeight', 'sessionRescale', 'releaseDate', 'dueDate', 'gradeDate',
                   'mediaURL', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight',
-                  'questionsMax', 'fieldsMin', 'attributes', 'questions',
+                  'questionsMax', 'fieldsMin', 'attributes', 'questions', 'teams',
                   'questionConcepts', 'primary_qconcepts', 'secondary_qconcepts']
 Log_fields =     ['name', 'id', 'email', 'altid', 'Timestamp', 'browser', 'file', 'function', 'type', 'message', 'trace']
 
@@ -3150,12 +3150,14 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
             if not due_date_str:
                 due_date_str = prev_row[due_date_col]
 
-    row_values = [session_name, session_name, revision, None, session_weight, session_rescale, release_date_str, due_date_str, None, media_url, pace_level, admin_paced,
-                score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
-                sliauth.ordered_stringify(sheet_attributes), sliauth.ordered_stringify(questions), sliauth.ordered_stringify(question_concepts),
-                '; '.join(sort_caseless(list(p_concepts))),
-                '; '.join(sort_caseless(list(s_concepts)))
-                 ]
+    row_values = [session_name, session_name, revision, None, session_weight, session_rescale, release_date_str, due_date_str, None,
+                  media_url, pace_level, admin_paced,
+                  score_weights, grade_weights, other_weights, len(questions), len(Manage_fields)+len(Session_fields),
+                  sliauth.ordered_stringify(sheet_attributes), sliauth.ordered_stringify(questions), None,
+                  sliauth.ordered_stringify(question_concepts),
+                  '; '.join(sort_caseless(list(p_concepts))),
+                  '; '.join(sort_caseless(list(s_concepts)))
+                  ]
 
     if len(Index_fields) != len(row_values):
         abort('Error:HEADERS:Error in updating index entry for module session %s: number of headers != row length' % (session_name,))

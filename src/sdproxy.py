@@ -143,7 +143,7 @@ COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
 
 DROPPED_STATUS = 'dropped'
 
-HIDE_HEADERS = ['attributes', 'questions', 'questionConcepts']
+HIDE_HEADERS = ['attributes', 'questions', 'teams', 'questionConcepts']
 
 TESTUSER_ROSTER = {'name': '#user, test', 'id': TESTUSER_ID, 'email': '', 'altid': '', 'extratime': ''}
 
@@ -4919,11 +4919,11 @@ def addDiscussUser(sessionName, userId, userName=''):
     discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]])
 
 def getTeamSettings(sessionName):
-    return json.loads(lookupValues(MAXSCORE_ID, ['team'], sessionName, listReturn=True)[0] or '{}')
+    return json.loads(lookupValues(sessionName, ['teams'], INDEX_SHEET, listReturn=True)[0] or '{}')
 
 def setTeamSettings(sessionName, members, aliases):
     teamSettings = {'members': members, 'aliases': aliases}
-    setValue(MAXSCORE_ID, 'team', json.dumps(teamSettings, default=sliauth.json_default), sessionName)
+    setValue(sessionName, 'teams', json.dumps(teamSettings, default=sliauth.json_default), INDEX_SHEET)
 
 def notifyDiscussUsers(sessionName, discussNum, teamName, userId, userName, newPost):
     if not Global.discussPostCallback:

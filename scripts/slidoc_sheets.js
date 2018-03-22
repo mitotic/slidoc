@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.21y';
+var VERSION = '0.97.22b';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -3857,12 +3857,12 @@ function addDiscussUser(sessionName, userId, userName) {
 }
 
 function getTeamSettings(sessionName) {
-    return JSON.parse(lookupValues(MAXSCORE_ID, ['team'], sessionName, true)[0] || '{}');
+    return JSON.parse(lookupValues(sessionName, ['teams'], INDEX_SHEET, true)[0] || '{}');
 }
 
 function setTeamSettings(sessionName, members, aliases) {
     var teamSettings = {'members': members, 'aliases': aliases};
-    setValue(MAXSCORE_ID, 'team', JSON.stringify(teamSettings), sessionName);
+    setValue(sessionName, 'teams', JSON.stringify(teamSettings), INDEX_SHEET);
 }
 
 function notifyDiscussUsers(sessionName, discussNum, teamName, userId, userName, newPost) {
@@ -5217,25 +5217,42 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
     ///trackCall(1, 'updateGrades-start: '+sessionNames);
 
     var errorMessages = [];
+    var allSessions = [];
     var updatedSessions = [];
     var curDate = new Date();
     try {
 	var scoreSheet = getSheet(GRADES_SHEET);
 
-	if (!create) {
-	    // Refresh only already posted sessions
-	    if (!scoreSheet)
-		return '';
-	    var temColIndex = indexColumns(scoreSheet);
-	    var curSessions = [];
-	    for (var j=0; j<sessionNames.length; j++) {
-		if (temColIndex['_'+sessionNames[j]])
-		    curSessions.push(sessionNames[j]);
+	if (scoreSheet) {
+	    var temHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
+	    for (var j=0; j<temHeaders.length; j++) {
+		var smatch = temHeaders[j].match(/_(([a-z][-\w]*[a-z])(\d\d))$/i);
+		if (smatch)
+		    allSessions.push(smatch[1]);
 	    }
-	    if (!curSessions.length)
+	    var refreshSessions = [];
+	    for (var j=0; j<sessionNames.length; j++) {
+		if (allSessions.indexOf(sessionNames[j]) >= 0) {
+		    // Session already posted; if not create, refresh only already posted sessions
+		    if (!create)
+			refreshSessions.push(sessionNames[j]);
+		} else {
+		    // Session not posted; post it if create
+		    if (create)
+			allSessions.push(sessionNames[j]);
+		}
+	    }
+	    if (!create) {
+		if (!refreshSessions.length)
+		    return '';
+		sessionNames = refreshSessions;
+	    }
+	} else {
+	    if (!create)
 		return '';
-	    sessionNames = curSessions;
+	    allSessions = sessionNames
 	}
+
 	var indexSheet = getSheet(INDEX_SHEET);
 	if (!indexSheet) {
 	    SpreadsheetApp.getUi().alert('Sheet not found: '+INDEX_SHEET);
@@ -5331,7 +5348,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    var temHeaders = scoreSheet.getSheetValues(1, 1, 1, scoreSheet.getLastColumn())[0];
 	    for (var j=0; j<scoreHeaders.length; j++) {
 		if (scoreHeaders[j] != temHeaders[j])
-		    throw('Header '+temHeaders[j]+' in score sheet is mismatched; re-create score sheet');
+		    throw('Mismatched header '+scoreHeaders[j]+' != '+temHeaders[j]+' in grades_slidoc; re-create sheet');
 	    }
 
 	    var nPrevIds = scoreSheet.getLastRow()-userStartRow+1;
@@ -5578,8 +5595,8 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	if (totalFormula) {
 	    try {
 		var allSessionTypes = {};
-		for (var j=0; j<updatedSessions.length; j++) {
-		    var smatch = SESSION_COL_RE.exec(updatedSessions[j]);
+		for (var j=0; j<allSessions.length; j++) {
+		    var smatch = SESSION_COL_RE.exec(allSessions[j]);
 		    if (smatch)
 			allSessionTypes[smatch[1]] = 1;
 		}
@@ -5609,8 +5626,8 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 			modTotalCompStr.push(compTerm.replace(amatch[2], agSessionType));
 			compTerm = compTerm.replace(amatch[2], agName);
 		    } else if (smatch) {
-			if (updatedSessions.indexOf(smatch[0]) < 0) {
-			    errorMessages.push('Skipped unavilable session: '+smatch[0]);
+			if (allSessions.indexOf(smatch[0]) < 0) {
+			    errorMessages.push('Skipped unavailable session: '+smatch[0]);
 			    continue;
 			}
 			modTotalCompStr.push(compTerm);
