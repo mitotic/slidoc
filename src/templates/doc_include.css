@@ -156,6 +156,7 @@ span#slidoc-test-status {color: red; font-weight: bold; background: #888;}
 /* Body */
 body {
   padding-top: 25px;
+  overscroll-behavior-y: contain;
 }
 
 body.slidoc-plain-page {
