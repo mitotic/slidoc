@@ -3252,7 +3252,7 @@ def sheetAction(params, notrace=False):
 
     except Exception, err:
         # if error, return this
-        if Settings['debug'] and not notrace:
+        if Settings['debug'] and not notrace and (not err.message or not err.message.startswith('Error:NOSHEET:Sheet')):
             import traceback
             traceback.print_exc()
 
@@ -4841,8 +4841,6 @@ def getDiscussPosts(sessionName, discussNum, userId, name, postTeams=[], noread=
     else:
         teamNames = ['']
 
-    teamAliases = teamSettings.get('aliases')
-
     if userId == TESTUSER_ID:
         # Retrieve posts for all teams, if no team specified
         postTeams = postTeams or teamNames
@@ -4877,14 +4875,7 @@ def getDiscussPosts(sessionName, discussNum, userId, name, postTeams=[], noread=
         nameValue = nameVals[j]
         if not idValue or (idValue.startswith('_') and idValue != TESTUSER_ID):
             continue
-        if teamAliases and teamAliases.get(idValue):
-            # Replace name with aliased ID
-            nameValue = teamAliases[idValue]
-            if userId == idValue:
-                nameValue = 'self-' + nameValue
-            elif userId != TESTUSER_ID:
-                # Replace id with aliased ID (for normal users)
-                idValue = nameValue
+        idValue, nameValue = aliasDiscussUser(idValue, nameValue, sessionName, teamSettings, selfId=userId)
         userPosts = splitPosts(colVals[j])
         for k in range(len(userPosts)):
             pmatch = POST_NUM_RE.match(userPosts[k])
@@ -4933,6 +4924,19 @@ def setTeamSettings(sessionName, members, aliases):
     teamSettings = {'members': members, 'aliases': aliases}
     setValue(sessionName, 'teams', json.dumps(teamSettings, default=sliauth.json_default), INDEX_SHEET)
 
+def aliasDiscussUser(userId, userName, sessionName, teamSettings, selfId=''):
+    teamAliases = teamSettings.get('aliases')
+    if teamAliases and teamAliases.get(userId):
+        # Replace name with aliased ID
+        userName = teamAliases[userId]
+        if selfId and userId == selfId:
+            userName = 'self-' + userName
+        elif userId != TESTUSER_ID:
+            # Replace id with aliased ID (for normal users)
+            userId = userName
+
+    return userId, userName
+
 def notifyDiscussUsers(sessionName, discussNum, teamName, userId, userName, newPost):
     if not Global.discussPostCallback:
         return
@@ -4942,6 +4946,8 @@ def notifyDiscussUsers(sessionName, discussNum, teamName, userId, userName, newP
             teamIds = ','.join(teamSettings['members'][teamName])
         else:
             teamIds = ''
+
+        userId, userName = aliasDiscussUser(userId, userName, sessionName, teamSettings)
         Global.discussPostCallback(sessionName, discussNum, teamIds, teamName, userId, userName, newPost)
     except Exception, excp:
         print('sdproxy: notifyDiscussUsers ERROR %s-%s, %s %s: %s' % (sessionName, discussNum, teamName, userId, excp), file=sys.stderr)

@@ -202,15 +202,15 @@ Discuss = {
 	}
     },
 
-    deletePost: function(postNum, userId) {
-	Slidoc.log('Slidoc.Plugins.Discuss.deletePost:', postNum, userId);
+    deletePost: function(postNum, userTeam, userId) {
+	Slidoc.log('Slidoc.Plugins.Discuss.deletePost:', postNum, userTeam, userId);
 	if (this.discussNum <= 0)
 	    return false;
 	if (!window.confirm('Delete discussion post?'))
 	    return false;
 	var colName = 'discuss' + Slidoc.zeroPad(this.discussNum, 3);
 	var updates = {id: userId};
-	var postTeam = '';
+	var postTeam = userTeam || '';
 	updates[colName] = 'delete:' + postTeam + ':' + Slidoc.zeroPad(postNum, 3);
 	var opts = {};
 	if (userId != this.userId)
@@ -273,7 +273,7 @@ Discuss = {
 	html += Slidoc.MDConverter(highlight+postName+highlight+': '+postText, true); // user name
 	html += '<br><em class="slidoc-plugin-Discuss-post-timestamp">'+timestamp+'</em>';  // Time
 	if ((this.userId == userId || this.userId == this.global.discussParams.testUserId) && !postText.match(/\s*\(deleted/))
-	    html += ' <span class="slidoc-clickable slidoc-plugin-Discuss-post-delete" onclick="Slidoc.Plugins['+"'"+this.name+"']['"+this.slideId+"'"+'].deletePost('+postNum+",'"+userTeam+",'"+userId+"'"+');">&#x1F5D1;</span>';
+	    html += ' <span class="slidoc-clickable slidoc-plugin-Discuss-post-delete" onclick="Slidoc.Plugins['+"'"+this.name+"']['"+this.slideId+"'"+'].deletePost('+postNum+",'"+userTeam+"','"+userId+"'"+');">&#x1F5D1;</span>';
 
 	var elem = document.createElement('p');
 	elem.id = postId;
