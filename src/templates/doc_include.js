@@ -1054,6 +1054,7 @@ Slidoc.accordionView = function(active, show) {
 	setupOverride('Enable test user override to display all slides?', Sliobj.previewState);
 
     var allSlides = getVisibleSlides();
+    Slidoc.classDisplay('slidoc-togglebar', 'none');
     for (var j=0; j<allSlides.length; j++) {
 	var togglebar = document.getElementById(allSlides[j].id+'-togglebar');
 	if (setupOverride()) {
@@ -1063,6 +1064,9 @@ Slidoc.accordionView = function(active, show) {
 		togglebar.style.display = null;
 	} else if (allSlides[j].style.display == 'none') {
 	    continue;
+	} else {
+	    if (togglebar)
+		togglebar.style.display = null;
 	}
 	toggleClass(active && !show, 'slidoc-toggle-hide', allSlides[j]);
 	if (togglebar)
@@ -9431,8 +9435,8 @@ function onTouchStart(evt) {
     }
 }
 
-var scrollThresholdY = 15;   // Try 10, 15, ...
-var swipeThresholdX = 7;     // Try 7, ...
+var scrollThresholdY = 21;   // Try 10, 15, ...
+var swipeThresholdX = 14;     // Try 7, ...
  
 function onTouchMove(evt) {
     if (touchAction) {
