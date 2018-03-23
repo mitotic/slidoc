@@ -123,7 +123,7 @@ document.onreadystatechange = function(event) {
   late submission token.
   </li>
   <p></p>
-  <li>Use <b>Access code</b> option to display custom URL/QR code for
+  <li>Use <b>Access token</b> option to display custom URL/QR code for
   lockdown user access to session.
   </li>
 </ul>
@@ -209,7 +209,7 @@ document.onreadystatechange = function(event) {
       {% if submitTime %}
         <td></td>
       {% else %}
-        <td><a class="clickable" href="{{site_prefix}}/_lockcode/{{url_escape(session_name+';'+idVal,plus=False)}}">Access code</a></td>
+        <td><a class="clickable" href="{{site_prefix}}/_lockcode/{{url_escape(session_name+';'+idVal,plus=False)}}">Access token</a></td>
       {% end %}
 
       <td><code>{{connection}}</code></td>

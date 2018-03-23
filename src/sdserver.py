@@ -234,6 +234,7 @@ Global.session_options = {}
 Global.email2id = None
 Global.predefined_sites = []
 Global.split_site_opts = {}
+Global.accessCodes = {}
 
 Global.twitterStream = None
 Global.twitterSpecial = {}
@@ -280,6 +281,19 @@ TOP_LEVEL = 'top'
 
 def preElement(content):
     return '<pre>'+tornado.escape.xhtml_escape(str(content))+'</pre>'
+
+def checkAccessCode(inputCode, userId, sessionName):
+    requireCode = Global.accessCodes.get(sessionName)
+    if requireCode and (not inputCode.isdigit() or int(inputCode) != requireCode):
+        raise Exception('Error:NEED_ACCESS_CODE:Need access code for session')
+
+def updateAccessCode(sessionName, paceLevel, dueDate, accessCode):
+    if sessionName in Global.accessCodes:
+        if not accessCode or dueDate:
+            del Global.accessCodes[sessionName]
+    else:
+        if accessCode and not dueDate:
+            Global.accessCodes[sessionName] = random.randrange(1+10**(accessCode-1), 10**accessCode)
 
 def getSessionType(sessionName):
     if '--' in sessionName:
@@ -1949,12 +1963,12 @@ class ActionHandler(BaseHandler):
                 self.displayMessage('Unable to retrieve session '+sessionName)
                 return
             token = sliauth.gen_locked_token(Options['auth_key'], userId, Options['site_name'], sessionName)
-            accessCode = '%s:%s' % (userId, token)
-            accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], urllib.quote_plus(accessCode))
+            accessToken = '%s:%s' % (userId, token)
+            accessURL = '%s/_auth/login/?usertoken=%s' % (Options['server_url'], urllib.quote_plus(accessToken))
             if Options['debug']:
                 print >> sys.stderr, 'DEBUG: locked access URL', accessURL
-            img_data_uri = sliauth.gen_qr_code(accessCode, img_html='<img class="slidoc-lockcode" src="%s">')
-            self.displayMessage('<h3>Access code for user %s, session %s</h3><a href="%s" target="_blank"><b>Click or copy this link for locked access</b></a><p></p>%s' % (userId, sessionName, accessURL, img_data_uri) )
+            img_data_uri = sliauth.gen_qr_code(accessToken, img_html='<img class="slidoc-lockcode" src="%s">')
+            self.displayMessage('<h3>Lockdown access token for user %s, session %s</h3><a href="%s" target="_blank"><b>Click or copy this link for locked access</b></a><p></p>%s' % (userId, sessionName, accessURL, img_data_uri) )
             return
 
         elif action == '_interactcode':
@@ -4405,7 +4419,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 connection.close()
 
     @classmethod
-    def processMessage(cls, fromUser, fromRole, fromName, message, allStatus=False, source='', adminBroadcast=False):
+    def processMessage(cls, fromUser, fromRole, fromName, message, allStatus=False, source='', accessCode=0, adminBroadcast=False):
         # Return null string on success or error message
         print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromRole, fromName, message
 
@@ -4449,7 +4463,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             connection.close()
 
         create = source or 'message'
-        retval = sdproxy.getUserRow(sessionName, fromUser, fromName, opts={'getheaders': '1', 'create': create})
+        opts = {'getheaders': '1', 'create': create}
+        if accessCode:
+            opts['access'] =  str(accessCode)
+        retval = sdproxy.getUserRow(sessionName, fromUser, fromName, opts=opts)
         if retval['result'] != 'success':
             msg = 'Error in processing message from '+fromUser+': '+retval['error']
             print >> sys.stderr, 'sdserver.processMessage:', msg
@@ -4611,7 +4628,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.timeout = None
         self.userId = self.get_id_from_cookie()
         self.pathUser = (path, self.userId)
-        self.sessionVersion = self.getSessionVersion(self.get_path_base(path))
+        self.sessionName = self.get_path_base(path) or ''
+        self.sessionVersion = self.getSessionVersion(self.sessionName)
         self.userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
         connectionList = self._connections[self.pathUser[0]][self.pathUser[1]]
         if not connectionList:
@@ -4629,7 +4647,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
         self.eventFlusher.start()
 
-        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion] ]))
+        dispAccessCode = Global.accessCodes.get(self.sessionName,'') if self.userRole == sdproxy.ADMIN_ROLE else ''
+        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, dispAccessCode] ]))
 
     def on_close(self):
         if Options['debug']:
@@ -4735,7 +4754,6 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             ##if Options['debug']:
             ##    print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
 
-            sessionName = self.get_path_base(self.pathUser[0])
             if method == 'close':
                 self.close()
 
@@ -4770,16 +4788,16 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                     # Rollback interactive session to the slide of the last answered question (or start slide)
                     WSHandler.setupInteractive(None, '', 'rollback', '', None, '')
                     # Close all session websockets (forcing reload)
-                    IOLoop.current().add_callback(WSHandler.lockSessionConnections, sessionName, 'Last question rolled back. Reload page', True)
+                    IOLoop.current().add_callback(WSHandler.lockSessionConnections, self.sessionName, 'Last question rolled back. Reload page', True)
 
             elif method == 'reset_question':
                 # args: qno, userid 
                 if self.userRole == sdproxy.ADMIN_ROLE:
                     # Do not accept interactive responses
                     WSHandler.setupInteractive(None, '', 'end', '', None, '')
-                    sdproxy.clearQuestionResponses(sessionName, args[0], args[1])
+                    sdproxy.clearQuestionResponses(self.sessionName, args[0], args[1])
                     # Close all session websockets (forcing reload)
-                    IOLoop.current().add_callback(WSHandler.lockSessionConnections, sessionName, 'Question reset. Reload page', True)
+                    IOLoop.current().add_callback(WSHandler.lockSessionConnections, self.sessionName, 'Question reset. Reload page', True)
 
             elif method == 'plugin':
                 if len(args) < 2:
@@ -4789,13 +4807,13 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
                 params = {'pastDue': ''}
                 userId = self.pathUser[1]
-                if sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET):
-                    sessionEntries = sdproxy.lookupValues(sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
+                if self.sessionName and sdproxy.getSheet(sdproxy.INDEX_SHEET):
+                    sessionEntries = sdproxy.lookupValues(self.sessionName, ['dueDate'], sdproxy.INDEX_SHEET)
                     if sessionEntries['dueDate']:
                         # Check if past due date
                         effectiveDueDate = sessionEntries['dueDate']
                         try:
-                            userEntries = sdproxy.lookupValues(userId, ['lateToken'], sessionName)
+                            userEntries = sdproxy.lookupValues(userId, ['lateToken'], self.sessionName)
                             if userEntries['lateToken'] and userEntries['lateToken'] not in (LATE_SUBMIT,PARTIAL_SUBMIT):
                                 # late/partial; use late submission option
                                 effectiveDueDate = userEntries['lateToken'][:17]
@@ -5095,9 +5113,14 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                     if not indexSheet:
                         raise tornado.web.HTTPError(404, log_message='CUSTOM:No index sheet for paced session '+sessionName)
                     try:
-                        sessionEntries = sdproxy.lookupValues(sessionName, ['gradeDate', 'releaseDate'], sdproxy.INDEX_SHEET)
+                        sessionEntries = sdproxy.lookupValues(sessionName, ['paceLevel', 'dueDate', 'gradeDate', 'releaseDate', 'attributes'], sdproxy.INDEX_SHEET)
+                        paceLevel = sessionEntries['paceLevel']
+                        dueDate = sessionEntries.get('dueDate','')
                         gradeDate = sessionEntries['gradeDate']
                         releaseDate = sessionEntries['releaseDate']
+                        sessionAttributes = json.loads(sessionEntries['attributes'])
+                        accessCode = sessionAttributes['params'].get('accessCode')
+                            
                     except Exception, excp:
                         excpMsg = str(excp)
                         print >> sys.stderr, "AuthStaticFileHandler.get_current_user: ERROR", excpMsg
@@ -5105,6 +5128,8 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Proxy version mismatch for site %s' % Options['site_name'])
                         else:
                             raise tornado.web.HTTPError(404, log_message='CUSTOM:Session %s unavailable' % sessionName)
+
+                    updateAccessCode(sessionName, paceLevel, dueDate, accessCode)
 
                 if Options['start_date']:
                     startDateMS = sliauth.epoch_ms(sliauth.parse_date(Options['start_date']))
@@ -5163,10 +5188,18 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
 class AuthMessageHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath=''):
-        status = self.get_argument("status", "")
+        status = self.get_argument('status', '')
+        inputCode = self.get_argument('access', '').strip()
         sessionName, questionAttrs = WSHandler.getInteractiveSession()
+        requireCode = Global.accessCodes.get(sessionName) or ''
+        if requireCode:
+            if not inputCode:
+                inputCode = 'Enter code'
+        else:
+            inputCode = ''
         label = 'User %s: %s' % (self.get_id_from_cookie(), sessionName or 'No interactive session')
-        self.render("send.html", status=status, site_name=Options['site_name'], site_label=Options['site_label'], session_label=label,
+        self.render("send.html", status=status, access=inputCode,
+                    site_name=Options['site_name'], site_label=Options['site_label'], session_label=label,
                     session_name=sessionName, qnumber=questionAttrs.get('qnumber',0),  qtype=questionAttrs.get('qtype',''),
                     choices=questionAttrs.get('choices',0), explain=bool(questionAttrs.get('explain')))
 
@@ -5174,10 +5207,14 @@ class AuthMessageHandler(BaseHandler):
     def post(self, subpath=''):
         sessionName, questionAttrs = WSHandler.getInteractiveSession()
         qnumberStr = self.get_argument('qnumber', '')
+        inputCode = self.get_argument('access', '').strip()
+        requireCode = Global.accessCodes.get(sessionName) or ''
         if not sessionName:
             status = 'Error: No interactive session'
         elif qnumberStr != str(questionAttrs.get('qnumber',0)):
             status = 'Error: Discarded answer for inactive Question %s; re-submit answer' % qnumberStr
+        elif requireCode and (not inputCode.isdigit() or int(inputCode) != requireCode):
+            status = 'Error: Invalid access code '+inputCode
         else:
             try:
                 userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
@@ -5188,7 +5225,7 @@ class AuthMessageHandler(BaseHandler):
                     message = choice + ' ' + message
                 elif number:
                     message = number + ' ' + message
-                status = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), message, allStatus=True, source='interact', adminBroadcast=True)
+                status = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), message, allStatus=True, source='interact', accessCode=requireCode, adminBroadcast=True)
                 if not status:
                     status = 'Accepted answer: '+message
             except Exception, excp:
@@ -5200,7 +5237,7 @@ class AuthMessageHandler(BaseHandler):
                 else:
                     status = 'Error in processing message'
         site_prefix = '/'+Options['site_name'] if Options['site_name'] else ''
-        self.redirect(site_prefix+'/send/?status='+sliauth.safe_quote(status))
+        self.redirect(site_prefix+'/send/?access='+sliauth.safe_quote(inputCode)+'&status='+sliauth.safe_quote(status))
 
 
 class AuthLoginHandler(BaseHandler):
@@ -6742,7 +6779,7 @@ def site_server_setup():
         update_session_settings(Global.site_settings)
 
     sdproxy.initProxy(gradebookActive=('gradebook' in SiteProps.get_site_menu()),
-                      discussPostCallback=WSHandler.postNotify)
+                      accessCodeCallback=checkAccessCode, discussPostCallback=WSHandler.postNotify)
 
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:

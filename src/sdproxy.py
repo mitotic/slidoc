@@ -205,9 +205,11 @@ Global.updatePartial = UPDATE_PARTIAL_ROWS
 
 Global.gradebookActive = False
 Global.discussPostCallback = None
+Global.accessCodeCallback = None
 
-def initProxy(gradebookActive=False, discussPostCallback=None):
+def initProxy(gradebookActive=False, accessCodeCallback=None, discussPostCallback=None):
     Global.gradebookActive = gradebookActive
+    Global.accessCodeCallback = accessCodeCallback
     Global.discussPostCallback = discussPostCallback
 
 def copySiteConfig(siteConfig):
@@ -1846,6 +1848,7 @@ def sheetAction(params, notrace=False):
         paramId = params.get('id','')
         paramTeam = params.get('team','')
         authToken = params.get('token', '')
+        accessCode = params.get('access','')
 
         if ':' in authToken:
             comps = authToken.split(':')   # effectiveId:userid:role:sites:hmac
@@ -2727,19 +2730,24 @@ def sheetAction(params, notrace=False):
                         rowUpdates[columnIndex['name']-1] = displayName
                         
             teamCol = columnIndex.get('team')
-            if newRow and rowUpdates and userId != MAXSCORE_ID and teamCol and sessionTeam and sessionTeam['session'] != '_setup':
-                # New row; set up teams, if not live setup
-                setupErrMsg = setupSessionTeam(sheetName)
-                if setupErrMsg:
-                    raise Exception(setupErrMsg)
+            if newRow and rowUpdates and userId != MAXSCORE_ID:
+                # New row
+                if userId != TESTUSER_ID and paceLevel == ADMIN_PACE and not dueDate and Global.accessCodeCallback:
+                    Global.accessCodeCallback(accessCode, userId, sheetName)
 
-                teamSettings = getTeamSettings(sheetName)
-                for teamName in teamSettings.get('members',{}).keys():
-                    memberIds = teamSettings['members'][teamName]
-                    if userId in memberIds:
-                        # Update team column
-                        rowUpdates[teamCol-1] = teamName
-                        break
+                if teamCol and sessionTeam and sessionTeam['session'] != '_setup':
+                    # Set up teams, if not live setup
+                    setupErrMsg = setupSessionTeam(sheetName)
+                    if setupErrMsg:
+                        raise Exception(setupErrMsg)
+
+                    teamSettings = getTeamSettings(sheetName)
+                    for teamName in teamSettings.get('members',{}).keys():
+                        memberIds = teamSettings['members'][teamName]
+                        if userId in memberIds:
+                            # Update team column
+                            rowUpdates[teamCol-1] = teamName
+                            break
 
             if newRow and getRow and not rowUpdates:
                 # Row does not exist return empty list

@@ -118,6 +118,8 @@ GService.openWebsocket = function (wsPath) {
 		    } else {
 			wsock.remoteVersion = callback_args[0];
 
+			Slidoc.sessionSetup(callback_args[1]);
+
 			// Flush message buffer
 			while (wsock.buffer.length > 0)
 			    GService.sendWS(wsock.buffer.shift());
@@ -930,6 +932,7 @@ GoogleSheet.prototype.delRow = function (id, callback) {
 
 GoogleSheet.prototype.getRow = function (id, opts, callback) {
     // If !id, GService.gprofile.auth.id is used
+    // Specify opts.access for access code
     // Specify opts.create to create new row
     // Specify opts.getheaders to get headers
     // Specify opts.getstats to getstats
@@ -961,6 +964,8 @@ GoogleSheet.prototype.getRow = function (id, opts, callback) {
     }
 
     var params = {id: id, get: '1'};
+    if (opts.access)
+	params.access = opts.access;
     if (opts.create)
 	params.create = 'browser';
     if (opts.getheaders)

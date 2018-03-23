@@ -3,7 +3,7 @@
 <head>
 
 <!-- send template for slidoc server --->
-<!-- send parameters: site_name , site_label, session_label, session_name, qnumber, qtype, choices, explain, status-->
+<!-- send parameters: site_name, site_label, session_label, session_name, qnumber, qtype, choices, explain, status, access-->
 
 {% include "base.html" %}
 
@@ -49,6 +49,10 @@ function choose(choice) {
       {% if session_name %}
       <form  id="sendform" action="{{site_prefix}}/send" method="post">
 	<hr>
+        {% if access %}
+        <label for="access">Access code:</label>
+        <input id="access" name="access" type="text" value="{{access}}">
+        {% end %}
 	<p></p>
         <input id="qnumber" name="qnumber" type="hidden" value="{{qnumber}}">
         <input id="choice" name="choice" type="hidden" value="">

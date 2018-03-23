@@ -3703,7 +3703,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                  'sessionFields':Manage_fields+Session_fields, 'gradeFields': [], 
                  'adminUserId': ADMINUSER_ID, 'testUserId': TESTUSER_ID,
                  'adminRole': ADMIN_ROLE, 'graderRole': GRADER_ROLE,
-                 'authType': '', 'features': {} }
+                 'authType': '', 'accessCode': 0, 'features': {} }
 
     js_params['version'] = sliauth.get_version()
     js_params['userCookiePrefix'] = sliauth.USER_COOKIE_PREFIX
@@ -3986,6 +3986,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                     
             js_params['features'] = dict([(x, 1) for x in file_config.features])
             js_params['paceLevel'] = file_config.pace or 0
+            js_params['accessCode'] = file_config.access_code or 0
 
             release_date_obj = None
             due_date_obj = None
@@ -5123,6 +5124,7 @@ Strip_all = ['answers', 'chapters', 'contents', 'hidden', 'inline_formula', 'nav
 Features_all = ['adaptive_rubric', 'answer_credits', 'assessment', 'auto_noshuffle', 'auto_interact', 'center_title', 'dest_dir', 'discuss_all', 'equation_left', 'equation_number', 'grade_response', 'hide_output', 'immediate_math', 'incremental_slides', 'keep_extras', 'live_discussion', 'math_input', 'no_incremental_list', 'no_markdown', 'override', 'progress_bar', 'quote_response', 'remote_answers', 'rollback_interact', 'section_banners', 'share_all', 'share_answers', 'shuffle_choice', 'skip_ahead', 'slide_break_avoid', 'slide_break_page', 'slides_only', 'tex_math', 'track_references', 'two_column', 'untitled_number']
 
 Conf_parser = argparse.ArgumentParser(add_help=False)
+Conf_parser.add_argument('--access_code', type=int, metavar='DIGITS', help='No. of digits of access code for interactive sessions')
 Conf_parser.add_argument('--all', metavar='FILENAME', help='Base name of combined HTML output file')
 Conf_parser.add_argument('--crossref', metavar='FILE', help='Cross reference HTML file')
 Conf_parser.add_argument('--css', metavar='FILE_OR_URL', help='Custom CSS filepath or URL (derived from doc_custom.css)')

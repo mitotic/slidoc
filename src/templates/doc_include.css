@@ -52,12 +52,14 @@ li.slidoc-restricted-top { background-color: #4f4f4f; }
 /* Hidden slides */
 body:not(.slidoc-showhidden-view) section.slidoc-slide-hidden { display: none; }
 
-
 /* Float clearing */
 .slidoc-full-block { clear: both; }
 
 /* Plugin display */
 div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
+
+/* Access code display */
+.slidoc-access-code { font-size: 2em; font-family:Consolas,Monaco,Lucida Console,Courier New; }
 
 /* Code display */
 .slidoc-block-fillable pre  { counter-reset: line; }

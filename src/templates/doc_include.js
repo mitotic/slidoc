@@ -104,6 +104,9 @@ Sliobj.sessionLabel = (!Sliobj.params.fileName && Sliobj.params.sessionType) ? S
 
 Sliobj.sessionProperties = null;   // For all sessions
 
+Sliobj.inputAccessCode = '';
+Sliobj.dispAccessCode = '';
+
 Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
     Sliobj.gradeFieldsObj[Sliobj.params.gradeFields[j]] = 1;
@@ -555,6 +558,13 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
     } else {
 	sessionAbort('Error: File must be served from proxy server for websocket authentication');
     }
+}
+
+Slidoc.sessionSetup = function(dispAccessCode) {
+    Sliobj.dispAccessCode = dispAccessCode || '';
+    var elem = document.getElementById('slidoc-access-code');
+    if (elem)
+	elem.textContent = ''+Sliobj.dispAccessCode;
 }
 
 Slidoc.logoutURL = "/_auth/logout/";
@@ -2080,6 +2090,12 @@ Slidoc.zeroPad = zeroPad;
 
 function letterFromIndex(n) {
     return String.fromCharCode('A'.charCodeAt(0) + n);
+}
+
+
+Slidoc.getRandomInt = function(ndigits) {
+    ndigits = ndigits || 4;
+    return Math.floor( (1+9*Math.random()) * Math.pow(10,ndigits-1) );
 }
 
 function shuffleArray(array, randFunc) {
@@ -4502,6 +4518,8 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
 	}
     }
 
+    var getOpts = {access: true, create: true, retry: 'ready'};
+
     if (Sliobj.params.timedSec) {
 
 	function slidocTimedGetCallback(temSession, temFeedback) {
@@ -4514,13 +4532,13 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
 		return;
 		}
 	    }
-	    sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
+	    sessionGet(null, Sliobj.sessionName, getOpts, slidocSetup);
 	}
 
 	sessionGet(null, Sliobj.sessionName, {}, slidocTimedGetCallback);
 
     } else {
-	sessionGet(null, Sliobj.sessionName, {create: true, retry: 'ready'}, slidocSetup);
+	sessionGet(null, Sliobj.sessionName, getOpts, slidocSetup);
     }
 }
 
@@ -6344,12 +6362,27 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 		Slidoc.userLogin('Invalid username/token or key mismatch. Please re-enter', retryOpts.call);
 		return;
 
+	    } else if (err_type == 'NEED_ACCESS_CODE') {
+		if (retryOpts.type == 'ready') {
+		    if (Sliobj.inputAccessCode) {
+			var promptMsg = 'Invalid access code. Re-enter code or enter blank to cancel';
+		    } else {
+			var promptMsg = 'Please enter access code';
+		    }
+		    Sliobj.inputAccessCode = (window.prompt(promptMsg, Sliobj.inputAccessCode+'') || '').trim();
+		    if (Sliobj.inputAccessCode) {
+			retryOpts.call();
+			return;
+		    }
+		}
+
 	    } else if ((prevSession||retryOpts.type == 'ready') && (err_type == 'PAST_SUBMIT_DEADLINE' || err_type == 'INVALID_LATE_TOKEN')) {
 		var temToken = setLateToken(prevSession||Sliobj.session, prefix);
 		if (temToken) {
 		    retryOpts.call(temToken);
 		    return;
 		}
+
 	    } else if (retryOpts.type == 'ready' || retryOpts.type == 'new' || retryOpts.type == 'end_paced') {
 		var conf_msg = 'Error in saving'+((retryOpts.type == 'end_paced') ? ' completed':'')+' session to Google Docs: '+err_msg+' Retry?';
 		if (window.confirm(conf_msg)) {
@@ -6410,6 +6443,7 @@ function sessionGet(userId, sessionName, opts, callback, lateToken) {
 	retryOpts.call = opts.retry ? sessionGet.bind(null, userId, sessionName, opts, callback) : null;
 	var getOpts = {};
 	if (opts.create) getOpts.create = 1;
+	if (opts.access) getOpts.access = Sliobj.inputAccessCode || '';
 	if (lateToken) getOpts.late = lateToken;
 	try {
 	    gsheet.getRow(userId, getOpts, sessionGetPutAux.bind(null, null, 'get', callback, retryOpts));
