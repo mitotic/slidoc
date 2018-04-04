@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.22d';
+var VERSION = '0.97.22e';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -843,6 +843,7 @@ function sheetAction(params) {
 	    }
 	    returnValues = [];
 	    var data = JSON.parse(params.data);
+	    ///startCallTracking(3, {}, 'PROXY');
 	    trackCall(1, 'handleProxyUpdates: params.data.length='+params.data.length);
 	    var retval = handleProxyUpdates(data, params.create, returnMessages);
 	    returnInfo.refreshSheets = retval[0];
@@ -4476,7 +4477,7 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAns
         if (skipAhead && qscore == 1 && !hintsUsed[qnumber] && !qAttempted.retries) {
             // Correct answer (without hints and retries)
             if (slideNum > prevQuestionSlide+1) {
-                // Question  not part of sequence
+                // Question not part of sequence
                 correctSequence = 1;
             } else if (correctSequence > 0) {
                 // Question part of correct sequence
@@ -4518,13 +4519,16 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAns
         } else if (hintsUsed[qnumber] && questionAttrs.hints && questionAttrs.hints.length) {
 	    if (hintsUsed[qnumber] > questionAttrs.hints.length)
 		throw('Internal Error: Inconsistent hint count');
-	    for (var j=0; j<hintsUsed[qnumber]; j++)
-		effectiveScore -= Math.abs(questionAttrs.hints[j]);
+	    for (var k=0; k<hintsUsed[qnumber]; k++)
+		effectiveScore -= Math.abs(questionAttrs.hints[k]);
 	}
+
+	if (questionAttrs.participation)  // Minimum (normalized) score for attempting question
+	    effectiveScore = Math.max(effectiveScore, questionAttrs.participation);
 
         if (effectiveScore > 0) {
             questionsCorrect += 1 + qSkipCount;
-            weightedCorrect += effectiveScore*qWeight + qSkipWeight;
+            weightedCorrect += Math.max(0,Math.min(1,effectiveScore))*qWeight + qSkipWeight;
         }
     }
 
@@ -4679,8 +4683,13 @@ function updateTotalAux(sheetName, create) {
 	var sessionAttributes = JSON.parse(sessionEntries.attributes)
 	var questions = JSON.parse(sessionEntries.questions);
 	var sessionSheet = getSheet(sessionName);
-	updateTotalScores(sessionSheet, sessionAttributes, questions, true);
-	updateTotalFormula(sessionSheet, sessionSheet.getLastRow());
+	var confirm = getPrompt('Enter "yes" to update q_scores (careful; may lead to inconsistency)', 'UpdateScores')
+	if (confirm && confirm.trim().toLowerCase() == 'yes') {
+	    updateTotalScores(sessionSheet, sessionAttributes, questions, true);
+	    updateTotalFormula(sessionSheet, sessionSheet.getLastRow());
+	} else {
+	    return;
+	}
     }
     notify('Updated totals for sessions: '+sessionNames.join(', '), 'Slidoc Totals');
 }
@@ -5038,8 +5047,8 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    if (!paceLevel)
 		continue;
 
-	    // Update total scores
-	    updateTotalScores(sessionSheet, sessionAttributes, questions, true);
+	    // Update total scores (DISABLED due to possible inconsistency)
+	    ///updateTotalScores(sessionSheet, sessionAttributes, questions, true);
 
 	    // Update answers/stats sheets (if already present)
 	    try {
