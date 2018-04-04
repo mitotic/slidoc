@@ -2985,7 +2985,7 @@ def sheetAction(params, notrace=False):
                                 raise Exception("Error::Cannot modify column '"+colHeader+"'. Specify as 'null'")
 
                     if userId != MAXSCORE_ID and scoresCol and computeTotalScore:
-                        # Tally user scores
+                        # Tally user scores after row updates
                         userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes)
                         if userScores:
                             rowValues[scoresCol-1] = userScores.get('weightedCorrect', '')
@@ -3142,13 +3142,6 @@ def sheetAction(params, notrace=False):
                         if modValue is not None:
                             rowValues[headerColumn-1] = modValue
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
-
-                    if userId != MAXSCORE_ID and scoresCol and computeTotalScore:
-                        # Tally user scores
-                        userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes)
-                        if userScores:
-                            rowValues[scoresCol-1] = userScores.get('weightedCorrect', '')
-                            modSheet.getRange(userRow, scoresCol, 1, 1).setValues([[ rowValues[scoresCol-1] ]])
 
                     if discussionPost:
                         returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], TESTUSER_ID if adminUser else userId, rosterName)

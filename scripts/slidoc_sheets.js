@@ -1915,7 +1915,7 @@ function sheetAction(params) {
 		    }
 
 		    if (userId != MAXSCORE_ID && scoresCol && computeTotalScore) {
-			// Tally user scores
+			// Tally user scores after row updates
 			var userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes);
 			if (userScores) {
 			    rowValues[scoresCol-1] = userScores.weightedCorrect || '';
@@ -2074,15 +2074,6 @@ function sheetAction(params) {
 			if (modValue !== null) {
 			    rowValues[headerColumn-1] = modValue;
 			    modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]]);
-			}
-		    }
-
-		    if (userId != MAXSCORE_ID && scoresCol && computeTotalScore) {
-			// Tally user scores
-			var userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes);
-			if (userScores) {
-			    rowValues[scoresCol-1] = userScores.weightedCorrect || '';
-			    modSheet.getRange(userRow, scoresCol, 1, 1).setValues([[ rowValues[scoresCol-1] ]]);
 			}
 		    }
 
