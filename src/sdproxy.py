@@ -2702,12 +2702,11 @@ def sheetAction(params, notrace=False):
                         raise Exception('Error:RETAKES:No more retakes available')
 
                     # Save score for last take
-                    savedSession = unpackSession(columnHeaders, origVals)
-                    if savedSession and savedSession.get('questionsAttempted') and computeTotalScore:
-                        scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers'])
-                        lastTake = str(scores.get('weightedCorrect') or 0)
-                    else:
-                        lastTake = '0'
+                    lastTake = '0'
+                    if computeTotalScore:
+                        userScores = recomputeUserScores(columnHeaders, origVals, questions, sessionAttributes)
+                        if userScores:
+                            lastTake = str(scores.get('weightedCorrect') or 0)
 
                     # Update retakes score list
                     retakesList.append(lastTake)
@@ -2987,10 +2986,9 @@ def sheetAction(params, notrace=False):
 
                     if userId != MAXSCORE_ID and scoresCol and computeTotalScore:
                         # Tally user scores
-                        savedSession = unpackSession(columnHeaders, rowValues)
-                        if savedSession and len(savedSession.get('questionsAttempted').keys()):
-                            scores = tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
-                            rowValues[scoresCol-1] = scores.get('weightedCorrect', '')
+                        userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes)
+                        if userScores:
+                            rowValues[scoresCol-1] = userScores.get('weightedCorrect', '')
 
                     # Copy user info from roster (if available)
                     if rosterValues:
@@ -3145,6 +3143,13 @@ def sheetAction(params, notrace=False):
                             rowValues[headerColumn-1] = modValue
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
+                    if userId != MAXSCORE_ID and scoresCol and computeTotalScore:
+                        # Tally user scores
+                        userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes)
+                        if userScores:
+                            rowValues[scoresCol-1] = userScores.get('weightedCorrect', '')
+                            modSheet.getRange(userRow, scoresCol, 1, 1).setValues([[ rowValues[scoresCol-1] ]])
+
                     if discussionPost:
                         returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], TESTUSER_ID if adminUser else userId, rosterName)
 
@@ -3250,6 +3255,12 @@ def sheetAction(params, notrace=False):
         print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
     
     return retObj
+
+def recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes):
+    savedSession = unpackSession(columnHeaders, rowValues)
+    if savedSession and len(savedSession.get('questionsAttempted').keys()):
+        return tallyScores(questions, savedSession.get('questionsAttempted'), savedSession.get('hintsUsed'), sessionAttributes.get('params'), sessionAttributes.get('remoteAnswers'))
+    return None
 
 def submit_timed_session(userId, sessionName):
     sessionSheet = getSheet(sessionName)

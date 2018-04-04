@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.22c';
+var VERSION = '0.97.22d';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -1606,12 +1606,11 @@ function sheetAction(params) {
 			throw('Error:RETAKES:No more retakes available');
 
 		    // Save score for last take
-		    var savedSession = unpackSession(columnHeaders, origVals);
-		    if (savedSession && Object.keys(savedSession.questionsAttempted).length && computeTotalScore) {
-			var scores = tallyScores(questions, savedSession['questionsAttempted'], savedSession['hintsUsed'], sessionAttributes['params'], sessionAttributes['remoteAnswers']);
-			var lastTake = str(scores.weightedCorrect || 0);
-                    } else {
-			var lastTake = '0';
+		    var lastTake = '0';
+		    if (computeTotalScore) {
+			var userScores = recomputeUserScores(columnHeaders, origVals, questions, sessionAttributes);
+			if (userScores)
+			    lastTake = str(userScores.weightedCorrect || 0);
 		    }
 
 		    // Update retakes score list
@@ -1916,10 +1915,9 @@ function sheetAction(params) {
 
 		    if (userId != MAXSCORE_ID && scoresCol && computeTotalScore) {
 			// Tally user scores
-			var savedSession = unpackSession(columnHeaders, rowValues);
-			if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
-			    var scores = tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params, sessionAttributes.remoteAnswers);
-			    rowValues[scoresCol-1] = scores.weightedCorrect || '';
+			var userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes);
+			if (userScores) {
+			    rowValues[scoresCol-1] = userScores.weightedCorrect || '';
 			}
 		    }
 		    // Copy user info from roster (if available)
@@ -2078,6 +2076,15 @@ function sheetAction(params) {
 			}
 		    }
 
+		    if (userId != MAXSCORE_ID && scoresCol && computeTotalScore) {
+			// Tally user scores
+			var userScores = recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes);
+			if (userScores) {
+			    rowValues[scoresCol-1] = userScores.weightedCorrect || '';
+			    modSheet.getRange(userRow, scoresCol, 1, 1).setValues([[ rowValues[scoresCol-1] ]]);
+			}
+		    }
+
                     if (discussionPost) {
                         returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], (adminUser ? TESTUSER_ID : userId), rosterName);
                     }
@@ -2191,6 +2198,14 @@ function sheetAction(params) {
     } finally { //release lock
 	lock.releaseLock();
     }
+}
+
+function recomputeUserScores(columnHeaders, rowValues, questions, sessionAttributes) {
+    var savedSession = unpackSession(columnHeaders, rowValues);
+    if (savedSession && Object.keys(savedSession.questionsAttempted).length) {
+	return tallyScores(questions, savedSession.questionsAttempted, savedSession.hintsUsed, sessionAttributes.params, sessionAttributes.remoteAnswers);
+    }
+    return null;
 }
 
 function adminPacedUpdate(sheetName, modSheet, numStickyRows, submitTimestamp) {

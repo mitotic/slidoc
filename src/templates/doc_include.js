@@ -561,7 +561,8 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
     }
 }
 
-Slidoc.sessionSetup = function(dispAccessCode) {
+Slidoc.sessionSetup = function(dispAccessCode, interactSlideId) {
+    Slidoc.log('Slidoc.sessionSetup:', dispAccessCode, interactSlideId)
     Sliobj.dispAccessCode = dispAccessCode || '';
     var elem = document.getElementById('slidoc-access-code');
     if (elem)
@@ -2591,6 +2592,9 @@ Slidoc.showConcepts = function (submitMsg) {
 		    if (computedGrade != null && Math.abs(feedbackGrade - parseNumber(computedGrade)) > 0.01) {
 			alert('Warning: Inconsistent re-computed total grade: q_total!='+computedGrade)
 		    }
+		    if (isNumber(Sliobj.feedback.q_scores) && Sliobj.scores.weightedCorrect != null && Math.abs(Sliobj.feedback.q_scores - parseNumber(Sliobj.scores.weightedCorrect)) > 0.01) {
+			alert('Warning: Inconsistent re-computed weighted score: sheet score '+Sliobj.feedback.q_scores+' != '+Sliobj.scores.weightedCorrect+' re-computed');
+		    }
 		}
 	    } else if (Sliobj.params.scoreWeight) {
 		// Display autoscore, if available
@@ -3234,7 +3238,7 @@ function enableInteract(active, slideId, forceDisable) {
 	}
 	return;
     }
-    if (!isController() || Sliobj.session.submitted || Sliobj.interactiveSlide || !lastSlideId)
+    if (!isController() || Sliobj.session.submitted || !lastSlideId || lastSlideId == Sliobj.interactiveSlide)
 	return;
 
     var qattrs = getQuestionAttrs(lastSlideId);

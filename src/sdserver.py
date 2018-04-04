@@ -4391,9 +4391,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     def getInteractiveSession(cls):
         # Return (name of interactive session or '', question attributes)
         if cls._interactiveSession[2]:
-            return (UserIdMixin.get_path_base(cls._interactiveSession[1]) or '', cls._interactiveSession[3])
+            return (UserIdMixin.get_path_base(cls._interactiveSession[1]) or '', cls._interactiveSession[2], cls._interactiveSession[3])
         else:
-            return ('', {})
+            return ('', '', {})
 
     @classmethod
     def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None, rollbackOption=None):
@@ -4721,8 +4721,12 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
         self.eventFlusher.start()
 
+        interactSessionName, interactSlideId, _ = self.getInteractiveSession()
+        if not self.sessionName or self.sessionName != interactSessionName:
+            interactSlideId = ''
+
         dispAccessCode = Global.accessCodes.get(self.sessionName,'') if self.userRole == sdproxy.ADMIN_ROLE else ''
-        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, dispAccessCode] ]))
+        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, dispAccessCode, interactSlideId] ]))
 
     def on_close(self):
         if Options['debug']:
@@ -5307,7 +5311,7 @@ class AuthMessageHandler(BaseHandler):
     def get(self, subpath=''):
         status = self.get_argument('status', '')
         inputCode = self.get_argument('access', '').strip()
-        sessionName, questionAttrs = WSHandler.getInteractiveSession()
+        sessionName, slideId, questionAttrs = WSHandler.getInteractiveSession()
         requireCode = Global.accessCodes.get(sessionName) or ''
         if requireCode:
             if not inputCode:
@@ -5322,7 +5326,7 @@ class AuthMessageHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self, subpath=''):
-        sessionName, questionAttrs = WSHandler.getInteractiveSession()
+        sessionName, slideId, questionAttrs = WSHandler.getInteractiveSession()
         qnumberStr = self.get_argument('qnumber', '')
         inputCode = self.get_argument('access', '').strip()
         requireCode = Global.accessCodes.get(sessionName) or ''
