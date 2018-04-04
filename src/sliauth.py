@@ -21,7 +21,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.22b'
+VERSION = '0.97.22c'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -59,6 +59,23 @@ DIGEST_ALGORITHM = hashlib.sha256
 def errlog(*args):
     print(*args, file=sys.stderr)
     return ' '.join(str(arg) for arg in args)
+
+def isNumber(x):
+    return parseNumber(x) is not None
+
+def parseNumber(x):
+    try:
+        if type(x) in (str, unicode):
+            if '.' in x or 'e' in x or 'E' in x:
+                return float(x)
+            else:
+                return int(x)
+        elif type(x) is float:
+            return x
+        else:
+            return int(x)
+    except Exception, err:
+        return None
 
 def digest_hex(message, truncate=TRUNCATE_DIGEST):
     return DIGEST_ALGORITHM(message).hexdigest()[:truncate]
@@ -396,7 +413,7 @@ def safeName(s, capitalize=False):
 
 def team_gen(user_ranks, count=None, min_size=None, composition='', random_seed=None):
     # Generate teams from ranking parameters
-    # composition: ''/'assigned'/'uniform'/'disparate' (null => random)
+    # composition: 'random'/'assigned'/'similar'/'diverse' ('' => random)
     # user_ranks: [(userid1, rank1), ...]
     # Return [ [ [[userid1, rank1], [userid2, rank2], ...], ... ], [team1name, team2name, ...] ]
     # random_seed, if specified, is used as a random seed to assure reproducible rank sorting (e.g., using session name)
@@ -431,14 +448,14 @@ def team_gen(user_ranks, count=None, min_size=None, composition='', random_seed=
     else:
         # Create a copy (for in-place sorting)
         sorted_ranks = user_ranks[:]
-        if not composition:
+        if not composition or composition == 'random':
             # Random composition
             random.shuffle(sorted_ranks)
         else:
-            # Uniform/disparate composition
+            # Similar/diverse composition
 
             # Pre-sort by userid, rank for determinicity with random seed
-            sorted_ranks.sort()
+            sorted_ranks.sort(key=lambda x:[x[0], parseNumber(x[1])] if isNumber(x[1]) else x)
 
             # Bin by rank
             rank_bins = {}
@@ -452,7 +469,7 @@ def team_gen(user_ranks, count=None, min_size=None, composition='', random_seed=
 
             # Sort users by rank, ensuring random shuffling for all users with the same rank
             ranks = rank_bins.keys()
-            ranks.sort()
+            ranks.sort(key=lambda x:parseNumber(x) if isNumber(x) else x)
             sorted_ranks = []
 
             # Specified random seed for determinicity in random shuffling within rank bin
@@ -463,8 +480,8 @@ def team_gen(user_ranks, count=None, min_size=None, composition='', random_seed=
                 rand.shuffle(tem_user_ranks)
                 sorted_ranks += tem_user_ranks
 
-        if composition == 'disparate':
-            # Disparate team composition: interleaved binning
+        if composition == 'diverse':
+            # Diverse team composition: interleaved binning
             offset = 0
             team_user_ranks = [ [] for j in range(count) ]
             for iuser, user_rank in enumerate(reversed(sorted_ranks[extra_users+count:])):
@@ -477,7 +494,7 @@ def team_gen(user_ranks, count=None, min_size=None, composition='', random_seed=
                 iteam = iuser % count
                 team_user_ranks[iteam].append(user_rank)
         else:
-            # Uniform/random team composition: chunk binning
+            # Similar/random team composition: chunk binning
             offset = 0
             team_user_ranks = []
             for iteam in range(count):
@@ -493,8 +510,14 @@ def team_gen(user_ranks, count=None, min_size=None, composition='', random_seed=
         names = [ str(j+1) for j in range(count) ]
     return team_user_ranks, names
 
-def team_props(user_ranks, count=None, min_size=None, composition='', team_names=[], random_seed=None):
+Greek_names = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta', 'iota', 'kappa', 'lambda', 'mu', 'nu'] 
+
+def team_props(user_ranks, count=None, min_size=None, composition='', alias='', team_names=[], random_seed=None):
     # random_seed, if specified, is used as a random seed to assure reproducible rank sorting (e.g., using session name)
+    # alias: 'rankgreek' => alpha1, alpha2, ... for response A and so on across teams
+    #        'rank' => userA1, userA2, ... for response A and so on across teams
+    #        'teamgreek' => alpha1, beta1, gamma1,... for team1 and so on
+    #        'team'     => team1A, team1B, ... for team1 and so on
     name_prefix = 'team'
     user_prefix = 'user'
     names = []
@@ -511,21 +534,28 @@ def team_props(user_ranks, count=None, min_size=None, composition='', team_names
         names = [(name_prefix + name_list[j]) for j in range(len(team_user_ranks))]
 
     user_aliases = {}
-    if composition == 'disparate' and all(str(x[1]).isalpha() for x in user_ranks):
-        # Letter ranks
+    if alias.startswith('rank') and composition == 'diverse' and all(str(x[1]).isalpha() for x in user_ranks):
+        # Letter rank-based aliases
         letter_counts = {}
         for team in team_user_ranks:
             for user, rank in team:
-                suffix = rank.upper()
-                if suffix in letter_counts:
-                    letter_counts[suffix] += 1
+                offset = ord(rank[0].upper()) - ord('A')
+                if alias == 'rankgreek' and  offset < len(Greek_names):
+                    alias_prefix = Greek_names[offset]
                 else:
-                    letter_counts[suffix] = 1
-                user_aliases[user] = user_prefix + suffix + str(letter_counts[suffix])
-    else:
+                    alias_prefix = user_prefix+rank.upper()
+                if alias_prefix in letter_counts:
+                    letter_counts[alias_prefix] += 1
+                else:
+                    letter_counts[alias_prefix] = 1
+                user_aliases[user] = alias_prefix + str(letter_counts[alias_prefix])
+    elif alias:
         for j, team in enumerate(team_user_ranks):
             for k, user_rank in enumerate(team):
-                user_aliases[user_rank[0]] = names[j]+chr(k+ord('A')) 
+                if alias == 'teamgreek':
+                    user_aliases[user_rank[0]] = (Greek_names[k] if k < len(Greek_names) else chr(k+ord('A'))) + str(j+1)
+                else:
+                    user_aliases[user_rank[0]] = names[j]+chr(k+ord('A'))
 
     members = {}
     ranks = {}
@@ -545,7 +575,7 @@ def test_team_gen(prefix='prefix', random_seed=None):
 
     print('test_team_gen: ranks=', ' '.join(str(y) for y in sorted([x[1] for x in user_ranks])), file=sys.stderr)
     for min_size in (3,4,5):
-        for composition in ('', 'uniform', 'disparate'):
+        for composition in ('random', 'similar', 'diverse'):
             props = team_props(user_ranks, min_size=min_size, composition=composition, team_names=[prefix], random_seed=random_seed)
             print('test_team_gen: %s team_size=%s' % (composition, min_size), file=sys.stderr)
             for j, team_name in enumerate(props['names']):

@@ -141,6 +141,7 @@ TWITTER_HEADER = 'twitter'
 GRADE_HEADERS = ['total', 'grade', 'numGrade']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
 
+BLOCKED_STATUS = 'blocked'
 DROPPED_STATUS = 'dropped'
 
 HIDE_HEADERS = ['attributes', 'questions', 'teams', 'questionConcepts']
@@ -181,7 +182,9 @@ QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
 QFIELD_MOD_RE = re.compile(r"^(q_other|q_comments|q(\d+)_(comments|grade))$")
 QFIELD_TOTAL_RE = re.compile(r"^(q_scores|q_other|q(\d+)_grade)$")
 
-DELETED_POST = '(deleted)'
+ANSWER_POST = '|answer|'
+DELETED_POST = '|deleted|'
+FLAGGED_POST = '|flagged|'
 POST_PREFIX_RE = re.compile(r'^Post:([\w-]*):(\d+):([-\d:T]+)(\s|$)')
 POST_NUM_RE = re.compile(r'([\w-]*):(\d+):([-\d:T]+)([\s\S]*)$')
 TEAMNAME_RE = re.compile(r'[\w-]+')
@@ -204,12 +207,14 @@ Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
 
 Global.gradebookActive = False
-Global.discussPostCallback = None
 Global.accessCodeCallback = None
+Global.teamSetupCallback = None
+Global.discussPostCallback = None
 
-def initProxy(gradebookActive=False, accessCodeCallback=None, discussPostCallback=None):
+def initProxy(gradebookActive=False, accessCodeCallback=None, teamSetupCallback=None, discussPostCallback=None):
     Global.gradebookActive = gradebookActive
     Global.accessCodeCallback = accessCodeCallback
+    Global.teamSetupCallback = teamSetupCallback
     Global.discussPostCallback = discussPostCallback
 
 def copySiteConfig(siteConfig):
@@ -1996,6 +2001,7 @@ def sheetAction(params, notrace=False):
         questions = None
         paceLevel = None
         adminPaced = None
+        releaseDate = None
         dueDate = None
         gradeDate = None
         voteDate = None
@@ -2100,11 +2106,12 @@ def sheetAction(params, notrace=False):
             if not rowUpdates and selectedUpdates and len(selectedUpdates) == 2 and selectedUpdates[0][0] == 'id':
                 updatingSingleColumn = selectedUpdates[1][0]
                 if discussingSession and updatingSingleColumn.startswith('discuss'):
+                    discNum = int(updatingSingleColumn[len('discuss'):])
                     if paramId == TESTUSER_ID:
                         postTeam = paramTeam
                     else:
-                        postTeam = getUserTeam(discussingSession, paramId)
-                    discussionPost = [discussingSession, int(updatingSingleColumn[len('discuss'):]), postTeam]
+                        postTeam = getUserTeam(discussingSession, paramId, discussNum=discNum)
+                    discussionPost = [discussingSession, discNum, postTeam]
 
                 if updatingSingleColumn == 'submitTimestamp':
                     alterSubmission = True
@@ -2116,7 +2123,7 @@ def sheetAction(params, notrace=False):
 
             if discussionPost:
                 # Create session_discuss sheet, if need be, to post
-                modSheet = updateDiscussSheet(discussingSession)
+                modSheet = updateSessionDiscussSheet(discussingSession)
                 if not modSheet:
                     raise Exception('Cannot post discussion for session '+discussingSession)
                 addDiscussUser(discussingSession, paramId, rosterName)
@@ -2143,12 +2150,13 @@ def sheetAction(params, notrace=False):
                 raise Exception("Error::No columns in sheet '"+sheetName+"'")
 
             if indexedSession:
-                sessionEntries = lookupValues(sheetName, ['sessionWeight', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
+                sessionEntries = lookupValues(sheetName, ['sessionWeight', 'releaseDate', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced', 'scoreWeight', 'gradeWeight', 'otherWeight', 'fieldsMin', 'questions', 'attributes'], INDEX_SHEET)
                 sessionAttributes = json.loads(sessionEntries['attributes'])
                 sessionWeight = parseNumber(sessionEntries.get('sessionWeight'))
                 questions = json.loads(sessionEntries['questions'])
                 paceLevel = sessionEntries.get('paceLevel')
                 adminPaced = sessionEntries.get('adminPaced')
+                releaseDate = sessionEntries.get('releaseDate')
                 dueDate = sessionEntries.get('dueDate')
                 gradeDate = sessionEntries.get('gradeDate')
                 voteDate = createDate(sessionAttributes['params']['plugin_share_voteDate']) if sessionAttributes['params'].get('plugin_share_voteDate') else None
@@ -2586,7 +2594,7 @@ def sheetAction(params, notrace=False):
                             nameMap[idValues[j][0]] = nameValues[j][0]
                     shortMap = makeShortNames(nameMap, first=True)
                     returnInfo['responders'] = []
-                    if teamAttr == 'setup':
+                    if teamAttr == 'assign':
                         teamMembers = {}
                         for j in range(nRows):
                             idValue = idValues[j][0]
@@ -2605,14 +2613,19 @@ def sheetAction(params, notrace=False):
                         for k in range(len(teamNames)):
                             returnInfo['responders'].append(teamNames[k]+': '+', '.join(teamMembers[teamNames[k]]))
                     else:
+                        activeSession = releaseDate != FUTURE_DATE and not dueDate
+                        sources = getRowMap(sheetName, 'source', regular=True)
                         for j in range(nRows):
                             idValue = idValues[j][0]
                             if not includeId.get(idValue):
                                 continue
+                            iSuffix = ''
+                            if activeSession and sources.get(idValue) == 'interact':
+                                iSuffix += '-'
                             if responderTeam.get(idValue):
                                 returnInfo['responders'].append(responderTeam[idValue])
                             else:
-                                returnInfo['responders'].append(idValue+'/'+shortMap.get(idValue,'')+'/'+nameMap[idValue])
+                                returnInfo['responders'].append(idValue+'/'+shortMap.get(idValue,idValue)+iSuffix+'/'+nameMap.get(idValue,idValue))
                     returnInfo['responders'].sort()
 
                 ##returnMessages.append('Debug::getShare: '+str(nCols)+', '+str(nRows)+', '+str(sortVals)+', '+str(curUserVals)+'')
@@ -2735,19 +2748,13 @@ def sheetAction(params, notrace=False):
                 if userId != TESTUSER_ID and paceLevel == ADMIN_PACE and not dueDate and Global.accessCodeCallback:
                     Global.accessCodeCallback(accessCode, userId, sheetName)
 
-                if teamCol and sessionTeam and sessionTeam['session'] != '_setup':
+                if teamCol and sessionTeam and sessionTeam['session'] not in ('_assign', '_generate'):
                     # Set up teams, if not live setup
                     setupErrMsg = setupSessionTeam(sheetName)
                     if setupErrMsg:
                         raise Exception(setupErrMsg)
+                    rowUpdates[teamCol-1] = getUserTeam(sheetName, userId)
 
-                    teamSettings = getTeamSettings(sheetName)
-                    for teamName in teamSettings.get('members',{}).keys():
-                        memberIds = teamSettings['members'][teamName]
-                        if userId in memberIds:
-                            # Update team column
-                            rowUpdates[teamCol-1] = teamName
-                            break
 
             if newRow and getRow and not rowUpdates:
                 # Row does not exist return empty list
@@ -2964,12 +2971,7 @@ def sheetAction(params, notrace=False):
                                     qno = int(hmatch.group(1))
                                     if questions and qno <= len(questions):
                                         teamAttr = questions[qno-1].get('team','')
-                                if teamAttr == 'setup':
-                                    if hmatch.group(2) == 'response' and colValue != SKIP_ANSWER:
-                                        # Set up team name (capitalized)
-                                        rowValues[teamCol-1] = sliauth.safeName(colValue, True)
-                                        returnInfo['team'] = rowValues[teamCol-1]
-                                elif teamAttr == 'response' and rowValues[teamCol-1]:
+                                if teamAttr == 'response' and rowValues[teamCol-1]:
                                     # Copy response/explain/plugin for team
                                     teamCopyCols.append(j+1)
                                     if hmatch and hmatch.group(2) == 'response':
@@ -3011,12 +3013,9 @@ def sheetAction(params, notrace=False):
                             adminPaced = rowValues[lastSlideCol-1]
                             setValue(sheetName, 'adminPaced', adminPaced, INDEX_SHEET)
 
-                            if sessionTeam and (not sessionTeam['session'] or sessionTeam['session'] == '_setup'):
-                                # Setup teams for this session
-                                setupErrMsg = setupSessionTeam(sheetName)
-                                if setupErrMsg:
-                                    blankColumn(sheetName, 'team')
-                                    returnInfo['teamSetupError'] = setupErrMsg
+                            if discussableSession:
+                                # Close all open discussions
+                                closeDiscussion(sheetName)
 
                         if params.get('submit'):
                             # Use test user submission time as due date for admin-paced sessions
@@ -3109,29 +3108,11 @@ def sheetAction(params, notrace=False):
                                 raise Exception('Invalid discussion post entry in column '+colHeader+' for session '+sheetName)
                             if colValue.lower().startswith('delete:'):
                                 # Delete post
-                                userPosts = splitPosts(prevValue)
-                                dcomps = colValue.split(':')
-                                if len(dcomps) != 3 or not dcomps[2].isdigit():
-                                    raise Exception('Invalid delete post entry %s' % dcomps)
-                                deleteLabel = dcomps[1] + ':%03d:' % int(dcomps[2])
-                                for j in range(len(userPosts)):
-                                    if userPosts[j].startswith(deleteLabel):
-                                        # "Delete" post by prefixing it with (deleted)
-                                        comps = userPosts[j].split(' ')
-                                        userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
-                                        modValue = joinPosts(userPosts)
-                                        break
+                                modValue = deletePost(prevValue, colValue, userId, rosterName, adminUser, discussionPost[0], discussionPost[1])
                             else:
                                 # New post; append
-                                if adminPaced and not (sessionEntries.get('dueDate') or sessionAttributes['params']['features'].get('live_discussion')):
-                                    raise Exception('live_discussion feature not enabled for session '+discussionPost[0])
-                                if userId == TESTUSER_ID:
-                                    postTeam = paramTeam
-                                else:
-                                    postTeam = discussionPost[2]
-                                
-                                modValue, newPost = postDiscussEntry(discussionPost[0], discussionPost[1], postTeam, prevValue, colValue)
-                                notifyDiscussUsers(discussionPost[0], discussionPost[1], postTeam, userId, rosterName, newPost)
+                                modValue, newPost = postDiscussEntry(discussionPost[0], discussionPost[1], discussionPost[2], userId, rosterName, prevValue, colValue)
+                                notifyDiscussUsers(discussionPost[0], discussionPost[1], discussionPost[2], 'new', userId, rosterName, newPost)
 
                         elif colValue is None:
                             # Do not modify field
@@ -3165,7 +3146,7 @@ def sheetAction(params, notrace=False):
                             modSheet.getRange(userRow, headerColumn, 1, 1).setValues([[ rowValues[headerColumn-1] ]])
 
                     if discussionPost:
-                        returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], userId, rosterName)
+                        returnInfo['discussPosts'] = getDiscussPosts(discussionPost[0], discussionPost[1], TESTUSER_ID if adminUser else userId, rosterName)
 
                 if len(teamCopyCols):
                     nCopyRows = numRows-numStickyRows
@@ -3186,6 +3167,11 @@ def sheetAction(params, notrace=False):
                 if (paramId != TESTUSER_ID or prevSubmitted or params.get('submit')) and sessionEntries and adminPaced:
                     # Set adminPaced for testuser only upon submission
                     returnInfo['adminPaced'] = adminPaced
+
+                if sessionEntries and adminPaced:
+                    teamStatus = getTeamStatus(sheetName)
+                    if teamStatus and len(teamStatus):
+                        returnInfo['teamStatus'] = teamStatus
 
                 if sessionEntries and getRow:
                     # Return user/team file access keys
@@ -4263,6 +4249,11 @@ def editRosterValues(rowDict, overwrite=False):
     if not NAME_RE.match(rowDict['name']):
         raise Exception('Invalid name "%s"; must be of the form "Last Name, First And Middle"' % rowDict['name'])
 
+    if 'status' in rowDict:
+        rowDict['status'] = rowDict['status'].strip()
+        if rowDict['status'] and rowDict['status'] not in (BLOCKED_STATUS, DROPPED_STATUS):
+            raise Exception('Invalid status value "%s"; must be one of %s' % (rowDict['status'], (BLOCKED_STATUS, DROPPED_STATUS)))
+
     if not rowDict.get('id','').strip():
         idVal = makeId(rowDict['name'], idVals)
         rowDict = rowDict.copy()
@@ -4622,36 +4613,36 @@ def blankColumn(sheet, colName, startRow=None):
     blankCol = indexColumns(sheet).get(colName, 0)
     if not blankCol or lastRow < startRow:
         return
-    blankRange = sheet.getRange(startRow, blankCol, lastRow, 1)
+    blankRange = sheet.getRange(startRow, blankCol, lastRow-startRow+1, 1)
     blankVals = blankRange.getValues()
     for j in range(len(blankVals)):
         blankVals[j][0] = ''
     blankRange.setValues(blankVals)
 
-def getUserTeam(sessionName, userId):
-    sessionSheet = getSheet(sessionName)
-    if not sessionSheet:
-        raise Exception('Session '+sessionName+' not found')
-    return lookupValues(userId, ['team'], sessionName, listReturn=True)[0]
+def getUserTeam(sessionName, userId, discussNum=0):
+    teamSettings = getTeamSettings(sessionName, discussNum=discussNum)
+    for teamName in teamSettings.get('members',{}).keys():
+        memberIds = teamSettings['members'][teamName]
+        if userId in memberIds:
+            return teamName
+    return ''
     
 def getDiscussStats(userId, sessionName=''):
-    # Returns discussion stats { sessionName1: {discussNum1: {team1: [nPosts, unreadPosts], ...}, discussNum2:...}, sessionName2: ...}
-    discussStats = {}
+    # Returns discussion stats { sessionName1: {discussNum1: {closed: 0/1, teams{team1: [nPosts, unreadPosts], ...}, discussNum2:...}, sessionName2: ...}
+    sessionStats = {}
+    flagStats = {}
+    blocked = []
+    stats = {'sessions': sessionStats, 'flags': flagStats, 'blocked': blocked}
+
     axsSheet = getSheet(DISCUSS_SHEET)
     if not axsSheet:
-        return discussStats
+        return stats
     topRow = lookupRowIndex(DISCUSS_ID, axsSheet)
     if not topRow:
         raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
     userRow = lookupRowIndex(userId, axsSheet)
 
-    if userId == TESTUSER_ID:
-        postTeams = []
-    else:
-        postTeams = ['']
-        userTeam = getUserTeam(sessionName, userId)
-        if userTeam:
-            postTeams.append(userTeam)
+    adminUser = (userId == TESTUSER_ID)
 
     ncols = axsSheet.getLastColumn()
     headers = axsSheet.getSheetValues(1, 1, 1, ncols)[0]
@@ -4662,33 +4653,98 @@ def getDiscussStats(userId, sessionName=''):
             temSessionName = headers[j][1:]
             if sessionName and sessionName != temSessionName:
                 continue
-            sessionReadPosts = {}
+            if not topVals[j]:  # Blanked out column
+                continue
+            discussStats = {}
             try:
                 discussState = json.loads(topVals[j])
-                lastPostsAll = numericKeys(discussState['lastPost'])
-                lastReadPostsAll = numericKeys(json.loads(userVals[j] or '{}'))  if userVals  else {}
+                lastPostsAll = discussState['lastPost']
+                lastReadPostsAll = json.loads(userVals[j] or '{}')  if userVals  else {}
                 discussNums = lastPostsAll.keys()
                 for idisc in range(0,len(discussNums)):
-                    discussNum = discussNums[idisc]
-                    lastPosts = lastPostsAll.get(discussNum, {})
-                    lastReadPosts = lastReadPostsAll.get(discussNum, {})
+                    discussNumStr = discussNums[idisc]
+                    lastPosts = lastPostsAll.get(discussNumStr, {})
+                    lastReadPosts = lastReadPostsAll.get(discussNumStr, {})
+
+                    if adminUser:
+                        # Display posts for all teams
+                        postTeams = []
+                        # Return stats on blocked users and flagged posts
+                        for posterId, postLabels in discussState['flagged'].items():
+                            if len(postLabels) >= 2:
+                                blocked.append(posterId)
+                            for postLabel in postLabels:
+                                discussNumStr, teamName, postNumberStr = postLabel.split(':')
+                                discussNum = int(discussNumStr)
+                                if temSessionName not in flagStats:
+                                    flagStats[temSessionName] = {}
+                                if discussNumStr not in flagStats[temSessionName]: 
+                                    flagStats[temSessionName][discussNumStr] = []
+                                flagStats[temSessionName][discussNumStr].append(teamName+':'+postNumberStr)
+                    else:
+                        # Display only posts for user or user's team
+                        postTeams = ['']
+                        userTeam = getUserTeam(temSessionName, userId, discussNum=int(discussNumStr))
+                        if userTeam:
+                            postTeams.append(userTeam)
+
                     teamNames = postTeams if postTeams else lastPosts.keys()
                     if len(teamNames):
-                        sessionReadPosts[discussNum] = {}
+                        teamReadPosts = {}
+                        discussStats[discussNumStr] = {'teams': teamReadPosts, 'closed': (discussState['closed'].get(discussNumStr,0)) }
                         for iteam in range(0,len(teamNames)):
                             postTeam = teamNames[iteam];
                             lastPost = lastPosts.get(postTeam, 0)
                             lastReadPost = lastReadPosts.get(postTeam, 0)
-                            sessionReadPosts[discussNum][postTeam] = [lastPost, lastPost-lastReadPost]
+                            teamReadPosts[postTeam] = [lastPost, lastPost-lastReadPost]
             except Exception:
                 if Settings['debug']:
                     import traceback
                     traceback.print_exc()
-            discussStats[temSessionName] = sessionReadPosts
-    return discussStats
+            sessionStats[temSessionName] = discussStats
+    return stats
 
+def getDiscussionSeeds(sessionName, questionNum, discussNum):
+    startRow = 3
+    discussSheet = getSheet(sessionName+'_discuss')
+    if not discussSheet:
+        raise Exception('Discussion sheet not foud for session '+sessionName)
+    discussColIndex = indexColumns(discussSheet)
+    discussCol =  discussColIndex[DISCUSS_COL_FMT % discussNum]
+    if not discussCol:
+        raise Exception('Discussion %s not found for session ' % (discussNum, sessionName))
+    nRows = discussSheet.getLastRow()-startRow+1
+    postEntries = discussSheet.getSheetValues(startRow, discussCol, nRows, 1)
+    idValues = discussSheet.getSheetValues(startRow, discussColIndex['id'], nRows, 1)
+    nameValues = discussSheet.getSheetValues(startRow, discussColIndex['name'], nRows, 1)
+    nameMap = lookupRoster('name', userId=None)
+    if not nameMap:
+        nameMap = {}
+        for j in range(nRows):
+            nameMap[idValues[j][0]] = nameValues[j][0]
+    shortMap = makeShortNames(nameMap, first=True)
+    subrows = []
+    responders = []
+    for j in range(nRows):
+        idValue = idValues[j][0]
+        postEntry = postEntries[j][0]
+        userPosts = splitPosts(postEntry)
+        for k in range(len(userPosts)):
+            pmatch = POST_NUM_RE.match(userPosts[k])
+            if not pmatch:
+                continue
+            text = pmatch.group(4).strip()
+            if not text.startswith(ANSWER_POST):
+                continue
+            text = text[len(ANSWER_POST):].strip()
+            response, _, explanation = text.partition(':')
+            subrows.append([idValue, response, explanation.strip()])
+            responders.append(idValue+'/'+shortMap.get(idValue,idValue)+'/'+nameMap.get(idValue,idValue))
+    subrows.sort(key=lambda x: parseNumber(x[1]) if isNumber(x[1]) else x[1])
+    qprefix = 'q'+str(questionNum)+'_'
+    return {'id': [x[0] for x in subrows], qprefix+'response': [x[1] for x in subrows], qprefix+'explain': [x[2] for x in subrows], 'responders': responders}
 
-def getDiscussState(sessionName):
+def getDiscussState(sessionName, optional=False):
     if sessionName == previewingSession():
         raise Exception('Cannot access discussions when previewing session %s' % sessionName)
 
@@ -4700,14 +4756,20 @@ def getDiscussState(sessionName):
 
     axsColumn = indexColumns(axsSheet).get(axsSession)
     if not axsColumn:
+        if optional:
+            return None
         raise Exception('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET)
 
     axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet)
     if not axsTopRow:
+        if optional:
+            return None
         raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
 
     discussStateEntry = axsSheet.getRange(axsTopRow, axsColumn, 1, 1).getValues()[0][0]
     if not discussStateEntry.strip():
+        if optional:
+            return None
         raise Exception('Row with id '+DISCUSS_ID+' empty for session '+axsSession+' in sheet '+DISCUSS_SHEET)
 
     return json.loads(discussStateEntry)
@@ -4731,31 +4793,166 @@ def setDiscussState(sessionName, discussState):
         raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
     axsSheet.getRange(axsTopRow, axsColumn, 1, 1).setValue(json.dumps(discussState))
 
-def postDiscussEntry(sessionName, discussNum, postTeam, prevText, newText):
-    postCount = createDiscussEntry(sessionName, postDiscussNum=discussNum, postTeam=postTeam)
-    newPost = makePost(postTeam, postCount, newText)
-    return appendPosts(prevText, newPost, postCount), newPost
-
-def createDiscussEntry(sessionName, postDiscussNum, postTeam=''):
+def postDiscussEntry(sessionName, discussNum, postTeam, userId, userName, prevText, newText, special=False):
+    discussNumStr = str(discussNum)
     discussState = getDiscussState(sessionName)
-    closed = numericKeys(discussState['closed']).get(postDiscussNum,{})
+    closed = discussState['closed'].get(discussNumStr,0)
     if closed:
-        raise Exception('Discussion '+str(postDiscussNum)+' in session '+sessionName+' is closed for new postings')
+        raise Exception('Discussion '+discussNumStr+' in session '+sessionName+' is closed for new postings')
+
+    if userId:
+        rosterStatus = lookupRoster(STATUS_HEADER, userId=userId)
+        if rosterStatus:
+            raise Exception('User %s with %s status not allowed to post' % (userId, rosterStatus))
+        if len(discussState['flagged'].get(userId, {}).keys()) >= 2:
+            raise Exception('You have at least two flagged posts; please contact moderator to clear them to continue posting')
+        # Update post count for user
+        userDiscussRange(sessionName, discussNum, userId, userName, increment='postCount')
 
     # New post for session/discussion
-    lastPost = numericKeys(discussState['lastPost']).get(postDiscussNum,{})
+    lastPost = discussState['lastPost'].get(discussNumStr,{})
     if not lastPost.get(postTeam):
         lastPost[postTeam] = 1
     else:
         lastPost[postTeam] += 1
-    discussState['lastPost'][postDiscussNum] = lastPost
+    discussState['lastPost'][discussNumStr] = lastPost
     setDiscussState(sessionName, discussState)
-    return lastPost[postTeam]
 
-def accessDiscussion(sessionName, discussNum, userId, name, postTeam='', noread=False):
+    postCount = lastPost[postTeam]
+
+    newPost = makePost(postTeam, postCount, newText, special=special)
+    return appendPosts(prevText, newPost, postCount), newPost
+
+def closeDiscussion(sessionName, discussNum=0, reopen=False):
+    if sessionName == previewingSession():
+        return
+    discussState = getDiscussState(sessionName, optional=True)
+    if reopen and not discussState:
+        updateSessionDiscussSheet(sessionName)
+        discussState = getDiscussState(sessionName)
+    if not discussState:
+        return
+
+    dNums = [discussNum] if discussNum else discussState['closed'].keys()
+    for dNum in dNums:
+        discussNumStr = str(dNum)
+        closed = discussState['closed'].get(discussNumStr,0)
+        if not closed and not reopen:
+            discussState['closed'][discussNumStr] = 1
+            setDiscussState(sessionName, discussState)
+            notifyDiscussUsers(sessionName, discussNum, '', 'close', '', '', '')
+        elif closed and reopen:
+            discussState['closed'][discussNumStr] = 0
+            setDiscussState(sessionName, discussState)
+            notifyDiscussUsers(sessionName, discussNum, '', 'open', '', '', '')
+
+def flagPost(sessionName, discussNum, postTeam, postNumber, posterId, flaggerId, unflag=False):
+    discussState = getDiscussState(sessionName)
+    flagged = discussState['flagged']
+    teamSettings = getTeamSettings(sessionName, discussNum=discussNum)
+    teamAliases = teamSettings.get('aliases') or {}
+    posterId = unaliasDiscussUser(posterId, sessionName, teamSettings)
+
+    flagLabel = postLabel(discussNum, postTeam, postNumber)
+
+    if unflag:
+        if posterId in flagged and flagLabel in flagged[posterId]:
+            del flagged[posterId][flagLabel]
+            if not flagged[posterId].keys():
+                del flagged[posterId]
+    else:
+        if posterId not in flagged:
+            flagged[posterId] = {}
+        elif flaggerId in flagged[posterId].values():
+            raise Exception('You have already flagged a post by this user')
+
+        if flagLabel in flagged[posterId]:
+            raise Exception('Post already flagged')
+        flagged[posterId][flagLabel] = flaggerId
+        discussState['flagCount'][posterId] = discussState['flagCount'].get(posterId,0) + 1
+
+        notifyMsg = 'Post by user '+posterId+' flagged by user '+flaggerId+' in session '+sessionName+', Discussion '+str(discussNum);
+        if postTeam:
+            notifyMsg += ' team '+postTeam
+        notify_admin(notifyMsg, msgType='flagged')
+    setDiscussState(sessionName, discussState)
+
+def deletePost(prevValue, colValue, userId, userName, adminUser, sessionName, discussNum):
+    # Delete post
+    newValue = prevValue
+    userPosts = splitPosts(prevValue)
+    dcomps = colValue.split(':')
+    if len(dcomps) != 3 or not dcomps[2].isdigit():
+        raise Exception('Invalid delete post entry %s' % dcomps)
+    teamName = dcomps[1]
+    postNumber = int(dcomps[2])
+
+    flagLabel = postLabel(discussNum, teamName, postNumber)
+    discussState = getDiscussState(sessionName)
+    flagged = discussState['flagged']
+    if userId in flagged and flagLabel in flagged[userId]:
+        if adminUser:
+            # Unflag post before deleting
+            flagPost(sessionName, discussNum, teamName, postNumber, userId, TESTUSER_ID, unflag=True)
+        else:
+            raise Exception('Cannot delete flagged post in session '+sessionName)
+
+    deleteLabel = '%s:%03d:' % (teamName, postNumber)
+    for j in range(len(userPosts)):
+        if userPosts[j].startswith(deleteLabel):
+            # "Delete" post by prefixing it with (deleted)
+            comps = userPosts[j].split(' ')
+            userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
+            newValue = joinPosts(userPosts)
+            userDiscussRange(sessionName, discussNum, userId, userName, increment='deleteCount')
+            break
+    return newValue
+
+def userDiscussRange(sessionName, discussNum, userId, userName, increment=''):
+    # Return user discuss range containing JSON lastRead, postCount, deleteCount, creating it if needed
+    discussNumStr = str(discussNum)
+    axsSheet = getSheet(DISCUSS_SHEET)
+    if not axsSheet:
+        raise Exception('Sheet '+DISCUSS_SHEET+' not found')
+
+    axsSession = '_'+sessionName
+    axsRowOffset = 2
+    axsNameCol = 1
+    axsIdCol = 2
+
+    axsColumn = indexColumns(axsSheet).get(axsSession)
+    if not axsColumn:
+        raise Exception('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET)
+
+    axsRow = lookupRowIndex(userId, axsSheet)
+    if not axsRow:
+        # Add discuss access row for user
+        axsRows = axsSheet.getLastRow()
+        if axsRows > axsRowOffset:
+            axsNames = axsSheet.getSheetValues(1+axsRowOffset, axsNameCol, axsRows-axsRowOffset, 1)
+            axsIds = axsSheet.getSheetValues(1+axsRowOffset, axsIdCol, axsRows-axsRowOffset, 1)
+            temRow = axsRowOffset + locateNewRow(userName or '#'+userId, userId, axsNames, axsIds)
+        else:
+            temRow = axsRowOffset + 1
+        axsSheet.insertRowBefore(temRow, keyValue=userId)
+        axsSheet.getRange(temRow, axsNameCol, 1, 1).setValue(userName or '#'+userId)
+        axsRow = lookupRowIndex(userId, axsSheet)
+    axsRange = axsSheet.getRange(axsRow, axsColumn, 1, 1)
+    userEntry = axsRange.getValue()
+    if not userEntry:
+        userEntry = '{"lastRead": {}, "postCount": {}, "deleteCount": {}}'
+        axsRange.setValue(userEntry)
+    if increment:
+        userDiscuss = json.loads(userEntry)
+        userDiscuss[increment][discussNumStr] = userDiscuss[increment].get(discussNumStr,0) + 1
+        axsRange.setValue(json.dumps(userDiscuss))
+    return axsRange
+
+def accessDiscussion(sessionName, discussNum, userId, userName, postTeam='', noread=False):
     # Returns lastReadPost number 
     # If noread, do not update read state
 
+    discussNumStr = str(discussNum)
     axsSession = '_'+sessionName
     axsRowOffset = 2
     axsNameCol = 1
@@ -4772,37 +4969,30 @@ def accessDiscussion(sessionName, discussNum, userId, name, postTeam='', noread=
             raise Exception('Column '+axsSession+' not found in sheet '+DISCUSS_SHEET)
 
         discussState = getDiscussState(sessionName)
-        lastPost = numericKeys(discussState['lastPost']).get(discussNum,{})
+        lastPost = discussState['lastPost'].get(discussNumStr,{})
         teamLastPost = lastPost.get(postTeam, 0)
 
-        axsRow = lookupRowIndex(userId, axsSheet)
-        if not axsRow:
-            # Add discuss access row for user
-            axsRows = axsSheet.getLastRow()
-            if axsRows > axsRowOffset:
-                axsNames = axsSheet.getSheetValues(1+axsRowOffset, axsNameCol, axsRows-axsRowOffset, 1)
-                axsIds = axsSheet.getSheetValues(1+axsRowOffset, axsIdCol, axsRows-axsRowOffset, 1)
-                temRow = axsRowOffset + locateNewRow(name or '#'+userId, userId, axsNames, axsIds)
-            else:
-                temRow = axsRowOffset + 1
-            axsSheet.insertRowBefore(temRow, keyValue=userId)
-            axsSheet.getRange(temRow, axsNameCol, 1, 1).setValues([[name or '#'+userId]])
-            axsRow = lookupRowIndex(userId, axsSheet)
-
-        axsRange = axsSheet.getRange(axsRow, axsColumn, 1, 1)
-        lastReadPostsAll = json.loads(axsRange.getValue() or '{}')
-        lastReadPosts = numericKeys(lastReadPostsAll).get(discussNum, {})
+        axsRange = userDiscussRange(sessionName, discussNum, userId, userName)
+        userDiscussEntry = axsRange.getValue()
+        if not userDiscussEntry:
+            raise Exception('Internal error: No discuss entry found for user '+userId+' in discussion '+str(discussNum)+' for session '+sessionName)
+        userDiscuss = json.loads(userDiscussEntry)
+        lastReadPostsAll = userDiscuss['lastRead']
+        lastReadPosts = lastReadPostsAll.get(discussNumStr, {})
         teamLastReadPost = lastReadPosts.get(postTeam, 0)
         if not noread and teamLastReadPost < teamLastPost:
             lastReadPosts[postTeam] = teamLastPost
-            lastReadPostsAll[discussNum] = lastReadPosts;
-            axsRange.setValue(json.dumps(lastReadPostsAll))
+            lastReadPostsAll[discussNumStr] = lastReadPosts;
+            axsRange.setValue(json.dumps(userDiscuss))
         return teamLastReadPost
     except Exception, excp:
         if Settings['debug']:
             import traceback
             traceback.print_exc()
-        raise Exception('Error in discussion access for session '+sessionName+', discussion '+str(discussNum)+': '+str(excp))
+        raise Exception('Error in discussion access for session '+sessionName+', discussion '+discussNumStr+': '+str(excp))
+
+def postLabel(discussNum, teamName, postNumber):
+    return ':'.join([str(discussNum), teamName, str(postNumber)])
 
 def splitPosts(posts):
     return ('\n\n\n'+posts.strip()).split('\n\n\nPost:')[1:]
@@ -4810,8 +5000,10 @@ def splitPosts(posts):
 def joinPosts(posts):
     return 'Post:' + '\n\n\nPost:'.join(posts)
 
-def makePost(postTeam, postCount, postText):
+def makePost(postTeam, postCount, postText, special=False):
     postText = postText.strip()
+    if not special:
+        postText = postText.lstrip('|')   # Strip preceding | to allow special prefixes
     while '\n\n\n' in postText:
         postText = postText.replace('\n\n\n', '\n\n')
     curDate = createDate()
@@ -4825,41 +5017,53 @@ def appendPosts(prevPosts, newPost, postCount):
         retValue += '\n'
     return retValue
 
+DISCUSS_COL_FMT = 'discuss%03d'
+TEAM_NAME_RE = re.compile(r'^([^\d])*(\d+)$')
+def teamSortKey(name):
+    tmatch = TEAM_NAME_RE.match(name)
+    return '%s%04d' % (tmatch.group(1), int(tmatch.group(2))) if tmatch else name
+
 def getDiscussPosts(sessionName, discussNum, userId, name, postTeams=[], noread=False):
-    # Return sorted list of discussion posts [ teamNames, [ [userTeam, postNum, userId, userName, postTime, unreadFlag, postText] ] ]
+    # Return sorted list of discussion posts [ closedFlag, teamNames, [ [userTeam, postNum, userId, userName, postTime, unreadFlag, postText] ] ]
     # If noread, do not update read stats
-    sessionEntries = lookupValues(sessionName, ['attributes'], INDEX_SHEET)
+    discussNumStr = str(discussNum)
+    sessionEntries = lookupValues(sessionName, ['adminPaced', 'attributes'], INDEX_SHEET)
+    adminPaced = sessionEntries.get('adminPaced')
     sessionAttributes = json.loads(sessionEntries['attributes'])
-    discussSlides = sessionAttributes['discussSlides']
-    discussProps = discussSlides[discussNum-1]
 
-    teamSettings = getTeamSettings(sessionName)
+    if not getSheet(sessionName+'_discuss'):
+        return [adminPaced, [''], []]
 
-    if discussProps.get('team'):
+    teamSettings = getTeamSettings(sessionName, discussNum=discussNum)
+
+    if teamSettings:
         teamNames = teamSettings.get('members',{}).keys()
-        teamNames.sort()
+        teamNames.sort(key=teamSortKey)
     else:
         teamNames = ['']
+
+    discussState = getDiscussState(sessionName)
+    closedFlag = discussState['closed'].get(discussNumStr,0)
 
     if userId == TESTUSER_ID:
         # Retrieve posts for all teams, if no team specified
         postTeams = postTeams or teamNames
     else :
-        userTeam = getUserTeam(sessionName, userId) if discussProps.get('team') else ''
+        userTeam = getUserTeam(sessionName, userId, discussNum=discussNum)
         if not postTeams:
             postTeams = [ userTeam ]
         elif postTeams != [ userTeam ]:
-            raise Exception('User '+userId+' not allowed to access discussion '+str(discussNum)+' for team '+userTeam)
+            raise Exception('User '+userId+' not allowed to access discussion '+discussNumStr+' for team '+userTeam)
     
     sheetName = sessionName+'_discuss'
     discussSheet = getSheet(sheetName)
     if not discussSheet:
-        return [postTeams, []]
+        return [closedFlag, postTeams, []]
 
     colIndex = indexColumns(discussSheet)
-    axsColName = 'discuss%03d' % discussNum
+    axsColName = DISCUSS_COL_FMT % discussNum
     if not colIndex.get(axsColName):
-        return [postTeams, []]
+        return [closedFlag, postTeams, []]
 
     lastReadPosts = {}
     # Last read post
@@ -4875,23 +5079,39 @@ def getDiscussPosts(sessionName, discussNum, userId, name, postTeams=[], noread=
         nameValue = nameVals[j]
         if not idValue or (idValue.startswith('_') and idValue != TESTUSER_ID):
             continue
-        idValue, nameValue = aliasDiscussUser(idValue, nameValue, sessionName, teamSettings, selfId=userId)
+        flaggedIdPosts = discussState['flagged'].get(idValue,{})
+        modIdValue, modNameValue = aliasDiscussUser(idValue, nameValue, sessionName, teamSettings, selfId=userId)
         userPosts = splitPosts(colVals[j])
         for k in range(len(userPosts)):
             pmatch = POST_NUM_RE.match(userPosts[k])
             if pmatch and pmatch.group(1) in postTeams:
                 teamName = pmatch.group(1)
                 postNumber = int(pmatch.group(2))
+                flagLabel = postLabel(discussNum, teamName, postNumber)
+                flaggerId = flaggedIdPosts.get(flagLabel)
+                if flaggerId:
+                    if userId != idValue and userId != flaggerId and userId != TESTUSER_ID:
+                        # Only display flagged posts to poster/flagger/admin
+                        continue
                 postTimeStr = pmatch.group(3)
                 unreadFlag = postNumber > lastReadPosts[teamName] if not noread else False
                 text = pmatch.group(4).strip()+'\n'
                 if text.startswith(DELETED_POST):
                     # Hide text from deleted messages
-                    text = DELETED_POST
-                allPosts.append([teamName, postNumber, idValue, nameValue, postTimeStr, unreadFlag, text])
+                    text = '('+DELETED_POST.strip('|')+')'
+                elif flaggerId:
+                    if userId == idValue or userId == TESTUSER_ID:
+                        # Display flagged text to poster and admin
+                        text = '('+FLAGGED_POST.strip('|')+') ' + text
+                    else:
+                        text = '('+FLAGGED_POST.strip('|')+')'
+                elif text.startswith(ANSWER_POST):
+                    # Prefix answer post
+                    text = '('+ANSWER_POST.strip('|')+') ' + text[len(ANSWER_POST):].lstrip()
+                allPosts.append([teamName, postNumber, modIdValue, modNameValue, postTimeStr, unreadFlag, text])
 
-    allPosts.sort()  #  (sorting by team name and then by post number)
-    return [postTeams, allPosts]
+    allPosts.sort(key=lambda x: (teamSortKey(x[0]), x[1]))  #  (sorting by team name and then by post number)
+    return [closedFlag, postTeams, allPosts]
 
 def addDiscussUser(sessionName, userId, userName=''):
     discussSheet = getSheet(sessionName+'_discuss')
@@ -4917,12 +5137,36 @@ def addDiscussUser(sessionName, userId, userName=''):
     discussSheet.insertRowBefore(temRow, keyValue=userId)
     discussSheet.getRange(temRow, discussNameCol, 1, 1).setValues([[temName]])
 
-def getTeamSettings(sessionName):
+def getTeamStatus(sessionName):
+    sessionEntries = lookupValues(sessionName, ['attributes'], INDEX_SHEET)
+    sessionAttributes = json.loads(sessionEntries['attributes'])
+    discussSlides = sessionAttributes['discussSlides']
+    teamIndices = []
+    if discussSlides:
+        for discussNum in range(1+len(discussSlides)):
+            if getTeamSettings(sessionName, discussNum=discussNum, optional=True):
+                teamIndices.append(discussNum)
+    return teamIndices
+
+def getTeamSettings(sessionName, discussNum=0, optional=False):
+    if discussNum:
+        if optional and not getSheet(sessionName+'_discuss'):
+            return None
+        colValue = lookupValues(DISCUSS_ID, [DISCUSS_COL_FMT % discussNum], sessionName+'_discuss', listReturn=True, blankValues=True)[0]
+        if colValue != 'SESSIONTEAM':
+            return json.loads(colValue or '{}')
     return json.loads(lookupValues(sessionName, ['teams'], INDEX_SHEET, listReturn=True)[0] or '{}')
 
-def setTeamSettings(sessionName, members, aliases):
+def setTeamSettings(sessionName, members, aliases, responses=None, discussNum=0):
     teamSettings = {'members': members, 'aliases': aliases}
-    setValue(sessionName, 'teams', json.dumps(teamSettings, default=sliauth.json_default), INDEX_SHEET)
+    if responses:
+        teamSettings['responses'] = responses
+    if discussNum:
+        if not getSheet(sessionName+'_discuss'):
+            updateSessionDiscussSheet(sessionName)
+        setValue(DISCUSS_ID, DISCUSS_COL_FMT % discussNum, json.dumps(teamSettings, default=sliauth.json_default), sessionName+'_discuss')
+    else:
+        setValue(sessionName, 'teams', json.dumps(teamSettings, default=sliauth.json_default), INDEX_SHEET)
 
 def aliasDiscussUser(userId, userName, sessionName, teamSettings, selfId=''):
     teamAliases = teamSettings.get('aliases')
@@ -4931,32 +5175,197 @@ def aliasDiscussUser(userId, userName, sessionName, teamSettings, selfId=''):
         userName = teamAliases[userId]
         if selfId and userId == selfId:
             userName = 'self-' + userName
-        elif userId != TESTUSER_ID:
+        elif selfId != TESTUSER_ID:
             # Replace id with aliased ID (for normal users)
             userId = userName
 
     return userId, userName
 
-def notifyDiscussUsers(sessionName, discussNum, teamName, userId, userName, newPost):
+def unaliasDiscussUser(posterId, sessionName, teamSettings):
+    teamAliases = teamSettings.get('aliases') or {}
+    for key, value in teamAliases.items():
+        if value == posterId:
+            return key
+    return posterId
+
+def notifyDiscussUsers(sessionName, discussNum, teamName, postMsg, userId, userName, newPost):
     if not Global.discussPostCallback:
         return
     try:
-        teamSettings = getTeamSettings(sessionName)
-        if teamName:
+        teamSettings = getTeamSettings(sessionName, discussNum=discussNum, optional=True)
+        if teamSettings and teamName:
             teamIds = ','.join(teamSettings['members'][teamName])
         else:
             teamIds = ''
 
-        userId, userName = aliasDiscussUser(userId, userName, sessionName, teamSettings)
-        Global.discussPostCallback(sessionName, discussNum, teamIds, teamName, userId, userName, newPost)
+        if teamSettings and userId:
+            userId, userName = aliasDiscussUser(userId, userName, sessionName, teamSettings)
+
+        discussState = getDiscussState(sessionName)
+        closed = discussState['closed'].get(str(discussNum),0)
+
+        Global.discussPostCallback(sessionName, discussNum, closed, teamIds, teamName, postMsg, userId, userName, newPost)
     except Exception, excp:
-        print('sdproxy: notifyDiscussUsers ERROR %s-%s, %s %s: %s' % (sessionName, discussNum, teamName, userId, excp), file=sys.stderr)
+        if Settings['debug']:
+            import traceback
+            traceback.print_exc()
+        print('sdproxy: notifyDiscussUsers ERROR %s-%s, %s %s %s %s: %s' % (sessionName, discussNum, closed, teamName, postMsg, userId, excp), file=sys.stderr)
+
+def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min_size=3, composition='', teamNames=[]):
+    if fromSession.startswith('_'):
+        if fromSession == '_roster':
+            # Assigned teams from roster
+            userTeams = lookupRoster('team')
+            userNames = lookupRoster('name')
+        else:
+            # Assigned teams from response in current session
+            userTeams = getRowMap(sessionName, 'q'+str(fromQuestion)+'_response', regular=True)
+            userNames = getRowMap(sessionName, 'name', regular=True)
+
+        members = {}
+        for temId in userTeams.keys():
+            teamName = userTeams[temId]
+            if teamName in members:
+                members[teamName].append(temId)
+            else:
+                members[teamName] = [temId]
+        aliases = None
+        explanations = None
+        ranks = None
+
+    elif fromSession and not fromQuestion:
+        # Copy teams from previous session
+        teamSettings = getTeamSettings(fromSession)
+        members = teamSettings.get('members')
+        aliases = teamSettings.get('aliases') if alias else None
+        if not members:
+            raise Exception('Unable to generate team for session '+sessionName+' from session '+fromSession)
+        explanations = None
+        ranks = None
+
+    else:
+        # Ranked/randomized teams from response in previous or current session
+        fromSession = fromSession or sessionName
+        userNames = getRowMap(fromSession, 'name', regular=True)
+        sources = getRowMap(fromSession, 'source', regular=True)
+        responses = getRowMap(fromSession, 'q'+str(fromQuestion)+'_response', regular=True)
+        explanations = getRowMap(fromSession, 'q'+str(fromQuestion)+'_explain', regular=True, optional=True) or {}
+
+        statusMap = lookupRoster(STATUS_HEADER)
+        user_ranks = []
+        for user in responses.keys():
+            if sources[user] == 'interact':
+                # Skip non-browser responses
+                continue
+            respVal = responses[user]
+            if not isinstance(respVal, (str, unicode)):
+                respVal = str(respVal)
+            if respVal and user in statusMap and not statusMap[user]:
+                # Include only non-blocked and non-dropped users in roster
+                user_ranks.append([user, respVal])
+
+        # Generate team names
+        props = sliauth.team_props(user_ranks, count=count, min_size=min_size, composition=composition, alias=alias, team_names=teamNames, random_seed=fromSession)
+
+        members = props['members']
+        aliases = props['aliases'] if alias else None
+        ranks = props['ranks']
+
+    return members, aliases, ranks, explanations
+
+def seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanations, userNames):
+    # Ranked session setup
+    teamNameList = members.keys()
+    teamNameList.sort()
+    updateSessionDiscussSheet(sessionName)
+    discussState = getDiscussState(sessionName)
+    if not discussState:
+        raise Exception('Discussion not setup for session '+sessionName)
+
+    closeDiscussion(sessionName, discussNum, reopen=True)
+    
+    for iteam in range(len(teamNameList)):
+        teamName = teamNameList[iteam]
+        teamRanks = ranks[teamName]
+        for imem in range(len(teamRanks)):
+            teamUserId, rankValue = teamRanks[imem]
+            if not rankValue:
+                continue
+            colName = DISCUSS_COL_FMT % discussNum
+            try:
+                explanation = sliauth.str_encode(explanations.get(teamUserId,''))
+                postText = ANSWER_POST + ' ' + str(rankValue)
+                if explanation.strip():
+                    postText += ': ' + explanation
+                colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText, special=True)
+                addDiscussUser(sessionName, teamUserId, userNames[teamUserId])
+                setValue(teamUserId, colName, colValue, sessionName+'_discuss')
+            except Exception, excp:
+                print('sdproxy.seedDiscuss: Error in team seed post for user %s in session %s, discussion %s: %s' % (teamUserId, sessionName, discussNum, excp), file=sys.stderr)
+
+def finalizeSessionTeam(sessionName, members, aliases, ranks, explanations, delayed=False):
+
+    sessionEntries = lookupValues(sessionName, ['attributes'], INDEX_SHEET)
+    sessionAttributes = json.loads(sessionEntries['attributes'])
+    discussSlides = sessionAttributes['discussSlides']
+
+    setTeamSettings(sessionName, members, aliases)
+
+    if  delayed:
+        # Delayed setup; initialize team column (done separately for session=_roster/_setup/sessionname)
+        for teamName, teamUserIds in members.items():
+            for teamUserId in teamUserIds:
+                setValue(teamUserId, 'team', teamName, sessionName)
+
+            # Notify team membership
+            Global.teamSetupCallback(sessionName, ','.join(teamUserIds), teamName)
+
+    if discussSlides and len(discussSlides):
+        userNames = getRowMap(sessionName, 'name', regular=True)
+        for idisc in range(len(discussSlides)):
+            discussNum = idisc+1
+            if discussSlides[idisc].get('team') and not getTeamSettings(sessionName, discussNum=discussNum, optional=True):
+                setValue(DISCUSS_ID, DISCUSS_COL_FMT % discussNum, 'SESSIONTEAM', sessionName+'_discuss')
+                if discussSlides[idisc].get('seed') and ranks:
+                    seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanations, userNames)
+            notifyDiscussUsers(sessionName, discussNum, '', 'setup', '', '', '')
+
+def generateTeam(sessionName, questionNum, params):
+    # params = {discussNum:, alias:, count:, minSize:, composition:, sessionTeam:, seedDiscuss:}
+    if sessionName == previewingSession():
+        # No team creation during preview
+        return
+
+    print('sdproxy.generateTeam:', sessionName, questionNum, params, file=sys.stderr)
+
+    discussNum = params.get('discussNum')
+
+    if discussNum and getTeamSettings(sessionName, discussNum=discussNum, optional=True):
+        raise Exception('Discuss team already set up for session %s; reset session to re-create team from discussion %s' % (sessionName, discussNum))
+
+    members, aliases, ranks, explanations = createTeam(sessionName, sessionName, questionNum, alias=params.get('alias',''), count=params.get('count'), min_size=params.get('minSize'), composition=params.get('composition'))
+
+    if not discussNum or params.get('sessionTeam'):
+        if getTeamSettings(sessionName):
+            raise Exception('Session team already set up for session %s; reset session to re-create session team from question %s' % (sessionName, questionNum))
+        finalizeSessionTeam(sessionName, members, aliases, ranks, explanations, delayed=True)
+
+    elif not getTeamSettings(sessionName, discussNum=discussNum, optional=True):
+        setTeamSettings(sessionName, members, aliases, discussNum=discussNum)
+
+        if params.get('seedDiscuss'):
+            userNames = getRowMap(sessionName, 'name', regular=True)
+            seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanations, userNames)
+        notifyDiscussUsers(sessionName, discussNum, '', 'teamgen', '', '', '')
+
 
 def setupSessionTeam(sessionName):
     # Return error message or null string
     if sessionName == previewingSession():
-        # No sheet creation during preview
+        # No team creation during preview
         return ''
+
+    print('sdproxy.setupSessionTeam:', sessionName, file=sys.stderr)
 
     prevTeamSetttings = getTeamSettings(sessionName)
     if len(prevTeamSetttings.keys()):
@@ -4965,10 +5374,9 @@ def setupSessionTeam(sessionName):
     sessionEntries = lookupValues(sessionName, ['adminPaced', 'dueDate', 'attributes'], INDEX_SHEET)
     adminPaced = sessionEntries.get('adminPaced')
     sessionAttributes = json.loads(sessionEntries['attributes'])
-    discussSlides = sessionAttributes['discussSlides']
     sessionTeam = sessionAttributes['sessionTeam']
 
-    if not sessionTeam:
+    if not sessionTeam or sessionTeam['session'] in ('_assign', '_generate'):
         return ''
 
     try:
@@ -4981,88 +5389,11 @@ def setupSessionTeam(sessionName):
             # Setup teams from previous session
             if not qno:
                 raise Exception('Must specify valid question number to create team for session '+sessionName+' from session '+sessionTeam['session'])
-        elif not sessionTeam['session'] or sessionTeam['session'] == '_setup':
-            # Setup teams from current session; ensure moving past slide with Team: or team=setup
-            if sessionTeam['slide'] >= adminPaced:
-                return ''
 
-        if sessionTeam['session'].startswith('_'):
-            if sessionTeam['session'] == '_roster':
-                # Assigned teams from roster
-                userTeams = lookupRoster('team')
-                userNames = lookupRoster('name')
-            else:
-                # Assigned teams from response in current session
-                userTeams = getRowMap(sessionName, 'q'+str(qno)+'_response', regular=True)
-                userNames = getRowMap(sessionName, 'name', regular=True)
+        members, aliases, ranks, explanations = createTeam(sessionName, sessionTeam['session'], qno, alias=sessionTeam.get('alias',''), count=sessionTeam.get('count'), min_size=sessionTeam.get('minsize'), composition=sessionTeam.get('composition'), teamNames=sessionTeam.get('names'))
 
-            members = {}
-            for temId in userTeams.keys():
-                teamName = userTeams[temId]
-                if teamName in members:
-                    members[teamName].append(temId)
-                else:
-                    members[teamName] = [temId]
-            aliases = None
-            explanations = None
-            ranks = None
-
-        else:
-            # Ranked/randomized teams from response in previous or current session
-            fromSession = sessionTeam['session'] or sessionName
-            userNames = getRowMap(fromSession, 'name', regular=True)
-            responses = getRowMap(fromSession, 'q'+str(qno)+'_response', regular=True)
-            explanations = getRowMap(fromSession, 'q'+str(qno)+'_explain', regular=True, optional=True) or {}
-
-            user_ranks = []
-            for user in responses.keys():
-                if responses[user]:
-                    user_ranks.append([user, responses[user]])
-
-            # Generate team names
-            props = sliauth.team_props(user_ranks, count=sessionTeam.get('count'), min_size=sessionTeam.get('minsize'), composition=sessionTeam.get('composition'), team_names=sessionTeam.get('names'), random_seed=fromSession)
-
-            members = props['members']
-            aliases = props['aliases'] if sessionTeam.get('alias') else None
-            ranks = props['ranks']
-
-        setTeamSettings(sessionName, members, aliases)
-
-        if sessionTeam['session'].startswith('_'):
-            return ''
-
-        # Ranked session setup
-        startDiscussion = (discussSlides and len(discussSlides)) and (not adminPaced or sessionEntries.get('dueDate') or sessionAttributes['params']['features'].get('live_discussion'))
-
-        teamNameList = members.keys()
-        teamNameList.sort()
-        if startDiscussion:
-            updateDiscussSheet(sessionName)
-            discussState = getDiscussState(sessionName)
-            if not discussState:
-                raise Exception('Discussion not setup for session '+sessionName)
-
-        for iteam in range(len(teamNameList)):
-            teamName = teamNameList[iteam]
-            teamRanks = ranks[teamName]
-            for imem in range(len(teamRanks)):
-                teamUserId, rankValue = teamRanks[imem]
-                if not sessionTeam['session']:
-                    # Save per user team entry (already saved for session=_roster/_setup/sessionname)
-                    setValue(teamUserId, 'team', teamName, sessionName)
-
-                if startDiscussion:
-                    for idisc in range(len(discussSlides)):
-                        if discussSlides[idisc].get('team') and discussSlides[idisc].get('seed'):
-                            # Make initial discussion posts with response+explanation
-                            discussNum = idisc + 1
-                            colName = 'discuss%03d' % discussNum
-                            colValue, _ = postDiscussEntry(sessionName, discussNum, teamName, '', str(rankValue)+' '+str(explanations[teamUserId]))
-                            addDiscussUser(sessionName, teamUserId, userNames[teamUserId])
-                            setValue(teamUserId, colName, colValue, sessionName+'_discuss')
-
-            notifyDiscussUsers(sessionName, 0, teamName, '', '', '')
-
+        finalizeSessionTeam(sessionName, members, aliases, ranks, explanations)
+        
     except Exception, excp:
         if Settings['debug']:
             import traceback
@@ -5074,13 +5405,14 @@ def setupSessionTeam(sessionName):
     return ''
 
 
-def updateDiscussSheet(sessionName):
+def updateSessionDiscussSheet(sessionName):
     # Create/update session_discuss sheet (which will contain rows for all users who have posted)
     if sessionName == previewingSession():
         # No sheet creation during preview
         return None
 
-    sessionEntries = lookupValues(sessionName, ['dueDate', 'gradeDate', 'attributes'], INDEX_SHEET)
+    sessionEntries = lookupValues(sessionName, ['adminPaced', 'dueDate', 'gradeDate', 'attributes'], INDEX_SHEET)
+    adminPaced = sessionEntries.get('adminPaced')
     sessionAttributes = json.loads(sessionEntries['attributes'])
     discussSlides = sessionAttributes['discussSlides']
 
@@ -5127,19 +5459,23 @@ def updateDiscussSheet(sessionName):
         axsTopRow = lookupRowIndex(DISCUSS_ID, axsSheet)
         if not axsTopRow:
             raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
-        axsTopEntry = {'closed': {}, 'flagged': {}, 'lastPost': {}}
+        axsTopEntry = {'closed': {}, 'flagged': {}, 'flagCount': {}, 'lastPost': {}}
 
         axsSheet.getRange(axsTopRow, axsColumn, 1, 1).setValue(json.dumps(axsTopEntry))
         
     discussColIndex = indexColumns(discussSheet)
     appendHeaders = []
     for idisc in range(len(discussSlides)):
-        colHeader = 'discuss%03d' % (idisc+1)
+        discussNum = idisc + 1
+        colHeader = DISCUSS_COL_FMT % discussNum
         if discussColIndex.get(colHeader):
             continue
 
         # Append discussNNN column
         appendHeaders.append(colHeader)
+
+        if adminPaced:
+            closeDiscussion(sessionName, discussNum)
 
     if len(appendHeaders):
         discussSheet.appendColumns(appendHeaders)

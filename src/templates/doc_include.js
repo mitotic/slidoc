@@ -97,6 +97,7 @@ Sliobj.logSheet = null;
 Sliobj.renderDate = JS_RENDER_DATE;
 Sliobj.params = JS_PARAMS_OBJ;
 Slidoc.version = JS_PARAMS_OBJ.version || '';
+Slidoc.testUserId = Sliobj.params.testUserId;
 
 Sliobj.sitePrefix = Sliobj.params.siteName ? '/'+Sliobj.params.siteName : '';
 Sliobj.sessionName = Sliobj.params.paceLevel ? Sliobj.params.fileName : '';
@@ -2874,6 +2875,9 @@ document.onkeydown = function(evt) {
 	}
     }
 
+    if (evt.altKey || evt.ctrlKey || evt.metaKey) // Handle alt-key or ctrl-key or meta-key modified input normally
+	return;
+
     if (!(evt.keyCode in Key_codes))
 	return;
 
@@ -3041,6 +3045,10 @@ Sliobj.eventReceiver = function(eventMessage) {
 	var pluginName = comps[0];
 	var pluginMethodName = comps[1];
 
+	if (pluginName == 'Discuss' && pluginMethodName == 'postNotify' && eventArgs.length >= 3 && eventArgs[2] == 'teamgen') {
+	    ///teamGenView(false); // Need to allow reanswer even after team generation
+	}
+
 	var slideNum = (comps.length > 2) ? parseInt(comps[2]) : 0; // '' slideNum => session plugin
 	var slide_id = slideNum ? Slidoc.makeSlideId(slideNum) : '';
 	try {
@@ -3051,7 +3059,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 
      } else if (adminSender && eventName == 'TeamSetup') {
 	 // Team setup
-	 if (Sliobj.session)
+	 if (Sliobj.session && getUserId() != Sliobj.params.testUserId)
 	     Sliobj.session.team = eventArgs[0];
 
     } else if (adminSender && eventName == 'ReloadPage') {
@@ -3074,12 +3082,16 @@ Sliobj.eventReceiver = function(eventMessage) {
 	    Sliobj.closePopup(null, eventName);
 	    
     } else if (adminSender && eventName == 'AdminPacedForceAnswer') {
-	if (controlledPace() && !Sliobj.session.questionsAttempted[eventArgs[0]]) {
-	    // Force answer to unanswered question
-	    var slide_id = eventArgs[1];
-	    var ansElem = document.getElementById(slide_id+'-answer-click');
-	    if (ansElem)
-		Slidoc.answerClick(ansElem, slide_id, 'controlled');
+	if (controlledPace()) {
+	    if (!Sliobj.session.questionsAttempted[eventArgs[0]]) {
+		// Force answer to unanswered question
+		var slide_id = eventArgs[1];
+		var ansElem = document.getElementById(slide_id+'-answer-click');
+		if (ansElem)
+		    Slidoc.answerClick(ansElem, slide_id, 'controlled');
+	    }
+	} else {
+	    sessionReload('Session has been modified. Reload page?')
 	}
     } else if (adminSender && eventName == 'AdminPacedAdvance') {
 	if (controlledPace()) {
@@ -3204,23 +3216,25 @@ function toggleInteractMode() {
 	interactDispElem.classList.add('slidoc-interact-suspend');
 }
 
-function enableInteract(active, slideId) {
+function enableInteract(active, slideId, forceDisable) {
     Slidoc.log('enableInteract:', active, slideId, Sliobj.interactiveSlide, Sliobj.session.lastSlide);
-    var lastSlideId = getVisibleSlides()[Sliobj.session.lastSlide-1].id;
+    var lastSlide = getVisibleSlides()[Sliobj.session.lastSlide-1];
+    var lastSlideId = lastSlide ? lastSlide.id : null;
     if (slideId && slideId != lastSlideId) // Obsolete async call
 	return;
 
     var interactDispElem = document.getElementById('slidoc-interact-display');
     if (!active) {
+	if (Sliobj.interactiveSlide || forceDisable)
+	    GService.requestWS('interact', ['end', '', null, ''], interactCallback);
 	if (Sliobj.interactiveSlide) {
 	    Sliobj.interactiveSlide = '';
 	    if (interactDispElem)
 		interactDispElem.classList.add('slidoc-interact-suspend');
-	    GService.requestWS('interact', ['end', '', null, ''], interactCallback);
 	}
 	return;
     }
-    if (!isController() || Sliobj.session.submitted || Sliobj.interactiveSlide)
+    if (!isController() || Sliobj.session.submitted || Sliobj.interactiveSlide || !lastSlideId)
 	return;
 
     var qattrs = getQuestionAttrs(lastSlideId);
@@ -3238,6 +3252,19 @@ function enableInteract(active, slideId) {
 
     // Note: Closing websocket will disable interactivity
 }
+
+Slidoc.getDiscussNum = function (slideId) {
+    slideId = slideId || Slidoc.getCurrentSlideId();
+    if (!Sliobj.params.discussSlides)
+	return 0;
+    var slideNum = Slidoc.getSlideNumber(slideId);
+    for (var j=0; j<Sliobj.params.discussSlides.length; j++) {
+	if (Sliobj.params.discussSlides[j].slide == slideNum)
+	    return j+1;
+    }
+    return 0;
+}
+
 
 function interactCallback(retObj, errMsg) {
     Slidoc.log('interactCallback:', retObj, errMsg);
@@ -3387,6 +3414,13 @@ Slidoc.PluginManager.remoteCall = function (pluginName, pluginMethod, callback) 
     for (var j=3; j<arguments.length; j++)
 	data.push(arguments[j]);
     GService.requestWS('plugin', data, callback);
+}
+
+Slidoc.PluginManager.teamStatusValue = function(teamStatus) {
+    if (teamStatus)
+	Sliobj.teamStatus = teamStatus;
+    else
+	return Sliobj.teamStatus;
 }
 
 Slidoc.PluginManager.getCurrentSlide = function() {
@@ -4111,14 +4145,14 @@ Slidoc.showDiscuss = function() {
     }
 }
 
-function countUnread(sessionDiscuss) {
+function countUnread(sessionDiscussTeams) {
     var totalPosts = 0;
     var unreadPosts = 0;
-    var teamNames = Object.keys(sessionDiscuss);
+    var teamNames = Object.keys(sessionDiscussTeams);
     teamNames.sort(cmp);
     for (var j=0; j<teamNames.length; j++) {
 	var teamName = teamNames[j];
-	var teamDiscuss = sessionDiscuss[teamName];
+	var teamDiscuss = sessionDiscussTeams[teamName];
 	totalPosts += (teamDiscuss[0] || 0);
 	unreadPosts += (teamDiscuss[1] || 0);
     }
@@ -4131,14 +4165,30 @@ function showDiscussCallback(retObj, errmsg) {
 	alert('Error in discussion status: '+(retObj?retObj.error : errmsg));
 	return;
     }
-    var allDiscussStats = retObj['discuss']['stats'];
+    var blocks = retObj['discuss']['blocks'];
+    var flagStats = retObj['discuss']['flags'];
+    var allDiscussStats = retObj['discuss']['sessions'];
     var sessionPaths = retObj['discuss']['paths'];
     var html = '<h3>Discussions menu</h3>\n';
+
+    var blockedIds = Object.keys(blocks);
+    if (blockedIds.length) {
+	blockedIds.sort();
+	html += 'Blocked users: <code>';
+	for (var j=0; j<blockedIds.length; j++) {
+	    if (j)
+		html += ', ';
+	    html += blockedIds[j] + ' (' + blocks[blockedIds[j]] + ')';
+	}
+	html += '</code><br>\n';
+    }
+
     html += '<ul>\n';
     var sessionNames = Object.keys(allDiscussStats);
     sessionNames.sort();
     if (Sliobj.sessionName && Sliobj.sessionName in allDiscussStats) {
 	// Show discuss post breakdown (unread/total) for this session
+	var sessionFlags = flagStats[Sliobj.sessionName] || {};
 	var discussNums = Object.keys(allDiscussStats[Sliobj.sessionName]);
 	discussNums.sort(cmp);
 	for (var k=0;k<discussNums.length; k++) {
@@ -4146,11 +4196,13 @@ function showDiscussCallback(retObj, errmsg) {
 	    var sessionDiscuss = allDiscussStats[Sliobj.sessionName][discussNum];
 	    if (!sessionDiscuss)
 		continue;
-	    var postCounts = countUnread(sessionDiscuss);
+	    var postCounts = countUnread(sessionDiscuss.teams);
 	    var slideNum = Sliobj.params.discussSlides[discussNum-1].slide;
 	    var slideId = Slidoc.makeSlideId(slideNum);
 	    var headerElems = document.getElementsByClassName(slideId+'-header');
 	    var headerText = headerElems.length ? headerElems[0].textContent : 'Discussion '+discussNum;
+	    if (discussNum in sessionFlags)
+		headerText += ' &#9873;';
 	    var temtext = '('+(postCounts[1] ? '<b>'+postCounts[1]+'</b>/':'')+postCounts[0]+')';
 	    html += '<li><span class="slidoc-clickable" onclick="Slidoc.go('+ "'#" + slideId +"'"+');">'+headerText+'</span> '+temtext+'</li>\n';
 	}
@@ -4160,7 +4212,7 @@ function showDiscussCallback(retObj, errmsg) {
 	html += '<li>No discussions</li>\n';
     }
     for (var j=0; j<sessionNames.length; j++) {
-	// Show unread/total for all other session
+	// Show unread/total for all other sessions
 	var sessionName = sessionNames[j];
 	if (sessionName == Sliobj.sessionName)
 	    continue;
@@ -4172,14 +4224,17 @@ function showDiscussCallback(retObj, errmsg) {
 	    var sessionDiscuss = allDiscussStats[Sliobj.sessionName][discussNums[k]];
 	    if (!sessionDiscuss)
 		continue;
-	    var postCounts = countUnread(sessionDiscuss);
+	    var postCounts = countUnread(sessionDiscuss.teams);
 	    totalPosts += postCounts[0] || 0;
 	    unreadPosts += postCounts[1] || 0;
 	}
+	var sessionLabel = sessionName;
+	if (sessionName in flagStats)
+	    sessionLabel += ' &#9873;';
 	if (sessionPaths[sessionName])
-	    html += '<li><a class="slidoc-clickable" href=="'+sessionPaths[sessionName]+'">'+sessionName+'</a> ('+unreadPosts+'/'+totalPosts+')</li>\n';
+	    html += '<li><a class="slidoc-clickable" href=="'+sessionPaths[sessionName]+'">'+sessionLabel+'</a> ('+unreadPosts+'/'+totalPosts+')</li>\n';
 	else
-	    html += '<li><span ">'+sessionName+'</span> ('+unreadPosts+'/'+totalPosts+')</li>\n';
+	    html += '<li><span ">'+sessionLabel+'</span> ('+unreadPosts+'/'+totalPosts+')</li>\n';
     }
     html += '</ul>';
     if (Sliobj.closePopup)
@@ -4405,7 +4460,9 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.userFileKey = '';
     Sliobj.teamFileKey = '';
     Sliobj.sessionFileKey = '';
-    Sliobj.sessionDiscuss = null;
+    Sliobj.teamStatus = null;
+    Sliobj.teamGenerate = false;
+    Sliobj.discussStats = null;
     Sliobj.sheetsAvailable = null;
     Sliobj.voteDate = null;
 
@@ -4780,7 +4837,9 @@ function slidocSetupAux(session, feedback) {
 
     scoreSession(Sliobj.session);
 
-    var globalArgs = {Discuss: {gd_sheet_url: Sliobj.params.gd_sheet_url, testUserId: Sliobj.params.testUserId, discussSlides: Sliobj.params.discussSlides, stats: Sliobj.sessionDiscuss} };
+    var globalArgs = {Discuss: {gd_sheet_url: Sliobj.params.gd_sheet_url, discussSlides: Sliobj.params.discussSlides, stats: Sliobj.discussStats},
+		      Share: {discussSlides: Sliobj.params.discussSlides}
+		     };
 
     initSessionPlugins(Sliobj.session, globalArgs);
 
@@ -4805,7 +4864,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.resubmitAnswers)
 	toggleClass(true, 'slidoc-resubmit-view');
 
-    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length && (Sliobj.params.paceLevel < ADMIN_PACE || ('live_discussion' in Sliobj.params.features || Sliobj.session && Sliobj.session.submitted )) )
+    if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length)
 	toggleClass(true, 'slidoc-discuss-view');
 
     if (collapsibleAccess())
@@ -5611,6 +5670,8 @@ function displayAfterGrading() {
 }
 
 function allowReanswer() {
+    if (Sliobj.teamGenerate && !isController())
+	return true;
     return Sliobj.params.resubmitAnswers && !Sliobj.gradableState && Sliobj.delayScoring && !(Sliobj.session && Sliobj.session.submitted);
 }
 
@@ -6249,8 +6310,11 @@ function sessionGetPutAux(prevSession, callType, callback, retryOpts, result, re
 	    if (retStatus.info.teamFileKey)
 		Sliobj.teamFileKey = retStatus.info.teamFileKey;
 
+	    if (retStatus.info.teamStatus)
+		Sliobj.teamStatus = retStatus.info.teamStatus;
+
 	    if (retStatus.info.discussStats)
-		Sliobj.sessionDiscuss = retStatus.info.discussStats[Sliobj.sessionName] || {};
+		Sliobj.discussStats = retStatus.info.discussStats;
 
 	    if (retStatus.info.sheetsAvailable)
 		Sliobj.sheetsAvailable = retStatus.info.sheetsAvailable;
@@ -7015,7 +7079,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 	    if (ansElem && allowReanswer())
 		Slidoc.answerClick(ansElem, slide_id, 'choiceclick');
 	}
-	if (Sliobj.session && question_attrs.team == 'setup')
+	if (Sliobj.session && question_attrs.team == 'assign')
 	    Slidoc.sendEvent('', -1, 'LiveResponse', question_attrs.qnumber, elem.dataset.choice, Sliobj.session.displayName);
 
     } else if (choice_val) {
@@ -8362,6 +8426,9 @@ Slidoc.startPaced = function () {
     // Allow forward link only if no try requirement
     toggleClassAll(Sliobj.params.paceLevel < QUESTION_PACE, 'slidoc-forward-link-allowed', 'slidoc-forward-link');
 
+    if (isController())
+	enableInteract(false, null, true);
+
     if (autoInteract())
 	toggleInteractMode();
 
@@ -8639,9 +8706,15 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     var question_attrs = getQuestionAttrs(slide_id);  // New slide
     Sliobj.lastInputValue = null;
 
+    var reenableInteract = false;
     if (Sliobj.session && Sliobj.session.paced && slide_num > Sliobj.session.lastSlide) {
 	// Advancing to next (or later) paced slide; update session parameters
 	Slidoc.log('Slidoc.slideViewGo:B', slide_num, Sliobj.session.lastSlide);
+
+	if (isController() && Sliobj.teamGenerate && Sliobj.questionSlide && (Sliobj.questionSlide.team == 'assign' || Sliobj.questionSlide.team == 'generate') && (!Sliobj.teamStatus || !(0 in Sliobj.teamStatus)) ) {
+	    if (!window.confirm("Team generation expected for this question. Proceed without team generation?"))
+		return false;
+	}
 
 	if (Sliobj.questionSlide && !Sliobj.session.questionsAttempted[Sliobj.questionSlide.qnumber] && Sliobj.session.remainingTries) {
 	    // Current (not new) slide is question slide
@@ -8758,7 +8831,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 	    // Not last slide for test user in admin-paced; save lastSlide value
 	    sessionPut();
 	    if (Sliobj.interactiveMode)
-		enableInteract(true);
+		reenableInteract = true;
 	}
 
 	if (isController()) {
@@ -8785,10 +8858,25 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     }
 
     if (Sliobj.session && Sliobj.session.paced) {
+	var atLastSlide = (Sliobj.session.lastSlide == slide_num);
 	toggleClass(Sliobj.questionSlide && Sliobj.params.paceLevel == QUESTION_PACE && !Sliobj.scores.correctSequence, 'slidoc-incorrect-answer-state');
-	toggleClass(slide_num == Sliobj.session.lastSlide, 'slidoc-paced-last-slide');
+	toggleClass(atLastSlide, 'slidoc-paced-last-slide');
 	toggleClass(Sliobj.session.remainingTries, 'slidoc-expect-answer-state');
+
+	var generatable = Sliobj.questionSlide && (Sliobj.questionSlide.team == 'assign' || Sliobj.questionSlide.team == 'generate' || Slidoc.getDiscussNum(slide_id));
+	if (generatable && !Sliobj.gradableState && !Sliobj.session.submitted && ((controlledPace() && Sliobj.adminPaced && Sliobj.adminPaced == slide_num) || (isController() && atLastSlide))) {
+	    // Last question slide with team=assign|generate or Discuss:; allow reanswer
+	    teamGenView(true);
+	    if (Sliobj.interactiveMode)
+		toggleInteractMode();
+	} else {
+	    teamGenView(false);
+	}
     }
+
+    if (reenableInteract && !Sliobj.teamGenerate)
+	enableInteract(true);
+
     if (Sliobj.scores)
 	toggleClass(slide_num < Sliobj.scores.skipToSlide, 'slidoc-skip-optional-slide');
 
@@ -8851,6 +8939,17 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     window.scrollTo(0,1);
     if (inputElem && !Sliobj.swiping && !Sliobj.testOverride && !Sliobj.previewState) setTimeout(function(){inputElem.focus();}, 50);
     return false;
+}
+
+function teamGenView(activate) {
+    Sliobj.teamGenerate = !!activate;
+    toggleClass(Sliobj.teamGenerate, 'slidoc-teamgen-view');
+    if (Sliobj.teamGenerate) {
+	toggleClass(true, 'slidoc-resubmit-view');
+    } else {
+	if (!Sliobj.params.resubmitAnswers)
+	    toggleClass(false, 'slidoc-resubmit-view');
+    }
 }
 
 Slidoc.breakChain = function () {

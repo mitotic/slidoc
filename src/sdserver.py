@@ -401,11 +401,15 @@ def http_sync_post(url, params_dict=None):
     return result
 
 def discussStats(userId, sessionName=''):
+    nameMap = sdproxy.lookupRoster('name')
     stats = sdproxy.getDiscussStats(userId, sessionName)
     paths = {}
-    for session in stats:
+    for session in stats['sessions']:
         paths[session] = getSessionPath(session, site_prefix=True)
-    return {'stats': stats, 'paths': paths}
+    blocks = {}
+    for blockedId in stats['blocked']:
+        blocks[blockedId] = nameMap.get(blockedId, blockedId)
+    return {'sessions': stats['sessions'], 'paths': paths, 'flags': stats['flags'], 'blocks': blocks}
 
 def zipdir(dirpath, inner=False):
     basedir = dirpath if inner else os.path.dirname(dirpath)
@@ -1579,7 +1583,7 @@ class ActionHandler(BaseHandler):
 
         elif action in ('_roster',):
             overwrite = self.get_argument('overwrite', '')
-            nameMap = sdproxy.lookupRoster('name', userId=None)
+            nameMap = sdproxy.lookupRoster('name')
             if not nameMap or overwrite:
                 lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
                 self.render('newroster.html', site_name=Options['site_name'], overwrite=overwrite,
@@ -1591,6 +1595,7 @@ class ActionHandler(BaseHandler):
                         del nameMap[idVal]
                 lastMap = sdproxy.makeShortNames(nameMap)
                 firstMap = sdproxy.makeShortNames(nameMap, first=True)
+                statusMap = sdproxy.lookupRoster('status')
 
                 wheelNames = []
                 for idVal, shortName in firstMap.items():
@@ -1608,7 +1613,7 @@ class ActionHandler(BaseHandler):
 
                 self.render('roster.html', site_name=site_name, gradebook='gradebook' in SiteProps.get_site_menu(),
                              session_name='', qwheel_link=qwheel_link, qwheel_new=qwheel_new,
-                             name_map=nameMap, last_map=lastMap, first_map=firstMap)
+                             name_map=nameMap, last_map=lastMap, first_map=firstMap, status_map=statusMap)
 
         elif action == '_cache':
             self.write('<h2>Proxy cache and connection status</h2>')
@@ -3920,8 +3925,19 @@ class UserActionHandler(ActionHandler):
             self.browse(url_path, subsubpath, site_admin=admin_access, download=self.get_argument('download', ''))
             return
 
+        elif action in ('_user_discussclose',):
+            self.user_discussclose(self.get_argument('session',''), self.get_argument('discussion',''), userId,
+                                   reopen=self.get_argument('reopen',''), admin=admin_access)
+            return
+
         elif action in ('_user_discuss',):
             self.discuss_stats(sdproxy.TESTUSER_ID if admin_access else userId)
+            return
+
+        elif action in ('_user_flag',):
+            self.user_flag(self.get_argument('session',''), self.get_argument('discussion',''), self.get_argument('team',''),
+                           self.get_argument('post',''), self.get_argument('posterid'), userId, self.get_argument('unflag',''),
+                           admin=admin_access)
             return
 
         elif action in ('_user_message',):
@@ -3969,6 +3985,60 @@ class UserActionHandler(ActionHandler):
             retval['sessionProperties'] = sessionProperties
         else:
             retval['sessionProperties'] = None
+
+        self.set_header('Content-Type', 'application/json')
+        self.write( json.dumps(retval, default=sliauth.json_default) )
+
+    def user_discussclose(self, sessionName, discussNumStr, userId, reopen=False, admin=False):
+        errMsg = ''
+        if not admin:
+            errMsg = 'Only admin user can close discussion'
+        elif not discussNumStr.isdigit():
+            errMsg = 'Invalid discussion number: '+discussNumStr
+        else:
+            try:
+                sdproxy.closeDiscussion(sessionName, int(discussNumStr), reopen=reopen)
+            except Exception, excp:
+                if Options['debug']:
+                    import traceback
+                    traceback.print_exc()
+                errMsg = 'Error in closing/reopening discussion'
+                if admin:
+                    errMsg += ': '+str(excp)
+
+        if errMsg:
+             retval = {'result': 'error', 'error': errMsg}
+        else:
+            retval = {'result': 'success'}
+
+        self.set_header('Content-Type', 'application/json')
+        self.write( json.dumps(retval, default=sliauth.json_default) )
+
+    def user_flag(self, sessionName, discussNumStr, postTeam, postNumberStr, posterId, userId, unflag, admin=False):
+        flaggerId = sdproxy.TESTUSER_ID if admin else userId
+        errMsg = ''
+        if unflag and not admin:
+            errMsg = 'Only admin user can unflag'
+        elif not discussNumStr.isdigit():
+            errMsg = 'Invalid discussion number: '+discussNumStr
+        elif not postNumberStr.isdigit():
+            errMsg = 'Invalid post number: '+postNumberStr
+        else:
+            try:
+                sdproxy.flagPost(sessionName, int(discussNumStr), postTeam, int(postNumberStr), posterId, flaggerId, unflag)
+            except Exception, excp:
+                if Options['debug']:
+                    import traceback
+                    traceback.print_exc()
+                errMsg = 'Error in ' + ('unflagging' if unflag else 'flagging')
+                if admin:
+                    errMsg += ': '+str(excp)
+
+        if errMsg:
+             retval = {'result': 'error', 'error': errMsg}
+        else:
+            retval = {'result': 'success'}
+            retval['discussPosts'] = sdproxy.getDiscussPosts(sessionName, int(discussNumStr), flaggerId, '')
 
         self.set_header('Content-Type', 'application/json')
         self.write( json.dumps(retval, default=sliauth.json_default) )
@@ -4609,17 +4679,21 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                         conn.flushEventBuffer()
 
     @classmethod
-    def postNotify(cls, sessionName, discussNum, teamIds, teamName, userId, userName, discussPost):
+    def teamNotify(cls, sessionName, teamIds, teamName):
+        # Broadcast team setup event to team+admin users
         if Options['debug']:
-            print >> sys.stderr, 'DEBUG: sdserver.postNotify: ', sessionName, discussNum, teamIds, teamName, userId, userName, discussPost[:40]
+            print >> sys.stderr, 'DEBUG: sdserver.teamNotify: ', sessionName, teamIds, teamName
+        sessionPath = getSessionPath(sessionName, site_prefix=True)
+        cls.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, True, True, [teamIds, -1, 'TeamSetup', [teamName]])
+
+    @classmethod
+    def postNotify(cls, sessionName, discussNum, closed, teamIds, teamName, postMsg, userId, userName, discussPost):
+        # Broadcast postNotify event to team+admin users
+        if Options['debug']:
+            print >> sys.stderr, 'DEBUG: sdserver.postNotify: ', sessionName, discussNum, closed, teamIds, teamName, postMsg, userId, userName, discussPost[:40]
         sessionPath = getSessionPath(sessionName, site_prefix=True)
 
-        if not discussNum:
-            # Broadcast team setup event to team users
-            cls.sendEvent(sessionPath[1:], '', sdproxy.ADMIN_ROLE, True, False, [teamIds, -1, 'TeamSetup', [teamName]])
-        else:
-            # Broadcast postNotify event to team+admin users
-            cls.sendEvent(sessionPath[1:], userId, sdproxy.ADMIN_ROLE, True, True, [teamIds, -1, 'Discuss.postNotify', [userName, teamName, discussNum, discussPost]])
+        cls.sendEvent(sessionPath[1:], userId, sdproxy.ADMIN_ROLE, True, True, [teamIds, -1, 'Discuss.postNotify', [discussNum, closed, postMsg, userName, teamName, discussPost]])
 
     def open(self, path=''):
         self.clientVersion = self.get_argument('version','')
@@ -4776,6 +4850,17 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
             elif method == 'discuss_stats':
                 retObj['discuss'] = discussStats(sdproxy.TESTUSER_ID if self.userRole == sdproxy.ADMIN_ROLE else self.pathUser[1])
+
+            elif method == 'generate_team':
+                # Args: questionNum, params
+                sdproxy.generateTeam(self.sessionName, args[0], args[1])
+                teamStatus = sdproxy.getTeamStatus(self.sessionName)
+                if teamStatus and len(teamStatus):
+                    retObj['teamStatus'] = teamStatus
+
+            elif method == 'get_seeds':
+                # Args: questionNum, discussNum
+                retObj.update( sdproxy.getDiscussionSeeds(self.sessionName, args[0], args[1]) )
 
             elif method == 'interact':
                 # args: action, slideId, questionAttrs, rollbackOption
@@ -5185,6 +5270,38 @@ class AuthStaticFileHandler(SiteStaticFileHandler, UserIdMixin):
         return abs_path
 
     
+class UnauthMessageHandler(BaseHandler):
+    def post(self):
+        temUser = self.get_argument('username', '')
+        dispName = self.get_argument('dispname', '')
+        accessToken = self.get_argument('token', '')
+        print >> sys.stderr, "UnauthMessageHandler.post", temUser
+
+        comps = accessToken.split(':')
+        if len(comps) != 3:
+            raise Exception('Invalid access token for user '+temUser)
+        temSiteName, sessionName, _ = comps
+        if not self.check_locked_token(temUser, accessToken, temSiteName, sessionName):
+            raise Exception('Invalid access token for user '+temUser)
+        userId = temUser
+        userRole = ''
+        choice = self.get_argument('choice', '')
+        number = self.get_argument('number', '')
+        message = self.get_argument('message', '')
+        source = self.get_argument('source', 'interact')
+        if choice:
+            message = choice + ' ' + message
+        elif number:
+            message = number + ' ' + message
+
+        status = WSHandler.processMessage(userId, userRole, dispName or userId, message, allStatus=True, source=source, adminBroadcast=True)
+        if not status:
+            status = 'Accepted answer: '+message
+
+        self.set_header('Content-Type', 'application/json')
+        self.write( json.dumps( {'result': 'success', 'status': status} ) )
+
+
 class AuthMessageHandler(BaseHandler):
     @tornado.web.authenticated
     def get(self, subpath=''):
@@ -5581,6 +5698,8 @@ def createApplication():
                       (pathPrefix+r"/(_user_browse/.+)", UserActionHandler),
                       (pathPrefix+r"/(_user_canceldelay)", UserActionHandler),
                       (pathPrefix+r"/(_user_discuss)", UserActionHandler),
+                      (pathPrefix+r"/(_user_discussclose)", UserActionHandler),
+                      (pathPrefix+r"/(_user_flag)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades)", UserActionHandler),
                       (pathPrefix+r"/(_user_grades/[-\w.%]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_message)", UserActionHandler),
@@ -5590,6 +5709,9 @@ def createApplication():
                       (pathPrefix+r"/(_user_twitterlink/[-\w.]+)", UserActionHandler),
                       (pathPrefix+r"/(_user_twitterverify/[-\w.]+)", UserActionHandler),
                       ]
+
+        if Options['server_url'].startswith('http://localhost:'):
+            site_handlers += [ (pathPrefix+r"/_testsend", UnauthMessageHandler) ]
 
         patterns= [   r"/(_(backup|cache|clear|freeze))",
                       r"/(_accept)",
@@ -6779,7 +6901,7 @@ def site_server_setup():
         update_session_settings(Global.site_settings)
 
     sdproxy.initProxy(gradebookActive=('gradebook' in SiteProps.get_site_menu()),
-                      accessCodeCallback=checkAccessCode, discussPostCallback=WSHandler.postNotify)
+                      accessCodeCallback=checkAccessCode, teamSetupCallback=WSHandler.teamNotify, discussPostCallback=WSHandler.postNotify)
 
     bak_dir = getBakDir(Options['site_name'])
     if bak_dir:

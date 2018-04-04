@@ -85,7 +85,8 @@ def get_roster(sheet_url, hmac_key, session_name):
     headers = retval['headers']
     if headers[1] != 'id' or headers[0] != 'name':
         sys.exit('Incorrect roster headers: '+str(headers))
-    return OrderedDict( (x[1], x[0]) for x in all_rows)
+    statusCol = 1 + headers.index('status')
+    return OrderedDict( (row[1], row[0]) for row in all_rows if row[statusCol-1] != 'dropped')
 
 def start_ioloop():
     IOLoop.current().start()

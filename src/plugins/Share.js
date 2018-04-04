@@ -1,5 +1,12 @@
 Share = {
     // Simple share plugin
+    global: {
+	initGlobal: function(shareParams) {
+	    Slidoc.log('Slidoc.Plugins.Share.initGlobal:', shareParams);
+	    this.shareParams = shareParams;
+	}
+    },
+
     init: function() {
 	///Slidoc.log('Slidoc.Plugins.Share.init:', this);
 	this.shareElem = document.getElementById(this.pluginId+'-sharebutton');
@@ -7,6 +14,14 @@ Share = {
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
 	this.finalizeElem = document.getElementById(this.pluginId+'-sharefinalize');
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
+	this.teamgenElem = document.getElementById(this.pluginId+'-teamgen-container');
+	this.teamgenOptionsElem = document.getElementById(this.pluginId+'-teamgen-options');
+	this.showorigElem = document.getElementById(this.pluginId+'-teamgen-showorig');
+	this.sessionTeamElem = document.getElementById(this.pluginId+'-teamgen-sessionteam');
+
+	this.adminUser = (this.userId == Slidoc.testUserId);
+	this.discussNum = Slidoc.getDiscussNum(this.slideId) || 0;
+	this.teamStatus = Slidoc.PluginManager.teamStatusValue();
 
 	var manage = (this.paced == Slidoc.PluginManager.ADMIN_PACE && (this.gradableState || this.testUser));
 	toggleClass(!manage, 'slidoc-shareable-hide', this.countElem);
@@ -24,6 +39,23 @@ Share = {
 	this.respErrors = null;
 	if (manage)
 	    this.detailsElem.style.display = 'none';
+
+	if (this.qattributes.team == 'assign')
+	    this.teamgenOptionsElem.style.display = 'none';
+	
+	if (this.qattributes.team == 'generate') {
+	    this.sessionTeamElem.checked = true;
+	    this.sessionTeamElem.disabled = 'disabled';
+	}
+
+	var sessionTeamGen = this.qattributes.team && (this.qattributes.team == 'assign' || this.qattributes.team == 'generate');
+	var discussTeamGen = this.discussNum && (this.qattributes.qtype == 'choice' || this.qattributes.qtype == 'number');
+	if (this.adminUser &&  (sessionTeamGen || discussTeamGen) && (!this.teamStatus || this.teamStatus.indexOf(this.discussNum) < 0))
+	    this.teamgenElem.style.display = null;  // Question slide with team=assign|generate or Discuss with choice/numeric, with team not yet generated
+
+	if (this.discussNum && this.teamStatus && this.teamStatus.indexOf(this.discussNum) >= 0)
+	    this.showorigElem.style.display = null;
+
 	this.responseTally = null;
     },
 
@@ -150,6 +182,34 @@ Share = {
 	}
     },
 
+
+    getSeeds: function() {
+	GService.requestWS('get_seeds', [this.qattributes.qnumber, this.discussNum], this.getSeedsCallback.bind(this));
+    },
+
+    getSeedsCallback: function (retObj, errMsg) {
+	Slidoc.log('Slidoc.Plugins.Share.getSeedsCallback:', retObj, errMsg);
+	if (retObj && retObj.result == 'success') {
+	    var qresp = 'q'+this.qattributes.qnumber+'_response';
+	    var qexp  = 'q'+this.qattributes.qnumber+'_explain';
+	    var result = {id: retObj.id};
+	    result[qresp] = retObj[qresp];
+	    result[qexp] = retObj[qexp];
+	    var retStatus =  {info: {responders: retObj.responders}};
+	    this.responseCallback(true, true, result, retStatus);
+	} else {
+	    var msg = '';
+	    if (retObj && retObj.error) {
+		msg += retObj.error;
+	    }
+	    if (errMsg) {
+		msg += errMsg;
+	    }
+	    alert('Error in getting seeds: '+msg);
+	    return;
+	}
+    },
+
     getResponses: function (display) {
 	Slidoc.log('Slidoc.Plugins.Share.getResponses:', display);
 	if (!this.qattributes.share || !window.GService)
@@ -161,11 +221,11 @@ Share = {
 	    this.nCols += 1;
 	var colPrefix = 'q'+this.qattributes.qnumber;
 	var gsheet = getSheet(this.sessionName);
-	gsheet.getShare(colPrefix, this.gradableState, this.responseCallback.bind(this, display));
+	gsheet.getShare(colPrefix, this.gradableState, this.responseCallback.bind(this, display, false));
     },
 
-    responseCallback: function (display, result, retStatus) {
-	Slidoc.log('Slidoc.Plugins.Share.responseCallback:', display, result, retStatus);
+    responseCallback: function (display, seedResponse, result, retStatus) {
+	Slidoc.log('Slidoc.Plugins.Share.responseCallback:', display, seedResponse, result, retStatus);
 	if (!result && !retStatus)
 	    return;
 	if (retStatus.error) {
@@ -301,11 +361,12 @@ Share = {
 		this.responseTally.push([prevResp, checkIfCorrect(prevResp), respCount, explanations, names]);
 
 	    Slidoc.log('Slidoc.Plugins.Share.responseCallback3:', this.responseTally.length, this.responseTally);
+	    var helpText = seedResponse ? 'Original responses' : 'Click on the bars to see explanations/ask follow-up questions';
 	    if (this.qattributes.qtype == 'number' && !this.qattributes.vote) {
 		// No voting; display sorted numeric responses
 		// (If voting, this display will be suppressed)
 		var lines = ['Numeric responses:\n'];
-		lines.push('<br><em class="slidoc-text-orange">Click on the bars to see explanations/ask follow-up questions</em>\n');
+		lines.push('<br><em class="slidoc-text-orange">'+helpText+'</em>\n');
 		lines.push('<p></p><ul>\n');
 		for (var j=0; j<this.responseTally.length; j++) {
 		    var percent = Math.round(100*this.responseTally[j][2]/nResp)+'%';
@@ -321,7 +382,7 @@ Share = {
 		// Display choice responses inline (both for voting and non-voting cases)
 		var chartHeader = document.getElementById(this.slideId+'-chart-header');
 		if (chartHeader) {
-		    chartHeader.innerHTML = '<em>Click on the bars to see explanations/ask follow-up questions</em>';
+		    chartHeader.innerHTML = '<em>'+helpText+'</em>';
 		    chartHeader.style.display = null;
 		}
 
@@ -502,6 +563,50 @@ Share = {
 	    elems[j].classList.remove('slidoc-plugin-Share-votebutton-clicked');
 	    elems[j].classList.add('slidoc-plugin-Share-votebutton-activated');
 	}
+    },
+
+    genTeam: function () {
+	Slidoc.log('Slidoc.Plugins.Share.genTeam:');
+	if (this.qattributes.team == 'assign') {
+	    var params = {composition: 'assign'};
+	} else {
+	    var seed = document.getElementById(this.pluginId+'-teamgen-seed').checked ? 1 : 0;
+	    var minSize = document.getElementById(this.pluginId+'-teamgen-size').value;
+	    var count = document.getElementById(this.pluginId+'-teamgen-count').value;
+	    var alias = document.getElementById(this.pluginId+'-teamgen-alias').value;
+	    var composition = document.getElementById(this.pluginId+'-teamgen-composition').value;
+
+	    var params = {discussNum: this.discussNum, alias: alias, composition: composition, seedDiscuss: seed,
+			  minSize: parseInt(minSize) || 0, count: parseInt(count) || 0};
+
+	    if (this.sessionTeamElem.checked)
+		params.sessionTeam = 1;
+	}
+	GService.requestWS('generate_team', [this.qattributes.qnumber, params], this.genTeamCallback.bind(this));
+    },
+
+    genTeamCallback: function (retObj, errMsg) {
+	Slidoc.log('Slidoc.Plugins.Share.genTeamCallback:', retObj, errMsg);
+	if (retObj && retObj.result == 'success') {
+	    alert('Teams generated');
+	    this.teamgenElem.style.display = 'none';
+	    if (retObj.teamStatus) {
+		this.teamStatus = retObj.teamStatus;
+		Slidoc.PluginManager.teamStatusValue(retObj.teamStatus);
+	    }
+	    if (this.discussNum && this.teamStatus && this.teamStatus.indexOf(this.discussNum) >= 0)
+		this.showorigElem.style.display = null;
+	} else {
+	    var msg = '';
+	    if (retObj && retObj.error) {
+		msg += retObj.error;
+	    }
+	    if (errMsg) {
+		msg += errMsg;
+	    }
+	    alert('Error in team setup: '+msg);
+	    return;
+	}
     }
 };
 
@@ -561,4 +666,28 @@ pre.slidoc-plugin-Share-responders {
      onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].finalizeShare();"></input>
      <pre id="%(pluginId)s-shareresponders" class="slidoc-plugin-Share-responders %(pluginId)s-shareresponders"><pre>
    </div>
+   <div id="%(pluginId)s-teamgen-container" class="slidoc-plugin-Share-teamgen %(pluginId)s-teamgen slidoc-teamgenonly" style="display: none;">
+     <input type="button" id="%(pluginId)s-teamgen-button" class="slidoc-clickable slidoc-button" value="Create team"
+     onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].genTeam();"></input><br>
+    <div id="%(pluginId)s-teamgen-options">
+      Minimum team size: <input type="number" id="%(pluginId)s-teamgen-size" value="3"></input>
+      Number of teams: <input type="number" id="%(pluginId)s-teamgen-count" value=""></input>
+      Seed discussion: <input type="checkbox" id="%(pluginId)s-teamgen-seed" value="seed" checked></input>
+      Set as session team: <input type="checkbox" id="%(pluginId)s-teamgen-sessionteam" value="sessionteam"></input>
+      User aliases: <select  id="%(pluginId)s-teamgen-alias">
+                          <option value="" selected>No aliases</option>
+                          <option value="teamgreek">Greek names for team members</option>
+                          <option value="team">Letter names for team members</option>
+                          <option value="rankgreek">Greek names based on answers</option>
+                          <option value="rank">Letter names based on answers</option>
+                        </select>
+      Team composition: <select  id="%(pluginId)s-teamgen-composition">
+                          <option value="diverse" selected>Diverse</option>
+                          <option value="similar">Similar</option>
+                          <option value="random">Random</option>
+                        </select>
+     </div>
+   </div>
+   <input type="button" id="%(pluginId)s-teamgen-showorig" class="slidoc-clickable slidoc-button" value="Show original responses"
+   onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].getSeeds();" style="display: none;"></input><br>
 */

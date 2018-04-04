@@ -1,7 +1,7 @@
 <html>
 <head>
 <!-- roster template for slidoc server --->
-<!-- roster parameters: site_name, gradebook, qwheel_new, qwheel_link, name_map, last_map, first_map -->
+<!-- roster parameters: site_name, gradebook, qwheel_new, qwheel_link, name_map, last_map, first_map, status_map -->
 
 {% include "base.html" %}
 {% include "actbase.html" %}
@@ -54,6 +54,7 @@ th { text-align: left; }
       {% if not j and gradebook %}<td><a class="clickable" href="{{ site_prefix }}/_user_grades/{{ url_escape(userid,plus=False) }}">&#x1F520;</a></td>{% end %}
       <td><a class="clickable" href="{{ site_prefix }}/_editroster?user={{ url_escape(userid) }}" >&#9998;</a></td>
       <td><a class="clickable" href="javascript:slidocConfirmAction('editroster','delete','?user={{ url_escape(userid) }}&delete=1')" >&#x1F5D1;</a></td>
+      {% if status_map.get(userid,'') %}<td>{{ status_map.get(userid,'') }}</td>{% end %}
     </tr>
   {% end %}
   </table>
