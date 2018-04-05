@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.22e';
+var VERSION = '0.97.22f';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -1199,6 +1199,9 @@ function sheetAction(params) {
 	    if (sessionEntries) {
 		if (adminPaced) {
                     returnInfo['adminPaced'] = adminPaced;
+		}
+		if (dueDate) {
+                    returnInfo['dueDate'] = dueDate;
 		}
 		if (columnIndex.lastSlide) {
                     returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide']);
@@ -4715,6 +4718,8 @@ function actionHandler(actions, sheetName, create) {
 		if (retval.match(/error/i))
 		    throw('Error:ACTION:Error in updating gradebook for session(s) '+sessions+': '+retval);
 		refreshSheets.push(GRADES_SHEET);
+	    } else if (sessions.length) {
+		throw('Error:ACTION:Error in updating gradebook for session(s) '+sessions+': No updates performed. Ensure session weight is not zero and either grades are released or ungraded sessions are overdue');
 	    }
 	} else {
 	    throw('Error:ACTION:Invalid action '+action+' for session(s) '+sessions);
@@ -4786,10 +4791,10 @@ function updateScorePostAll() {
 
 function updateScoreAux(sessionName, create) {
     var retval = updateGrades(isArray(sessionName) ? sessionName : [sessionName], create||false, true);
-    if (retval)
+    if (retval && !retval.match(/error/i))
 	notify(retval, 'Slidoc Scores');
     else
-	notify('Failed to update scores for session '+sessionName+'. Ensure that grades are released and session weight is not zero', 'Slidoc Scores');
+	notify('Failed to update scores for session '+sessionName+'. Ensure session weight is not zero and either grades are released or ungraded sessions are overdue', 'Slidoc Scores');
     return retval;
 }
 
@@ -4828,7 +4833,7 @@ var SESSION_COL_RE =       /\b([a-z][-\w]*[a-z])(\d\d)$/i;
 
 function updateGrades(sessionNames, create, interactive, totalOnly) {
     // Update scores sheet for sessions in list
-    // Returns list of updated sessions
+    // Returns status message, which may include the string 'error'
 
     ///startCallTracking(2, {}, 'GRADES_SHEET');
     ///trackCall(1, 'updateGrades-start: '+sessionNames);

@@ -1909,6 +1909,8 @@ def sheetAction(params, notrace=False):
 
         previewingSheet = (sheetName == previewingSession())
 
+        indexedSession = not restrictedSheet and not protectedSheet and not loggingSheet and not discussingSession and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET)
+
         getRow = params.get('get','')
         createRow = params.get('create', '')
         allRows = params.get('all','')
@@ -2118,8 +2120,6 @@ def sheetAction(params, notrace=False):
 
                 if updatingSingleColumn == TWITTER_HEADER and sheetName == ROSTER_SHEET:
                     twitterSetting = True
-
-            indexedSession = not restrictedSheet and not protectedSheet and not loggingSheet and not discussingSession and sheetName != ROSTER_SHEET and getSheet(INDEX_SHEET)
 
             if discussionPost:
                 # Create session_discuss sheet, if need be, to post
@@ -2345,6 +2345,8 @@ def sheetAction(params, notrace=False):
             if sessionEntries:
                 if adminPaced:
                     returnInfo['adminPaced'] = adminPaced
+                if dueDate:
+                    returnInfo['dueDate'] = dueDate
                 if columnIndex.get('lastSlide'):
                     returnInfo['maxLastSlide'] = getColumnMax(modSheet, 2, columnIndex['lastSlide'])
                 if computeTotalScore:

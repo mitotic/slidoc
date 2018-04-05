@@ -291,6 +291,8 @@ function setupCache(auth, callback) {
 	    Sliobj.maxLastSlide = Math.min(retStatus.info.maxLastSlide, Sliobj.params.pacedSlides);
 	if (retStatus.info.remoteAnswers)
 	    Sliobj.remoteAnswers = retStatus.info.remoteAnswers;
+	if (retStatus.info.dueDate)
+	    Sliobj.dueDate = retStatus.info.dueDate;
 	if (retStatus.info.sessionFileKey)
 	    Sliobj.sessionFileKey = retStatus.info.sessionFileKey;
 	if (retStatus.info.sheetsAvailable)
@@ -2639,7 +2641,11 @@ Slidoc.showConcepts = function (submitMsg) {
 
 Slidoc.rescaleGrades = function() {
     Sliobj.gradeRescale = window.prompt('Session rescale (curve) operations, comma-separated, with (normalized) power-op first e.g.: ^0.5,+10,*2,/4,<100: ', Sliobj.gradeRescale || Sliobj.params.sessionRescale) || '';
-    updateGradeStats();
+    try {
+	updateGradeStats();
+    } catch(err) {
+	alert('Error in rescaling: '+err);
+    }
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
     Slidoc.showConcepts();
