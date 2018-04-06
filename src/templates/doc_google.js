@@ -118,7 +118,7 @@ GService.openWebsocket = function (wsPath) {
 		    } else {
 			wsock.remoteVersion = callback_args[0];
 
-			Slidoc.sessionSetup(callback_args[1], callback_args[2]);
+			Slidoc.sessionSetup.apply(null, callback_args.slice(1));
 
 			// Flush message buffer
 			while (wsock.buffer.length > 0)

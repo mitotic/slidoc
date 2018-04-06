@@ -36,6 +36,19 @@ Discuss = {
 	    throw('Discuss.js: Denied access to relay method '+methodName);
 	},
 
+	parsePost: function(post) {
+	    var POST_PREFIX_RE = /^Post:([\w-]*)\|(\d+)\|([,\w-]*)\|([-\d:T]+)([\s\S]*)$/;
+	    var pmatch = post.match(POST_PREFIX_RE);
+	    if (!pmatch)
+		return null;
+	    var state = {};
+	    var scomps = pmatch[3].split(',');
+	    for (var j=0; j<scomps.length; j++)
+		state[scomps[j]] = 1;
+	    var comps = {team: pmatch[1], number: parseInt(pmatch[2]), state: state, date: pmatch[4], text: pmatch[5].trim()};
+	    return comps;
+	},
+
 	postNotify: function(userId, discussNum, closed, postMsg, userName, teamName, newPost) {
 	    Slidoc.log('Slidoc.Plugins.Discuss.postNotify:', userId, discussNum, closed, postMsg, userName, teamName, newPost);
 	    if (!discussNum)
@@ -45,16 +58,15 @@ Discuss = {
 	    if (!slidePlugin)
 		return;
 	    if (newPost) {
-		var POST_PREFIX_RE = /^Post:([\w-]*):(\d+):([-\d:T]+)\s+(.*)$/;
-		var match = newPost.match(POST_PREFIX_RE);
-		if (match) {
+		var postComps = this.parsePost(newPost);
+		if (postComps) {
 		    slidePlugin.unreadPost = true;
 		    slidePlugin.activeUsers[userId] = new Date();
 		    if (this.topElem && slideNum != Slidoc.PluginManager.getCurrentSlide())
 			this.topElem.classList.add('slidoc-plugin-Discuss-unread');
 
-		    var teamName = match[1]; // Redundant, since teamName is also an argument
-		    var row = [match[1], parseInt(match[2]), userId, userName, match[3], true, match[4]];
+		    var teamName = postComps.team; // Redundant, since teamName is also an argument
+		    var row = [teamName, postComps.number, postComps.state, userId, userName, postComps.date, true, postComps.text];
 		    var postElem = slidePlugin.displayPost(row);
 		    if (postElem) {
 			Slidoc.renderMath(postElem);
@@ -251,6 +263,10 @@ Discuss = {
 	    return false;
 	if (!window.confirm((unflag?'Unflag':'Flag')+' discussion post?'))
 	    return false;
+	if (!unflag) {
+	    if (!window.confirm('If you flag this post, it will be hidden and the instructor will be informed. Do you wish to proceed?'))
+		return false;
+	}
 	var params = {session: this.sessionName, discussion: this.discussNum, team: userTeam||'', post:postNum,
 		      posterid: userId};
 	if (unflag)
@@ -306,15 +322,16 @@ Discuss = {
     },
 
     displayPost: function(row) {
-	// row = [userTeam, postNum, userId, userName, postTime, unreadFlag, postText]
+	// row = [userTeam, postNum, postState, userId, userName, postTime, unreadFlag, postText]
 	// Return html and also set this.unreadId
-	var userTeam = row[0];
-	var postNum = row[1];
-	var userId = row[2];
-	var userName = row[3];
-	var postTime = row[4];
-	var unreadPost = row[5];
-	var postText = row[6];
+	var userTeam   = row[0];
+	var postNum    = row[1];
+	var postState  = row[2];
+	var userId     = row[3];
+	var userName   = row[4];
+	var postTime   = row[5];
+	var unreadPost = row[6];
+	var postText   = row[7];
 
 	var postId = this.slideId+'-'+userTeam+'post'+Slidoc.zeroPad(postNum,3);
 	var postName = (userId == Slidoc.testUserId) ? 'Instructor' : Slidoc.makeShortFirst(userName);
@@ -338,8 +355,8 @@ Discuss = {
 	html += Slidoc.MDConverter(highlight+postName+highlight+': '+postText, true); // user name
 	html += '<br><em class="slidoc-plugin-Discuss-post-timestamp">'+timestamp+'</em>';  // Time
 
-	var flagged = postText.match(/\s*\(flagged/);
-	if (!postText.match(/\s*\(deleted/)) {
+	var flagged = postState.flagged;
+	if (!postState.deleted) {
 	    if (this.adminUser || (!flagged && this.userId == userId))
 		html += ' <span class="slidoc-clickable slidoc-plugin-Discuss-post-delete" onclick="Slidoc.Plugins['+"'"+this.name+"']['"+this.slideId+"'"+'].deletePost('+postNum+",'"+userTeam+"','"+userId+"'"+');">&#x1F5D1;</span>';
 

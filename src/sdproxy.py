@@ -182,11 +182,14 @@ QFIELD_RE = re.compile(r"^q(\d+)_([a-z]+)$")
 QFIELD_MOD_RE = re.compile(r"^(q_other|q_comments|q(\d+)_(comments|grade))$")
 QFIELD_TOTAL_RE = re.compile(r"^(q_scores|q_other|q(\d+)_grade)$")
 
-ANSWER_POST = '|answer|'
-DELETED_POST = '|deleted|'
-FLAGGED_POST = '|flagged|'
-POST_PREFIX_RE = re.compile(r'^Post:([\w-]*):(\d+):([-\d:T]+)(\s|$)')
-POST_NUM_RE = re.compile(r'([\w-]*):(\d+):([-\d:T]+)([\s\S]*)$')
+ANSWER_POST = 'answer'
+DELETED_POST = 'deleted'
+FLAGGED_POST = 'flagged'
+
+# Post|team|number|state1,state2|yyyy-mm-ddThh:mm text
+POST_MAKE_FMT = '%s%s|%03d|%s|%s %s'
+POST_PREFIX_RE = re.compile(r'^Post:([\w-]*)\|(\d+)\|([,\w-]*)\|([-\d:T]+)(\s|$)')
+POST_NUM_RE    = re.compile(       r'([\w-]*)\|(\d+)\|([,\w-]*)\|([-\d:T]+)([\s\S]*)$')
 TEAMNAME_RE = re.compile(r'[\w-]+')
 
 class Dummy():
@@ -4736,16 +4739,11 @@ def getDiscussionSeeds(sessionName, questionNum, discussNum):
         postEntry = postEntries[j][0]
         userPosts = splitPosts(postEntry)
         for k in range(len(userPosts)):
-            pmatch = POST_NUM_RE.match(userPosts[k])
-            if not pmatch:
-                continue
-            text = pmatch.group(4).strip()
-            if not text.startswith(ANSWER_POST):
-                continue
-            text = text[len(ANSWER_POST):].strip()
-            response, _, explanation = text.partition(':')
-            subrows.append([idValue, response, explanation.strip()])
-            responders.append(idValue+'/'+shortMap.get(idValue,idValue)+'/'+nameMap.get(idValue,idValue))
+            postComps = parsePost(userPosts[k])
+            if postComps and postComps['state'].get(ANSWER_POST):
+                # Extract response and explanation
+                subrows.append([idValue, postComps['answer'], postComps['text']])
+                responders.append(idValue+'/'+shortMap.get(idValue,idValue)+'/'+nameMap.get(idValue,idValue))
     subrows.sort(key=lambda x: parseNumber(x[1]) if isNumber(x[1]) else x[1])
     qprefix = 'q'+str(questionNum)+'_'
     return {'id': [x[0] for x in subrows], qprefix+'response': [x[1] for x in subrows], qprefix+'explain': [x[2] for x in subrows], 'responders': responders}
@@ -4799,7 +4797,7 @@ def setDiscussState(sessionName, discussState):
         raise Exception('Row with id '+DISCUSS_ID+' not found in sheet '+DISCUSS_SHEET)
     axsSheet.getRange(axsTopRow, axsColumn, 1, 1).setValue(json.dumps(discussState))
 
-def postDiscussEntry(sessionName, discussNum, postTeam, userId, userName, prevText, newText, special=False):
+def postDiscussEntry(sessionName, discussNum, postTeam, userId, userName, prevText, newText, answer=''):
     discussNumStr = str(discussNum)
     discussState = getDiscussState(sessionName)
     closed = discussState['closed'].get(discussNumStr,0)
@@ -4826,7 +4824,7 @@ def postDiscussEntry(sessionName, discussNum, postTeam, userId, userName, prevTe
 
     postCount = lastPost[postTeam]
 
-    newPost = makePost(postTeam, postCount, newText, special=special)
+    newPost = makePost(postTeam, postCount, newText, answer=answer)
     return appendPosts(prevText, newPost, postCount), newPost
 
 def closeDiscussion(sessionName, discussNum=0, reopen=False):
@@ -4903,12 +4901,11 @@ def deletePost(prevValue, colValue, userId, userName, adminUser, sessionName, di
         else:
             raise Exception('Cannot delete flagged post in session '+sessionName)
 
-    deleteLabel = '%s:%03d:' % (teamName, postNumber)
     for j in range(len(userPosts)):
-        if userPosts[j].startswith(deleteLabel):
-            # "Delete" post by prefixing it with (deleted)
-            comps = userPosts[j].split(' ')
-            userPosts[j] = comps[0]+' '+DELETED_POST+' '+' '.join(comps[1:])
+        postComps = parsePost(userPosts[j])
+        if postComps['team'] == teamName and postComps['number'] == postNumber:
+            # Delete post
+            userPosts[j] = makePost(postComps['team'], postComps['number'], postComps['text'], date=postComps['date'], state=postComps['state'], delete=True, noprefix=True)
             newValue = joinPosts(userPosts)
             userDiscussRange(sessionName, discussNum, userId, userName, increment='deleteCount')
             break
@@ -5006,19 +5003,43 @@ def splitPosts(posts):
 def joinPosts(posts):
     return 'Post:' + '\n\n\nPost:'.join(posts)
 
-def makePost(postTeam, postCount, postText, special=False):
+def makePost(postTeam, postNumber, postText, date=None, state={}, answer='', delete=False, noprefix=False):
+    postDate = date or sliauth.iso_date(createDate(), nosubsec=True)
     postText = postText.strip()
-    if not special:
-        postText = postText.lstrip('|')   # Strip preceding | to allow special prefixes
+    postState = state.copy()
+    prefix = '' if noprefix else 'Post:'
+    
+    if answer.strip():
+        postText = answer.strip() + ': ' + postText
+        postState[ANSWER_POST] = 1
+
+    if delete:
+        postState[DELETED_POST] = 1
+
     while '\n\n\n' in postText:
         postText = postText.replace('\n\n\n', '\n\n')
-    curDate = createDate()
-    return 'Post:%s:%03d:%s %s' % (postTeam, postCount, sliauth.iso_date(curDate, nosubsec=True), postText)
 
+    return POST_MAKE_FMT % (prefix, postTeam, postNumber, ','.join(sorted(postState.keys())), postDate, postText)
+
+def parsePost(post):
+    pmatch = POST_NUM_RE.match(post)
+    if not pmatch:
+        return None
+    state = dict((key, 1) for key in pmatch.group(3).split(',') if key)
+    text = pmatch.group(5).strip()
+    comps = {'team': pmatch.group(1), 'number': int(pmatch.group(2)), 'state': state, 'date': pmatch.group(4)}
+
+    if state.get(ANSWER_POST):
+        answer, _, text = text.partition(':')
+        comps['answer'] = answer.strip()
+
+    comps['text'] = text.strip()
+    return comps
+    
 def appendPosts(prevPosts, newPost, postCount):
     prevPosts = prevPosts.strip()
     retValue = prevPosts + '\n\n\n'  if prevPosts  else ''
-    retValue += newPost
+    retValue += sliauth.str_encode(newPost)
     if not retValue.endswith('\n'):
         retValue += '\n'
     return retValue
@@ -5089,32 +5110,34 @@ def getDiscussPosts(sessionName, discussNum, userId, name, postTeams=[], noread=
         modIdValue, modNameValue = aliasDiscussUser(idValue, nameValue, sessionName, teamSettings, selfId=userId)
         userPosts = splitPosts(colVals[j])
         for k in range(len(userPosts)):
-            pmatch = POST_NUM_RE.match(userPosts[k])
-            if pmatch and pmatch.group(1) in postTeams:
-                teamName = pmatch.group(1)
-                postNumber = int(pmatch.group(2))
+            postComps = parsePost(userPosts[k])
+            if postComps and postComps['team'] in postTeams:
+                teamName = postComps['team']
+                postNumber = postComps['number']
+                postState = postComps['state']
                 flagLabel = postLabel(discussNum, teamName, postNumber)
                 flaggerId = flaggedIdPosts.get(flagLabel)
                 if flaggerId:
                     if userId != idValue and userId != flaggerId and userId != TESTUSER_ID:
                         # Only display flagged posts to poster/flagger/admin
                         continue
-                postTimeStr = pmatch.group(3)
                 unreadFlag = postNumber > lastReadPosts[teamName] if not noread else False
-                text = pmatch.group(4).strip()+'\n'
-                if text.startswith(DELETED_POST):
+                text = postComps['text']+'\n'
+                if postState.get(DELETED_POST):
                     # Hide text from deleted messages
-                    text = '('+DELETED_POST.strip('|')+')'
+                    text = '('+DELETED_POST+')'
                 elif flaggerId:
+                    # Flagged stats is temporary
+                    postState[FLAGGED_POST] = 1
                     if userId == idValue or userId == TESTUSER_ID:
                         # Display flagged text to poster and admin
-                        text = '('+FLAGGED_POST.strip('|')+') ' + text
+                        text = '('+FLAGGED_POST+') ' + text
                     else:
-                        text = '('+FLAGGED_POST.strip('|')+')'
-                elif text.startswith(ANSWER_POST):
+                        text = '('+FLAGGED_POST+')'
+                elif postState.get(ANSWER_POST):
                     # Prefix answer post
-                    text = '('+ANSWER_POST.strip('|')+') ' + text[len(ANSWER_POST):].lstrip()
-                allPosts.append([teamName, postNumber, modIdValue, modNameValue, postTimeStr, unreadFlag, text])
+                    text = '('+ANSWER_POST+') ' + postComps['answer'] + ': ' + text
+                allPosts.append([teamName, postNumber, postState, modIdValue, modNameValue, postComps['date'], unreadFlag, text])
 
     allPosts.sort(key=lambda x: (teamSortKey(x[0]), x[1]))  #  (sorting by team name and then by post number)
     return [closedFlag, postTeams, allPosts]
@@ -5299,11 +5322,8 @@ def seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanation
                 continue
             colName = DISCUSS_COL_FMT % discussNum
             try:
-                explanation = sliauth.str_encode(explanations.get(teamUserId,''))
-                postText = ANSWER_POST + ' ' + str(rankValue)
-                if explanation.strip():
-                    postText += ': ' + explanation
-                colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText, special=True)
+                postText = sliauth.str_encode(explanations.get(teamUserId,'')).strip()
+                colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText, answer=str(rankValue))
                 addDiscussUser(sessionName, teamUserId, userNames[teamUserId])
                 setValue(teamUserId, colName, colValue, sessionName+'_discuss')
             except Exception, excp:

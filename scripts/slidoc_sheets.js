@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.22f';
+var VERSION = '0.97.22g';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -199,12 +199,12 @@ var PLUGIN_RE = /^(.*)=\s*(\w+)\.(expect|response)\(\s*(\d*)\s*\)$/;
 var QFIELD_RE = /^q(\d+)_([a-z]+)$/;
 var QFIELD_MOD_RE = /^(q_other|q_comments|q(\d+)_(comments|grade))$/;
 
-var ANSWER_POST = '|answer|';
-var DELETED_POST = '|deleted|';
-var FLAGGED_POST = '|flagged|';
+var ANSWER_POST = 'answer';
+var DELETED_POST = 'deleted';
+var FLAGGED_POST = 'flagged';
 
-var POST_PREFIX_RE = /^Post:([\w-]*):(\d+):([-\d:T]+)(\s|$)/;
-var POST_NUM_RE = /'([\w-]*):(\d+):([-\d:T]+)([\s\S]*)$/;
+var POST_PREFIX_RE = /^Post:([\w-]*)\|(\d+)\|([,\w-]*)\|([-\d:T]+)(\s|$)/;
+var POST_NUM_RE    =       /([\w-]*)\|(\d+)\|([,\w-]*)\|([-\d:T]+)([\s\S]*)$/;
 var TEAMNAME_RE = /[\w-]+/;
 
 var SCRIPT_PROP = PropertiesService.getScriptProperties(); // new property service
@@ -243,6 +243,7 @@ function onOpen(evt) {
    menuEntries.push({name: "Email late token", functionName: "emailLateToken"});
    menuEntries.push({name: "Insert late token", functionName: "insertLateToken"});
    menuEntries.push(null); // line separator
+   menuEntries.push({name: "Reformat discussion posts", functionName: "ReformatDiscussionPosts"});
    menuEntries.push({name: "Migrate sheet names", functionName: "MigrateSheetNames"});
    menuEntries.push({name: "Migrate to new schema", functionName: "MigrateAll"});
 
@@ -4677,7 +4678,7 @@ function updateTotalAux(sheetName, create) {
 	var sessionAttributes = JSON.parse(sessionEntries.attributes)
 	var questions = JSON.parse(sessionEntries.questions);
 	var sessionSheet = getSheet(sessionName);
-	var confirm = getPrompt('Enter "yes" to update q_scores (careful; may lead to inconsistency)', 'UpdateScores')
+	var confirm = getPrompt('Enter "yes" to update q_scores (careful; may lead to inconsistency)', 'UpdateScores');
 	if (confirm && confirm.trim().toLowerCase() == 'yes') {
 	    updateTotalScores(sessionSheet, sessionAttributes, questions, true);
 	    updateTotalFormula(sessionSheet, sessionSheet.getLastRow());
@@ -5527,6 +5528,54 @@ function smallBlank(values, n) {
 	return minVals[0];
     else
 	return 0;
+}
+
+function ReformatDiscussionPosts() {
+    var lock = LockService.getPublicLock();
+    lock.waitLock(30000);  // wait 30 seconds before conceding defeat.
+
+    var sheetName = getPrompt('Sheet to reformat', '*_discuss');
+    if (!getPrompt('Enter string to confirm reformat for sheet '+sheetName, 'ReformatDiscussion'))
+	return;
+    var OLD_POST_NUM_RE = /([\w-]*):(\d+):([-\d:T]+)\s+(\|(\w*)\|\s+)?([\s\S]*)$/;
+    try {
+	var modSheet = getSheet(sheetName);
+	var startRow = 3;
+	var nRows = modSheet.getLastRow()-startRow+1; 
+	var headers = modSheet.getSheetValues(1, 1, 1, modSheet.getLastColumn())[0];
+	for (var j=0; j<headers.length; j++) {
+	    var colNum = j+1;
+	    if (headers[j].match(/^discuss/)) {
+		var discussNum = parseInt(headers[j].slice('discuss'.length));
+		var colRange = modSheet.getRange(startRow, colNum, nRows, 1);
+		var colValues = colRange.getValues();
+		for (var k=0; k<colValues.length; k++) {
+		    var allPosts = colValues[k][0];
+		    if (allPosts.trim()) {
+			var posts = ('\n\n\n'+allPosts.trim()).split('\n\n\nPost:').slice(1);
+			for (var m=0; m<posts.length; m++) {
+			    var pmatch = OLD_POST_NUM_RE.exec(posts[m]);
+			    if (pmatch) {
+				var teamName = pmatch[1];
+				var postNum = pmatch[2];
+				var postDate = pmatch[3];
+				var postState = pmatch[5] || '';
+				var text = pmatch[6];
+				posts[m] = [teamName, postNum, postState, postDate].join('|') + ' '+ text;
+			    }
+			}
+			colValues[k][0] = 'Post:' + posts.join('\n\n\nPost:');
+		    }
+		}
+		colRange.setValues(colValues)
+	    }
+	}
+	notify('Reformatted posts in '+sheetName, 'Slidoc Migrate');
+    } catch(err) {
+	SpreadsheetApp.getUi().alert(''+err);
+    } finally { //release lock
+	lock.releaseLock();
+    }
 }
 
 function MigrateSheetNames() {

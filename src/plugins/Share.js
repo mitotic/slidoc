@@ -515,7 +515,7 @@ Share = {
 	var wheelURL = '';
 	if (respTally[4] && respTally[4].length) {
 	    var titleStr = this.sessionName+', Q'+this.qattributes.qnumber+': response='+respTally[0];
-	    var qwheel_link = 'https://mitotic.github.io/wheel/?session=' + encodeURIComponent(this.siteName+'_'+this.sessionName) + '&title=' + encodeURIComponent(titleStr);
+	    var qwheel_link = Slidoc.PluginManager.WHEEL_URL + '/?session=' + encodeURIComponent(this.siteName+'_'+this.sessionName+'_question') + '&title=' + encodeURIComponent(titleStr);
 	    var nameList = respTally[4].join(';');
 	    if (respTally[4].length == 1)
 		nameList += ';';

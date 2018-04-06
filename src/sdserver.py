@@ -4705,6 +4705,23 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         self.sessionName = self.get_path_base(path) or ''
         self.sessionVersion = self.getSessionVersion(self.sessionName)
         self.userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
+        joined = False
+        activeUsers = None
+        if self.sessionName:
+            activeUserIds = []
+            for connId, connections in WSHandler.get_connections(self.sessionName).items():
+                if connections.sd_role != sdproxy.ADMIN_ROLE:
+                    activeUserIds.append(connId)
+            if self.userId not in activeUserIds and self.userRole != sdproxy.ADMIN_ROLE:
+                joined = True
+                activeUserIds.append(self.userId)
+            if joined or self.userRole == sdproxy.ADMIN_ROLE:
+                nameMap = sdproxy.lookupRoster('name')
+                shortMap = sdproxy.makeShortNames(nameMap, first=True)
+                activeUsers = [ [nameMap.get(x,x), x, shortMap.get(x,x)] for x in activeUserIds]
+                activeUsers.sort()
+
+        # Add connection
         connectionList = self._connections[self.pathUser[0]][self.pathUser[1]]
         if not connectionList:
             connectionList.sd_role = self.userRole
@@ -4726,7 +4743,10 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             interactSlideId = ''
 
         dispAccessCode = Global.accessCodes.get(self.sessionName,'') if self.userRole == sdproxy.ADMIN_ROLE else ''
-        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, dispAccessCode, interactSlideId] ]))
+        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, dispAccessCode, interactSlideId, activeUsers] ]))
+
+        if joined and self.userRole != sdproxy.ADMIN_ROLE:
+            WSHandler.sendEvent(self.pathUser[0], self.pathUser[1], sdproxy.ADMIN_ROLE, False, True, ['', -1, 'ActiveUsers', [self.pathUser[1], activeUsers]])
 
     def on_close(self):
         if Options['debug']:
@@ -4744,6 +4764,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             if self._interactiveSession[0] is self:
                 # Disable interactivity associated with this connection
                 self._interactiveSession = (None, None, None, None)
+
+            if self.sessionName:
+                if self.pathUser[1] not in WSHandler.get_connections(self.sessionName):
+                    # Notify that user has disconnected
+                    WSHandler.sendEvent(self.pathUser[0], self.pathUser[1], sdproxy.ADMIN_ROLE, False, True, ['', -1, 'ActiveUsers', [self.pathUser[1], None]])
 
         except Exception, err:
             pass

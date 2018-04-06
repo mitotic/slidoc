@@ -35,6 +35,8 @@ Slidoc.PluginManager.BASIC_PACE    = 1;  // Move to Slidoc.BASIC_PACE ...?
 Slidoc.PluginManager.QUESTION_PACE = 2;
 Slidoc.PluginManager.ADMIN_PACE    = 3;
 
+Slidoc.PluginManager.WHEEL_URL = 'https://mitotic.github.io/wheel';
+
 var SKIP_ANSWER = 'skip';
 
 var LATE_SUBMIT = 'late';
@@ -107,6 +109,7 @@ Sliobj.sessionProperties = null;   // For all sessions
 
 Sliobj.inputAccessCode = '';
 Sliobj.dispAccessCode = '';
+Sliobj.activeUsers = null;
 
 Sliobj.gradeFieldsObj = {};
 for (var j=0; j<Sliobj.params.gradeFields.length; j++)
@@ -563,12 +566,15 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
     }
 }
 
-Slidoc.sessionSetup = function(dispAccessCode, interactSlideId) {
-    Slidoc.log('Slidoc.sessionSetup:', dispAccessCode, interactSlideId)
+Slidoc.sessionSetup = function(dispAccessCode, interactSlideId, activeUsers) {
+    Slidoc.log('Slidoc.sessionSetup:', dispAccessCode, interactSlideId, activeUsers)
     Sliobj.dispAccessCode = dispAccessCode || '';
+    Sliobj.activeUsers = activeUsers || null;
     var elem = document.getElementById('slidoc-access-code');
     if (elem)
 	elem.textContent = ''+Sliobj.dispAccessCode;
+    if (activeUsers)
+	Slidoc.showActiveUsers(true);
 }
 
 Slidoc.logoutURL = "/_auth/logout/";
@@ -3067,6 +3073,21 @@ Sliobj.eventReceiver = function(eventMessage) {
 	    Slidoc.log('Sliobj.eventReceiver: Error in relayCall to plugin method: '+eventSource+', '+eventRole+', '+eventName+'.'+slideNum+': '+err);
 	}
 
+    } else if (adminSender && eventName == 'ActiveUsers') {
+	if (eventArgs[1]) {
+	    // User joining
+	    Sliobj.activeUsers = eventArgs[1];
+	} else if (Sliobj.activeUsers) {
+	    // User leaving
+	    for (var j=0; j<Sliobj.activeUsers.length; j++) {
+		if (Sliobj.activeUsers[j][1] == eventArgs[0]) {
+		    Sliobj.activeUsers.splice(j,1);
+		    break;
+		}
+	    }
+	}
+	Slidoc.showActiveUsers(true);
+
      } else if (adminSender && eventName == 'TeamSetup') {
 	 // Team setup
 	 if (Sliobj.session && getUserId() != Sliobj.params.testUserId)
@@ -4028,6 +4049,40 @@ function showStatsCallback(result, retStatus) {
     Slidoc.showPopup(html);
 }
 
+Slidoc.showActiveUsers = function (countOnly) {
+    if (!isController())
+	return;
+    var activeElem = document.getElementById('slidoc-activeuser-display');
+    if (activeElem && Sliobj.activeUsers)
+	activeElem.textContent = Sliobj.activeUsers.length ? (''+Sliobj.activeUsers.length) : '';
+    if (countOnly || !Sliobj.activeUsers)
+	return;
+    if (Sliobj.closePopup)
+	Sliobj.closePopup();
+    var html = '<b>Active Users</b><br>';
+    html += '<ul class="slidoc-direct-message-list">';
+    var names = [];
+    for (var j=0; j<Sliobj.activeUsers.length; j++) {
+	var respName = Sliobj.activeUsers[j][0];
+	var ncomps = respName.split(',');
+	if (ncomps.length > 1 && ncomps[1].trim()) {
+	    // Comma-separated name
+            respName = ncomps[1].trim().split(' ')[0] + ' ' + ncomps[0];  // First Last
+        }
+	names.push(Sliobj.activeUsers[j][2]+'/'+respName);  // shortName/LongName
+	html += '<li>' + escapeHtml(respName) + '</li>';
+    }
+    html += '</ul>';
+    var titleStr = Sliobj.params.siteName+': active users';
+    var qwheel_link = Slidoc.PluginManager.WHEEL_URL + '/?session=' + encodeURIComponent(Sliobj.params.siteName+'_'+Sliobj.sessionName+'_active') + '&title=' + encodeURIComponent(titleStr);
+    var nameList = names.join(';');
+    if (names.length == 1)
+	nameList += ';';
+    var qwheel_new = qwheel_link + '&names=' + encodeURIComponent(nameList);
+    var wheelURL = '<a class="slidoc-clickable" target="_blank" href="'+qwheel_new+'">&#x1F3B2;</a>&nbsp;\n';
+    Slidoc.showPopup(wheelURL+html);
+}
+
 Slidoc.showGrades = function () {
     if (!Sliobj.params.gd_sheet_url) {
 	window.location = Sliobj.sitePrefix + '/_user_grades';
@@ -4231,7 +4286,7 @@ function showDiscussCallback(retObj, errmsg) {
 	var totalPosts = 0;
 	var unreadPosts = 0;
 	for (var k=0;k<discussNums.length; k++) {
-	    var sessionDiscuss = allDiscussStats[Sliobj.sessionName][discussNums[k]];
+	    var sessionDiscuss = allDiscussStats[sessionName][discussNums[k]];
 	    if (!sessionDiscuss)
 		continue;
 	    var postCounts = countUnread(sessionDiscuss.teams);
@@ -4242,7 +4297,7 @@ function showDiscussCallback(retObj, errmsg) {
 	if (sessionName in flagStats)
 	    sessionLabel += ' &#9873;';
 	if (sessionPaths[sessionName])
-	    html += '<li><a class="slidoc-clickable" href=="'+sessionPaths[sessionName]+'">'+sessionLabel+'</a> ('+unreadPosts+'/'+totalPosts+')</li>\n';
+	    html += '<li><a class="slidoc-clickable" href="'+sessionPaths[sessionName]+'">'+sessionLabel+'</a> ('+unreadPosts+'/'+totalPosts+')</li>\n';
 	else
 	    html += '<li><span ">'+sessionLabel+'</span> ('+unreadPosts+'/'+totalPosts+')</li>\n';
     }
