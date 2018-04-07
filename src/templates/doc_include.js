@@ -2915,6 +2915,8 @@ Slidoc.handleKey = function (keyName, swipe) {
     }
 
     if (Sliobj.currentSlide) {
+	if (swipe && Sliobj.currentSlide == Sliobj.adminPaced && !(Sliobj.session && Sliobj.session.submitted)) // Disable swiping for active adminPaced slide
+	    return false;
 	if (!(keyName in Slide_view_handlers))
 	    return;
 	Slide_view_handlers[keyName]();
@@ -3062,7 +3064,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 	var pluginMethodName = comps[1];
 
 	if (pluginName == 'Discuss' && pluginMethodName == 'postNotify' && eventArgs.length >= 3 && eventArgs[2] == 'teamgen') {
-	    ///teamGenView(false); // Need to allow reanswer even after team generation
+	    ///teamGenView(0); // Need to allow reanswer even after team generation
 	}
 
 	var slideNum = (comps.length > 2) ? parseInt(comps[2]) : 0; // '' slideNum => session plugin
@@ -4526,7 +4528,7 @@ Slidoc.slidocReady = function (auth) {
     Sliobj.teamFileKey = '';
     Sliobj.sessionFileKey = '';
     Sliobj.teamStatus = null;
-    Sliobj.teamGenerate = false;
+    Sliobj.teamGenerate = 0;
     Sliobj.discussStats = null;
     Sliobj.sheetsAvailable = null;
     Sliobj.voteDate = null;
@@ -8931,11 +8933,11 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 	var generatable = Sliobj.questionSlide && (Sliobj.questionSlide.team == 'assign' || Sliobj.questionSlide.team == 'generate' || Slidoc.getDiscussNum(slide_id));
 	if (generatable && !Sliobj.gradableState && !Sliobj.session.submitted && ((controlledPace() && Sliobj.adminPaced && Sliobj.adminPaced == slide_num) || (isController() && atLastSlide))) {
 	    // Last question slide with team=assign|generate or Discuss:; allow reanswer
-	    teamGenView(true);
+	    teamGenView(slide_num);
 	    if (Sliobj.interactiveMode)
 		toggleInteractMode();
 	} else {
-	    teamGenView(false);
+	    teamGenView(0);
 	}
     }
 
@@ -9006,8 +9008,8 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
     return false;
 }
 
-function teamGenView(activate) {
-    Sliobj.teamGenerate = !!activate;
+function teamGenView(slideNum) {
+    Sliobj.teamGenerate = slideNum;
     toggleClass(Sliobj.teamGenerate, 'slidoc-teamgen-view');
     if (Sliobj.teamGenerate) {
 	toggleClass(true, 'slidoc-resubmit-view');
@@ -9600,7 +9602,9 @@ function onTouchStart(evt) {
 }
 
 var scrollThresholdY = 21;   // Try 10, 15, ...
-var swipeThresholdX = 14;     // Try 7, ...
+var swipeThresholdX = 40;     // Try 7, ...
+
+///function str(x) {return ''+x;}
  
 function onTouchMove(evt) {
     if (touchAction) {
@@ -9608,7 +9612,9 @@ function onTouchMove(evt) {
         touchEndY = getCoord(evt, 'Y');
         touchDiffX = touchEndX - touchStartX;
         touchDiffY = touchEndY - touchStartY;
+
         Slidoc.log('onTouchMove: dx, dy, sort, swipe, scroll', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll);
+        ///Slidoc.remoteLog('onTouchMove:', 'dx, dy, sort, swipe, scroll', [str(touchDiffX), str(touchDiffY), str(touchSort), str(touchSwipe), str(touchScroll)].join(', '));
  
         if (!touchSort && !touchSwipe && !touchScroll) {
             if (Math.abs(touchDiffY) > scrollThresholdY && Math.abs(touchDiffY) > 0.5*Math.abs(touchDiffX)) { // It's a scroll
@@ -9638,6 +9644,8 @@ function onTouchMove(evt) {
  
 function onTouchEnd(evt) {
     Slidoc.log('onTouchEnd: dx, dy, sort, swipe, scroll, action', touchDiffX, touchDiffY, touchSort, touchSwipe, touchScroll, touchAction);
+    ///Slidoc.remoteLog('onTouchEnd:', 'dx, dy, sort, swipe, scroll, action', [str(touchDiffX), str(touchDiffY), str(touchSort), str(touchSwipe), str(touchScroll), str(touchAction)].join(', '));
+
     if (touchAction) {
         touchAction = false;
  
