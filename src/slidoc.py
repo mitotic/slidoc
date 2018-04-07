@@ -1011,6 +1011,16 @@ class SlidocRenderer(MathRenderer):
         self.slide_formulas = []
         self.slide_params = {}
 
+    def abort(self, prefix, msg):
+        self.message(prefix, msg, quit=True)
+
+    def message(self, prefix, msg, quit=False):
+        text = '    ****%s: %s, Slide %s (%s...) %s' % (prefix, self.options["filename"], self.slide_number, self.cur_header or self.alt_header or '', msg)
+        if quit:
+            abort(text)
+        else:
+            message(text)
+
     def close_zip(self, md_content=None):
         # Create zipped content (only if there are any images)
         if self.content_zip and self.content_image_paths:
@@ -1049,7 +1059,7 @@ class SlidocRenderer(MathRenderer):
                     # (slide_number, number of questions skipped, weight of questions skipped, class for forward link)
                     self.questions[qno-1]['skip'] = (self.slide_number, skipped, skip_weight, ref_id+'-forward-link')
                 else:
-                    message("    ****LINK-ERROR: %s: Forward link %s to slide %s skips graded questions; ignored." % (self.options["filename"], ref_id, self.slide_number))
+                    self.message('LINK-ERROR', 'Forward link %s to slide %s skips graded questions; ignored.' % (ref_id, self.slide_number))
 
     def inline_formula(self, text, alt_text):
         elem_tag = 'code'
@@ -1074,7 +1084,7 @@ class SlidocRenderer(MathRenderer):
             action = imatch.group(2)
             js_arg = imatch.group(3)
             if action in ('answerSave', 'buttonClick', 'disable', 'display', 'enterSlide', 'expect', 'incrementSlide', 'init', 'initGlobal', 'initSetup', 'leaveSlide', 'response'):
-                abort("    ****PLUGIN-ERROR: %s: Disallowed inline plugin action `=%s.%s()` in slide %s" % (self.options["filename"], plugin_def_name, action, self.slide_number))
+                self.abort('PLUGIN-ERROR', 'Disallowed inline plugin action `=%s.%s()`' % (plugin_def_name, action))
 
         else:
             plugin_def_name = 'Params'
@@ -1224,7 +1234,7 @@ class SlidocRenderer(MathRenderer):
                 self.sheet_attributes['hiddenSlides'].append(self.slide_number)
                 classes.append('slidoc-slide-hidden')
             else:
-                message('    ****HIDDEN-WARNING: %s: Slide %s, Hidden: ignored for first slide/question slide/question-paced sessions' % (self.options["filename"], self.slide_number))
+                self.message('HIDDEN-WARNING', 'Slide %s, Hidden: ignored for first slide/question slide/question-paced sessions' % (self.slide_number,))
 
         attrs = ''
         if self.all_params:
@@ -1346,10 +1356,7 @@ class SlidocRenderer(MathRenderer):
 
     def end_slide(self, suffix_html='', last_slide=False):
         if self.choice_opts and not self.qtypes[-1].endswith('choice'):
-            if self.options['config'].pace:
-                abort("    ****CHOICE-ERROR: %s: 'Answer: ...' expected after choice options A.., B.., for paced slide %s" % (self.options["filename"], self.slide_number))
-            else:
-                message("    ****CHOICE-WARNING: %s: 'Answer: ...' expected after choice options A.., B.., for slide %s" % (self.options["filename"], self.slide_number))
+            self.message('CHOICE-ERROR', '"Answer: ..." expected after choice options A.., B.., in slide', quit=self.options['config'].pace)
 
         prefix_html = self.slidoc_end_choice_block()+self.end_hint()+self.end_extra()
 
@@ -1372,7 +1379,7 @@ class SlidocRenderer(MathRenderer):
             elif self.slide_plugin_embeds[name] < self.slide_plugin_refs[name]:
                 missing.append('%s[%s]' % (name, self.slide_plugin_refs[name]))
         if missing:
-            abort("    ****PLUGIN-ERROR: %s: Missing plugins %s in slide %s." % (self.options["filename"], ','.join(missing), self.slide_number))
+            self.abort('PLUGIN-ERROR', 'Missing plugins %s' % (','.join(missing),))
         if self.qtypes[-1]:
             # Question slide
             qnumber = len(self.questions)
@@ -1386,20 +1393,20 @@ class SlidocRenderer(MathRenderer):
                 # Handle forward link in current question
                 self.qforward[self.slide_forward_links[0]].append(qnumber)
                 if len(self.slide_forward_links) > 1:
-                    message("    ****ANSWER-ERROR: %s: Multiple forward links in slide %s. Only first link (%s) recognized." % (self.options["filename"], self.slide_number, self.slide_forward_links[0]))
+                    self.message('ANSWER-ERROR', 'Multiple forward links. Only first link (%s) recognized.' % (self.slide_forward_links[0],))
 
         if last_slide and self.options['config'].pace:
             # Last paced slide
             if self.qtypes[-1]:
                 pass
-                ###abort('***ERROR*** Last slide cannot be a question slide for paced mode in module '+self.options["filename"])
+                ###self.abort('ANSWER-ERROR', 'Last slide cannot be a question slide for paced mode')
 
             elif self.options['config'].pace == BASIC_PACE and 'Submit' not in self.plugin_loads:
                 # Non-question slide and submit button not previously included in this slide or earlier slides
                 plugins_html += self.embed_plugin_body('Submit', self.get_slide_id())
 
         ###if self.cur_qtype and not self.qtypes[-1]:
-        ###    message("    ****ANSWER-ERROR: %s: 'Answer:' missing for %s question in slide %s" % (self.options["filename"], self.cur_qtype, self.slide_number))
+        ###    self.message('ANSWER-ERROR', '"Answer:" missing for %s question' % (self.cur_qtype,))
 
         if 'discuss_all' in self.options['config'].features and 'discuss' not in self.slide_options:
             self.slide_options.add('discuss')
@@ -1415,7 +1422,7 @@ class SlidocRenderer(MathRenderer):
             if 'untitled_number' in self.options['config'].features:
                 # Number untitled slides (e.g., as in question numbering)
                 if self.questions and len(self.questions)+1 != self.untitled_number:
-                    abort("    ****QUESTION-ERROR: %s: Untitled number %d out of sync with question number %d in slide %s. Add explicit headers to non-question slides to avoid numbering" % (self.options["filename"], self.untitled_number, len(self.questions)+1, self.slide_number))
+                    self.abort('QUESTION-ERROR', 'Untitled number %d out of sync with question number %d. Add explicit headers to non-question slides to avoid numbering' % (self.untitled_number, len(self.questions)+1))
                     return ''
 
                 self.untitled_header = '%d. ' % self.untitled_number
@@ -1507,7 +1514,7 @@ class SlidocRenderer(MathRenderer):
                 classes += ' slidoc-block-input'
             elif blockType in ('solution', 'fillable'):
                 if self.slide_block_solution:
-                    abort("    ****SOLUTION-ERROR: %s: Multiple '*s' blocks in slide %s" % (self.options["filename"], lang, self.slide_number))
+                    self.abort('SOLUTION-ERROR', 'Multiple %s blocks' % (lang,))
                 self.slide_block_solution = self.block_input_counter
                 classes += ' slidoc-block-solution'
                 if self.options['config'].show_correct == 'after_grading':
@@ -1639,7 +1646,7 @@ class SlidocRenderer(MathRenderer):
             if match.group(2) and len(match.group(2)) > 1:
                 short_id = match.group(2)[1:]
                 if not re.match(r'^[-.\w]+$', short_id):
-                    message('REF-WARNING: Use only alphanumeric chars, hyphens and dots in references: %s' % text)
+                    self.message('REF-WARNING', 'Use only alphanumeric chars, hyphens and dots in references: %s' % text)
                 header_ref = md2md.ref_key(short_id)
             if match.group(3) and match.group(3).strip():
                 attrs = match.group(3).strip().split()
@@ -1659,7 +1666,7 @@ class SlidocRenderer(MathRenderer):
             if ref_id not in Global.dup_ref_tracker:
                 Global.dup_ref_tracker.add(ref_id)
                 if  'track_references' in self.options['config'].features:
-                    message('    ****REF-WARNING: %s: Duplicate reference #%s in slide %s (also in %s)' % (self.options["filename"], header_ref, self.slide_number, Global.ref_tracker[ref_id][-1]))
+                    self.message('REF-WARNING', 'Duplicate reference #%s in slide %s (also in %s)' % (header_ref, self.slide_number, Global.ref_tracker[ref_id][-1]))
         else:
             self.add_ref_link(ref_id, '??', header_ref, '')
 
@@ -1772,7 +1779,7 @@ class SlidocRenderer(MathRenderer):
             elif opt.startswith('no_') and opt[len('no_'):] in ALLOWED_OPTS:
                 self.slide_options.discard( opt[len('no_'):] )
             else:
-                message('    ****OPTION-WARNING: %s: Slide %s, Ignored invalid option Slide: %s; must be one of %s' % (self.options["filename"], self.slide_number, opt, '/'.join(ALLOWED_OPTS)))
+                self.message('OPTION-WARNING', 'Ignored invalid option Slide: %s; must be one of %s' % (opt, '/'.join(ALLOWED_OPTS)))
 
         return prev_slide_end
 
@@ -1789,12 +1796,12 @@ class SlidocRenderer(MathRenderer):
         for param_def in text.split():
             match = DEFINE_PARAM_RE.match(param_def)
             if not match:
-                abort("    ****DEFINE-ERROR: %s: Invalid Define: specification '%s' in slide %s; expecting name=value1[:value2[:count]] OR name=value1,value2,...  OR function name (arg1,arg2) {...}" % (self.options["filename"], param_def, self.slide_number))
+                self.abort('DEFINE-ERROR', 'Invalid Define: specification "%s"; expecting name=value1[:value2[:count]] OR name=value1,value2,...  OR function name (arg1,arg2) {...}' % (param_def,))
                 break
             param_name = match.group(1)
             param_value = match.group(2)
             if param_name in self.slide_params:
-                abort("    ****DEFINE-ERROR: %s: Duplicate Define: specification '%s' vs. '%s' in slide %s" % (self.options["filename"], param_def, self.slide_params[param_name], self.slide_number))
+                self.abort('DEFINE-ERROR', 'Duplicate Define: specification "%s" vs. "%s"' % (param_def, self.slide_params[param_name]))
             self.slide_params[param_name] = param_value
 
         return ''
@@ -1807,12 +1814,12 @@ class SlidocRenderer(MathRenderer):
 
             if option == 'maxchars':
                 if not value.isdigit():
-                    abort("    ****DISCUSS-ERROR: %s: Invalid Discuss: %s=%s option in slide %s; expecting numeric value" % (self.options['filename'], option, value, self.slide_number))
+                    self.abort('DISCUSS-ERROR', 'Invalid Discuss: %s=%s option; expecting numeric value' % (option, value))
 
             elif option in ('seed','team'):
                 pass
             else:
-                abort("    ****DISCUSS-ERROR: %s: Unknown Discuss: %s=%s option in slide %s" % (self.options['filename'], option, value, self.slide_number))
+                self.abort('DISCUSS-ERROR', 'Unknown Discuss: %s=%s option ' % (option, value))
                 
             discuss_opts[option] = value or 'yes'
 
@@ -1822,11 +1829,11 @@ class SlidocRenderer(MathRenderer):
 
     def slidoc_team(self, name, text):
         if self.sheet_attributes['sessionTeam']:
-            abort("    ****TEAM-ERROR: %s: Multiple Team: options in slide %s" % (self.options['filename'], self.slide_number))
+            self.abort('TEAM-ERROR', 'Multiple Team: options in same slide')
             return ''
 
         if self.qtypes[-1]:
-            abort("    ****TEAM-ERROR: %s: Team: option must not appear in question slide %s" % (self.options['filename'], self.slide_number))
+            self.abort('TEAM-ERROR', 'Team: option must not appear in question slide')
 
         team_opts = {}
         composition_opts = ('diverse', 'random', 'similar')
@@ -1836,38 +1843,38 @@ class SlidocRenderer(MathRenderer):
 
             if option == 'session':
                 if value != '_roster' and not sliauth.SESSION_NAME_RE.match(value):
-                    abort("    ****TEAM-ERROR: %s: Invalid Team: session=%s option in slide %s; expecting '_roster' or valid session name" % (self.options['filename'], value, self.slide_number))
+                    self.abort('TEAM-ERROR', 'Invalid Team: session=%s option ; expecting "_roster" or valid session name' % (value,))
 
             elif option in ('question', 'count', 'minsize'):
                 if not value.isdigit():
-                    abort("    ****TEAM-ERROR: %s: Invalid Team: %s=%s option in slide %s; expecting numeric value" % (self.options['filename'], option, value, self.slide_number))
+                    self.abort('TEAM-ERROR', 'Invalid Team: %s=%s option; expecting numeric value' % (option, value))
                 value = int(value)
 
             elif option == 'composition':
                 if value not in composition_opts:
-                    abort("    ****TEAM-ERROR: %s: Invalid Team: composition=%s option in slide %s; expecting one of %s" % (self.options['filename'], value, self.slide_number, '/'.join(composition_opts)))
+                    self.abort('TEAM-ERROR', 'Invalid Team: composition=%s option; expecting one of %s' % (value, '/'.join(composition_opts)))
 
             elif option == 'names' and value:
                 value = value.split(',')
 
             elif option == 'alias':
                 if value and value not in alias_opts:
-                    abort("    ****TEAM-ERROR: %s: Invalid Team: alias=%s option in slide %s; expecting one of %s" % (self.options['filename'], value, self.slide_number, '/'.join(alias_opts)))
+                    self.abort('TEAM-ERROR', 'Invalid Team: alias=%s option; expecting one of %s' % (value, '/'.join(alias_opts)))
                 value = value or 'teamgreek'
 
             else:
-                abort("    ****TEAM-ERROR: %s: Unknown Team: %s=%s option in slide %s" % (self.options['filename'], option, value, self.slide_number))
+                self.abort('TEAM-ERROR', 'Unknown Team: %s=%s option' % (option, value))
                     
             team_opts[option] = value or 'yes'
 
         if 'count' not in team_opts and 'minsize' not in team_opts and 'names' not in team_opts:
-            abort("    ****TEAM-ERROR: %s: Must specify one of count=... or minsize=... for Team: option in slide %s" % (self.options['filename'], self.slide_number))
+            self.abort('TEAM-ERROR', 'Must specify one of count=... or minsize=... for Team: option')
 
         if 'session' not in team_opts:
-            abort("    ****TEAM-ERROR: %s: Team: session=... option missing in slide %s" % (self.options['filename'], self.slide_number))
+            self.abort('TEAM-ERROR', 'Team: session=... option missing')
 
         if team_opts['session'] == '_roster' and team_opts.get('question'):
-            abort("    ****TEAM-ERROR: %s: Team: question option incompatible with session option in slide %s" % (self.options['filename'], self.slide_number))
+            self.abort('TEAM-ERROR', 'Team: question option incompatible with session option')
 
         team_opts['slide'] = self.slide_number
         self.sheet_attributes['sessionTeam'] = team_opts
@@ -1880,12 +1887,12 @@ class SlidocRenderer(MathRenderer):
         if team_opts['session']:
             qno = team_opts['question']
             if qno > len(questions):
-                abort("    ****TEAM-ERROR: %s: Question %s not found in session %s for team generation" % (self.options['filename'], qno, team_opts['session']))
+                self.abort('TEAM-ERROR', 'Question %s not found in session %s for team generation' % (qno, team_opts['session']))
             qtype = questions[qno-1].get('qtype')
 
         composition = team_opts.get('composition','')
         if composition in ('diverse', 'similar') and qtype not in ('choice', 'number'):
-            abort("    ****TEAM-ERROR: %s: Question type %s in session %s not suitable for team composition=%s" % (self.options['filename'], qtype, team_opts['session'], composition))
+            self.abort('TEAM-ERROR', 'Question type %s in session %s not suitable for team composition=%s' % (qtype, team_opts['session'], composition))
             
 
     def slidoc_choice(self, name, star):
@@ -1909,14 +1916,14 @@ class SlidocRenderer(MathRenderer):
             alt_choice = True
             if self.choice_full_alt:
                 if self.choice_expect: 
-                    abort("    ****CHOICE-ERROR: %s: Expected choice %s for alternative question %d in slide %s" % (self.options["filename"], self.choice_expect, self.choice_full_alt, self.slide_number))
+                    self.abort('CHOICE-ERROR', 'Expected choice %s for alternative question %d' % (self.choice_expect, self.choice_full_alt))
                     return ''
 
             else:
                 if self.alt_header is None:
                     self.choice_qprefix = self.untitled_slide('question...')
                 if len(self.choice_opts) > 1 and any(self.choice_opts):
-                    abort("    ****CHOICE-ERROR: %s: Cannot mix choice alternatives and full question alternatives in slide %s" % (self.options["filename"], self.slide_number))
+                    self.abort('CHOICE-ERROR', 'Cannot mix choice alternatives and full question alternatives')
                     return ''
 
             self.choice_current = ''
@@ -1928,7 +1935,7 @@ class SlidocRenderer(MathRenderer):
 
             if len(self.choice_opts) > 1:
                 if self.choice_no_top_q:
-                    abort("    ****CHOICE-ERROR: %s: Must specify top Q.. for full question alternatives in slide %s" % (self.options["filename"], self.slide_number))
+                    self.abort('CHOICE-ERROR', 'Must specify top Q.. for full question alternatives')
                     return ''
                 self.choice_full_alt += 1
         else:
@@ -1937,7 +1944,7 @@ class SlidocRenderer(MathRenderer):
                 if not self.choice_full_alt:
                     self.choice_star += name
                 else:
-                    abort("    ****CHOICE-ERROR: %s: Correct choice in alternative (%s) does not match main question (%s) in slide %s" % (self.options["filename"], name, self.choice_star, self.slide_number))
+                    self.abort('CHOICE-ERROR', 'Correct choice in alternative (%s) does not match main question (%s)' % (name, self.choice_star))
 
             if not self.choice_opts:
                 self.choice_no_top_q = True
@@ -1952,7 +1959,7 @@ class SlidocRenderer(MathRenderer):
                 else:
                     self.choice_opts[choiceNum] += 1
             else:
-                abort("    ****CHOICE-ERROR: %s: Out of sequence choice %s when expecting %s in slide %s" % (self.options["filename"], name, self.choice_expect, self.slide_number))
+                self.abort('CHOICE-ERROR', 'Out of sequence choice %s when expecting %s ' % (name, self.choice_expect))
                 return name+'..'
 
             self.choice_current = name
@@ -1963,7 +1970,7 @@ class SlidocRenderer(MathRenderer):
             self.choice_expect = chr(choiceNum+ord('A'))
 
         if alt_choice and 'shuffle_choice' not in self.options['config'].features:
-            abort("    ****CHOICE-ERROR: %s: Specify --features=shuffle_choice to handle alternative choices in slide %s" % (self.options["filename"], self.slide_number))
+            self.abort('CHOICE-ERROR', 'Specify --features=shuffle_choice to handle alternative choices')
             return ''
 
         choice_opt = self.choice_opts[choiceNum]
@@ -2012,7 +2019,7 @@ class SlidocRenderer(MathRenderer):
     def embed_plugin_body(self, plugin_def_name, slide_id, args='', content=''):
         if plugin_def_name in self.slide_plugin_embeds:
             if plugin_def_name in SINGLETON_PLUGINS:
-                abort('ERROR Multiple instances of reserved plugin '+plugin_def_name+' in slide '+str(self.slide_number))
+                self.abort('PLUGIN-ERROR', 'Multiple instances of reserved plugin '+plugin_def_name)
             self.slide_plugin_embeds[plugin_def_name] += 1
         else:
             self.slide_plugin_embeds[plugin_def_name] = 0
@@ -2029,7 +2036,7 @@ class SlidocRenderer(MathRenderer):
 
         plugin_def = self.plugin_defs.get(plugin_def_name) or self.options['plugin_defs'].get(plugin_def_name)
         if not plugin_def:
-            abort('ERROR Plugin '+plugin_def_name+' not defined/closed!')
+            self.abort('PLUGIN-ERROR', 'Plugin '+plugin_def_name+' not defined/closed!')
             return ''
 
         plugin_params = {'pluginName': plugin_name,
@@ -2046,7 +2053,7 @@ class SlidocRenderer(MathRenderer):
                 try:
                     self.plugin_tops.append(plugin_top % plugin_params)
                 except Exception, err:
-                    abort('ERROR Template formatting error in TOP for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+                    self.abort('PLUGIN-ERROR', 'Template formatting error in TOP for plugin %s: %s' % (plugin_name, err))
 
         # Add slide-specific plugin params
         plugin_params['pluginSlideId'] = slide_id
@@ -2054,7 +2061,7 @@ class SlidocRenderer(MathRenderer):
         try:
             tem_params['pluginBodyDef'] = plugin_def.get('BODY', '') % plugin_params
         except Exception, err:
-            abort('ERROR Template formatting error in Body for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+            self.abort('PLUGIN-ERROR', 'Template formatting error in Body for plugin %s: %s' % (plugin_name, err))
         body_div = self.plugin_body_template % tem_params
 
         content = unescape_slidoc_script(content)
@@ -2066,7 +2073,7 @@ class SlidocRenderer(MathRenderer):
             try:
                 plugin_params['pluginContent'] = content % tem_params
             except Exception, err:
-                abort('ERROR Template formatting error in content for plugin %s in slide %s: %s' % (plugin_name, self.slide_number, err))
+                self.abort('PLUGIN-ERROR', 'Template formatting error in content for plugin %s: %s' % (plugin_name, err))
         else:
             # Save content as raw (pre) text (for plugin processing); insert plugin body after raw content
             if content:
@@ -2076,7 +2083,7 @@ class SlidocRenderer(MathRenderer):
 
     def slidoc_plugin(self, name, text):
         if name in SINGLETON_PLUGINS:
-            abort("    ****PLUGIN-ERROR: %s: Cannot embed special plugin %s in slide %s" % (self.options["filename"], self.untitled_number, name, self.slide_number))
+            self.abort('PLUGIN-ERROR', 'Plugin name %s is reserved' % (name,))
         args, sep, content = text.partition('\n')
         return self.slidoc_end_choice_block() + self.embed_plugin_body(name, self.get_slide_id(), args=args.strip(), content=content)
 
@@ -2090,17 +2097,17 @@ class SlidocRenderer(MathRenderer):
             self.choice_alternatives = max(self.choice_opts)
             for j, x in enumerate(self.choice_opts):
                 if x and x != self.choice_alternatives:
-                    abort("    ****CHOICE-ERROR: %s: Mismatch in number of alternatives for %s in slide %s: expected %d but got %d" % (self.options["filename"], chr(j-1+ord('A')) if j else 'Q', self.slide_number, self.choice_alternatives, x))
+                    self.abort('CHOICE-ERROR', 'Mismatch in number of alternatives for %s: expected %d but got %d' % (chr(j-1+ord('A')) if j else 'Q', self.choice_alternatives, x))
                     return ''
 
         else:
             self.choice_alternatives = self.choice_full_alt
             if self.choice_expect:
-                abort("    ****CHOICE-ERROR: %s: Expected choice %s for alternative question %d in slide %s" % (self.options["filename"], self.choice_expect, self.choice_full_alt, self.slide_number))
+                self.abort('CHOICE-ERROR', 'Expected choice %s for alternative question %d' % (self.choice_expect, self.choice_full_alt))
                 return ''
 
         if self.choice_alternatives > 9:
-            abort("    ****CHOICE-ERROR: %s: More than %d alternatives in slide %s" % (self.options["filename"], self.choice_alternatives, self.slide_number))
+            self.abort('CHOICE-ERROR', 'More than %d alternatives' % (self.choice_alternatives,))
             return ''
 
         return html_prefix
@@ -2111,7 +2118,7 @@ class SlidocRenderer(MathRenderer):
             return ''
 
         if self.sheet_attributes['sessionTeam'] and self.sheet_attributes['sessionTeam']['slide'] == self.slide_number:
-            abort("    ****TEAM-ERROR: %s: Team: option must not appear in question slide %s" % (self.options['filename'], self.slide_number))
+            self.abort('TEAM-ERROR', 'Team: option must not appear in question slide')
             return ''
 
         html_prefix = self.slidoc_end_choice_block()
@@ -2134,7 +2141,7 @@ class SlidocRenderer(MathRenderer):
             opt_comps = shlex.split(opt_text) if opt_text else []
 
         if text and (text.split('=')[0].strip() in all_options):
-             abort("    ****ANSWER-ERROR: %s: Insert semicolon before answer option 'Answer: ;%s' in slide %s" % (self.options["filename"], text, self.slide_number))
+             self.abort('ANSWER-ERROR', 'Insert semicolon before answer option "Answer: ;%s"' % (text,))
 
         weight_answer = ''
         maxchars = 0           # Max. length (in characters) for textarea
@@ -2170,7 +2177,7 @@ class SlidocRenderer(MathRenderer):
                     elif match_opt == 'weight':
                         weight_answer = num_match.group(2).strip()
                 except Exception, excp:
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting numeric value for slide %s" % (self.options["filename"], num_match.group(1), num_match.group(2), self.slide_number))
+                    self.abort('ANSWER-ERROR', '"Answer: ... %s=%s" is not a valid option; expecting numeric value' % (num_match.group(1), num_match.group(2)))
             elif opt == 'retry':
                 retry_counts = [1, 0]
             else:
@@ -2178,13 +2185,13 @@ class SlidocRenderer(MathRenderer):
                 if option_match:
                     opt_name = option_match.group(1)
                     if option_match.group(3) and option_match.group(3) not in opt_values[opt_name]:
-                        abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s=%s' is not a valid option; expecting %s for slide %s" % (self.options["filename"], opt_name, option_match.group(3), '/'.join(opt_values[opt_name]), self.slide_number))
+                        self.abort('ANSWER-ERROR', '"Answer: ... %s=%s" is not a valid option; expecting %s' % (opt_name, option_match.group(3), '/'.join(opt_values[opt_name])))
 
                     answer_opts[opt_name] = option_match.group(3) or opt_values[opt_name][0]
                     if opt_name == 'team' and answer_opts[opt_name] == 'setup':    # Backwards compatibility
                         answer_opts[opt_name] = 'assign'
                 else:
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... %s' is not a valid answer option for slide %s" % (self.options["filename"], opt, self.slide_number))
+                    self.abort('ANSWER-ERROR', 'Answer: ... %s is not a valid answer option' % opt)
 
         if not answer_opts['share']:
             if (answer_opts['vote'] or 'share_all' in self.options['config'].features):
@@ -2211,7 +2218,7 @@ class SlidocRenderer(MathRenderer):
             qtype = type_match.group(1)
             text = type_match.group(2).strip()
             if qtype not in valid_simple_types:
-                abort("    ****ANSWER-ERROR: %s: %s is not a valid answer type; expected %s=answer in slide %s" % (self.options["filename"], qtype, '|'.join(valid_simple_types), self.slide_number))
+                self.abort('ANSWER-ERROR', '%s is not a valid answer type; expected %s=answer' % (qtype, '|'.join(valid_simple_types)))
 
         embed_defs = []
         expect_match = ANSWER_EXPECT_RE.match(text)
@@ -2242,7 +2249,7 @@ class SlidocRenderer(MathRenderer):
                 elif match[1] == '$$':
                     self.global_plugin_refs.add(match[2])
         elif text.startswith('`'):
-            abort("    ****ANSWER-ERROR: %s: Expecting Answer: ...`=formula`, but found %s in slide %s" % (self.options["filename"], text, self.slide_number))
+            self.abort('ANSWER-ERROR', 'Expecting Answer: ...`=formula`, but found %s' % (text,))
 
         num_match = re.match(r'^([-+/\d\.eE\s%]+)$', text)
         if num_match and text.lower() != 'e' and (not qtype or qtype == 'number'):
@@ -2262,7 +2269,7 @@ class SlidocRenderer(MathRenderer):
                 qtype = 'number'
                 text = ans + (' +/- '+error if error else '')
             else:
-                abort("    ****ANSWER-ERROR: %s: 'Answer: %s' is not a valid numeric answer; expect 'ans +/- err' in slide %s" % (self.options["filename"], text, self.slide_number))
+                self.abort('ANSWER-ERROR', '"Answer: %s" is not a valid numeric answer; expect "ans +/- err"' % (text,))
 
         elif not qtype:
             amatch = ANSWER_CONTENT_RE.match(text)
@@ -2281,10 +2288,10 @@ class SlidocRenderer(MathRenderer):
                 elif plugin_name in self.options['plugin_defs']:
                     arg_pattern = self.options['plugin_defs'][plugin_name].get('ArgPattern', '')
                 else:
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: %s' missing definition for response plugin %s in slide %s" % (self.options["filename"], text, plugin_name, self.slide_number))
+                    self.abort('ANSWER-ERROR', '"Answer: %s" missing definition for response plugin %s in' % (text, plugin_name))
 
                 if arg_pattern and not re.match(arg_pattern, tem_args):
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: %s' invalid arguments for plugin %s, expecting %s; in slide %s" % (self.options["filename"], text, plugin_name, arg_pattern, self.slide_number))
+                    self.abort('ANSWER-ERROR', '"Answer: %s" invalid arguments for plugin %s, expecting %s' % (text, plugin_name, arg_pattern))
 
                 plugin_action = 'response'
                 qtype = plugin_name + '/' + tem_args
@@ -2321,7 +2328,7 @@ class SlidocRenderer(MathRenderer):
                 if qtype == 'choice':
                     # Multiple answers for choice are allowed with a warning (to fix grading problems)
                     if len(text) > 1:
-                        message("    ****ANSWER-WARNING: %s: 'Answer: choice=%s' expect single choice in slide %s" % (self.options["filename"], text, self.slide_number))
+                        self.message('ANSWER-WARNING', '"Answer: choice=%s" expect single choice' % (text,))
                 elif not qtype:
                     qtype = 'multichoice' if len(text) > 1 else 'choice'
 
@@ -2329,7 +2336,7 @@ class SlidocRenderer(MathRenderer):
                     if 'auto_noshuffle' in self.options['config'].features:
                         noshuffle = self.count_of_the_above
                     elif 'shuffle_choice' in self.options['config'].features:
-                        message("    ****CHOICE-WARNING: Choice question %d may need noshuffle=%d value for '... of the above' option(s)" % (len(self.questions)+1, self.count_of_the_above))
+                        self.message('CHOICE-WARNING', 'Choice question %d may need noshuffle=%d value for "... of the above" option(s)' % (len(self.questions)+1, self.count_of_the_above))
             else:
                 # Ignore choice options
                 self.choice_opts = []
@@ -2342,7 +2349,7 @@ class SlidocRenderer(MathRenderer):
             self.cur_qtype = qtype or 'text'
 
         elif qtype and qtype != self.cur_qtype:
-            abort("    ****ANSWER-ERROR: %s: 'Answer: %s' line inconsistent; expected 'Answer: %s' in slide %s" % (self.options["filename"], qtype, self.cur_qtype, self.slide_number))
+            self.abort('ANSWER-ERROR', '"Answer: %s" line inconsistent; expected "Answer: %s"' % (qtype, self.cur_qtype))
 
         if self.cur_qtype == 'Code/python':
             self.load_python = True
@@ -2364,7 +2371,7 @@ class SlidocRenderer(MathRenderer):
                 except Exception, excp:
                     import traceback
                     traceback.print_exc()
-                    message("    ****ANSWER-WARNING: %s: 'Answer: %s' in slide %s does not parse properly as html: %s'" % (self.options["filename"], text, self.slide_number, excp))
+                    self.message('ANSWER-WARNING', '"Answer: %s" in slide not parsed properly as html: %s' % (text, excp))
 
         multiline_answer = self.cur_qtype.startswith('text/')
         if multiline_answer:
@@ -2400,14 +2407,14 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['followup']:
             if not self.last_question_props:
-                abort("    ****FOLLOWUP-ERROR: %s: Answer: followup=%s not allowed for first question in slide %s" % (self.options["filename"], answer_opts['followup'], self.slide_number))
+                self.abort('FOLLOWUP-ERROR', 'Answer: followup=%s not allowed for first question' % (answer_opts['followup'],))
 
             last_followup = self.last_question_props['followup'] or 0
             if answer_opts['followup'] not in (last_followup, last_followup+1):
-                abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting followup=%s/%s but found followup=%s in slide %s" % (self.options["filename"], last_followup, last_followup+1, answer_opts['followup'], self.slide_number))
+                self.abort('FOLLOWUP-ERROR', 'Answer: Expecting followup=%s/%s but found followup=%s' % (last_followup, last_followup+1, answer_opts['followup']))
 
             if self.choice_alternatives != self.last_question_props['alternatives']:
-                abort("    ****FOLLOWUP-ERROR: %s: Answer: Expecting %s alternatives but found %s for followup=%s question in slide %s" % (self.options["filename"], self.last_question_props['alternatives'], self.choice_alternatives, answer_opts['followup'], self.slide_number))
+                self.abort('FOLLOWUP-ERROR', 'Answer: Expecting %s alternatives but found %s for followup=%s question' % (self.last_question_props['alternatives'], self.choice_alternatives, answer_opts['followup']))
 
 
         self.last_question_props = {'alternatives': self.choice_alternatives, 'followup': answer_opts['followup'] or 0}
@@ -2430,7 +2437,7 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['team']:
             if answer_opts['team'] == 'response' and not self.sheet_attributes['sessionTeam']:
-                abort("    ****TEAM-ERROR: %s: No Team: option specified before team=response in slide %s" % (self.options['filename'], self.slide_number))
+                self.abort('TEAM-ERROR', 'No Team: option specified before team=response in slide')
             self.questions[-1].update(team=answer_opts['team'])
 
         if answer_opts['vote']:
@@ -2465,13 +2472,13 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['team'] in ('assign', 'generate'):
             if self.sheet_attributes['sessionTeam']:
-                abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=assign/generate' must occur as first team option in slide %s" % (self.options["filename"], self.slide_number))
+                self.abort('ANSWER-ERROR', '"Answer: ... team=assign/generate" must occur as first team option')
             if answer_opts['team'] == 'assign':
                 if self.cur_qtype != 'choice' and self.cur_qtype != 'text':
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=assign' must have answer type as 'choice' or 'text' in slide %s" % (self.options["filename"], self.slide_number))
+                    self.abort('ANSWER-ERROR', '"Answer: ... team=assign" must have answer type as "choice" or "text"')
             else:
                 if self.cur_qtype != 'choice' and self.cur_qtype != 'number':
-                    abort("    ****ANSWER-ERROR: %s: 'Answer: ... team=generate' must have answer type as 'choice' or 'number' in slide %s" % (self.options["filename"], self.slide_number))
+                    self.abort('ANSWER-ERROR', '"Answer: ... team=generate" must have answer type as "choice" or "number"')
             self.sheet_attributes['sessionTeam'] = {'session': '_'+answer_opts['team'], 'slide': self.slide_number}
 
         ans_grade_fields = self.process_weights(weight_answer, plugin_action)
@@ -2493,7 +2500,7 @@ class SlidocRenderer(MathRenderer):
 
         if answer_opts['disabled']:
             if self.options['config'].pace > BASIC_PACE:
-                abort("    ****ANSWER-ERROR: %s: 'Answer disabling incompatible with pace value: slide %s" % (self.options["filename"], self.slide_number))
+                self.abort('ANSWER-ERROR', 'Answer disabling incompatible with pace value')
             if answer_opts['disabled'] == 'choice':
                 ans_params['ansdisp'] = ' slidoc-ansdisp-disabled-choice'
             else:
@@ -2508,7 +2515,7 @@ class SlidocRenderer(MathRenderer):
             return html_prefix+(self.ansprefix_template % ans_params)+'<p></p>\n'
 
         if not self.slide_block_solution and len(self.slide_block_test) != len(self.slide_block_output):
-            abort("    ****ANSWER-ERROR: %s: Test block count %d != output block_count %d in slide %s" % (self.options["filename"], len(self.slide_block_test), len(self.slide_block_output), self.slide_number))
+            self.abort('ANSWER-ERROR', 'Test block count %d != output block_count %d' % (len(self.slide_block_test), len(self.slide_block_output)))
 
         if self.options['config'].show_correct == 'always':
             # No hiding of correct answers
@@ -2595,21 +2602,21 @@ class SlidocRenderer(MathRenderer):
             vweight = parse_number(comps[2])
 
         if sweight is None or vweight is None:
-            abort("    ****WEIGHT-ERROR: %s: Error in parsing 'weight=%s' answer option; expected ';weight=number[,number[,number]]' in slide %s" % (self.options["filename"], text, self.slide_number))
+            self.abort('WEIGHT-ERROR', 'Error in parsing "weight=%s" answer option; expected ";weight=number[,number[,number]]"' % (text,))
             return []
 
         if 'grade_response' not in self.options['config'].features:
             if gweight is not None:
-                message("    ****WEIGHT-WARNING: %s: Not grading question with weight %d line in slide %s (no sheet URL?)" % (self.options["filename"], gweight, self.slide_number))
+                self.message('WEIGHT-WARNING', 'Not grading question with weight %d line (no sheet URL?)' % (gweight,))
 
             gweight = None
 
         if gweight is not None and '/' not in self.qtypes[-1] and not self.questions[-1].get('explain') and '()' not in self.questions[-1].get('correct','') < 0:
-            message("    ****WEIGHT-WARNING: %s: Ignoring unexpected grade weight %d in non-multiline/non-explained slide %s" % (self.options["filename"], gweight, self.slide_number))
+            self.message('WEIGHT-WARNING', 'Ignoring unexpected grade weight %d in non-multiline/non-explained' % (gweight,))
             gweight = None
 
         if vweight and not self.questions[-1].get('vote'):
-            message("    ****WEIGHT-WARNING: %s: Ignoring unexpected vote weight %d line without vote option in slide %s" % (self.options["filename"], vweight, self.slide_number))
+            self.message('WEIGHT-WARNING', 'Ignoring unexpected vote weight %d line without vote option' % (vweight,))
             vweight = 0
 
         if vweight:
@@ -2657,11 +2664,11 @@ class SlidocRenderer(MathRenderer):
             return ''
 
         ###if self.notes_end is not None:
-        ###    message("    ****TAGS-ERROR: %s: 'Tags: %s' line after Notes: ignored in '%s'" % (self.options["filename"], text, self.cur_header))
+        ###    message('TAGS-WARNING', '"Tags: %s" line after Notes: ignored" % (text,))
         ###    return ''
 
         if self.slide_concepts:
-            message("    ****TAGS-ERROR: %s: Extra 'Tags: %s' line ignored in '%s'" % (self.options["filename"], text, self.cur_header or ('slide%02d' % self.slide_number)))
+            self.message('TAGS-WARNING', 'Extra "Tags: %s" line ignored' % (text,))
             return ''
 
         primary, _, secondary = text.partition(':')
@@ -2725,15 +2732,15 @@ class SlidocRenderer(MathRenderer):
         if self.extra_end is not None:
             return ''
         if not self.qtypes[-1]:
-            abort("    ****HINT-ERROR: %s: Hint must appear after Answer:... in slide %s" % (self.options["filename"], self.slide_number))
+            self.abort('HINT-ERROR', 'Hint must appear after Answer:...')
 
         if self.notes_end is not None:
-            abort("    ****HINT-ERROR: %s: Hint may not appear within Notes section of slide %s" % (self.options["filename"], self.slide_number))
+            self.abort('HINT-ERROR', 'Hint may not appear within Notes section of slide')
         if not isfloat(text) or abs(float(text)) >= 100.0:
-            abort("    ****HINT-ERROR: %s: Invalid penalty %s following Hint. Expecting a negative percentage in slide %s" % (self.options["filename"], text, self.slide_number))
+            self.abort('HINT-ERROR', 'Invalid penalty %s following Hint. Expecting a negative percentage' % (text, ))
 
         if self.options['config'].pace > QUESTION_PACE:
-            message("    ****HINT-WARNING: %s: Hint displayed for non-question-paced module in slide %s" % (self.options["filename"], self.slide_number))
+            self.message('HINT-WARNING', 'Hint displayed for non-question-paced module')
 
         hint_penalty = abs(float(text)) / 100.0
             
@@ -3542,9 +3549,12 @@ def process_input(*args, **argv):
     try:
         return process_input_aux(*args, **argv)
     except SystemExit, excp:
-        import traceback
-        traceback.print_exc()
-        raise Exception('System exit error in process input: %s' % excp)
+        if argv.get('return_html') or argv.get('return_messages'):
+            import traceback
+            traceback.print_exc()
+            raise Exception('System exit error in process input: %s' % excp)
+        else:
+            sys.exit(str(excp))
 
 def process_input_aux(input_files, input_paths, config_dict, default_args_dict={}, images_zipdict={}, nb_links={},
                       restricted_sessions_re=None, return_html=False, return_messages=False, extra_attributes={},
