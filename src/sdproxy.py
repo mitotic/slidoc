@@ -94,7 +94,7 @@ COPY_FROM_CONFIG = ['gsheet_url', 'site_label', 'site_title', 'site_access',
                     'no_login_token', 'no_late_token', 'no_roster', 'log_call',
                    ]
     
-COPY_FROM_SERVER = ['auth_key', 'site_name',  'server_url',
+COPY_FROM_SERVER = ['auth_key', 'auth_type', 'site_name',  'server_url',
                     'debug', 'dry_run', 'email_addr', 'email_url', 'root_users',
                     'lock_proxy_url', 'min_wait_sec', 'request_timeout',]
 
@@ -137,6 +137,7 @@ DISCUSS_ID = '_discuss'
 
 MIN_HEADERS = ['name', 'id', 'email', 'altid']
 STATUS_HEADER = 'status'
+TEAM_HEADER = 'team'
 TWITTER_HEADER = 'twitter'
 GRADE_HEADERS = ['total', 'grade', 'numGrade']
 COPY_HEADERS = ['source', 'team', 'lateToken', 'lastSlide', 'retakes']
@@ -2592,7 +2593,7 @@ def sheetAction(params, notrace=False):
                 sortVals.sort()
 
                 if adminUser or paramId == TESTUSER_ID:
-                    nameMap = lookupRoster('name', userId=None)
+                    nameMap = lookupRoster('name')
                     if not nameMap:
                         nameMap = {}
                         for j in range(nRows):
@@ -4169,7 +4170,9 @@ def getRowMap(sheetName, colName, regular=False, optional=False, startRow=2):
             rowMap[rowId[0]] = vals[j][0]
     return rowMap
 
-def lookupRoster(field, userId=None):
+def lookupRoster(field, userId=None, regular=False):
+    # If not userId, return all entries for field as a dict
+    # if regular, only for names defined and not starting with #)
     rosterSheet = getSheet(ROSTER_SHEET)
     if not rosterSheet:
         return None
@@ -4189,9 +4192,12 @@ def lookupRoster(field, userId=None):
         return lookupValues(userId, [field], ROSTER_SHEET, True)[0]
 
     idVals = getColumns('id', rosterSheet, 1, 2)
+    names = getColumns('name', rosterSheet, 1, 2)
     fieldVals = getColumns(field, rosterSheet, 1, 2)
     fieldDict = OrderedDict()
     for j, idVal in enumerate(idVals):
+        if regular and (not names[j] or names[j].startswith('#')):
+            continue
         fieldDict[idVal] = fieldVals[j]
     return fieldDict
 
@@ -4726,7 +4732,7 @@ def getDiscussionSeeds(sessionName, questionNum, discussNum):
     postEntries = discussSheet.getSheetValues(startRow, discussCol, nRows, 1)
     idValues = discussSheet.getSheetValues(startRow, discussColIndex['id'], nRows, 1)
     nameValues = discussSheet.getSheetValues(startRow, discussColIndex['name'], nRows, 1)
-    nameMap = lookupRoster('name', userId=None)
+    nameMap = lookupRoster('name')
     if not nameMap:
         nameMap = {}
         for j in range(nRows):
@@ -5244,7 +5250,7 @@ def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min
     if fromSession.startswith('_'):
         if fromSession == '_roster':
             # Assigned teams from roster
-            userTeams = lookupRoster('team')
+            userTeams = lookupRoster('team', regular=True)
             userNames = lookupRoster('name')
         else:
             # Assigned teams from response in current session
@@ -5256,7 +5262,7 @@ def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min
             teamName = userTeams[temId]
             if teamName in members:
                 members[teamName].append(temId)
-            else:
+            elif teamName:
                 members[teamName] = [temId]
         aliases = None
         explanations = None
@@ -5280,7 +5286,7 @@ def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min
         responses = getRowMap(fromSession, 'q'+str(fromQuestion)+'_response', regular=True)
         explanations = getRowMap(fromSession, 'q'+str(fromQuestion)+'_explain', regular=True, optional=True) or {}
 
-        statusMap = lookupRoster(STATUS_HEADER)
+        statusMap = lookupRoster(STATUS_HEADER) or {}
         user_ranks = []
         for user in responses.keys():
             if sources[user] == 'interact':
@@ -5302,8 +5308,9 @@ def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min
 
     return members, aliases, ranks, explanations
 
-def seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanations, userNames):
-    # Ranked session setup
+def seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, explanations, userNames):
+    # Ranked session seedType='answer'/'explanation'/'name'
+    print('sdproxy: seedDiscussion', seedType, sessionName, discussNum, file=sys.stderr)
     teamNameList = members.keys()
     teamNameList.sort()
     updateSessionDiscussSheet(sessionName)
@@ -5313,21 +5320,41 @@ def seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanation
 
     closeDiscussion(sessionName, discussNum, reopen=True)
     
-    for iteam in range(len(teamNameList)):
-        teamName = teamNameList[iteam]
-        teamRanks = ranks[teamName]
-        for imem in range(len(teamRanks)):
-            teamUserId, rankValue = teamRanks[imem]
-            if not rankValue:
-                continue
-            colName = DISCUSS_COL_FMT % discussNum
-            try:
-                postText = sliauth.str_encode(explanations.get(teamUserId,'')).strip()
-                colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText, answer=str(rankValue))
+    colName = DISCUSS_COL_FMT % discussNum
+    if seedType == 'name':
+        for teamName, memberList in members.items():
+            for teamUserId in memberList:
+                postText = teamUserId
+                if Settings['auth_type'] and ',' in Settings['auth_type']:
+                    comps = Settings['auth_type'].split(',')
+                    if comps[0] and comps[0][0] == '@':
+                        # Append login domain
+                        postText += comps[0]
+                if userNames.get(teamUserId):
+                    postText += ' (' + userNames.get(teamUserId) + ')'
+                colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText)
                 addDiscussUser(sessionName, teamUserId, userNames[teamUserId])
                 setValue(teamUserId, colName, colValue, sessionName+'_discuss')
-            except Exception, excp:
-                print('sdproxy.seedDiscuss: Error in team seed post for user %s in session %s, discussion %s: %s' % (teamUserId, sessionName, discussNum, excp), file=sys.stderr)
+    elif ranks:
+        for iteam in range(len(teamNameList)):
+            teamName = teamNameList[iteam]
+            teamRanks = ranks[teamName]
+            for imem in range(len(teamRanks)):
+                teamUserId, rankValue = teamRanks[imem]
+                if not rankValue:
+                    continue
+                try:
+                    postText = ''
+                    answerText = ''
+                    postText = sliauth.str_encode(explanations.get(teamUserId,'')).strip()
+                    if seedType == 'answer':
+                        answerText = str(rankValue)
+                    if postText or answerText:
+                        colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText, answer=answerText)
+                        addDiscussUser(sessionName, teamUserId, userNames[teamUserId])
+                        setValue(teamUserId, colName, colValue, sessionName+'_discuss')
+                except Exception, excp:
+                    print('sdproxy.seedDiscuss: Error in team seed post for user %s in session %s, discussion %s: %s' % (teamUserId, sessionName, discussNum, excp), file=sys.stderr)
 
 def finalizeSessionTeam(sessionName, members, aliases, ranks, explanations, delayed=False):
 
@@ -5347,13 +5374,15 @@ def finalizeSessionTeam(sessionName, members, aliases, ranks, explanations, dela
             Global.teamSetupCallback(sessionName, ','.join(teamUserIds), teamName)
 
     if discussSlides and len(discussSlides):
-        userNames = getRowMap(sessionName, 'name', regular=True)
         for idisc in range(len(discussSlides)):
             discussNum = idisc+1
             if discussSlides[idisc].get('team') and not getTeamSettings(sessionName, discussNum=discussNum, optional=True):
+                updateSessionDiscussSheet(sessionName)
                 setValue(DISCUSS_ID, DISCUSS_COL_FMT % discussNum, 'SESSIONTEAM', sessionName+'_discuss')
-                if discussSlides[idisc].get('seed') and ranks:
-                    seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanations, userNames)
+                seedType = discussSlides[idisc].get('seed')
+                userNames = lookupRoster('name') or getRowMap(sessionName, 'name', regular=True)
+                if seedType and (ranks or seedType == 'name'):
+                    seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, explanations, userNames)
             notifyDiscussUsers(sessionName, discussNum, '', 'setup', '', '', '')
 
 def generateTeam(sessionName, questionNum, params):
@@ -5379,9 +5408,10 @@ def generateTeam(sessionName, questionNum, params):
     elif not getTeamSettings(sessionName, discussNum=discussNum, optional=True):
         setTeamSettings(sessionName, members, aliases, discussNum=discussNum)
 
-        if params.get('seedDiscuss'):
+        seedType = params.get('seedDiscuss')
+        if seedType:
             userNames = getRowMap(sessionName, 'name', regular=True)
-            seedDiscussion(sessionName, discussNum, members, aliases, ranks, explanations, userNames)
+            seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, explanations, userNames)
         notifyDiscussUsers(sessionName, discussNum, '', 'teamgen', '', '', '')
 
 

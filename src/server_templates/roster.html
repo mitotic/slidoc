@@ -36,6 +36,37 @@ th { text-align: left; }
 <b><a class="clickable" href="javascript:slidocAction('editroster')">Add new user to roster</a></b>
 <hr>
 
+<b><span class="clickable" onclick="document.getElementById('teamgen-form').style.display=null;this.style.display='none';">Create roster teams</span></b>
+
+<form id="teamgen-form" action="/{{site_name}}{% if site_name %}/{% end %}_teamgen" method="post" enctype="multipart/form-data" style="display: none;">
+    <b>Create roster teams</b>
+   <div id="teamgen-container" class="">
+    <div id="teamgen-options">
+      Gradebook columns to average: <input type="text" id="teamgen-gradecols" name="gradecols" value=""></input><br>
+      Include null values: <input type="checkbox" id="teamgen-includenull" name="includenull" value="includenull"></input><br>
+      Minimum team size: <input type="number" id="teamgen-size" name="minsize" value="3"></input><br>
+      Number of teams: <input type="number" id="teamgen-count" name="count" value=""></input><br>
+      Team composition: <select  id="teamgen-composition" name="composition">
+                          <option value="diverse" selected>Diverse</option>
+                          <option value="similar">Similar</option>
+                          <option value="random">Random</option>
+                        </select>
+      User aliases: <select  id="teamgen-alias" name="alias">
+                          <option value="" selected>No aliases</option>
+                          <option value="teamgreek">Greek names for team members</option>
+                          <option value="team">Letter names for team members</option>
+                          <option value="rankgreek">Greek names based on answers</option>
+                          <option value="rank">Letter names based on answers</option>
+                        </select><br>
+      Overwrite teams: <input type="checkbox" id="teamgen-overwrite" name="overwrite" value="overwrite"></input><br>
+     </div>
+   </div>
+   <div>
+     <input id="slidoc-upload-submit" type="submit" value="Create teams">
+   </div>
+</form>
+<hr>
+
 <a class="clickable" href="{{ qwheel_new  }}" target="_blank"><b>New question wheel session</b></a>
 <p></p>
 

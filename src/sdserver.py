@@ -2423,7 +2423,7 @@ class ActionHandler(BaseHandler):
                 return
             submitDate = self.get_argument('submitdate','')
 
-        if action in ('_browse', '_import', '_restore', '_editroster', '_attend', '_roster', '_submit', '_upload'):
+        if action in ('_browse', '_import', '_restore', '_editroster', '_teamgen', '_attend', '_roster', '_submit', '_upload'):
             if action == '_submit':
                 # Submit test user
                 try:
@@ -2458,6 +2458,60 @@ class ActionHandler(BaseHandler):
                 except Exception, excp:
                     self.render('editroster.html', site_name=Options['site_name'], session_name='',
                                  headers=headers, values=[rowDict[header] for header in headers], err_msg=str(excp), edit=False)
+
+            elif action == '_teamgen':
+                try:
+                    count = int(self.get_argument('count', '') or '0')
+                    minsize = int(self.get_argument('minsize', '') or '0')
+                    inc_null = self.get_argument('includenull', '')
+                    grade_cols = [x.strip() for x in self.get_argument('gradecols', '').split(',') if x.strip()]
+                    user_ranks = []
+                    if not self.get_argument('overwrite', ''):
+                        if any(sdproxy.lookupRoster(sdproxy.TEAM_HEADER, regular=True).values()):
+                            raise Exception('Teams already present in roster; select overwrite option')
+                    statusMap = sdproxy.lookupRoster('status', regular=True)
+                    for idValue, status in statusMap.items():
+                        if status == sdproxy.DROPPED_STATUS:
+                            continue
+                        try:
+                            grade_vals = sdproxy.lookupValues(idValue, grade_cols, sdproxy.GRADES_SHEET, listReturn=True)
+                            rank = sum(x or 0 for x in grade_vals)
+                        except Exception, excp:
+                            rank = 0
+                            if Options['debug']:
+                                print >> sys.stderr, 'ActionHandler:teamgen ERROR', idValue, str(excp)
+                        if not rank and not inc_null:
+                            continue
+                        user_ranks.append([idValue, rank])
+                        
+                    props = sliauth.team_props(user_ranks, min_size=minsize, composition=self.get_argument('composition', ''),
+                                               alias=self.get_argument('alias', ''), random_seed='_roster')
+                    team_lines = []
+                    for j, team_name in enumerate(props['members']):
+                        # Define teams
+                        members = props['members'][team_name]
+                        for idValue in members:
+                            sdproxy.setValue(idValue, sdproxy.TEAM_HEADER, team_name, sdproxy.ROSTER_SHEET)
+
+                        team_ranks = props['ranks'][team_name]
+                        team_desc = ' '.join('%s:%s' % tuple(user_rank) for user_rank in team_ranks)
+                        if str(team_ranks[0][1]).isalpha():
+                            team_avg = sum(ord(user_rank[1].upper())-ord('A') for user_rank in team_ranks) / float(len(team_ranks))
+                        else:
+                            team_avg = sum(user_rank[1] for user_rank in team_ranks) / float(len(team_ranks))
+                        team_lines.append( 'team %02d %s (%4.2f): %s' % (j+1, team_name, team_avg, team_desc))
+                    self.write('<pre>'+tornado.escape.xhtml_escape('\n'.join(team_lines))+'</pre>')
+
+                    if Options['debug']:
+                        print >> sys.stderr, 'ActionHandler:teamgen', minsize, count, self.get_argument('composition', ''), grade_cols, user_ranks
+                        for team_line in team_lines:
+                            print >> sys.stderr, 'ActionHandler:teamgen    ', team_line
+                except Exception, excp:
+                    if Options['debug']:
+                        import traceback
+                        traceback.print_exc()
+                    self.displayMessage('Error in team generation: '+str(excp))
+                    return
 
             elif action == '_attend':
                 selectedDay = self.get_argument('newday', '').strip().lower()
@@ -5785,6 +5839,7 @@ def createApplication():
                       r"/(_startpreview/[-\w.]+)",
                       r"/(_submit/[-\w.:;]+)",
                       r"/(_twitter)",
+                      r"/(_teamgen)",
                       r"/(_unlock/[-\w.]+)",
                       r"/(_unsafe_trigger_updates/[-\w.]+)",
                       r"/(_upload)",
@@ -5951,7 +6006,7 @@ def importRoster(filepath, csvfile, overwrite=False, lastname_col='', firstname_
         if not idCol and not emailCol:
             raise Exception('ID column %s not found in CSV file %s' % (id_col, filepath))
 
-        rosterHeaders = sdproxy.MIN_HEADERS + [sdproxy.STATUS_HEADER, sdproxy.TWITTER_HEADER]
+        rosterHeaders = sdproxy.MIN_HEADERS + [sdproxy.STATUS_HEADER, sdproxy.TEAM_HEADER, sdproxy.TWITTER_HEADER]
         rosterTwitterCol = 1 + rosterHeaders.index(sdproxy.TWITTER_HEADER)
         rosterRows = []
         singleDomain = None

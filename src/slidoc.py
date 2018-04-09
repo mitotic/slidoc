@@ -1809,6 +1809,7 @@ class SlidocRenderer(MathRenderer):
     def slidoc_discuss(self, name, text):
         self.slide_options.add('discuss')
         discuss_opts = {}
+        seed_opts = ('answer', 'name', 'response')
         for option_value in text.split():
             option, sep, value = option_value.partition('=')
 
@@ -1816,7 +1817,11 @@ class SlidocRenderer(MathRenderer):
                 if not value.isdigit():
                     self.abort('DISCUSS-ERROR', 'Invalid Discuss: %s=%s option; expecting numeric value' % (option, value))
 
-            elif option in ('seed','team'):
+            elif option == 'seed':
+                value = value or 'answer'
+                if value not in seed_opts:
+                    self.abort('DISCUSS-ERROR', 'Invalid Discuss: seed=%s option; expecting one of %s' % (value, '/'.join(seed_opts)))
+            elif option in ('team',):
                 pass
             else:
                 self.abort('DISCUSS-ERROR', 'Unknown Discuss: %s=%s option ' % (option, value))
@@ -1867,14 +1872,14 @@ class SlidocRenderer(MathRenderer):
                     
             team_opts[option] = value or 'yes'
 
-        if 'count' not in team_opts and 'minsize' not in team_opts and 'names' not in team_opts:
-            self.abort('TEAM-ERROR', 'Must specify one of count=... or minsize=... for Team: option')
-
         if 'session' not in team_opts:
             self.abort('TEAM-ERROR', 'Team: session=... option missing')
 
         if team_opts['session'] == '_roster' and team_opts.get('question'):
             self.abort('TEAM-ERROR', 'Team: question option incompatible with session option')
+
+        if team_opts['session'] != '_roster' and ('count' not in team_opts and 'minsize' not in team_opts and 'names' not in team_opts):
+            self.abort('TEAM-ERROR', 'Must specify one of count=... or minsize=... for Team: option')
 
         team_opts['slide'] = self.slide_number
         self.sheet_attributes['sessionTeam'] = team_opts

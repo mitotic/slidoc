@@ -261,10 +261,10 @@ Discuss = {
 	Slidoc.log('Slidoc.Plugins.Discuss.flagPost:', postNum, userTeam, userId, unflag);
 	if (this.discussNum <= 0)
 	    return false;
-	if (!window.confirm((unflag?'Unflag':'Flag')+' discussion post?'))
+	if (!window.confirm(unflag ? 'Flag discussion post for offensive content?' : 'Unflag post?'))
 	    return false;
 	if (!unflag) {
-	    if (!window.confirm('If you flag this post, it will be hidden and the instructor will be informed. Do you wish to proceed?'))
+	    if (!window.confirm('You should only flag posts for offensive content, not simply because you disagree with it. If you flag this post, it will be no longer be visible and the instructor will be informed of your action. Do you wish to proceed?'))
 		return false;
 	}
 	var params = {session: this.sessionName, discussion: this.discussNum, team: userTeam||'', post:postNum,

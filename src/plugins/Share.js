@@ -14,7 +14,8 @@ Share = {
 	this.detailsElem = document.getElementById(this.pluginId+'-sharedetails');
 	this.finalizeElem = document.getElementById(this.pluginId+'-sharefinalize');
 	this.respondersElem = document.getElementById(this.pluginId+'-shareresponders');
-	this.teamgenElem = document.getElementById(this.pluginId+'-teamgen-container');
+	this.teamgenToggleElem = document.getElementById(this.pluginId+'-teamgen-toggle');
+	this.teamgenContainerElem = document.getElementById(this.pluginId+'-teamgen-container');
 	this.teamgenOptionsElem = document.getElementById(this.pluginId+'-teamgen-options');
 	this.showorigElem = document.getElementById(this.pluginId+'-teamgen-showorig');
 	this.sessionTeamElem = document.getElementById(this.pluginId+'-teamgen-sessionteam');
@@ -51,7 +52,7 @@ Share = {
 	var sessionTeamGen = this.qattributes.team && (this.qattributes.team == 'assign' || this.qattributes.team == 'generate');
 	var discussTeamGen = this.discussNum && (this.qattributes.qtype == 'choice' || this.qattributes.qtype == 'number');
 	if (this.adminUser &&  (sessionTeamGen || discussTeamGen) && (!this.teamStatus || this.teamStatus.indexOf(this.discussNum) < 0))
-	    this.teamgenElem.style.display = null;  // Question slide with team=assign|generate or Discuss with choice/numeric, with team not yet generated
+	    this.teamgenToggleElem.style.display = null;  // Question slide with team=assign|generate or Discuss with choice/numeric, with team not yet generated
 
 	if (this.discussNum && this.teamStatus && this.teamStatus.indexOf(this.discussNum) >= 0)
 	    this.showorigElem.style.display = null;
@@ -570,7 +571,7 @@ Share = {
 	if (this.qattributes.team == 'assign') {
 	    var params = {composition: 'assign'};
 	} else {
-	    var seed = document.getElementById(this.pluginId+'-teamgen-seed').checked ? 1 : 0;
+	    var seed = document.getElementById(this.pluginId+'-teamgen-seed').value;
 	    var minSize = document.getElementById(this.pluginId+'-teamgen-size').value;
 	    var count = document.getElementById(this.pluginId+'-teamgen-count').value;
 	    var alias = document.getElementById(this.pluginId+'-teamgen-alias').value;
@@ -582,6 +583,7 @@ Share = {
 	    if (this.sessionTeamElem.checked)
 		params.sessionTeam = 1;
 	}
+	Slidoc.log('Slidoc.Plugins.Share.genTeam2:', params);
 	GService.requestWS('generate_team', [this.qattributes.qnumber, params], this.genTeamCallback.bind(this));
     },
 
@@ -589,7 +591,8 @@ Share = {
 	Slidoc.log('Slidoc.Plugins.Share.genTeamCallback:', retObj, errMsg);
 	if (retObj && retObj.result == 'success') {
 	    alert('Teams generated');
-	    this.teamgenElem.style.display = 'none';
+	    this.teamgenToggleElem.style.display = 'none';
+	    this.teamgenContainerElem.style.display = 'none';
 	    if (retObj.teamStatus) {
 		this.teamStatus = retObj.teamStatus;
 		Slidoc.PluginManager.teamStatusValue(retObj.teamStatus);
@@ -666,25 +669,31 @@ pre.slidoc-plugin-Share-responders {
      onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].finalizeShare();"></input>
      <pre id="%(pluginId)s-shareresponders" class="slidoc-plugin-Share-responders %(pluginId)s-shareresponders"><pre>
    </div>
+   <span id="%(pluginId)s-teamgen-toggle" class="slidoc-clickable slidoc-teamgenonly" onclick="document.getElementById('%(pluginId)s-teamgen-container').style.display=null;this.style.display='none';">Team creation options</span><br>
    <div id="%(pluginId)s-teamgen-container" class="slidoc-plugin-Share-teamgen %(pluginId)s-teamgen slidoc-teamgenonly" style="display: none;">
-     <input type="button" id="%(pluginId)s-teamgen-button" class="slidoc-clickable slidoc-button" value="Create team"
+     <input type="button" id="%(pluginId)s-teamgen-button" class="slidoc-clickable slidoc-button" value="Create teams"
      onclick="Slidoc.Plugins['%(pluginName)s']['%(pluginSlideId)s'].genTeam();"></input><br>
     <div id="%(pluginId)s-teamgen-options">
-      Minimum team size: <input type="number" id="%(pluginId)s-teamgen-size" value="3"></input>
-      Number of teams: <input type="number" id="%(pluginId)s-teamgen-count" value=""></input>
-      Seed discussion: <input type="checkbox" id="%(pluginId)s-teamgen-seed" value="seed" checked></input>
-      Set as session team: <input type="checkbox" id="%(pluginId)s-teamgen-sessionteam" value="sessionteam"></input>
+      Minimum team size: <input type="number" id="%(pluginId)s-teamgen-size" value="3"></input><br>
+      Number of teams: <input type="number" id="%(pluginId)s-teamgen-count" value=""></input><br>
+      Set as session team: <input type="checkbox" id="%(pluginId)s-teamgen-sessionteam" value="sessionteam"></input><br>
+      Team composition: <select  id="%(pluginId)s-teamgen-composition">
+                          <option value="diverse" selected>Diverse</option>
+                          <option value="similar">Similar</option>
+                          <option value="random">Random</option>
+                        </select>
+      Seed discussion: <select  id="%(pluginId)s-teamgen-seed">
+                          <option value="">No seeding</option>
+                          <option value="answer" selected>Answer</option>
+                          <option value="explanation">Explanation</option>
+                          <option value="name">Name</option>
+                        </select>
       User aliases: <select  id="%(pluginId)s-teamgen-alias">
                           <option value="" selected>No aliases</option>
                           <option value="teamgreek">Greek names for team members</option>
                           <option value="team">Letter names for team members</option>
                           <option value="rankgreek">Greek names based on answers</option>
                           <option value="rank">Letter names based on answers</option>
-                        </select>
-      Team composition: <select  id="%(pluginId)s-teamgen-composition">
-                          <option value="diverse" selected>Diverse</option>
-                          <option value="similar">Similar</option>
-                          <option value="random">Random</option>
                         </select>
      </div>
    </div>
