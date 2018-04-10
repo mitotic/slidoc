@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.22g';
+var VERSION = '0.97.22h';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -4720,7 +4720,7 @@ function actionHandler(actions, sheetName, create) {
 		    throw('Error:ACTION:Error in updating gradebook for session(s) '+sessions+': '+retval);
 		refreshSheets.push(GRADES_SHEET);
 	    } else if (sessions.length) {
-		throw('Error:ACTION:Error in updating gradebook for session(s) '+sessions+': No updates performed. Ensure session weight is not zero and either grades are released or ungraded sessions are overdue');
+		throw('Error:NOGRADEUPDATE:Error in updating gradebook for session(s) '+sessions+': No updates performed. Ensure session weight is not zero and either grades are released or ungraded sessions are overdue');
 	    }
 	} else {
 	    throw('Error:ACTION:Invalid action '+action+' for session(s) '+sessions);

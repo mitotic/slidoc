@@ -1762,6 +1762,9 @@ class ProxyUpdater(object):
             refreshSheet(sheetName)
 
         for errSessionName, proxyErrMsg, proxyErrTrace, proxyDebugMsg in respObj['info'].get('updateErrors',[]):
+            if 'NOGRADEUPDATE' in proxyErrMsg:
+                # Gradebook not updated; OK for proxy
+                continue
             temMsg = 'Update LOCKED %s: %s \n%s\n%s\n' % (errSessionName, proxyErrMsg, proxyErrTrace, proxyDebugMsg)
             if errSessionName not in Lock_cache:
                 Lock_cache[errSessionName] = proxyErrMsg
@@ -4541,10 +4544,12 @@ def getColumnMax(sheet, startRow, colNum):
 
 
 def setColumnMax(sheet, startRow, colNum, maxValue):
+    modified = False
+    if sheet.getLastRow() < startRow:
+        return modified
     vrange = sheet.getRange(startRow, colNum, sheet.getLastRow()-startRow+1, 1)
     values = vrange.getValues()
 
-    modified = False
     for j in range(len(values)):
         if values[j][0] and values[j][0] > maxValue:
             values[j][0] = maxValue
@@ -4578,7 +4583,7 @@ def lookupValues(idValue, colNames, sheetName, listReturn=False, blankValues=Fal
     indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2)
     sessionRow = indexRowIndex.get(idValue)
     if not sessionRow:
-        raise Exception('ID value '+idValue+' not found in index sheet '+sheetName)
+        raise Exception('ID value '+idValue+' not found in index sheet '+sheetName+': '+str(colNames))
     retVals = {}
     listVals = []
     for colName in colNames:
@@ -4601,7 +4606,7 @@ def setValue(idValue, colName, colValue, sheetName):
     indexRowIndex = indexRows(indexSheet, indexColIndex['id'], 2)
     sessionRow = indexRowIndex.get(idValue)
     if not sessionRow:
-        raise Exception('ID value '+idValue+' not found in index sheet '+sheetName)
+        raise Exception('ID value '+idValue+' not found in index sheet '+sheetName+': '+colName)
     if colName not in indexColIndex:
         raise Exception('Column '+colName+' not found in index sheet '+sheetName)
     indexSheet.getRange(sessionRow, indexColIndex[colName], 1, 1).setValues([[colValue]])

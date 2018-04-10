@@ -2598,7 +2598,7 @@ Slidoc.showConcepts = function (submitMsg) {
 		    var userId = getUserId();
 		    var computedGrade = computeGrade(userId);
 		    if (computedGrade != null && Math.abs(feedbackGrade - parseNumber(computedGrade)) > 0.01) {
-			alert('Warning: Inconsistent re-computed total grade: q_total!='+computedGrade)
+			alert('Warning: Inconsistent re-computed total grade: '+feedbackGrade+'!='+computedGrade+' for '+userId);
 		    }
 		    if (isNumber(Sliobj.feedback.q_scores) && Sliobj.scores.weightedCorrect != null && Math.abs(Sliobj.feedback.q_scores - parseNumber(Sliobj.scores.weightedCorrect)) > 0.01) {
 			alert('Warning: Inconsistent re-computed weighted score: sheet score '+Sliobj.feedback.q_scores+' != '+Sliobj.scores.weightedCorrect+' re-computed');
@@ -6248,8 +6248,12 @@ Slidoc.gradeMax = function (elem, slideId, gradeStr) {
 	return;
     var gradeInput = document.getElementById(slideId+'-grade-input');
     if (gradeInput && gradeStr) {
-	gradeInput.value = gradeStr.slice(1);
-	Slidoc.gradeClick(elem, slideId);
+	if (''+gradeInput.value) {
+	    alert('Clear entered grade of '+gradeInput.value+' to assign max value of '+gradeStr.slice(1))
+	} else {
+	    gradeInput.value = gradeStr.slice(1);
+	    Slidoc.gradeClick(elem, slideId);
+	}
     }
 }
 

@@ -2821,18 +2821,20 @@ class ActionHandler(BaseHandler):
         if sessionName != 'index':
             WSHandler.lockSessionConnections(sessionName, 'Session being modified. Wait ...', reload=False)
 
+        startedPreview = False
         if SiteProps.paced_session(uploadType) and sessionName != 'index':
             # Lock proxy for preview
             temMsg = sdproxy.startPreview(sessionName, rollingOver=rollingOver)
             if temMsg:
                 raise Exception('Unable to preview session: '+temMsg)
+            startedPreview = True
 
-            if deleteSlideNum:
+        try:
+            if startedPreview and deleteSlideNum:
                 delete_qno = sdproxy.deleteSlide(sessionName, deleteSlideNum)
                 if delete_qno:
                     modify = 'overwrite'
 
-        try:
             images_zipdata = None
             if fext == '.pptx':
                 md_text, images_zipdata = self.pptx2md(sessionName, fbody1, slides_zip=fbody2, zip_images=True)
@@ -2885,7 +2887,7 @@ class ActionHandler(BaseHandler):
             md_params = retval['md_params']
 
             # Save current preview state (allowing user to navigate and answer questions, without saving those changes)
-            if SiteProps.paced_session(uploadType) and sessionName != 'index':
+            if startedPreview:
                 sdproxy.savePreview()
 
             # NOTE: If adding any preview fields here, also modify createUnmodifiedPreview below
@@ -4986,7 +4988,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                                 # late/partial; use late submission option
                                 effectiveDueDate = userEntries['lateToken'][:17]
                         except Exception, excp:
-                            print >> sys.stderr, 'sdserver.on_message_aux', str(excp)
+                            ##print >> sys.stderr, 'sdserver.on_message_aux: plugin '+pluginName+'.'+pluginMethodName, str(excp)
+                            pass
                         if effectiveDueDate and sliauth.epoch_ms() > sliauth.epoch_ms(effectiveDueDate):
                             params['pastDue'] = sliauth.iso_date(effectiveDueDate)
                 
