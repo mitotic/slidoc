@@ -185,6 +185,9 @@ def normalize_newlines(s):
 def str_encode(value, errors='strict'):
     return value.encode('utf-8', errors) if isinstance(value, unicode) else value
 
+def str_decode(value, errors='replace'):
+    return value if isinstance(value, unicode) else value.decode('utf-8', errors)
+
 def safe_quote(value):
     return urllib.quote(str_encode(value), safe='')
 

@@ -870,31 +870,36 @@ class SlidocRenderer(MathRenderer):
     grading_template = '''
   <div id="%(sid)s-grade-element" class="slidoc-grade-element slidoc-answeredonly %(zero_gwt)s">
     <button id="%(sid)s-gstart-click" class="slidoc-clickable slidoc-button slidoc-gstart-click slidoc-grade-button slidoc-gradableonly slidoc-nograding" onclick="Slidoc.gradeClick(this, '%(sid)s');">Start</button>
+    <button id="%(sid)s-grade-clickadv" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-gradableonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s',true);">Save&#9660;</button>
     <button id="%(sid)s-grade-click" class="slidoc-clickable slidoc-button slidoc-grade-click slidoc-grade-button slidoc-gradableonly slidoc-gradingonly" onclick="Slidoc.gradeClick(this,'%(sid)s');">Save</button>
     <span id="%(sid)s-gradeprefix" class="slidoc-grade slidoc-gradeprefix slidoc-gradable-graded"><em>Grade:</em></span>
     <input id="%(sid)s-grade-input" type="number" step="any" class="slidoc-grade-input slidoc-gradableonly slidoc-gradingonly" onkeydown="Slidoc.inputKeyDown(event);"></input>
     <span id="%(sid)s-grade-content" class="slidoc-grade slidoc-grade-content slidoc-nograding"></span>
     <span id="%(sid)s-gradesuffix" class="slidoc-grade slidoc-gradesuffix slidoc-gradable-graded">%(gweight)s</span>
-    <button id="%(sid)s-grademax" class="slidoc-clickable slidoc-button slidoc-grademax slidoc-gradingonly" onclick="Slidoc.gradeMax(this,'%(sid)s','%(gweight)s');">&#x2714;</button>
+    <button id="%(sid)s-grademax" class="slidoc-clickable slidoc-button slidoc-grademax slidoc-gradingonly" onclick="Slidoc.gradeMax(this,'%(sid)s','%(gweight)s', true);">&#x2714;&#9660;</button>
   </div>
 '''
-    comments_template_a = '''
-  <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="7" ></textarea>
-  <div id="%(sid)s-comments-suggestions" class="slidoc-comments-suggestions" style="display: none;"></div>
-'''
     render_template = '''
-  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-button slidoc-render-button" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
+  <button id="%(sid)s-render-button" class="slidoc-clickable slidoc-button slidoc-render-button slidoc-nograding" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
 '''
+    response_div_template = '''  <div id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></div>\n'''
+    response_pre_template = '''  <pre id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></pre>\n'''
+
     quote_template = '''
   <button id="%(sid)s-quote-button" class="slidoc-clickable slidoc-button slidoc-quote-button slidoc-gradingonly" onclick="Slidoc.quoteText(this,'%(sid)s');">Quote</button>
 '''
-    comments_template_b = '''              
+    comments_template_grading = '''
+  <textarea id="%(sid)s-comments-textarea" name="textarea" class="slidoc-comments-textarea slidoc-gradingonly" cols="60" rows="7" ></textarea>
+  <div id="%(sid)s-comments-suggestions" class="slidoc-comments-suggestions" style="display: none;"></div>
+'''
+    render_template_grading = '''
+  <button id="%(sid)s-grading-render-button" class="slidoc-clickable slidoc-button slidoc-render-button slidoc-gradingonly" onclick="Slidoc.renderText(this,'%(sid)s');">Render</button>
+'''
+    comments_template = '''
 <div id="%(sid)s-comments" class="slidoc-comments slidoc-comments-element slidoc-answeredonly slidoc-gradable-graded slidoc-graderesponseonly"><em>Comments:</em>
   <div id="%(sid)s-comments-content" class="slidoc-comments-content"></div>
 </div>
 '''
-    response_div_template = '''  <div id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></div>\n'''
-    response_pre_template = '''  <pre id="%(sid)s-response-div" class="slidoc-response-div slidoc-noplugin"></pre>\n'''
 
     # Suffixes of input/textarea elements that need to be cleaned up
     input_suffixes = ['-answer-input', '-answer-textarea', '-grade-input', '-comments-textarea']
@@ -2569,23 +2574,24 @@ class SlidocRenderer(MathRenderer):
 
         html_template = '''\n<div id="%(sid)s-answer-container" class="slidoc-answer-container %(ans_classes)s">\n'''+self.answer_template
 
-        if ans_grade_fields:
-            html_template += self.grading_template
-            html_template += self.comments_template_a
-
         if self.render_markdown and (self.cur_qtype == 'text/plain' or answer_opts['explain']):
             html_template += self.render_template
-
-        if multiline_answer or answer_opts['explain']:
-            html_template += self.quote_template
-
-        if ans_grade_fields:
-            html_template += self.comments_template_b
 
         if self.cur_qtype == 'text/x-code':
             html_template += self.response_pre_template
         else:
             html_template += self.response_div_template
+
+        if multiline_answer or answer_opts['explain']:
+            html_template += self.quote_template
+
+        if ans_grade_fields:
+            html_template += self.grading_template
+            html_template += self.comments_template_grading
+
+            html_template += self.render_template_grading
+
+            html_template += self.comments_template
 
         html_template +='''</div>\n'''
 

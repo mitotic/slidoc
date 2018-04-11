@@ -72,6 +72,10 @@ div.slidoc-answer-plugin .slidoc-noplugin { display: none; }
 
 .slidoc-fillable-input { background-color: #eaeaea; }
 
+/* Grader view */
+
+select.slidoc-switch-user {font-family: Monaco, "Lucida Console", monospace;}
+
 /* Answer/grading control */
 body.slidoc-gradable-view .slidoc-nogradable { display: none; }
 body.slidoc-graded-view .slidoc-nograded { display: none; }

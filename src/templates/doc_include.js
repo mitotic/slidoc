@@ -41,7 +41,7 @@ var SKIP_ANSWER = 'skip';
 
 var LATE_SUBMIT = 'late';
 
-var SYMS = {correctMark: '&#x2714;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;',
+var SYMS = {lightCorrectMark: '&#x2713;', correctMark: '&#x2714;', ballotBoxMark: '&#x2610;', partcorrectMark: '&#x2611;', wrongMark: '&#x2718;', anyMark: '&#9083;', xBoxMark: '&#8999;',
 	    xMark: '&#x2A2F', letters: '&#x1f520;'};
 
 var uagent = navigator.userAgent.toLowerCase();
@@ -288,6 +288,8 @@ function setupCache(auth, callback) {
 	Slidoc.log('allCallback:', allRows, retStatus);
 	if (!retStatus)
 	    throw('Null retStatus in setupCache.allCallback');
+	if (retStatus.error)
+	    throw('Error in setupCache.allCallback: '+retStatus.error);
 	if (Sliobj.params.paceLevel >= ADMIN_PACE && retStatus.info.adminPaced)
 	    Sliobj.adminPaced = retStatus.info.adminPaced;
 	if (retStatus.info.maxLastSlide)
@@ -2598,7 +2600,7 @@ Slidoc.showConcepts = function (submitMsg) {
 		    var userId = getUserId();
 		    var computedGrade = computeGrade(userId);
 		    if (computedGrade != null && Math.abs(feedbackGrade - parseNumber(computedGrade)) > 0.01) {
-			alert('Warning: Inconsistent re-computed total grade: '+feedbackGrade+'!='+computedGrade+' for '+userId);
+			alert('Warning: Inconsistent re-computed total grade: '+feedbackGrade+'!='+computedGrade+' for '+userId+'; may need refreshing');
 		    }
 		    if (isNumber(Sliobj.feedback.q_scores) && Sliobj.scores.weightedCorrect != null && Math.abs(Sliobj.feedback.q_scores - parseNumber(Sliobj.scores.weightedCorrect)) > 0.01) {
 			alert('Warning: Inconsistent re-computed weighted score: sheet score '+Sliobj.feedback.q_scores+' != '+Sliobj.scores.weightedCorrect+' re-computed');
@@ -4967,7 +4969,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.session.submitted || Sliobj.gradableState) // Suppress incremental display
 	toggleClass(true, 'slidoc-completed-view');
     
-    if (Sliobj.feedback) {
+    if (Sliobj.feedback || Sliobj.gradableState) {
 	// If any non-null feedback, activate graded view
 	toggleClass(true, 'slidoc-graded-view');
 	if (Sliobj.params.features.grade_response)
@@ -5459,10 +5461,14 @@ function updateGradingStatus(userId) {
     var html = Sliobj.userGrades[userId].gradeDisp;
     var gradeCount = Sliobj.userGrades[userId].needGrading ? Object.keys(Sliobj.userGrades[userId].needGrading).length : 0;
     if (Sliobj.userGrades[userId].allowGrading && Sliobj.userGrades[userId].needGrading) {
-	if (gradeCount)
+	if (Sliobj.userGrades[userId].late) {
+	    html += '&#x29D7;'; // hourglass
+	} else if (gradeCount) {
 	    html += SYMS.anyMark + ' ' + gradeCount;
-	else
-	    html += SYMS.correctMark;
+	    text = '*' + text;
+	} else {
+	    html += SYMS.lightCorrectMark;
+	}
     }
 
     option.dataset.nograding = (gradeCount && Sliobj.userGrades[userId].allowGrading && !Sliobj.userGrades[userId].late) ? '' : 'nograding';
@@ -5995,8 +6001,8 @@ function computeGrade(userId, breakup) {
 	var q_other = rowObj.q_other||0;
 	var tot = q_grades + q_scores + q_other;
 	gradeStr += flexFixed(tot);
-	if (breakup && (Sliobj.params.scoreWeight || q_other) && q_scores != tot) {
-	    gradeStr += ' ('+flexFixed(q_scores);
+	if (breakup && (Sliobj.params.totalWeight > Sliobj.params.scoreWeight || q_other)) {
+	    gradeStr += ' ('+flexFixed(q_grades);
 	    if (q_other)
 		gradeStr += ','+flexFixed(q_other);
 	    gradeStr += ')';
@@ -6241,8 +6247,8 @@ function displayCommentSuggestions(slideId, qnumber) {
     }
 }
 
-Slidoc.gradeMax = function (elem, slideId, gradeStr) {
-    Slidoc.log("Slidoc.gradeMax:", elem, slideId, gradeStr);
+Slidoc.gradeMax = function (elem, slideId, gradeStr, advance) {
+    Slidoc.log("Slidoc.gradeMax:", elem, slideId, gradeStr, advance);
     var startGrading = !elem || elem.classList.contains('slidoc-gstart-click');
     if (startGrading)
 	return;
@@ -6252,7 +6258,7 @@ Slidoc.gradeMax = function (elem, slideId, gradeStr) {
 	    alert('Clear entered grade of '+gradeInput.value+' to assign max value of '+gradeStr.slice(1))
 	} else {
 	    gradeInput.value = gradeStr.slice(1);
-	    Slidoc.gradeClick(elem, slideId);
+	    Slidoc.gradeClick(elem, slideId, advance);
 	}
     }
 }
@@ -8237,8 +8243,8 @@ Slidoc.quoteText = function(elem, slide_id) {
     commentsArea.value += textareaElem.value.replace(/(^|\n)(?=.)/g, '\n> ');
 }
 
-Slidoc.gradeClick = function (elem, slide_id) {
-    Slidoc.log("Slidoc.gradeClick:", elem, slide_id);
+Slidoc.gradeClick = function (elem, slide_id, advance) {
+    Slidoc.log("Slidoc.gradeClick:", elem, slide_id, advance);
     if (Slidoc.sheetIsLocked()) {
 	alert(Slidoc.sheetIsLocked());
 	return;
@@ -8302,22 +8308,22 @@ Slidoc.gradeClick = function (elem, slide_id) {
 	var teamUpdate = '';
 	if (question_attrs.team == 'response' && Sliobj.session.team)
 	    teamUpdate = Sliobj.session.team;
-	gradeUpdate(slide_id, question_attrs.qnumber, teamUpdate, updates);
+	gradeUpdate(slide_id, question_attrs.qnumber, teamUpdate, updates, advance);
     }
 }
 
-function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
-    Slidoc.log('gradeUpdate: ', slide_id, qnumber, teamUpdate, updates, !!callback);
+function gradeUpdate(slide_id, qnumber, teamUpdate, updates, advance, callback) {
+    Slidoc.log('gradeUpdate: ', slide_id, qnumber, teamUpdate, updates, advance, !!callback);
     var updateObj = copyAttributes(updates);
     updateObj.Timestamp = null;  // Ensure that Timestamp is updated
 
     var gsheet = getSheet(Sliobj.sessionName);
     var retryOpts = {type: 'gradeUpdate'};
-    retryOpts.call = gradeUpdate.bind(null, qnumber, updates, callback);
+    retryOpts.call = gradeUpdate.bind(null, qnumber, updates, advance, callback);
 
     try {
 	gsheet.updateRow(updateObj, {team: !!teamUpdate}, sessionGetPutAux.bind(null, null, 'update',
-		   gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, teamUpdate, callback), retryOpts) );
+		   gradeUpdateAux.bind(null, updateObj.id, slide_id, qnumber, teamUpdate, advance, callback), retryOpts) );
     } catch(err) {
 	sessionAbort(''+err, err.stack);
 	return;
@@ -8328,7 +8334,7 @@ function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
     if (gsheet.pendingUpdates > 1)
 	return;
 
-    if (!Slidoc.testingActive()) {
+    if (advance && !Slidoc.testingActive()) {
 	// Move on to next user needing grading if slideshow mode, else to next question
 	var nextUserSlide = '';
 	if (Sliobj.currentSlide) {
@@ -8346,20 +8352,20 @@ function gradeUpdate(slide_id, qnumber, teamUpdate, updates, callback) {
 		    break;
 		var new_slide = parseSlideId(slide_id)[0]+'-'+zeroPad(question_attrs.slide,2);
 		goSlide('#'+new_slide);
-		setTimeout(function(){Slidoc.gradeClick(null, new_slide);}, 200);
+		setTimeout(function(){Slidoc.gradeClick(null, new_slide, advance);}, 200);
 	    }
 	    if (qnumber == attr_vals.length) // Move to first question for next user
 		nextUserSlide = parseSlideId(slide_id)[0]+'-'+zeroPad(attr_vals[0].slide,2);
 	}
 	if (nextUserSlide && (Sliobj.gradingUser < Sliobj.userList.length)) {
 	    Slidoc.nextUser(true, false, true);
-	    setTimeout(function(){Slidoc.gradeClick(null, nextUserSlide);}, 200);
+	    setTimeout(function(){Slidoc.gradeClick(null, nextUserSlide, advance);}, 200);
 	}
     }
 }
 
-function gradeUpdateAux(userId, slide_id, qnumber, teamUpdate, callback, result, retStatus) {
-    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, teamUpdate, !!callback, result, retStatus);
+function gradeUpdateAux(userId, slide_id, qnumber, teamUpdate, advance, callback, result, retStatus) {
+    Slidoc.log('gradeUpdateAux: ', userId, slide_id, qnumber, teamUpdate, advance, !!callback, result, retStatus);
     delete Sliobj.userGrades[userId].needGrading[qnumber];
     updateGradingStatus(userId);
     if (teamUpdate) {
