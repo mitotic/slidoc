@@ -1826,12 +1826,17 @@ class SlidocRenderer(MathRenderer):
                 value = value or 'answer'
                 if value not in seed_opts:
                     self.abort('DISCUSS-ERROR', 'Invalid Discuss: seed=%s option; expecting one of %s' % (value, '/'.join(seed_opts)))
-            elif option in ('team',):
+
+            elif option in ('team', 'gdoc'):
                 pass
+
             else:
                 self.abort('DISCUSS-ERROR', 'Unknown Discuss: %s=%s option ' % (option, value))
                 
             discuss_opts[option] = value or 'yes'
+
+        if 'gdoc' in discuss_opts and 'seed' not in discuss_opts:
+            discuss_opts['seed'] = 'name'
 
         discuss_opts['slide'] = self.slide_number
         self.sheet_attributes['discussSlides'].append(discuss_opts)

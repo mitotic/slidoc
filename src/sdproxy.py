@@ -79,7 +79,7 @@ Settings = {
     'debug': '',
     'dry_run': '',      # Dry run (read from, but do not update, Google Sheets)
     'email_addr': '',
-    'email_url': '',
+    'gapps_url': '',
     'root_users': [],
 
     'lock_proxy_url': '', # URL of proxy server to lock sheet (used to "safely" allow direct access to Google Sheets from an auxiliary server)
@@ -95,7 +95,7 @@ COPY_FROM_CONFIG = ['gsheet_url', 'site_label', 'site_title', 'site_access',
                    ]
     
 COPY_FROM_SERVER = ['auth_key', 'auth_type', 'site_name',  'server_url',
-                    'debug', 'dry_run', 'email_addr', 'email_url', 'root_users',
+                    'debug', 'dry_run', 'email_addr', 'gapps_url', 'root_users',
                     'lock_proxy_url', 'min_wait_sec', 'request_timeout',]
 
 # Site access:
@@ -1495,10 +1495,10 @@ def email_admin(subject='', content=''):
         print('email_admin:Error: ', str(excp), file=sys.stderr)
 
 def send_email(toAddr, subject='', content=''):
-    if not Settings['email_url']:
+    if not Settings['gapps_url']:
         return
-    params = {'to': toAddr, 'subject': subject, 'content': content}
-    url = tornado.httputil.url_concat(Settings['email_url'], params)
+    params = {'action': 'mail_send', 'to': toAddr, 'subject': subject, 'content': content}
+    url = tornado.httputil.url_concat(Settings['gapps_url'], params)
 
     http_client = tornado.httpclient.AsyncHTTPClient()
 
@@ -4724,7 +4724,7 @@ def getDiscussStats(userId, sessionName=''):
             sessionStats[temSessionName] = discussStats
     return stats
 
-def getDiscussionSeeds(sessionName, questionNum, discussNum):
+def getDiscussionSeed(sessionName, questionNum, discussNum):
     startRow = 3
     discussSheet = getSheet(sessionName+'_discuss')
     if not discussSheet:
@@ -5231,6 +5231,7 @@ def unaliasDiscussUser(posterId, sessionName, teamSettings):
 def notifyDiscussUsers(sessionName, discussNum, teamName, postMsg, userId, userName, newPost):
     if not Global.discussPostCallback:
         return
+    closed = 0
     try:
         teamSettings = getTeamSettings(sessionName, discussNum=discussNum, optional=True)
         if teamSettings and teamName:
@@ -5313,9 +5314,42 @@ def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min
 
     return members, aliases, ranks, explanations
 
-def seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, explanations, userNames):
+DOCS_LINK_POST_FMT = '''A shared Google Doc has been created for this team, which may be [accessed here](%s). Please use this document, which any team member can edit, to work on collaboratively on your project. Some helpful links:
+
+- [Collaborating using Google Docs](https://mashable.com/2016/03/18/collaborate-google-docs/#ynJ3Qt7KL5q5)
+- [Chat with others while editing Google Docs](https://support.google.com/docs/answer/2494891?co=GENIE.Platform%%3DDesktop&hl=en)
+'''
+
+def createSharedDoc(sessionName, discussNum, teamName, memberIds, loginDomain='', content=''):
+    params = {'action': 'file_create'}
+    _, _, serverDomain = Settings['server_url'].rpartition('//')
+    params['path'] = sliauth.shared_doc_path(serverDomain, sessionName, discussNum, teamName, siteName=Settings['site_name'])
+    params['editors'] = ','.join(memberId if '@' in memberId else memberId+loginDomain for memberId in memberIds)
+    if content:
+        params['content'] = content
+    retval = sliauth.http_post(Settings['gapps_url'], params)
+    gdoc_id = ''
+    if retval and retval.get('result') == 'success':
+        gdoc_id = retval.get('value')
+        gdoc_link = sliauth.GDOC_LINK_FMT % gdoc_id
+        postText = DOCS_LINK_POST_FMT % gdoc_link
+    else:
+        errMsg = retval.get('error','') if retval else ''
+        postText = 'Error in creating shared Google Doc for team: '+errMsg
+        print('sdproxy.createSharedDoc: Error in creating shared doc for team %s in session %s, discussion %s: %s' % (teamName, sessionName, discussNum, errMsg), file=sys.stderr)
+
+    sheetName = sessionName+'_discuss'
+    colName = DISCUSS_COL_FMT % discussNum
+    addDiscussUser(sessionName, TESTUSER_ID, '')
+    prevValue = lookupValues(TESTUSER_ID, [colName], sheetName, listReturn=True)[0]
+    newValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, TESTUSER_ID, '', prevValue, postText)
+    setValue(TESTUSER_ID, colName, newValue, sheetName)
+    return gdoc_id
+
+def seedDiscussion(seedType, sharedDoc, sessionName, discussNum, members, aliases, ranks, explanations, userNames):
     # Ranked session seedType='answer'/'explanation'/'name'
-    print('sdproxy: seedDiscussion', seedType, sessionName, discussNum, file=sys.stderr)
+    # sharedDoc = None or content string
+    print('sdproxy: seedDiscussion', seedType, sharedDoc, sessionName, discussNum, file=sys.stderr)
     teamNameList = members.keys()
     teamNameList.sort()
     updateSessionDiscussSheet(sessionName)
@@ -5324,17 +5358,22 @@ def seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, e
         raise Exception('Discussion not setup for session '+sessionName)
 
     closeDiscussion(sessionName, discussNum, reopen=True)
+
+    loginDomain = ''
+    if Settings['auth_type'] and ',' in Settings['auth_type']:
+        comps = Settings['auth_type'].split(',')
+        if comps[0] and comps[0][0] == '@':
+            loginDomain = comps[0]
     
     colName = DISCUSS_COL_FMT % discussNum
+    discuss_gdocs = {}
     if seedType == 'name':
         for teamName, memberList in members.items():
+            if sharedDoc is not None:
+                discuss_gdocs[teamName] = createSharedDoc(sessionName, discussNum, teamName, memberList, loginDomain=loginDomain, content=sharedDoc)
+
             for teamUserId in memberList:
-                postText = teamUserId
-                if Settings['auth_type'] and ',' in Settings['auth_type']:
-                    comps = Settings['auth_type'].split(',')
-                    if comps[0] and comps[0][0] == '@':
-                        # Append login domain
-                        postText += comps[0]
+                postText = teamUserId + loginDomain
                 if userNames.get(teamUserId):
                     postText += ' (' + userNames.get(teamUserId) + ')'
                 colValue, newPost = postDiscussEntry(sessionName, discussNum, teamName, '', '', '', postText)
@@ -5344,6 +5383,9 @@ def seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, e
         for iteam in range(len(teamNameList)):
             teamName = teamNameList[iteam]
             teamRanks = ranks[teamName]
+            if sharedDoc is not None:
+                discuss_gdocs[teamName] = createSharedDoc(sessionName, discussNum, teamName, [x[0] for x in teamRanks], loginDomain=loginDomain, content=sharedDoc)
+
             for imem in range(len(teamRanks)):
                 teamUserId, rankValue = teamRanks[imem]
                 if not rankValue:
@@ -5360,6 +5402,12 @@ def seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, e
                         setValue(teamUserId, colName, colValue, sessionName+'_discuss')
                 except Exception, excp:
                     print('sdproxy.seedDiscuss: Error in team seed post for user %s in session %s, discussion %s: %s' % (teamUserId, sessionName, discussNum, excp), file=sys.stderr)
+
+    if discuss_gdocs:
+        gdoc_ids = discussState.get('gdoc_ids', {})
+        gdoc_ids[str(discussNum)] = discuss_gdocs
+        discussState['gdoc_ids'] = gdoc_ids
+        setDiscussState(sessionName, discussState)
 
 def finalizeSessionTeam(sessionName, members, aliases, ranks, explanations, delayed=False):
 
@@ -5385,13 +5433,17 @@ def finalizeSessionTeam(sessionName, members, aliases, ranks, explanations, dela
                 updateSessionDiscussSheet(sessionName)
                 setValue(DISCUSS_ID, DISCUSS_COL_FMT % discussNum, 'SESSIONTEAM', sessionName+'_discuss')
                 seedType = discussSlides[idisc].get('seed')
+                sharedDoc = discussSlides[idisc]['gdoc'] if 'gdoc' in discussSlides[idisc] else None
+                if sharedDoc is not None:
+                    # Substitute escaped newlines in content
+                    sharedDoc = sharedDoc.replace(r'\n', '\n')
                 userNames = lookupRoster('name') or getRowMap(sessionName, 'name', regular=True)
                 if seedType and (ranks or seedType == 'name'):
-                    seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, explanations, userNames)
+                    seedDiscussion(seedType, sharedDoc, sessionName, discussNum, members, aliases, ranks, explanations, userNames)
             notifyDiscussUsers(sessionName, discussNum, '', 'setup', '', '', '')
 
 def generateTeam(sessionName, questionNum, params):
-    # params = {discussNum:, alias:, count:, minSize:, composition:, sessionTeam:, seedDiscuss:}
+    # params = {discussNum:, alias:, count:, minSize:, composition:, sessionTeam:, seedDiscuss:, sharedDoc:}
     if sessionName == previewingSession():
         # No team creation during preview
         return
@@ -5414,9 +5466,10 @@ def generateTeam(sessionName, questionNum, params):
         setTeamSettings(sessionName, members, aliases, discussNum=discussNum)
 
         seedType = params.get('seedDiscuss')
+        sharedDoc = params['sharedDoc'] if 'sharedDoc' in params else None
         if seedType:
             userNames = getRowMap(sessionName, 'name', regular=True)
-            seedDiscussion(seedType, sessionName, discussNum, members, aliases, ranks, explanations, userNames)
+            seedDiscussion(seedType, sharedDoc, sessionName, discussNum, members, aliases, ranks, explanations, userNames)
         notifyDiscussUsers(sessionName, discussNum, '', 'teamgen', '', '', '')
 
 

@@ -582,6 +582,8 @@ Share = {
 
 	    if (this.sessionTeamElem.checked)
 		params.sessionTeam = 1;
+	    if (document.getElementById(this.pluginId+'-teamgen-shareddoc').checked)
+		params.sharedDoc = '';
 	}
 	Slidoc.log('Slidoc.Plugins.Share.genTeam2:', params);
 	GService.requestWS('generate_team', [this.qattributes.qnumber, params], this.genTeamCallback.bind(this));
@@ -677,6 +679,7 @@ pre.slidoc-plugin-Share-responders {
       Minimum team size: <input type="number" id="%(pluginId)s-teamgen-size" value="3"></input><br>
       Number of teams: <input type="number" id="%(pluginId)s-teamgen-count" value=""></input><br>
       Set as session team: <input type="checkbox" id="%(pluginId)s-teamgen-sessionteam" value="sessionteam"></input><br>
+      Create shared GDoc: <input type="checkbox" id="%(pluginId)s-teamgen-shareddoc" value="shareddoc"></input><br>
       Team composition: <select  id="%(pluginId)s-teamgen-composition">
                           <option value="diverse" selected>Diverse</option>
                           <option value="similar">Similar</option>

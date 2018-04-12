@@ -3875,7 +3875,7 @@ function dispUserInfo(userId, dispName) {
 	if (infoElem)
 	    infoElem.textContent = (dispName || userId);
 	if (footerElem)
-	    footerElem.innerHTML = '<p></p><p></p><div style="float: right;"><em>(Seed: '+Sliobj.session.randomSeed+')</em></div>';
+	    footerElem.innerHTML = '<p></p><p></p><div style="float: right;"><em>(Seed: '+Sliobj.session.randomSeed+'/'+Sliobj.remoteVersion+')</em></div>';
 
 	var ncomps = dispName.split(',');
 	var username = ncomps[0].trim();
@@ -7904,7 +7904,7 @@ Slidoc.responseTable = function () {
     }
     html += '</tr></table></pre>';
 
-    html += '<br><em>Seed:</em> '+Sliobj.session.randomSeed;
+    html += '<br><em>Seed:</em> '+Sliobj.session.randomSeed+'/'+Sliobj.remoteVersion;
     if (Sliobj.lockedView)
 	html += '<p></p><span class="slidoc-clickable" onclick="Android.printPage();">Print</span>';
     else

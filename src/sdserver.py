@@ -99,8 +99,8 @@ Options = {
     'dry_run': False,
     'dry_run_file_modify': False,  # If true, allow source/web/plugin file mods even for dry run (e.g., local copy)
     'email_addr': '',
-    'email_url': '',
     'end_date': '',
+    'gapps_url': '',
     'grader_users': '',
     'gsheet_url': '',
     'guest_users': '',
@@ -1812,7 +1812,7 @@ class ActionHandler(BaseHandler):
             errMsgs = self.deleteSession(subsubpath, reset=reset)
             tocPath = getSessionPath(sessionName, site_prefix=True, toc=True)
             if errMsgs and any(errMsgs):
-                self.displayMessage(errMsgs)
+                self.displayMessage(errMsgs, back_url=tocPath)
             elif reset:
                 self.displayMessage('Reset session '+sessionName, back_url=tocPath)
             else:
@@ -2473,13 +2473,14 @@ class ActionHandler(BaseHandler):
                     for idValue, status in statusMap.items():
                         if status == sdproxy.DROPPED_STATUS:
                             continue
-                        try:
-                            grade_vals = sdproxy.lookupValues(idValue, grade_cols, sdproxy.GRADES_SHEET, listReturn=True)
-                            rank = sum(x or 0 for x in grade_vals)
-                        except Exception, excp:
-                            rank = 0
-                            if Options['debug']:
-                                print >> sys.stderr, 'ActionHandler:teamgen ERROR', idValue, str(excp)
+                        rank = 0
+                        if grade_cols:
+                            try:
+                                grade_vals = sdproxy.lookupValues(idValue, grade_cols, sdproxy.GRADES_SHEET, listReturn=True)
+                                rank = sum(x or 0 for x in grade_vals)
+                            except Exception, excp:
+                                if Options['debug']:
+                                    print >> sys.stderr, 'ActionHandler:teamgen ERROR', idValue, str(excp)
                         if not rank and not inc_null:
                             continue
                         user_ranks.append([idValue, rank])
@@ -2487,25 +2488,32 @@ class ActionHandler(BaseHandler):
                     props = sliauth.team_props(user_ranks, min_size=minsize, composition=self.get_argument('composition', ''),
                                                alias=self.get_argument('alias', ''), random_seed='_roster')
                     team_lines = []
-                    for j, team_name in enumerate(props['members']):
+                    total_count = 0
+                    team_names = props['members'].keys()
+                    team_names.sort(key=sdproxy.teamSortKey)
+                    for j, team_name in enumerate(team_names):
                         # Define teams
                         members = props['members'][team_name]
                         for idValue in members:
                             sdproxy.setValue(idValue, sdproxy.TEAM_HEADER, team_name, sdproxy.ROSTER_SHEET)
 
                         team_ranks = props['ranks'][team_name]
-                        team_desc = ' '.join('%s:%s' % tuple(user_rank) for user_rank in team_ranks)
+                        team_count = len(team_ranks)
+                        total_count += team_count
+                        team_desc = ', '.join('%s(%.2f)' % tuple(user_rank) for user_rank in team_ranks)
                         if str(team_ranks[0][1]).isalpha():
-                            team_avg = sum(ord(user_rank[1].upper())-ord('A') for user_rank in team_ranks) / float(len(team_ranks))
+                            team_avg = sum(ord(user_rank[1].upper())-ord('A') for user_rank in team_ranks) / float(team_count)
                         else:
-                            team_avg = sum(user_rank[1] for user_rank in team_ranks) / float(len(team_ranks))
-                        team_lines.append( 'team %02d %s (%4.2f): %s' % (j+1, team_name, team_avg, team_desc))
-                    self.write('<pre>'+tornado.escape.xhtml_escape('\n'.join(team_lines))+'</pre>')
+                            team_avg = sum(user_rank[1] for user_rank in team_ranks) / float(team_count)
+                        team_lines.append( '%d: name=%s, count=%d, avg_rank=%.2f, members=%s\n' % (j+1, team_name, team_count, team_avg, team_desc))
+
+                    team_lines = ['Generated teams for %d members:\n' % total_count] + team_lines
+                    self.displayMessage(team_lines, back_url=site_prefix+'/_roster')
 
                     if Options['debug']:
                         print >> sys.stderr, 'ActionHandler:teamgen', minsize, count, self.get_argument('composition', ''), grade_cols, user_ranks
                         for team_line in team_lines:
-                            print >> sys.stderr, 'ActionHandler:teamgen    ', team_line
+                            print >> sys.stderr, 'ActionHandler:teamgen    ', team_line.rstrip()
                 except Exception, excp:
                     if Options['debug']:
                         import traceback
@@ -7077,8 +7085,8 @@ def main():
     define("dry_run", default=False, help="Dry run (read from Google Sheets, but do not write to it)")
     define("dry_run_file_modify", default=False, help="Allow source/web/plugin file mods even for dry run (e.g., local copy)")
     define("email_addr", default="", help="Admin notification email address for server errors")
-    define("email_url", default="", help="Google app send email script?to=&subject=&content=")
     define("forward_port", default=0, help="Forward port for default (root) web server with multiproxy, allowing slidoc sites to overlay a regular website, using '_' prefix for admin")
+    define("gapps_url", default="", help="Google app URL, e.g. URL?action=mail_send&to=&subject=&content=")
     define("gsheet_url", default="", help="Google sheet URL1;...")
     define("host", default=Options['host'], help="Server hostname or IP address, specify '' for all (default: localhost)")
     define("import_params", default=Options['import_params'], help="KEY;KEYCOL;SKIP_KEY1,... parameters for importing answers")
@@ -7309,7 +7317,7 @@ def main():
     if Global.config_path:
         print >> sys.stderr, 'sdserver: Config path =', Global.config_path
 
-    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'email_url', 'insecure_cookie', 'public_pages', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
+    print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'insecure_cookie', 'public_pages', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
     if Options['debug']:
         print >> sys.stderr, 'sdserver: SERVER_NONCE =', Options['server_nonce']

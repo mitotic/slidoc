@@ -21,7 +21,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.22g'
+VERSION = '0.97.22h'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -35,6 +35,8 @@ SLIDE_ID_RE = re.compile(r'^(slidoc(\d+))(-(\d+))?$')
 SESSION_NAME_FMT = '%s%02d'
 SESSION_NAME_RE     = re.compile(r'^([a-zA-Z][-\w]*[a-zA-Z])(\d\d)$')
 SESSION_NAME_TOP_RE = re.compile(r'^([a-zA-Z][-\w]*[a-zA-Z])$')
+
+GDOC_LINK_FMT = 'https://docs.google.com/document/d/%s/edit?usp=sharing'
 
 RESTRICTED_SESSIONS = ('exam', 'final', 'midterm', 'quiz', 'test')
 
@@ -297,6 +299,13 @@ def json_default(obj):
     if isinstance(obj, datetime.datetime):
         return iso_date(obj, utc=True)
     raise TypeError("%s not serializable" % type(obj))
+
+def shared_doc_path(serverDomain, sessionName, discussNum, teamName, siteName='', docType='txt'):
+    docPath = [serverDomain]
+    if siteName:
+        docPath += [siteName]
+    docPath += [sessionName, str(discussNum), teamName]
+    return '/'.join(docPath)
 
 def read_header_opts(file_handle):
     # Return (options_string, number_of_skipped_bytes)
