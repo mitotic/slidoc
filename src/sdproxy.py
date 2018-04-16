@@ -210,10 +210,28 @@ Global.dryDeletedSheets = set()
 Global.shuttingDown = False
 Global.updatePartial = UPDATE_PARTIAL_ROWS
 
+Global.displayNameMap = {}
+
 Global.gradebookActive = False
 Global.accessCodeCallback = None
 Global.teamSetupCallback = None
 Global.discussPostCallback = None
+
+
+def mapDisplayName(userId, displayName):
+    if displayName and (',' in displayName or userId not in Global.displayNameMap):
+        # Comma-formatted names override
+        Global.displayNameMap[userId] = displayName
+
+def getDisplayNames(includeNonRoster=False):
+    rosterNameMap = lookupRoster('name')
+    if rosterNameMap is None and not includeNonRoster:
+        return None
+    nameMap = Global.displayNameMap.copy() if includeNonRoster else {}
+    if rosterNameMap:
+        nameMap.update(rosterNameMap)
+    return nameMap
+
 
 def initProxy(gradebookActive=False, accessCodeCallback=None, teamSetupCallback=None, discussPostCallback=None):
     Global.gradebookActive = gradebookActive
@@ -2596,12 +2614,8 @@ def sheetAction(params, notrace=False):
                 sortVals.sort()
 
                 if adminUser or paramId == TESTUSER_ID:
-                    nameMap = lookupRoster('name')
-                    if not nameMap:
-                        nameMap = {}
-                        for j in range(nRows):
-                            nameMap[idValues[j][0]] = nameValues[j][0]
-                    shortMap = makeShortNames(nameMap, first=True)
+                    nameMap = getDisplayNames(includeNonRoster=True)
+                    shortMap = makeShortNames(nameMap, first=True) if nameMap else {}
                     returnInfo['responders'] = []
                     if teamAttr == 'assign':
                         teamMembers = {}
@@ -4737,12 +4751,8 @@ def getDiscussionSeed(sessionName, questionNum, discussNum):
     postEntries = discussSheet.getSheetValues(startRow, discussCol, nRows, 1)
     idValues = discussSheet.getSheetValues(startRow, discussColIndex['id'], nRows, 1)
     nameValues = discussSheet.getSheetValues(startRow, discussColIndex['name'], nRows, 1)
-    nameMap = lookupRoster('name')
-    if not nameMap:
-        nameMap = {}
-        for j in range(nRows):
-            nameMap[idValues[j][0]] = nameValues[j][0]
-    shortMap = makeShortNames(nameMap, first=True)
+    nameMap = getDisplayNames(includeNonRoster=True)
+    shortMap = makeShortNames(nameMap, first=True) if nameMap else {}
     subrows = []
     responders = []
     for j in range(nRows):

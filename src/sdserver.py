@@ -401,7 +401,7 @@ def http_sync_post(url, params_dict=None):
     return result
 
 def discussStats(userId, sessionName=''):
-    nameMap = sdproxy.lookupRoster('name')
+    nameMap = sdproxy.getDisplayNames()
     stats = sdproxy.getDiscussStats(userId, sessionName)
     paths = {}
     for session in stats['sessions']:
@@ -1583,7 +1583,7 @@ class ActionHandler(BaseHandler):
 
         elif action in ('_roster',):
             overwrite = self.get_argument('overwrite', '')
-            nameMap = sdproxy.lookupRoster('name')
+            nameMap = sdproxy.getDisplayNames()
             if not nameMap or overwrite:
                 lastname_col, firstname_col, midname_col, id_col, email_col, altid_col = Options["roster_columns"].split(',')
                 self.render('newroster.html', site_name=Options['site_name'], overwrite=overwrite,
@@ -1839,7 +1839,7 @@ class ActionHandler(BaseHandler):
         elif action == '_prefill':
             if sdproxy.getRowMap(sessionName, 'Timestamp', regular=True):
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s already filled' % sessionName)
-            nameMap = sdproxy.lookupRoster('name')
+            nameMap = sdproxy.getDisplayNames()
             if not nameMap:
                 raise tornado.web.HTTPError(403, log_message='CUSTOM:Error: Session %s has no roster for prefill' % sessionName)
             count = 0
@@ -1879,7 +1879,7 @@ class ActionHandler(BaseHandler):
 
             userId = self.get_argument('user','')
             dateStr = self.get_argument('date','')
-            nameMap = sdproxy.lookupRoster('name')
+            nameMap = sdproxy.getDisplayNames()
             if dateStr:
                 if not userId:
                     self.displayMessage('Please specify user id for late token')
@@ -1977,7 +1977,9 @@ class ActionHandler(BaseHandler):
             return
 
         elif action == '_interactcode':
-            interactURL = '%s%s/send' % (Options['server_url'], site_prefix)
+            interactURL = Options['server_url'] + site_prefix
+            if self.get_argument('dest',''):
+                interactURL += '/' + self.get_argument('dest','')
             img_data_uri = sliauth.gen_qr_code(interactURL, img_html='<img class="slidoc-lockcode" src="%s">')
             self.displayMessage('<h3>To interact, type URL or scan code</h3><h2>%s</h2>%s' % (interactURL, img_data_uri) )
             return
@@ -3509,7 +3511,6 @@ class ActionHandler(BaseHandler):
                     return
 
         prevPreviewState = self.previewState.copy() if self.previewState else None
-
         slide_images_zip = None
         image_zipdata = ''
         deleteSlideNum = 0
@@ -4760,57 +4761,66 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         cls.sendEvent(sessionPath[1:], userId, sdproxy.ADMIN_ROLE, True, True, [teamIds, -1, 'Discuss.postNotify', [discussNum, closed, postMsg, userName, teamName, discussPost]])
 
     def open(self, path=''):
-        self.clientVersion = self.get_argument('version','')
-        self.msgTime = time.time()
-        self.locked = ''
-        self.timeout = None
-        self.userId = self.get_id_from_cookie()
-        self.pathUser = (path, self.userId)
-        self.sessionName = self.get_path_base(path) or ''
-        self.sessionVersion = self.getSessionVersion(self.sessionName)
-        self.userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
-        joined = False
-        activeUsers = None
-        if self.sessionName:
-            activeUserIds = []
-            for connId, connections in WSHandler.get_connections(self.sessionName).items():
-                if connections.sd_role != sdproxy.ADMIN_ROLE:
-                    activeUserIds.append(connId)
-            if self.userId not in activeUserIds and self.userRole != sdproxy.ADMIN_ROLE:
-                joined = True
-                activeUserIds.append(self.userId)
-            if joined or self.userRole == sdproxy.ADMIN_ROLE:
-                nameMap = sdproxy.lookupRoster('name')
-                shortMap = sdproxy.makeShortNames(nameMap, first=True)
-                activeUsers = [ [nameMap.get(x,x), x, shortMap.get(x,x)] for x in activeUserIds]
-                activeUsers.sort()
+        try:
+            self.clientVersion = self.get_argument('version','')
+            self.msgTime = time.time()
+            self.locked = ''
+            self.timeout = None
+            self.userId = self.get_id_from_cookie()
+            self.pathUser = (path, self.userId)
+            self.sessionName = self.get_path_base(path) or ''
+            self.sessionVersion = self.getSessionVersion(self.sessionName)
+            self.userRole = self.get_id_from_cookie(role=True, for_site=Options['site_name'])
+            joined = False
+            activeUsers = None
+            if self.sessionName:
+                activeUserIds = []
+                for connId, connections in WSHandler.get_connections(self.sessionName).items():
+                    if connections.sd_role != sdproxy.ADMIN_ROLE:
+                        activeUserIds.append(connId)
+                if self.userId not in activeUserIds and self.userRole != sdproxy.ADMIN_ROLE:
+                    joined = True
+                    activeUserIds.append(self.userId)
+                if joined or self.userRole == sdproxy.ADMIN_ROLE:
+                    nameMap = sdproxy.getDisplayNames(includeNonRoster=True)
+                    shortMap = sdproxy.makeShortNames(nameMap, first=True) if nameMap else {}
+                    activeUsers = [ [nameMap.get(x,x), x, shortMap.get(x,x)] for x in activeUserIds]
+                    activeUsers.sort()
 
-        # Add connection
-        connectionList = self._connections[self.pathUser[0]][self.pathUser[1]]
-        if not connectionList:
-            connectionList.sd_role = self.userRole
-        connectionList.append(self)
-        self.pluginInstances = {}
-        self.awaitBinary = None
+            # Add connection
+            connectionList = self._connections[self.pathUser[0]][self.pathUser[1]]
+            if not connectionList:
+                connectionList.sd_role = self.userRole
+            connectionList.append(self)
+            self.pluginInstances = {}
+            self.awaitBinary = None
 
-        if Options['debug']:
-            print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser, self.clientVersion
-        if not self.userId:
-            self.close()
+            if Options['debug']:
+                print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser, self.clientVersion
+            if not self.userId:
+                self.close()
 
-        self.eventBuffer = []
-        self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
-        self.eventFlusher.start()
+            self.eventBuffer = []
+            self.eventFlusher = PeriodicCallback(self.flushEventBuffer, EVENT_BUFFER_SEC*1000)
+            self.eventFlusher.start()
 
-        interactSessionName, interactSlideId, _ = self.getInteractiveSession()
-        if not self.sessionName or self.sessionName != interactSessionName:
-            interactSlideId = ''
+            interactSessionName, interactSlideId, _ = self.getInteractiveSession()
+            if not self.sessionName or self.sessionName != interactSessionName:
+                interactSlideId = ''
 
-        dispAccessCode = Global.accessCodes.get(self.sessionName,'') if self.userRole == sdproxy.ADMIN_ROLE else ''
-        self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, dispAccessCode, interactSlideId, activeUsers] ]))
+            dispAccessCode = Global.accessCodes.get(self.sessionName,'') if self.userRole == sdproxy.ADMIN_ROLE else ''
 
-        if joined and self.userRole != sdproxy.ADMIN_ROLE:
-            WSHandler.sendEvent(self.pathUser[0], self.pathUser[1], sdproxy.ADMIN_ROLE, False, True, ['', -1, 'ActiveUsers', [self.pathUser[1], activeUsers]])
+            sessionParams = {'dispAccessCode':dispAccessCode, 'interactSlideId':interactSlideId, 'noRoster': sdproxy.Settings['no_roster'] or '',
+                             'activeUsers':activeUsers}
+
+            self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, sessionParams] ]))
+
+            if joined and self.userRole != sdproxy.ADMIN_ROLE:
+                WSHandler.sendEvent(self.pathUser[0], self.pathUser[1], sdproxy.ADMIN_ROLE, False, True, ['', -1, 'ActiveUsers', [self.pathUser[1], activeUsers]])
+        except Exception, excp:
+            if Options['debug']:
+                import traceback
+                traceback.print_exc()
 
     def on_close(self):
         if Options['debug']:
@@ -5599,7 +5609,10 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
             if displayName and user.get('given_name',''):
                 displayName += ', '
             displayName += user.get('given_name','')
-            if not displayName:
+
+            if displayName:
+                sdproxy.mapDisplayName(username, displayName)
+            else:
                 displayName = username
             
             role, sites = Global.userRoles.id_role_sites(username)
@@ -5907,7 +5920,13 @@ def processTwitterMessage(msg):
     rosterSheet = sdproxy.getSheet(sdproxy.ROSTER_SHEET)
 
     if Options['auth_type'].startswith('twitter,') or (not rosterSheet and sdproxy.Settings['no_roster']):
+        if not Options['auth_type'].startswith('twitter,'):
+            # Using non-twitter auth; distinguish twitter userid
+            fromUser = '@' + fromUser
+            if fromName:
+                sdproxy.mapDisplayName(fromUser, fromName)
         status = WSHandler.processMessage(fromUser, fromRole, fromName, message, source='twitter', adminBroadcast=True)
+
 
     elif rosterSheet:
         idMap = sdproxy.makeRosterMap(sdproxy.TWITTER_HEADER, lowercase=True)
@@ -6174,7 +6193,7 @@ def importAnswers(sessionName, filepath, csvfile, importParams, submitDate=''):
             # Special case of test user; not really Twitter ID
             keyMap[sdproxy.TESTUSER_ID] = sdproxy.TESTUSER_ID
 
-        nameMap = sdproxy.lookupRoster('name')
+        nameMap = sdproxy.getDisplayNames()
 
         missingKeys = []
         userKeys = set()
@@ -7033,6 +7052,7 @@ def get_site_settings(site_name, commandOpts, cmd_arg_set):
         site_settings_file = getattr(commandOpts, 'settings_file', '')
 
     if site_settings_file and os.path.exists(site_settings_file):
+        print >> sys.stderr, 'sdserver: '+site_name+' settings file=', site_settings_file
         with open(site_settings_file, 'r') as f:
             site_settings = json.load(f)
     else:

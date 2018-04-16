@@ -109,6 +109,7 @@ Sliobj.sessionProperties = null;   // For all sessions
 
 Sliobj.inputAccessCode = '';
 Sliobj.dispAccessCode = '';
+Sliobj.noRoster = '';
 Sliobj.activeUsers = null;
 
 Sliobj.gradeFieldsObj = {};
@@ -568,14 +569,16 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
     }
 }
 
-Slidoc.sessionSetup = function(dispAccessCode, interactSlideId, activeUsers) {
-    Slidoc.log('Slidoc.sessionSetup:', dispAccessCode, interactSlideId, activeUsers)
-    Sliobj.dispAccessCode = dispAccessCode || '';
-    Sliobj.activeUsers = activeUsers || null;
+Slidoc.sessionSetup = function(sessionParams) {
+    // sessionParams = {dispAccessCode:, interactSlideId:, noRoster:, activeUsers:}
+    Slidoc.log('Slidoc.sessionSetup:', sessionParams);
+    Sliobj.dispAccessCode = sessionParams.dispAccessCode || '';
+    Sliobj.noRoster = sessionParams.noRoster || ''
+    Sliobj.activeUsers = sessionParams.activeUsers || null;
     var elem = document.getElementById('slidoc-access-code');
     if (elem)
 	elem.textContent = ''+Sliobj.dispAccessCode;
-    if (activeUsers)
+    if (Sliobj.activeUsers)
 	Slidoc.showActiveUsers(true);
 }
 
@@ -3158,11 +3161,16 @@ Slidoc.interact = function() {
 	if (siteTwitter.match(/^@/)) {
 	    html += '<li>Tweet or text 40404: <code>'+siteTwitter+' answer</code></li>';
 	} else if (siteTwitter) {
-	    html += '<li>Text 40404: <code>d '+siteTwitter+' answer</code></li>';
-	    html += '<li>Twitter direct message @'+siteTwitter+': <code>answer</code></li>';
+	    if (Sliobj.noRoster) {
+		html += '<li>Text 40404:&nbsp;&nbsp; <code>@'+siteTwitter+' answer <em>comment</em></code></li>';
+		html += '<li>Tweet:&nbsp;&nbsp; <code>@'+siteTwitter+' answer <em>comment</em></code></li>';
+	    } else {
+		html += '<li>Text 40404: <code>d '+siteTwitter+' answer</code></li>';
+		html += '<li>Twitter direct message @'+siteTwitter+': <code>answer <em>comment</em></code></li>';
+	    }
 	}
 	html += '<li><a href="'+interactURL+'" target="_blank"><code>'+interactURL+'</code></a></li>';
-	html += '<li><a href="'+Sliobj.sitePrefix+'/_interactcode" target="_blank"><b>QR code</b></a></li>';
+	html += '<li><a href="'+Sliobj.sitePrefix+'/_interactcode?dest=send" target="_blank">QR code</a></li>';
 	html += '</ul>';
 	html += clickableSpan('Live message display', 'interactiveMessageDisplay();', !Sliobj.interactiveMode)+'<p></p>';
     }
@@ -6861,7 +6869,7 @@ Slidoc.pagesDisplay = function() {
 
 Slidoc.contentsDisplay = function() {
     Slidoc.log('Slidoc.contentsDisplay:');
-    var prefix = '<b>Contents</b>\n';
+    var prefix = '<b>Contents</b> (<a href="'+Sliobj.sitePrefix+'/_interactcode" target="_blank">QR code</a>)\n';
     if (!Sliobj.params.fileName) {
 	Slidoc.showPopup(prefix);
 	return;
