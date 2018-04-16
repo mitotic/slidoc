@@ -304,7 +304,8 @@ def shared_doc_path(serverDomain, sessionName, discussNum, teamName, siteName=''
     docPath = [serverDomain]
     if siteName:
         docPath += [siteName]
-    docPath += [sessionName, str(discussNum), teamName]
+    fileName = sessionName + '-' + teamName + '-' + (siteName or serverDomain)
+    docPath += [sessionName, str(discussNum), fileName]
     return '/'.join(docPath)
 
 def read_header_opts(file_handle):

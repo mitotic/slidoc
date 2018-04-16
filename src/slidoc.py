@@ -1815,8 +1815,9 @@ class SlidocRenderer(MathRenderer):
         self.slide_options.add('discuss')
         discuss_opts = {}
         seed_opts = ('answer', 'name', 'response')
-        for option_value in text.split():
+        for option_value in shlex.split(text):
             option, sep, value = option_value.partition('=')
+            value = value.strip('"').strip("'")
 
             if option == 'maxchars':
                 if not value.isdigit():

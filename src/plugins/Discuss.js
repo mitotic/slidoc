@@ -4,6 +4,8 @@ Discuss = {
 	initGlobal: function(discussParams) {
 	    Slidoc.log('Slidoc.Plugins.Discuss.initGlobal:', discussParams);
 	    this.discussParams = discussParams;
+	    if (!window.GService)
+		return;
 	    this.discussSheet = new GService.GoogleSheet(this.discussParams.gd_sheet_url, this.sessionName+'_discuss',
 							 [], [], false);
 	    this.topElem = document.getElementById('slidoc-discuss-display');
@@ -92,7 +94,7 @@ Discuss = {
 
     init: function() {
 	Slidoc.log('Slidoc.Plugins.Discuss.init:', this.global);
-	if (!this.global.discussParams.stats || !this.global.discussParams.stats.sessions)
+	if (!window.GService || !this.global.discussParams.stats || !this.global.discussParams.stats.sessions)
 	    return;
 	var sessionStats = this.global.discussParams.stats.sessions[this.sessionName] || {};
 	this.discussNum = 0;
@@ -174,6 +176,9 @@ Discuss = {
 		    this.global.topElem.classList.add('slidoc-plugin-Discuss-unread');
 	    }
 	}
+
+	if (!Slidoc.PluginManager.previewStatus() && this.global.discussParams.discussSlides[this.discussNum-1].gdoc)
+	    setTimeout(this.slideDiscuss.bind(this, 'show'), 300);
     },
 
     relayCall: function(isAdmin, fromUser, methodName) // Extra args
@@ -351,8 +356,9 @@ Discuss = {
 	    if (!this.unreadId)
 		this.unreadId = postId;
 	}
-	var html = '';
-	html += Slidoc.MDConverter(highlight+postName+highlight+': '+postText, true); // user name
+	var html = Slidoc.MDConverter(highlight+postName+highlight+': '+postText, true); // user name
+	html = html.replace(/ ([\w.+-]+@[\w.-]+\b)/g, ' <a href="mailto:$1" target="_blank">$1</a>');
+
 	html += '<br><em class="slidoc-plugin-Discuss-post-timestamp">'+timestamp+'</em>';  // Time
 
 	var flagged = postState.flagged;

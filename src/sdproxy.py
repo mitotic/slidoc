@@ -5314,7 +5314,7 @@ def createTeam(sessionName, fromSession, fromQuestion, alias='', count=None, min
 
     return members, aliases, ranks, explanations
 
-DOCS_LINK_POST_FMT = '''A shared Google Doc has been created for this team, which may be [accessed here](%s). Please use this document, which any team member can edit, to work on collaboratively on your project. Some helpful links:
+DOCS_LINK_POST_FMT = '''A shared Google Doc has been created for this team. [Click here](%s) to access it. You may use this document, which any team member can edit, to work on collaboratively on your project. Some helpful links:
 
 - [Collaborating using Google Docs](https://mashable.com/2016/03/18/collaborate-google-docs/#ynJ3Qt7KL5q5)
 - [Chat with others while editing Google Docs](https://support.google.com/docs/answer/2494891?co=GENIE.Platform%%3DDesktop&hl=en)
