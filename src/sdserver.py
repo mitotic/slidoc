@@ -4931,6 +4931,11 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             ##if Options['debug']:
             ##    print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
 
+            ALLOWED_USER_METHODS = set(['close', 'discuss_stats', 'plugin', 'proxy', 'switch_session'])
+            if self.userRole != sdproxy.ADMIN_ROLE:
+                if method not in ALLOWED_USER_METHODS:
+                    raise Exception('User %s not allowed to access WS method %s for session %s' % (self.pathUser[1], method, self.sessionName))
+            
             if method == 'close':
                 self.close()
 
@@ -4954,16 +4959,30 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             elif method == 'discuss_stats':
                 retObj['discuss'] = discussStats(sdproxy.TESTUSER_ID if self.userRole == sdproxy.ADMIN_ROLE else self.pathUser[1])
 
+            elif method == 'switch_session':
+                # Args: nextSessionName, forward
+                sessionEntries = sdproxy.lookupValues(args[0], ['releaseDate', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
+                releaseDate = sessionEntries['releaseDate']
+                if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) > sliauth.epoch_ms():
+                    retObj['proceed'] = False
+                elif releaseDate != sliauth.FUTURE_DATE and ((sessionEntries['adminPaced'] and sessionEntries['dueDate']) or (not sessionEntries['adminPaced'] and sessionEntries['gradeDate'])):
+                    # Proceed to released, completed adminPaced sessions or graded sessions
+                    retObj['proceed'] = True
+                else:
+                    retObj['proceed'] = False
+
             elif method == 'generate_team':
                 # Args: questionNum, params
-                sdproxy.generateTeam(self.sessionName, args[0], args[1])
-                teamStatus = sdproxy.getTeamStatus(self.sessionName)
-                if teamStatus and len(teamStatus):
-                    retObj['teamStatus'] = teamStatus
+                if self.userRole == sdproxy.ADMIN_ROLE:
+                    sdproxy.generateTeam(self.sessionName, args[0], args[1])
+                    teamStatus = sdproxy.getTeamStatus(self.sessionName)
+                    if teamStatus and len(teamStatus):
+                        retObj['teamStatus'] = teamStatus
 
             elif method == 'get_seeds':
                 # Args: questionNum, discussNum
-                retObj.update( sdproxy.getDiscussionSeeds(self.sessionName, args[0], args[1]) )
+                if self.userRole == sdproxy.ADMIN_ROLE:
+                    retObj.update( sdproxy.getDiscussionSeeds(self.sessionName, args[0], args[1]) )
 
             elif method == 'interact':
                 # args: action, slideId, questionAttrs, rollbackOption
@@ -5036,6 +5055,9 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 # args: evTarget, evType, evName, evArgs
                 # Broadcast event to all if from admin, else send to admins only
                 self.sendEvent(self.pathUser[0], self.pathUser[1], self.userRole, True, True, args)
+
+            else:
+                raise Exception('User %s accessing invalid WS method %s for session %s' % (self.pathUser[1], method, self.sessionName))
 
             if callback_index:
                 return json.dumps([callback_index, '', retObj], default=sliauth.json_default)
@@ -5446,7 +5468,11 @@ class AuthMessageHandler(BaseHandler):
                     message = choice + ' ' + message
                 elif number:
                     message = number + ' ' + message
-                status = WSHandler.processMessage(self.get_id_from_cookie(), userRole, self.get_id_from_cookie(name=True), message, allStatus=True, source='interact', accessCode=requireCode, adminBroadcast=True)
+                displayName = self.get_id_from_cookie(name=True)
+                userId = self.get_id_from_cookie()
+                if displayName:
+                    sdproxy.mapDisplayName(userId, displayName)
+                status = WSHandler.processMessage(userId, userRole, displayName, message, allStatus=True, source='interact', accessCode=requireCode, adminBroadcast=True)
                 if not status:
                     status = 'Accepted answer: '+message
             except Exception, excp:
