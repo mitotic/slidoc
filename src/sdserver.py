@@ -1315,7 +1315,7 @@ class ActionHandler(BaseHandler):
     def post(self, subpath, inner=None):
         userId = self.get_current_user()
         if Options['debug']:
-            print >> sys.stderr, 'DEBUG: postAction', userId, Options['site_number'], subpath
+            print >> sys.stderr, 'DEBUG: postAction', sliauth.iso_date(nosubsec=True), userId, Options['site_number'], subpath
         if not self.check_admin_access():
             raise tornado.web.HTTPError(403)
         return self.postAction(subpath)
@@ -3061,7 +3061,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile: type=%s, src=%s, index=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, nb=%s, files=%s' % (uploadType, repr(src_path), indexOnly, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), nb_links.keys(), fileNames)
+            print >> sys.stderr, 'sdserver.compile: %s type=%s, src=%s, index=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, nb=%s, files=%s' % (sliauth.iso_date(nosubsec=True), uploadType, repr(src_path), indexOnly, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), nb_links.keys(), fileNames)
 
         return_html = bool(src_path)
 
@@ -4462,8 +4462,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
 
     @classmethod
     def setupInteractive(cls, connection, path, action, slideId='', questionAttrs=None, rollbackOption=None):
-        if Options['debug']:
-            print >> sys.stderr, 'sdserver.setupInteractive:', path, action, cls._interactiveSession
+        ##if Options['debug']:
+        ##    print >> sys.stderr, 'sdserver.setupInteractive:', path, action, cls._interactiveSession
 
         interactiveSession = UserIdMixin.get_path_base(cls._interactiveSession[1]) if cls._interactiveSession[1] else ''
         basePath = UserIdMixin.get_path_base(path) if path else ''
@@ -4556,7 +4556,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
     @classmethod
     def processMessage(cls, fromUser, fromRole, fromName, message, allStatus=False, source='', accessCode=0, adminBroadcast=False):
         # Return null string on success or error message
-        print >> sys.stderr, 'sdserver.processMessage:', fromUser, fromRole, fromName, message
+        print >> sys.stderr, 'sdserver.processMessage:', sliauth.iso_date(nosubsec=True), fromUser, fromRole, fromName, message
 
         conn, path, slideId, questionAttrs = cls._interactiveSession
         if not path or not slideId:
@@ -4795,8 +4795,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             self.pluginInstances = {}
             self.awaitBinary = None
 
-            if Options['debug']:
-                print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser, self.clientVersion
+            ##if Options['debug']:
+            ##    print >> sys.stderr, "DEBUG: WSopen", sliauth.iso_date(nosubsec=True), self.pathUser, self.clientVersion
             if not self.userId:
                 self.close()
 
@@ -4823,8 +4823,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 traceback.print_exc()
 
     def on_close(self):
-        if Options['debug']:
-            print >> sys.stderr, "DEBUG: WSon_close", getattr(self, 'pathUser', 'NOT OPENED')
+        ##if Options['debug']:
+        ##    print >> sys.stderr, "DEBUG: WSon_close", getattr(self, 'pathUser', 'NOT OPENED')
         try:
             if self.eventFlusher:
                 self.eventFlusher.stop()
@@ -4931,7 +4931,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             ##if Options['debug']:
             ##    print >> sys.stderr, 'sdserver.on_message_aux', method, len(args)
 
-            ALLOWED_USER_METHODS = set(['close', 'discuss_stats', 'plugin', 'proxy', 'switch_session'])
+            ALLOWED_USER_METHODS = set(['close', 'discuss_stats', 'event', 'plugin', 'proxy', 'switch_session'])
             if self.userRole != sdproxy.ADMIN_ROLE:
                 if method not in ALLOWED_USER_METHODS:
                     raise Exception('User %s not allowed to access WS method %s for session %s' % (self.pathUser[1], method, self.sessionName))
@@ -4982,7 +4982,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             elif method == 'get_seeds':
                 # Args: questionNum, discussNum
                 if self.userRole == sdproxy.ADMIN_ROLE:
-                    retObj.update( sdproxy.getDiscussionSeeds(self.sessionName, args[0], args[1]) )
+                    retObj.update( sdproxy.getDiscussionSeed(self.sessionName, args[0], args[1]) )
 
             elif method == 'interact':
                 # args: action, slideId, questionAttrs, rollbackOption
@@ -5599,7 +5599,7 @@ class GoogleLoginHandler(tornado.web.RequestHandler,
                 code=self.get_argument('code'))
 
             if Options['debug']:
-                print >> sys.stderr, 'GoogleAuth: step 1', user.get('token_type'), 'state=', self.get_argument('state', '')
+                print >> sys.stderr, 'GoogleAuth: step 1', sliauth.iso_date(nosubsec=True), user.get('token_type'), 'state=', self.get_argument('state', '')
 
             if not user:
                 self.custom_error(500, '<h2>Google authentication failed</h2><a href="/">Home</a>', clear_cookies=True)

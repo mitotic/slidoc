@@ -2937,6 +2937,12 @@ Slidoc.handleKey = function (keyName, swipe) {
 	return false;
     }
 
+    if (swipe && !Sliobj.currentSlide && document.body.classList.contains('slidoc-accordion-view') && (keyName == 'left' || keyName == 'right')) {
+	// Experimental: allow swiping to switch sessions in collapsed mode only
+	Slidoc.switchSession(keyName == 'right');
+	return false;
+    }
+
     if (Sliobj.currentSlide) {
 	if (swipe && Sliobj.currentSlide == Sliobj.adminPaced && !(Sliobj.session && Sliobj.session.submitted)) // Disable swiping for active adminPaced slide
 	    return false;
@@ -6898,7 +6904,9 @@ Slidoc.pagesDisplay = function() {
 
 Slidoc.contentsDisplay = function() {
     Slidoc.log('Slidoc.contentsDisplay:');
-    var prefix = '<b>Contents</b> (<a href="'+Sliobj.sitePrefix+'/_interactcode" target="_blank">QR code</a>)\n';
+    var prefix = '<b>Contents</b>\n';
+    if (Slidoc.serverCookie)
+	prefix += ' (<a href="'+Sliobj.sitePrefix+'/_interactcode" target="_blank">QR code</a>)\n';
     if (!Sliobj.params.fileName) {
 	Slidoc.showPopup(prefix);
 	return;
@@ -9488,7 +9496,10 @@ Slidoc.wordCloud = function(textList, options) {
 	return;
     }
     Slidoc.log('Slidoc.wordCloud:', textList.length);
-    Slidoc.showPopup('<div id="slidoc-wcloud-container"><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br></div>', null, true);
+    var width = (0.75*window.innerWidth).toFixed(0);
+    var height = (0.8*window.innerHeight).toFixed(0);
+    Slidoc.showPopup('<div id="slidoc-wcloud-container" style="width:'+width+'px;height:'+height+'px;"></div>', null, true);
+    var options = {width: width, height: height, center: {x:width/2, y:height/2}};
     WCloud.createCloud(document.getElementById("slidoc-wcloud-container"), textList);
 }
 

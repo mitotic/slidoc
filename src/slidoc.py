@@ -371,13 +371,15 @@ class MathBlockLexer(mistune.BlockLexer):
                             self.slidoc_slide_end()
                         self.slidoc_slide_header = ''
                     elif key == 'heading':
-                        if len(m.group(1)) <= 2 and m.group(2).strip('#').strip():
+                        if len(m.group(1)) <= 2:
                             # Level 1 or 2 header
                             if self.slidoc_slide_header:
                                 # Not right after hrule or after Slide: => implicit slide break
                                 self.slidoc_slide_end()
-                        # Non-blank text content
-                        self.slidoc_slide_header = m.group(2).strip('#').strip() 
+                            self.slidoc_slide_header = m.group(2).strip('#').strip() or 'HEADER'
+                        else:
+                            # Non-blank text content
+                            self.slidoc_slide_header = m.group(2).strip('#').strip() 
 
                     self.slidoc_blocks.append(m.group(0))
 
@@ -919,6 +921,7 @@ class SlidocRenderer(MathRenderer):
         self.extra_end = None
         self.section_headers = []
         self.untitled_number = 0
+        self.alt_header_list = []
         self.qtypes = []
         self.questions = []
         self.question_concepts = []
@@ -1224,6 +1227,7 @@ class SlidocRenderer(MathRenderer):
     def slide_footer(self):
         slide_id = self.get_slide_id()
         header = self.cur_header or self.slide_img_tag or self.alt_header or ''
+        self.alt_header_list.append(header)
         if header and not header.startswith('<img '):
             header = mistune.escape(header)
         if self.cur_header or self.untitled_header or not self.toggle_slide_id:
@@ -2896,8 +2900,10 @@ def md2html(source, filename, config, filenumber=1, filedir='', plugin_defs={}, 
     md_digest = sliauth.digest_hex(md_source)
     if len(md_slides) != renderer.slide_number:
         message('SLIDES-WARNING: pre-parsing slide count (%d) does not match post-parsing slide count (%d)' % (len(md_slides), renderer.slide_number))
-        ##for j, slide_text in enumerate(md_slides):
-        ##    print("md2html.slide", j+1, slide_text.strip().split('\n')[0], file=sys.stderr)
+        for j, slide_text in enumerate(md_slides):
+            print("md2html.slide pre-parsing", j+1, slide_text.strip().split('\n')[0], file=sys.stderr)
+        for j, header in enumerate(renderer.alt_header_list):
+            print("md2html.slide post-parsing", j+1, header, file=sys.stderr)
         md_slides = []
         md_defaults = ''
 

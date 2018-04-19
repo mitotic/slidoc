@@ -224,13 +224,14 @@ def mapDisplayName(userId, displayName):
         Global.displayNameMap[userId] = displayName
 
 def getDisplayNames(includeNonRoster=False):
+    # Returns id->name mapping, sorted by name
     rosterNameMap = lookupRoster('name')
     if rosterNameMap is None and not includeNonRoster:
         return None
     nameMap = Global.displayNameMap.copy() if includeNonRoster else {}
     if rosterNameMap:
         nameMap.update(rosterNameMap)
-    return nameMap
+    return OrderedDict(sorted(nameMap.items(), key=lambda x:x[1]))
 
 
 def initProxy(gradebookActive=False, accessCodeCallback=None, teamSetupCallback=None, discussPostCallback=None):
@@ -3268,7 +3269,7 @@ def sheetAction(params, notrace=False):
                   "messages": '\n'.join(returnMessages)}
 
     if Settings['debug'] and not notrace and retObj['result'] != 'success':
-        print("DEBUG: RETOBJ", retObj['result'], retObj['messages'], file=sys.stderr)
+        print("DEBUG: RETOBJ", retObj['result'], retObj.get('error'), retObj.get('messages'), file=sys.stderr)
     
     return retObj
 
