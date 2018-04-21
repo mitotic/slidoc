@@ -1190,7 +1190,7 @@ class SlidocRenderer(MathRenderer):
         html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, SYMS['rightarrow'])
         right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
         for action, icon in right_list:
-            toggle_classes = 'slidoc-toptoggle-edit slidoc-edit-icon slidoc-testuseronly slidoc-nolocalpreview slidoc-noupdate slidoc-serveronly'
+            toggle_classes = 'slidoc-toptoggle-editable slidoc-toptoggle-edit slidoc-edit-icon slidoc-nolocalpreview slidoc-noupdate'
             attrs = ''
             if action == 'drag':
                 attrs += ' draggable="true" data-slide="%d"' % slide_number

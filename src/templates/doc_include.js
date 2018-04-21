@@ -716,7 +716,7 @@ function preInitialize() {
 	var accordionElem = document.getElementById('slidoc-chapter-accordion');
 	if (accordionElem)
 	    accordionElem.classList.add('slidoc-collapsibleonly');
-	
+
 	// Hide paced, non-printable sessions by default
 	var articles = document.getElementsByTagName('article');
 	if (!startDocView  && articles && articles.length && Sliobj.params && Sliobj.params.paceLevel && !Sliobj.params.printable)
@@ -5063,6 +5063,10 @@ function slidocSetupAux(session, feedback) {
 	    toggleClass(true, 'slidoc-graderesponse-view');
     }
 
+    // Views set up
+    toggleClassAll(true, 'slidoc-testuseronly', 'slidoc-toptoggle-editable');
+    toggleClassAll(true, 'slidoc-serveronly', 'slidoc-toptoggle-editable');
+	
     if (document.getElementById("slidoc-topnav")) {
 	//if (document.getElementById("slidoc-slideview-button"))
 	//    document.getElementById("slidoc-slideview-button").style.display = 'none';
