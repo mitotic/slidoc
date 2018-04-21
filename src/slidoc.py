@@ -1174,9 +1174,19 @@ class SlidocRenderer(MathRenderer):
     def slide_prefix(self, slide_id, classes=''):
         chapter_id, sep, slideNumStr = slide_id.partition('-')
         slide_number = int(slideNumStr)
-        prefix = str(slide_number)+'. ' if 'untitled_number' not in self.options['config'].features else ''
-        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-full-block slidoc-droppable slidoc-collapsibleonly slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
-        html += '''  <span id="%s-toptoggle" class="slidoc-toptoggle">\n''' % slide_id
+
+        # Slides need to be unhidden in Javascript for paced/slides_only sessions
+        style = ''
+        if self.options['config'].pace or 'slides_only' in self.options['config'].features:
+            style += 'display: none;'
+        return '\n<section id="%s" class="slidoc-slide %s-slide slidoc-full-block %s" style="%s"> <!--slide start-->\n' % (slide_id, chapter_id, classes, style)
+
+    def slide_toggle(self, slide_id, slide_number, header=''):
+        html = '''<div id="%s-togglebar" class="slidoc-togglebar slidoc-toggle-hide slidoc-full-block slidoc-droppable slidoc-noprint" data-slide="%d">\n''' % (slide_id, slide_number)
+        toptoggle_classes = 'slidoc-toptoggle'
+        if self.qtypes[-1]:
+            toptoggle_classes += ' slidoc-toptoggle-question'
+        html += '''  <span id="%s-toptoggle" class="%s">\n''' % (slide_id, toptoggle_classes)
         html += '''    <span class="slidoc-toptoggle-icon slidoc-toggle-visible slidoc-clickable" onclick="Slidoc.accordionToggle('%s',false);">%s</span><span class="slidoc-toptoggle-icon slidoc-toggle-hidden slidoc-clickable" onclick="Slidoc.accordionToggle('%s',true);">%s</span>\n''' % (slide_id, SYMS['down'], slide_id, SYMS['rightarrow'])
         right_list = [ ('edit', SYMS['pencil']), ('drag', '&#8693')]
         for action, icon in right_list:
@@ -1191,12 +1201,15 @@ class SlidocRenderer(MathRenderer):
 
             html += '''  <span class="%s" %s >%s</span>''' % (toggle_classes, attrs, icon)
             
-        html += '''  <span id="%s-toptoggle-discuss" class="slidoc-toptoggle-edit slidoc-edit-icon slidoc-nolocalpreview slidoc-discussonly slidoc-serveronly slidoc-toggle-hidden" style="display: none;">%s</span>''' % (slide_id, SYMS['bubble'])
+        html += '''  <span id="%s-toptoggle-discuss" class="slidoc-toptoggle-edit slidoc-edit-icon slidoc-nolocalpreview slidoc-discussonly slidoc-serveronly slidoc-toggle-hidden" style="display: none;">%s</span><span id="%s-toptoggle-questionicon" class="slidoc-toptoggle-edit slidoc-edit-icon slidoc-toptoggle-questionicon">&#x2753;</span>''' % (slide_id, SYMS['bubble'], slide_id)
 
         site_name = self.options['config'].site_name
         site_prefix = '/'+site_name if site_name else ''
 
-        html += '''    <span id="%s-toptoggle-header" class="slidoc-toptoggle-header slidoc-toggle-hidden slidoc-toggle-draggable" draggable="true" data-slide="%d">%s</span>''' % (slide_id, slide_number, prefix)
+        header_classes = 'slidoc-toptoggle-header slidoc-toggle-draggable'
+        if slide_number == 1:
+            header_classes += ' slidoc-first-slide'
+        html += '''    <span id="%s-toptoggle-header" class="%s" draggable="true" data-slide="%d">%s</span>''' % (slide_id, header_classes, slide_number, header)
         html += '''  </span>\n'''
         html += '''</div>\n'''
         html += '''<div id="%s-togglebar-edit" class="slidoc-togglebar-edit slidoc-full-block slidoc-droppable slidoc-noupdate slidoc-noprint" data-slide="%s" style="display:none;">\n''' % (slide_id, slide_id)
@@ -1216,25 +1229,24 @@ class SlidocRenderer(MathRenderer):
         html += '''    <div class="slidoc-img-droparea slidoc-droppable slidoc-img-drop" data-slide-id="%s">Drop image here<br></div>\n''' % (slide_id,)
         html += '''  </div>'''
         html += '''</div>\n'''
-
-        # Slides need to be unhidden in Javascript for paced/slides_only sessions
-        style = ''
-        if self.options['config'].pace or 'slides_only' in self.options['config'].features:
-            style += 'display: none;'
-        html += '\n<section id="%s" class="slidoc-slide %s-slide slidoc-full-block %s" style="%s"> <!--slide start-->\n' % (slide_id, chapter_id, classes, style)
         return html
 
     def slide_footer(self):
         slide_id = self.get_slide_id()
         header = self.cur_header or self.slide_img_tag or self.alt_header or ''
+
         self.alt_header_list.append(header)
         if header and not header.startswith('<img '):
             header = mistune.escape(header)
+
         if self.cur_header or self.untitled_header or not self.toggle_slide_id:
+            # Explicit/auto header or first implicit header
             self.toggle_slide_id = slide_id
         elif header:
-            # Nested header
+            # Nest implicit header (for collapsing as a group)
             header = '&nbsp;&nbsp;&nbsp;' + header
+
+        toggle_html = self.slide_toggle(slide_id, self.slide_number, header)
 
         classes = []
         if 'hide' in self.slide_options and not self.options['config'].unhide_slides:
@@ -1252,8 +1264,8 @@ class SlidocRenderer(MathRenderer):
             attrs += ' data-function-count="%d"' % len(self.all_functions)
         if self.qtypes[-1]:
             attrs += ' data-question-type="%s"' % self.qtypes[-1]
-        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle slidoc-full-block %s" %s style="display:none;">%s</div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs, header)
-        return html
+        html = '''<div id="%s-footer-toggle" class="slidoc-footer-toggle %s-footer-toggle slidoc-full-block %s" %s style="display:none;"></div>\n''' % (slide_id, self.toggle_slide_id, ' '.join(classes), attrs)
+        return toggle_html + html
 
     def image(self, src, title, text):
         basename = os.path.basename(src)
@@ -4282,7 +4294,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                       'math_js': math_inc if math_present else '',
                       'pagedown_js': (Pagedown_js % libraries_params) if renderer.render_markdown else '',
                       'skulpt_js': (Skulpt_js % libraries_params) if renderer.load_python else '',
-                      'body_class': 'slidoc-plain-page' if topnav_html else '',
+                      'body_class': 'slidoc-plain-page' if topnav_html else 'slidoc-accordion-view',
                       'top_nav':  topnav_html,
                       'top_nav_hide': ' slidoc-topnav-hide' if topnav_html else ''}
         mid_params.update(SYMS)
@@ -4379,7 +4391,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             elif 'slide_break_page' in file_config.features:
                 chapter_classes += ' slidoc-page-break-always'
 
-            md_prefix = chapter_prefix(fnumber, chapter_classes, hide=js_params['paceLevel'] and not config.printable)
+            md_prefix = chapter_prefix(fnumber, chapter_classes, hide=False)
             md_suffix = '</article> <!--chapter end-->\n'
             if combined_file:
                 combined_html.append(md_prefix)
@@ -4758,6 +4770,7 @@ Html_header = '''<!DOCTYPE html>
 Delay_image_format = '''<img class="slidoc-blankimage" src="%s/_user_blankimage?delay=%d%s" style="display:none;">'''
 
 Html_footer = '''
+<div id="slidoc-init-load"><p></p><b>&#x29D7; Loading page ... (<a href="/_logout">reset</a>)</b></div>
 <div id="slidoc-body-footer" class="slidoc-noslide"></div>
 </body></html>
 '''

@@ -348,6 +348,43 @@ def getSessionPath(sessionName, sessionType='', site_prefix=False, toc=False):
         path = '/' + Options['site_name'] + path
     return path
 
+def nextSession(sessionName, back=False):
+    # Returns name of nextSession if it can be navigated to else null string
+    smatch = sliauth.SESSION_NAME_RE.match(sessionName)
+    if not smatch:
+        return ''
+
+    sessionType = smatch.group(1)
+    sessionNumber = int(smatch.group(2))
+    nextSessionNumber = (-1 if back else 1) + sessionNumber
+    if not nextSessionNumber:
+        return ''
+
+    nextSessionName = sliauth.SESSION_NAME_FMT % (sessionType, nextSessionNumber)
+
+    nextSessionFile = os.path.join(BaseHandler.site_web_dir, getSessionPath(nextSessionName, sessionType)[1:])
+    if not os.path.isfile(nextSessionFile):
+        return ''
+        
+    if not SiteProps.paced_session(sessionType):
+        return nextSessionName
+
+    try:
+        sessionEntries = sdproxy.lookupValues(nextSessionName, ['releaseDate', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
+    except Exception, excp:
+        return ''
+
+    releaseDate = sessionEntries['releaseDate']
+
+    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) > sliauth.epoch_ms():
+        return ''
+
+    elif releaseDate != sliauth.FUTURE_DATE and ((sessionEntries['adminPaced'] and sessionEntries['dueDate']) or (not sessionEntries['adminPaced'] and sessionEntries['gradeDate'])):
+        # Proceed to released, completed adminPaced sessions or graded sessions
+        return nextSessionName
+    else:
+        return ''
+
 def restricted_user_access(start_date, end_date, site_role=None, site_access='', batch_mode=''):
     if site_role:
         # Admin.grader access
@@ -4813,6 +4850,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
             sessionParams = {'dispAccessCode':dispAccessCode, 'interactSlideId':interactSlideId, 'noRoster': sdproxy.Settings['no_roster'] or '',
                              'activeUsers':activeUsers}
 
+            sessionParams['nextSession'] = nextSession(self.sessionName)
+            sessionParams['prevSession'] = nextSession(self.sessionName, back=True)
             self.write_message_safe(json.dumps([0, 'session_setup', [self.sessionVersion, sessionParams] ]))
 
             if joined and self.userRole != sdproxy.ADMIN_ROLE:
@@ -4960,16 +4999,8 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
                 retObj['discuss'] = discussStats(sdproxy.TESTUSER_ID if self.userRole == sdproxy.ADMIN_ROLE else self.pathUser[1])
 
             elif method == 'switch_session':
-                # Args: nextSessionName, forward
-                sessionEntries = sdproxy.lookupValues(args[0], ['releaseDate', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
-                releaseDate = sessionEntries['releaseDate']
-                if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) > sliauth.epoch_ms():
-                    retObj['proceed'] = False
-                elif releaseDate != sliauth.FUTURE_DATE and ((sessionEntries['adminPaced'] and sessionEntries['dueDate']) or (not sessionEntries['adminPaced'] and sessionEntries['gradeDate'])):
-                    # Proceed to released, completed adminPaced sessions or graded sessions
-                    retObj['proceed'] = True
-                else:
-                    retObj['proceed'] = False
+                # Args: sessionName, backward
+                retObj['switchSession'] = nextSession(args[0], args[1])
 
             elif method == 'generate_team':
                 # Args: questionNum, params

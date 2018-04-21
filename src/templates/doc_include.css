@@ -36,6 +36,7 @@ body:not(.slidoc-server-view) .slidoc-serveronly,
 body:not(.slidoc-controller-view) .slidoc-controlleronly,
 body:not(.slidoc-restricted-view) .slidoc-restrictedonly,
 body:not(.slidoc-testuser-view) .slidoc-testuseronly,
+body:not(.slidoc-accordion-view) .slidoc-accordiononly,
 body:not(.slidoc-collapsible-view) .slidoc-collapsibleonly,
 body:not(.slidoc-incremental-view) .slidoc-incrementalonly,
 body:not(.slidoc-assessment-view) .slidoc-assessmentonly,
@@ -381,6 +382,9 @@ body:not(.slidoc-dragdrop-view) .slidoc-dropbar {display: none;}
 .slidoc-edit-update { float: right; }
 
 .slidoc-togglebar-edit-area { outline: none; width: 90%; }
+
+span.slidoc-toptoggle-header.slidoc-first-slide {font-weight: bold;}
+span.slidoc-toptoggle:not(.slidoc-toptoggle-question) span.slidoc-toptoggle-questionicon {display: none;}
 
 
 /* Drag-drop */

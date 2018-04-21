@@ -110,8 +110,7 @@ Sliobj.sessionLabel = (!Sliobj.params.fileName && Sliobj.params.sessionType) ? S
 Sliobj.sessionProperties = null;   // For all sessions
 
 Sliobj.inputAccessCode = '';
-Sliobj.dispAccessCode = '';
-Sliobj.noRoster = '';
+Sliobj.sessionParams = {};
 Sliobj.activeUsers = null;
 
 Sliobj.gradeFieldsObj = {};
@@ -572,14 +571,13 @@ if (Sliobj.params.gd_sheet_url && Sliobj.params.gd_sheet_url.slice(0,1) == '/') 
 }
 
 Slidoc.sessionSetup = function(sessionParams) {
-    // sessionParams = {dispAccessCode:, interactSlideId:, noRoster:, activeUsers:}
+    // sessionParams = {dispAccessCode:, interactSlideId:, noRoster:, activeUsers:, nextSession:, prevSession:}
     Slidoc.log('Slidoc.sessionSetup:', sessionParams);
-    Sliobj.dispAccessCode = sessionParams.dispAccessCode || '';
-    Sliobj.noRoster = sessionParams.noRoster || ''
+    Sliobj.sessionParams = sessionParams;
     Sliobj.activeUsers = sessionParams.activeUsers || null;
     var elem = document.getElementById('slidoc-access-code');
     if (elem)
-	elem.textContent = ''+Sliobj.dispAccessCode;
+	elem.textContent = ''+(Sliobj.sessionParams.dispAccessCode||'');
     if (Sliobj.activeUsers)
 	Slidoc.showActiveUsers(true);
 }
@@ -616,6 +614,7 @@ document.onreadystatechange = function(event) {
     // !Sliobj.params.fileName => index file; load, but do not execute JS
     if (document.readyState != "interactive" || !document.body)
 	return;
+
     Slidoc.pageSetup();
     if (!Sliobj.params.fileName || (Sliobj.params.fileName == 'index' && !Sliobj.previewState)) {
 	// Just a simple web page
@@ -701,9 +700,59 @@ Sliobj.previewModified = 0;
 Sliobj.updateView = false;
 Sliobj.imageDropSetup = false;
 
+function preInitialize() {
+    try {
+	var startDocView = getParameter('nocreate') && (getUserId() == Sliobj.params.testUserId || !('slides_only' in Sliobj.params.features));
+	Slidoc.log("preInitialize:", startDocView, getParameter('collapse'));
+
+	if (startDocView && getParameter('collapse')) {
+	    toggleClass(true, 'slidoc-collapsible-view');
+	} else {
+	    // Accordion view is enabled by default to allow sessions to display headers initially.
+	    // Disable it now, but it may be re-enabled later
+	    document.body.classList.remove('slidoc-accordion-view');
+	}
+
+	var accordionElem = document.getElementById('slidoc-chapter-accordion');
+	if (accordionElem)
+	    accordionElem.classList.add('slidoc-collapsibleonly');
+	
+	// Hide paced, non-printable sessions by default
+	var articles = document.getElementsByTagName('article');
+	if (!startDocView  && articles && articles.length && Sliobj.params && Sliobj.params.paceLevel && !Sliobj.params.printable)
+	    articles[0].style.display = 'none';
+
+	var slideElems = document.getElementsByClassName('slidoc-slide');
+	[].forEach.call(slideElems, function(elem) {
+	    // Move slide element before footer element (and after togglebar/toggleedit elements)
+	    var footerElem = document.getElementById(elem.id + '-footer-toggle');
+	    if (footerElem && footerElem.parentNode.isSameNode(elem.parentNode))
+		elem.parentNode.insertBefore(elem, footerElem);
+
+	    // Togglebar only visible in collapsible view
+	    var togglebarElem = document.getElementById(elem.id + '-togglebar');
+	    if (togglebarElem)
+		togglebarElem.classList.add('slidoc-collapsibleonly');
+
+	    if (!startDocView || !getParameter('collapse')) {
+		// Hide togglebar header (may be unhidden later)
+		if (togglebarElem)
+		    toggleClass(false, 'slidoc-toggle-hide', togglebarElem);
+		var toptoggleHeaderElem = document.getElementById(elem.id + '-toptoggle-header');
+		if (toptoggleHeaderElem)
+		    toptoggleHeaderElem.classList.add('slidoc-toggle-hidden');
+	    }
+	});
+    } catch(err) {
+	console.log('ERROR in pre-initalization: '+err+', '+err.stack);
+    }
+}
+
 Slidoc.pageSetup = function() {
     Slidoc.log("pageSetup:", Sliobj.reloadCheck, location.hash, getParameter('update'));
 
+    preInitialize();
+    
     // Styles for simple pages, e.g., help
     if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
 	toggleClass(true, 'slidoc-instructor-view');
@@ -1070,6 +1119,19 @@ Slidoc.accordionView = function(active, show) {
     if (Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
 	setupOverride('Enable test user override to display all slides?', Sliobj.previewState);
 
+    if (active) {
+	if (!Sliobj.sessionParams.prevSession) {
+	    var prevElem = document.getElementById('slidoc-session-nav-prev');
+	    if (prevElem)
+		prevElem.classList.add('slidoc-disabled');
+	}
+	if (!Sliobj.sessionParams.nextSession) {
+	    var nextElem = document.getElementById('slidoc-session-nav-next');
+	    if (nextElem)
+		nextElem.classList.add('slidoc-disabled');
+	}
+    }
+
     var allSlides = getVisibleSlides();
     Slidoc.classDisplay('slidoc-togglebar', 'none');
     for (var j=0; j<allSlides.length; j++) {
@@ -1089,14 +1151,6 @@ Slidoc.accordionView = function(active, show) {
 	if (togglebar)
 	    toggleClass(active && !show, 'slidoc-toggle-hide', togglebar);
 
-	var topToggleHeader = document.getElementById(allSlides[j].id+'-toptoggle-header');
-	var slideToggleFooter = getSlideFooter(allSlides[j].id);
-	if (active && topToggleHeader && slideToggleFooter) {
-	    if (slideToggleFooter.textContent)
-		topToggleHeader.innerHTML = slideToggleFooter.innerHTML;
-	    if (slideToggleFooter.dataset.questionType) 
-		topToggleHeader.classList.add('slidoc-toptoggle-header-question');
-	}
     }
     toggleClass(active, 'slidoc-accordion-view');
 }
@@ -2813,8 +2867,8 @@ var Slide_view_handlers = {
     't':     function() { Slidoc.contentsDisplay(); },
     'm':     function() { Slidoc.showConcepts(); },
     'reset': function() { Slidoc.resetPaced(); },
-    'shiftleft':  function() { Slidoc.switchSession(false); },
-    'shiftright': function() { Slidoc.switchSession(true); }
+    'shiftleft':  function() { Slidoc.switchSession(true); },
+    'shiftright': function() { Slidoc.switchSession(false); }
 }
 
 var Key_codes = {
@@ -2933,13 +2987,13 @@ Slidoc.handleKey = function (keyName, swipe) {
 
     if (keyName == 'shiftleft' || keyName == 'shiftright') {
 	if (!Sliobj.currentSlide)
-	    Slidoc.switchSession(keyName == 'shiftright');
+	    Slidoc.switchSession(keyName == 'shiftleft');
 	return false;
     }
 
     if (swipe && !Sliobj.currentSlide && document.body.classList.contains('slidoc-accordion-view') && (keyName == 'left' || keyName == 'right')) {
 	// Experimental: allow swiping to switch sessions in collapsed mode only
-	Slidoc.switchSession(keyName == 'right');
+	Slidoc.switchSession(keyName == 'left');
 	return false;
     }
 
@@ -3185,7 +3239,7 @@ Slidoc.interact = function() {
 	if (siteTwitter.match(/^@/)) {
 	    html += '<li>Tweet or text 40404: <code>'+siteTwitter+' answer</code></li>';
 	} else if (siteTwitter) {
-	    if (Sliobj.noRoster) {
+	    if (Sliobj.sessionParams.noRoster) {
 		html += '<li>Text 40404:&nbsp;&nbsp; <code>@'+siteTwitter+' answer <em>comment</em></code></li>';
 		html += '<li>Tweet:&nbsp;&nbsp; <code>@'+siteTwitter+' answer <em>comment</em></code></li>';
 	    } else {
@@ -4027,12 +4081,12 @@ function showQDiffCallback(result, errMsg) {
 	var qno = result.qcorrect[j][1];
 	var question_attrs = attr_vals[qno-1];
 	var slide_id = chapter_id + '-' + zeroPad(question_attrs.slide, 2);
-	var footer_elem = getSlideFooter(slide_id);
+	var header_elem = getSlideHeader(slide_id);
 	var concept_elem = document.getElementById(slide_id+'-concepts');
 	var header = 'slide';
 	var tags = ''
-	if (footer_elem)
-	    header = footer_elem.textContent;
+	if (header_elem)
+	    header = header_elem.textContent;
 	if (concept_elem)
 	    tags = ' [' + concept_elem.textContent.trim() + ']';
 	html += '<tr><td>'+(result.qcorrect[j][0]*100).toFixed(0)+'%:</td><td><span class="slidoc-clickable" onClick="Slidoc.slideViewGo(true,'+question_attrs.slide+');">'+header+'</span></td><td>'+tags+'</td></tr>\n';
@@ -4970,8 +5024,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.params.discussSlides && Sliobj.params.discussSlides.length)
 	toggleClass(true, 'slidoc-discuss-view');
 
-    if (collapsibleAccess())
-	toggleClass(true, 'slidoc-collapsible-view');
+    toggleClass(collapsibleAccess(), 'slidoc-collapsible-view');
 
     if (Sliobj.previewState) {
     	toggleClass(true, 'slidoc-preview-view');
@@ -6837,6 +6890,10 @@ function getCurrentlyVisibleSlide(slides) {
     return 0
 }
 
+function getSlideHeader(slide_id) {
+    return document.getElementById(slide_id+'-toptoggle-header');
+}
+
 function getSlideFooter(slide_id) {
     return document.getElementById(slide_id+'-footer-toggle');
 }
@@ -6936,9 +6993,9 @@ Slidoc.contentsDisplay = function() {
 	var headerElems = document.getElementsByClassName(allSlides[j].id+'-header');
 	var headerText = headerElems.length ? headerElems[0].textContent : '';
 	if (!headerText && 'untitled_number' in Sliobj.params.features) {
-	    var footerElem = getSlideFooter(allSlides[j].id);
-	    if (footerElem)
-		headerText = footerElem.textContent;
+	    var headerElem = getSlideHeader(allSlides[j].id);
+	    if (headerElem)
+		headerText = headerElem.textContent;
 	}
 	if (headerText || !j) {
 	    // Slide with header or first slide
@@ -9219,25 +9276,39 @@ function goSlide(slideHash, chained, singleChapter) {
    return false;
 }
 
-Slidoc.switchSession = function(forward) {
-    Slidoc.log('Slidoc.switchSession:', forward);
-    if (!window.GService || !Sliobj.params.fileName)
+Slidoc.switchSession = function(backward) {
+    Slidoc.log('Slidoc.switchSession:', backward);
+    var sessionName = Sliobj.params.fileName;
+    if (!sessionName)
 	return;
-    var smatch = SESSION_NAME_RE.exec(Sliobj.params.fileName);
+    var smatch = SESSION_NAME_RE.exec(sessionName);
     if (!smatch)
 	return;
-    var nextNum = (forward? 1 : -1) + parseInt(smatch[2]);
+    var nextNum = (backward ? -1 : 1) + parseInt(smatch[2]);
     if (!nextNum)
 	return;
-    var nextSessionName = smatch[1] + zeroPad(nextNum, 2);
-    GService.requestWS('switch_session', [nextSessionName, !!forward], switchSessionCallback.bind(null, nextSessionName, forward));
+
+    var switchSessionName = '';
+    if (!window.GService && !Sliobj.params.paceLevel) {
+	switchSessionName = smatch[1] + zeroPad(nextNum, 2);
+    } else if (!backward && Sliobj.sessionParams.nextSession) {
+	switchSessionName = Sliobj.sessionParams.nextSession;
+    } else if (backward && Sliobj.sessionParams.prevSession) {
+	switchSessionName = Sliobj.sessionParams.prevSession;
+    }
+
+    if (switchSessionName) {
+	switchSessionCallback(sessionName, backward, {result: 'success', 'switchSession': switchSessionName}, '');
+    } else {
+	GService.requestWS('switch_session', [sessionName, !!backward], switchSessionCallback.bind(null, sessionName, backward));
+    }
 }
 
-function switchSessionCallback(nextSessionName, forward, retObj, errMsg) {
-    Slidoc.log('switchSessionCallback:', nextSessionName, forward, retObj, errMsg);
+function switchSessionCallback(sessionName, backward, retObj, errMsg) {
+    Slidoc.log('switchSessionCallback:', sessionName, backward, retObj, errMsg);
     if (retObj && retObj.result == 'success') {
-	if (retObj.proceed) {
-	    var newPath = location.pathname.replace(Sliobj.params.fileName,nextSessionName)+'?nocreate=1';
+	if (retObj.switchSession) {
+	    var newPath = location.pathname.replace(sessionName, retObj.switchSession)+'?nocreate=1';
 	    if (document.body.classList.contains('slidoc-accordion-view'))
 		newPath += '&collapse=1';
 	    window.location = newPath;
