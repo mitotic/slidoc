@@ -442,7 +442,7 @@ body.slidoc-accordion-view .slidoc-pre-header {display: none;}
 body:not(.slidoc-accordion-view) .slidoc-chapter-accordion .slidoc-toptoggle {display: none;}
 
 .slidoc-chapter-accordion .slidoc-toggle-visible {opacity: 0.5;}
-.slidoc-chapter-accordion .slidoc-toggle-hidden {background: #eee;}
+.slidoc-chapter-accordion .slidoc-toggle-hidden {background: #ddd;}
 
 body:not(.slidoc-accordion-view) .slidoc-toggle-hidden {display: none;}
 body.slidoc-accordion-view .slidoc-chapter-accordion .slidoc-toggle-visible {display: none;}
@@ -467,6 +467,43 @@ body.slidoc-accordion-view .slidoc-chapter-accordion .slidoc-toggle-visible {dis
 code.slidoc-plugin-share-resp-prefix {
     font-weight: bold;
     color: green;
+}
+
+/* Switching */
+.slidoc-switching-starting {
+    opacity: 0.6;
+}
+
+.slidoc-switching-delay {
+    display: none;
+}
+
+.slidoc-paced-pre-init {
+    opacity: 0.4;
+}
+
+.slidoc-switching-starting.slidoc-toptoggle-header.slidoc-first-slide {
+   background: linear-gradient(to right, rgba(0,0,0,1), rgba(0,0,0,0)); 
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slidoc-paced-pre-init.slidoc-toptoggle-header.slidoc-first-slide {
+   background: linear-gradient(to left, rgba(0,0,0,1), rgba(0,0,0,0)); 
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slidoc-switching-fade { /* Apply gradient */
+  position: absolute;
+  bottom: 0;  
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(to top,
+     rgba(255,255,255, 1) 20%, 
+     rgba(255,255,255, 0) 80%
+  );
+  pointer-events: none; /* keep text selectable */
 }
 
 /* Popup */

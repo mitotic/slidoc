@@ -216,7 +216,7 @@ Slidoc.log = function() {
 	console.log(msg);
 	return;
     }
-    var debugging = Sliobj.params.debug || Sliobj.gradableState || getUserId() == Sliobj.params.testUserId;
+    var debugging = Sliobj.params.debug || Sliobj.gradableState || isAdminUser();
     if (debugging) {
 	console.log.apply(console, arguments);
     }
@@ -700,12 +700,28 @@ Sliobj.previewModified = 0;
 Sliobj.updateView = false;
 Sliobj.imageDropSetup = false;
 
+function switchViewStart() {
+    if (Sliobj.session && !Sliobj.session.submitted) {
+	// No switching for unsubmitted sessions (unless admin and not admin-paced)
+	if (!isAdminUser() || Sliobj.params.paceLevel == ADMIN_PACE)
+	    return false;
+    }
+    return getParameter('switching') && (isAdminUser() || !('slides_only' in Sliobj.params.features));
+}
+
+function endSwitchingDelay() {
+    toggleClassAll(false, 'slidoc-switching-delay', 'slidoc-switching-delay');
+}
+
 function preInitialize() {
     try {
-	var startDocView = getParameter('nocreate') && (getUserId() == Sliobj.params.testUserId || !('slides_only' in Sliobj.params.features));
-	Slidoc.log("preInitialize:", startDocView, getParameter('collapse'));
+	var startSwitchView = switchViewStart();
 
-	if (startDocView && getParameter('collapse')) {
+	Slidoc.log("preInitialize:", startSwitchView, getParameter('collapse'));
+
+	setTimeout(endSwitchingDelay, getParameter('switching') ? 1000 : 0);
+
+	if (startSwitchView && getParameter('collapse')) {
 	    toggleClass(true, 'slidoc-collapsible-view');
 	} else {
 	    // Accordion view is enabled by default to allow sessions to display headers initially.
@@ -717,10 +733,14 @@ function preInitialize() {
 	if (accordionElem)
 	    accordionElem.classList.add('slidoc-collapsibleonly');
 
-	// Hide paced, non-printable sessions by default
 	var articles = document.getElementsByTagName('article');
-	if (!startDocView  && articles && articles.length && Sliobj.params && Sliobj.params.paceLevel && !Sliobj.params.printable)
-	    articles[0].style.display = 'none';
+	if (articles && articles.length) {
+	    articles[0].classList.remove('slidoc-paced-pre-init');
+
+	    // Hide paced, non-printable sessions by default
+	    if (!startSwitchView && Sliobj.params && Sliobj.params.paceLevel && !Sliobj.params.printable)
+		articles[0].style.display = 'none';
+	}
 
 	var slideElems = document.getElementsByClassName('slidoc-slide');
 	[].forEach.call(slideElems, function(elem) {
@@ -734,7 +754,7 @@ function preInitialize() {
 	    if (togglebarElem)
 		togglebarElem.classList.add('slidoc-collapsibleonly');
 
-	    if (!startDocView || !getParameter('collapse')) {
+	    if (!startSwitchView || !getParameter('collapse')) {
 		// Hide togglebar header (may be unhidden later)
 		if (togglebarElem)
 		    toggleClass(false, 'slidoc-toggle-hide', togglebarElem);
@@ -745,6 +765,25 @@ function preInitialize() {
 	});
     } catch(err) {
 	console.log('ERROR in pre-initalization: '+err+', '+err.stack);
+    }
+}
+
+function postInitialize() {
+    // Called after all views are set up (towards the end of setup)
+    toggleClassAll(true, 'slidoc-pacedonly', 'slidoc-session-navigate');
+    toggleClassAll(true, 'slidoc-testuseronly', 'slidoc-toptoggle-editable');
+    toggleClassAll(true, 'slidoc-serveronly', 'slidoc-toptoggle-editable');
+
+    if (!Sliobj.sessionParams.prevSession) {
+	var prevElem = document.getElementById('slidoc-session-nav-prev');
+	if (prevElem)
+	    prevElem.classList.add('slidoc-disabled');
+    }
+
+    if (!Sliobj.sessionParams.nextSession) {
+	var nextElem = document.getElementById('slidoc-session-nav-next');
+	if (nextElem)
+	    nextElem.classList.add('slidoc-disabled');
     }
 }
 
@@ -1118,19 +1157,6 @@ Slidoc.accordionView = function(active, show) {
 
     if (Sliobj.session && Sliobj.session.paced >= QUESTION_PACE)
 	setupOverride('Enable test user override to display all slides?', Sliobj.previewState);
-
-    if (active) {
-	if (!Sliobj.sessionParams.prevSession) {
-	    var prevElem = document.getElementById('slidoc-session-nav-prev');
-	    if (prevElem)
-		prevElem.classList.add('slidoc-disabled');
-	}
-	if (!Sliobj.sessionParams.nextSession) {
-	    var nextElem = document.getElementById('slidoc-session-nav-next');
-	    if (nextElem)
-		nextElem.classList.add('slidoc-disabled');
-	}
-    }
 
     var allSlides = getVisibleSlides();
     Slidoc.classDisplay('slidoc-togglebar', 'none');
@@ -2252,8 +2278,11 @@ function toggleClass(add, className, element) {
 
 function toggleClassAll(add, className, allClassName) {
     var elems = document.getElementsByClassName(allClassName);
-    for (var j=0; j<elems.length; j++)
-	toggleClass(add, className, elems[j]);
+    var elemList = [];
+    for (var j=0; j<elems.length; j++) // Need to create temporary array because elems is dynamic, and may change is class is removed
+	elemList.push(elems[j]);
+    for (var j=0; j<elemList.length; j++)
+	toggleClass(add, className, elemList[j]);
 }
 
 function hideClass(className, hide) {
@@ -2274,7 +2303,7 @@ Slidoc.printerMenu = function () {
 }
 
 Slidoc.printSession = function (slideView) {
-    if ('slides_only' in Sliobj.params.features && !(location.hostname == 'localhost' && getUserId() == Sliobj.params.testUserId))
+    if ('slides_only' in Sliobj.params.features && !(location.hostname == 'localhost' && isAdminUser()))
 	return false;
 
     if (Sliobj.currentSlide) {
@@ -2830,12 +2859,12 @@ Slidoc.viewNavHelp = function () {
 	for (var j=0; j<Slide_help_list_b.length; j++)
 	    html += formatNavHelp(Slide_help_list_b[j]);
     } else if (Sliobj.params.fileName) {
-	html += formatNavHelp(['&#9668;',   'left',  'collapse']);
-	html += formatNavHelp(['&#9658;',   'right', 'uncollapse']);
+	html += formatNavHelp(['Shift-&#9668;',   'shiftleft',  'outline view']);
+	html += formatNavHelp(['Shift-&#9658;',   'shiftright', 'document view']);
 	html += formatNavHelp(['Escape', 'unesc', 'enter slide mode']);
 	if (!Sliobj.currentSlide && window.GService && SESSION_NAME_RE.exec(Sliobj.params.fileName)) {
-	    html += formatNavHelp(['Shift-&#9668;', 'shiftleft',  'prev session']);
-	    html += formatNavHelp(['Shift-&#9658;', 'shiftright', 'next session']);
+	    html += formatNavHelp(['&#9668;', 'left',  'prev session']);
+	    html += formatNavHelp(['&#9658;', 'right', 'next session']);
 	}
     }
     html += '</table>';
@@ -2866,9 +2895,7 @@ var Slide_view_handlers = {
     'g':     function() { Slidoc.viewNavHelp(); },
     't':     function() { Slidoc.contentsDisplay(); },
     'm':     function() { Slidoc.showConcepts(); },
-    'reset': function() { Slidoc.resetPaced(); },
-    'shiftleft':  function() { Slidoc.switchSession(true); },
-    'shiftright': function() { Slidoc.switchSession(false); }
+    'reset': function() { Slidoc.resetPaced(); }
 }
 
 var Key_codes = {
@@ -2985,12 +3012,6 @@ Slidoc.handleKey = function (keyName, swipe) {
 	    return false;
     }
 
-    if (keyName == 'shiftleft' || keyName == 'shiftright') {
-	if (!Sliobj.currentSlide)
-	    Slidoc.switchSession(keyName == 'shiftleft');
-	return false;
-    }
-
     if (swipe && !Sliobj.currentSlide && document.body.classList.contains('slidoc-accordion-view') && (keyName == 'left' || keyName == 'right')) {
 	// Experimental: allow swiping to switch sessions in collapsed mode only
 	Slidoc.switchSession(keyName == 'left');
@@ -3019,8 +3040,14 @@ Slidoc.handleKey = function (keyName, swipe) {
 
 	if (keyName == 'reset') { Slidoc.resetPaced(); return false; }
 	
-	if (keyName == 'left' && !swipe) { Slidoc.accordionView(true); return false; }
-	if (keyName == 'right' && !swipe) { Slidoc.accordionView(false); return false; }
+	if (keyName == 'left' || keyName == 'right') {
+	    if (!Sliobj.currentSlide)
+		Slidoc.switchSession(keyName == 'left');
+	    return false;
+	}
+
+	if (keyName == 'shiftleft') { Slidoc.accordionView(true); return false; }
+	if (keyName == 'shiftright') { Slidoc.accordionView(false); return false; }
 	
 	if (Sliobj.curChapterId) {
 	    var chapNum = parseSlideId(Sliobj.curChapterId)[1];
@@ -3175,7 +3202,7 @@ Sliobj.eventReceiver = function(eventMessage) {
 
      } else if (adminSender && eventName == 'TeamSetup') {
 	 // Team setup
-	 if (Sliobj.session && getUserId() != Sliobj.params.testUserId)
+	 if (Sliobj.session && !isAdminUser())
 	     Sliobj.session.team = eventArgs[0];
 
     } else if (adminSender && eventName == 'ReloadPage') {
@@ -3406,7 +3433,7 @@ function interactCallback(retObj, errMsg) {
 
 Slidoc.hideSlides = function() {
     // Toggle explicitly hidden slides
-    if (getUserId() != Sliobj.params.testUserId)
+    if (!isAdminUser())
 	return false;
     if (Sliobj.closePopup)
 	Sliobj.closePopup();
@@ -3714,7 +3741,7 @@ function createPluginInstance(pluginName, nosession, slide_id, slideData, slideP
     defCopy.userId = auth ? auth.id : null;
     defCopy.displayName = auth ? auth.displayName : null;
     defCopy.gradableState = Sliobj.gradableState;
-    defCopy.testUser = (getUserId() == Sliobj.params.testUserId);
+    defCopy.testUser = isAdminUser();
     defCopy.sessionName = Sliobj.sessionName;
     defCopy.siteName = Sliobj.params.siteName || '';
 
@@ -4735,8 +4762,8 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
     }
 
     var getOpts = {access: true, retry: 'ready'};
-    if (!getParameter('nocreate'))
-	getOpts.create = true;
+    if (!isAdminUser() || !getParameter('switching'))
+	getOpts.create = true;  // Admin user cannot create entry by switching
 
     if (Sliobj.params.timedSec) {
 
@@ -4764,12 +4791,21 @@ function slidocReadyPaced(prereqs, prevSession, prevFeedback) {
 // Section 14: Session setup
 ///////////////////////////////
 
-function setupOverride(msg, force) {
-    if (getUserId() != Sliobj.params.testUserId)
-	return false;
+function isAdminUser() {
+    if (getUserId()) {
+	return getUserId() == Sliobj.params.testUserId;
+    } else if (Slidoc.serverCookie) {
+	return Slidoc.serverCookie.siteRole == Sliobj.params.adminRole;
+    }
+    return false;
+}
 
+function setupOverride(msg, force) {
+    if (!isAdminUser())
+	return false;
+    
     if (Sliobj.testOverride == null && msg)
-	Sliobj.testOverride = force || (getParameter('nocreate') || !!window.confirm(msg));
+	Sliobj.testOverride = force || (getParameter('switching') || !!window.confirm(msg));
     return Sliobj.testOverride;
 }
 
@@ -4788,11 +4824,11 @@ function controlledPace() {
     // If test user has submitted, assume controlledPace
     if (Sliobj.params.paceLevel < ADMIN_PACE)
 	return false;
-    return getUserId() != Sliobj.params.testUserId || (Sliobj.session && Sliobj.session.submitted);
+    return !isAdminUser() || (Sliobj.session && Sliobj.session.submitted);
 }
 
 function isController() {
-    return Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.gradableState && getUserId() == Sliobj.params.testUserId;
+    return Sliobj.params.paceLevel >= ADMIN_PACE && !Sliobj.gradableState && isAdminUser();
 }
 
 function autoInteract() {
@@ -4806,8 +4842,9 @@ function gradingAccess() {
 }
 
 function collapsibleAccess() {
-    if (getUserId() == Sliobj.params.testUserId)
+    if (isAdminUser())
 	return true;
+
     if ('slides_only' in Sliobj.params.features)
 	return false;
     return true;
@@ -4816,6 +4853,14 @@ function collapsibleAccess() {
 
 function allowDelay() {
     return Sliobj.params.paceLevel < ADMIN_PACE || Sliobj.dueDate;
+}
+
+function updateIncompletePaced(dispSlideCount) {
+    if (isAdminUser())
+	return;
+    var incompletePacedElem = document.getElementById('slidoc-incomplete-paced');
+    if (incompletePacedElem && !Sliobj.gradableState)
+	incompletePacedElem.style.display = (dispSlideCount < Sliobj.params.pacedSlides) ? null : 'none';
 }
 
 function slidocSetup(session, feedback) {
@@ -4869,18 +4914,22 @@ function slidocSetupAux(session, feedback) {
     }    
 
     var slides = getVisibleSlides();
+    var dispSlideCount = Sliobj.params.pacedSlides;
     if (controlledPace()) {
 	// Unhide only admin-paced slides
-	for (var j=0; j<visibleSlideCount(); j++)
+	dispSlideCount = visibleSlideCount();
+	for (var j=0; j<dispSlideCount; j++)
 	    slidesVisible(true, j+1, slides);
     } else if (!Sliobj.batchMode && !Sliobj.assessmentView && Sliobj.hideUnviewedSlides) {
 	// Unhide only paced slides
-	for (var j=0; j<Sliobj.session.lastSlide; j++)
+	dispSlideCount = Sliobj.session.lastSlide;
+	for (var j=0; j<dispSlideCount; j++)
 	    slidesVisible(true, j+1, slides);
     } else {
 	// Not paced or admin-paced, or batch/assessment view; unhide all slides
 	slidesVisible(true);
     }
+    updateIncompletePaced(dispSlideCount);
 
     if (!Sliobj.session) {
 	// New paced session
@@ -4944,7 +4993,7 @@ function slidocSetupAux(session, feedback) {
     }
 
     // Make slide text unselectable, if slides_only
-    if (!Sliobj.gradableState && ('slides_only' in Sliobj.params.features) && getUserId() != Sliobj.params.testUserId)
+    if (!Sliobj.gradableState && ('slides_only' in Sliobj.params.features) && !isAdminUser())
 	document.body.classList.add('slidoc-unselectable');
     
     var chapters = document.getElementsByClassName('slidoc-reg-chapter');
@@ -5035,7 +5084,7 @@ function slidocSetupAux(session, feedback) {
     if (Sliobj.gradableState)
     	toggleClass(true, 'slidoc-gradable-view');
 
-    if (getUserId() == Sliobj.params.testUserId || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole && (Sliobj.gradableState || !Sliobj.sessionName)) )
+    if (isAdminUser() || (Slidoc.serverCookie && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole && (Sliobj.gradableState || !Sliobj.sessionName)) )
 	toggleClass(true, 'slidoc-testuser-view');
 
     if (isController())
@@ -5064,8 +5113,7 @@ function slidocSetupAux(session, feedback) {
     }
 
     // Views set up
-    toggleClassAll(true, 'slidoc-testuseronly', 'slidoc-toptoggle-editable');
-    toggleClassAll(true, 'slidoc-serveronly', 'slidoc-toptoggle-editable');
+    postInitialize();
 	
     if (document.getElementById("slidoc-topnav")) {
 	//if (document.getElementById("slidoc-slideview-button"))
@@ -5079,7 +5127,7 @@ function slidocSetupAux(session, feedback) {
 	dispUserInfo(getUserId(), Sliobj.session.displayName);
     }
 
-    var startDocView = getParameter('nocreate') && (getUserId() == Sliobj.params.testUserId || !(('slides_only' in Sliobj.params.features)));
+    var startSwitchView = switchViewStart();
 
     // Setup completed; branch out
     Sliobj.firstTime = false;
@@ -5091,7 +5139,7 @@ function slidocSetupAux(session, feedback) {
 	    Sliobj.allQuestionConcepts = parseElem(firstSlideId+'-qconcepts') || [];
 	}
 	if (Sliobj.session.paced) {
-	    Slidoc.startPaced(startDocView); // This will call preAnswer later
+	    Slidoc.startPaced(startSwitchView); // This will call preAnswer later
 	    startedPace = true;
 	} else {
 	    preAnswer();
@@ -5105,7 +5153,7 @@ function slidocSetupAux(session, feedback) {
     Slidoc.cancelDelay();
 
     if (startedPace) {
-	if (startDocView && getParameter('collapse'))
+	if (startSwitchView && getParameter('collapse'))
 	    Slidoc.accordionView(true);
 	return false;
     }
@@ -5144,16 +5192,16 @@ function slidocSetupAux(session, feedback) {
 	}
     }
 
-    if (location.hash && (Sliobj.updateView || Sliobj.previewState) && (!getUserId() || getUserId() == Sliobj.params.testUserId)) {
+    if (location.hash && (Sliobj.updateView || Sliobj.previewState) && (!getUserId() || isAdminUser())) {
 	if (location.hash.slice(0,2) == '#-')
 	    restoreScroll();
-	else if (location.hash.slice(1).match(SLIDE_ID_RE) && !startDocView)
+	else if (location.hash.slice(1).match(SLIDE_ID_RE) && !startSwitchView)
 	    Slidoc.slideViewStart();
-    } else if ('slides_only' in Sliobj.params.features && !Sliobj.assessmentView && !Sliobj.gradableState && !startDocView) {
+    } else if ('slides_only' in Sliobj.params.features && !Sliobj.assessmentView && !Sliobj.gradableState && !startSwitchView) {
 	Slidoc.slideViewStart();
     }
 
-    if (startDocView && getParameter('collapse'))
+    if (startSwitchView && getParameter('collapse'))
 	Slidoc.accordionView(true);
     ///if (Slidoc.testingActive())
 	///Slidoc.slideViewStart();
@@ -7010,7 +7058,7 @@ Slidoc.contentsDisplay = function() {
 		classes += ' slidoc-contents-explicltlyhiddenslide';
 	    } else if (hidden) {
 		classes += ' slidoc-contents-hiddenslide';
-		if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && getUserId() == Sliobj.params.testUserId) {
+		if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && isAdminUser()) {
 		    classes += ' slidoc-contents-nextslide';
 		}
 	    } else {
@@ -7019,7 +7067,7 @@ Slidoc.contentsDisplay = function() {
 		if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide)
 		    classes += ' slidoc-contents-currentslide';
 	    }
-	    if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && getUserId() == Sliobj.params.testUserId) {
+	    if (Sliobj.currentSlide && j+1 == Sliobj.currentSlide+1 && isAdminUser()) {
 		prefix += '<p></p>Next slide: <b>'+headerText+'</b>\n';
 	    }
 	    lines.push('<li class="'+classes+'"' + action + '></li>');
@@ -7204,7 +7252,7 @@ function checkAnswerStatus(setup, slide_id, force, question_attrs, explain) {
 	    textareaElem.value = explain;
 	    renderDisplay(slide_id, '-answer-textarea', '-response-div', !Sliobj.params.features.no_markdown);
 	}
-    } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim() && getUserId() != Sliobj.params.testUserId) {
+    } else if (question_attrs.explain && textareaElem && !textareaElem.value.trim() && !isAdminUser()) {
 	if (force != 'controlled') {
 	    if (!force)
 		showDialog('alert', 'explainDialog', 'Please provide an explanation for the answer');
@@ -7249,7 +7297,7 @@ Slidoc.choiceClick = function (elem, slide_id, choice_val) {
 
 	    if (question_attrs.explain && allowReanswer()) {
 		var textareaElem = document.getElementById(slide_id+'-answer-textarea');
-		if (textareaElem && !textareaElem.value.trim() && getUserId() != Sliobj.params.testUserId) {
+		if (textareaElem && !textareaElem.value.trim() && !isAdminUser()) {
 		    showDialog('alert', 'explainDialog', 'Please provide an explanation for the choice');
 		    return false;
 		}
@@ -8048,7 +8096,7 @@ Slidoc.submitStatus = function () {
     if (Sliobj.session && Object.keys(Sliobj.session.questionsAttempted).length)
 	html += '<p></p><span class="slidoc-clickable" onclick="Slidoc.responseTable();">Table of responses</span>';
 
-    if (Sliobj.gradableState || getUserId() == Sliobj.params.testUserId) {
+    if (Sliobj.gradableState || isAdminUser()) {
 	var userId = getUserId() || '';
 	if (!Sliobj.gradableState)
 	    userId = '';
@@ -8586,8 +8634,8 @@ function remarksUpdateAux(userId, callback, result, retStatus) {
 // Section 19: Paced session management
 /////////////////////////////////////////
 
-Slidoc.startPaced = function (startDocView) {
-    Slidoc.log('Slidoc.startPaced: ', location.hash, startDocView);
+Slidoc.startPaced = function (startSwitchView) {
+    Slidoc.log('Slidoc.startPaced: ', location.hash, startSwitchView);
     Sliobj.delaySec = null;
 
     var firstSlideId = getVisibleSlides()[0].id;
@@ -8618,9 +8666,11 @@ Slidoc.startPaced = function (startDocView) {
     var unreadCount = Slidoc.PluginManager.optMethod('Discuss', '', 'unread');
 
     if (Sliobj.session.submitted) {
-    var startMsg = 'Reviewing submitted paced session '+Sliobj.sessionName+'<br>';
-    if (unreadCount)
-	startMsg += '&nbsp;&nbsp;<em>There are '+unreadCount+' slides with UNREAD discussions.</em><br>';
+	var startMsg = 'Reviewing submitted paced session '+Sliobj.sessionName+'<br>';
+	if (unreadCount)
+	    startMsg += '&nbsp;&nbsp;<em>There are '+unreadCount+' slides with UNREAD discussions.</em><br>';
+	if (!('slides_only' in Sliobj.params.features))
+	    startMsg += '&nbsp;&nbsp;<em>Press ESCAPE key to switch to document view</em><br>';
     } else {
     var startMsg = 'Starting'+((Sliobj.params.paceLevel && ('slides_only' in Sliobj.params.features))?' strictly':'')+' paced session '+Sliobj.sessionName+':<br>';
     if (Sliobj.timedSecLeft)
@@ -8644,7 +8694,7 @@ Slidoc.startPaced = function (startDocView) {
     startMsg += '</ul>';
     }
 
-    if (!startDocView && !Sliobj.batchMode && !Sliobj.updateView && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
+    if (!startSwitchView && !Sliobj.batchMode && !Sliobj.updateView && (!Sliobj.previewState || !location.hash || location.hash.slice(1).match(/-01$/)))
 	Slidoc.showPopup(startMsg);
 
     var chapterId = parseSlideId(firstSlideId)[0];
@@ -8657,7 +8707,7 @@ Slidoc.startPaced = function (startDocView) {
 	// Unhide all slides
 	slidesVisible(true);
 	restoreScroll();
-    } else if (!Sliobj.batchMode && !Sliobj.assessmentView && !startDocView) {
+    } else if (!Sliobj.batchMode && !Sliobj.assessmentView && !startSwitchView) {
 	Slidoc.slideViewStart(true);
     }
 }
@@ -8745,7 +8795,7 @@ Slidoc.slideViewStart = function (pacedStart) {
 
     var slideId = '';
 
-    if (getUserId() == Sliobj.params.testUserId && getParameter('slideid'))
+    if (isAdminUser() && getParameter('slideid'))
 	slideId = getParameter('slideid');
     else if ((Sliobj.previewState || Sliobj.updateView) && location.hash && location.hash.slice(1).match(SLIDE_ID_RE))
 	slideId = location.hash.slice(1);
@@ -8942,6 +8992,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 	Sliobj.session.lastSlide = slide_num; 
 	Sliobj.session.lastTime = Date.now();
 	Sliobj.questionSlide = question_attrs;
+	updateIncompletePaced(Sliobj.session.lastSlide);
 
 	var curTime = Date.now();
 	if (slide_num == 1 && Sliobj.params.paceLevel == ADMIN_PACE)
@@ -9081,7 +9132,7 @@ Slidoc.slideViewGo = function (forward, slide_num, start, incrementAll) {
 
     var counterElem = document.getElementById('slidoc-slide-nav-counter');
     counterElem.textContent = ((actual_slide_total <= 9) ? actual_slide_num : zeroPad(actual_slide_num,2))+'/'+actual_slide_total;
-    if (actual_slide_total < slides.length && getUserId() == Sliobj.params.testUserId)
+    if (actual_slide_total < slides.length && isAdminUser())
 	counterElem.textContent += '*';
 
     Slidoc.log('Slidoc.slideViewGo:D', Sliobj.currentSlide, slide_num, backward, incrementAll, slides[slide_num-1]);
@@ -9179,7 +9230,7 @@ function goSlide(slideHash, chained, singleChapter) {
    // Scroll to slide with slideHash, hiding current chapter and opening new one
    // If chained, hide previous link and set up new link
     Slidoc.log("goSlide:", slideHash, chained);
-    if (Sliobj.session && Sliobj.session.paced && ('slides_only' in Sliobj.params.features) && !Sliobj.currentSlide && !singleChapter && (getUserId() != Sliobj.params.testUserId)) {
+    if (Sliobj.session && Sliobj.session.paced && ('slides_only' in Sliobj.params.features) && !Sliobj.currentSlide && !singleChapter && !isAdminUser()) {
 	alert('Slidoc: InternalError: strict paced mode without slideView');
 	return false;
     }
@@ -9312,9 +9363,10 @@ function switchSessionCallback(sessionName, backward, retObj, errMsg) {
     Slidoc.log('switchSessionCallback:', sessionName, backward, retObj, errMsg);
     if (retObj && retObj.result == 'success') {
 	if (retObj.switchSession) {
-	    var newPath = location.pathname.replace(sessionName, retObj.switchSession)+'?nocreate=1';
+	    var newPath = location.pathname.replace(sessionName, retObj.switchSession)+'?switching=1';
 	    if (document.body.classList.contains('slidoc-accordion-view'))
 		newPath += '&collapse=1';
+	    document.body.classList.add('slidoc-switching-starting');
 	    window.location = newPath;
 	}
     }

@@ -366,24 +366,22 @@ def nextSession(sessionName, back=False):
     if not os.path.isfile(nextSessionFile):
         return ''
         
-    if not SiteProps.paced_session(sessionType):
-        return nextSessionName
-
-    try:
-        sessionEntries = sdproxy.lookupValues(nextSessionName, ['releaseDate', 'dueDate', 'gradeDate', 'paceLevel', 'adminPaced'], sdproxy.INDEX_SHEET)
-    except Exception, excp:
-        return ''
-
-    releaseDate = sessionEntries['releaseDate']
-
-    if isinstance(releaseDate, datetime.datetime) and sliauth.epoch_ms(releaseDate) > sliauth.epoch_ms():
-        return ''
-
-    elif releaseDate != sliauth.FUTURE_DATE and ((sessionEntries['adminPaced'] and sessionEntries['dueDate']) or (not sessionEntries['adminPaced'] and sessionEntries['gradeDate'])):
-        # Proceed to released, completed adminPaced sessions or graded sessions
-        return nextSessionName
+    if SiteProps.paced_session(sessionType):
+        try:
+            sessionEntries = sdproxy.lookupValues(nextSessionName, ['releaseDate'], sdproxy.INDEX_SHEET)
+            releaseDate = sessionEntries['releaseDate']
+        except Exception, excp:
+            return ''
     else:
+        with open(nextSessionFile) as f:
+            fileOpts = slidoc.parse_merge_args(sliauth.read_header_opts(io.BytesIO(f.read()))[0], '', slidoc.Conf_parser, {})
+        releaseDate = sliauth.parse_date(fileOpts.release_date)
+
+    if releaseDate and (not isinstance(releaseDate, datetime.datetime) or sliauth.epoch_ms(releaseDate) > sliauth.epoch_ms()):
+        # Unreleased session
         return ''
+
+    return nextSessionName
 
 def restricted_user_access(start_date, end_date, site_role=None, site_access='', batch_mode=''):
     if site_role:
@@ -4958,7 +4956,7 @@ class WSHandler(tornado.websocket.WebSocketHandler, UserIdMixin):
         callback_index = None
         try:
             obj = json.loads(message)
-            if obj[0] != self.sessionVersion:
+            if obj[0] and obj[0] != self.sessionVersion:
                 self.write_message_safe(json.dumps([0, 'close', ['Outdated version of session: %s vs %s' % (obj[0], self.sessionVersion), 'Outdated version of session. Reload page'] ]))
                 return
 

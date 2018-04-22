@@ -4299,6 +4299,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                       'top_nav_hide': ' slidoc-topnav-hide' if topnav_html else ''}
         mid_params.update(SYMS)
         mid_params['plugin_tops'] = ''.join(renderer.plugin_tops)
+        if js_params['paceLevel']:
+             mid_params['top_nav_hide'] += ' slidoc-switching-delay'
 
         if file_config.gsheet_url and (not config.dry_run or return_html):
             tem_attributes = extra_attributes.copy()
@@ -4381,6 +4383,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
             message("Indexed ", outname+":", fheader)
         else:
             chapter_classes = 'slidoc-reg-chapter'
+            if js_params['paceLevel']:
+                chapter_classes += ' slidoc-paced-pre-init'
             if 'two_column' in file_config.features:
                 chapter_classes += ' slidoc-two-column'
             if 'hide_output' in file_config.features:
@@ -4770,6 +4774,7 @@ Html_header = '''<!DOCTYPE html>
 Delay_image_format = '''<img class="slidoc-blankimage" src="%s/_user_blankimage?delay=%d%s" style="display:none;">'''
 
 Html_footer = '''
+<div id="slidoc-incomplete-paced" class="slidoc-noslide" style="display: none;"><p></p><em>Switch to <span class="slidoc-clickable" onclick="Slidoc.slideViewStart()">slideshow</span> mode to view remaining slides</em></div>
 <div id="slidoc-init-load"><p></p><b>&#x29D7; Loading page ... (<a href="/_logout">reset</a>)</b></div>
 <div id="slidoc-body-footer" class="slidoc-noslide"></div>
 </body></html>

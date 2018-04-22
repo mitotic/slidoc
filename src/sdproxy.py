@@ -2841,7 +2841,7 @@ def sheetAction(params, notrace=False):
                                     returnMessages.append("Warning:FORCED_SUBMISSION:Forced submission of user "+(displayName or userId)+" for session "+sheetName)
                                 else:
                                     # Creating/modifying row
-                                    raise Exception("Error:PAST_SUBMIT_DEADLINE:Past submit deadline ("+str(dueDate)+") for session "+sheetName)
+                                    raise Exception("Error:PAST_SUBMIT_DEADLINE:User "+userId+" past submit deadline ("+str(dueDate)+") for session "+sheetName)
                             elif (sliauth.epoch_ms(dueDate) - curTime) < 2*60*60*1000:
                                 returnMessages.append("Warning:NEAR_SUBMIT_DEADLINE:Nearing submit deadline ("+str(dueDate)+") for session "+sheetName)
 
