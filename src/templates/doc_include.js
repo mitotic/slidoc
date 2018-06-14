@@ -4261,6 +4261,8 @@ function showGradesCallback(userId, result, retStatus) {
 	var grade = result[sessionName];
 	if (isNumber(grade))
 	    grade = grade ? grade.toFixed(2) : (amatch?'':'missed');
+	else if (!grade)
+	    continue;
 
 	var dispSession = sessionName;
 	if (amatch) {
@@ -5762,18 +5764,23 @@ function preAnswer() {
 	    hintDisplayAux(slide_id, qnumber, Sliobj.session.hintsUsed[qnumber]);
 	}
 
+	var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	if (qnumber in Sliobj.session.questionsAttempted) {
 	    // Question attempted; display answer
 	    var qAttempted = Sliobj.session.questionsAttempted[qnumber];
-	    var qfeedback = Sliobj.feedback ? (Sliobj.feedback[qnumber] || null) : null;
 	    Slidoc.answerClick(null, slide_id, 'preanswer', qAttempted.response, qAttempted.explain||null, qAttempted.expect||null, qAttempted.plugin||null, qfeedback);
 	} else if (Sliobj.gradableState) {
 	    // Question not attempted; display null plugin response if grading
 	    var qtypeMatch = QTYPE_RE.exec(question_attrs.qtype);
 	    if (qtypeMatch && qtypeMatch[2]) {
 		var pluginName = qtypeMatch[1];
-		Slidoc.PluginMethod(pluginName, slide_id, 'display', '', null);
-		Slidoc.PluginManager.disable(pluginName, slide_id);
+		if (pluginName == 'Upload') {
+		    // WORKAROUND to allow late file uploads to be graded
+		    Slidoc.answerClick(null, slide_id, 'preanswer', SKIP_ANSWER, null, null, {name: pluginName, score: null, correctAnswer: ''}, qfeedback);
+		} else {
+		    Slidoc.PluginMethod(pluginName, slide_id, 'display', '', null);
+		    Slidoc.PluginManager.disable(pluginName, slide_id);
+		}
 	    }
 	}
 
@@ -7873,8 +7880,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAns
     for (var j=0; j<questions.length; j++) {
         var qnumber = j+1;
         var qAttempted = questionsAttempted[qnumber];
-        if (!qAttempted && params.paceLevel >= QUESTION_PACE) {
-            // Process answers only in sequence
+        if (!qAttempted && params.paceLevel == QUESTION_PACE) {
+            // Process answers only in sequence for question-paced slides
             break;
         }
 

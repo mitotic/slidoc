@@ -3,6 +3,8 @@ Discuss = {
     global: {
 	initGlobal: function(discussParams) {
 	    Slidoc.log('Slidoc.Plugins.Discuss.initGlobal:', discussParams);
+	    if (!discussParams)
+		return;
 	    this.discussParams = discussParams;
 	    if (!window.GService)
 		return;
@@ -94,7 +96,7 @@ Discuss = {
 
     init: function() {
 	Slidoc.log('Slidoc.Plugins.Discuss.init:', this.global);
-	if (!window.GService || !this.global.discussParams.stats || !this.global.discussParams.stats.sessions)
+	if (!window.GService || !this.global.discussParam || !this.global.discussParams.stats || !this.global.discussParams.stats.sessions)
 	    return;
 	var sessionStats = this.global.discussParams.stats.sessions[this.sessionName] || {};
 	this.discussNum = 0;

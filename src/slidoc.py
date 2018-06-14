@@ -1443,7 +1443,7 @@ class SlidocRenderer(MathRenderer):
             if 'untitled_number' in self.options['config'].features:
                 # Number untitled slides (e.g., as in question numbering)
                 if self.questions and len(self.questions)+1 != self.untitled_number:
-                    self.abort('QUESTION-ERROR', 'Untitled number %d out of sync with question number %d. Add explicit headers to non-question slides to avoid numbering' % (self.untitled_number, len(self.questions)+1))
+                    self.abort('QUESTION-ERROR', 'Untitled number %d out of sync with question number %d (%s...). Add explicit headers to non-question slides to avoid numbering' % (self.untitled_number, len(self.questions)+1, text[:25]))
                     return ''
 
                 self.untitled_header = '%d. ' % self.untitled_number
@@ -3098,7 +3098,8 @@ def get_session_index_entry(sheet_url, hmac_key, session_name):
 def update_session_index(sheet_url, hmac_key, session_name, revision, session_weight, session_rescale, release_date_str, due_date_str, media_url, pace_level,
                          score_weights, grade_weights, other_weights, sheet_attributes,
                          questions, question_concepts, p_concepts, s_concepts, max_last_slide=None, debug=False,
-                         row_count=None, row_headers=[], modify_col=0, modify_session=None, related_sheets=None):
+                         row_count=None, row_headers=[], modify_col=0, modify_session=None, related_sheets=None,
+                         restricted_sessions_re=None):
     modify_questions = False
     admin_paced = 1 if pace_level >= ADMIN_PACE else None
 
@@ -3108,7 +3109,13 @@ def update_session_index(sheet_url, hmac_key, session_name, revision, session_we
     prev_headers = retval.get('headers')
     prev_row = retval.get('value')
     prev_questions = None
-    if prev_row:
+    if not prev_row:
+        # New session
+        if restricted_sessions_re and restricted_sessions_re.search(session_name):
+            if release_date_str != sliauth.FUTURE_DATE:
+                abort('RESTRICTED-ERROR: Must specify future release date to create new restricted session %s' % session_name)
+    else:
+        # Pre-existing session
         revision_col = Index_fields.index('revision')
         pace_col = Index_fields.index('paceLevel')
         admin_paced_col = Index_fields.index('adminPaced')
@@ -4051,10 +4058,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
             if restricted_sessions_re and restricted_sessions_re.search(fname):
                 if not release_date_str:
-                    abort('RESTRICTED-ERROR: Must specify an actual/future release date to create restricted session %s' % fname)
+                    abort('RESTRICTED-ERROR: Must specify an actual/future release date to create/modify restricted session %s' % fname)
                 if return_html and release_date_obj:
                     if not start_date_obj:
-                        abort('RESTRICTED-ERROR: Must specify site start date to create restricted session %s' % fname)
+                        abort('RESTRICTED-ERROR: Must specify site start date to create/modify restricted session %s' % fname)
                     if  sliauth.epoch_ms(release_date_obj) < sliauth.epoch_ms(start_date_obj):
                         abort('RESTRICTED-ERROR: Invalid release date %s before start date %s for restricted session %s' % (release_date_str, config.start_date, fname))
 
@@ -4330,7 +4337,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                                  js_params['scoreWeight'], js_params['gradeWeight'], js_params['otherWeight'], tem_attributes,
                                  renderer.questions, renderer.question_concepts, renderer.qconcepts[0], renderer.qconcepts[1],
                                  max_last_slide=max_last_slide, debug=config.debug,
-                                 row_count=row_count, row_headers=prev_headers or tem_fields, modify_col=modify_col, modify_session=modify_session, related_sheets=related_sheets)
+                                 row_count=row_count, row_headers=prev_headers or tem_fields, modify_col=modify_col, modify_session=modify_session, related_sheets=related_sheets, restricted_sessions_re=restricted_sessions_re)
 
             admin_due_date[fname] = mod_due_date if js_params['paceLevel'] == ADMIN_PACE else ''
 

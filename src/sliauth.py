@@ -21,7 +21,7 @@ import time
 import urllib
 import urllib2
 
-VERSION = '0.97.22k'
+VERSION = '0.97.22l'
 
 USER_COOKIE_PREFIX = 'slidoc_user'
 SITE_COOKIE_PREFIX = 'slidoc_site'
@@ -51,6 +51,8 @@ def get_version(sub=False):
 def sub_version(version):
     # Returns portion of version that should match
     # (For versions with letter suffix, just drop letter; otherwise, drop last number)
+    if not version:
+        return version
     return version[:-1] if version[-1].isalpha() else '.'.join(version.split('.')[:-1])
 
 TRUNCATE_DIGEST = 12

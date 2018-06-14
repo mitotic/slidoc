@@ -9,7 +9,9 @@ NOTE:
 
 1. Use --printable --fontsize=12,9 --delay_sec=... options for best results in printing sessions
 
-2. Use 'lp -o StapleLocation=UpperLeft filenames ...' for printing+stapling
+2. Use 'lp -d PRINTER -o StapleLocation=UpperLeft filenames ...' for printing+stapling (Ricoh printers)
+        lp -d PRINTER -o StapleOption=1StapleLeft ...' (Konica printers)
+   Use 'lpoptions -p PRINTER  -l |grep taple' to discover stapling options
 
 3. wkhtmltopdf: The OS X Carbon (32-bit) version seems to work better
                 Inserting very large figures messes up the fonts. Resize figures for better results.

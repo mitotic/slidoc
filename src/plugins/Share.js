@@ -3,7 +3,7 @@ Share = {
     global: {
 	initGlobal: function(shareParams) {
 	    Slidoc.log('Slidoc.Plugins.Share.initGlobal:', shareParams);
-	    this.shareParams = shareParams;
+	    this.shareParams = shareParams || {};
 	}
     },
 

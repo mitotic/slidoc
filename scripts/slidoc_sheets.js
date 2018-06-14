@@ -1,6 +1,6 @@
 // slidoc_sheets.js: Google Sheets add-on to interact with Slidoc documents
 
-var VERSION = '0.97.22h';
+var VERSION = '0.97.22l';
 
 var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure administrative access (obtain from proxy for multi-site setup: sliauth.py -a ROOT_KEY -t SITE_NAME)'],
 
@@ -20,7 +20,7 @@ var DEFAULT_SETTINGS = [ ['auth_key', '', '(Hidden cell) Secret value for secure
 			 ['no_roster',      '', 'Non-null string for true'],
 			 ['log_call', '', '> 0 to log calls to sheet call_log; may generate large output over time'],
                          [],
-			 ['gradebook_release',  '', 'List of released items: average,cumulative_total,cumulative_grade (comma-separated)'],
+			 ['gradebook_release',  '', 'List of released/!suppressed items: average,cumulative_total,cumulative_grade,!_exam03 (comma-separated)'],
 		         ['cumulative_total',   '', 'Formula for gradebook total column, e.g., 0.4*assignment_avg_1+0.5*quiz_sum+10*test_normavg+0.1*extra01'],
 			 ['cumulative_grade',   '', 'A:90%:4,B:80%:3,C:70%:2,D:60%:1,F:0%:0'], // Or A:180:4,B:160:3,...
 			 [],
@@ -2134,8 +2134,13 @@ function sheetAction(params) {
 		    returnInfo.gradeDate = gradeDate;
 		}
 
-		if (!adminUser && params.getstats) {
+		if (!adminUser && getRow && sheetName == GRADES_SHEET) {
 		    // Blank out grade-related columns from gradebook
+		    for (var j=0; j<columnHeaders.length; j++) {
+			// Temporarily blank out specific grade-related column(s)
+			if (('!'+columnHeaders[j]) in gradebookRelease)
+			    returnValues[j] = '';
+		    }
 		    for (var j=0; j < GRADE_HEADERS.length; j++) {
 			var cname = GRADE_HEADERS[j];
 			var cindex = columnIndex[cname];
@@ -2145,12 +2150,14 @@ function sheetAction(params) {
 			     (cname != 'total' && !('cumulative_grade' in gradebookRelease)) ||
 			     !returnInfo.lastUpdate ) {
 			    returnValues[cindex-1] = '';
-			    if (returnInfo.maxScores)
-				returnInfo.maxScores[cindex-1] = '';
-			    if (returnInfo.rescale)
-				returnInfo.rescale[cindex-1] = '';
-			    if (returnInfo.averages)
-				returnInfo.averages[cindex-1] = '';
+			    if (params.getstats) {
+				if (returnInfo.maxScores)
+				    returnInfo.maxScores[cindex-1] = '';
+				if (returnInfo.rescale)
+				    returnInfo.rescale[cindex-1] = '';
+				if (returnInfo.averages)
+				    returnInfo.averages[cindex-1] = '';
+			    }
 			}
 		    }
 		}
@@ -4441,8 +4448,8 @@ function tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAns
     for (var j=0; j<questions.length; j++) {
         var qnumber = j+1;
         var qAttempted = questionsAttempted[qnumber];
-        if (!qAttempted && params.paceLevel >= QUESTION_PACE) {
-            // Process answers only in sequence
+        if (!qAttempted && params.paceLevel == QUESTION_PACE) {
+            // Process answers only in sequence for question-paced slides
             break;
         }
 
@@ -5359,7 +5366,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 	    modTotalFormula = modTotalFormula.replace(agName, colChar+'@');
 	    var agColMax = agCol;
 	    var agMaxWeight = null;
-	    var agMaxWeightMismatch = false;
+	    var agMaxWeightMismatch = '';
 	    for (var kcol=agCol+1; kcol<=scoreColHeaders.length; kcol++) {
 		// Find last column to aggregate
 		if (scoreColHeaders[kcol-1].slice(0,agParams.prefix.length) != agParams.prefix)
@@ -5367,8 +5374,8 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 		agColMax = kcol;
 		if (agMaxWeight == null)
 		    agMaxWeight = maxWeights[kcol-1];
-		else if (agMaxWeight != maxWeights[kcol-1])
-		    agMaxWeightMismatch = true;
+		else if (Math.abs(agMaxWeight - maxWeights[kcol-1]) > 0.00001)
+		    agMaxWeightMismatch = (agMaxWeight + '!=') + maxWeights[kcol-1];
 	    }
 	    var agFormula = '';
 	    var agAverage = '';
@@ -5384,7 +5391,7 @@ function updateGrades(sessionNames, create, interactive, totalOnly) {
 		if (agParams.type == 'avg') {
 		    // Average
 		    if (agMaxWeightMismatch)
-			throw('All max weights should be identical to aggregate column '+agName+' in session '+sessionName);
+			throw('All max weights should be identical to aggregate column '+agName+' in session '+sessionName+': '+agMaxWeightMismatch);
 		    if (dropScores)
 			agFormula = '(' + agFormula + ')/(COLUMNS(' + agRangeStr + ')-'+dropScores+')';
 		    else

@@ -73,7 +73,7 @@ Settings = {
     'no_roster': False,
     'log_call': '',        # > 0 to log calls to sheet call_log; may generate large output over time
 
-    'gradebook_release': '', # List of released items: average,cumulative_total,cumulative_grade (comma-separated)
+    'gradebook_release': '', # List of released/!suppressed items: average,cumulative_total,cumulative_grade,!_exam03 (comma-separated)
 
                           # General settings from server
     'debug': '',
@@ -3215,8 +3215,12 @@ def sheetAction(params, notrace=False):
                 elif not adminUser and gradeDate:
                     returnInfo['gradeDate'] = sliauth.iso_date(gradeDate, utc=True)
 
-                if not adminUser and params.get('getstats',''):
+                if not adminUser and getRow and sheetName == GRADES_SHEET:
                     # Blank out cumulative grade-related columns from gradebook
+                    for j in range(len(columnHeaders)):
+                        # Temporarily blank out specific grade-related column(s)
+                        if ('!'+columnHeaders[j]) in gradebookRelease:
+                            returnValues[j] = ''
                     for j in range(len(GRADE_HEADERS)):
                         cname = GRADE_HEADERS[j]
                         cindex = columnIndex.get(cname)
@@ -3226,12 +3230,13 @@ def sheetAction(params, notrace=False):
                              (cname != 'total' and not('cumulative_grade' in gradebookRelease)) or
                              not returnInfo.get('lastUpdate') ):
                             returnValues[cindex-1] = ''
-                            if returnInfo.get('maxScores'):
-                                returnInfo['maxScores'][cindex-1] = ''
-                            if returnInfo.get('rescale'):
-                                returnInfo['rescale'][cindex-1] = ''
-                            if returnInfo.get('averages'):
-                                returnInfo['averages'][cindex-1] = ''
+                            if params.get('getstats',''):
+                                if returnInfo.get('maxScores'):
+                                    returnInfo['maxScores'][cindex-1] = ''
+                                if returnInfo.get('rescale'):
+                                    returnInfo['rescale'][cindex-1] = ''
+                                if returnInfo.get('averages'):
+                                    returnInfo['averages'][cindex-1] = ''
 
                 if getRow and createRow and discussableSession and userId != MAXSCORE_ID:
                     # Accessing discussable session
@@ -4393,7 +4398,9 @@ def lookupGrades(userId, admin=False):
     sessionGrades = []
     gradebookStatus = ''
     for j, header in enumerate(headers):
-        if header in ('total', 'grade'):
+        if ('!'+header) in gradebookRelease:
+            continue
+        elif header in ('total', 'grade'):
             if admin:
                 pass
             elif not lastUpdate:
@@ -5825,8 +5832,8 @@ def tallyScores(questions, questionsAttempted, hintsUsed, params, remoteAnswers)
     for j in range(len(questions)):
         qnumber = j+1
         qAttempted = questionsAttempted.get(qnumber)
-        if not qAttempted and params.get('paceLevel') >= QUESTION_PACE:
-            # Process answers only in sequence
+        if not qAttempted and params.get('paceLevel') == QUESTION_PACE:
+            # Process answers only in sequence for question-paced slides
             break
 
         questionAttrs = questions[j]
