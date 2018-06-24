@@ -106,7 +106,41 @@ HTML documents produced by Slidoc automatically load the
 [Mathjax](https://www.mathjax.org) library to display equations.
 This means that equations will not render without an internet connection.
 
-The server program `sdserver.py` requires the Tornado web server to be installed.
+The server program `sdserver.py` requires the Tornado web server to be
+installed.
+
+
+---
+
+## Using Slidoc with Windows 10 Subsystem for Linux
+
+https://docs.microsoft.com/en-us/windows/wsl/install-win10
+
+Open `PowerShell` as **Administrator** and run:
+
+    Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux
+
+Reboot the system
+
+Open `Microsoft Store` and install a Linux distribution (such as
+*Ubuntu*)
+
+Enter Unix username and password (may be different from Windows)
+
+From now on, Linux can be accessed by running `bash.exe`
+
+In the terminal, run
+
+    sudo apt install python-minimal
+    sudo apt update -y 
+    sudo apt install python-pip
+    git clone https://github.com/mitotic/slidoc.git
+    cd slidoc/src
+	python slidoc.py -p 8080 ../README.md
+
+Open the URL `http://localhost:8080` using a browser
+
+
 
 ---
 

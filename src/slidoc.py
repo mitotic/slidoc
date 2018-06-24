@@ -3470,8 +3470,8 @@ def read_index(fhandle, entry_count=6, path=''):
 
     return index_entries
 
-def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_char=''):
-    site_prefix = '/'
+def get_topnav(opts, server_url, fnames=[], site_name='', separate=False, cur_dir='', split_char=''):
+    site_prefix = '/' if server_url else ''
     if site_name:
         site_prefix += site_name + '/'
     if opts == 'args':
@@ -3496,7 +3496,7 @@ def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_
                 continue
             base = os.path.basename(opt)
             if opt == '/' or opt == 'index.html':
-                label_list.append( (site_name or 'Home', site_prefix) )
+                label_list.append( (site_name or 'Home', site_prefix or 'index.html') )
             elif '.' not in base:
                 # No extension in basename; assume directory
                 label_list.append( (strip_name(opt, split_char), site_prefix+opt+'/index.html') )
@@ -3519,8 +3519,8 @@ def get_topnav(opts, fnames=[], site_name='', separate=False, cur_dir='', split_
         topnav_list.append([link, basename, linkid])
     return topnav_list
 
-def render_topnav(topnav_list, filepath='', site_name=''):
-    site_prefix = '/'
+def render_topnav(topnav_list, server_url, filepath='', site_name=''):
+    site_prefix = '/' if server_url else ''
     if site_name:
         site_prefix += site_name + '/'
     fname = ''
@@ -3542,10 +3542,12 @@ def render_topnav(topnav_list, filepath='', site_name=''):
         elems.append('<li>'+elem+'</li>')
 
     topnav_html = '<ul class="slidoc-topnav slidoc-noprint" id="slidoc-topnav">\n'+'\n'.join(elems)+'\n'
-    topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
-    topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
-    topnav_html += '<li id="helplink" class="" style=""><a href="%ssend">%s</a> <span class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.userProfile();">%s</span><a href="_docs/index.html" target="_blank">%s</a></li>' % (site_prefix, SYMS['phonearrow'], SYMS['bust'], '<b>?</b>')
-    topnav_html += '<li id="dashlink" class="slidoc-restricted-top" style="display: none;"><a href="%s_addtype" target="_blank"><b>+</b></a> <a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, site_prefix, SYMS['gear'], SYMS['pencil'])
+    if server_url:
+        topnav_html += '<li id="fileslink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_browse/files" target="_blank">%s</a></li>' % (site_prefix, SYMS['folder'])
+        topnav_html += '<li id="gradelink" class="slidoc-remoteonly" style="display: none;"><a href="%s_user_grades" target="_blank">%s</a></li>' % (site_prefix, SYMS['letters'])
+        topnav_html += '<li id="helplink" class="" style=""><a href="%ssend" class="slidoc-remoteonly">%s</a> <span class="slidoc-clickable slidoc-remoteonly" onclick="Slidoc.userProfile();">%s</span><a href="_docs/index.html"  class="slidoc-remoteonly" target="_blank">%s</a></li>' % (site_prefix, SYMS['phonearrow'], SYMS['bust'], '<b>?</b>')
+        topnav_html += '<li id="dashlink" class="slidoc-restricted-top" style="display: none;"><a href="%s_addtype" target="_blank"><b>+</b></a> <a href="%s_dash" target="_blank">%s</a> <a id="dashlinkedit" class="slidoc-noupdate" href="">%s</a></li>' % (site_prefix, site_prefix, SYMS['gear'], SYMS['pencil'])
+
     topnav_html += '<li class="slidoc-nav-icon"><a href="javascript:void(0);" onclick="Slidoc.switchNav()">%s</a></li>' % SYMS['threebars']
     topnav_html += '</ul>\n'
     return topnav_html
@@ -3879,7 +3881,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
     topnav_list = []
     if config.topnav:
-        topnav_list = get_topnav(config.topnav, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
+        topnav_list = get_topnav(config.topnav, config.server_url, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
     js_params['topnavList'] = topnav_list
 
     head_html = font_css(config.fontsize) + css_html + insert_resource('doc_include.js') + insert_resource('wcloud.js')
@@ -4240,8 +4242,8 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
         announce_due_html = ''
         if topnav_opts and config.separate:
             top_fname = 'home' if fname == 'index' else fname
-            js_params['topnavList'] = get_topnav(topnav_opts, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
-            topnav_html = '' if config.create_toc or config.toc else render_topnav(js_params['topnavList'], top_fname, site_name=config.site_name)
+            js_params['topnavList'] = get_topnav(topnav_opts, config.server_url, fnames=orig_fnames, site_name=config.site_name, separate=config.separate)
+            topnav_html = '' if config.create_toc or config.toc else render_topnav(js_params['topnavList'], config.server_url, top_fname, site_name=config.site_name)
             index_display = []
             for opt in topnav_opts.split(','):
                 if opt != '/index.html' and (opt.endswith('/index.html') or not opt.endswith('.html')):
@@ -4465,7 +4467,7 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
                           'skulpt_js': '',
                           'plugin_tops': '',
                           'body_class': 'slidoc-plain-page',
-                          'top_nav': render_topnav(topnav_list, toc_path, site_name=config.site_name) if topnav_list else '',
+                          'top_nav': render_topnav(topnav_list, config.server_url, toc_path, site_name=config.site_name) if topnav_list else '',
                           'top_nav_hide': ' slidoc-topnav-hide' if topnav_list else ''}
         toc_mid_params.update(SYMS)
         if config.toc_header:
