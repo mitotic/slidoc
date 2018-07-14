@@ -258,13 +258,13 @@ class ProxyServer(object):
         the internal server, by combining the external and internal streams.
         Flow refers to one way information transfer (external->internal or internal->external)
     """
-    def __init__(self, host, port, handler_class, proxy_id="", io_loop=None, xheaders=False,
+    def __init__(self, host, port, handler_class, proxy_id="", start=False, xheaders=False,
                  multiplex_params=(), relay_keep_alive=True, local_handler_class=None, masquerade="", host_header=None,
                  application=None, block_addrs=[], block_filename=None, weblog_file=None, log_interval=60,
                  ssl_options={}, idle_timeout=None, debug=False):
         """ Listens for TCP requests.
         If the unique proxy_id string is omitted, "host:port" is used as proxy_id.
-        If io_loop is not specified, a new io_loop is created and started (blocking)
+        If start, start IO loop (blocking)
         If xheaders, create and forward X-Real-Ip and X-Scheme upstream.
         If multiplex_params=(class, websock_offset), multiplex websocket connections using class
         If relay_keep_alive, keep internal relay connection alive as long as external is alive (DEFAULT: True)
@@ -279,10 +279,7 @@ class ProxyServer(object):
         self.ports = {"http": port}
         self.handler_class = handler_class
         self.proxy_id = proxy_id or "%s:%s" % (host, port)
-        if not io_loop:
-            self.io_loop = ioloop.IOLoop.current()
-        else:
-            self.io_loop = io_loop
+        self.io_loop = ioloop.IOLoop.current()
 
         self.xheaders = xheaders
         self.multiplex_params = multiplex_params
@@ -330,8 +327,7 @@ class ProxyServer(object):
             logging.warning("%s: Listening for %s on %s:%d", LOGNAME, server_type, self.host, port)
             print >> sys.stderr, "%s: Listening for %s on %s:%d" % (LOGNAME, server_type, self.host, port)
 
-        self.periodic_loop = ioloop.PeriodicCallback(self.periodic_callback, PERIODIC_SEC*1000,
-                                                     io_loop=self.io_loop)
+        self.periodic_loop = ioloop.PeriodicCallback(self.periodic_callback, PERIODIC_SEC*1000)
         self.last_period_time = time.time()
         self.periodic_loop.start()
 
@@ -341,7 +337,7 @@ class ProxyServer(object):
                 self.block(addr)
         self.update_blocked_list()
 
-        if not io_loop:
+        if start:
             self.io_loop.start()
 
     def stop(self):
@@ -397,13 +393,13 @@ class ProxyServer(object):
                 return
 
             if self.ssl_options:
-                external_stream = ChunkySSLIOStream(connection, io_loop=self.io_loop,
+                external_stream = ChunkySSLIOStream(connection,
                                             chunk_timeout=self.idle_timeout,
                                             read_chunk_size=READ_CHUNK_SIZE,
                                             max_buffer_size=MAX_BUFFER_SIZE,
                                             ssl_options=self.ssl_options)
             else:
-                external_stream = ChunkyIOStream(connection, io_loop=self.io_loop,
+                external_stream = ChunkyIOStream(connection,
                                             chunk_timeout=self.idle_timeout,
                                             read_chunk_size=READ_CHUNK_SIZE,
                                             max_buffer_size=MAX_BUFFER_SIZE)
@@ -710,7 +706,7 @@ class Pipeline(object):
                 # relay_address = unix_domain_socket_addr
                 socket_type = socket.AF_UNIX
             self.internal_sock = socket.socket(socket_type, socket.SOCK_STREAM, 0)
-            self.internal_stream = ChunkyIOStream(self.internal_sock, io_loop=self.proxy_server.io_loop)
+            self.internal_stream = ChunkyIOStream(self.internal_sock)
             self.internal_stream.set_close_callback(self.internal_disconnected)
             self.internal_stream.connect(self.relay_address, self.internal_connected)
         except Exception, excp:
@@ -1540,8 +1536,8 @@ if __name__ == "__main__":
                 raise Exception('Invalid path '+self.request_uri)
 
     HOST, PORT = "localhost", 8801
-    IO_loop = ioloop.IOLoop.instance()
-    Proxy_server = ProxyServer(HOST, PORT, TestRequestHandler, io_loop=IO_loop, log_interval=0,
+    IO_loop = ioloop.IOLoop.current()
+    Proxy_server = ProxyServer(HOST, PORT, TestRequestHandler, log_interval=0,
                                xheaders=True, masquerade="server/1.2345", debug=True)
 
     IO_loop.start()
